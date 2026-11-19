@@ -39,7 +39,7 @@
  * choice: `implement` is not one of `REFUSING_STEPS`, so arriving at the router
  * and refusing are different things and only one of them is charged for.
  */
-import type { RuntimeId } from '@lingtai/domain'
+import type { ImplementOutcome, RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import {
@@ -68,13 +68,18 @@ export type WorkedAnswer =
    * It started and left no receipt — a crash, a spent turn budget, no commit.
    *
    * `interrupted` is set where the caller can name the runtime's own cause
-   * (`#466`), and `committedNothing` where the agent ran to the end and simply
-   * left nothing on the branch — the two `did-not-finish`es 0120 §1 tells apart
-   * as `Interrupted` and `commit Completed{head: null, question: null}`. Both
-   * absent is a setup that broke before any agent ran (`NotDone`), which is
+   * (`#466`), and `declared` where the agent ran to the end and what it declared
+   * was not `Implemented` (#1250) — the two `did-not-finish`es 0120 §1 tells apart
+   * as `Interrupted` and `commit Completed{outcome}`; `head` is what it left on
+   * the branch beside an `Unclear`. Both absent is a setup that broke before any agent ran (`NotDone`), which is
    * `conduct.ts`'s own four `the hook …` sentences.
    */
-  | { readonly stopped: string; readonly interrupted?: InterruptedCause; readonly committedNothing?: true }
+  | {
+      readonly stopped: string
+      readonly interrupted?: InterruptedCause
+      readonly declared?: ImplementOutcome
+      readonly head?: string
+    }
 
 /**
  * The dispatch, as the only thing this action needs from its caller.
@@ -170,6 +175,8 @@ export function makeWorkAction(spec: WorkActionSpec, deps: WorkPortDeps): Action
             evidence: `committed ${answer.committed.slice(0, 7)}`,
             findings: [],
             head: answer.committed,
+            // The agent's own declaration, so the stored outcome carries it (#1250).
+            declared: { _tag: 'Implemented' },
           }
         }
         if ('asked' in answer) {
@@ -203,7 +210,8 @@ export function makeWorkAction(spec: WorkActionSpec, deps: WorkPortDeps): Action
           evidence: boundedEvidence(answer.stopped),
           findings: [],
           ...(answer.interrupted === undefined ? {} : { interrupted: answer.interrupted }),
-          ...(answer.committedNothing === undefined ? {} : { committedNothing: answer.committedNothing }),
+          ...(answer.declared === undefined ? {} : { declared: answer.declared }),
+          ...(answer.head === undefined ? {} : { head: answer.head }),
         }
       })
     },

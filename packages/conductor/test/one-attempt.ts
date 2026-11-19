@@ -536,7 +536,7 @@ export const runtime: Runtime = {
       durationMs: 1234,
       costUsd: 0.42,
       failure: null,
-      text: 'done',
+      text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
       sessionId: 'sess-1',
     }),
 }
@@ -553,26 +553,29 @@ export const runtime: Runtime = {
  */
 export const refusingRuntime: Runtime = {
   ...runtime,
-  run: () =>
-    Effect.succeed({
-      exitCode: 0,
-      turns: 5,
-      durationMs: 2_000,
-      costUsd: 1.25,
-      failure: null,
-      text: JSON.stringify({
-        findings: [
-          {
-            file: 'src/fix.ts',
-            line: 12,
-            severity: 'blocker',
-            claim: 'the approach cannot work',
-            failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
-          },
-        ],
-      }),
-      sessionId: 'sess-review',
-    }),
+  // What is not a review is an implementer or a fixer, and it declares it did the work (#1250).
+  run: (request) =>
+    !request.runId.includes(':review:') && !request.runId.includes(':judge:')
+      ? runtime.run(request)
+      : Effect.succeed({
+          exitCode: 0,
+          turns: 5,
+          durationMs: 2_000,
+          costUsd: 1.25,
+          failure: null,
+          text: JSON.stringify({
+            findings: [
+              {
+                file: 'src/fix.ts',
+                line: 12,
+                severity: 'blocker',
+                claim: 'the approach cannot work',
+                failureScenario: 'call it twice and the second call deadlocks on the lock the first took',
+              },
+            ],
+          }),
+          sessionId: 'sess-review',
+        }),
 }
 
 /**
@@ -602,7 +605,7 @@ export function reviewerThatCrashes(tried: { n: number }): Runtime {
           durationMs: 1234,
           costUsd: 0.42,
           failure: null,
-          text: 'done',
+          text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
           sessionId: 'sess-1',
         })
       }
@@ -684,7 +687,7 @@ export const reviewerAtTheWall: Runtime = {
             durationMs: 1234,
             costUsd: 0.42,
             failure: null,
-            text: 'done',
+            text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
             sessionId: 'sess-1',
           },
     ),
@@ -726,7 +729,7 @@ export const designerAtTheWall: Runtime = {
             durationMs: 1234,
             costUsd: 0.42,
             failure: null,
-            text: 'done',
+            text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
             sessionId: 'sess-1',
           },
     ),

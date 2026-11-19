@@ -125,7 +125,7 @@
  * the ending happened, and neither does this file's failure to resolve them.
  */
 import type { ActionContext, ActionFinding, InterruptedCause, TheDesign } from '@lingtai/actions'
-import type { Envelope, RuntimeId, ToAppend } from '@lingtai/domain'
+import type { Envelope, ImplementOutcome, RuntimeId, ToAppend } from '@lingtai/domain'
 import type { Cause as TriageCause } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
@@ -240,18 +240,21 @@ export type { SentBack }
  * which is the whole of what separates it from `Asked` — and since `#296` that
  * separation is two endings rather than two values of one `because`.
  *
- * `interrupted` and `committedNothing` are `#466`'s, optional and widened
+ * `interrupted` is `#466`'s and `declared` is #1250's, optional and widened
  * rather than a fifth arm on `Worked`: the dispatch that builds this already
  * knows the runtime's own failure kind (`firstDispatch`, `fixRound`), or that
  * the agent ran to the end and left no commit, and carrying either here is
  * what lets `createWorkAction` set `ActionResult.interrupted`/
- * `.committedNothing` without a second reading of `stopped`'s sentence
+ * `.declared` without a second reading of `stopped`'s sentence
  * (0031 §1).
  */
 export interface Stopped {
   readonly stopped: string
   readonly interrupted?: InterruptedCause
-  readonly committedNothing?: true
+  /** What the agent declared where it ran to the end and the facts did not bear it out (#1250). */
+  readonly declared?: ImplementOutcome
+  /** The commit it left, where it left one beside a declared outcome — an `Unclear` keeps them. */
+  readonly head?: string
 }
 
 /**
@@ -357,14 +360,6 @@ export interface Judging {
   readonly findings: readonly ActionFinding[]
   /** What the step printed when it did not pass; the question, for `needs-input`. */
   readonly evidence: string
-  /**
-   * The ticket the attempt read, for `nothing-produced` alone (#1198): *is the
-   * ticket unclear* cannot be judged without it. Absent for every other reason,
-   * so their prompts do not grow by a body. `null` where the attempt had none.
-   */
-  readonly ticket?: { readonly title: string; readonly body: string } | null
-  /** The implementer's last message, for `nothing-produced` alone (#1198). */
-  readonly said?: string | null
 }
 
 /**

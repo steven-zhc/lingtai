@@ -289,12 +289,11 @@ describe('what the fixer is told', () => {
    * should fail here rather than quietly close the hatch again.
    */
   it('tells the fixer it may decline, and that declining is how a person hears it', () => {
-    expect(brief).toMatch(/change nothing and commit nothing/i)
+    expect(brief).toMatch(/declare .?Disputed/i)
     // Not giving up, and not a wasted round: the prompt has to say what the
     // move *achieves*, or an agent under a "produce something" reading will
     // avoid it exactly when it is most needed.
     expect(brief).toMatch(/how your objection\s+reaches a person/i)
-    expect(brief).toMatch(/stops this loop and puts\s+the evidence in front of somebody/i)
     // And when to use it, in the terms the fixer can actually check.
     expect(brief).toMatch(/the sequence a finding\s+describes cannot happen/i)
     expect(brief).toMatch(/the failure was not\s+caused by this diff/i)
@@ -1626,7 +1625,7 @@ describe('what a conflict tells the fixer', () => {
   })
 
   it('keeps the decline, which is the same escape the other two have', () => {
-    expect(brief).toMatch(/change nothing and commit nothing/i)
+    expect(brief).toMatch(/declare .?Disputed/i)
   })
 })
 

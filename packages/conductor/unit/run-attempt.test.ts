@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { rerunId, type Action, type ActionContext, type ActionFinding, type ActionResult } from '@lingtai/actions'
-import { STEPS, type Step } from '@lingtai/domain'
+import { STEPS, type ImplementOutcome, type Step } from '@lingtai/domain'
 import { StepMap, type StepAction } from '@lingtai/recipe'
 /**
  * The pass, read against the decision rather than against a diff.
@@ -76,6 +76,14 @@ const committedSomething = (name: string, head: string | null = COMMITTED): Acti
   kind: 'agent',
   yields: 'commit',
   run: async () => ({ ...PASSED, evidence: 'committed', ...(head === null ? {} : { head }) }),
+})
+
+/** An agent that ran to the end and declared something that is not `Implemented` (#1250). */
+const declaredOutcome = (name: string, declared: ImplementOutcome): Action => ({
+  name,
+  kind: 'agent',
+  yields: 'commit',
+  run: async () => ({ verdict: 'did-not-finish', evidence: 'it said so', findings: [], declared }),
 })
 
 /**
@@ -1299,17 +1307,24 @@ describe('every step that does not pass arrives at proposed', () => {
     const recipe = recipeWith({ proposed: [{ name: 'sign off', human: 'ship it?' }] })
     const { bodies } = watching()
     const { actionsAt, ran } = watchingActions({
-      implement: [committedSomething('write the change', null)],
+      implement: [declaredOutcome('write the change', { _tag: 'AgentFailed', why: 'no outcome' })],
     })
     const { emit } = events()
 
-    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt })
+    // The redos are spent, so the wait stands for a person (an unspent one would redo it by rule).
+    const result = await runAttempt({
+      recipe,
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      from: { step: 'implement', waive: undefined, stepRedosSpent: 3 },
+    } as unknown as AttemptOptions)
 
     expect(ran.some((r) => r.step === 'proposed')).toBe(false)
-    expect(result.steps.find((s) => s.step === 'proposed')?.results).toEqual([])
     expect(result.end).toMatchObject({
       _tag: 'WaitOnPerson',
-      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'NothingProduced' } },
+      reason: { _tag: 'AgentCrashed', step: 'implement' },
     })
   })
 
@@ -1317,7 +1332,7 @@ describe('every step that does not pass arrives at proposed', () => {
    * **`FixerDisagrees` is the one of the seven that needs a round already
    * spent** — a judge declared for `findings` sends the first review's
    * blocker back to `implement`, and the second attempt commits nothing,
-   * which is `changedNothing` with `round > 0`.
+   * which is a declared `Disputed` with `round > 0`.
    */
   it("does not run proposed's own declared human: for a fix round that changed nothing", async () => {
     const finding: ActionFinding = {
@@ -1348,7 +1363,11 @@ describe('every step that does not pass arrives at proposed', () => {
               }),
             ]
           : step === 'implement'
-            ? [committedSomething('write the change', implements_++ === 0 ? COMMITTED : null)]
+            ? [
+                implements_++ === 0
+                  ? committedSomething('write the change', COMMITTED)
+                  : declaredOutcome('write the change', { _tag: 'Disputed', findings: [{ index: 1, why: 'no' }] }),
+              ]
             : actions.map((a) => defaultFor(step, a))
       ran.push({ step, actions: built.map((a) => a.name) })
       return built

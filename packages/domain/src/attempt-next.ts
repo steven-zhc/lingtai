@@ -20,7 +20,8 @@
  */
 import { z } from 'zod'
 
-import { Action, changedNothing, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
+import { Action, cleared, decidingAction, Integration, StepOutcome } from './action.ts'
+import { disputedText, unclearText } from './implement-outcome.ts'
 import { mergeRefusalProposal, Proposal } from './proposal.ts'
 import { Finding, Step, STEPS } from './vocabulary.ts'
 import { AttemptRef, WaitReason } from './wait.ts'
@@ -184,14 +185,6 @@ export function nextOf(outcome: StepOutcome, run: AttemptRef): NextOfResult {
     return sandboxRefusedOr(outcome, fellShortAs(step, action, run))
   }
 
-  if (step === 'implement' && changedNothing(outcome)) {
-    const said = lastCommitEvidence(outcome)
-    return {
-      _tag: 'Propose',
-      proposal: outcome.round > 0 ? { _tag: 'FixerDisagrees', said } : { _tag: 'NothingProduced', said },
-    }
-  }
-
   if (step === 'merge') {
     throw new ImpossibleOutcomeError(step, 'merge', 'merge cleared without an Integrated action')
   }
@@ -257,11 +250,46 @@ function signoffFellShort(step: Step, action: OfYields<'signoff'>, run: AttemptR
 /** No `default` — a new `commit` result `_tag` must be given a cell here. */
 function commitFellShort(step: Step, action: OfYields<'commit'>, run: AttemptRef): NextOfResult {
   switch (action.result._tag) {
-    case 'Completed':
-      return {
-        _tag: 'Propose',
-        proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: action.result.question! },
+    case 'Completed': {
+      const declared = action.result.outcome
+      // What the agent declared (#1250, 0108 §21): each outcome has its own destination.
+      switch (declared?._tag) {
+        case 'AgentFailed':
+          // Redone by rule, the way a crash is (`redoAgentFailed`): the wait is the same shape.
+          return {
+            _tag: 'WaitOnPerson',
+            reason: {
+              _tag: 'AgentCrashed',
+              run,
+              step: 'implement',
+              cause: 'crash',
+              // Our own sentence only: the agent's prose is not a runtime's failure text, and
+              // `wallOf` reads this detail for an account limit.
+              detail: declared.why ?? 'the agent declared no outcome',
+            },
+          }
+        case 'Disputed':
+          return { _tag: 'Propose', proposal: { _tag: 'FixerDisagrees', said: disputedText(declared.findings) } }
+        case 'Unclear':
+          return {
+            _tag: 'Propose',
+            proposal: {
+              _tag: 'InputNeeded',
+              from: 'implement',
+              questions: declared.questions,
+              ...(declared.questions.length === 0 ? { said: action.result.question ?? unclearText(declared) } : {}),
+            },
+          }
+        case 'Implemented':
+        case undefined:
+        case null:
+          // A row written before #1250: a question it asked.
+          return {
+            _tag: 'Propose',
+            proposal: { _tag: 'InputNeeded', from: 'implement', questions: [], said: action.result.question ?? '' },
+          }
       }
+    }
     case 'Interrupted':
       return interruptedAs(step, action.result.cause, action.evidence, run)
     case 'NotDone':
@@ -490,22 +518,18 @@ function requeuedNeverStarted(scope: 'conductor' | 'work-item'): NextOfResult {
   return { _tag: 'Requeued', cause: { _tag: 'NeverStarted', scope } }
 }
 
-/**
- * The last `commit`-yield action **run by the agent itself**, or `null` with
- * none or an empty one. A kept `run:` (`kept-run-action.ts`, `plugin: 'run'`)
- * also yields `commit` — it commits what the agent left behind — but its
- * `evidence` is the command's own output, never the agent's words, and
- * `said` is specifically the agent's last words (`events.ts`'s `FixApplied`;
- * the name stayed when #502 removed the rest).
- * Skipping it is what keeps a kept run's
- * `"nothing to commit"` from overwriting what the fixer actually said.
- */
-export function lastCommitEvidence(outcome: StepOutcome): string | null {
-  let evidence: string | undefined
+/** What the agent said when it declared `Disputed` (#1250), finding by finding; `null` where it declared otherwise. */
+export function disputedOf(outcome: StepOutcome): string | null {
   for (const action of outcome.actions) {
-    if (action.yields === 'commit' && action.plugin === 'agent') evidence = action.evidence
+    if (
+      action.yields === 'commit' &&
+      action.plugin === 'agent' &&
+      action.result._tag === 'Completed' &&
+      action.result.outcome?._tag === 'Disputed'
+    )
+      return disputedText(action.result.outcome.findings)
   }
-  return evidence === undefined || evidence === '' ? null : evidence
+  return null
 }
 
 /**

@@ -25,7 +25,7 @@ import { z } from 'zod'
 import { StepOutcome, WaitId } from './action.ts'
 import { RequeueCause } from './attempt-next.ts'
 import { PromptRefEntry } from './prompt-ref.ts'
-import { JudgeWhen } from './proposal.ts'
+import { StoredJudgeWhen } from './proposal.ts'
 import { StoredProposal, copiedFieldsOf } from './proposal.ts'
 import { RouteOffer, JudgeReply, RouteDecision } from './routing.ts'
 import { Usage } from './spend.ts'
@@ -655,7 +655,7 @@ export const SpentFor = z.discriminatedUnion('_tag', [
     round: z.number().int().nonnegative(),
     grant: WaitId.optional(),
   }),
-  z.object({ _tag: z.literal('Judge'), when: JudgeWhen }),
+  z.object({ _tag: z.literal('Judge'), when: StoredJudgeWhen }),
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),
 ])

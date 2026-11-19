@@ -57,7 +57,7 @@
  * process, no socket, no network.
  */
 import { AgentHostFailed, type Runtime } from '@lingtai/agent'
-import { expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
+import { BOUNDS, expandPrompt, type Envelope, type PayloadOf } from '@lingtai/domain'
 import {
   integrationStream,
   waitWords,
@@ -765,37 +765,12 @@ runtime:
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'WaitStarted',
-      'IssueUpdated',
-      'IssueUpdated',
-    ])
-    expect(typesOf(theRun(store))).toEqual([
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'RunStarted',
-      'StepsResolved',
-      'RunPrompted',
-      'SandboxBoundaryRecorded',
-      'RunFinished',
-      'RunSpent',
-      'StepEnded',
-      'ProposalRouted',
-      'RunRefsPublished',
-      'RunRefsPublished',
-    ])
+    // It said `Implemented` and moved nothing: `AgentFailed`, redone by rule until `stepRedos` is
+    // spent (#1250), and then a person's — there is no router visit and no judge asked.
+    expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(typesOf(theRun(store))).not.toContain('ProposalRouted')
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'NothingProduced', said: 'done' },
-    })
+    expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -824,7 +799,22 @@ runtime:
       {
         project,
         client: fakeGitHub([], JUDGED),
-        runtime: refusingRuntime,
+        // The fixer disputes finding 1 by declaring it (#1250); everyone else is `refusingRuntime`.
+        runtime: {
+          ...refusingRuntime,
+          run: (request) =>
+            request.runId.includes(':fix:')
+              ? Effect.succeed({
+                  exitCode: 0,
+                  turns: 1,
+                  durationMs: 10,
+                  costUsd: 0.1,
+                  failure: null,
+                  text: '```outcome\n{"outcome": "Disputed", "findings": [{"index": 1, "why": "the approach cannot work"}]}\n```',
+                  sessionId: 'sess-fix',
+                })
+              : refusingRuntime.run(request),
+        },
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
         prompt: 'fix {{issue}}',
@@ -894,7 +884,12 @@ runtime:
     // `Declined`/`FixerDisagrees` off the stored hold regardless; this is the
     // other half, read off the run's own wire events.
     const implementRound1 = stepOutcomesOf(all).find((o) => o.step === 'implement' && o.round === 1)
-    expect(implementRound1?.actions[0]?.result).toEqual({ _tag: 'Completed', head: null, question: null })
+    expect(implementRound1?.actions[0]?.result).toEqual({
+      _tag: 'Completed',
+      head: null,
+      question: null,
+      outcome: { _tag: 'Disputed', findings: [{ index: 1, why: 'the approach cannot work' }] },
+    })
     const routes = routesOf(all)
     expect(routes).toHaveLength(2)
     expect(routes[0]).toMatchObject({ from: 'review', decision: { _tag: 'Selected', candidate: 'fix-lines' } })
@@ -1256,7 +1251,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
                 durationMs: 1234,
                 costUsd: 0.42,
                 failure: null,
-                text: 'done',
+                text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
                 sessionId: 'sess-1',
               },
         ),
@@ -1566,10 +1561,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'BudgetExhausted', from: 'implement', kind: 'out-of-turns', turns: null, costUsd: null },
-    })
+    // The fixer's turns spent are `AgentFailed` (#1250): redone by rule, then a person's.
+    expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     theWaitFoldsToTheStoredHold(await allEvents(store), hold!)
   })
 
@@ -1677,47 +1670,22 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'WaitStarted',
-      'IssueUpdated',
-      'IssueUpdated',
-    ])
-    expect(typesOf(theRun(store))).toEqual([
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'RunStarted',
-      'StepsResolved',
-      'RunPrompted',
-      'SandboxBoundaryRecorded',
-      'RunFinished',
-      'RunFailed',
-      'RunSpent',
-      'StepEnded',
-      'ProposalRouted',
-      'RunRefsPublished',
-      'RunProducedDiff',
-      'RunRefsPublished',
-    ])
+    // A run cut off at its turns is `AgentFailed` (0108 §21, #1250): redone by rule until `stepRedos`
+    // is spent, and then a person's — there is no router visit and no judge asked.
+    expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(typesOf(theRun(store))).not.toContain('ProposalRouted')
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'ProposedEscalated',
-      proposal: { _tag: 'BudgetExhausted', from: 'implement', kind: 'out-of-turns', turns: null, costUsd: null },
-    })
+    expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     const all14a = await allEvents(store)
     theWaitFoldsToTheStoredHold(all14a, hold!)
     const implementOutcome = stepOutcomesOf(all14a).find((o) => o.step === 'implement')
-    expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'out-of-turns', head: null })
-    // **#493**: `out-of-turns` still returned an outcome, so it still gets a
-    // `RunSpent` — what it reported, never a made-up zero.
+    expect(implementOutcome?.actions[0]?.result).toMatchObject({
+      _tag: 'Completed',
+      outcome: { _tag: 'AgentFailed' },
+    })
+    // **#493**: every run still gets a `RunSpent` — what it reported, never a made-up zero.
     const spent14a = theRun(store)!.filter((e) => e.type === 'RunSpent')
-    expect(spent14a).toHaveLength(1)
+    expect(spent14a).toHaveLength(BOUNDS.stepRedos + 1)
     expect(spent14a[0]!.data).toEqual({
       for: { _tag: 'Action', step: 'implement', name: 'write the change', round: 0 },
       runtime: 'claude-code',
@@ -1766,43 +1734,16 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     )
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
-    expect(typesOf(await theItem(store))).toEqual([
-      'TicketClaimed',
-      'IssueUpdated',
-      'WaitStarted',
-      'IssueUpdated',
-      'IssueUpdated',
-    ])
-    expect(typesOf(theRun(store))).toEqual([
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'StepEnded',
-      'StepStarted',
-      'RunStarted',
-      'StepsResolved',
-      'RunPrompted',
-      'SandboxBoundaryRecorded',
-      'RunFailed',
-      'RunSpent',
-      'StepEnded',
-      'RunRefsPublished',
-      'RunProducedDiff',
-      'RunRefsPublished',
-    ])
+    expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
     const hold = theHold(await theItem(store))
-    expect(hold).toMatchObject({
-      _tag: 'AgentCrashed',
-      step: 'implement',
-      cause: 'timeout',
-      detail: 'timeout: exceeded wall 2m',
-    })
+    expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     const all14b = await allEvents(store)
     theWaitFoldsToTheStoredHold(all14b, hold!)
     const implementOutcome = stepOutcomesOf(all14b).find((o) => o.step === 'implement')
-    expect(implementOutcome?.actions[0]?.result).toEqual({ _tag: 'Interrupted', cause: 'timeout', head: null })
+    expect(implementOutcome?.actions[0]?.result).toMatchObject({
+      _tag: 'Completed',
+      outcome: { _tag: 'AgentFailed' },
+    })
   })
 
   /**
@@ -2071,7 +2012,7 @@ runtime:
     return { recipe: RESTARTABLE, runtime: judging, ports, FIX_SHA, WIP_SHA }
   }
 
-  it('16. a judge restarts a pass that kept a WIP (`RunKeptUncommitted`, `PassRestarted` spends the ceiling)', async () => {
+  it('16. a fix round that committed and then met its turns is cut off, never walked on to a review (`RunKeptUncommitted`, #1250)', async () => {
     const store = memoryStore()
     const did: string[] = []
     const fixture = restartWithAKeptWip(did, store)
@@ -2091,19 +2032,21 @@ runtime:
       fixture.ports,
     )
 
-    expect(result).toMatchObject({ ok: false, stage: 'restart' })
+    // The fixer committed, then hit `out-of-turns`: the commit is not the end of the round, so the
+    // pass holds on the abnormal ending and does not go on to a review of a round nobody finished.
+    expect(result).toMatchObject({ ok: 'held', step: 'implement' })
 
     const run = theRun(store)!
     const kept = run.find((e) => e.type === 'RunKeptUncommitted')
     expect(kept).toBeDefined()
     expect(kept!.data).toMatchObject({ sha: fixture.WIP_SHA, parentSha: fixture.FIX_SHA, stoppedBy: 'out-of-turns' })
 
-    // **#493**: the fix round's own `out-of-turns`, with a commit kept, still
-    // returned an outcome — a `RunSpent` at this round's own number, beside
-    // the first dispatch's own at round 0.
+    // **#493**: the fix round's own `out-of-turns` still returned an outcome — a `RunSpent` at this
+    // round's own number, beside the first dispatch's own at round 0.
     const spent16 = run.filter((e) => e.type === 'RunSpent')
     const implementSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'implement')
-    expect(implementSpent16).toHaveLength(2)
+    // The cut-off round is redone by rule, each time with its own spend.
+    expect(implementSpent16).toHaveLength(2 + BOUNDS.stepRedos)
     expect(implementSpent16[1]!.data).toMatchObject({
       for: { _tag: 'Action', step: 'implement', round: 1 },
       turns: 8,
@@ -2111,64 +2054,18 @@ runtime:
       usage: [],
     })
 
-    // **#494**: the cold reviewer dispatches again over the kept-but-dirty
-    // tree before the pass notices it and restarts — so its own `RunSpent`
-    // appears twice too, one per visit, the same shape `implement`'s does.
+    // The review ran once, before the fix round it asked for, and not again over the cut-off one.
     const reviewSpent16 = spent16.filter((e) => (e.data as { for: { step: string } }).for.step === 'review')
-    expect(reviewSpent16).toHaveLength(2)
+    expect(reviewSpent16).toHaveLength(1)
 
-    // The WIP is on `HEAD` before `build` and `review` run (#1243), so the head
-    // they judged and the head the refs name are the same commit.
-    const refs = run.filter((e) => e.type === 'RunRefsPublished')
-    expect(refs.length).toBeGreaterThan(0)
-    for (const row of refs) {
-      expect((row.data as { headSha: string | null }).headSha).toBe(fixture.WIP_SHA)
-    }
-
-    const item = await theItem(store)
-    // **`PassRestarted` is gone (#502): `TicketReleased{cause: Restart}` is
-    // the one event now** — the arm, its head and the findings still live are
-    // on the previous run's own stream (`attempts.ts`'s `lastRun` reads it),
-    // not repeated on the release.
-    const released = item.find((e) => e.type === 'TicketReleased')!
-    expect(released.data).toMatchObject({ cause: { _tag: 'NewAttempt', newAttempt: 1 } })
-    expect(releaseCauseOf(await allEvents(store))).toEqual([{ _tag: 'NewAttempt', newAttempt: 1 }])
-    // **The restart is bound to the commit `review` judged, which carries the WIP (#1243).**
-    // This is the ceiling actually being spent — the bug this test is against
-    // left the fix round's own head unrecorded on this exact ending.
-    const all16 = await allEvents(store)
-    const implementRound1 = stepOutcomesOf(all16).find((o) => o.step === 'implement' && o.round === 1)
-    expect(implementRound1?.actions[0]?.result).toMatchObject({ head: fixture.WIP_SHA })
-
-    // The same pass, run again on the same store with fresh ports:
-    // `reduced.newAttempts` already carries the first, and a second WIP on a
-    // fresh worktree spends the second.
-    const did2: string[] = []
-    const again = restartWithAKeptWip(did2, store)
-    const result2 = await once(
-      {
-        project,
-        client: fakeGitHub([], again.recipe),
-        runtime: again.runtime,
-        issue: 7,
-        hookBinary: '/tmp/fake/lingtai-hook',
-        prompt: 'fix {{issue}}',
-        merge: false,
-        home: '/tmp/fake-home',
-        store,
-      },
-      again.ports,
-    )
-    expect(result2).toMatchObject({ ok: false, stage: 'restart' })
-
-    const item2 = await theItem(store)
-    const releases = item2.filter((e) => e.type === 'TicketReleased')
-    expect(releases).toHaveLength(2)
-    expect(releases[1]!.data).toMatchObject({ cause: { _tag: 'NewAttempt', newAttempt: 2 } })
-    expect(releaseCauseOf(await allEvents(store))).toEqual([
-      { _tag: 'NewAttempt', newAttempt: 1 },
-      { _tag: 'NewAttempt', newAttempt: 2 },
-    ])
+    // It is recorded as `AgentFailed` with the head it left, WIP included — never a completed round
+    // and never a receipt-less one (#1250).
+    const implementRound1 = stepOutcomesOf(await allEvents(store)).find((o) => o.step === 'implement' && o.round === 1)
+    expect(implementRound1?.actions[0]?.result).toMatchObject({
+      _tag: 'Completed',
+      head: fixture.WIP_SHA,
+      outcome: { _tag: 'AgentFailed' },
+    })
   })
 
   /**

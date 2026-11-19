@@ -366,69 +366,6 @@ describe('nextOf: §4 Fell short as table', () => {
     })
   })
 
-  it('implement, round > 0, all cleared, no head: Propose{FixerDisagrees}', () => {
-    const result = next(
-      outcome(
-        'implement',
-        [
-          action(
-            'commit',
-            { _tag: 'Completed', head: null, question: null },
-            { plugin: 'agent', evidence: 'nothing to add' },
-          ),
-        ],
-        1,
-      ),
-    )
-    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'FixerDisagrees', said: 'nothing to add' } })
-  })
-
-  it('implement, round 0, all cleared, no head: Propose{NothingProduced}', () => {
-    const result = next(
-      outcome(
-        'implement',
-        [
-          action(
-            'commit',
-            { _tag: 'Completed', head: null, question: null },
-            { plugin: 'agent', evidence: 'nothing to add' },
-          ),
-        ],
-        0,
-      ),
-    )
-    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: 'nothing to add' } })
-  })
-
-  it('implement, a kept run after the agent: said is the agent’s own words, not the run’s', () => {
-    const result = next(
-      outcome(
-        'implement',
-        [
-          action(
-            'commit',
-            { _tag: 'Completed', head: null, question: null },
-            { plugin: 'agent', name: 'claude-code', evidence: 'the finding is wrong — the caller already guards this' },
-          ),
-          action(
-            'commit',
-            { _tag: 'Completed', head: null, question: null },
-            {
-              plugin: 'run',
-              name: 'pnpm fmt',
-              evidence: 'All matched files use the correct format. — nothing to commit',
-            },
-          ),
-        ],
-        1,
-      ),
-    )
-    expect(result).toEqual({
-      _tag: 'Propose',
-      proposal: { _tag: 'FixerDisagrees', said: 'the finding is wrong — the caller already guards this' },
-    })
-  })
-
   it('signoff at proposed, Completed{requested}: WaitOnPerson{SignoffRequired}', () => {
     const result = next(
       outcome('proposed', [
@@ -571,56 +508,6 @@ describe('nextOf: Advance along the spine', () => {
       _tag: 'Advance',
       to: 'merge',
     })
-  })
-})
-
-describe('nextOf: the "said" extraction', () => {
-  it('no commit action at all: said null', () => {
-    expect(next(outcome('implement', []))).toEqual({
-      _tag: 'Propose',
-      proposal: { _tag: 'NothingProduced', said: null },
-    })
-  })
-
-  it("the last agent commit action's evidence is empty: said null, even with an earlier non-empty one", () => {
-    const result = next(
-      outcome('implement', [
-        action(
-          'commit',
-          { _tag: 'Completed', head: null, question: null },
-          { plugin: 'agent', evidence: 'first try output' },
-        ),
-        action('commit', { _tag: 'Completed', head: null, question: null }, { plugin: 'agent', evidence: '' }),
-      ]),
-    )
-    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: null } })
-  })
-
-  it("the last agent commit action's non-empty evidence: said that evidence", () => {
-    const result = next(
-      outcome('implement', [
-        action(
-          'commit',
-          { _tag: 'Completed', head: null, question: null },
-          { plugin: 'agent', evidence: 'tried the rename' },
-        ),
-      ]),
-    )
-    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: 'tried the rename' } })
-  })
-
-  it("a kept run's evidence is never said, even when the agent's own is empty", () => {
-    const result = next(
-      outcome('implement', [
-        action('commit', { _tag: 'Completed', head: null, question: null }, { plugin: 'agent', evidence: '' }),
-        action(
-          'commit',
-          { _tag: 'Completed', head: null, question: null },
-          { plugin: 'run', name: 'pnpm fmt', evidence: 'nothing to commit' },
-        ),
-      ]),
-    )
-    expect(result).toEqual({ _tag: 'Propose', proposal: { _tag: 'NothingProduced', said: null } })
   })
 })
 

@@ -17,6 +17,7 @@
  */
 import { z } from 'zod'
 
+import { ImplementOutcome } from './implement-outcome.ts'
 import { TriageQuestion } from './triage.ts'
 import { Finding, RefusalReason, Step } from './vocabulary.ts'
 
@@ -169,7 +170,16 @@ const CommitAction = ActionBase.extend({
   yields: z.literal('commit'),
   result: z.discriminatedUnion('_tag', [
     // `head`: where a commit left the branch; `null`: nothing committed.
-    z.object({ _tag: z.literal('Completed'), head: z.string().nullable(), question: z.string().nullable() }),
+    // `outcome`: what the agent declared and the facts corrected (0108 §21, #1250). Absent on a
+    // row written before, and `null` on a kept `run:` — which is not an agent and declares
+    // nothing. `question` stays beside it for an `Unclear`, as the sentence readers of the old
+    // shape already read.
+    z.object({
+      _tag: z.literal('Completed'),
+      head: z.string().nullable(),
+      question: z.string().nullable(),
+      outcome: ImplementOutcome.nullable().optional(),
+    }),
     // Committed part of it, then stopped.
     Interrupted.extend({ head: z.string().nullable() }),
     // A kept-run could not restore the tree (`kept-run-action.ts:80`).
@@ -304,7 +314,10 @@ export function cleared(action: Action): boolean {
     case 'commit':
       switch (action.result._tag) {
         case 'Completed':
-          return action.result.question === null
+          // A declared outcome is the whole answer; only `Implemented` clears.
+          return action.result.outcome == null
+            ? action.result.question === null
+            : action.result.outcome._tag === 'Implemented'
         case 'Waived':
           return true
         case 'Interrupted':
@@ -433,18 +446,6 @@ export function reviewSummaryOf(
     ...(typeof found.summary === 'string' ? { summary: found.summary } : {}),
     ...(found.clipped === undefined ? {} : { clipped: found.clipped }),
   }
-}
-
-/**
- * An `implement` whose actions all cleared and none of which carries a
- * `head` — read off the agent alone this would be wrong both ways: a
- * kept-run after it may commit a format, and a kept-run after a committing
- * agent may have nothing to commit (0120:240-243). An `implement` with no
- * actions answers `true`.
- */
-export function changedNothing(outcome: StepOutcome): boolean {
-  if (outcome.step !== 'implement') return false
-  return outcome.actions.every((action) => cleared(action)) && headOf(outcome) === null
 }
 
 /**

@@ -83,7 +83,7 @@ import {
   personAsksFromState,
   ticketStream,
 } from '@lingtai/domain'
-import type { ProjectState } from '@lingtai/domain'
+import { decideImplementOutcome, parseImplementOutcome, type ProjectState } from '@lingtai/domain'
 import {
   continuationOf,
   grantCriterion,
@@ -3676,13 +3676,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const declared = judgeDeclaredAt(recipe.steps.proposed, on.when)
         if (declared === null) return Effect.succeed({ noJudge: true })
         if ('built' in declared) return Effect.succeed(declared)
-        // The ticket is shown for `nothing-produced` alone (#1198): *is it unclear* cannot be
-        // judged without it, and every other reason's prompt must not grow by a body.
-        const shown: Judging =
-          on.when === 'nothing-produced'
-            ? { ...on, ticket: took === null ? null : { title: took.ticket.title, body: took.ticket.body } }
-            : on
-        return askTheAgent(declared, shown)
+        return askTheAgent(declared, on)
       }
 
       /** `end` — the work item's own stream, read this late on purpose. */
@@ -5044,7 +5038,30 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // Kept now, on `HEAD`, before any step after this one reads the worktree (`#1243`).
             yield* keepUncommittedWork()
             const cause = outcome.failure.kind
+            // What the cut-off run left, WIP included, so the stored outcome keeps the receipt (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === startedAt ? {} : { head: left }
+            // **An abnormal ending is decided like any other outcome** (0108 §21): a budget or a wall is
+            // `AgentFailed`, redone by rule. A crash keeps its cell, which `rerunInPlace` redoes.
+            const failedRun =
+              cause === 'crash' || cause === 'no-commits' || cause === 'no-structured-answer'
+                ? null
+                : decideImplementOutcome({
+                    declared: null,
+                    endedAbnormally: true,
+                    startedAt,
+                    head: left,
+                    findingsOffered: 0,
+                  })
+            if (failedRun !== null) {
+              return {
+                stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
+                declared: failedRun,
+                ...kept,
+              }
+            }
             return {
+              ...kept,
               stopped: `${outcome.failure.kind}: ${outcome.failure.detail}`,
               // Neither word is one this dispatch's own runtime ever reports
               // (`no-commits` is `head === startedAt`'s own check, two lines
@@ -5082,25 +5099,38 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // commit of its own cannot stand in for one. An agent that ran and committed
           // nothing left no receipt, and the pass stops rather than buying a round to
           // fix a diff that does not exist.
-          if (head === startedAt) {
-            // `StepDidNotFinish` at `implement`, named for itself (`#468`): the
-            // ticket's own second case, and the one `#237` was.
-            stoppedBy = 'no-commits'
-            // The agent's own last message is the evidence (#1198): it is what a judge
-            // declared at `nothing-produced` reads. A silent agent leaves it empty, so
-            // `said` is null and no judge is paid to read nothing.
-            return { stopped: (outcome.text ?? '').trim().slice(0, 8_000), committedNothing: true }
+          // **What the agent declared decides, and the head only corrects it** (0108 §21, #1250): an
+          // `Implemented` that moved nothing is `AgentFailed`, and so is a final message that declared
+          // nothing parseable. The sha it is measured from is the step's first start, never this run's.
+          const decided = decideImplementOutcome({
+            declared: parseImplementOutcome(outcome.text ?? null),
+            endedAbnormally: false,
+            startedAt,
+            head,
+            findingsOffered: 0,
+          })
+          const moved = head !== startedAt
+          // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
+          stoppedBy = moved ? null : 'no-commits'
+          if (moved) yield* recordDiff(branch, head)
+          // Completion is proposed only for what the agent declared `Implemented`; a run that is
+          // `AgentFailed` or `Unclear` has not offered finished work, and no check follows it.
+          if (decided._tag === 'Implemented') {
+            yield* appendNow(runId, [
+              {
+                type: 'RunProposedCompletion',
+                actor: 'conductor',
+                data: parsePayload('RunProposedCompletion', { headSha: head }),
+              },
+            ])
           }
-          // A receipt, so `interrupted` stands for nothing any more.
-          stoppedBy = null
-          yield* recordDiff(branch, head)
-          yield* appendNow(runId, [
-            {
-              type: 'RunProposedCompletion',
-              actor: 'conductor',
-              data: parsePayload('RunProposedCompletion', { headSha: head }),
-            },
-          ])
+          if (decided._tag !== 'Implemented') {
+            return {
+              stopped: (outcome.text ?? '').trim().slice(0, 8_000),
+              declared: decided,
+              ...(moved ? { head } : {}),
+            }
+          }
           return { committed: head }
         })
 
@@ -5169,9 +5199,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               } as const)
             : findings.length > 0
               ? ({ on: 'findings', findings } as const)
-              : again.said != null
-                ? ({ on: 'unfinished', said: again.said, why: again.why } as const)
-                : ({ on: 'output', output: said } as const)
+              : ({ on: 'output', output: said } as const)
+          // How many findings the fixer is shown, which is the range a `Disputed` may name: a
+          // refusal that is one command's output, or a merge's, is finding 1 (#1250).
+          const offered =
+            refusal.on === 'output'
+              ? 1
+              : refusal.on === 'conflict'
+                ? Math.max(1, refusal.findings.length)
+                : refusal.findings.length
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
@@ -5226,7 +5262,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     refusal,
                     round: counted,
                     of: bound,
-                    action: refusal.on === 'unfinished' ? 'implement' : from,
+                    action: from,
                     diff: underReview.text,
                     ...(underReview.from === null || underReview.to === null
                       ? {}
@@ -5348,26 +5384,53 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // **Nor a fixer that committed and then met the account's wall** (#1205): it is released `AccountLimit`
           // at the ending like any run the wall cut off, never walked on to a review.
           const cutOffByWall = fixed.failure?.kind === 'crash' && wallOf(fixed.failure.detail) !== null
-          if (!committed || cutOffTransient || cutOffByWall) {
+          // **What the fixer declared decides, and the head only corrects it** (#1250), for a run that
+          // ended normally. One cut off keeps the cells above: `interrupted` names the runtime's cause.
+          const roundStart = brief.context.redo?.startedAt ?? brief.context.onSha
+          // **A fixer cut off by its budget is `AgentFailed`, whatever it committed first** (0108 §21,
+          // #1250): the commit is not the end of the round. A crash keeps its cell, which the walk reruns.
+          const failedKind = fixed.failure?.kind
+          const budgetEnded =
+            failedKind !== undefined &&
+            failedKind !== 'crash' &&
+            failedKind !== 'no-commits' &&
+            failedKind !== 'no-structured-answer'
+          const decidedFix =
+            fixed.failure == null || budgetEnded
+              ? decideImplementOutcome({
+                  declared: fixed.failure == null ? parseImplementOutcome(fixed.text) : null,
+                  endedAbnormally: budgetEnded,
+                  startedAt: roundStart,
+                  head: after,
+                  findingsOffered: offered,
+                })
+              : null
+          if (
+            !committed ||
+            cutOffTransient ||
+            cutOffByWall ||
+            budgetEnded ||
+            (decidedFix !== null && decidedFix._tag !== 'Implemented')
+          ) {
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
             stoppedBy = fixed.failure ? fixed.failure.kind : null
             yield* keepUncommittedWork()
             const cause = fixed.failure?.kind
+            // The head the round left, WIP included, kept on the stored outcome (#1250).
+            const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+            const kept = left === roundStart ? {} : { head: left }
             return {
+              ...kept,
               stopped: fixed.failure
                 ? `the fixing agent did not finish (${fixed.failure.kind}: ${fixed.failure.detail}), ` +
                   'so there is nothing new for the review to read'
                 : (fixSaid ?? 'the fixing agent committed nothing, so there is nothing new for the review to read'),
-              // **`committed` false and no `failure`** is the fixer reading the
-              // findings and declining, not crashing — the `commit
-              // Completed{head: null, question: null}` cell rather than
-              // `Interrupted`. `never-started` cannot reach here (handled
-              // above), and `no-commits`/`no-structured-answer` are never this
-              // agent's own failure kind.
-              ...(cause === undefined
-                ? { committedNothing: true }
+              // **`committed` false and no `failure`** is the fixer declaring something other than
+              // `Implemented`; a crash is `Interrupted` for the walk to rerun; a budget is `AgentFailed`.
+              ...(budgetEnded || cause === undefined
+                ? { declared: decidedFix! }
                 : cause === 'no-commits' || cause === 'no-structured-answer'
                   ? {}
                   : { interrupted: cause }),
