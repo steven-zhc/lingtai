@@ -18,6 +18,7 @@ import {
   parseTicketStream,
   triageFactsOf,
   waitWords,
+  systemLineOf,
   type BlockDiagnosis,
   type Envelope,
   type PromptRefEntry,
@@ -107,7 +108,7 @@ import {
   type WaitingNeighbour,
 } from './board.ts'
 import { shownOf, type PromptShown } from './expand-prompts.ts'
-import { type HistoryLine, summarise, toLine } from './history.ts'
+import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
 import { readProjectLocks } from './locks.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
@@ -1487,7 +1488,11 @@ export function totalsFact(totals: Totals): string | null {
  * actually happened, in order, with who did it*, and the grouping is a way in
  * rather than a filter.
  */
-export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<string, number>): HistoryGroup[] {
+export function groupHistory(
+  events: readonly Envelope[],
+  attempts: ReadonlyMap<string, number>,
+  systemLine?: LineContext['systemLine'],
+): HistoryGroup[] {
   // Insertion order is first-seq order, which is the order the groups read in.
   const groups = new Map<string, HistoryGroup>()
   // A run stream's own subject, which the run's reducer reads off its
@@ -1538,7 +1543,13 @@ export function groupHistory(events: readonly Envelope[], attempts: ReadonlyMap<
       claimedByStream.set(e.streamId, claimed)
     }
     group.lines.push(
-      toLine(e, { attempts, branch: branchByRun.get(e.streamId), claim, endedAt: endedByRun.get(e.streamId) }),
+      toLine(e, {
+        attempts,
+        branch: branchByRun.get(e.streamId),
+        claim,
+        endedAt: endedByRun.get(e.streamId),
+        systemLine,
+      }),
     )
     group.to = String(e.seq)
   }
@@ -1696,14 +1707,21 @@ export async function knowable(taskId: string): Promise<boolean> {
  */
 async function planFor(
   project: string,
-): Promise<{ plan: StepPlan; limits: Pick<AttemptLimitsView, 'refusalFixes' | 'newAttempts'> } | undefined> {
+): Promise<
+  | { plan: StepPlan; limits: Pick<AttemptLimitsView, 'refusalFixes' | 'conflictResolutions' | 'newAttempts'> }
+  | undefined
+> {
   const state = await readProject(project).catch(() => null)
   if (!state) return undefined
   const filter = await projectFilter(state)
   return filter.ok
     ? {
         plan: filter.plan,
-        limits: { refusalFixes: filter.limits.refusalFixes, newAttempts: filter.limits.newAttempts },
+        limits: {
+          refusalFixes: filter.limits.refusalFixes,
+          conflictResolutions: filter.limits.conflictResolutions,
+          newAttempts: filter.limits.newAttempts,
+        },
       }
     : undefined
 }
@@ -2385,6 +2403,15 @@ export async function loadTicketTab(taskId: string): Promise<TicketTabDetail | n
   if (ticket === null) return null
   // The ticket stream's claims are what its `TicketClaimed` rows name, so the
   // map is built from the same reduction `readAttempts` numbers the tabs by.
-  const attempts = new Map(reduceTicket(own).claims.map((c, i) => [c.runId, i + 1]))
-  return { taskId, ticket, events: groupHistory(own, attempts).flatMap((g) => g.lines) }
+  const state = reduceTicket(own)
+  const attempts = new Map(state.claims.map((c, i) => [c.runId, i + 1]))
+  // The recipe is read only where a triage resolved a wait: that is the one row whose bound is `of N`.
+  const project = parseTicketStream(taskId)?.project ?? null
+  const triaged = state.waits.some((w) => w.resolution?.by === 'triage')
+  const limits = triaged && project !== null ? ((await planFor(project))?.limits ?? null) : null
+  const systemLine = (waitId: string) => {
+    const wait = state.waits.find((w) => w.waitId === waitId)
+    return wait === undefined ? undefined : (systemLineOf(state, wait, limits) ?? undefined)
+  }
+  return { taskId, ticket, events: groupHistory(own, attempts, systemLine).flatMap((g) => g.lines) }
 }

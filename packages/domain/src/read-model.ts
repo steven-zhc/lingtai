@@ -15,12 +15,13 @@ import { isReached, type Reached, type StepOutcome, type WaitId } from './action
 import { verdictOf, type StepVerdict } from './attempt.ts'
 import type { Envelope } from './envelope.ts'
 import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
+import { BOUNDS } from './failure/respond.ts'
 import { fromOf } from './proposal.ts'
 import { resolveOffer, routeMove, type RouteDecision, type RouteMove } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import { personAsksSpent, reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
-import { waitWords } from './wait-words.ts'
+import { systemLine, waitWords, type SystemLimits, type SystemLine } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
 
 /**
@@ -429,4 +430,65 @@ export function personFixRoundsOf(state: TicketState, runId: string, runEvents: 
       'run' in w.reason &&
       w.reason.run.runId === runId,
   ).length
+}
+
+// ------------------------------------------------------------ the system's line (#1259) ----
+
+const runOfWait = (w: TicketState['waits'][number]): string | null => ('run' in w.reason ? w.reason.run.runId : null)
+
+/**
+ * **The bound a triage resolution spent, at the moment it did, against what the recipe allows now** (#1259). `used`
+ * is read off the log — a `FixRefusal`/`RedoStep` carries its own `spent.n`, and a `StartNewAttempt` is the
+ * `newAttempt` its release recorded for the run — and `allowed` is the caller's limits, `BOUNDS.stepRedos` for redos.
+ * Null whenever either half is unknown: half a fraction reads like a whole one.
+ */
+export function systemBoundOf(
+  state: TicketState,
+  wait: TicketState['waits'][number],
+  limits: SystemLimits,
+): { used: number; allowed: number } | null {
+  const r = wait.resolution
+  if (r === null || r.by !== 'triage') return null
+  const spent = r.spent
+  switch (r.resolution._tag) {
+    case 'RedoStep':
+      return spent?.bound === 'stepRedos' ? { used: spent.n, allowed: BOUNDS.stepRedos } : null
+    case 'FixRefusal': {
+      if (limits === null || spent === undefined || spent.bound === 'stepRedos') return null
+      return { used: spent.n, allowed: limits[spent.bound] }
+    }
+    case 'StartNewAttempt': {
+      const run = runOfWait(wait)
+      const rec = run === null ? undefined : state.newAttempts.find((n) => n.after === run)
+      return rec === undefined || limits === null ? null : { used: rec.newAttempt, allowed: limits.newAttempts }
+    }
+    default:
+      return null
+  }
+}
+
+/**
+ * **The one triage resolution a card still carries** (#1259): the ticket's last wait, if triage resolved it and
+ * nothing since has ended it — no later claim of another run (a claim of the wait's own run is the continuation the
+ * resolution asked for), and no landing, closing or satisfying. A later `WaitStarted` makes another wait the last.
+ */
+export function standingSystemResolution(state: TicketState): TicketState['waits'][number] | null {
+  const wait = state.waits[state.waits.length - 1]
+  if (wait === undefined || wait.resolution?.by !== 'triage') return null
+  const status = state.lifecycle.status
+  if (status === 'landed' || status === 'closed' || status === 'satisfied') return null
+  const run = runOfWait(wait)
+  const newer = state.claims.some((c) => c.at.getTime() > wait.at.getTime() && (run === null || c.runId !== run))
+  return newer ? null : wait
+}
+
+/** The sentence parts for one wait, joined from the log and the limits — the board's card, its record and `status` all call this. */
+export function systemLineOf(
+  state: TicketState,
+  wait: TicketState['waits'][number],
+  limits: SystemLimits,
+): SystemLine | null {
+  const r = wait.resolution
+  if (r === null || r.by !== 'triage') return null
+  return systemLine(r, wait.triage.result, systemBoundOf(state, wait, limits))
 }

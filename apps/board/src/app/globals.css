@@ -730,6 +730,7 @@ body {
 }
 .qgroup:first-child { margin-top: 0; }
 .qnext { color: var(--ink-2); }
+.system-line { margin: 2px 0 0; color: var(--ink-2); font-size: 12.5px; }
 
 /* --- landed ---------------------------------------------------------------
    History, at the weight history deserves.
