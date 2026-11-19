@@ -59,6 +59,9 @@ another word defines it where it is used or does without it.
 | **Why nothing runs** | The one sentence under `Queue` in `lingtai status` and at the top of the board's Queued column, saying what holds the queued tickets. | *stuck* |
 | **satisfied** | How a ticket ends when its work was already on the base: shown as *satisfied* on the Landed row, the task page and `/landed`. | *landed*, *closed* |
 | **redo the step** | Run the step that did not finish again, whole, from the attempt's head. Shown as *the step is being redone*. | *retry* |
+| **Handled for you** | What the board and `/report` count of the problems steps raised: each once, as *auto-fixed* when the system answered (a rule, one look or a judge) and *needed you* when a person did, or it is still open. See [operating.md](operating.md#handled-for-you). | *auto-resolved*, *success rate* |
+| **AI review** | The `review:` step: an agent that reads the diff cold and reports findings. Older text, ADRs and archived docs call it the *cold reviewer*. | |
+| **One look** | The middle way a problem is answered, between a mechanical rule and a person: one agent judgement (triage or a judge) that picks the next move — lines to fix, start over, or split. It counts as the system's answer in *handled for you*. Defined by the failure-paths lanes, `apps/site/src/app/failure-paths.tsx`. | |
 
 How these appear:
 
