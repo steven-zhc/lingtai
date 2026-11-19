@@ -92,6 +92,8 @@ const firstLine = (text: string) => text.split('\n')[0]?.trim() ?? ''
 export interface SplitControls {
   progress: SplitProgress
   tickets: 'github' | 'db'
+  /** Epoch ms at which a *writing* reading lapses for want of log activity; the page looks again then. */
+  activeUntil?: number
 }
 
 /**
@@ -115,11 +117,14 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   // *Writing* is read off recent activity and expires with no append to say so: look again once it has.
   const router = useContext(AppRouterContext)
   const writing = progress.state === 'writing'
+  const activeUntil = controls?.activeUntil
   useEffect(() => {
     if (!writing) return
-    const timer = setTimeout(() => router?.refresh(), 5 * 60_000 + 1_000)
+    // Rearmed whenever the server's expiry moves (new activity), so a late append never leaves the old timer standing.
+    const wait = activeUntil === undefined ? 5 * 60_000 : Math.max(0, activeUntil - Date.now())
+    const timer = setTimeout(() => router?.refresh(), wait + 1_000)
     return () => clearTimeout(timer)
-  }, [writing, router])
+  }, [writing, activeUntil, router])
 
   const keys = children.map((child) => child.key)
   const wave = useMemo(() => waves(keys.slice(), links), [keys.join('\u0000'), links])
