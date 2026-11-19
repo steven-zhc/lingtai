@@ -25,6 +25,9 @@ import {
   dayText,
   HANDLED_ORDER,
   handledRow,
+  moveOf,
+  moveRow,
+  neededRows,
   pageHandled,
   shareWithoutYou,
   TICK_LIMIT,
@@ -34,6 +37,7 @@ import {
 import {
   centsOf,
   dollars,
+  donutSegments,
   durationText,
   fixed,
   kindSeries,
@@ -124,7 +128,7 @@ export function Tiles({
     <section className="rp-tiles four" aria-label="figures">
       <Tile k="landed" v={String(counts.landed)} s={`closed ${counts.closed} · still open ${counts.open}`} />
       <Tile
-        k="median refusal fixes"
+        k="median fix rounds"
         v={fixed(landed.fixRounds.median)}
         s={`mean ${fixed(landed.fixRounds.mean, 2)}`}
         title={none}
@@ -161,7 +165,7 @@ export function Tiles({
         <DayMeter day={day} />
       </Tile>
       <Tile
-        k="answering refusals"
+        k="fixing review findings"
         v={percent(answeringShare)}
         s={
           denominator === 0
@@ -170,7 +174,7 @@ export function Tiles({
               ? `nothing known spent on it of ${dollars(denominator)}${unknownText(answering!.unknown)}`
               : `${dollars(answering === undefined ? 0 : centsOf(answering))} of ${dollars(denominator)}${unknownText(answering?.unknown ?? 0)}`
         }
-        title="the share of the window's spend that went to answering a refusal"
+        title="the share of the window's spend that went to fixing review findings"
       />
       <Tile
         k="median machine time"
@@ -182,32 +186,41 @@ export function Tiles({
   )
 }
 
-/** Where the window's money went: one bar by purpose, solid where reported and pale where estimated. */
+/** Where the window's money went: a donut by purpose, solid where reported and pale where estimated. */
 export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['byPurpose'] }) {
   const rows = purposeRows(byPurpose)
   const total = rows.reduce((n, r) => n + centsOf(r.money), 0)
   if (rows.length === 0) return <Empty>nothing spent in the window</Empty>
-  const width = (cents: number) => `${Number(((cents / total) * 100).toFixed(3))}%`
+  const unknown = rows.reduce((n, r) => n + r.money.unknown, 0)
+  const segments = donutSegments(
+    rows.map((r) => ({
+      key: r.series.key,
+      colour: r.series.colour,
+      reportedCents: r.money.reportedCents,
+      estimatedCents: r.money.estimatedCents,
+    })),
+  )
   return (
-    <>
-      <div className="sw-bar">
-        {total === 0
-          ? null
-          : rows.flatMap((r) => [
-              <span
-                key={`${r.series.key}-rep`}
-                className="sw-seg"
-                style={{ width: width(r.money.reportedCents), background: r.series.colour }}
-                title={`${r.series.name}: ${dollars(r.money.reportedCents)} reported`}
-              />,
-              <span
-                key={`${r.series.key}-est`}
-                className="sw-seg est"
-                style={{ width: width(r.money.estimatedCents), background: r.series.colour }}
-                title={`${r.series.name}: ~${dollars(r.money.estimatedCents)} estimated`}
-              />,
-            ])}
-      </div>
+    <div className="sw-donut">
+      <svg width="180" height="180" viewBox="0 0 180 180" role="img" aria-label="spend by purpose">
+        {segments.map((g) => (
+          <path
+            key={`${g.key}-${g.estimated ? 'est' : 'rep'}`}
+            d={g.d}
+            fill={g.colour}
+            fillRule="evenodd"
+            opacity={g.estimated ? 0.45 : 1}
+            stroke="var(--surface, #fff)"
+            strokeWidth="1.5"
+          />
+        ))}
+        <text x="90" y="86" textAnchor="middle" style={{ font: '600 20px var(--mono)', fill: 'var(--ink)' }}>
+          {total === 0 ? '—' : dollars(total)}
+        </text>
+        <text x="90" y="106" textAnchor="middle" style={{ font: '11px var(--mono)', fill: 'var(--muted)' }}>
+          {unknown > 0 ? `+ ${unknown} unknown` : 'in the window'}
+        </text>
+      </svg>
       <ul className="sw-rows">
         {rows.map((r) => (
           <li key={r.series.key}>
@@ -232,40 +245,7 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
           </li>
         ))}
       </ul>
-    </>
-  )
-}
-
-/** The eight dearest placed tickets, whatever became of them; a row that did not land says what did. */
-export function CostliestPanel({ tickets }: { tickets: TopTicket[] }) {
-  if (tickets.length === 0) return <Empty>no ticket in this window</Empty>
-  const biggest = Math.max(1, ...tickets.map((t) => centsOf(t.cost)))
-  return (
-    <ul className="tc">
-      {tickets.map((t) => {
-        const lead = t.purposeShares[0]
-        return (
-          <li key={t.ticket}>
-            <Link className="tk" href={`/task/${encodeURIComponent(t.ticket)}`}>
-              #{issueOf(t.ticket)}
-            </Link>
-            <span className="kd">{t.kind ?? 'unclassified'}</span>
-            <span className="rd">
-              {t.fixRounds} round{t.fixRounds === 1 ? '' : 's'}
-            </span>
-            <span className="tb">
-              <span className="b rep" style={{ width: `${(t.cost.reportedCents / biggest) * 100}%` }} />
-              <span className="b est" style={{ width: `${(t.cost.estimatedCents / biggest) * 100}%` }} />
-            </span>
-            <span className="tv">{moneyText(t.cost)}</span>
-            <span className="why">
-              {t.outcome === 'landed' ? '' : `${t.outcome} · `}
-              {lead === undefined ? 'no cost known' : `mostly ${purposeWords(lead.purpose)}`}
-            </span>
-          </li>
-        )
-      })}
-    </ul>
+    </div>
   )
 }
 
@@ -340,13 +320,12 @@ export function KindsPanel({ kinds }: { kinds: KindRow[] }) {
       <table className="rp-table">
         <thead>
           <tr>
-            <th>kind</th>
+            <th>type</th>
             <th className="num">landed</th>
             <th className="num">median rounds</th>
             <th className="num">0–1 rounds</th>
             <th className="num">5+ rounds</th>
             <th className="num">mean cost per landed</th>
-            <th className="num">spent in the window</th>
           </tr>
         </thead>
         <tbody>
@@ -368,7 +347,6 @@ export function KindsPanel({ kinds }: { kinds: KindRow[] }) {
                 <td className="num">{percent(k.zeroOrOneShare)}</td>
                 <td className="num">{percent(k.fiveOrMoreShare)}</td>
                 <td className="num">{mean}</td>
-                <td className="num">{moneyText(k.spend)}</td>
               </tr>
             )
           })}
@@ -378,16 +356,40 @@ export function KindsPanel({ kinds }: { kinds: KindRow[] }) {
   )
 }
 
-/** The eight tickets that went round most; each is a link to its task page. */
+/** Where the money went and each wait, folded under the ticket's one summary line. */
+function MoreLines({ ticket: t }: { ticket: TopTicket }) {
+  const lines: string[] = []
+  if (t.purposeShares.length > 0)
+    lines.push(t.purposeShares.map((p) => `${purposeWords(p.purpose)} ${Math.round(p.share * 100)}%`).join(' · '))
+  for (const w of t.waits)
+    lines.push(
+      `waited for ${reasonWords(w.reason)} · triage: ${w.cause === null ? 'no cause' : causeWords(w.cause)} · ${resolutionWords(w.resolution)}`,
+    )
+  if (lines.length === 0) return null
+  return (
+    <details className="rp-more">
+      <summary>
+        {lines.length} more {lines.length === 1 ? 'line' : 'lines'} — where the money went and each wait
+      </summary>
+      {lines.map((l, i) => (
+        <div className="why" key={i}>
+          {l}
+        </div>
+      ))}
+    </details>
+  )
+}
+
+/** The eight tickets that took the most work; each is a link to its task page. */
 export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery }) {
   return (
     <>
       <nav className="rp-seg" aria-label="order">
         <Link href={reportHref(query, { sort: 'rounds' })} className={query.sort === 'rounds' ? 'on' : ''}>
-          by rounds
+          most fix rounds
         </Link>
         <Link href={reportHref(query, { sort: 'cost' })} className={query.sort === 'cost' ? 'on' : ''}>
-          by cost
+          most spend
         </Link>
       </nav>
       {top.length === 0 ? (
@@ -398,8 +400,8 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
             <thead>
               <tr>
                 <th>ticket</th>
-                <th>kind</th>
-                <th className="num">refusal fixes</th>
+                <th>type</th>
+                <th className="num">fix rounds</th>
                 <th className="num">attempts</th>
                 <th className="num">cost</th>
                 <th>outcome</th>
@@ -411,19 +413,7 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
                   <td className="t">
                     <Link href={`/task/${encodeURIComponent(t.ticket)}`}>#{issueOf(t.ticket)}</Link>
                     <div className="why">{t.sentence}</div>
-                    {t.purposeShares.length === 0 ? null : (
-                      <div className="why">
-                        {t.purposeShares
-                          .map((p) => `${purposeWords(p.purpose)} ${Math.round(p.share * 100)}%`)
-                          .join(' · ')}
-                      </div>
-                    )}
-                    {t.waits.map((w, i) => (
-                      <div className="why" key={i}>
-                        waited for {reasonWords(w.reason)} · triage:{' '}
-                        {w.cause === null ? 'no cause' : causeWords(w.cause)} · {resolutionWords(w.resolution)}
-                      </div>
-                    ))}
+                    <MoreLines ticket={t} />
                   </td>
                   <td>{t.kind ?? 'unclassified'}</td>
                   <td className="num">{t.fixRounds}</td>
@@ -579,39 +569,49 @@ export function HandledPanel({
   const noun = query.which === 'today' ? "today's" : query.which === '7d' ? "the week's" : "the range's"
 
   const rows = (g: Group) =>
-    groups
-      .filter((x) => x.g === g && x.count > 0)
-      .map(({ kind, count }) => {
-        const r = handledRow(kind)
-        const link = (
-          <Link href={href(kind, g)} scroll={false}>
-            {count}
-          </Link>
-        )
-        return g === 'system' ? (
-          <tr key={kind} title={r.hover === '' ? undefined : r.hover}>
-            <td>
-              <span className="dot" style={{ background: r.colour }} />
-              <span className={kind === 'other' ? 'w other' : 'w'}>{r.wrong}</span>
-              {r.did === undefined ? null : (
-                <>
-                  <span className="ar">→</span>
-                  <span className="d">{r.did}</span>
-                </>
-              )}
-            </td>
-            <td className="n">{link}</td>
-          </tr>
-        ) : (
-          <tr key={kind} className="you" title={r.hover === '' ? undefined : r.hover}>
-            <td>
-              <span className="dot" />
-              <span className={kind === 'other' ? 'w other' : 'y2'}>{r.wrong}</span>
-            </td>
-            <td className="n">{link}</td>
-          </tr>
-        )
-      })
+    g === 'you'
+      ? neededRows(handled.needed).map(({ kind, verb, hover, count }) => {
+          const r = handledRow(kind)
+          return (
+            <tr key={`${kind}:${verb}`} className="you" title={hover === '' ? undefined : hover}>
+              <td>
+                <span className="dot" />
+                <span className={kind === 'other' ? 'w other' : 'y2'}>{r.wrong}</span>
+                <span className="ar">→</span>
+                <span className="d">{verb}</span>
+              </td>
+              <td className="n">
+                <Link href={href(kind as HandledQuery['kind'], g)} scroll={false}>
+                  {count}
+                </Link>
+              </td>
+            </tr>
+          )
+        })
+      : groups
+          .filter((x) => x.g === g && x.count > 0)
+          .map(({ kind, count }) => {
+            const r = handledRow(kind)
+            return (
+              <tr key={kind} title={r.hover === '' ? undefined : r.hover}>
+                <td>
+                  <span className="dot" style={{ background: r.colour }} />
+                  <span className={kind === 'other' ? 'w other' : 'w'}>{r.wrong}</span>
+                  {r.did === undefined ? null : (
+                    <>
+                      <span className="ar">→</span>
+                      <span className="d">{r.did}</span>
+                    </>
+                  )}
+                </td>
+                <td className="n">
+                  <Link href={href(kind, g)} scroll={false}>
+                    {count}
+                  </Link>
+                </td>
+              </tr>
+            )
+          })
 
   const days = handled.days
   const biggest = Math.max(1, ...days.map((d) => d.system + d.you))
@@ -771,7 +771,9 @@ export function HandledPanel({
                     />
                     <span className="m">
                       <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
-                      <span className="d">{p.answeredBy === 'you' ? 'needed you' : (verb ?? r.wrong)}</span>
+                      <span className="d">
+                        {p.answeredBy === 'you' ? moveRow(moveOf(p), p.kind).verb : (verb ?? r.wrong)}
+                      </span>
                     </span>
                     <span className="t">
                       {p.outcome === 'landed' ? (
@@ -843,6 +845,7 @@ function HandledProblems({
                 <td>
                   {r.wrong}
                   {p.answeredBy === 'system' && r.did !== undefined ? ` → ${r.did}` : ''}
+                  {p.answeredBy === 'you' ? ` → ${moveRow(moveOf(p), p.kind).verb}` : ''}
                 </td>
                 <td>{p.answeredBy === 'system' ? 'Lingtai' : 'you'}</td>
                 <td>{p.outcome}</td>

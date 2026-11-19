@@ -1,6 +1,6 @@
 import type { Report } from '@lingtai/conductor/report'
 
-import { kindCopy } from './handled-copy'
+import { handledRow } from './handled'
 
 /** The Waiting column's empty card (#1286), reduced from `report().handled`. */
 export interface HandledToday {
@@ -39,7 +39,12 @@ export function handledToday(handled: Report['handled']): HandledToday | null {
         : {
             kinds: rest.length,
             problems: rest.reduce((n, k) => n + k.count, 0),
-            hint: rest.map((k) => `${kindCopy(k.kind).problem} → ${kindCopy(k.kind).action}`).join(' · '),
+            hint: rest
+              .map((k) => {
+                const r = handledRow(k.kind)
+                return r.did === undefined ? r.wrong : `${r.wrong} → ${r.did}`
+              })
+              .join(' · '),
           },
     marks: [
       ...handled.kinds.filter((k) => k.system > 0).map((k) => ({ kind: k.kind, count: k.system, you: false })),

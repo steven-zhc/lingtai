@@ -57,7 +57,7 @@ The operator's decisions in epic #648 are the inputs here.
    | refusal fixes | distinct `(pass, round)` pairs among the ticket's `RunSpent` events whose `for` is `Action` with `round ≥ 1` (0110 §10), **summed over every attempt of the ticket** |
    | reviews | each review's `StepEnded` on the ticket's attempt streams (`outcome.step` is `review`), with its `round`, its time, and the count of its findings that are `blocker` or `major`; a review passed when it has none of those **and** every action of the step cleared, so an interrupted review has not passed |
    | waits | `WaitStarted` on the ticket's stream, each with its reason's tag, its latest `WaitTriaged` cause if any, and its `WaitResolved` resolution |
-| problems | one entry per problem a step raised — a `ProposalRouted` (or the retired `PassRouted`), or a step a crash cut off and `StepRedone` ran again — with its kind (`PROBLEM_KINDS`, anything unnamed is `other`), its own time, its attempt and **its group, by kind**: `you` for `asked` and `setup`, `system` for every other kind, whoever answered it. **One problem is counted once**: a route that opened a wait is that wait's problem, with the route's kind. Nothing on the log links them, so a wait claims the last route (or redo group) on its run at or before its own time whose tag agrees with its reason; a route whose move then failed is claimed the same way. A route nobody claimed counts as itself. Computed by `problemsOf` from the stored routes and redos and the ticket's reduced waits on every save |
+| problems | one entry per problem a step raised — a `ProposalRouted` (or the retired `PassRouted`), or a step a crash cut off and `StepRedone` ran again — with its kind (`PROBLEM_KINDS`, anything unnamed is `other`), its own time, its attempt and **who finally answered it**: `system` (a route the router selected, or a wait resolved `by: 'triage'`) or `you` (a person, or still open; a question or a broken setup is always `you`). **One problem is counted once**: a route that opened a wait is that wait's problem, with the route's kind and the wait's answer. Nothing on the log links them, so a wait claims the last route (or redo group) on its run at or before its own time whose tag agrees with its reason; a route whose move then failed is claimed the same way. A route nobody claimed counts as itself, an escalation with no wait is `you`, and a `you` problem keeps **`yourMove`**: the final resolution's tag, `'triage'` where triage answered an always-`you` kind, `null` while open. Computed by `problemsOf` from the stored routes and redos and the ticket's reduced waits on every save |
    | machine time | one interval per claim and per continuation, from it to the earlier of the first `TicketLanded`, `WaitStarted`, `TicketReleased` or `TicketClosed` after it and its last sign of life (below), summed. The approval itself starts nothing; the continuation after it opens its own interval |
    | cost | the ticket's `RunSpent` events, split by purpose: Work, Answering, Judge, Triage, Discussion (`apps/board/src/lib/spend.ts:30`) |
    | unknown | the number of the ticket's `RunSpent` events with no reported or priced cost, plus one for each claim that has no `Action` `RunSpent` at all. A claim is one `runId` (0109 §5), so this is the board's rule (`withNoSpendFallback`, `apps/board/src/lib/spend.ts:113`) and a continuation adds nothing |
@@ -153,7 +153,7 @@ The operator's decisions in epic #648 are the inputs here.
    - each wait's reason and triage cause, and how it was resolved, in words
      (`--json` keeps the tags);
    - one sentence assembled from those facts, leading with the largest share:
-     *72% answering refusals over 6 refusal fixes · 3 attempts · waited 3 times
+     *72% fixing review findings over 6 fix rounds · 3 attempts · waited 3 times
      (for a call between the fixer and the reviewer ×2, for a decision on a
      refused merge).*
 
@@ -221,28 +221,34 @@ The operator's decisions in epic #648 are the inputs here.
    amber means *a person is waited on*. Chart series use colours that are none of
    the board's states (not amber, red or green). Top to bottom:
    - the filters: window, dates, kinds;
-   - figure tiles: landed (with closed and open), median refusal fixes, the
+   - figure tiles: landed (with closed and open), median fix rounds, the
      5-or-more share, the 0-or-1 share, spend in the window (by run day) with
      its unknown count, median machine time;
-   - **handled for you** (#1285): the window's problems by kind's group
-     them — *N solved without you*, the share, *M needed you*, a mark per
+   - **handled for you** (#1285): the window's problems by who finally answered
+     them (a NEEDED YOU row reads *what went wrong → what you did*, #1288) — *N solved without you*, the share, *M needed you*, a mark per
      problem, the two groups of kinds (each count linking to
      `?handled=<kind|all>&by=system|you`, which lists the problems behind it,
      twenty to a page, in the same panel), what answering them cost (reported,
      estimated and unknown apart), per-day stacked bars and the latest six.
      Its kinds take series colours: `build` and `too-big` are `--s5` and `--s6`,
      not the amber the design drew them in;
-   - five panels: refusal fixes by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
-     **reviews to pass**, the share of tickets still not passed after k
-     reviews, a step line from 100% down with steps 1 to 6 and then one 7+
-     step holding every ticket with seven or more, the tickets still counted
-     shown in each step's hover;
-     landings per day stacked by kind; spend per day stacked by purpose (from
-     `spend`, by each run's day); and
-     **why tickets waited, as a cross-table of each wait's reason against its
-     triage cause** (no triage being a column of its own);
-   - the per-kind table of §3;
-   - §4's list, each ticket linking to its task page.
+   - the panels, in one grid (the page and `lingtai report` call a *refusal
+     fix* a **fix round**; §1's definition is unchanged):
+     **Fix rounds per landed ticket** (0, 1, 2, 3, 4, 5+, stacked by kind) beside
+     **Reviews needed to pass** (the share of tickets still not passed after k
+     reviews, a step line from 100% down with steps 1 to 6 and then one 7+ step,
+     the tickets still counted in each step's hover);
+     one wide **Spend** panel, a donut *by purpose* (building, fixing review
+     findings, AI judge, triage; the total in the middle, reported solid and
+     estimated pale) beside the *each day* bars in the same colours;
+     **Landed each day** stacked by kind beside **By ticket type** (§3's per-kind
+     table without a spend column — the Spend panel is where spend is read);
+     **Tickets that took the most work**, §4's list with tabs *most fix
+     rounds* and *most spend*, each ticket one summary line and the purpose
+     and wait lines folded under it; and, last, a wide
+     **Why work stopped for a person**, a cross-table of each wait's reason
+     against its triage cause (no triage being a column of its own).
+     There is no separate costliest-tickets panel: *most spend* is that list;
 
    Every chart has a hover with its exact figures and a legend; no chart has two
    y-axes.

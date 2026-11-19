@@ -324,10 +324,10 @@ export function kindSeries(kinds: readonly (string | null)[]): {
 
 /** Spend by purpose: four series, with Triage and Discussion reduced into one to keep to four colours. */
 export const PURPOSE_SERIES: Series[] = [
-  { key: 'Work', name: 'work', colour: SLOTS[0]! },
-  { key: 'Answering', name: 'answering refusals', colour: SLOTS[1]! },
-  { key: 'Judge', name: 'judging', colour: SLOTS[2]! },
-  { key: 'Other', name: 'triage and discussion', colour: SLOTS[3]! },
+  { key: 'Work', name: 'building', colour: SLOTS[0]! },
+  { key: 'Answering', name: 'fixing review findings', colour: SLOTS[1]! },
+  { key: 'Judge', name: 'AI judge', colour: SLOTS[2]! },
+  { key: 'Other', name: 'triage', colour: SLOTS[3]! },
 ]
 
 export const purposeSeriesOf = (purpose: string): number =>
@@ -360,4 +360,51 @@ export function stepPath(knots: readonly { x: number; y: number }[]): string {
   const [head, ...rest] = knots
   if (!head) return ''
   return `M${head.x},${head.y}${rest.map((p) => `H${p.x}V${p.y}`).join('')}`
+}
+
+// --- the spend donut -------------------------------------------------------------
+
+export type DonutSegment = { key: string; colour: string; estimated: boolean; d: string }
+
+const DONUT_CENTRE = 90
+const DONUT_OUTER = 70
+const DONUT_INNER = 46
+
+/**
+ * One ring path per non-zero segment, in order, from 12 o'clock clockwise. A segment that is the whole
+ * ring is two half-arcs, since an arc from a point back to itself draws nothing.
+ */
+export function donutSegments(
+  rows: { key: string; colour: string; reportedCents: number; estimatedCents: number }[],
+): DonutSegment[] {
+  const parts = rows.flatMap((r) => [
+    { key: r.key, colour: r.colour, estimated: false, cents: r.reportedCents },
+    { key: r.key, colour: r.colour, estimated: true, cents: r.estimatedCents },
+  ])
+  const total = parts.reduce((n, p) => n + p.cents, 0)
+  if (total <= 0) return []
+  const at = (turn: number, radius: number) => {
+    const a = turn * 2 * Math.PI
+    return `${DONUT_CENTRE + radius * Math.sin(a)} ${DONUT_CENTRE - radius * Math.cos(a)}`
+  }
+  const out: DonutSegment[] = []
+  let from = 0
+  for (const p of parts) {
+    if (p.cents <= 0) continue
+    const to = from + p.cents / total
+    const R = DONUT_OUTER
+    const r = DONUT_INNER
+    let d: string
+    if (to - from >= 1 - 1e-9) {
+      d =
+        `M ${at(0, R)} A ${R} ${R} 0 1 1 ${at(0.5, R)} A ${R} ${R} 0 1 1 ${at(0, R)} ` +
+        `M ${at(0, r)} A ${r} ${r} 0 1 0 ${at(0.5, r)} A ${r} ${r} 0 1 0 ${at(0, r)} Z`
+    } else {
+      const large = to - from > 0.5 ? 1 : 0
+      d = `M ${at(from, R)} A ${R} ${R} 0 ${large} 1 ${at(to, R)} L ${at(to, r)} A ${r} ${r} 0 ${large} 0 ${at(from, r)} Z`
+    }
+    out.push({ key: p.key, colour: p.colour, estimated: p.estimated, d })
+    from = to
+  }
+  return out
 }

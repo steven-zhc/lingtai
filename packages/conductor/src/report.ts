@@ -206,6 +206,8 @@ export interface Handled {
   kinds: ({ kind: string } & HandledCount)[]
   /** The same days as `spend.days`. */
   days: ({ day: string; kinds: HandledDayKind[] } & HandledCount)[]
+  /** NEEDED YOU by (kind, move), #1288: `move` is `Problem.yourMove` as stored, `'unknown'` where the key is absent (stored before the rebuild), null while open. `PROBLEM_KINDS` order, then count descending. */
+  needed: { kind: string; move: string | null; count: number }[]
   /** The eight newest problems, newest first. */
   latest: HandledProblem[]
   /** What answering them cost in the window: the `Answering`, `Judge` and `Triage` purposes, reported and estimated apart. */
@@ -377,9 +379,9 @@ export function survivalCurve(tickets: readonly ReportTicketRow[]): SurvivalStep
 }
 
 export const PURPOSE_WORDS: Record<string, string> = {
-  Work: 'work',
-  Answering: 'answering refusals',
-  Judge: 'judging',
+  Work: 'building',
+  Answering: 'fixing review findings',
+  Judge: 'AI judge',
   Triage: 'triage',
   Discussion: 'discussion',
 }
@@ -391,7 +393,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
   AgentQuestion: "an answer to the agent's question",
   FixerDisagrees: 'a call between the fixer and the reviewer',
   NothingProduced: 'a decision after the agent produced nothing',
-  ProposedEscalated: 'a decision after its refusal fixes ran out',
+  ProposedEscalated: 'a decision after its fix rounds ran out',
   CheckRefused: 'a decision on a refused check',
   MergeRefused: 'a decision on a refused merge',
   BudgetExhausted: 'a decision after it ran out of budget',
@@ -405,7 +407,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
 /** How a wait ended. */
 export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
-  FixRefusal: 'a refusal fix granted',
+  FixRefusal: 'a fix round granted',
   RedoStep: 'the step run again',
   AnswerQuestions: 'answered, and the step continued',
   AnswerQuestion: 'answered',
@@ -450,7 +452,7 @@ function sentenceOf(t: {
     : t.cost.unknown > 0
       ? 'cost unknown'
       : 'no cost'
-  const parts = [`${head} over ${plural(t.fixRounds, 'refusal fix', 'refusal fixes')}`, plural(t.passes, 'attempt')]
+  const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'attempt')]
   if (t.waits.length > 0) {
     const counts = new Map<string, number>()
     for (const w of t.waits) counts.set(w.reason, (counts.get(w.reason) ?? 0) + 1)
@@ -593,6 +595,15 @@ export function report(input: ReportInput): Report {
           (k) => k.system + k.you > 0,
         ),
       }
+    }),
+    needed: PROBLEM_KINDS.flatMap((kind) => {
+      const by = new Map<string | null, number>()
+      for (const q of raised) {
+        if (q.kind !== kind || q.answeredBy !== 'you') continue
+        const move = q.yourMove === undefined ? 'unknown' : q.yourMove
+        by.set(move, (by.get(move) ?? 0) + 1)
+      }
+      return [...by].map(([move, count]) => ({ kind, move, count })).sort((a, b) => b.count - a.count)
     }),
     latest: raised.slice(0, 8),
     answeringCost: byPurpose

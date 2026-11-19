@@ -372,15 +372,15 @@ describe('waits and the top eight', () => {
       waits: [wait('FixerDisagrees', null), wait('FixerDisagrees', null), wait('MergeRefused', null)],
     })
     expect(run([t]).top[0]!.sentence).toBe(
-      '72% answering refusals over 6 refusal fixes · 3 attempts · waited 3 times (for a call between the fixer and the reviewer ×2, for a decision on a refused merge)',
+      '72% fixing review findings over 6 fix rounds · 3 attempts · waited 3 times (for a call between the fixer and the reviewer ×2, for a decision on a refused merge)',
     )
   })
 
   it('uses singulars, leaves out no waits, and says when cost is unknown', () => {
     const t = ticket({ fixRounds: 1, passes: 1, unknownClaims: 2 })
-    expect(run([t]).top[0]!.sentence).toBe('cost unknown over 1 refusal fix · 1 attempt · 2 runs unknown')
+    expect(run([t]).top[0]!.sentence).toBe('cost unknown over 1 fix round · 1 attempt · 2 runs unknown')
     const once = ticket({ waits: [wait('X', null)] })
-    expect(run([once]).top[0]!.sentence).toBe('no cost over 0 refusal fixes · 1 attempt · waited once (for X)')
+    expect(run([once]).top[0]!.sentence).toBe('no cost over 0 fix rounds · 1 attempt · waited once (for X)')
   })
 
   it('words a wait in English, never its tag', () => {
@@ -562,6 +562,33 @@ describe('report().handled (#1284)', () => {
     expect(all.map((x) => x.kind)).toEqual(['review-fixed', 'review-fixed', 'conflict'])
     expect(all.every((x) => x.outcome === 'landed')).toBe(true)
     expect(r.handled.latest).toEqual(all)
+  })
+
+  it('counts NEEDED YOU by (kind, move) and the sums equal the you counts (#1288)', () => {
+    const m = (kind: string, move: string | null | undefined, d: Date) => {
+      const q = p(kind, 'you', d)
+      return move === undefined ? q : { ...q, yourMove: move }
+    }
+    const t = ticket({
+      problems: [
+        m('review-fixed', 'Approve', day(28)),
+        m('review-fixed', 'Approve', day(27)),
+        m('review-fixed', 'FixRefusal', day(27)),
+        m('review-fixed', null, day(26)),
+        m('review-fixed', undefined, day(26)),
+        p('review-fixed', 'system', day(26)),
+      ],
+    })
+    const h = run([t], { window: resolveWindow('7d', now) }).handled
+    expect(h.needed.filter((n) => n.kind === 'review-fixed')).toEqual([
+      { kind: 'review-fixed', move: 'Approve', count: 2 },
+      { kind: 'review-fixed', move: 'FixRefusal', count: 1 },
+      { kind: 'review-fixed', move: null, count: 1 },
+      { kind: 'review-fixed', move: 'unknown', count: 1 },
+    ])
+    for (const k of h.kinds) {
+      expect(h.needed.filter((n) => n.kind === k.kind).reduce((a, n) => a + n.count, 0)).toBe(k.you)
+    }
   })
 
   it('respects the kind filter', () => {
