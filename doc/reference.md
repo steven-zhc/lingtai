@@ -2076,7 +2076,7 @@ a decision a person can take (below), not a command.
 `approve` and `waive` are the decisions a person can take from the CLI, with
 the moves `fix-refusal`, `redo-step` and `start-new-attempt` (described in
 [operating.md](operating.md)). There is no `lingtai requeue`: the verb is
-retired. The board's decisions are the first two — `apps/board/src/app/actions.ts` imports
+retired. The board still calls `requeue` as a function — `apps/board/src/app/actions.ts` imports
 `approve` and `requeue` from `@lingtai/conductor/decide` — and a waiver from the
 board is the one `approve` appends for a gate still refusing (`#150`). That the set was not
 countable from the CLI's side is how `requeue` (`#130`) and `waive` (`#129`)
