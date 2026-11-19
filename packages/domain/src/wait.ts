@@ -328,7 +328,8 @@ export const Resolution = z.discriminatedUnion('_tag', [
   EditBodyAndStartNewAttempt,
   AnswerQuestion,
   ConfirmSatisfied,
-  // the person's approved plan (0118 §12); a structural fault never parses, so never reaches the log
+  // The system's split (0118 §12): written only `by: 'triage'` and never offered to a person by `allowedResolutions`.
+  // 0118 §1's *there is no `Split` resolution* is read as *none a person can choose*; old rows keep their tag.
   SplitResolution,
   Close,
 ])
@@ -395,12 +396,12 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
     case 'ProposedEscalated':
       switch (reason.proposal._tag) {
         case 'ReviewFindings':
-          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         case 'ReviewEmpty':
           return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         case 'BuildRed':
         case 'VerifyRed':
-          return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
+          return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         case 'MergeConflict':
           // 0118 §1: `FixRefusal` is appended by `allowedResolutions`;
           // this row is `StartNewAttempt`, `Close` — no body edit.
@@ -428,7 +429,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         case 'NothingProduced':
         case 'BudgetExhausted':
         case 'AnswerUnreadable':
-          return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
+          return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
         // Allow the host (or install the sandbox), then requeue: the
         // requeue runs under the edited recipe or the repaired host (#1157).
         case 'SetupRefused':
@@ -438,7 +439,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
         // means *review the clipped diff anyway* (#892) — and there is no round
         // to grant. `Split` still waits on triage's plan.
         case 'DiffTooLarge':
-          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Split', 'Close']
+          return ['Approve', 'StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
       }
     case 'MergeRefused':
       return ['Approve', 'StartNewAttempt', 'Close']
@@ -446,7 +447,7 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
     case 'BudgetExhausted':
     case 'AgentCrashed':
     case 'AnswerUnreadable':
-      return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close']
+      return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
     case 'SetupRefused':
       return ['StartNewAttempt', 'Close']
   }
@@ -945,9 +946,9 @@ function causeResolution(cause: Cause): Resolution['_tag'] {
       return 'RedoStep'
     case 'UndecidedQuestion':
       return 'AnswerQuestions'
-    // the person's own split stays until #1262 removes it
+    // a split the system could not make waits as a limit, where a person edits the body or closes it (0118 §1)
     case 'TicketTooBig':
-      return cause.plan !== null ? 'Split' : 'RedoStep'
+      return cause.plan !== null ? 'EditBodyAndStartNewAttempt' : 'RedoStep'
   }
 }
 

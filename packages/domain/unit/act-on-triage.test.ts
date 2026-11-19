@@ -78,6 +78,7 @@ const context = (over: Partial<ActContext> = {}): ActContext => ({
   headNow: 'abc',
   fix: { onSha: 'abc', ref: 'agent/7' },
   redo: { onSha: 'abc', ref: 'agent/7' },
+  split: null,
   ...over,
 })
 const input = (state: TicketState, over: Record<string, unknown> = {}, ctx: Partial<ActContext> = {}) => ({

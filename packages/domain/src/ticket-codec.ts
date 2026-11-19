@@ -105,6 +105,7 @@ const StoredTicket = z.strictObject({
     })
     .nullable(),
   newAttempts: z.array(z.strictObject({ after: z.string(), newAttempt: z.number() })),
+  splitStarts: z.array(WaitId),
   pendingPrompt: z.strictObject({ text: z.string(), by: z.string() }).nullable(),
   answers: z.array(
     z.strictObject({
@@ -188,7 +189,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 9: a wait's `resolution` carries the optional `spent` of a triage resolution (#1258); a version-8 snapshot may have lost it.
   // 10: an `AnswerQuestions` resolution, and a wait's reason is the `AskLimit` where it would be the sixth ask (#1254); a version-8 snapshot holds neither.
   // 11: a wait's `resolution` carries its `note` (#1259); a version-10 snapshot lost it.
-  version: 11,
+  // 12: `splitStarts` counts a ticket's splits from `SplitStarted` (#1262); a version-11 snapshot has no such list.
+  version: 12,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

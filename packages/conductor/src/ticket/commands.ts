@@ -48,6 +48,7 @@ import {
   reduceTicket,
   resolvedEvents,
   resolveWaitTransition,
+  systemSplitAllowed,
   type ContinueDecline,
   type ReleaseCause,
   type ReleaseDecline,
@@ -374,6 +375,8 @@ export function resolveTicketWaitEffect<R>(
     resolution: Resolution
     by: string
     note: string
+    /** The system's own resolution (`by: 'triage'`'s split): the actor recorded is `conductor` and the release spends no new attempt. */
+    system?: boolean
     /** Events appended after the resolution, in the same append. */
     with?: readonly ToAppend[]
     split?: unknown
@@ -388,7 +391,11 @@ export function resolveTicketWaitEffect<R>(
     const read = { snapshots: options.snapshots, writer: options.writer }
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
 
-    const decided = resolveWaitTransition(state, { waitId: options.waitId, resolution: options.resolution })
+    const decided = resolveWaitTransition(state, {
+      waitId: options.waitId,
+      resolution: options.resolution,
+      by: options.by,
+    })
     if (!decided.ok) return { ok: false, refusal: decided.refusal, written: false } as const
     if (decided.kind === 'repeat') return { ok: true, kind: 'repeat', runId: decided.runId } as const
     const block = decided.block
@@ -402,10 +409,12 @@ export function resolveTicketWaitEffect<R>(
     // What is written is checked, not what was asked: `prepare` may rewrite a resolution (a grant's head), never its kind.
     if (
       resolution._tag !== options.resolution._tag ||
-      !allowedResolutions(
-        block.reason,
-        state.waits.findLast((w) => w.waitId === options.waitId)?.triage.result,
-      ).includes(resolution._tag)
+      !(resolution._tag === 'Split'
+        ? systemSplitAllowed(state, options.waitId, options.by)
+        : allowedResolutions(
+            block.reason,
+            state.waits.findLast((w) => w.waitId === options.waitId)?.triage.result,
+          ).includes(resolution._tag))
     ) {
       return {
         ok: false,
@@ -422,6 +431,7 @@ export function resolveTicketWaitEffect<R>(
       note: options.note,
       ...(answers ? { answers } : {}),
       split: options.split,
+      ...(options.system ? { system: {} } : {}),
     })
     if (!events.ok) return { ok: false, refusal: events.refusal, written } as const
 
@@ -429,7 +439,11 @@ export function resolveTicketWaitEffect<R>(
     if (written) {
       // The body write recorded its own events on this stream: read again, and check the wait is still the one open.
       const fresh = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', read)
-      const again = resolveWaitTransition(fresh, { waitId: options.waitId, resolution: options.resolution })
+      const again = resolveWaitTransition(fresh, {
+        waitId: options.waitId,
+        resolution: options.resolution,
+        by: options.by,
+      })
       if (!again.ok || again.kind !== 'proceed') {
         return { ok: false, refusal: { reason: 'not-blocked', waitId: options.waitId }, written } as const
       }

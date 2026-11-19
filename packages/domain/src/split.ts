@@ -18,6 +18,9 @@ import { TRIAGE_SPLIT_BODY_MAX, TRIAGE_SPLIT_CHILDREN_MAX, TRIAGE_TEXT_MAX } fro
 /** The system's label on a split's child until the whole split is read back; the queue passes over it (#1261). */
 export const PUBLISHING_LABEL = 'lingtai:publishing'
 
+/** A child's marker, matched whatever its wait and key: a body carrying one is a child and is never split (#1261). */
+export const ANY_SPLIT_MARKER = /<!-- lingtai:split \S+ \S+ -->/
+
 /** A child's stable name inside the plan, which a dependency refers to. */
 const KEY_PATTERN = /^[a-z0-9][a-z0-9-]*$/
 const KEY_MAX = 40
@@ -243,3 +246,16 @@ export const TriagePlanAnswer = z
   .object({ children: z.array(z.object(planChild)).max(TRIAGE_SPLIT_CHILDREN_MAX), ...planRest })
   .superRefine(refuseProblems)
 export type TriagePlanAnswer = z.infer<typeof TriagePlanAnswer>
+
+/** The plan as `SplitStarted` freezes it: plain arrays and nothing else of the agent's answer. One copy, for the decision and the writer. */
+export function frozenPlan(plan: {
+  children: readonly { key: string; title: string; body: string; kind: string; covers?: readonly string[] }[]
+  blockedBy: readonly { ticket: string; blockedBy: string }[]
+  uncovered?: readonly string[]
+}) {
+  return {
+    children: plan.children.map((c) => ({ ...c, covers: c.covers === undefined ? undefined : [...c.covers] })),
+    blockedBy: [...plan.blockedBy],
+    ...(plan.uncovered === undefined ? {} : { uncovered: [...plan.uncovered] }),
+  }
+}

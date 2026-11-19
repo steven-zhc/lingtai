@@ -114,6 +114,8 @@ export interface ResolveWaitOptions extends SnapshotReadOptions {
   writtenSection?: string
   /** Recorded on the resolution. A waiver, a close, an answer — none of them is anonymous. */
   by: string
+  /** The system's split only (0118 §12): recorded as the conductor's, releasing the claim without spending a new attempt. */
+  system?: boolean
   /** Why. Required only where `Approve` is waiving a refusal still standing on the sha — see `refusingOn`. */
   note?: string
   /**
@@ -238,6 +240,7 @@ export function resolveWaitHoldingEffect(
       resolution: options.resolution,
       by: options.by,
       note,
+      ...(options.system ? { system: true } : {}),
       split: options.split,
       with: options.with,
       prepare: (item, block) => prepare(options, store, ticketId, note, item, block),

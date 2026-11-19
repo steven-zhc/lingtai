@@ -32,14 +32,15 @@
  * transaction, so a retry after a lost race re-reads and lands only that.
  */
 import {
+  frozenPlan,
   PUBLISHING_LABEL,
   reduceTicket,
   splitProgressOf,
+  systemSplitAllowed,
   ticketStream,
   type PayloadOf,
   type WaitId,
 } from '@lingtai/domain'
-import { allowedResolutions, splitPlanProblems, describeSplitProblem } from '@lingtai/domain/wait'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import type { GitHubClient, Issue, LinkedIssue } from '@lingtai/github'
 import { Cause, Effect } from 'effect'
@@ -47,7 +48,7 @@ import { Cause, Effect } from 'effect'
 import { upsertSection } from './body-section.ts'
 import { decidingEffect } from './deciding.ts'
 import { asFailure } from './port-face.ts'
-import { describeReason, resolveWaitHoldingEffect } from './resolve-wait.ts'
+import { resolveWaitHoldingEffect } from './resolve-wait.ts'
 import { BodyChanged } from './ticket-store.ts'
 import { recordSplitProgress } from './ticket/commands.ts'
 
@@ -77,9 +78,6 @@ export interface SplitPlanInput {
 
 /** The key of the parent's `## Split into` section (`upsertSection`). */
 const SPLIT_INTO_KEY = 'split-into'
-
-/** A child's marker, matched whatever its wait and key: a body carrying one is a child and is never split (#1261). */
-const ANY_SPLIT_MARKER = /<!-- lingtai:split \S+ \S+ -->/
 
 /** Done-when items are a person's text; one that quotes a section marker would make `upsertSection` refuse. */
 const defuse = (text: string) => text.replaceAll('lingtai:answer', 'lingtai:\u200banswer')
@@ -130,27 +128,17 @@ export interface SplitTicketOptions {
   project: string
   issue: number
   waitId: WaitId
-  /**
-   * Required on the first call only: the plan is frozen by the first
-   * `SplitStarted`, and a call after it ignores whatever is passed here.
-   */
-  plan?: SplitPlanInput
   /** The recipe's `source.kinds`. */
   kinds: readonly string[]
   /** `owner/repo` of the project — a sub-issue from another repository is not this split's. */
   repository: string
   by: string
   /**
-   * This board process's id, for `SplitStarted`: a writer whose instance is not
-   * the asker's has gone, and the reducer reads it as interrupted. Make it once per
-   * process and cache it on `globalThis` — a module-level `randomUUID()` is
-   * re-evaluated by Next's dev HMR, and a running write would read as
-   * interrupted to its own page.
+   * This daemon's start id, for `SplitStarted`: a writer whose instance is not
+   * the asker's has gone, and the reducer reads it as interrupted.
    */
   instance: string
   note?: string
-  /** Called straight after this attempt's `SplitStarted` is appended — the write is running from here. */
-  onStarted?: () => void
   github: SplitClient
   store?: EventStore
 }
@@ -202,11 +190,7 @@ export function splitTicketEffect(options: SplitTicketOptions): Effect.Effect<Sp
   return decidingEffect<SplitTicketResult, Error, never>(
     ticketId,
     () =>
-      refused(
-        options.plan,
-        ticketId,
-        `${ticketId} is being decided by someone else right now. Reload and read it again.`,
-      ),
+      refused(undefined, ticketId, `${ticketId} is being decided by someone else right now. Reload and read it again.`),
     splitTicketHoldingEffect(options, store, ticketId),
   )
 }
@@ -254,43 +238,25 @@ export function splitTicketHoldingEffect(
 
     // **Refuse before writing**, with no GitHub call until every check passed.
     const events = yield* lift(() => store.read(ticketId))
-    const first = events.find((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)
-    // The plan is the one the first Create all froze, whatever this call was handed.
+    const started = events.filter((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId === waitId)
+    // The plan is the one the decision froze (0118 §12.3), whoever calls: this writer never takes a plan of its own.
+    const first = started[0]
     const plan: SplitPlanInput | undefined =
-      first === undefined ? options.plan : (first.data as PayloadOf<'SplitStarted'>).plan
+      first === undefined ? undefined : (first.data as PayloadOf<'SplitStarted'>).plan
     const stop = (detail: string) => refused(plan, ticketId, detail)
     const item = reduceTicket(events)
     if (item.lifecycle.status !== 'blocked' || item.lifecycle.waitId !== waitId)
       return stop(`${ticketId} is not waiting on ${waitId} — nothing was written. Reload and read it again.`)
-    if (!allowedResolutions(item.lifecycle.reason).includes('Split'))
-      return stop(`Split is not offered for ${describeReason(item.lifecycle.reason)} — nothing was written.`)
-    if (plan === undefined) return stop('there is no split plan to write — nothing was written.')
-    if (first === undefined) {
-      const problems = splitPlanProblems(plan, { kinds: options.kinds })
-      if (problems.length > 0)
-        return stop(
-          `the split plan is refused — nothing was written: ${problems.map(describeSplitProblem).join('; ')}.`,
-        )
-    }
+    if (plan === undefined || first === undefined)
+      return stop(`nothing decided to split ${ticketId} for ${waitId} — nothing was written.`)
+    if (!systemSplitAllowed(item, waitId, 'triage'))
+      return stop(`a split is not offered for ${waitId} — nothing was written.`)
     // **Once per root** (#1261): a `SplitStarted` for another wait has spent the split; one for this wait is this split resuming.
     const spent = events.some((e) => e.type === 'SplitStarted' && (e.data as { waitId?: string }).waitId !== waitId)
     if (spent) return stop(`${ticketId} was already split once — nothing was written.`)
-    let parentRead: Issue | undefined
     let placementRead: Placement | undefined
-    if (first === undefined) {
-      // A read, so nothing is written: a child is known by its marker, and a child is never split.
-      const parent = yield* settled(lift(() => github.getIssue(options.issue)))
-      if (parent.ok) parentRead = parent.value
-      if (!parent.ok)
-        return stop(`the ticket's body could not be read — nothing was written: ${errorMessage(parent.error)}`)
-      if (ANY_SPLIT_MARKER.test(parent.value.body))
-        return stop(
-          `${ticketId} carries a split marker, so it is a split's child and is not split — nothing was written.`,
-        )
-    }
-    if (first === undefined) placementRead = placementOf(parentRead!)
     // Before this attempt's own `SplitStarted`: a read that threw after it would leave a start with nothing terminal after it.
-    const since = new Date((first?.at ?? new Date()).getTime() - SKEW_MS)
+    const since = new Date(first.at.getTime() - SKEW_MS)
 
     const prior = splitProgressOf(events, { waitId, instance: options.instance, running: true })
     const known = new Map(prior.state === 'idle' ? [] : prior.children.map((c) => [c.key, c.number] as const))
@@ -302,16 +268,18 @@ export function splitTicketHoldingEffect(
       data: PayloadOf<T>,
     ): Effect.Effect<void, Error> =>
       recordSplitProgress(store, ticketId, type, data, options.by).pipe(Effect.mapError(asFailure))
-    yield* note('SplitStarted', {
-      waitId,
-      plan: {
-        children: plan.children.map((c) => ({ ...c, covers: c.covers === undefined ? undefined : [...c.covers] })),
-        blockedBy: [...plan.blockedBy],
-        ...(plan.uncovered === undefined ? {} : { uncovered: [...plan.uncovered] }),
-      },
-      instance: options.instance,
-    })
-    options.onStarted?.()
+    // The decision's own record stands for this attempt while it is this writer's and nothing terminal followed it;
+    // any other is a resume, and starts its attempt afresh so the page reads from its start.
+    const latest = events.findLast(
+      (e) =>
+        (e.data as { waitId?: string }).waitId === waitId &&
+        (e.type === 'SplitStarted' || e.type === 'SplitFailed' || e.type === 'TicketSplit'),
+    )
+    const standing =
+      latest !== undefined &&
+      latest.type === 'SplitStarted' &&
+      (latest.data as PayloadOf<'SplitStarted'>).instance === options.instance
+    if (!standing) yield* note('SplitStarted', { waitId, plan: frozenPlan(plan), instance: options.instance })
 
     /** The terminal event. If it cannot be appended the caller's running set still says the writer is gone. */
     const noteFailed = (step: string, detail: string): Effect.Effect<void> =>
@@ -597,7 +565,8 @@ export function splitTicketHoldingEffect(
                 children: plan.children.map(({ covers: _covers, ...c }) => c),
                 blockedBy: [...plan.blockedBy],
               },
-              by: options.by,
+              by: 'triage',
+              system: true,
               note: options.note,
               kinds: options.kinds,
               split: payload,
