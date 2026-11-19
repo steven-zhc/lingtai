@@ -43,6 +43,11 @@ import {
   locksOn,
   savedHeadOf,
   waitWords,
+  ticketReducer,
+  standingSystemResolution,
+  systemLineOf,
+  systemLineText,
+  type SystemLimits,
   type AccountState,
   type CeilingFacts,
   type Account,
@@ -253,7 +258,19 @@ export interface StatusReading {
   stepOf?: (runId: string) => Effect.Effect<StatusAttempt['step'], unknown>
   /** Whether a run published a clean head a refusal fix can continue from. Replaceable so a test need not own a log. */
   savedHeadOf?: (runId: string, project: ProjectState) => Effect.Effect<SavedHeadReading, unknown>
+  /** The system's line for a ticket (#1259). Replaceable so a test need not own a log. */
+  systemOf?: (taskId: string, limits: SystemLimits) => Effect.Effect<string | null, unknown>
 }
+
+/** The ticket's standing triage resolution as one sentence, or null (#1259). A read that fails is no line, never a made-up one. */
+const systemOf = (taskId: string, limits: SystemLimits) =>
+  readThroughSnapshot(eventStore, ticketReducer, taskId, 'all', { snapshots: log.snapshots }).pipe(
+    Effect.map((state) => {
+      const wait = standingSystemResolution(state)
+      const line = wait === null ? null : systemLineOf(state, wait, limits)
+      return line === null ? null : systemLineText(line)
+    }),
+  )
 
 /** A run's state through the log's snapshots. Read-only: a short command offers none (0124 §5, #878). */
 const attemptOf = (runId: string) =>
@@ -341,6 +358,8 @@ export interface StatusRow {
   wait: StatusWait | null
   /** For a `running` or `verifying` row: which run, and the step it is at. Null otherwise. */
   run: StatusAttempt | null
+  /** What the system did for a wait it resolved itself, as `systemLineText` words it (#1259). Null on every other row. */
+  system: string | null
 }
 
 /** `ProjectFilter` reduced to what a reader needs, so a report can be built by hand in a test. */
@@ -552,6 +571,7 @@ export const readStatus = (
           // Against the offer and not `runnable`, which the retry window has already thinned.
           unoffered: t.state === 'queued' && asked && !offeredRefs.has(t.issue),
           run: null,
+          system: null,
           wait:
             t.wait == null || words === null
               ? null
@@ -670,6 +690,17 @@ export const readStatus = (
                   )
                 : undefined
               const row = rowOf({ ...t, savedHead }, t.newAttempts ?? 0)
+              // The one line a triage resolution leaves on the ticket, only where it can still be standing (#1259).
+              if (
+                (t.state === 'queued' && (t.attempts ?? 0) > 0) ||
+                t.state === 'running' ||
+                t.state === 'verifying' ||
+                t.state === 'approved'
+              ) {
+                row.system = yield* Effect.suspend(() =>
+                  (reading.systemOf ?? systemOf)(t.taskId, filter.ok ? filter.limits : null),
+                ).pipe(recovering(() => Effect.succeed<string | null>(null)))
+              }
               // Every pass in flight is a row with its step, not only the first (#640).
               if ((t.state === 'running' || t.state === 'verifying') && t.runId) {
                 const runId = t.runId
@@ -831,6 +862,17 @@ export function renderStatus(
         }
       }
       lines.push('', section('Waiting on you', lines2))
+    }
+
+    // What the system decided for a person, while it still stands (#1259). Plain, never the amber of *waiting on you*.
+    const decided = p.known.filter((t) => t.system !== null)
+    if (decided.length > 0) {
+      const lines3: string[] = []
+      for (const t of decided) {
+        lines3.push(`#${t.ref}${t.title === '' ? '' : `  ${t.title}`}`)
+        lines3.push(`    ${t.system}`)
+      }
+      lines.push('', section('Decided for you', lines3))
     }
     blocks.push(lines.join('\n'))
   }

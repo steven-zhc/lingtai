@@ -77,6 +77,7 @@ const row = (over: Partial<StatusRow> & Pick<StatusRow, 'taskId' | 'ref'>): Stat
   unoffered: false,
   wait: null,
   run: null,
+  system: null,
   ...over,
 })
 
@@ -897,5 +898,27 @@ describe('whyNothingRuns under Queue (#1215)', () => {
     })
     const all = (statusJson(withWhy(), true).projects as { whyNothingRuns: { others: unknown[] } }[])[0]!.whyNothingRuns
     expect(all.others).toHaveLength(1)
+  })
+})
+
+describe('renderStatus: what the system decided (#1259)', () => {
+  it('prints the line under the ticket, in a section of its own', () => {
+    const base = fixture.projects[0]!
+    const decided = row({
+      taskId: 't1',
+      ref: '77',
+      state: 'running',
+      system: 'Triage read only unfinished; the step is being redone — 2 of 3 redos used',
+    })
+    const out = renderStatus(
+      { ...fixture, projects: [{ ...base, known: [...base.known, decided] }] },
+      { all: false },
+    ).join('\n')
+    expect(out).toContain('Decided for you')
+    expect(out).toContain('#77')
+    expect(out).toContain('the step is being redone — 2 of 3 redos used')
+  })
+  it('says nothing where no row carries one', () => {
+    expect(renderStatus(fixture, { all: false }).join('\n')).not.toContain('Decided for you')
   })
 })
