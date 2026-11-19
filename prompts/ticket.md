@@ -65,8 +65,19 @@ The issue cannot be closed as written — it is ambiguous, or it asks for someth
 the code cannot support. One to five questions, each with two to four answers and
 the one you recommend. Keep what you committed; a person answers and the work
 continues from it. A run that stops with a clear question is worth more than one
-that merges the wrong thing. **This is also what to declare when the work is
-already on the base branch** — say so in the question.
+that merges the wrong thing.
+
+```outcome
+{"outcome": "AlreadyDone", "items": [{"item": "<the Done-when line, verbatim>", "evidence": "<file:line, a command and its output, or a commit>"}]}
+```
+
+Use this **only when nothing needs changing**: the work this ticket asks for is
+already on the base branch, and you changed nothing. Answer **every** `## Done when`
+item of the ticket, each with the line copied word for word and what on the base
+satisfies it. A reviewer opens that evidence at the base's commit and judges each
+item; one it cannot find is sent back to you as a finding. An item with no evidence,
+or a ticket with no `## Done when` list, is not believed, and the step is redone.
+If you did change something, this is `Implemented`, not this.
 
 A final message with no block, or one that cannot be read, is a run that did not
 finish, and it is redone.

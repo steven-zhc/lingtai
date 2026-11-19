@@ -335,6 +335,49 @@ Rules:
   what changed where, and why. It describes the whole diff as it stands, not
   only a fix round's delta. It never affects your findings.`
 
+/**
+ * **What a reviewer asked to check evidence, not a diff, is told** (#1251, 0108 §21): each `## Done when`
+ * item of the ticket as written, what the implementer says on the base satisfies it, and the base's sha to judge
+ * them at. No ticket body, no diff and no head: the head can carry commits that will never land, so evidence that
+ * holds only because of them is not "already on the base".
+ */
+export function alreadyDonePromptParts(
+  spec: AgentActionSpec,
+  check: { readonly baseSha: string; readonly items: readonly { readonly item: string; readonly evidence: string }[] },
+): PromptPart[] {
+  const items = check.items
+    .map((i, n) => `### Item ${n + 1}\n\n**Done when:** ${i.item}\n\n**The implementer's evidence:** ${i.evidence}`)
+    .join('\n\n')
+  return [
+    `You are checking a claim you did not make. An engineer says the work this ticket asks for is **already on the
+base branch**, so nothing needs changing. For each \`## Done when\` item below they gave the evidence that satisfies
+it. You have those items and that evidence, deliberately nothing else — no plan, no transcript, no diff.
+
+## Where to look
+
+Judge every item **at commit \`${check.baseSha}\`**, not at the checked-out head — the head can carry commits that
+will never land. Read it with \`git show ${check.baseSha}:<path>\` and \`git grep <pattern> ${check.baseSha}\`, and
+run nothing that changes the tree.
+
+## The items
+
+${items}
+
+## What counts
+
+An item is **met** only if what is on \`${check.baseSha}\` makes it true as written. Evidence that is missing, does not
+exist at that commit, or satisfies the item only partly leaves it **unmet**. Do not take the evidence on trust: open
+it.
+
+Each unmet item is one finding at severity \`major\`. Put the Done-when item **word for word** in its
+\`failureScenario\`, and say in \`claim\` what is missing at that commit. Met items are not findings.
+
+${spec.prompt ? `## Also for this project\n\n${spec.prompt}\n` : ''}## How to report
+${CONTRACT}
+`,
+  ]
+}
+
 export interface ReviewIssue {
   ref: string
   title: string
@@ -877,11 +920,15 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
     run: (context: ActionContext): Effect.Effect<ActionResult> =>
       Effect.gen(function* () {
         const moved = context.landedOnBase
+        // **A check reads no diff** (#1251): `implement` declared the work already on the base, so the head
+        // is the base and the diff is empty by definition — and an empty diff is passed unread just below.
+        // The branch is taken before the diff is asked for, so evidence is never accepted for want of one.
+        const check = context.alreadyDone
         // No start: the port answers the merge-base with the base, wherever
         // anybody's base merge has put it (#937).
-        const read = readOf(yield* deps.diff())
+        const read = check === undefined ? readOf(yield* deps.diff()) : readOf('')
         const diff = read.text
-        if (!diff.trim()) {
+        if (check === undefined && !diff.trim()) {
           // Nothing to review is not the same as nothing wrong, and saying so is
           // cheaper than an agent call that reads an empty diff.
           return { verdict: 'passed', evidence: 'the diff is empty; nothing to review', findings: [] }
@@ -906,8 +953,9 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           }
         }
 
-        const issue = yield* deps.issue()
-        const recheck = context.recheck ?? []
+        const issue: ReviewIssue =
+          check === undefined ? yield* deps.issue() : { ref: '', title: '', body: '' }
+        const recheck = check === undefined ? (context.recheck ?? []) : []
         // **Not** `context.runId`. The session id is derived from it, so reusing
         // it would resume the implementer's session and make this a warm review
         // wearing a cold review's name.
@@ -934,14 +982,22 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         // bought for (`conduct.ts` only continues the loop when the fixer
         // committed), so the commit is what makes each round's review a
         // different reviewer.
-        const reviewId = rerunId(`${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`, context)
+        const reviewId = rerunId(
+          check === undefined
+            ? `${context.runId}:review:${spec.name}:${context.onSha.slice(0, 7)}`
+            : // Its own id (#1251): the check is not the review of any head, and a later review must not resume it.
+              `${context.runId}:check:${spec.name}:${check.baseSha.slice(0, 7)}`,
+          context,
+        )
         const landedBlock =
-          moved === undefined || deps.landed === undefined ? '' : landedOnBaseBlock(moved, yield* deps.landed(moved))
+          check !== undefined || moved === undefined || deps.landed === undefined
+            ? ''
+            : landedOnBaseBlock(moved, yield* deps.landed(moved))
         // The fix's own delta (#671): only when a review of this pass has read an
         // earlier head. Anything unreadable falls back to a full review.
         let delta: ReviewDelta | undefined
         let deltaHunks: DiffHunks | undefined
-        if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
+        if (check === undefined && context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
           const reviewedSha = context.reviewedSha
           // Soft, as it was under a `try`: a rejected read is a defect now, so it is an `Exit` to read.
           const deltaRead = yield* Effect.exit(
@@ -990,7 +1046,9 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                     context,
                     spec.name,
                     composePrompt(
-                      reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta),
+                      check === undefined
+                        ? reviewPromptParts(spec, issue, read, deps.limits.diffBytes, recheck, landedBlock, delta)
+                        : alreadyDonePromptParts(spec, check),
                     ),
                   )
                   const prompt = composed.handed
@@ -1075,6 +1133,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                 deltaHunks,
                 recheck,
                 approvedClipped ? { read: deps.limits.diffBytes, of: diff.length } : undefined,
+                check !== undefined,
               ),
               spent: spentOf(outcome, deps.runtime),
             }
@@ -1105,6 +1164,8 @@ function reviewAnswer(
   deltaHunks?: DiffHunks,
   recheck: readonly ActionFinding[] = [],
   clipped?: { readonly read: number; readonly of: number },
+  /** A check of declared evidence (#1251): there is no diff, so no finding is demoted for lying outside one. */
+  onEvidence = false,
 ): ActionResult {
   if (outcome.failure) {
     /**
@@ -1229,8 +1290,8 @@ function reviewAnswer(
     }
   }
 
-  const hunks = hunksOf(diff)
-  if (hunks === null) log?.note('review', 'the diff could not be read as hunks; no finding was demoted')
+  const hunks = onEvidence ? null : hunksOf(diff)
+  if (hunks === null && !onEvidence) log?.note('review', 'the diff could not be read as hunks; no finding was demoted')
   // A finding that quotes a recheck scenario verbatim is a recheck, never demoted (#671).
   const scenarios = new Set(recheck.map((f) => f.failureScenario))
   const isRecheck = (f: ActionFinding): boolean => scenarios.has(f.failureScenario)
