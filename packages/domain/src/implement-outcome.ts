@@ -8,6 +8,7 @@
  */
 import { z } from 'zod'
 
+import { normaliseItem } from './done-when.ts'
 import { AskedQuestions, TriageQuestion, askedText } from './triage.ts'
 
 /** The stored outcome: lenient, because nothing on the log may become unreadable (#1253's bar is the writer's). */
@@ -20,6 +21,13 @@ export const ImplementOutcome = z.discriminatedUnion('_tag', [
     findings: z.array(z.object({ index: z.number().int(), why: z.string() })),
   }),
   z.object({ _tag: z.literal('Unclear'), questions: z.array(TriageQuestion), said: z.string().optional() }),
+  /** The work is already on the base (#1251): each `## Done when` item with what satisfies it; `baseSha` and `bodyVersion` are added where it is stored. */
+  z.object({
+    _tag: z.literal('AlreadyDone'),
+    items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+    baseSha: z.string().optional(),
+    bodyVersion: z.number().int().optional(),
+  }),
 ])
 export type ImplementOutcome = z.infer<typeof ImplementOutcome>
 
@@ -28,6 +36,7 @@ export type Declared =
   | { readonly _tag: 'Implemented' }
   | { readonly _tag: 'Disputed'; readonly findings: readonly { index: number; why: string }[] }
   | { readonly _tag: 'Unclear'; readonly questions: TriageQuestion[] }
+  | { readonly _tag: 'AlreadyDone'; readonly items: readonly { item: string; evidence: string }[] }
 
 const OPENS = /^[ \t]*```outcome[ \t]*$/gm
 const CLOSES = /^[ \t]*```[ \t]*$/m
@@ -39,6 +48,10 @@ const Block = z.discriminatedUnion('outcome', [
     findings: z.array(z.strictObject({ index: z.number().int(), why: z.string().min(1) })).min(1),
   }),
   z.strictObject({ outcome: z.literal('Unclear'), questions: AskedQuestions }),
+  z.strictObject({
+    outcome: z.literal('AlreadyDone'),
+    items: z.array(z.strictObject({ item: z.string(), evidence: z.string() })),
+  }),
 ])
 
 function blockOf(body: string): Declared | null {
@@ -58,6 +71,8 @@ function blockOf(body: string): Declared | null {
       return { _tag: 'Disputed', findings: b.findings }
     case 'Unclear':
       return { _tag: 'Unclear', questions: b.questions }
+    case 'AlreadyDone':
+      return { _tag: 'AlreadyDone', items: b.items }
   }
 }
 
@@ -88,9 +103,13 @@ export interface DecideInput {
   readonly head: string
   /** How many findings the agent was shown: the 1-based range a `Disputed` index may name. */
   readonly findingsOffered: number
+  /** The body's `## Done when` items (`doneWhenItems`), `null` where it has none. */
+  readonly doneWhen?: readonly string[] | null
+  /** Whether this call may answer `AlreadyDone`: the first implement call only (#1251). */
+  readonly offersAlreadyDone?: boolean
 }
 
-/** 0108 §21's table, four rows (`AlreadyDone` is #1251's). */
+/** 0108 §21's table. `AlreadyDone` with the head moved is `Implemented`; unmoved, every item answered. */
 export function decideImplementOutcome(input: DecideInput): ImplementOutcome {
   if (input.endedAbnormally) return { _tag: 'AgentFailed', why: 'the agent ended abnormally' }
   const d = input.declared
@@ -110,6 +129,24 @@ export function decideImplementOutcome(input: DecideInput): ImplementOutcome {
     }
     case 'Unclear':
       return { _tag: 'Unclear', questions: d.questions }
+    case 'AlreadyDone': {
+      if (input.offersAlreadyDone !== true)
+        return { _tag: 'AgentFailed', why: 'AlreadyDone answers the ticket, not a finding; declare Disputed' }
+      if (input.head !== input.startedAt) return { _tag: 'Implemented' }
+      const wanted = input.doneWhen ?? null
+      if (wanted === null)
+        return { _tag: 'AgentFailed', why: 'declared AlreadyDone, and the ticket has no `## Done when` list to check it against' }
+      const answered = new Map<string, string>()
+      for (const i of d.items) answered.set(normaliseItem(i.item), i.evidence)
+      const items: { item: string; evidence: string }[] = []
+      for (const item of wanted) {
+        const evidence = answered.get(item)?.trim() ?? ''
+        if (evidence === '')
+          return { _tag: 'AgentFailed', why: `declared AlreadyDone and gave no evidence for the Done-when item: ${item}` }
+        items.push({ item, evidence })
+      }
+      return { _tag: 'AlreadyDone', items }
+    }
   }
 }
 

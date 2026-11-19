@@ -351,6 +351,7 @@ export function verdictOf(action: Reached): StepVerdict {
               case 'Unclear':
                 return 'asked'
               case 'Implemented':
+              case 'AlreadyDone':
                 return 'passed'
               case 'AgentFailed':
               case 'Disputed':

@@ -173,6 +173,8 @@ export type TicketLifecycle =
        */
     }
   | { status: 'landed'; mergeCommit: string; base: string }
+  /** The base already held the work and a review checked it item by item (#1251): terminal, nothing landed. */
+  | { status: 'satisfied'; baseSha: string; bodyVersion: number }
   /**
    * Nobody is going to do this (#151). A terminal like `landed`, and like it
    * nothing lifts it — reopening the issue starts no work, and the answer to
@@ -423,6 +425,7 @@ export const LIFECYCLE_EVENTS: ReadonlySet<string> = new Set([
   'WaitStarted',
   'WaitResolved',
   'TicketLanded',
+  'TicketSatisfied',
   'TicketClosed',
 ])
 
@@ -751,6 +754,16 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         ...at,
         since: event.at,
         lifecycle: { status: 'landed', mergeCommit: d.mergeCommit, base: d.base },
+      }
+    }
+
+    case 'TicketSatisfied': {
+      const d = event.data as PayloadOf<'TicketSatisfied'>
+      return {
+        ...state,
+        ...at,
+        since: event.at,
+        lifecycle: { status: 'satisfied', baseSha: d.baseSha, bodyVersion: d.bodyVersion },
       }
     }
 
@@ -1214,12 +1227,17 @@ export function finishTriageTransition(
   }
 }
 
-export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }
+export type CloseDecline =
+  | { reason: 'already-closed' }
+  | { reason: 'landed' }
+  | { reason: 'satisfied' }
+  | { reason: 'changed' }
 
 /** A close is refused from either terminal, and when the stream moved since the caller's decision (#604). */
 export function closeChecks(state: TicketState, input: { ifVersion?: number }): CloseDecline | null {
   if (state.lifecycle.status === 'closed') return { reason: 'already-closed' }
   if (state.lifecycle.status === 'landed') return { reason: 'landed' }
+  if (state.lifecycle.status === 'satisfied') return { reason: 'satisfied' }
   if (input.ifVersion !== undefined && state.version !== input.ifVersion) return { reason: 'changed' }
   return null
 }
@@ -1251,4 +1269,85 @@ export function closeTransition(
   const resolved = resolvedEvents(state, decided.block, { waitId, by: input.by, resolution, note: input.reason.trim() })
   if (!resolved.ok) return resolved
   return { ok: true, events: [...resolved.events, closed, ...input.ended], blocked: true }
+}
+
+/** What a satisfied ending is refused for: the ticket already ended, or it is not waiting on that confirmation. */
+export type SatisfyRefusal = { reason: 'terminal'; status: 'landed' | 'closed' | 'satisfied' } | ResolveRefusal
+
+/**
+ * **`TicketSatisfied` and the end plan, one append** (#1251, 0108 §21): a split parent whose check passed ends
+ * here at once. A ticket already `landed`, `closed` or `satisfied` is refused, so a second one is the reducer's
+ * own refusal, as a second `TicketLanded` is.
+ */
+export function satisfyTransition(
+  state: TicketState,
+  input: {
+    baseSha: string
+    bodyVersion: number
+    items: PayloadOf<'TicketSatisfied'>['items']
+    ended: readonly ToAppend[]
+  },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: SatisfyRefusal } {
+  const status = state.lifecycle.status
+  if (status === 'landed' || status === 'closed' || status === 'satisfied')
+    return { ok: false, refusal: { reason: 'terminal', status } }
+  return {
+    ok: true,
+    events: [
+      {
+        type: 'TicketSatisfied',
+        actor: 'conductor',
+        data: parsePayload('TicketSatisfied', {
+          baseSha: input.baseSha,
+          bodyVersion: input.bodyVersion,
+          items: input.items,
+        }),
+      },
+      ...input.ended,
+    ],
+  }
+}
+
+/**
+ * **A person confirms a `SatisfiedUnconfirmed`** (#1251): the wait's resolution, `TicketSatisfied` and the end plan,
+ * one append. The data for `TicketSatisfied` is the wait's own, so a stale page that names another wait is refused
+ * as for any wait.
+ */
+export function confirmSatisfiedTransition(
+  state: TicketState,
+  input: { waitId: WaitId; by: string; note: string; ended: readonly ToAppend[] },
+): { ok: true; events: ToAppend[] } | { ok: false; refusal: SatisfyRefusal } {
+  const resolution: Resolution = { _tag: 'ConfirmSatisfied' }
+  const decided = resolveWaitTransition(state, { waitId: input.waitId, resolution })
+  if (!decided.ok) return decided
+  if (decided.kind === 'repeat') return { ok: false, refusal: { reason: 'not-blocked', waitId: input.waitId } }
+  const reason = decided.block.reason
+  if (reason._tag !== 'SatisfiedUnconfirmed')
+    return {
+      ok: false,
+      refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: reason },
+    }
+  const resolved = resolvedEvents(state, decided.block, {
+    waitId: input.waitId,
+    by: input.by,
+    resolution,
+    note: input.note,
+  })
+  if (!resolved.ok) return resolved
+  return {
+    ok: true,
+    events: [
+      ...resolved.events,
+      {
+        type: 'TicketSatisfied',
+        actor: input.by,
+        data: parsePayload('TicketSatisfied', {
+          baseSha: reason.baseSha,
+          bodyVersion: reason.bodyVersion,
+          items: reason.items,
+        }),
+      },
+      ...input.ended,
+    ],
+  }
 }

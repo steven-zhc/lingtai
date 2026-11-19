@@ -176,6 +176,8 @@ const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   'budget-exhausted': REFUSED_ROW,
   'base-moved': REFUSED_ROW,
   'sandbox-refused': REFUSED_ROW,
+  // Never asked: `check-done` is a rule's move, taken before any judge (#1251).
+  'already-done': REFUSED_ROW,
 }
 
 /** What a judge at `findings` is told each cause it may answer means — `wait.ts`'s own words for them. */

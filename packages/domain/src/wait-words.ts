@@ -279,6 +279,10 @@ function escalatedColumns(
       const question = why(reasonText !== '' ? reasonText : proposal.said)
       return judgement(question, run, proposal.said, APPROVE_EVERY_STEP_PASSED)
     }
+    case 'AlreadyDone': {
+      const detail = proposal.items.map((i) => `${i.item}: ${i.evidence}`).join('\n')
+      return judgement(why(reasonText !== '' ? reasonText : `declared already done at ${proposal.baseSha.slice(0, 7)}`), run, detail)
+    }
     case 'SetupRefused':
       return acknowledgement(stepLine(proposal.from, 'refused', proposal.output), run, proposal.output)
     case 'CheckRefused':
@@ -359,6 +363,17 @@ export function waitWords(
       const recommendation = reason.step === 'merge' && pass.findings.length === 0 ? APPROVE_EVERY_STEP_PASSED : null
       return { ...judgement(question, reason.run, reason.question, recommendation), short: 'ready to land' }
     }
+
+    case 'SatisfiedUnconfirmed':
+      return {
+        ...judgement(
+          `already satisfied on ${reason.baseSha.slice(0, 7)} — confirm to end it, or send it round again. ${said(reason.reading, 400)}`,
+          reason.run,
+          reason.reading,
+          null,
+        ),
+        short: 'already satisfied',
+      }
 
     case 'FixerDisagrees':
       return judgement(

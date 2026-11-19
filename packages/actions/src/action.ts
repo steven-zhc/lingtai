@@ -601,6 +601,16 @@ export interface ActionContext {
     readonly branchSha?: string
   }
   /**
+   * **The review runs on evidence, not on a diff** (#1251, 0108 §18, §21): `implement` declared the
+   * work already on the base. The agent action reads no diff and is handed each `## Done when` item
+   * the body carries, the evidence the implementer gave for it, and the base's sha to judge them at.
+   * Absent on every review but the one an `already-done` route buys. A fact about this run.
+   */
+  alreadyDone?: {
+    readonly baseSha: string
+    readonly items: readonly { readonly item: string; readonly evidence: string }[]
+  }
+  /**
    * The merge the conductor started in the worktree before a conflict round's
    * agent began (#1120): `MERGE_HEAD` and the markers are standing. Replaced or
    * cleared by the next fix round or base merge. A fact about this run.

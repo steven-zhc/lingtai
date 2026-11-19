@@ -461,6 +461,8 @@ export function askPlaceholder({
       return `what will Attempt ${attempt} do once it continues?`
     case 'landed':
       return `what did Attempt ${attempt} change?`
+    case 'satisfied':
+      return `what on the base satisfied this ticket?`
   }
 }
 
