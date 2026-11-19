@@ -14,7 +14,13 @@
  * was read. That has to be visible, not swallowed.
  */
 import { askedText, type WaitId } from '@lingtai/domain'
-import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  triageCauseOf,
+  type Resolution,
+  type TriageResult,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
@@ -379,11 +385,14 @@ export function EditBodyAndRequeue({
   issue,
   waitId,
   reason,
+  triaged = null,
 }: {
   project: string
   issue: number
   waitId: WaitId | null
   reason: WaitReason | null
+  /** What triage answered on this wait: an `UndecidedQuestion` is answerable whatever the wait began as (#1254). */
+  triaged?: TriageResult | null
 }) {
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
@@ -395,7 +404,14 @@ export function EditBodyAndRequeue({
   const draftWaitId = body?.waitId ?? null
   const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
   // What the agent asked: its questions drawn as choices, or the prose where it asked in prose (#1253).
-  const asked = askedOf(reason)
+  const ownAsked = askedOf(reason)
+  const triageCause = triageCauseOf(triaged)
+  const triageAsked =
+    ownAsked.length === 0 && triageCause !== null && triageCause._tag === 'UndecidedQuestion'
+      ? triageCause.questions
+      : []
+  const asked = ownAsked.length > 0 ? ownAsked : triageAsked
+  const askedSource = ownAsked.length > 0 ? 'asked' : 'triage'
   const asking =
     reason?._tag === 'AgentQuestion'
       ? reason
@@ -435,7 +451,7 @@ export function EditBodyAndRequeue({
       asked.length > 0 &&
       triage !== null &&
       reason !== null &&
-      allowedResolutions(reason).includes('AnswerQuestions') ? (
+      allowedResolutions(reason, triaged).includes('AnswerQuestions') ? (
         <button
           className="btn pri"
           disabled={pending || doneWaitId === waitId || edited}
@@ -452,7 +468,7 @@ export function EditBodyAndRequeue({
                 project,
                 issue,
                 waitId,
-                answers: Object.fromEntries(asked.map((q, index) => [index, triage.selected(index, q, 'asked')])),
+                answers: Object.fromEntries(asked.map((q, index) => [index, triage.selected(index, q, askedSource)])),
               })
               setPending(false)
               setDoneWaitId(result.ok ? waitId : null)
