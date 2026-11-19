@@ -281,7 +281,6 @@ import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
 import { proposeBaseFix } from './base-fix.ts'
 import { baseStateEffect, buildRunsOf } from './base-red.ts'
 import { agentBranch } from './branches.ts'
-import { closeHoldingEffect } from './close.ts'
 import { runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
@@ -304,7 +303,7 @@ import { signedInHere } from './projects.ts'
 import { resolvePromptRefs } from './prompt-refs.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
-import { buildCommands, nextPrompt, renderPromptParts } from './prompt.ts'
+import { buildCommands, nextPrompt, renderPromptParts, splitReturnParagraph } from './prompt.ts'
 import { recordPrompt, type RecordPart } from './record-prompt.ts'
 import { restartReason } from './restart.ts'
 import {
@@ -332,7 +331,7 @@ import {
   type InvocationAppends,
 } from './sandbox-record.ts'
 import { stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, editEndedWaitsEffect, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
+import { type RefChannel, tellGitHubAboutEffect } from './tell.ts'
 import { githubTicketStore, type Tickets } from './ticket-store.ts'
 import {
   claimTicketEffect,
@@ -342,7 +341,7 @@ import {
   refuseDispatchEffect,
   releaseTicketEffect,
   satisfyTicketEffect,
-  type SplitChildState,
+  type SplitChildBrief,
 } from './ticket/commands.ts'
 
 /** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
@@ -385,24 +384,6 @@ function baseCheckFor(store: EventStore, log: (line: string) => void, home: stri
 
 export function spentWords(costUsd: number | null): string {
   return costUsd === null ? 'cost unknown' : `$${costUsd.toFixed(2)}`
-}
-
-/** `#161 completed, #162 not planned` — a null reason is said to be unreported, never read as completed. */
-function splitChildrenWords(children: readonly SplitChildState[]): string {
-  return children
-    .map(
-      (c) =>
-        `#${c.number} ${c.stateReason === 'completed' ? 'completed' : c.stateReason === 'not_planned' ? 'not planned' : 'closed (reason not reported)'}`,
-    )
-    .join(', ')
-}
-
-function splitClosedComment(waitId: string, children: readonly SplitChildState[]): string {
-  return (
-    `**Lingtai is closing this without running an agent.** It was split (${waitId}) and every child the split ` +
-    `recorded is closed: ${splitChildrenWords(children)}.\n\n` +
-    `A child closed as not planned counts as closed. If work is still wanted, open a new ticket — a closed ticket stays closed.`
-  )
 }
 
 /**
@@ -2237,6 +2218,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
       /** The item, once `claim`'s `queue:` action has taken it. */
       let took: Claimed | null = null
+      /** What this pass's claim read of a split's children, for the return brief (#1263). */
+      let splitRead: readonly SplitChildBrief[] | null = null
       /** What this pass has spent, for the summary a person is shown (#766). */
       const spent = { usd: 0, unknown: 0 }
       /**
@@ -3326,46 +3309,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 }
               }
               const claim = attempted.success
-              if (!claim.ok && claim.refusal.reason === 'split-done') {
-                // #604: every child the split recorded is closed, so there is nothing
-                // left to change. Closed here, with no run — `end` is what resolves
-                // the issue, as it does for `lingtai close`.
-                const done = claim.refusal
-                const closed = yield* closeHoldingEffect(
-                  {
-                    project: options.project.project!,
-                    issue: options.issue,
-                    by: 'conductor',
-                    reason: `every child of split ${done.waitId} is closed: ${splitChildrenWords(done.children)}`,
-                    state: options.project,
-                    client: options.client,
-                    // A value already held, handed over as the thunk `CloseOptions` asks for.
-                    recipe: () => Promise.resolve(resolved),
-                    ifVersion: done.version,
-                  },
-                  store,
-                  ticketId,
-                ).pipe(Effect.orDie)
-                if (closed.ok) {
-                  // The split's wait is over (`WaitResolved{Split}` is on the stream).
-                  // This path calls `tellGitHub` directly, so it edits here (#750).
-                  yield* editEndedWaitsEffect({ store, github: options.client, ticketId, ...ticketSnapshots })
-                  // Said before the close, not after it: the comment has no record of
-                  // its own to retry from, and a close that fails here is finished later
-                  // by reconciliation — which would close the issue without ever
-                  // having said why. A failed comment is `IssueUpdateFailed` on the log.
-                  yield* tellGitHubEffect({
-                    store,
-                    github: options.client,
-                    ticketId,
-                    change: { kind: 'comment', body: splitClosedComment(done.waitId, done.children) },
-                  })
-                  // The recipe's `end` may not close the issue (`end: []`, or a close
-                  // restricted to `when: landed`); a terminal event with the issue
-                  // still open would be announced and never finished.
-                  yield* tellGitHubEffect({ store, github: options.client, ticketId, change: { kind: 'closed' } })
-                }
-              }
               if (!claim.ok)
                 return { kind: 'answer' as const, answer: { notClaimed: JSON.stringify(claim.refusal) } as TakeAnswer }
               // **Set on the line the append committed, and before anything that can
@@ -3379,6 +3322,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           )
           if (region.kind === 'answer') return region.answer
           const claim = region.claim
+          splitRead = claim.claim.splitChildren
           log(`claimed ${ticketId} as ${runId}`)
           // **The run's account starts here**, because until this line there is no
           // run to account for: see `runLog`. A `passedOver` or a lost race above
@@ -5103,6 +5047,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         ),
                         // The recipe's own words at `implement`, appended (`#266`).
                         ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                        ...(reduced.split === null
+                          ? []
+                          : [
+                              splitReturnParagraph(
+                                splitRead ??
+                                  reduced.split.children.map((c) => ({
+                                    number: c.number,
+                                    title: null,
+                                    stateReason: null,
+                                  })),
+                                doneWhenItems(brief.ticket.body),
+                              ),
+                            ]),
                         ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                       ]
                 const implementerFor = {

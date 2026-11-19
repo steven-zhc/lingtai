@@ -441,3 +441,40 @@ function designBriefParts(design: string): RecordPart[] {
     { text: design.trim(), onStep: { field: 'document', trimmed: true } },
   ]
 }
+
+/** A split's child as the return brief names it; `title` null means this pass did not read it. */
+export interface SplitReturnChild {
+  number: number
+  title: string | null
+  stateReason: 'completed' | 'not_planned' | null
+}
+
+/**
+ * The paragraph a split parent's return attempt is handed (#1263): the children's work is on the base, so
+ * check each `## Done when` item against it. How a child closed is a hint, never the criterion.
+ */
+export function splitReturnParagraph(
+  children: readonly SplitReturnChild[],
+  doneWhen: readonly string[] | null,
+): string {
+  const lines = children.map((c) => {
+    const how =
+      c.title === null
+        ? 'closed; title and reason not read on this pass'
+        : c.stateReason === 'completed'
+          ? 'closed as completed'
+          : c.stateReason === 'not_planned'
+            ? 'closed as not planned'
+            : 'closed, reason not reported'
+    return `- #${c.number}${c.title === null || c.title === '' ? '' : ` ${c.title}`} — ${how}`
+  })
+  const check =
+    doneWhen === null
+      ? 'This ticket has no `## Done when` section, so there is nothing to check items against and you may not declare `AlreadyDone`: implement what the ticket asks, or declare `Unclear`.'
+      : 'Check each item under `## Done when` against the base. Implement only what is missing; if nothing is, declare `AlreadyDone` with each item and its evidence.'
+  return (
+    '\n\n## This ticket was split, and its children have closed\n\n' +
+    'The children below are closed and their work is on the base branch. A child closed as not planned or as a duplicate did no work, so do not assume the ticket is done.\n\n' +
+    `${lines.join('\n')}\n\n${check}\n`
+  )
+}

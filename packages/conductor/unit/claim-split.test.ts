@@ -1,6 +1,6 @@
 /**
- * A split parent at claim (#604): the children come from the `TicketSplit`
- * event and from nowhere else, and nothing is appended either way.
+ * A split parent at claim (#604, #1263): the children come from the `TicketSplit`
+ * event and from nowhere else, and a parent whose children are all closed is claimed, never closed.
  */
 import { ticketStream } from '@lingtai/domain'
 import { aSplit, aWaitId } from '@lingtai/domain/test/events'
@@ -9,7 +9,6 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-import { closeHoldingEffect } from '../src/close.ts'
 import { claimTicketEffect } from '../src/ticket/commands.ts'
 import { memoryTickets } from '../test/memory-tickets.ts'
 
@@ -27,27 +26,21 @@ async function splitParent() {
 }
 
 describe('claimTicket on a split parent', () => {
-  it('answers split-done, naming how each child closed, when every recorded child is closed', async () => {
-    const { store, tickets, ticketId, waitId, a, b } = await splitParent()
+  it('claims when every recorded child is closed, naming how each closed, and appends no close', async () => {
+    const { store, tickets, ticketId, a, b } = await splitParent()
     await tickets.closeIssue(a.number, 'completed')
     await tickets.closeIssue(b.number, 'not_planned')
-    const before = (await store.read(ticketId)).length
 
     const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: tickets }))
 
-    expect(result).toEqual({
-      ok: false,
-      refusal: {
-        reason: 'split-done',
-        version: before,
-        waitId,
-        children: [
-          { number: a.number, stateReason: 'completed' },
-          { number: b.number, stateReason: 'not_planned' },
-        ],
-      },
-    })
-    expect(await store.read(ticketId)).toHaveLength(before)
+    expect(result.ok).toBe(true)
+    expect(result.ok && result.claim.splitChildren).toEqual([
+      { number: a.number, title: 'a', stateReason: 'completed' },
+      { number: b.number, title: 'b', stateReason: 'not_planned' },
+    ])
+    const types = (await store.read(ticketId)).map((e) => e.type)
+    expect(types).toContain('TicketClaimed')
+    expect(types).not.toContain('TicketClosed')
   })
 
   it('answers split-open, appending nothing, while a recorded child is open', async () => {
@@ -69,7 +62,7 @@ describe('claimTicket on a split parent', () => {
 
     const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: { getIssue } }))
 
-    expect(result.ok === false && result.refusal.reason).toBe('split-done')
+    expect(result.ok).toBe(true)
     expect(getIssue.mock.calls.map((c) => c[0]).sort()).toEqual([a.number, b.number].sort())
     expect(getIssue).not.toHaveBeenCalledWith(handAttached.number)
   })
@@ -91,33 +84,5 @@ describe('claimTicket on a split parent', () => {
     const { store, ticketId } = await splitParent()
     const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store }))
     expect(result.ok).toBe(true)
-  })
-
-  it('is not closed over a stream that moved after the check', async () => {
-    const { store, tickets, ticketId, a, b } = await splitParent()
-    await tickets.closeIssue(a.number)
-    await tickets.closeIssue(b.number)
-    const result = await Effect.runPromise(claimTicketEffect(ticketId, { runId: 'r1', store, children: tickets }))
-    const checked = result.ok === false && result.refusal.reason === 'split-done' ? result.refusal.version : -1
-    // Something else lands on the stream while the child reads were awaited.
-    const now = await store.read(ticketId)
-    await store.append(ticketId, now.length, aSplit(makeStream(ticketId), aWaitId(), [a.number]))
-
-    const closed = await Effect.runPromise(
-      closeHoldingEffect(
-        {
-          project: 'lingtai',
-          issue: Number(ticketId.split('-').pop()),
-          by: 'conductor',
-          reason: 'r',
-          ifVersion: checked,
-        },
-        store,
-        ticketId,
-      ),
-    )
-
-    expect(closed.ok).toBe(false)
-    expect((await store.read(ticketId)).map((e) => e.type)).not.toContain('TicketClosed')
   })
 })
