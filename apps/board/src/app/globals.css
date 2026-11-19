@@ -3256,6 +3256,34 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .whynot.down{border-color:var(--ink-2)} .whynot.down .wk{color:var(--ink-2)}
 .sk-whynot{display:grid;gap:6px;margin:2px 2px 10px;padding:7px 10px 8px;border:1px solid var(--rule-2);border-left-width:3px;border-radius:3px;min-height:46px}
 
+/* The empty Waiting column's card (#1286) and the header that goes grey at 0. */
+.col.hot:has(.col-h .ct.zero) .col-h { color: var(--muted); }
+.sk-handled { min-height: 300px; }
+.handled { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; }
+.handled-k { display: flex; justify-content: space-between; align-items: center; font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
+.handled-k .l { display: flex; align-items: center; gap: 8px; color: var(--pass); }
+.handled-k .when { color: var(--muted); letter-spacing: 0.06em; }
+.handled-n { display: flex; align-items: center; gap: 14px; margin: 16px 0 4px; }
+.handled-n b { font-family: var(--poster); font-weight: 400; font-size: 56px; line-height: 1; margin-top: -4px; color: var(--ink); letter-spacing: -0.01em; }
+.handled-n span { color: var(--ink-2); font-size: 14px; line-height: 1.35; }
+.handled-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
+.handled-ticks { display: grid; gap: 3px; margin: 14px 0 10px; }
+.handled-ticks i { display: block; height: 22px; border-radius: 1.5px; }
+.handled-ticks i.you { background: transparent; box-shadow: inset 0 0 0 1.5px var(--rule-2); }
+.handled-leg { margin: 0; padding: 0; list-style: none; }
+.handled-leg li { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 13px; cursor: default; }
+.handled-leg li > i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.handled-leg .w { color: var(--ink); }
+.handled-leg .ar { color: var(--muted); margin: 0 3px; }
+.handled-leg .d { color: var(--pass); font-weight: 500; }
+.handled-leg li b { margin-left: auto; font-family: var(--mono); font-weight: 500; color: var(--ink); font-size: 12px; }
+.handled-leg li.more { border-top: 1px dashed var(--rule-2); border-bottom: 0; }
+.handled-leg li.more a { color: var(--accent-ink); text-decoration: none; }
+.handled-leg li.more i { box-shadow: inset 0 0 0 1.5px var(--rule-2); }
+.handled-f { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
+.handled-f b { color: var(--ink); font-weight: 600; }
+.handled-f a { font-family: var(--mono); color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
+
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
 .rp { gap: 1rem; }
@@ -3522,31 +3550,3 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .triage-choice-hint { color: var(--ink-2); font-size: 0.8rem; }
 .triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: 0.85rem; }
 .triage-own textarea { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }
-
-/* The empty Waiting column's card (#1286) and the header that goes grey at 0. */
-.col.hot:has(.col-h .ct.zero) .col-h { color: var(--muted); }
-.sk-handled { min-height: 300px; }
-.handled { background: var(--surface); border: 1px solid var(--rule); border-radius: 3px; padding: 12px 14px; }
-.handled-k { display: flex; justify-content: space-between; align-items: center; font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; }
-.handled-k .l { display: flex; align-items: center; gap: 8px; color: var(--pass); }
-.handled-k .when { color: var(--muted); letter-spacing: 0.06em; }
-.handled-n { display: flex; align-items: center; gap: 14px; margin: 16px 0 4px; }
-.handled-n b { font-family: var(--poster); font-weight: 400; font-size: 56px; line-height: 1; margin-top: -4px; color: var(--ink); letter-spacing: -0.01em; }
-.handled-n span { color: var(--ink-2); font-size: 14px; line-height: 1.35; }
-.handled-sub { margin: 2px 0 0; font-size: 12px; color: var(--muted); }
-.handled-ticks { display: grid; gap: 3px; margin: 14px 0 10px; }
-.handled-ticks i { display: block; height: 22px; border-radius: 1.5px; }
-.handled-ticks i.you { background: transparent; box-shadow: inset 0 0 0 1.5px var(--rule-2); }
-.handled-leg { margin: 0; padding: 0; list-style: none; }
-.handled-leg li { display: flex; align-items: center; gap: 8px; padding: 7px 0; border-bottom: 1px solid var(--rule); font-size: 13px; cursor: default; }
-.handled-leg li > i { width: 8px; height: 8px; border-radius: 2px; flex: none; }
-.handled-leg .w { color: var(--ink); }
-.handled-leg .ar { color: var(--muted); margin: 0 3px; }
-.handled-leg .d { color: var(--pass); font-weight: 500; }
-.handled-leg li b { margin-left: auto; font-family: var(--mono); font-weight: 500; color: var(--ink); font-size: 12px; }
-.handled-leg li.more { border-top: 1px dashed var(--rule-2); border-bottom: 0; }
-.handled-leg li.more a { color: var(--accent-ink); text-decoration: none; }
-.handled-leg li.more i { box-shadow: inset 0 0 0 1.5px var(--rule-2); }
-.handled-f { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--rule); font-size: 12px; color: var(--muted); }
-.handled-f b { color: var(--ink); font-weight: 600; }
-.handled-f a { font-family: var(--mono); color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
