@@ -581,4 +581,13 @@ describe('an own answer and the other retained drafts (#1255)', () => {
     expect(html).not.toContain('no longer waiting')
     expect(html).toBe('')
   })
+
+  it('does not append the retained words again once the recovered draft is edited', () => {
+    typeOwn(aWaitId())
+    mount(null, () => editor(null, reason), { asked })
+    ;(harness.triage as Api).setBody('my own words!')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words!')
+    expect(html.split('my own words').length - 1).toBe(1)
+  })
 })

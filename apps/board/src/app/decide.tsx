@@ -410,8 +410,10 @@ export function EditBodyAndRequeue({
   const ended = waitId === null && triage?.waitId === null
   const retained = ended ? (triage?.retainedOwn ?? null) : null
   const kept = triage?.body ?? null
+  // Once the person edits after the wait ended the draft is stored with a null wait and already holds what they see,
+  // so the retained words are joined only to a draft written under the wait, never fed back into an edited one.
   const body: { waitId: WaitId | null; text: string } | null =
-    retained === null || retained.text.trim() === ''
+    retained === null || retained.text.trim() === '' || (kept !== null && kept.waitId === null)
       ? kept
       : {
           waitId: kept?.waitId ?? retained.waitId,
