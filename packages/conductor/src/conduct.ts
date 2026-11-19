@@ -331,7 +331,7 @@ import {
   type InvocationAppends,
 } from './sandbox-record.ts'
 import { stepsResolved } from './steps-resolved.ts'
-import { type RefChannel, tellGitHubAboutEffect } from './tell.ts'
+import { type RefChannel, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import { githubTicketStore, type Tickets } from './ticket-store.ts'
 import {
   claimTicketEffect,
@@ -6232,6 +6232,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             editEnded: true,
             appended: endResolved,
           })
+          // The recipe's `end` may not close the issue (`end: []`, or a close restricted to `when: landed`),
+          // and a satisfied ticket is terminal with nothing else to finish it (#1263).
+          yield* tellGitHubEffect({ store, github: options.client, ticketId, change: { kind: 'closed' } })
           log(`satisfied on ${done.baseSha.slice(0, 7)}: the base already held the work`)
           didLand = true
           return {
