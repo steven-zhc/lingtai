@@ -413,6 +413,7 @@ import {
   RunNow,
   ScheduleContinuation,
   Send,
+  ConfirmSatisfied,
 } from './decide.tsx'
 import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
@@ -1524,7 +1525,11 @@ export function Standing({
             {standing.reason?._tag === 'SatisfiedUnconfirmed' ? (
               <div className="ssatisfiedreading">
                 <p>{standing.reason.reading}</p>
-                <SatisfiedItems items={standing.reason.items} />
+                <SatisfiedItems
+                  items={standing.reason.items}
+                  base={standing.satisfiedContext?.base ?? null}
+                  children={standing.satisfiedContext?.children}
+                />
               </div>
             ) : null}
             {standing.state === 'satisfied' && standing.satisfied != null ? (
@@ -1534,7 +1539,11 @@ export function Standing({
                     ? 'Ended by the system — a split parent.'
                     : `Confirmed by ${standing.satisfied.actor}.`}
                 </p>
-                <SatisfiedItems items={standing.satisfied.items} />
+                <SatisfiedItems
+                  items={standing.satisfied.items}
+                  base={standing.satisfiedContext?.base ?? null}
+                  children={standing.satisfiedContext?.children}
+                />
               </div>
             ) : null}
             {standing.state === 'queued' ? <h2 className="ssectiontitle">Moves</h2> : null}
@@ -1733,6 +1742,14 @@ export function Standing({
                                   issue={issue}
                                   waitId={visible ? waitId : null}
                                   reason={standing.reason}
+                                />
+                              ) : null}
+                              {visible && tag === 'ConfirmSatisfied' && waitId !== null ? (
+                                <ConfirmSatisfied
+                                  project={project}
+                                  issue={issue}
+                                  waitId={waitId}
+                                  primary={recommended === 'ConfirmSatisfied'}
                                 />
                               ) : null}
                               {visible && tag === 'Close' && waitId !== null ? (

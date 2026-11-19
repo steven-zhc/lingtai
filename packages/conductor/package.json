@@ -33,6 +33,7 @@
     "./queue": "./src/queue.ts",
     "./backlog": "./src/backlog.ts",
     "./close": "./src/close.ts",
+    "./confirm-satisfied": "./src/confirm-satisfied.ts",
     "./create-app": "./src/create-app.ts",
     "./ticket-store": "./src/ticket-store.ts",
     "./body-section": "./src/body-section.ts",

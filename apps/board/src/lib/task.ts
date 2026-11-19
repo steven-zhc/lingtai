@@ -509,6 +509,8 @@ export interface StandingView {
   state: StandingState
   /** Present only on a satisfied ticket: what it was found to be done by. */
   satisfied?: SatisfiedView | null
+  /** What an evidence row's source tag names: the project's base and the split's children (#1252). */
+  satisfiedContext?: { base: string | null; children: number[] }
   /** The last person's move, only when its resulting lifecycle is still current. */
   afterMove?: {
     resolution: string
@@ -844,6 +846,24 @@ function decidingOf(runs: readonly AttemptView[], named: AttemptView | null): De
     if (refused !== null) return refused
   }
   return null
+}
+
+/**
+ * A satisfied ticket's standing with the base's name and the split's children, which only the caller that
+ * reads the project holds (#1252). Pure; any other standing is returned as it was.
+ */
+export function withSatisfiedContext(
+  standing: StandingView,
+  life: TicketLifecycle,
+  base: string | null,
+  children: readonly number[],
+): StandingView {
+  if (life.status !== 'satisfied' && standing.reason?._tag !== 'SatisfiedUnconfirmed') return standing
+  return {
+    ...standing,
+    ...(life.status === 'satisfied' ? { who: whoWaits(life, base) } : {}),
+    satisfiedContext: { base, children: [...children] },
+  }
 }
 
 function whoWaits(life: TicketLifecycle, base: string | null = null): string {
@@ -1830,7 +1850,19 @@ export const readAttempts = cache(async (taskId: string) => {
   const reduced = claims.map((c, i) =>
     presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, null), c.runId === heldRun, branch),
   )
-  const standing = standingOf(own, reduced)
+  const standing = await (async () => {
+    const plain = standingOf(own, reduced)
+    if (ticketState.lifecycle.status !== 'satisfied' && plain.reason?._tag !== 'SatisfiedUnconfirmed') return plain
+    const named = parseTicketStream(taskId)?.project ?? null
+    // A project that cannot be read leaves the base unnamed, never guessed (#1252).
+    const base = named === null ? null : ((await readProject(named).catch(() => null))?.base ?? null)
+    return withSatisfiedContext(
+      plain,
+      ticketState.lifecycle,
+      base,
+      (ticketState.split?.children ?? []).map((c) => c.number),
+    )
+  })()
 
   // `plan` where the item is running or blocked: a gate's bound is the
   // recipe's, and a phase in flight or one that stopped mid-gate are the two

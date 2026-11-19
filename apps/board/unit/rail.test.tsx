@@ -45,6 +45,7 @@ import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
+import { landedCount } from '../src/app/footer.tsx'
 import { Card, LandedRow } from '../src/app/page.tsx'
 import { Rail } from '../src/app/rail.tsx'
 import { LANDED_OPEN, WAITING_RAILS, railCandidates, toCard } from '../src/lib/board.ts'
@@ -1128,10 +1129,25 @@ describe('the hatch, and what may not draw it', () => {
 
   // #1252: a satisfied ticket's steps that recorded nothing were never meant to run.
   it('draws a satisfied ending as skipped where a landed one draws never-ran', () => {
-    const landed = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, 'landed')?.steps.map((p) => p.state)
-    const satisfied = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, 'satisfied')?.steps.map((p) => p.state)
-    expect(satisfied).not.toContain('never-ran')
-    expect(satisfied?.length).toBe(landed?.length)
+    const at = (ending: 'landed' | 'satisfied') =>
+      progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, ending)?.steps ?? []
+    const landed = at('landed')
+    const satisfied = at('satisfied')
+    expect(landed.find((p) => p.step === 'merge')?.state).toBe('never-ran')
+    expect(satisfied.find((p) => p.step === 'merge')?.state).toBe('skipped')
+    // Every cell of it, not only the point: the red hatch must not survive in an action.
+    expect(satisfied.flatMap((p) => [p.state, ...p.actions.map((a) => a.state)])).not.toContain('never-ran')
+    expect(satisfied.filter((p) => p.state === 'skipped').length).toBeGreaterThan(0)
+  })
+
+  it('tells a satisfied task apart from landed and closed, and counts it as landed', () => {
+    expect(railCandidates([task({ state: 'satisfied' })]).map((c) => c.ending)).toEqual(['satisfied'])
+    const board = asBoard({ state: 'satisfied' }, landedPastMerge(), MERGE_PLAN)
+    expect(board.satisfied).toBe(true)
+    expect(board.closed).toBe(false)
+    expect(board.column).toBe('landed')
+    expect(landedCount([board])).toBe(1)
+    expect(landedCount([asBoard({ state: 'closed' }, landedPastMerge(), MERGE_PLAN)])).toBe(0)
   })
 })
 

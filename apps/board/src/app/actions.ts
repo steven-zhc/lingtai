@@ -5,6 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { answer } from '@lingtai/conductor/ask'
 import { acceptFinding, declineFinding } from '@lingtai/conductor/backlog'
 import { close } from '@lingtai/conductor/close'
+import { confirmSatisfiedHoldingEffect } from '@lingtai/conductor/confirm-satisfied'
 /**
  * What a person can do from the board.
  *
@@ -440,6 +441,37 @@ export async function closeCard(input: {
       waitId: input.waitId,
     })
 
+    revalidatePath('/')
+    return { ok: result.ok, detail: result.detail }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * A person confirms the ticket is already satisfied (#1252): the same append and end plan `lingtai`'s close
+ * carries out, on the wait the page rendered — a stale page is refused by its `waitId`.
+ */
+export async function confirmSatisfiedCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+}): Promise<ActionResult> {
+  try {
+    if (!hasGitHubAuth()) return { ok: false, detail: 'no GitHub App configured' }
+    const state = await project(input.project)
+    const { client, resolved } = await projectClient(state)
+    const result = await Effect.runPromise(
+      confirmSatisfiedHoldingEffect({
+        project: input.project,
+        issue: input.issue,
+        by: actor(),
+        waitId: input.waitId,
+        state,
+        client,
+        recipe: async () => resolved,
+      }),
+    )
     revalidatePath('/')
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
