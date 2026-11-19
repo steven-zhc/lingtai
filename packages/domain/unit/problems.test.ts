@@ -64,19 +64,25 @@ describe('problemsOf, one per kind', () => {
     expect(one([redo(1), redo(2), redo(3)])).toMatchObject({ kind: 'stopped', answeredBy: 'system' })
   })
 
-  it('a crash that went to a person is that stopped problem, answered by the person', () => {
+  it('a crash that went to a person is still the auto-fixed stopped problem', () => {
     const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 5, 'alice')
-    expect(one([redo(1), redo(2)], [w])).toMatchObject({ kind: 'stopped', answeredBy: 'you', waitId: 'w5' })
+    expect(one([redo(1), redo(2)], [w])).toMatchObject({ kind: 'stopped', answeredBy: 'system', waitId: 'w5' })
   })
 
-  it('a crash with no redo is one stopped problem from its wait, you while open', () => {
+  it('a crash with no redo is one stopped problem from its wait, auto-fixed', () => {
     const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 5)
-    expect(one([], [w])).toMatchObject({ kind: 'stopped', answeredBy: 'you' })
+    expect(one([], [w])).toMatchObject({ kind: 'stopped', answeredBy: 'system' })
   })
 
   it('an answered crash wait with no redo is the system when triage resolved it', () => {
     const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 5, 'triage')
     expect(one([], [w])).toMatchObject({ kind: 'stopped', answeredBy: 'system' })
+  })
+
+  it('an asked problem is you whoever answered it, and so is a setup one', () => {
+    const q = wait({ _tag: 'AgentQuestion', run: { runId: RUN }, step: 'implement', questions: [] }, 2, 'triage')
+    expect(one([route('InputNeeded', null, 1)], [q])).toMatchObject({ kind: 'asked', answeredBy: 'you' })
+    expect(one([], [escalated('SetupRefused', 3, 'triage')])).toMatchObject({ kind: 'setup', answeredBy: 'you' })
   })
 
   it('a question is never the system, even when selected', () => {
@@ -103,10 +109,10 @@ describe('problemsOf, one per kind', () => {
   })
 })
 
-describe('problemsOf counts a problem once, by who finally answered it', () => {
-  it('an escalated ReviewFindings a person approved is one review-fixed, you', () => {
+describe('problemsOf counts a problem once, by its kind', () => {
+  it('an escalated ReviewFindings a person approved is one review-fixed, the system', () => {
     const p = one([route('ReviewFindings', null, 1)], [escalated('ReviewFindings', 2, 'alice')])
-    expect(p).toMatchObject({ kind: 'review-fixed', answeredBy: 'you', waitId: 'w2', at: at(1).toISOString() })
+    expect(p).toMatchObject({ kind: 'review-fixed', answeredBy: 'system', waitId: 'w2', at: at(1).toISOString() })
   })
 
   it('the same wait resolved by triage is the system', () => {
@@ -114,14 +120,14 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
     expect(p).toMatchObject({ kind: 'review-fixed', answeredBy: 'system' })
   })
 
-  it('a still-open wait is you', () => {
+  it('a still-open wait of an auto kind is the system', () => {
     expect(one([route('ReviewFindings', null, 1)], [escalated('ReviewFindings', 2)])).toMatchObject({
-      answeredBy: 'you',
+      answeredBy: 'system',
     })
   })
 
-  it('a hand-to-person selection is you, with or without its wait', () => {
-    expect(one([route('MergeConflict', 'hand-to-person', 1)])).toMatchObject({ kind: 'conflict', answeredBy: 'you' })
+  it('a hand-to-person selection is the system, with or without its wait', () => {
+    expect(one([route('MergeConflict', 'hand-to-person', 1)])).toMatchObject({ kind: 'conflict', answeredBy: 'system' })
     expect(one([route('MergeConflict', 'hand-to-person', 1)], [escalated('MergeConflict', 2, 'triage')])).toMatchObject(
       {
         kind: 'conflict',
@@ -130,14 +136,14 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
     )
   })
 
-  it('an escalation whose wait was never opened is you, open', () => {
-    expect(one([route('BuildRed', null, 1)])).toMatchObject({ kind: 'build', answeredBy: 'you', waitId: null })
+  it('an escalation whose wait was never opened is the system', () => {
+    expect(one([route('BuildRed', null, 1)])).toMatchObject({ kind: 'build', answeredBy: 'system', waitId: null })
   })
 
   it('a selected route whose move then failed is one problem, not two', () => {
     expect(one([route('BaseMoved', 'merge-base', 1)], [escalated('BaseMoved', 2)])).toMatchObject({
       kind: 'base-moved',
-      answeredBy: 'you',
+      answeredBy: 'system',
     })
   })
 
@@ -149,7 +155,7 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
     )
     expect(out.map((p) => [p.kind, p.answeredBy])).toEqual([
       ['build', 'system'],
-      ['review-fixed', 'you'],
+      ['review-fixed', 'system'],
     ])
   })
 
@@ -163,7 +169,7 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
 
   it('an unknown tag is other, never dropped', () => {
     expect(one([route('SomethingNewer', 'x', 1)])).toMatchObject({ kind: 'other', answeredBy: 'system' })
-    expect(one([], [escalated('SomethingNewer', 2, 'alice')])).toMatchObject({ kind: 'other', answeredBy: 'you' })
+    expect(one([], [escalated('SomethingNewer', 2, 'alice')])).toMatchObject({ kind: 'other', answeredBy: 'system' })
   })
 
   it('a replay of the same raised facts gives the same problems', () => {
@@ -188,17 +194,11 @@ describe('problemsOf, the sequences a review refused', () => {
     resolution,
   })
 
-  it('the last resolution decides, not the first the ticket reduce kept', () => {
-    const w = escalated('ReviewFindings', 2, 'triage')
-    const a = [answer('w2', 'triage', 'Approve', 3), answer('w2', 'alice', 'Approve', 4)]
-    expect(one([route('ReviewFindings', null, 1), ...a], [w])).toMatchObject({ answeredBy: 'you' })
-  })
-
   it('a crash wait claims its redos though a route was appended after them', () => {
     const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 9, 'alice')
     const out = problemsOf([redo(1), redo(2), route('ReviewFindings', 'fix-lines', 3)], [w], claims)
     expect(out.map((p) => [p.kind, p.answeredBy])).toEqual([
-      ['stopped', 'you'],
+      ['stopped', 'system'],
       ['review-fixed', 'system'],
     ])
   })
