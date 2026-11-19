@@ -32,16 +32,7 @@ import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../footer-fetched'
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel, kindsOfReport } from './charts.tsx'
-import {
-  CostliestPanel,
-  Filters,
-  HandledPanel,
-  KindsPanel,
-  Tiles,
-  TopPanel,
-  WaitsPanel,
-  WhereItWentPanel,
-} from './panels.tsx'
+import { Filters, HandledPanel, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from './panels.tsx'
 
 export const dynamic = 'force-dynamic'
 
@@ -142,44 +133,40 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               <HandledPanel handled={report.handled} spend={report.spend.total} query={query} problems={problems} />
               <section className="rp-grid">
                 <Panel
-                  title="refusal fixes"
-                  sub="landed tickets, stacked by kind · convergence is the right-hand column"
+                  title="Fix rounds per landed ticket"
+                  sub="how many times review sent the work back before it landed · by kind"
                 >
                   <RoundsPanel buckets={report.roundBuckets} kinds={kindsOfReport(report)} />
                 </Panel>
-                <Panel title="reviews to pass" sub="share still not passed after k reviews">
+                <Panel title="Reviews needed to pass" sub="share of tickets not yet passed after each review">
                   <SurvivalPanel steps={report.survival} />
                 </Panel>
-                <Panel title="landed per day" sub="stacked by kind">
-                  <LandingsPanel days={report.landingDays} kinds={kindsOfReport(report)} />
-                </Panel>
-                <Panel title="spend per day" sub="every run in the window, landed or not · stacked by purpose">
+                <Panel
+                  title="Spend"
+                  sub="every run in the window · by purpose · solid is reported, pale is estimated"
+                  wide
+                >
+                  <div className="sw-sub">by purpose</div>
+                  <WhereItWentPanel byPurpose={report.spend.byPurpose} />
+                  <div className="sw-sub">each day</div>
                   <SpendPanel days={report.spend.days} />
                 </Panel>
-                <Panel
-                  title="where it went"
-                  sub="every run in the window · by purpose · solid is reported, pale is estimated"
-                >
-                  <WhereItWentPanel byPurpose={report.spend.byPurpose} />
+                <Panel title="Landed each day" sub="by kind">
+                  <LandingsPanel days={report.landingDays} kinds={kindsOfReport(report)} />
                 </Panel>
-                <Panel title="the costliest tickets" sub="placed in the window, any outcome · dearest first">
-                  <CostliestPanel tickets={report.costliest} />
+                <Panel title="By ticket type" sub="landed tickets · rounds are fix rounds">
+                  <KindsPanel kinds={report.kinds} />
+                </Panel>
+                <Panel title="Tickets that took the most work" sub="most fix rounds or most spend" wide>
+                  <TopPanel top={report.top} query={query} />
                 </Panel>
                 <Panel
-                  title="why work stopped to wait"
-                  sub="rows are the reason, columns what triage found · darker is more often"
+                  title="Why work stopped for a person"
+                  sub="reason it stopped × what triage found · darker is more often"
                   wide
                 >
                   <WaitsPanel cells={report.waitCauses} />
                 </Panel>
-              </section>
-              <section className="rp-panel">
-                <h2>by kind</h2>
-                <KindsPanel kinds={report.kinds} />
-              </section>
-              <section className="rp-panel">
-                <h2>the tickets that went round most</h2>
-                <TopPanel top={report.top} query={query} />
               </section>
             </>
           )}

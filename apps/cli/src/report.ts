@@ -189,12 +189,12 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
       `landed tickets (${l.landed})`,
       keyValues([
         ['attempts', spread(l.passes)],
-        ['refusal fixes', spread(l.fixRounds)],
+        ['fix rounds', spread(l.fixRounds)],
         ['waits', spread(l.waits)],
         ['machine time', spread(l.machineMs, duration)],
         ['cost', costText(l.cost)],
-        ['0 or 1 refusal fixes', percent(l.zeroOrOneShare)],
-        ['5 or more refusal fixes', percent(l.fiveOrMoreShare)],
+        ['0 or 1 fix rounds', percent(l.zeroOrOneShare)],
+        ['5 or more fix rounds', percent(l.fiveOrMoreShare)],
       ]),
     ),
   )
@@ -227,7 +227,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
       section(
         'by kind',
         table(
-          ['kind', 'landed', 'median refusal fixes', '0 or 1', '5 or more', 'mean cost per landed', 'spend'],
+          ['kind', 'landed', 'median fix rounds', '0 or 1', '5 or more', 'mean cost per landed', 'spend'],
           r.kinds.map((k) => [
             kindName(k.kind),
             String(k.landed),
@@ -248,7 +248,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
     out.push(
       '',
       section(
-        'most refusal fixes',
+        'most fix rounds',
         top.flatMap((t) => [
           `${t.ticket}  ${kindName(t.kind)}  ${t.outcome}  ${moneyText(t.cost)}`,
           `  ${t.sentence}`,

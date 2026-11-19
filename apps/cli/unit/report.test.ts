@@ -247,7 +247,7 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('mean $1.50 reported + $0.25 estimated')
     expect(r.out).toContain('1 unknown')
     expect(r.out).toContain('ticket-lingtai-1  bug  landed')
-    expect(r.out).toContain('over 3 refusal fixes · 2 attempts · 1 run unknown')
+    expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unknown')
   })
 
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {
@@ -267,7 +267,7 @@ describe('lingtai report’s text', () => {
       },
     )
     const line = r.out.split('\n').find((l) => /^\s*bug\s/.test(l))
-    expect(r.out).toContain('median refusal fixes')
+    expect(r.out).toContain('median fix rounds')
     expect(line).toMatch(/bug\s+3\s+0\s+67%\s+33%\s+mean \$1\.50 reported/)
   })
 
@@ -287,14 +287,14 @@ describe('lingtai report’s text', () => {
     }
     const r = await run({}, { tickets: () => Effect.succeed([row({ waits: [wait], cost, fixRounds: 2 })]) })
     expect(r.out).toContain('ticket-lingtai-1  bug  landed  $4.00 reported')
-    expect(r.out).toContain('spent on: answering refusals 75% · work 25%')
+    expect(r.out).toContain('spent on: fixing review findings 75% · building 25%')
     expect(r.out).toContain('waited for a decision on a refused check · triage: merge by hand · answered')
     expect(r.out).not.toMatch(/CheckRefused|ConflictingHunks|AnswerQuestion|censored|cause —/)
   })
 
-  it('lists "most refusal fixes" only for tickets with a refusal fix, and not at all when none had one', async () => {
+  it('lists "most fix rounds" only for tickets with a refusal fix, and not at all when none had one', async () => {
     const none = await run({}, { tickets: () => Effect.succeed([row({ fixRounds: 0 })]) })
-    expect(none.out).not.toContain('most refusal fixes')
+    expect(none.out).not.toContain('most fix rounds')
     const some = await run(
       {},
       {
@@ -305,7 +305,7 @@ describe('lingtai report’s text', () => {
           ]),
       },
     )
-    const top = some.out.slice(some.out.indexOf('most refusal fixes'))
+    const top = some.out.slice(some.out.indexOf('most fix rounds'))
     expect(top).toContain('ticket-lingtai-1')
     expect(top).not.toContain('ticket-lingtai-2')
   })
