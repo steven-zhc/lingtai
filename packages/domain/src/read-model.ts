@@ -405,13 +405,18 @@ export function triageSpentOf(
 /**
  * **The fix rounds a person's `FixRefusal` actually ran on one attempt** (#1258): each one's continuation records a round
  * on the attempt stream (`implementRound`), but a person's resolution spends nothing of `refusalFixes`, so a reader of the
- * allowance takes these out of `implementRound`. A grant counts only once its fix round was dispatched — the attempt
- * stream holds a `RunPrompted`/`RunSpent` for an `Action` that names the grant's wait — so a grant whose continuation
- * crashed before implement started raised no round and refunds nothing.
+ * allowance takes these out of `implementRound`. A grant counts from the `StepStarted` that raised the round (#1280), which
+ * names it; a stream written before that holds a `RunPrompted`/`RunSpent` for an `Action` that names the grant's wait,
+ * and that still counts. A set of wait ids, so a rerun under one grant is one round.
  */
 export function personFixRoundsOf(state: TicketState, runId: string, runEvents: readonly Envelope[]): number {
   const ran = new Set<string>()
   for (const e of runEvents) {
+    if (e.type === 'StepStarted') {
+      const g = (e.data as { grant?: string } | null)?.grant
+      if (g !== undefined) ran.add(g)
+      continue
+    }
     if (e.type !== 'RunPrompted' && e.type !== 'RunSpent') continue
     const f = (e.data as { for?: { _tag?: string; grant?: string } } | null)?.for
     if (f?._tag === 'Action' && f.grant !== undefined) ran.add(f.grant)

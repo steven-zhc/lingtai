@@ -5861,6 +5861,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.roundLimit !== undefined ? { roundLimit: continuation.roundLimit } : {}),
                 ...('byTriage' in continuation && continuation.byTriage ? { byTriage: true as const } : {}),
                 ...(continuation.grant ? { grant: continuation.grant, findings: continuation.findings } : {}),
+                ...(continuation.grant && !('byTriage' in continuation && continuation.byTriage)
+                  ? { grantWait: continuation.resumedWaitId }
+                  : {}),
                 ...(continuation.grant && continuation.conflict !== undefined
                   ? { conflict: continuation.conflict }
                   : {}),
