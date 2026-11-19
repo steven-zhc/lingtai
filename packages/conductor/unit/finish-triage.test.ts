@@ -130,6 +130,28 @@ describe('finishTriage (#1258)', () => {
       expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({ answers: { section: 'reading every file' } })
     })
 
+    it('a write that appended its own audit event does not lose the resolution', async () => {
+      const s = await started()
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: () =>
+          Effect.promise(async () => {
+            const v = (await s.store.read(ticketId)).length
+            await s.store.append(ticketId, v, [
+              {
+                type: 'IssueUpdated',
+                actor: 'conductor',
+                data: { project: 'p', issue: '1', change: 'body', detail: 'ok' },
+              } as never,
+            ])
+            return { written: true } as const
+          }),
+      })
+      expect(done).toMatchObject({ ok: true, resolved: { resolution: { _tag: 'RedoStep' } } })
+      expect((await s.store.read(ticketId)).at(-1)!.type).toBe('WaitResolved')
+    })
+
     it('a write that failed resolves nothing: only WaitTriaged, the wait stays a still-open wait', async () => {
       const s = await started()
       const done = await finish(s, {
@@ -139,6 +161,10 @@ describe('finishTriage (#1258)', () => {
       })
       expect(done).toEqual({ ok: true, resolved: null })
       expect(await types(s)).toEqual(['TicketClaimed', 'WaitStarted', 'TriageStarted', 'WaitTriaged'])
+      // what stopped the redo is on the answer
+      expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({
+        result: { held: { _tag: 'environment', detail: expect.stringContaining('github down') } },
+      })
     })
 
     it('no way to write is the same: never a redo as if the body were written', async () => {

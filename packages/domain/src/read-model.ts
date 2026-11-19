@@ -21,7 +21,7 @@ import { resolveOffer, routeMove, type RouteDecision, type RouteMove } from './r
 import { agentBranchOf, parseTicketStream } from './streams.ts'
 import { personAsksSpent, reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
-import { systemLine, waitWords, type SystemLimits, type SystemLine } from './wait-words.ts'
+import { heldLine, systemLine, waitWords, type SystemLimits, type SystemLine } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
 
 /**
@@ -474,7 +474,15 @@ export function systemBoundOf(
  */
 export function standingSystemResolution(state: TicketState): TicketState['waits'][number] | null {
   const wait = state.waits[state.waits.length - 1]
-  if (wait === undefined || wait.resolution?.by !== 'triage') return null
+  if (wait === undefined) return null
+  // A wait the system read and left to a person (#1260) stands while it is still the one the ticket waits on.
+  if (wait.resolution === null)
+    return state.lifecycle.status === 'blocked' &&
+      state.lifecycle.waitId === wait.waitId &&
+      heldLine(wait.triage.result) !== null
+      ? wait
+      : null
+  if (wait.resolution.by !== 'triage') return null
   const status = state.lifecycle.status
   if (status === 'landed' || status === 'closed' || status === 'satisfied') return null
   const run = runOfWait(wait)
@@ -489,6 +497,7 @@ export function systemLineOf(
   limits: SystemLimits,
 ): SystemLine | null {
   const r = wait.resolution
-  if (r === null || r.by !== 'triage') return null
+  if (r === null) return heldLine(wait.triage.result)
+  if (r.by !== 'triage') return null
   return systemLine(r, wait.triage.result, systemBoundOf(state, wait, limits))
 }

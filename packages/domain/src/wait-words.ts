@@ -560,6 +560,32 @@ export function systemLine(
   }
 }
 
+const HELD_NOUN = {
+  refusalFixes: 'fix rounds',
+  newAttempts: 'new attempts',
+  ticketSplits: 'splits',
+  stepRedos: 'redos',
+  conflictResolutions: 'conflict resolutions',
+  personAsks: 'questions',
+} as const
+
+/**
+ * **The line for a wait the system read and then left to a person** (#1260): a bound spent (*3 of 3 redos used*, named by
+ * its own key) or an environment that stopped the action (the write's detail). Null where the answer carries no decision.
+ */
+export function heldLine(triage: TriageResult | null): SystemLine | null {
+  if (triage === null || triage._tag !== 'TriageAnswered' || triage.held === undefined) return null
+  const because = `Triage read ${CAUSE_READ[triage.cause._tag]}`
+  const held = triage.held
+  return held._tag === 'limit'
+    ? {
+        action: `${held.bound} is spent, so a person is asked`,
+        because,
+        bound: `${held.used} of ${held.allowed} ${HELD_NOUN[held.bound]} used`,
+      }
+    : { action: `a person is asked: ${held.detail}`, because, bound: null }
+}
+
 /**
  * **What a card or `status` says where the ticket's log could not be read** (#1259): a failed read is not "triage
  * resolved nothing", so the line says what it could not tell, and that the bound is unknown with it.

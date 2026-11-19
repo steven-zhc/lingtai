@@ -1189,7 +1189,33 @@ export const JudgeAnswer = z.strictObject({
 export type JudgeAnswer = z.infer<typeof JudgeAnswer>
 
 /** Triage's reading: the cause, one sentence for the card, and what the ticket wants. What follows is the system's (0108 §6). */
-const TriageAnswered = z.strictObject({ _tag: z.literal('TriageAnswered'), cause: RecordedCause, ...answerParts })
+const TriageAnswered = z.strictObject({
+  _tag: z.literal('TriageAnswered'),
+  cause: RecordedCause,
+  ...answerParts,
+  /**
+   * Why the system did not act on the answer, when it is the system's own decision (#1260): a spent bound, or a body
+   * write the redo needed that failed. Without it the wait shows the answer and nothing of the decision.
+   */
+  held: z
+    .discriminatedUnion('_tag', [
+      z.strictObject({
+        _tag: z.literal('limit'),
+        bound: z.enum([
+          'refusalFixes',
+          'newAttempts',
+          'ticketSplits',
+          'stepRedos',
+          'conflictResolutions',
+          'personAsks',
+        ]),
+        used: z.number().int().min(0),
+        allowed: z.number().int().min(0),
+      }),
+      z.strictObject({ _tag: z.literal('environment'), detail: z.string().max(TRIAGE_TEXT_MAX) }),
+    ])
+    .optional(),
+})
 
 /**
  * What triage answered before it answered a cause (0118 §1): the cause beside a resolution, which could disagree.

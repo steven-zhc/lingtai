@@ -402,6 +402,11 @@ describe('triageSpentOf', () => {
       const d = actOnTriageTransition(state, input(state, {}, { origin: 'run-limit', counters: spent }))
       expect(d).toMatchObject({ ok: true, action: { _tag: 'askPerson', why: { _tag: 'limit', bound: 'stepRedos' } } })
       if (d.ok) expect(d.events.map((x) => x.type)).toEqual(['WaitTriaged'])
+      // the decision is recorded with the answer
+      if (d.ok)
+        expect(d.events[0]!.data).toMatchObject({
+          result: { held: { _tag: 'limit', bound: 'stepRedos', used: 3, allowed: 3 } },
+        })
     })
   })
 })

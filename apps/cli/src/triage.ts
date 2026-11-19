@@ -14,6 +14,7 @@
  */
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
+import { diffBaseShaOf } from '@lingtai/conductor'
 import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { githubClientForEffect, projectClientEffect } from '@lingtai/conductor/filter'
@@ -1111,6 +1112,11 @@ export const readActContext = (
       // Only a head read from the remote just now is one a rerun continues on; the recorded base is not offered.
       if ('at' in head && head.atRef !== null && (yield* refIs(head.atRef, head.at)))
         redo = { onSha: head.at, ref: head.atRef }
+      // A run that committed nothing has no ref to check: it continues on the base commit it was cut from.
+      if ('atBase' in head) {
+        const base = diffBaseShaOf(runEvents)
+        if (base !== null) redo = { onSha: base, ref: null }
+      }
     }
     const split =
       action?._tag === 'splitTicket' && splitFacts !== null

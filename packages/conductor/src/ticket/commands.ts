@@ -37,6 +37,8 @@ import {
   actOnTriageTransition,
   finishTriageTransition,
   triageFailedEvent,
+  triageHeldEvent,
+  onlyIssueAuditSince,
   type ActContext,
   type ActOnTriageRefusal,
   startTriageTransition,
@@ -636,6 +638,7 @@ export function finishTriage(
     if (decided.ok) {
       let events = decided.events
       let resolution = decided.resolution
+      let version = state.version
       // The section is written before the wait resolves, as #1254's person path does: a write that failed resolves
       // nothing, and the answer stays advice on a wait that is still a person's. The key is the ticket's, so a second
       // cut-off run replaces the first's note in place and the body never grows past one.
@@ -645,11 +648,36 @@ export function finishTriage(
             ? ({ written: false, detail: 'no way to write the body' } as const)
             : yield* options.writeSection(decided.section)
         if (!wrote.written) {
-          events = events.slice(0, 1)
+          // The answer stays, with what stopped the redo, so the wait says the environment is why (#1260).
+          events =
+            result._tag === 'TriageAnswered'
+              ? [
+                  triageHeldEvent({
+                    waitId: input.waitId,
+                    attempt: input.attempt,
+                    headSha: input.headSha,
+                    by: input.by,
+                    result,
+                    held: {
+                      _tag: 'environment',
+                      detail: `the body could not be written: ${wrote.detail}`.slice(0, 500),
+                    },
+                  }),
+                ]
+              : events.slice(0, 1)
           resolution = null
+        } else {
+          // The write recorded its own audit events on this stream, so the version moved: read it again, and go on
+          // only if nothing but those landed — anything else is somebody else's append, which is `lost`.
+          const after = yield* Effect.tryPromise({
+            try: () => options.store.read(ticketId, state.version + 1),
+            catch: (e) => e,
+          })
+          if (!onlyIssueAuditSince(after)) return { ok: false, lost: true } as const
+          version = state.version + after.length
         }
       }
-      const lost = yield* appendLost(options.store, ticketId, state.version, events)
+      const lost = yield* appendLost(options.store, ticketId, version, events)
       if (lost) return { ok: false, lost: true } as const
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
       return {

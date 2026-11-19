@@ -1327,6 +1327,11 @@ export function unchangedSince(since: readonly SinceEvent[], waitId: WaitId): bo
   })
 }
 
+/** Whether everything in `since` is a record of a write to GitHub the caller itself just made (`IssueUpdated`, `IssueUpdateFailed`). */
+export function onlyIssueAuditSince(since: readonly SinceEvent[]): boolean {
+  return since.every((e) => e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed')
+}
+
 /** The stream holds exactly `since` past `ifVersion`, and all of it is this triage's own run facts. */
 function streamChanged(
   state: TicketState,
@@ -1355,6 +1360,17 @@ function triagedEvent(input: TriagedInput): ToAppend {
       by: input.by,
     }),
   }
+}
+
+/** An answer recorded with the system's decision not to act on it: a spent bound, or a body write that failed (#1260). */
+export function triageHeldEvent(
+  input: Omit<TriagedInput, 'result'> & {
+    result: Extract<TriageResult, { _tag: 'TriageAnswered' }>
+    held: NonNullable<Extract<TriageResult, { _tag: 'TriageAnswered' }>['held']>
+  },
+): ToAppend {
+  const { held, ...rest } = input
+  return triagedEvent({ ...rest, result: { ...input.result, held } })
 }
 
 /** The record that stands in for an answer that was not acted on: `TriageFailed{why}`, which resolves nothing. */
@@ -1394,7 +1410,8 @@ export type ActContext = {
   /** The saved head a `FixRefusal` continues, already checked against the remote ref; `null` when there is none. */
   fix: { onSha: string; ref: string } | null
   /** Where a `RedoStep` re-cuts, already checked against the remote ref; `null` when the attempt has no head a rerun can continue. */
-  redo: { onSha: string; ref: string } | null
+  /** `ref: null` is a run that committed nothing: the redo continues on the attempt's own base commit. */
+  redo: { onSha: string; ref: string | null } | null
   /**
    * What a split needs that the transition cannot read (0118 §12): the daemon's own start id, which `SplitStarted`
    * records as the writer, and the recipe's `source.kinds`. `null` when the answer is not a split.
@@ -1478,7 +1495,23 @@ export function actOnTriageTransition(
     }
     return { ok: true, events: [triaged, started], action, resolution: null }
   }
-  if (action._tag === 'askPerson') return advice
+  if (action._tag === 'askPerson') {
+    // The decision is recorded with the answer, so the wait can say which bound was spent (#1260).
+    if (action.why._tag !== 'limit') return advice
+    const { bound, used } = action.why
+    return {
+      ok: true,
+      events: [
+        triageHeldEvent({
+          ...input,
+          result: input.result,
+          held: { _tag: 'limit', bound, used, allowed: context.counters[bound].allowed },
+        }),
+      ],
+      action,
+      resolution: null,
+    }
+  }
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
