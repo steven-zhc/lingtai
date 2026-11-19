@@ -167,6 +167,30 @@ describe('finishTriage (#1258)', () => {
       })
     })
 
+    it('a failed write that appended its own audit event still records the held answer', async () => {
+      const s = await started()
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: () =>
+          Effect.promise(async () => {
+            const v = (await s.store.read(ticketId)).length
+            await s.store.append(ticketId, v, [
+              {
+                type: 'IssueUpdateFailed',
+                actor: 'conductor',
+                data: { project: 'p', issue: '1', change: 'body', error: 'down' },
+              } as never,
+            ])
+            return { written: false, detail: 'github down' } as const
+          }),
+      })
+      expect(done).toEqual({ ok: true, resolved: null })
+      expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({
+        result: { held: { _tag: 'environment' } },
+      })
+    })
+
     it('no way to write is the same: never a redo as if the body were written', async () => {
       const s = await started()
       expect(await finish(s, { result: owing, act: limited })).toEqual({ ok: true, resolved: null })

@@ -389,6 +389,16 @@ describe('triageSpentOf', () => {
       if (plain.ok) expect(plain.events[1]).toMatchObject({ data: { resolution: { _tag: 'RedoStep' } } })
     })
 
+    it('a run that committed nothing (no head either side) redoes on its base', () => {
+      const { state } = waiting(turns)
+      const base = input(state, {}, { origin: 'run-limit', redo: { onSha: 'b'.repeat(40), ref: null } })
+      const d = actOnTriageTransition(state, {
+        ...base,
+        context: { ...base.context, boundHead: null, headNow: null },
+      })
+      expect(d).toMatchObject({ ok: true, resolution: { _tag: 'RedoStep', ref: null } })
+    })
+
     it('refuses any other cause, by name', () => {
       const { state } = waiting(turns)
       const d = actOnTriageTransition(state, input(state, { result: fixable }, { origin: 'run-limit' }))

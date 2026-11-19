@@ -666,16 +666,16 @@ export function finishTriage(
                 ]
               : events.slice(0, 1)
           resolution = null
-        } else {
-          // The write recorded its own audit events on this stream, so the version moved: read it again, and go on
-          // only if nothing but those landed — anything else is somebody else's append, which is `lost`.
-          const after = yield* Effect.tryPromise({
-            try: () => options.store.read(ticketId, state.version + 1),
-            catch: (e) => e,
-          })
-          if (!onlyIssueAuditSince(after)) return { ok: false, lost: true } as const
-          version = state.version + after.length
         }
+        // The write recorded its own audit events on this stream, written or not (`IssueUpdated`, `IssueUpdateFailed`),
+        // so the version moved either way: read it again, and go on only if nothing but those landed — anything else
+        // is somebody else's append, which is `lost`.
+        const after = yield* Effect.tryPromise({
+          try: () => options.store.read(ticketId, state.version + 1),
+          catch: (e) => e,
+        })
+        if (!onlyIssueAuditSince(after)) return { ok: false, lost: true } as const
+        version = state.version + after.length
       }
       const lost = yield* appendLost(options.store, ticketId, version, events)
       if (lost) return { ok: false, lost: true } as const

@@ -1516,8 +1516,17 @@ export function actOnTriageTransition(
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
   // A head that was not read is not a head that is unchanged: `null` on either side refuses, `startNewAttempt` needs none.
+  // A run that committed nothing has no head on either side: that absence is unchanged, and the redo it reads
+  // (`ref: null`) continues on the attempt's own base commit (#1260).
+  const noHeadEitherSide =
+    (action._tag === 'redoStep' || action._tag === 'writeSpentOnThenRedoStep') &&
+    context.redo !== null &&
+    context.redo.ref === null &&
+    context.boundHead === null &&
+    context.headNow === null
   if (
     action._tag !== 'startNewAttempt' &&
+    !noHeadEitherSide &&
     (context.boundHead === null || context.headNow === null || context.headNow !== context.boundHead)
   )
     return { ok: false, refusal: 'head-moved' }
