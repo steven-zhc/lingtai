@@ -1575,6 +1575,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * since. Never shared between passes.
      */
     let reviewedSha: string | null = null
+    /** `mergedSinceReview` is measured from a head a person approved: no overlap path stays open (#1279). */
+    let baselineApproved = false
     /** A review read `reviewed`; a base merge onto `base` came after it, and no review has read the merged head whole (#1274). */
     let mergedSinceReview: { reviewed: string; base: string; overlap: readonly string[] } | null =
       options.from?.reviewedHead !== undefined && options.from.landedOnBase !== undefined
@@ -1669,6 +1671,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     const applyConflictMerge = (
       baseSha: string,
       got: Extract<ConflictMergeAnswer, { conflicted: unknown }>['conflicted'],
+      approved: string | null = null,
     ) => {
       const paths = got.paths
       landedOnBase = {
@@ -1679,14 +1682,17 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
       }
       mergedOnto = baseSha
-      const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
+      const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? approved
+      if (reviewedSha === null && mergedSinceReview === null && approved !== null) baselineApproved = true
       mergedSinceReview =
         reviewedBefore === null
           ? null
           : {
               reviewed: reviewedBefore,
               base: baseSha,
-              overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...landedOnBase.paths])],
+              overlap: baselineApproved
+                ? []
+                : [...new Set([...(mergedSinceReview?.overlap ?? []), ...landedOnBase.paths])],
             }
       reviewedSha = null
       reviewCarriedTo = null
@@ -2098,7 +2104,22 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             reviewCarriedTo = null
             const disjoint =
               offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.paths.length === 0
-            if (disjoint && (reviewedHeadStands || approvedHeadStands)) {
+            if (approvedHeadStands && approvedAt !== null) {
+              // A person's approval carries across any clean merge (#1279): `build` runs on the
+              // merge commit, `review` is not visited. The baseline stays the head the person
+              // read, with no overlap kept open; a red build's fix round is read from it.
+              reviewCarriedTo = merged.head
+              mergedSinceReview = {
+                reviewed: mergedSinceReview !== null && baselineApproved ? mergedSinceReview.reviewed : approvedAt,
+                base: next.toSha,
+                overlap: [],
+              }
+              baselineApproved = true
+              reviewedSha = null
+              landedOnBase = null
+              // The approval follows the system's own merges and nothing else.
+              approvedAt = merged.head
+            } else if (disjoint && reviewedHeadStands) {
               reviewCarriedTo = merged.head
               // Keep which head a review read, for a later overlapping move (#1274): a carried
               // review is not a delta, but the baseline for the next merge is still that head.
@@ -2117,23 +2138,20 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               // overlap or an approval-only read is not that: a full review, as before.
               const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
               mergedSinceReview =
-                !approvedHeadStands &&
-                reviewedBefore !== null &&
-                offer.proposal._tag === 'BaseMoved' &&
-                offer.proposal.paths !== null
+                reviewedBefore !== null && offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null
                   ? {
                       reviewed: reviewedBefore,
                       base: next.toSha,
                       overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...offer.proposal.paths])],
                     }
                   : null
-              reviewedSha = approvedHeadStands ? approvedAt : null
+              reviewedSha = null
               landedOnBase =
                 offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
                   ? { paths: offer.proposal.paths, fromSha: offer.proposal.fromSha, toSha: next.toSha }
                   : null
             }
-            approvedAt = null
+            if (!approvedHeadStands) approvedAt = null
             lapStart = steps.length
             at = 'build'
             return true
@@ -2204,6 +2222,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               applyConflictMerge(
                 offer.proposal._tag === 'MergeConflict' ? (offer.proposal.baseSha ?? '') : '',
                 conflictAnswer.conflicted,
+                approvedHeadStands ? approvedAt : null,
               )
             }
             // A conflict round has its own counter and leaves `rounds` where it was (#653).
@@ -2492,6 +2511,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         if (read && !clippedRead && checking === null) {
           reviewedSha = visitContext.onSha
           mergedSinceReview = null
+          baselineApproved = false
         }
       }
       const ending = reached.ending
