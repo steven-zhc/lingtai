@@ -379,9 +379,9 @@ export function survivalCurve(tickets: readonly ReportTicketRow[]): SurvivalStep
 }
 
 export const PURPOSE_WORDS: Record<string, string> = {
-  Work: 'work',
-  Answering: 'answering refusals',
-  Judge: 'judging',
+  Work: 'building',
+  Answering: 'fixing review findings',
+  Judge: 'AI judge',
   Triage: 'triage',
   Discussion: 'discussion',
 }
@@ -393,7 +393,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
   AgentQuestion: "an answer to the agent's question",
   FixerDisagrees: 'a call between the fixer and the reviewer',
   NothingProduced: 'a decision after the agent produced nothing',
-  ProposedEscalated: 'a decision after its refusal fixes ran out',
+  ProposedEscalated: 'a decision after its fix rounds ran out',
   CheckRefused: 'a decision on a refused check',
   MergeRefused: 'a decision on a refused merge',
   BudgetExhausted: 'a decision after it ran out of budget',
@@ -407,7 +407,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
 /** How a wait ended. */
 export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
-  FixRefusal: 'a refusal fix granted',
+  FixRefusal: 'a fix round granted',
   RedoStep: 'the step run again',
   AnswerQuestions: 'answered, and the step continued',
   AnswerQuestion: 'answered',
@@ -452,7 +452,7 @@ function sentenceOf(t: {
     : t.cost.unknown > 0
       ? 'cost unknown'
       : 'no cost'
-  const parts = [`${head} over ${plural(t.fixRounds, 'refusal fix', 'refusal fixes')}`, plural(t.passes, 'attempt')]
+  const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'attempt')]
   if (t.waits.length > 0) {
     const counts = new Map<string, number>()
     for (const w of t.waits) counts.set(w.reason, (counts.get(w.reason) ?? 0) + 1)

@@ -153,7 +153,7 @@ The operator's decisions in epic #648 are the inputs here.
    - each wait's reason and triage cause, and how it was resolved, in words
      (`--json` keeps the tags);
    - one sentence assembled from those facts, leading with the largest share:
-     *72% answering refusals over 6 refusal fixes · 3 attempts · waited 3 times
+     *72% fixing review findings over 6 fix rounds · 3 attempts · waited 3 times
      (for a call between the fixer and the reviewer ×2, for a decision on a
      refused merge).*
 
@@ -221,7 +221,7 @@ The operator's decisions in epic #648 are the inputs here.
    amber means *a person is waited on*. Chart series use colours that are none of
    the board's states (not amber, red or green). Top to bottom:
    - the filters: window, dates, kinds;
-   - figure tiles: landed (with closed and open), median refusal fixes, the
+   - figure tiles: landed (with closed and open), median fix rounds, the
      5-or-more share, the 0-or-1 share, spend in the window (by run day) with
      its unknown count, median machine time;
    - **handled for you** (#1285): the window's problems by who finally answered
@@ -232,17 +232,23 @@ The operator's decisions in epic #648 are the inputs here.
      estimated and unknown apart), per-day stacked bars and the latest six.
      Its kinds take series colours: `build` and `too-big` are `--s5` and `--s6`,
      not the amber the design drew them in;
-   - five panels: refusal fixes by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
-     **reviews to pass**, the share of tickets still not passed after k
-     reviews, a step line from 100% down with steps 1 to 6 and then one 7+
-     step holding every ticket with seven or more, the tickets still counted
-     shown in each step's hover;
-     landings per day stacked by kind; spend per day stacked by purpose (from
-     `spend`, by each run's day); and
-     **why tickets waited, as a cross-table of each wait's reason against its
-     triage cause** (no triage being a column of its own);
-   - the per-kind table of §3;
-   - §4's list, each ticket linking to its task page.
+   - the panels, in one grid (the page and `lingtai report` call a *refusal
+     fix* a **fix round**; §1's definition is unchanged):
+     **Fix rounds per landed ticket** (0, 1, 2, 3, 4, 5+, stacked by kind) beside
+     **Reviews needed to pass** (the share of tickets still not passed after k
+     reviews, a step line from 100% down with steps 1 to 6 and then one 7+ step,
+     the tickets still counted in each step's hover);
+     one wide **Spend** panel, a donut *by purpose* (building, fixing review
+     findings, AI judge, triage; the total in the middle, reported solid and
+     estimated pale) beside the *each day* bars in the same colours;
+     **Landed each day** stacked by kind beside **By ticket type** (§3's per-kind
+     table without a spend column — the Spend panel is where spend is read);
+     **Tickets that took the most work**, §4's list with tabs *most fix
+     rounds* and *most spend*, each ticket one summary line and the purpose
+     and wait lines folded under it; and, last, a wide
+     **Why work stopped for a person**, a cross-table of each wait's reason
+     against its triage cause (no triage being a column of its own).
+     There is no separate costliest-tickets panel: *most spend* is that list;
 
    Every chart has a hover with its exact figures and a legend; no chart has two
    y-axes.

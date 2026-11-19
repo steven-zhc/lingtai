@@ -1,7 +1,16 @@
 /** The address → the report's inputs, the chip, and the geometry (#689). */
 import { describe, expect, it } from 'vitest'
 
-import { axisFor, kindSeries, moneyText, reportChip, reportHref, reportQuery, stepPath } from '../src/lib/report.ts'
+import {
+  axisFor,
+  donutSegments,
+  kindSeries,
+  moneyText,
+  reportChip,
+  reportHref,
+  reportQuery,
+  stepPath,
+} from '../src/lib/report.ts'
 
 const NOW = new Date(2026, 9, 28, 12)
 const ymd = (d: Date) => `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}`
@@ -135,5 +144,29 @@ describe('the numbers', () => {
         { x: 20, y: 8 },
       ]),
     ).toBe('M0,0H10V5H20V8')
+  })
+})
+
+describe('donutSegments', () => {
+  const row = (key: string, reportedCents: number, estimatedCents: number) => ({
+    key,
+    colour: 'c',
+    reportedCents,
+    estimatedCents,
+  })
+
+  it('leaves zero-width segments out and keeps reported before estimated', () => {
+    const out = donutSegments([row('a', 100, 0), row('b', 50, 50)])
+    expect(out.map((s) => `${s.key}${s.estimated ? '~' : ''}`)).toEqual(['a', 'b', 'b~'])
+  })
+
+  it('draws a segment that is the whole ring as two half-arcs, never one arc back to its start', () => {
+    const [only, ...rest] = donutSegments([row('a', 100, 0)])
+    expect(rest).toEqual([])
+    expect(only!.d.match(/ A 70 70 /g)).toHaveLength(2)
+  })
+
+  it('draws nothing when no cost is known', () => {
+    expect(donutSegments([row('a', 0, 0)])).toEqual([])
   })
 })

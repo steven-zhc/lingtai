@@ -10,15 +10,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { LandingsPanel, RoundsPanel, SpendPanel, SurvivalPanel } from '../src/app/report/charts.tsx'
-import {
-  CostliestPanel,
-  Filters,
-  KindsPanel,
-  Tiles,
-  TopPanel,
-  WaitsPanel,
-  WhereItWentPanel,
-} from '../src/app/report/panels.tsx'
+import { Filters, KindsPanel, Tiles, TopPanel, WaitsPanel, WhereItWentPanel } from '../src/app/report/panels.tsx'
 import { dayReading, type DaySpendReading } from '../src/lib/day-spend.ts'
 import { reportQuery } from '../src/lib/report.ts'
 
@@ -54,7 +46,7 @@ const byPurpose = [
 ]
 
 describe('the report page', () => {
-  it('draws the refusal fixes by bucket, stacked by kind, with the figures in the hover', () => {
+  it('draws the fix rounds by bucket, stacked by kind, with the figures in the hover', () => {
     const out = renderToStaticMarkup(
       <RoundsPanel
         kinds={[...kinds, null]}
@@ -75,7 +67,7 @@ describe('the report page', () => {
         ]}
       />,
     )
-    expect(out).toContain('<title>0 refusal fixes\nbug: 2\nfeature: 1\ntotal: 3</title>')
+    expect(out).toContain('<title>0 fix rounds\nbug: 2\nfeature: 1\ntotal: 3</title>')
     expect(out).toContain('unclassified: 1')
     expect(out).toContain('rp-legend')
     expect(out).toContain('fill="var(--s1)"')
@@ -156,7 +148,7 @@ describe('the report page', () => {
     expect(out).toContain('Triage: ~$0.50 est.')
     expect(out).toContain('day: $3.00 + ~$0.50 est.')
     expect(out).toContain('2 unknown')
-    expect(out).toContain('triage and discussion')
+    expect(out).toContain('>triage<')
     const onlyUnknown = renderToStaticMarkup(<SpendPanel days={[day('2026-10-27', { unknown: 1 })]} />)
     expect(onlyUnknown).not.toContain('nothing spent')
     expect(renderToStaticMarkup(<SpendPanel days={[day('2026-10-27')]} />)).toContain('nothing spent in this window')
@@ -216,8 +208,34 @@ describe('the report page', () => {
     const row = (kind: string | null): KindRow => ({ ...figures(), kind, spend: money })
     const out = renderToStaticMarkup(<KindsPanel kinds={[row('bug'), row(null)]} />)
     expect(out).toContain('unclassified')
-    expect(out).toContain('$5.00 + ~$0.40 est. + 2 unknown')
+    expect(out).not.toContain('spent in the window')
     expect(out).toContain('$1.20 + ~$0.30 est. + 1 unknown')
+  })
+
+  it('folds the purpose and wait lines under the summary line, and none when there are none', () => {
+    const base: TopTicket = {
+      ticket: 'ticket-lingtai-9',
+      kind: 'bug',
+      outcome: 'landed',
+      passes: 1,
+      fixRounds: 1,
+      cost: money,
+      purposeShares: [{ purpose: 'Answering', share: 1 }],
+      waits: [{ reason: 'ProposedEscalated', cause: null, resolution: 'FixRefusal' }],
+      sentence: 'summary line',
+    }
+    const out = renderToStaticMarkup(<TopPanel top={[base]} query={query} />)
+    expect(out).toContain('summary line')
+    expect(out).toContain('2 more lines')
+    expect(out).toContain('fixing review findings 100%')
+    expect(out).toContain('a decision after its fix rounds ran out')
+    expect(out).toContain('a fix round granted')
+    expect(out).toContain('most spend')
+    const bare = renderToStaticMarkup(<TopPanel top={[{ ...base, purposeShares: [], waits: [] }]} query={query} />)
+    expect(bare).not.toContain('<details')
+    for (const old of ['answering refusals', 'refusal fix', 'where it went']) {
+      expect(out).not.toContain(old)
+    }
   })
 
   it('lists the top tickets, each a link to its task page, with the sentence unchanged', () => {
@@ -230,12 +248,12 @@ describe('the report page', () => {
       cost: money,
       purposeShares: [],
       waits: [],
-      sentence: '60% work over 6 refusal fixes · 3 passes',
+      sentence: '60% building over 6 fix rounds · 3 passes',
     }
     const out = renderToStaticMarkup(<TopPanel top={[t]} query={query} />)
     expect(out).toContain('href="/task/ticket-lingtai-612"')
     expect(out).toContain('>#612<')
-    expect(out).toContain('60% work over 6 refusal fixes · 3 passes')
+    expect(out).toContain('60% building over 6 fix rounds · 3 passes')
     expect(out).toContain('href="/report?sort=cost"')
     expect(renderToStaticMarkup(<TopPanel top={[]} query={query} />)).toContain('no ticket in this window')
   })
@@ -338,9 +356,21 @@ describe('the report page', () => {
     expect(panel).not.toContain('>0%<')
   })
 
+  it('draws the donut with the total in the middle and no ring when nothing is known', () => {
+    const out = renderToStaticMarkup(<WhereItWentPanel byPurpose={byPurpose} />)
+    expect(out).toContain('<path')
+    expect(out).toContain('opacity="0.45"')
+    const unknown = renderToStaticMarkup(
+      <WhereItWentPanel
+        byPurpose={[{ purpose: 'Work', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }]}
+      />,
+    )
+    expect(unknown).not.toContain('<path')
+  })
+
   it('draws where it went, triage and discussion as one row, unknown beside its purpose', () => {
     const out = renderToStaticMarkup(<WhereItWentPanel byPurpose={byPurpose} />)
-    expect(out).toContain('triage and discussion')
+    expect(out).toContain('>triage<')
     expect(out).toContain('$1.00')
     expect(out).toContain('+ 1 unknown')
     const none = renderToStaticMarkup(
@@ -352,37 +382,5 @@ describe('the report page', () => {
     expect(none).toContain('no known cost')
     expect(none).not.toContain('$0.00')
     expect(renderToStaticMarkup(<WhereItWentPanel byPurpose={[]} />)).toContain('nothing spent in the window')
-  })
-
-  it('lists the costliest tickets, a non-landed one with its outcome, unknown never $0.00', () => {
-    const t = (over: Partial<TopTicket>): TopTicket => ({
-      ticket: 'ticket-lingtai-7',
-      kind: 'bug',
-      outcome: 'landed',
-      passes: 1,
-      fixRounds: 2,
-      cost: money,
-      purposeShares: [{ purpose: 'Answering', share: 1 }],
-      waits: [],
-      sentence: '',
-      ...over,
-    })
-    const out = renderToStaticMarkup(
-      <CostliestPanel
-        tickets={[
-          t({}),
-          t({ ticket: 'ticket-lingtai-8', outcome: 'closed' }),
-          t({
-            ticket: 'ticket-lingtai-9',
-            cost: { reportedCents: 0, estimatedCents: 0, unknown: 3 },
-            purposeShares: [],
-          }),
-        ]}
-      />,
-    )
-    expect(out).toContain('href="/task/ticket-lingtai-7"')
-    expect(out).toContain('closed · ')
-    expect(out).toContain('3 unknown')
-    expect(out).not.toContain('$0.00')
   })
 })
