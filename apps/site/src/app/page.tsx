@@ -5,18 +5,33 @@ import { readBooks, type Books } from '@/lib/books'
 import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
-import { FailurePaths } from './failure-paths'
+import { FailurePaths, FailurePathsTable } from './failure-paths'
 import { Film } from './film'
 import { ReplayReceipt } from './replay-receipt'
+import { RouteArrow } from './route-arrow'
 import { SandboxShield } from './sandbox-shield'
 import { Shots } from './shots'
 
+type LedgerRow = {
+  key: string
+  alone: string
+  lingtai: string
+  /** A link that ends the row; the route arrow starts from it (#1291). */
+  see?: { href: string; label: string }
+}
+
 /** The agent alone against Lingtai: the left column says who decides, never that an agent fails. */
-const LEDGER = [
+const LEDGER: LedgerRow[] = [
   {
     key: "Who says it's done",
     alone: 'The agent, or your own scripts',
     lingtai: 'Your checks, a cold review, and your OK',
+  },
+  {
+    key: 'When something breaks',
+    alone: 'It stops, or tries the same thing again. You find out later.',
+    lingtai: 'A router picks the fix: a rule for most, one quick AI look for some, you only when it must.',
+    see: { href: '#when-it-fails', label: 'See how ↓' },
   },
   {
     key: 'Checks',
@@ -164,8 +179,6 @@ export function HomePage({ books }: { books: Books | null }) {
             <ReplayReceipt />
           </div>
 
-          <FailurePaths />
-
           <section className="sandbox-pitch" aria-labelledby="sandbox-title">
             <div className="sandbox-inner">
               <div className="sandbox-copy">
@@ -212,91 +225,135 @@ export function HomePage({ books }: { books: Books | null }) {
             </div>
           </section>
 
-          <section className="why" aria-labelledby="why-title">
-            <div className="why-head">
-              <p className="kicker">The first question</p>
-              <h2 id="why-title">Why not just give the agent the issue?</h2>
-              <p className="sub">
-                You can. Then the only proof it worked is <b>the agent saying so</b>. With Lingtai, you get{' '}
-                <b>the receipt you just watched</b>.
-              </p>
-            </div>
-            <div className="why-pair">
-              <figure className="why-card">
-                <figcaption className="why-cap">
-                  <span className="why-alone">THE AGENT ALONE</span>
-                  <span className="why-chip">Claude Code</span>
-                  <span className="why-chip">Codex</span>
-                </figcaption>
-                <div className="why-top">
-                  <span>session · chapter-garden</span>
-                  <span>23:02</span>
-                </div>
-                <p className="why-msg">
-                  I added a <code>ReadingTime</code> component and wired it into <code>ChapterMeta</code>. I ran{' '}
-                  <code>npm test</code> — 42 passed. Ready for you to review.
+          <div className="route">
+            <section className="why" aria-labelledby="why-title">
+              <div className="why-head">
+                <p className="kicker">The first question</p>
+                <h2 id="why-title">Why not just give the agent the issue?</h2>
+                <p className="sub">
+                  You can. Then the only proof it worked is <b>the agent saying so</b>. With Lingtai, you get{' '}
+                  <b>the receipt you just watched</b>.
                 </p>
-                <p className="why-note">Often right. But that&apos;s the agent grading its own work.</p>
-              </figure>
-              <span className="why-vs" aria-hidden="true">
-                vs
-              </span>
-              <figure className="why-card why-card-with">
-                <figcaption className="why-cap">
-                  <span className="why-with">WITH LINGTAI</span>
-                  <span className="why-chip">Claude Code</span>
-                  <span className="why-chip">Codex</span>
-                  <span className="why-chip">+ your rules</span>
-                </figcaption>
-                <a className="why-ref" href="#replay">
-                  <span className="why-arrow" aria-hidden="true">
-                    ↑
-                  </span>
-                  <span>
-                    <b>The receipt above.</b>
-                    <span className="why-ref-text">
-                      Your checks ran it, not the agent. A cold review passed it. You approved it. Its cost is recorded.
-                    </span>
-                  </span>
-                </a>
-              </figure>
-            </div>
-            <div className="ledger">
-              <div className="ledger-top">
-                <span>LINGTAI / THE DIFFERENCE</span>
-                <svg viewBox="0 0 24 24" aria-hidden="true">
-                  <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
-                  <path d="M9 8h6M9 12h6" />
-                </svg>
               </div>
-              <table>
-                <caption className="sr-only">The agent alone, and with Lingtai</caption>
-                <colgroup>
-                  <col className="lg-key" />
-                  <col />
-                  <col />
-                </colgroup>
-                <thead>
-                  <tr>
-                    <td />
-                    <th scope="col">Claude Code · Codex alone</th>
-                    <th scope="col">With Lingtai</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {LEDGER.map((row) => (
-                    <tr key={row.key}>
-                      <th scope="row">{row.key}</th>
-                      <td className="lg-a">{row.alone}</td>
-                      <td className="lg-b">{row.lingtai}</td>
+              <div className="why-pair">
+                <figure className="why-card">
+                  <figcaption className="why-cap">
+                    <span className="why-alone">THE AGENT ALONE</span>
+                    <span className="why-chip">Claude Code</span>
+                    <span className="why-chip">Codex</span>
+                  </figcaption>
+                  <div className="vsm">
+                    <p className="vsm-k">You type a prompt</p>
+                    <div className="vsm-term">
+                      <div className="vsm-bar">
+                        <i />
+                        <i />
+                        <i />
+                        <span>claude · chapter-garden</span>
+                      </div>
+                      <p className="vsm-in">
+                        <span className="vsm-ps">&gt;</span> Add a reading-time badge to chapter pages. Round up, show
+                        &quot;&lt; 1 min&quot; for short ones. Run the tests when you&apos;re done.
+                      </p>
+                      <p className="vsm-out">
+                        I added a <code>ReadingTime</code> component and wired it into <code>ChapterMeta</code>. I ran{' '}
+                        <code>npm test</code> — 42 passed. Ready for you to review.
+                      </p>
+                    </div>
+                    <p className="vsm-then">
+                      Then <b>you</b> watch it, re-prompt it when it drifts, check its tests, and merge it.
+                    </p>
+                  </div>
+                </figure>
+                <span className="why-vs" aria-hidden="true">
+                  vs
+                </span>
+                <figure className="why-card why-card-with">
+                  <figcaption className="why-cap">
+                    <span className="why-with">WITH LINGTAI</span>
+                    <span className="why-chip">Claude Code</span>
+                    <span className="why-chip">Codex</span>
+                    <span className="why-chip">+ your rules</span>
+                  </figcaption>
+                  <div className="vsm">
+                    <p className="vsm-k">You file a ticket</p>
+                    <div className="vsm-issue">
+                      <div className="vsm-ihead">
+                        <span className="vsm-open">● Open</span>
+                        <b>#1 · Add a reading-time badge</b>
+                      </div>
+                      <p>
+                        Chapter pages show how long they take to read. Round up; under a minute shows &quot;&lt; 1
+                        min&quot;.
+                      </p>
+                      <div className="vsm-labels">
+                        <span>feature</span>
+                        <span className="vsm-picked">Lingtai picked it up</span>
+                      </div>
+                    </div>
+                    <p className="vsm-then">
+                      Then <b>Lingtai</b> does the rest: runs your tests, has a second AI review the change, waits for
+                      your OK to merge, and keeps a record of what it cost. <a href="#replay">See it above ↑</a>
+                    </p>
+                  </div>
+                </figure>
+              </div>
+              <div className="ledger">
+                <div className="ledger-top">
+                  <span>LINGTAI / THE DIFFERENCE</span>
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
+                    <path d="M9 8h6M9 12h6" />
+                  </svg>
+                </div>
+                <table data-route-table>
+                  <caption className="sr-only">The agent alone, and with Lingtai</caption>
+                  <colgroup>
+                    <col className="lg-key" />
+                    <col />
+                    <col />
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <td />
+                      <th scope="col">Claude Code · Codex alone</th>
+                      <th scope="col">With Lingtai</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {LEDGER.map((row) => (
+                      <tr key={row.key} className={row.see ? 'lg-new' : undefined}>
+                        <th scope="row">{row.key}</th>
+                        <td className="lg-a">{row.alone}</td>
+                        <td className="lg-b">
+                          {row.lingtai}
+                          {row.see ? (
+                            <>
+                              {' '}
+                              <a className="lg-see" href={row.see.href} data-route-from>
+                                {row.see.label}
+                              </a>
+                            </>
+                          ) : null}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+            <FailurePaths />
+            <RouteArrow />
+          </div>
+
+          <section className="why-faq">
             <div className="faq">
               <h3 className="faq-title">Common questions</h3>
               <div className="faq-list">
+                <details className="faq-item faq-wide" open>
+                  <summary>What does it do in each case?</summary>
+                  <FailurePathsTable />
+                </details>
                 <details className="faq-item">
                   <summary>Will it break main?</summary>
                   <p>
@@ -309,13 +366,6 @@ export function HomePage({ books }: { books: Books | null }) {
                   <p>
                     Every paid call is recorded. Set a daily limit and it pauses when the limit is reached, until
                     midnight or until you resume it.
-                  </p>
-                </details>
-                <details className="faq-item">
-                  <summary>Will it loop forever?</summary>
-                  <p>
-                    No. Each ticket gets a fixed number of <a href="#when-it-fails">fix attempts</a>. When they run out,
-                    it stops and asks you what to do, with a suggested answer.
                   </p>
                 </details>
                 <details className="faq-item">

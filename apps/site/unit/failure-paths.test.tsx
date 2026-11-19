@@ -6,6 +6,8 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Recipe } from '../../../packages/recipe/src/recipe.ts'
+import { FailurePaths } from '../src/app/failure-paths'
+import { FailurePathsStage } from '../src/app/failure-paths-stage'
 import { HomePage } from '../src/app/page'
 
 /**
@@ -36,7 +38,7 @@ const LANES: Record<string, string> = {
 function item(key: string): string {
   const start = html.indexOf(`data-key="${key}"`)
   expect(start, `item ${key}`).toBeGreaterThan(-1)
-  const end = html.indexOf('</details>', start)
+  const end = html.indexOf('</tr>', start)
   return text(html.slice(start, end))
 }
 
@@ -51,34 +53,45 @@ const limits = (
 ).limits
 
 describe('the home page says where each failure goes', () => {
-  it('sits after the replay and before the sandbox band', () => {
-    const replay = html.indexOf('class="replay"')
+  it('sits after the ledger and before the FAQ', () => {
+    const ledger = html.indexOf('class="ledger"')
     const section = html.indexOf('id="when-it-fails"')
-    const sandbox = html.indexOf('class="sandbox-pitch"')
-    expect(replay).toBeGreaterThan(-1)
-    expect(section).toBeGreaterThan(replay)
-    expect(sandbox).toBeGreaterThan(section)
+    const faq = html.indexOf('class="faq-item')
+    expect(ledger).toBeGreaterThan(-1)
+    expect(section).toBeGreaterThan(ledger)
+    expect(faq).toBeGreaterThan(section)
   })
 
-  it('has seven items with their lane tags, and no monthly counts', () => {
-    expect(html.match(/class="fp-item"/g)).toHaveLength(7)
+  it('has seven rows in the FAQ table with their lane tags, and no monthly counts', () => {
+    expect(html.match(/<tr data-key=/g)).toHaveLength(7)
     for (const key of KEYS) expect(item(key), key).toContain(LANES[key])
     expect(html).not.toContain('fp-count')
-    expect(text(html)).toContain('Pick a failure. See where it goes.')
+    expect(text(html)).toContain('Here is what happens when something breaks.')
+    expect(text(html)).not.toContain('Pick a failure. See where it goes.')
     expect(text(html)).toContain('If the quick look itself fails, it asks once more, then hands it to you and says so.')
   })
 
-  it('links the FAQ answer to the section without changing its words', () => {
-    expect(html).toContain('<a href="#when-it-fails">fix attempts</a>')
-    const answer = text(html.replace(/<\/?a[^>]*>/g, ''))
-    expect(answer).toContain(
-      'No. Each ticket gets a fixed number of fix attempts. When they run out, it stops and asks you what to do, with a suggested answer.',
-    )
+  it('asks "What does it do in each case?" first, and no longer asks "Will it loop forever?"', () => {
+    const faq = html.slice(html.indexOf('class="faq"'))
+    expect(faq.indexOf('What does it do in each case?')).toBeGreaterThan(-1)
+    expect(faq.indexOf('What does it do in each case?')).toBeLessThan(faq.indexOf('Will it break main?'))
+    expect(html).not.toContain('Will it loop forever?')
   })
 
-  it('hides the drawing and opens the list until script runs', () => {
+  it('links See how to the section, and the section back to the replay', () => {
+    expect(html).toMatch(/<a[^>]*href="#when-it-fails"[^>]*data-route-from[^>]*>See how ↓<\/a>/)
+    expect(html).toContain('When something breaks')
+    expect(html).toContain('href="#replay">See it above ↑')
+  })
+
+  it('hides the drawing until script runs, and opens the FAQ table', () => {
     expect(html).toMatch(/class="fp-live"[^>]*hidden/)
-    expect(html).toMatch(/<details class="fp-all" open/)
+    expect(html).toMatch(/<details class="faq-item faq-wide" open/)
+  })
+
+  it('hands the drawing all seven paths, since it reads no copy from the page', () => {
+    const stage = FailurePaths().props.children.find((c: { type?: unknown }) => c?.type === FailurePathsStage)
+    expect(stage.props.items.map((i: { key: string }) => i.key)).toEqual(KEYS)
   })
 })
 
@@ -115,7 +128,8 @@ describe('the numbers the copy states', () => {
 
   it('unclear: the question card — TRIAGE_QUESTIONS_MAX and TRIAGE_ANSWERS_MAX, with the 2 a literal', () => {
     const CHOICES_MIN = 2 // triage.ts: the answers array is `.min(2)`
-    expect(item('unclear')).toContain(
+    // the card is held in the drawing's hidden template, not in the table
+    expect(text(html)).toContain(
       `Up to ${TRIAGE_QUESTIONS_MAX} questions at a time, ${CHOICES_MIN} to ${TRIAGE_ANSWERS_MAX} choices each`,
     )
   })

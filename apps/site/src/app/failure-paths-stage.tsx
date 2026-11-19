@@ -1,11 +1,11 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 
 /**
  * The drawing for "When it fails" (#1265; the agreed mock `doc/design/failure-paths.html`, whose script this is).
- * It holds no copy of its own: each item's words are read from the server-rendered list in the same section,
- * so the drawing and the list cannot disagree. What lives here is the *shape* of each path, which is drawing.
+ * It holds no copy of its own: each item's words are handed in from the one constant the FAQ table is also
+ * mapped over, so the drawing and the table cannot disagree. What lives here is the *shape* of each path, which is drawing.
  * Imports nothing outside `react` — no `@lingtai/*` — which only the Next build can check.
  */
 
@@ -35,6 +35,9 @@ type Op = {
   dotLabel?: string
 }
 type Path = { base: Op[]; keep?: number; ext?: Op[] }
+/** What the page hands the drawing for one path: a subset of the constant the FAQ table is mapped over. */
+export type PathItem = { key: string; say: string; what: string; bound: string; ext?: string }
+
 type Item = { key: string; say: string; what: string; bound: string; extText: string; ask: Element | null }
 
 const R = 0
@@ -772,23 +775,23 @@ function text(parent: Element, tag: string, className: string, content: string, 
   return e
 }
 
-/** Mounts the picker and the drawing into `host`, reading the section's list. Returns what undoes it. */
-function mount(host: HTMLElement, section: HTMLElement): () => void {
+/** Mounts the picker and the drawing into `host`, from the paths it is given. Returns what undoes it. */
+function mount(host: HTMLElement, paths: PathItem[]): () => void {
   const chipsBox = host.querySelector<HTMLElement>('.fp-chips')!
   const stage = host.querySelector<HTMLElement>('.fp-stage')!
   const svg = host.querySelector<SVGSVGElement>('.fp-svg')!
   const result = host.querySelector<HTMLElement>('.fp-result')!
   const askSlot = host.querySelector<HTMLElement>('.fp-askslot')!
   const out = host.querySelector<HTMLElement>('.fp-out')!
-  const all = section.querySelector<HTMLDetailsElement>('.fp-all')
+  const card = host.querySelector('.fp-ask-template .fp-ask')
 
-  const items: Item[] = [...section.querySelectorAll<HTMLElement>('.fp-item')].map((el) => ({
-    key: el.dataset.key ?? '',
-    say: el.querySelector('.fp-say')?.textContent ?? '',
-    what: el.querySelector('.fp-what')?.textContent ?? '',
-    bound: el.querySelector('.fp-bound')?.textContent ?? '',
-    extText: el.querySelector('.fp-ext')?.textContent ?? '',
-    ask: el.querySelector('.fp-ask'),
+  const items: Item[] = paths.map((p) => ({
+    key: p.key,
+    say: p.say,
+    what: p.what,
+    bound: p.bound,
+    extText: p.ext ?? '',
+    ask: p.key === 'unclear' ? card : null,
   }))
 
   const mq = matchMedia('(prefers-reduced-motion: reduce)')
@@ -1443,10 +1446,8 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
     go(animate)
   }
 
-  // The script is running: the drawing replaces the open list, which stays one click away.
+  // The script is running: the drawing shows. The table in the FAQ is a view of the same paths and stays as it is.
   host.hidden = false
-  if (all) all.open = false
-  section.querySelectorAll<HTMLDetailsElement>('.fp-item').forEach((d) => (d.open = false))
 
   let lastW = 0
   const ro = new ResizeObserver(() => {
@@ -1476,14 +1477,13 @@ function mount(host: HTMLElement, section: HTMLElement): () => void {
   }
 }
 
-export function FailurePathsStage() {
+export function FailurePathsStage({ items, children }: { items: PathItem[]; children?: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     const host = ref.current
-    const section = host?.closest('section')
-    if (!host || !section) return
-    return mount(host, section)
-  }, [])
+    if (!host) return
+    return mount(host, items)
+  }, [items])
   return (
     <div className="fp-live" ref={ref} hidden>
       <div className="fp-chips" role="group" aria-label="Pick a failure" />
@@ -1493,6 +1493,9 @@ export function FailurePathsStage() {
       <div className="fp-out fp-no-ask" aria-live="polite">
         <div className="fp-result" />
         <div className="fp-askslot" />
+      </div>
+      <div className="fp-ask-template" hidden>
+        {children}
       </div>
     </div>
   )
