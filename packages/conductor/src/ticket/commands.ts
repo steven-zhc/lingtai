@@ -548,7 +548,7 @@ export function finishTriage(
       ifVersion: options.ifVersion,
       since,
     }
-    let decided: { ok: true; events: ToAppend[]; action?: unknown } | { ok: false; refusal: TriageRefusal }
+    let decided: { ok: true; events: ToAppend[]; resolution: Resolution | null } | { ok: false; refusal: TriageRefusal }
     if (result._tag === 'TriageAnswered' && options.act !== undefined) {
       const read = yield* Effect.exit(options.act(state))
       if (Exit.isFailure(read) && Cause.hasInterruptsOnly(read.cause)) return yield* Effect.failCause(read.cause)
@@ -558,17 +558,15 @@ export function finishTriage(
         : actOnTriageTransition(state, { ...input, result, context: read.value })
     } else {
       const finished = finishTriageTransition(state, { ...input, result })
-      decided = finished.ok ? finished : { ok: false, refusal: finished.refusal.reason }
+      decided = finished.ok ? { ...finished, resolution: null } : { ok: false, refusal: finished.refusal.reason }
     }
     if (decided.ok) {
       const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
       if (lost) return { ok: false, lost: true } as const
-      const resolved = decided.events.find((e) => e.type === 'WaitResolved')
-      const data = resolved?.data as PayloadOf<'WaitResolved'> | undefined
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
       return {
         ok: true,
-        resolved: data === undefined ? null : { resolution: data.resolution, runId: block?.runId ?? null },
+        resolved: decided.resolution === null ? null : { resolution: decided.resolution, runId: block?.runId ?? null },
       } as const
     }
     // The refusal is a failure of this attempt, and a record of it: bound to the version just read.

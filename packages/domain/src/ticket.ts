@@ -1287,7 +1287,13 @@ export type ActContext = {
   redo: { onSha: string; ref: string | null } | null
 }
 
-export type ActOnTriageDecision = { ok: true; events: ToAppend[]; action: CauseAction | null }
+/** `resolution` is the one the same append resolved the wait with, or `null` when only the answer is recorded. */
+export type ActOnTriageDecision = {
+  ok: true
+  events: ToAppend[]
+  action: CauseAction | null
+  resolution: Resolution | null
+}
 
 /**
  * **A triage answer the system can act on resolves its own wait** (0108 §6, 0118 §3), pure. Checked, in order: the wait
@@ -1315,7 +1321,7 @@ export function actOnTriageTransition(
   const { context } = input
   const triaged = triagedEvent(input)
   const action = actionFor(input.result.cause, context.origin, context.counters)
-  const advice: ActOnTriageDecision = { ok: true, events: [triaged], action }
+  const advice: ActOnTriageDecision = { ok: true, events: [triaged], action, resolution: null }
   if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep' || action._tag === 'splitTicket')
     return advice
   // A wait the reduce has never seen has no reason to resolve against: advice only.
@@ -1351,7 +1357,7 @@ export function actOnTriageTransition(
     system: bound === null ? {} : { spent: { bound, n: context.counters[bound].used + 1 } },
   })
   if (!resolved.ok) return { ok: false, refusal: 'not-offered' }
-  return { ok: true, events: [triaged, ...resolved.events], action }
+  return { ok: true, events: [triaged, ...resolved.events], action, resolution }
 }
 
 export type CloseDecline = { reason: 'already-closed' } | { reason: 'landed' } | { reason: 'changed' }
