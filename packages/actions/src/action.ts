@@ -512,6 +512,8 @@ export interface RedoNote {
   readonly startedAt: string
   /** `HEAD` after the reset: everything committed, WIP included. */
   readonly head: string
+  /** The key of the body section that holds the answers to what this step asked (#1254): the step continues, it was not interrupted. */
+  readonly answered?: string
 }
 
 export interface ActionContext {
@@ -1363,6 +1365,8 @@ export function withRedoParagraph(prompt: string, paragraph: string | null | und
  * agents that are handed it cannot word it differently.
  */
 export function redoParagraph(redo: RedoNote, kept: readonly string[] = []): string {
+  if (redo.answered !== undefined)
+    return `You stopped this step to ask a person, and they answered: the answers are in the ticket body, between the \`<!-- lingtai:answer ${redo.answered} -->\` and \`<!-- /lingtai:answer -->\` markers. Your work so far is committed to ${redo.head}; carry on from it with the answers, do not ask again what they settle, and do not redo what is committed.`
   const saved = kept.length === 0 ? '' : `, including any unfinished work Lingtai saved for you (${kept.join(', ')})`
   const began = redo.startedAt === redo.head ? `it began at ${redo.head}` : `it began at ${redo.startedAt}`
   return `This step was interrupted (${redo.why}); ${began} and is committed to ${redo.head}${saved}. Carry on, and do not redo what is committed.`

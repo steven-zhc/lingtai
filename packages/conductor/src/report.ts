@@ -366,6 +366,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
   SetupRefused: 'a fix to the setup',
   AnswerUnreadable: 'a decision on an unreadable answer',
   SatisfiedUnconfirmed: 'your confirmation that it was already done',
+  AskLimit: 'a decision after the ticket had asked five times',
 }
 
 /** How a wait ended. */
@@ -373,6 +374,7 @@ export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   Approve: 'approved',
   FixRefusal: 'a refusal fix granted',
   RedoStep: 'the step run again',
+  AnswerQuestions: 'answered, and the step continued',
   AnswerQuestion: 'answered',
   ConfirmSatisfied: 'confirmed satisfied',
   StartNewAttempt: 'started over',

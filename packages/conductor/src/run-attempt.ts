@@ -1055,6 +1055,13 @@ export interface AttemptOptions {
       readonly why: string
       readonly startedAt?: string
     }
+    /**
+     * **The first visit of `step` continues what a person answered** (#1254, 0108 §22): the step asked, the answers are in
+     * the body under `key`'s section, and the worktree stands at the saved head. Like `redo` it is a rerun in place —
+     * `accountReruns` is the number its dispatch suffix carries — but it replays no recorded prompt: the brief is built
+     * fresh, from the body that now holds the answers.
+     */
+    readonly answered?: { readonly key: string; readonly accountReruns: number }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -2375,7 +2382,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   head: onSha,
                 },
               }
-            : contextFor()
+            : options.from?.answered !== undefined && at === options.from.step && !steps.some((visit) => visit.step === at)
+              ? {
+                  ...contextFor(),
+                  rerun: stepRedosSpent + landingRetriesSpent + options.from.answered.accountReruns,
+                  redo: { why: 'answered', startedAt: onSha, head: onSha, answered: options.from.answered.key },
+                }
+              : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached
       rerun = null
       /**
