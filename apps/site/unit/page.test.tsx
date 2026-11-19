@@ -151,9 +151,9 @@ describe("the home page's argument", () => {
     const block = faq.slice(0, faq.indexOf('</section>'))
     expect(block.match(/<details/g)).toHaveLength(5)
     for (const q of [
+      'What does it do in each case?',
       'Will it break main?',
       'Will it run up a bill?',
-      'Will it loop forever?',
       'What if my laptop restarts at 3am?',
       'Can it weaken its own checks?',
     ]) {
@@ -276,10 +276,12 @@ describe('why not just give the agent the issue', () => {
 
   it('links to the replay receipt, as a real table', () => {
     expect(html).toContain('id="replay"')
-    expect(html).toMatch(/<a class="why-ref" href="#replay"/)
-    expect(html).toContain('<table')
-    expect(html.match(/scope="col"/g)).toHaveLength(2)
-    expect(html.match(/scope="row"/g)).toHaveLength(7)
+    expect(html).toMatch(/<a href="#replay">See it above ↑<\/a>/)
+    const ledger = html.slice(html.indexOf('class="ledger"'), html.indexOf('class="fp-head"'))
+    expect(ledger).toContain('<table')
+    expect(ledger.match(/scope="col"/g)).toHaveLength(2)
+    // the seven it always had, and When something breaks (#1291)
+    expect(ledger.match(/scope="row"/g)).toHaveLength(8)
   })
 })
 

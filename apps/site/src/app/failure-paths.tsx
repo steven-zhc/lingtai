@@ -1,8 +1,9 @@
 import { FailurePathsStage } from './failure-paths-stage'
 
 /**
- * Where each failure goes (#1265, the agreed mock `doc/design/failure-paths.html`). This list is the whole
- * section without script, and the drawing reads each item's words from it, so the two cannot disagree.
+ * Where each failure goes (#1265, #1291; the agreed mock `doc/design/smart-routing.html`). `ITEMS` is the one
+ * source: the drawing is handed it, and the FAQ's table is mapped over it, so the two cannot disagree. Without
+ * script the table is the whole of the paths.
  * The copy is written out as it is shown: `unit/failure-paths.test.tsx` holds every number in it to the
  * constant it states.
  */
@@ -115,42 +116,76 @@ function QuestionCard() {
   )
 }
 
+const LEGEND = [
+  { lane: 'rule', bold: 'A rule', rest: ' handles most of it, free' },
+  { lane: 'look', bold: 'one quick AI look', rest: ' handles some, for cents' },
+  { lane: 'you', bold: 'you', rest: ' see only what needs a decision' },
+]
+
 export function FailurePaths() {
   return (
     <section className="fp" id="when-it-fails" aria-labelledby="fp-title">
       <div className="fp-head">
-        <div>
-          <p className="kicker">When it fails</p>
-          <h2 id="fp-title">Pick a failure. See where it goes.</h2>
+        <div className="fp-head-box" data-route-to>
+          <h2 id="fp-title">Here is what happens when something breaks.</h2>
+          <p className="fp-legend">
+            {LEGEND.map((l, i) => (
+              <span key={l.lane}>
+                {i > 0 ? ' · ' : null}
+                <span className={`fp-dot-key fp-${l.lane}`} aria-hidden="true" />
+                <b>{l.bold}</b>
+                {l.rest}
+              </span>
+            ))}
+            . Every path has a limit.
+          </p>
         </div>
-        <p className="fp-sub">
-          Most are handled by a rule, for free. Some get one quick look. Few ever reach you. Every path has a limit, so
-          nothing loops forever.
-        </p>
       </div>
 
-      <FailurePathsStage />
-
-      <details className="fp-all" open>
-        <summary>Every path, as a list</summary>
-        <ul className="fp-list">
-          {ITEMS.map((it) => (
-            <li key={it.key}>
-              <details className="fp-item" data-key={it.key} open>
-                <summary>
-                  <span className="fp-say">{it.say}</span>
-                  <span className={`fp-lanetag fp-${it.lane}`}>{it.laneName}</span>
-                </summary>
-                <p className="fp-what">{it.what}</p>
-                <p className="fp-bound">{it.bound}</p>
-                {it.ext ? <p className="fp-ext">{it.ext}</p> : null}
-                {it.key === 'unclear' ? <QuestionCard /> : null}
-              </details>
-            </li>
-          ))}
-        </ul>
-        <p className="fp-edge">If the quick look itself fails, it asks once more, then hands it to you and says so.</p>
-      </details>
+      <FailurePathsStage items={ITEMS}>
+        <QuestionCard />
+      </FailurePathsStage>
     </section>
+  )
+}
+
+/** The seven paths as one table: the FAQ's first answer, and the whole of the section without script. */
+export function FailurePathsTable() {
+  return (
+    <>
+      <table className="fp-table">
+        <thead>
+          <tr>
+            <th>When</th>
+            <th>Who handles it</th>
+            <th>What happens</th>
+            <th>Limit, and past it</th>
+          </tr>
+        </thead>
+        <tbody>
+          {ITEMS.map((it) => (
+            <tr key={it.key} data-key={it.key}>
+              <th scope="row" className="fp-say">
+                {it.say}
+              </th>
+              <td>
+                <span className={`fp-lanetag fp-${it.lane}`}>{it.laneName}</span>
+              </td>
+              <td className="fp-what">{it.what}</td>
+              <td>
+                <b className="fp-bound">{it.bound}</b>
+                {it.ext ? (
+                  <>
+                    <br />
+                    <span className="fp-ext">{it.ext}</span>
+                  </>
+                ) : null}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="fp-edge">If the quick look itself fails, it asks once more, then hands it to you and says so.</p>
+    </>
   )
 }
