@@ -176,6 +176,30 @@ describe('decideImplementOutcome', () => {
   })
 })
 
+describe('what an AlreadyDone arrival offers (#1251)', () => {
+  it('is the check and a person — no fix round and no restart, there is no criterion yet — and a built-in answers it', async () => {
+    const { offerFor, BUILT_IN_FOR } = await import('../src/index.ts')
+    const offer = offerFor(
+      {
+        _tag: 'AlreadyDone',
+        items: [{ item: 'it works', evidence: 'a.ts:1' }],
+        baseSha: 'ba5e',
+        bodyVersion: 2,
+      },
+      { refusalFixes: 2, newAttempts: 1, conflictResolutions: 2 },
+      { rounds: 0, newAttempts: 0 },
+    )
+    expect(offer.available.map((c) => c.id)).toEqual(['check-done', 'hand-to-person'])
+    expect(offer.available[0]!.next).toEqual({
+      _tag: 'CheckDone',
+      baseSha: 'ba5e',
+      bodyVersion: 2,
+      items: [{ item: 'it works', evidence: 'a.ts:1' }],
+    })
+    expect(BUILT_IN_FOR['already-done']).toBe('check-the-evidence')
+  })
+})
+
 describe('nextOf an implement that declared', () => {
   const run = { runId: 'r' }
   const outcomeOf = (result: object): StepOutcome =>
