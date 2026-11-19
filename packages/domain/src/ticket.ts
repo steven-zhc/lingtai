@@ -32,7 +32,14 @@ import {
 } from './events.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
-import { allowedResolutions, type Resolution, type TriageResult, type WaitReason } from './wait.ts'
+import {
+  allowedResolutions,
+  isPersonAsk,
+  limitedReason,
+  type Resolution,
+  type TriageResult,
+  type WaitReason,
+} from './wait.ts'
 
 /** How an attempt ended: the later of a release and a question put to a person (D13). */
 export type AttemptEnding =
@@ -70,6 +77,11 @@ export interface TicketWait {
   readonly closed: { readonly by: string } | null
 }
 
+/** How many of these waits spent a `personAsks` (#1254): every one that asked, resolved or not. */
+export function personAsksSpent(waits: readonly TicketWait[]): number {
+  return waits.filter((w) => isPersonAsk(w.reason, w.triage.result)).length
+}
+
 /**
  * The waits rule, once. Called for every event before `closed` absorbs anything,
  * so a closed ticket's waits read as a scan of its stream reads them.
@@ -82,7 +94,8 @@ export function reduceWaits(waits: readonly TicketWait[], event: Envelope): read
         ...waits,
         {
           waitId: d.waitId,
-          reason: d.reason,
+          // The sixth stop to ask is the limit wait itself, written here so every reader reads one wait (#1254).
+          reason: limitedReason(d.reason, null, personAsksSpent(waits)),
           at: event.at,
           resolution: null,
           triage: { started: null, result: null, headSha: null },
@@ -114,7 +127,14 @@ export function reduceWaits(waits: readonly TicketWait[], event: Envelope): read
       const d = event.data as PayloadOf<'WaitTriaged'>
       return waits.map((w) =>
         w.waitId === d.waitId && w.triage.started?.attempt === d.attempt && w.triage.result === null
-          ? { ...w, triage: { ...w.triage, result: d.result, headSha: d.headSha } }
+          ? {
+              ...w,
+              // A triage that asks turns a stop that was not an ask into one, and into the limit wait if it is the sixth.
+              reason: isPersonAsk(w.reason, null)
+                ? w.reason
+                : limitedReason(w.reason, d.result, personAsksSpent(waits.filter((o) => o.waitId !== w.waitId))),
+              triage: { ...w.triage, result: d.result, headSha: d.headSha },
+            }
           : w,
       )
     }
@@ -600,7 +620,7 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         lifecycle: {
           status: 'blocked',
           waitId: d.waitId,
-          reason: d.reason,
+          reason: state.waits.findLast((w) => w.waitId === d.waitId)?.reason ?? d.reason,
           runId: 'run' in d.reason ? d.reason.run.runId : null,
         },
         github: { ...state.github, lastWait: d.waitId },
@@ -644,6 +664,16 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       }
     }
 
+    case 'WaitTriaged': {
+      // A triage can turn the wait the lifecycle holds into the limit wait (#1254): the lifecycle says what the wait says.
+      const d = event.data as PayloadOf<'WaitTriaged'>
+      const life = state.lifecycle
+      const wait = state.waits.findLast((w) => w.waitId === d.waitId)
+      if (life.status !== 'blocked' || life.waitId !== d.waitId || wait === undefined || wait.reason === life.reason)
+        return { ...state, ...at }
+      return { ...state, ...at, lifecycle: { ...life, reason: wait.reason } }
+    }
+
     case 'WaitResolved': {
       const d = event.data as PayloadOf<'WaitResolved'>
       // The answer is kept, and that is the whole of #147's reducer change: this
@@ -670,7 +700,10 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
       // `allowedResolutions` offers `Approve` for no `WaitReason` that lacks
       // a run.
       if (
-        (d.resolution._tag === 'Approve' || d.resolution._tag === 'FixRefusal' || d.resolution._tag === 'RedoStep') &&
+        (d.resolution._tag === 'Approve' ||
+        d.resolution._tag === 'FixRefusal' ||
+        d.resolution._tag === 'RedoStep' ||
+        d.resolution._tag === 'AnswerQuestions') &&
         block !== null
       ) {
         return {
@@ -1045,17 +1078,18 @@ export function resolveWaitTransition(
   }
   // A rerun whose continuation was never scheduled is asked for again the same way (#1218).
   if (
-    resolution._tag === 'RedoStep' &&
+    (resolution._tag === 'RedoStep' || resolution._tag === 'AnswerQuestions') &&
     life.status === 'approved' &&
     life.waitId === input.waitId &&
-    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === 'RedoStep' &&
+    state.waits.find((w) => w.waitId === life.waitId)?.resolution?.resolution._tag === resolution._tag &&
     (!resolution.onSha || matchHead(resolution.onSha, life.onSha ?? '') === 'match')
   ) {
     return { ok: true, kind: 'repeat', runId: life.runId }
   }
   if (life.status !== 'blocked' || life.waitId !== input.waitId)
     return { ok: false, refusal: { reason: 'not-blocked', waitId: input.waitId } }
-  if (!allowedResolutions(life.reason).includes(resolution._tag)) {
+  const asked = state.waits.findLast((w) => w.waitId === input.waitId)
+  if (!allowedResolutions(life.reason, asked?.triage.result).includes(resolution._tag)) {
     return {
       ok: false,
       refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: life.reason },

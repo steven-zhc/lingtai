@@ -176,7 +176,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 3: a release's `NewAttempt{newAttempt}` replaces `Restart{restart}`, and a wait's ceiling names its bound (#1241); a version-2 snapshot holds the old tags.
   // 7: an `AgentQuestion` or `InputNeeded` carries `questions` and `said`, not `question` (#1253); a version-6 snapshot holds the string.
   // 8: a `TicketSatisfied` ends a ticket `satisfied` (#1251); a version-7 snapshot cannot hold it.
-  version: 8,
+  // 9: an `AnswerQuestions` resolution, and a wait's reason is the `AskLimit` where it would be the sixth ask (#1254); a version-8 snapshot holds neither.
+  version: 9,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,
