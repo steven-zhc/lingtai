@@ -467,8 +467,50 @@ export function stateWord(state: StandingState): string {
  * say — the diagnosis, the recommendation — is null until #83 writes one, and
  * the block renders without it.
  */
+/**
+ * What a `TicketSatisfied` said (#1252): the sha it was checked at, each
+ * `## Done when` item with its evidence, and who ended it. `byConductor` is the
+ * split parent, which the system ends; anything else is a person's confirm.
+ */
+export interface SatisfiedView {
+  baseSha: string
+  items: { item: string; evidence: string }[]
+  actor: string
+  byConductor: boolean
+}
+
+/** The last `TicketSatisfied` on a ticket's stream, or null. Pure. */
+export function satisfiedOf(own: readonly Envelope[]): SatisfiedView | null {
+  const e = [...own].reverse().find((x) => x.type === 'TicketSatisfied')
+  if (e === undefined) return null
+  const d = e.data as { baseSha?: unknown; items?: unknown }
+  const items = Array.isArray(d.items)
+    ? d.items.map((i) => ({
+        item: String((i as { item?: unknown }).item ?? ''),
+        evidence: String((i as { evidence?: unknown }).evidence ?? ''),
+      }))
+    : []
+  return { baseSha: String(d.baseSha ?? ''), items, actor: e.actor, byConductor: e.actor === 'conductor' }
+}
+
+/**
+ * The tag on an evidence row: the first `#N` in the evidence that names one of
+ * the split's children, otherwise the base. A pure reading — no field invented.
+ */
+export function evidenceSource(evidence: string, children: readonly number[], base: string | null): string | null {
+  for (const m of evidence.matchAll(/#(\d+)/g)) {
+    const n = Number(m[1])
+    if (children.includes(n)) return `#${n}`
+  }
+  return base
+}
+
 export interface StandingView {
   state: StandingState
+  /** Present only on a satisfied ticket: what it was found to be done by. */
+  satisfied?: SatisfiedView | null
+  /** What an evidence row's source tag names: the project's base and the split's children (#1252). */
+  satisfiedContext?: { base: string | null; children: number[] }
   /** The last person's move, only when its resulting lifecycle is still current. */
   afterMove?: {
     resolution: string
@@ -806,7 +848,25 @@ function decidingOf(runs: readonly AttemptView[], named: AttemptView | null): De
   return null
 }
 
-function whoWaits(life: TicketLifecycle): string {
+/**
+ * A satisfied ticket's standing with the base's name and the split's children, which only the caller that
+ * reads the project holds (#1252). Pure; any other standing is returned as it was.
+ */
+export function withSatisfiedContext(
+  standing: StandingView,
+  life: TicketLifecycle,
+  base: string | null,
+  children: readonly number[],
+): StandingView {
+  if (life.status !== 'satisfied' && standing.reason?._tag !== 'SatisfiedUnconfirmed') return standing
+  return {
+    ...standing,
+    ...(life.status === 'satisfied' ? { who: whoWaits(life, base) } : {}),
+    satisfiedContext: { base, children: [...children] },
+  }
+}
+
+function whoWaits(life: TicketLifecycle, base: string | null = null): string {
   switch (life.status) {
     case 'blocked':
       // The two a person can tell apart at a glance (#147): nothing has run, or
@@ -818,6 +878,8 @@ function whoWaits(life: TicketLifecycle): string {
       return 'an agent is working'
     case 'landed':
       return `merged into ${life.base}`
+    case 'satisfied':
+      return `found already done${base === null ? '' : ` on ${base}`} at ${life.baseSha.slice(0, 7)}`
     case 'approved':
       return 'approved — waiting for a conductor to continue it'
     case 'closed':
@@ -921,6 +983,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
     since: since === null ? null : since.toISOString(),
     onYou: blocked,
     who: whoWaits(life),
+    satisfied: life.status === 'satisfied' ? satisfiedOf(own) : null,
     // One line, and the same clip the evidence pointer gets. See `question`.
     question: words === null ? null : oneLine(words.line),
     needs: words?.needs ?? null,
@@ -1288,10 +1351,10 @@ export function presentAttemptEvents(
    */
   {
     plan,
-    over = false,
+    over = null,
     held = false,
     branch = '',
-  }: { plan?: StepPlan; over?: boolean; held?: boolean; branch?: string } = {},
+  }: { plan?: StepPlan; over?: 'landed' | 'satisfied' | null; held?: boolean; branch?: string } = {},
 ): AttemptView {
   const state = reduceAttempt(run)
   return presentAttempt(state, claim, attempt, progressOf(state, plan, over), held, branch)
@@ -1785,9 +1848,21 @@ export const readAttempts = cache(async (taskId: string) => {
   const heldRun = heldRunOf(ticketState.lifecycle)
   const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
   const reduced = claims.map((c, i) =>
-    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, false), c.runId === heldRun, branch),
+    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, null), c.runId === heldRun, branch),
   )
-  const standing = standingOf(own, reduced)
+  const standing = await (async () => {
+    const plain = standingOf(own, reduced)
+    if (ticketState.lifecycle.status !== 'satisfied' && plain.reason?._tag !== 'SatisfiedUnconfirmed') return plain
+    const named = parseTicketStream(taskId)?.project ?? null
+    // A project that cannot be read leaves the base unnamed, never guessed (#1252).
+    const base = named === null ? null : ((await readProject(named).catch(() => null))?.base ?? null)
+    return withSatisfiedContext(
+      plain,
+      ticketState.lifecycle,
+      base,
+      (ticketState.split?.children ?? []).map((c) => c.number),
+    )
+  })()
 
   // `plan` where the item is running or blocked: a gate's bound is the
   // recipe's, and a phase in flight or one that stopped mid-gate are the two
@@ -1805,13 +1880,14 @@ export const readAttempts = cache(async (taskId: string) => {
   // The last attempt reduced again with what only this function holds. **Only
   // the last**, and `over` only where the item landed: an earlier attempt was
   // released or refused, and its later points recorded nothing because nothing
-  // should have run in them — the same line `RailCandidate.over` holds, and
+  // should have run in them — the same line `RailCandidate.ending` holds, and
   // drawing the hatch there would be inventing Lingtai's bug (0041 §4).
   const last = reduced.length - 1
   const landed = standing.state === 'landed'
+  const ending = landed ? ('landed' as const) : standing.state === 'satisfied' ? ('satisfied' as const) : null
   const runs = (
-    last >= 0 && (landed || plan !== undefined)
-      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, landed) } : r))
+    last >= 0 && (ending !== null || plan !== undefined)
+      ? reduced.map((r, i) => (i === last ? { ...r, progress: progressOf(states[i]!, plan, ending) } : r))
       : reduced
   ).map((r) => {
     // This attempt's own spend: the rows whose `pass` is this run's stream —

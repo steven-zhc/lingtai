@@ -291,8 +291,11 @@ function stateOf(
    * bug out of a recipe the run never saw.
    */
   onRecord: boolean,
+  /** A satisfied ticket: a step that recorded nothing was skipped, not forgotten. */
+  satisfiedEnding = false,
 ): StepState {
   if (planned.length === 0 && seen.length === 0) return 'skipped'
+  if (satisfiedEnding && seen.length === 0) return 'skipped'
   // Above `failed`, because it is always the ending: the pipeline and the pass
   // both stop there (0041 §4), so a `failed` beside it on the same point is a
   // refusal from an earlier round, about a commit that is no longer the head.
@@ -363,7 +366,8 @@ export function progressOf(
   state: AttemptState,
   plan: StepPlan = new Map(),
   /**
-   * Whether this item **landed**. Not whether it is over.
+   * How this item ended: `landed` (not merely over), `satisfied` (found already
+   * done, so steps that recorded nothing are `skipped`), or still going.
    *
    * It cannot be read off the run's own stream: the merge lane appends
    * `IntegrationSucceeded` to its own stream and `TicketLanded` goes on the
@@ -372,9 +376,9 @@ export function progressOf(
    *
    * A **closed** item is not this, however finished it is: the pipeline stops
    * at the first refusal (0041 §4), so its later points recorded nothing
-   * because nothing should have run in them. See `RailCandidate.over`.
+   * because nothing should have run in them. See `RailCandidate.ending`.
    */
-  over = false,
+  ending: 'landed' | 'satisfied' | null = null,
 ): AttemptProgress | null {
   if (state.openedAt === null) return null
 
@@ -405,7 +409,8 @@ export function progressOf(
       // Landed, *and* against the plan the log says this run was given. A
       // stream with no `StepsResolved` falls back to today's recipe above, and
       // today's recipe cannot accuse a run of skipping a point it was never given.
-      over && recorded !== undefined,
+      ending === 'landed' && recorded !== undefined,
+      ending === 'satisfied' && step !== 'end',
     )
     const byAction = new Map(mine)
     // The plan's order first, because that is the order they run in; then
@@ -417,7 +422,9 @@ export function progressOf(
       name,
       // A point that ran nothing at all says so in every cell rather than
       // leaving them reading as *not reached yet*.
-      state: byAction.get(name) ?? (stepState === 'never-ran' ? 'never-ran' : 'pending'),
+      state:
+        byAction.get(name) ??
+        (stepState === 'never-ran' ? 'never-ran' : stepState === 'skipped' ? 'skipped' : 'pending'),
     }))
     return { step, planned, state: stepState, actions }
   })

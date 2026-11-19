@@ -1027,6 +1027,12 @@ export interface AttemptOptions {
      */
     readonly roundsSpent?: number
     /**
+     * How many of `roundsSpent` were a person's `FixRefusal` rounds (#1258). The allowance `ceilings.refusalFixes` is the
+     * system's own automatic fixes, so these are taken out of what it is judged against — earlier human rounds must not
+     * use up what triage or the router may still spend. Unused when a person's grant or `roundLimit` caps the lap.
+     */
+    readonly personRounds?: number
+    /**
      * **A ticket released for a red base, taken again** (#1211, 0108 §13): at the first visit of `build` the base
      * is checked at `toSha` (`action` is the `build` action to ask; null: no action runs the red command any
      * more) and, unless that is red again, a base merge onto it is routed as any base move is — counted in the
@@ -1091,6 +1097,8 @@ export interface AttemptOptions {
     }
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
+    /** The grant is triage's (#1258): only a person's grant caps a lap to one round, so triage's follows the recipe. */
+    readonly byTriage?: true
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
     readonly grant?: SentBack
     readonly findings?: readonly ActionFinding[]
@@ -1511,11 +1519,16 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
         },
       })
-    const roundLimit = options.from?.roundLimit ?? (options.from?.grant ? roundsSpent : ceilings.refusalFixes)
+    const roundLimit =
+      options.from?.roundLimit ?? (options.from?.grant && !options.from.byTriage ? roundsSpent : ceilings.refusalFixes)
+    // Judged against the allowance, a person's rounds are not spent from it; a cap taken from the absolute count is not.
+    const limitIsAllowance = options.from?.roundLimit === undefined && !(options.from?.grant && !options.from.byTriage)
+    const personRounds = limitIsAllowance ? Math.min(options.from?.personRounds ?? 0, roundsSpent) : 0
     // A restart is automatic fix routing too, and a bigger kind than a round: the lap
     // that spends a human grant ends at a person rather than at a restart nobody
     // decided. A continuation from `Approve` carries no grant and keeps the recipe's (#570).
-    const restartLimit = options.from?.grant !== undefined ? ceilings.newAttemptsSpent : ceilings.newAttempts
+    const restartLimit =
+      options.from?.grant !== undefined && !options.from.byTriage ? ceilings.newAttemptsSpent : ceilings.newAttempts
 
     /** Where on the spine the walk is. `null` once there is nothing left but `end`. */
     let at: Step | null = 'admit'
@@ -1811,7 +1824,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           conflictResolutions: ceilings.conflictResolutions,
         }
         const spentNow = {
-          rounds: roundsSpent,
+          rounds: roundsSpent - personRounds,
           newAttempts: ceilings.newAttemptsSpent,
           baseMerges: baseMergesSpent,
           conflictRounds: conflictRoundsSpent,
@@ -2194,7 +2207,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               )
             }
             // A conflict round has its own counter and leaves `rounds` where it was (#653).
-            if (next.conflict === undefined) roundsSpent = next.round
+            if (next.conflict === undefined) roundsSpent = next.round + personRounds
             else conflictRoundsSpent = next.conflict
             at = next.to
             return true

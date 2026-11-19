@@ -65,7 +65,18 @@ export function resolutionCopyFor(
   if (tag === 'Approve' && reason?._tag === 'ProposedEscalated' && reason.proposal._tag === 'DiffTooLarge') {
     return clippedApproveCopy(reason.proposal.limit)
   }
+  if (reason?._tag === 'SatisfiedUnconfirmed') {
+    const own = SATISFIED_WAIT_TITLE[tag]
+    if (own !== undefined) return { title: own, consequence: RESOLUTION_COPY[tag].consequence }
+  }
   return RESOLUTION_COPY[tag]
+}
+
+/** The mock's titles for the confirm wait (#1252), keyed here so no other wait reads them. */
+const SATISFIED_WAIT_TITLE: Partial<Record<Resolution['_tag'], string>> = {
+  ConfirmSatisfied: 'Confirm it is already done',
+  StartNewAttempt: 'Start over from base',
+  EditBodyAndStartNewAttempt: 'Add to the ticket and start over',
 }
 
 /** Approve on a `DiffTooLarge` wait, for a surface that has the limit and not the reason (#892). */

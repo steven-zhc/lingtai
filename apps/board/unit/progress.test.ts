@@ -118,7 +118,7 @@ describe('where a run has got to', () => {
     expect(stateOf(running, 'claim')).toBe('passed')
     expect(running.find((p) => p.step === 'claim')?.actions).toEqual([{ name: 'take the ticket', state: 'passed' }])
 
-    const landed = progressOf(reduceAttempt(timeline()), PLAN, true)?.steps ?? []
+    const landed = progressOf(reduceAttempt(timeline()), PLAN, 'landed')?.steps ?? []
     expect(stateOf(landed, 'claim')).toBe('passed')
   })
 

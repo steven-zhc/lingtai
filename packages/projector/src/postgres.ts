@@ -538,7 +538,8 @@ export function makePostgresProjections(options: PostgresProjectionStoreOptions 
     }),
 
     landed: Effect.fn('Projections.landed')(function* (query: TicketReportLandedQuery) {
-      const where = [`outcome = 'landed'`]
+      // A ticket found already done is over and counts as landed, marked `satisfied` (#1252).
+      const where = [`outcome IN ('landed', 'satisfied')`]
       const args: unknown[] = []
       if (query.project !== undefined) {
         args.push(query.project)

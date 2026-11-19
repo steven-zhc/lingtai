@@ -30,6 +30,7 @@ import {
   type Tier,
   type TriageStartedBy,
 } from './events.ts'
+import { actionFor, type CauseAction, type CauseBound, type CauseCounter, type CauseOrigin } from './failure/respond.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
 import { waitWords } from './wait-words.ts'
 import {
@@ -62,7 +63,12 @@ export interface TicketWait {
   /** The `WaitStarted`'s own `at`. */
   readonly at: Date
   /** The first `WaitResolved` naming this wait. */
-  readonly resolution: { readonly resolution: Resolution; readonly by: string } | null
+  readonly resolution: {
+    readonly resolution: Resolution
+    readonly by: string
+    /** What a system resolution spent, and the number its continuation records for it (#1258). Absent for a person's. */
+    readonly spent?: NonNullable<PayloadOf<'WaitResolved'>['spent']>
+  } | null
   readonly triage: {
     /** The latest `TriageStarted` by attempt. */
     readonly started: { readonly attempt: number; readonly at: Date; readonly by: TriageStartedBy } | null
@@ -108,7 +114,7 @@ export function reduceWaits(waits: readonly TicketWait[], event: Envelope): read
       const d = event.data as PayloadOf<'WaitResolved'>
       return waits.map((w) =>
         w.waitId === d.waitId && w.resolution === null
-          ? { ...w, resolution: { resolution: d.resolution, by: d.by } }
+          ? { ...w, resolution: { resolution: d.resolution, by: d.by, ...(d.spent ? { spent: d.spent } : {}) } }
           : w,
       )
     }
@@ -975,6 +981,8 @@ export function continueTransition(
 export type ReleaseInput =
   | { by: 'run'; runId: string; reason: string; cause: ReleaseCause | null }
   | { by: 'dead-worker'; mine: string; lock: string }
+  /** A new attempt triage chose (#1258): the release is the spend, as `newAttempt` counts it. */
+  | { by: 'triage'; runId: string; newAttempt: number }
   /** A person's requeue, edit or split gives the held run's claim up (0118 §7): the actor is the person. */
   | {
       by: 'person'
@@ -994,6 +1002,12 @@ export function releaseTransition(
   let data: PayloadOf<'TicketReleased'>
   if (input.by === 'run') {
     data = parsePayload('TicketReleased', { runId: input.runId, reason: input.reason, cause: input.cause })
+  } else if (input.by === 'triage') {
+    data = parsePayload('TicketReleased', {
+      runId: input.runId,
+      reason: 'Requeued by triage.',
+      cause: { _tag: 'NewAttempt', newAttempt: input.newAttempt },
+    })
   } else if (input.by === 'person') {
     const how =
       input.how === 'EditBodyAndStartNewAttempt'
@@ -1121,6 +1135,8 @@ export function resolvedEvents(
     note: string
     answers?: PayloadOf<'WaitResolved'>['answers']
     split?: unknown
+    /** The system's own resolution: the actor the store records is `conductor`, and the bound it spent rides on it. */
+    system?: { spent?: PayloadOf<'WaitResolved'>['spent'] }
   },
 ): { ok: true; events: ToAppend[] } | { ok: false; refusal: ResolveRefusal } {
   const events: ToAppend[] = []
@@ -1138,12 +1154,13 @@ export function resolvedEvents(
   }
   events.push({
     type: 'WaitResolved',
-    actor: input.by,
+    actor: input.system ? 'conductor' : input.by,
     data: parsePayload('WaitResolved', {
       waitId: input.waitId,
       by: input.by,
       resolution,
       note: input.note,
+      ...(input.system?.spent ? { spent: input.system.spent } : {}),
       ...(input.answers ? { answers: input.answers } : {}),
     }),
   })
@@ -1153,13 +1170,18 @@ export function resolvedEvents(
       resolution._tag === 'EditBodyAndStartNewAttempt' ||
       resolution._tag === 'Split')
   ) {
-    const released = releaseTransition(state, {
-      by: 'person',
-      person: input.by,
-      runId: block.runId,
-      waitId: input.waitId,
-      how: resolution._tag,
-    })
+    const released = releaseTransition(
+      state,
+      input.system
+        ? { by: 'triage', runId: block.runId, newAttempt: state.newAttempts.length + 1 }
+        : {
+            by: 'person',
+            person: input.by,
+            runId: block.runId,
+            waitId: input.waitId,
+            how: resolution._tag,
+          },
+    )
     if (released.ok) events.push(...released.events)
   }
   return { ok: true, events }
@@ -1234,40 +1256,164 @@ export function startTriageTransition(
   }
 }
 
+/** What a triage's answer was refused for: the wait moved on, or the ticket moved since the version it read (#1258). */
 export type FinishTriageDecline = { reason: 'wait-not-current' } | { reason: 'changed' }
 
-/** A triage's answer is recorded while its wait is current, and — when the caller decided on a version — only at it. */
+/** The part of an event the "unchanged since" rule reads. */
+export type SinceEvent = { readonly type: string; readonly data: unknown }
+
+/**
+ * Whether every event after the version a triage started at is that triage's own run fact — `RunPrompted` or `RunSpent`
+ * for `Triage{waitId}`, which `recordTriageRun` appends to the ticket stream between `TriageStarted` and the answer.
+ * Anything else (a person's resolution, an edit, a close, a requeue) is a change. A strict `state.version === ifVersion`
+ * would refuse every paid triage, and moving those facts off the ticket stream is 0129's.
+ *
+ * **A body edited on GitHub directly is not on the log**, so it moves no version and is not caught here (0118,
+ * *Consequences*).
+ */
+export function unchangedSince(since: readonly SinceEvent[], waitId: WaitId): boolean {
+  return since.every((e) => {
+    if (e.type !== 'RunPrompted' && e.type !== 'RunSpent') return false
+    const f = (e.data as { for?: { _tag?: string; waitId?: string } } | null)?.for
+    return f?._tag === 'Triage' && f.waitId === waitId
+  })
+}
+
+/** The stream holds exactly `since` past `ifVersion`, and all of it is this triage's own run facts. */
+function streamChanged(
+  state: TicketState,
+  input: { waitId: WaitId; ifVersion: number; since: readonly SinceEvent[] },
+): boolean {
+  return state.version !== input.ifVersion + input.since.length || !unchangedSince(input.since, input.waitId)
+}
+
+type TriagedInput = {
+  waitId: WaitId
+  attempt: number
+  headSha: string
+  result: PayloadOf<'WaitTriaged'>['result']
+  by: PayloadOf<'WaitTriaged'>['by']
+}
+
+function triagedEvent(input: TriagedInput): ToAppend {
+  return {
+    type: 'WaitTriaged',
+    actor: 'conductor',
+    data: parsePayload('WaitTriaged', {
+      waitId: input.waitId,
+      attempt: input.attempt,
+      headSha: input.headSha,
+      result: input.result,
+      by: input.by,
+    }),
+  }
+}
+
+/** The record that stands in for an answer that was not acted on: `TriageFailed{why}`, which resolves nothing. */
+export function triageFailedEvent(input: Omit<TriagedInput, 'result'> & { why: string }): ToAppend {
+  return triagedEvent({ ...input, result: { _tag: 'TriageFailed', why: input.why } })
+}
+
+/**
+ * A triage's answer is recorded while its wait is current and the ticket is unchanged since the version it read.
+ * `ifVersion` is required: `since` is the stream's events after it, which `state` already holds.
+ */
 export function finishTriageTransition(
   state: TicketState,
-  input: {
-    waitId: WaitId
-    attempt: number
-    headSha: string
-    result: PayloadOf<'WaitTriaged'>['result']
-    by: PayloadOf<'WaitTriaged'>['by']
-    ifVersion?: number
-  },
+  input: TriagedInput & { ifVersion: number; since: readonly SinceEvent[] },
 ): { ok: true; events: ToAppend[] } | { ok: false; refusal: FinishTriageDecline } {
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: { reason: 'wait-not-current' } }
-  if (input.ifVersion !== undefined && state.version !== input.ifVersion) {
-    return { ok: false, refusal: { reason: 'changed' } }
+  if (streamChanged(state, input)) return { ok: false, refusal: { reason: 'changed' } }
+  return { ok: true, events: [triagedEvent(input)] }
+}
+
+export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered'
+
+/** What the runner read at answer time and the pure transition cannot: the attempt's head, its counters, the heads a move names. */
+export type ActContext = {
+  origin: CauseOrigin
+  /** Each bound as it stands: the attempt's own counter, or the larger of it and what triage has recorded. */
+  counters: Readonly<Record<CauseBound, CauseCounter>>
+  /** The head the attempt was at when triage started, and is at now (`AttemptState.headSha`; `null`: it committed nothing). */
+  boundHead: string | null
+  headNow: string | null
+  /** The saved head a `FixRefusal` continues, already checked against the remote ref; `null` when there is none. */
+  fix: { onSha: string; ref: string } | null
+  /** Where a `RedoStep` re-cuts, already checked; `null` when the attempt has no head a rerun can continue. */
+  redo: { onSha: string; ref: string | null } | null
+}
+
+/** `resolution` is the one the same append resolved the wait with, or `null` when only the answer is recorded. */
+export type ActOnTriageDecision = {
+  ok: true
+  events: ToAppend[]
+  action: CauseAction | null
+  resolution: Resolution | null
+}
+
+/**
+ * **A triage answer the system can act on resolves its own wait** (0108 §6, 0118 §3), pure. Checked, in order: the wait
+ * is current, the stream is unchanged since `ifVersion` (`since` is what came after it), the attempt is at the head it
+ * was bound to. Then `actionFor` says what is done; `askPerson` records only `WaitTriaged`. Anything else comes back as
+ * `WaitTriaged` and `WaitResolved{by: 'triage'}` for **one** append: that `WaitResolved` is what spends the bound
+ * (`spent.n`, the number the continuation will itself record, so a reader takes a maximum and never a sum), before any
+ * effect. The resolution goes through `resolveWaitTransition` and `resolvedEvents`, the person's own path, so what it
+ * accepts is what a person may choose and a new attempt releases the claim.
+ *
+ * `writeSpentOnThenRedoStep` (#1260) and `splitTicket` (#1262) are not built: they record only `WaitTriaged` and the wait
+ * stays a person's.
+ */
+export function actOnTriageTransition(
+  state: TicketState,
+  input: TriagedInput & {
+    result: Extract<TriageResult, { _tag: 'TriageAnswered' }>
+    ifVersion: number
+    since: readonly SinceEvent[]
+    context: ActContext
+  },
+): ActOnTriageDecision | { ok: false; refusal: ActOnTriageRefusal } {
+  if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: 'wait-not-current' }
+  if (streamChanged(state, input)) return { ok: false, refusal: 'changed' }
+  const { context } = input
+  const triaged = triagedEvent(input)
+  const action = actionFor(input.result.cause, context.origin, context.counters)
+  const advice: ActOnTriageDecision = { ok: true, events: [triaged], action, resolution: null }
+  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep' || action._tag === 'splitTicket')
+    return advice
+  // A wait the reduce has never seen has no reason to resolve against: advice only.
+  const life = state.lifecycle
+  if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
+  if (action._tag !== 'startNewAttempt' && context.headNow !== context.boundHead)
+    return { ok: false, refusal: 'head-moved' }
+  let resolution: Resolution
+  let bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos' | null = null
+  switch (action._tag) {
+    case 'startNewAttempt':
+      resolution = { _tag: 'StartNewAttempt' }
+      break
+    case 'redoStep':
+      if (context.redo === null) return { ok: false, refusal: 'head-moved' }
+      resolution = { _tag: 'RedoStep', onSha: context.redo.onSha, ref: context.redo.ref }
+      bound = 'stepRedos'
+      break
+    case 'fixRefusal':
+    case 'resolveConflict':
+      if (context.fix === null) return { ok: false, refusal: 'head-moved' }
+      resolution = { _tag: 'FixRefusal', onSha: context.fix.onSha, ref: context.fix.ref }
+      bound = action._tag === 'fixRefusal' ? 'refusalFixes' : 'conflictResolutions'
+      break
   }
-  return {
-    ok: true,
-    events: [
-      {
-        type: 'WaitTriaged',
-        actor: 'conductor',
-        data: parsePayload('WaitTriaged', {
-          waitId: input.waitId,
-          attempt: input.attempt,
-          headSha: input.headSha,
-          result: input.result,
-          by: input.by,
-        }),
-      },
-    ],
-  }
+  const decided = resolveWaitTransition(state, { waitId: input.waitId, resolution })
+  if (!decided.ok || decided.kind !== 'proceed') return { ok: false, refusal: 'not-offered' }
+  const resolved = resolvedEvents(state, decided.block, {
+    waitId: input.waitId,
+    by: 'triage',
+    resolution,
+    note: input.result.summary,
+    system: bound === null ? {} : { spent: { bound, n: context.counters[bound].used + 1 } },
+  })
+  if (!resolved.ok) return { ok: false, refusal: 'not-offered' }
+  return { ok: true, events: [triaged, ...resolved.events], action, resolution }
 }
 
 export type CloseDecline =

@@ -88,6 +88,11 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
         </span>
       )}
       <span>{costText(money)}</span>
+      {row.outcome === 'satisfied' ? (
+        <span className="ld-satisfied">
+          satisfied{row.satisfiedAt === null ? '' : ` at ${row.satisfiedAt.slice(0, 7)}`} · nothing changed
+        </span>
+      ) : null}
       <span className="ld-links">
         {row.mergeCommit === null ? null : commit === null ? (
           <span>{row.mergeCommit.slice(0, 7)}</span>
@@ -102,9 +107,12 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
 
 function Notes({ row, entries }: { row: TicketReportRow; entries: readonly BacklogEntry[] }) {
   const decisions = row.waits.filter((w) => w.resolution !== null)
-  if (decisions.length === 0 && entries.length === 0 && row.summaryClipped === null) return null
+  // Who ended it is whether a person confirmed it, not whether any decision exists: a split parent carries its Split wait's.
+  const bySystem = row.outcome === 'satisfied' && !decisions.some((w) => w.resolution === 'ConfirmSatisfied')
+  if (!bySystem && decisions.length === 0 && entries.length === 0 && row.summaryClipped === null) return null
   return (
     <div className="ld-notes">
+      {bySystem ? <p className="ld-decision">Ended by the system — a split parent</p> : null}
       {decisions.map((w) => (
         <p key={w.waitId} className="ld-decision">
           A person decided: {moveTitle(w.resolution!)}
@@ -149,7 +157,15 @@ function Card({
   entries: readonly BacklogEntry[]
   colour: string
 }) {
-  const { lead, rest } = leadOf(row.summary!)
+  // A satisfied ticket has no review summary: it says what it is instead (#1252).
+  const { lead, rest } =
+    row.summary === null
+      ? {
+          lead:
+            row.satisfiedAt === null ? 'Found already done' : `Found already done at ${row.satisfiedAt.slice(0, 7)}`,
+          rest: '',
+        }
+      : leadOf(row.summary)
   const ref = ticketRef(row)
   return (
     <article className="ld-card" style={{ '--kind': colour, '--pop': kindPopOf(row.kind) } as CSSProperties}>
@@ -174,6 +190,9 @@ function Card({
 }
 
 const moneyOf = (row: TicketReportRow): Money => ticketMoney(row)
+
+/** A satisfied ticket has no summary and still gets a card: its ending is what the row says (#1252). */
+const showsLine = (row: TicketReportRow): boolean => row.summary === null && row.outcome !== 'satisfied'
 
 function Line({ row }: { row: TicketReportRow }) {
   const ref = ticketRef(row)
@@ -286,11 +305,11 @@ export function LandedView({
               <DateColumn day={day} colour={colour} />
               <ol className="ld-rail">
                 {day.rows.map((row) => (
-                  <li key={row.ticket} className={row.summary === null ? 'ld-has-line' : 'ld-has-card'}>
+                  <li key={row.ticket} className={showsLine(row) ? 'ld-has-line' : 'ld-has-card'}>
                     <time className="mono" dateTime={row.outcomeAt!.toISOString()}>
                       {minuteOf(row.outcomeAt!)}
                     </time>
-                    {row.summary === null ? (
+                    {showsLine(row) ? (
                       <Line row={row} />
                     ) : (
                       <Card

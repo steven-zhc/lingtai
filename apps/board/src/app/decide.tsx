@@ -31,6 +31,7 @@ import {
   answerCard,
   approveCard,
   closeCard,
+  confirmSatisfiedCard,
   continueFixingCard,
   rerunStepCard,
   answerQuestionsCard,
@@ -794,6 +795,48 @@ export function Close({
         </button>
         <button className="btn" onClick={() => setAsking(false)} disabled={pending}>
           Cancel
+        </button>
+      </div>
+      {refusal ? <p className="refusal">{refusal}</p> : null}
+    </div>
+  )
+}
+
+/** Confirm a satisfied ticket is already done (#1252): one click, on the wait the page rendered. */
+export function ConfirmSatisfied({
+  project,
+  issue,
+  waitId,
+  primary = false,
+}: {
+  project: string
+  issue: number
+  waitId: WaitId
+  primary?: boolean
+}) {
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const [done, setDone] = useState<string | null>(null)
+  const [, startTransition] = useTransition()
+  if (done) return <p className="decided">{done}</p>
+  return (
+    <div className="decide">
+      <div className="btnrow">
+        <button
+          className={primary ? 'btn pri' : 'btn'}
+          disabled={pending}
+          onClick={() => {
+            setPending(true)
+            setRefusal(null)
+            startTransition(async () => {
+              const result = await confirmSatisfiedCard({ project, issue, waitId })
+              setPending(false)
+              if (result.ok) setDone(result.detail)
+              else setRefusal(result.detail)
+            })
+          }}
+        >
+          {pending ? '…' : 'Confirm'}
         </button>
       </div>
       {refusal ? <p className="refusal">{refusal}</p> : null}

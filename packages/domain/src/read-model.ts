@@ -376,3 +376,52 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
       return []
   }
 }
+
+// ------------------------------------------------------------ triageSpentOf ----
+
+/**
+ * **What triage's own resolutions have spent for one attempt, per bound** (#1258): the highest `spent.n` among the waits
+ * on `runId` that a `WaitResolved{by: 'triage'}` closed. A person's resolution carries none and adds nothing.
+ *
+ * A reader takes `max(the attempt's own counter, this)` and never the sum: `n` is the number the continuation will
+ * itself record for the same bound, so once it has, the two say one spend, and before it has this says it alone — a
+ * restart between the append and the effect neither loses it nor counts it twice (the attempt reducer's own idiom: *a
+ * rerun in place raises the count by its own number, never by one*, #1201).
+ */
+export function triageSpentOf(
+  state: TicketState,
+  runId: string,
+): { refusalFixes: number; conflictResolutions: number; stepRedos: number } {
+  const out = { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 }
+  for (const w of state.waits) {
+    const r = w.resolution
+    if (r === null || r.by !== 'triage' || r.spent === undefined) continue
+    if (!('run' in w.reason) || w.reason.run.runId !== runId) continue
+    out[r.spent.bound] = Math.max(out[r.spent.bound], r.spent.n)
+  }
+  return out
+}
+
+/**
+ * **The fix rounds a person's `FixRefusal` actually ran on one attempt** (#1258): each one's continuation records a round
+ * on the attempt stream (`implementRound`), but a person's resolution spends nothing of `refusalFixes`, so a reader of the
+ * allowance takes these out of `implementRound`. A grant counts only once its fix round was dispatched — the attempt
+ * stream holds a `RunPrompted`/`RunSpent` for an `Action` that names the grant's wait — so a grant whose continuation
+ * crashed before implement started raised no round and refunds nothing.
+ */
+export function personFixRoundsOf(state: TicketState, runId: string, runEvents: readonly Envelope[]): number {
+  const ran = new Set<string>()
+  for (const e of runEvents) {
+    if (e.type !== 'RunPrompted' && e.type !== 'RunSpent') continue
+    const f = (e.data as { for?: { _tag?: string; grant?: string } } | null)?.for
+    if (f?._tag === 'Action' && f.grant !== undefined) ran.add(f.grant)
+  }
+  return state.waits.filter(
+    (w) =>
+      w.resolution?.resolution._tag === 'FixRefusal' &&
+      w.resolution.by !== 'triage' &&
+      ran.has(w.waitId) &&
+      'run' in w.reason &&
+      w.reason.run.runId === runId,
+  ).length
+}

@@ -150,6 +150,7 @@ export function stateInk(state: string): (text: string) => string {
   switch (state) {
     // `--pass`: the board's Landed lane.
     case 'landed':
+    case 'satisfied':
       return paint.pass
     // `--accent`: the board's `a-run`. `verifying` and `approved` reduce into it
     // here exactly as they do in the listing — from an operator's seat an

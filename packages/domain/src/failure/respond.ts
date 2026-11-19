@@ -587,6 +587,8 @@ export const BOUNDS = {
   baseBranchMerges: 10,
   /** At most this many times a ticket stops to ask a person, then a person decides: the sixth stop is the `AskLimit` wait and an agent never assumes (0108 §22, #1254). */
   personAsks: PERSON_ASKS,
+  /** A triage whose answer failed or went stale is asked this many more times, then the wait is a person's (0118 §3, #1258). */
+  triageRetries: 1,
   /** A ticket is split at most once per root (#1261): spent by its first `SplitStarted` for any wait. */
   ticketSplits: 1,
 } as const

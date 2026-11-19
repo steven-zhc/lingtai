@@ -163,6 +163,8 @@ export interface TicketReportRow {
   title: string | null
   /** The merge commit, for a landed ticket. */
   mergeCommit: string | null
+  /** The base sha a satisfied ticket was found already done at (#1252); null on every other. */
+  satisfiedAt: string | null
   /** The landing run: the ticket's last claim (a continuation is not one). Inferred: `TicketLanded` does not name it. */
   landingRun: string | null
   /** That run's number among the ticket's claims, from 1. */
@@ -229,6 +231,7 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
     cost: json(row.cost, {}),
     title: state.title,
     mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
+    satisfiedAt: state.lifecycle.status === 'satisfied' ? state.lifecycle.baseSha : null,
     landingRun: orNull<string>(columnOf(row, TICKET_REPORT_TABLE, 'landing_run')),
     landingAttempt: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_attempt')),
     landingFixRounds: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_fix_rounds')),

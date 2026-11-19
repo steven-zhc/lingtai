@@ -413,6 +413,7 @@ import {
   RunNow,
   ScheduleContinuation,
   Send,
+  ConfirmSatisfied,
 } from './decide.tsx'
 import { Deferred, type Answered } from './deferred.tsx'
 import { Discussion } from './discussion.tsx'
@@ -422,6 +423,7 @@ import { DocumentBody } from './markdown.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog, RawRunLog, SaidLast } from './run-log.tsx'
+import { SatisfiedItems } from './satisfied-items.tsx'
 import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
@@ -1070,6 +1072,8 @@ export function Standing({
   // Badged only when triage advised it: a wait's own default orders the cards
   // but is not called a recommendation.
   const triageRecommended = triageAdvised !== null ? recommended : null
+  // The confirm wait runs no triage, so its default is badged with what actually decided it (#1252).
+  const satisfiedAdvised = standing.reason?._tag === 'SatisfiedUnconfirmed' ? recommended : null
   const orderedResolutions =
     recommended === null
       ? drawable
@@ -1523,6 +1527,30 @@ export function Standing({
             inert={standing.split?.progress.state === 'writing' ? true : undefined}
           >
             {standing.state === 'blocked' ? <h2 className="ssectiontitle">Your decision</h2> : null}
+            {standing.reason?._tag === 'SatisfiedUnconfirmed' ? (
+              <div className="ssatisfiedreading">
+                <p>{standing.reason.reading}</p>
+                <SatisfiedItems
+                  items={standing.reason.items}
+                  base={standing.satisfiedContext?.base ?? null}
+                  children={standing.satisfiedContext?.children}
+                />
+              </div>
+            ) : null}
+            {standing.state === 'satisfied' && standing.satisfied != null ? (
+              <div className="ssatisfiedreading">
+                <p>
+                  {standing.satisfied.byConductor
+                    ? 'Ended by the system — a split parent.'
+                    : `Confirmed by ${standing.satisfied.actor}.`}
+                </p>
+                <SatisfiedItems
+                  items={standing.satisfied.items}
+                  base={standing.satisfiedContext?.base ?? null}
+                  children={standing.satisfiedContext?.children}
+                />
+              </div>
+            ) : null}
             {standing.state === 'queued' ? <h2 className="ssectiontitle">Moves</h2> : null}
 
             {/* ---- rank 4: the moves ---------------------------------------------- */}
@@ -1555,7 +1583,8 @@ export function Standing({
                         return (
                           <ResolutionCard
                             key={tag}
-                            recommended={triageRecommended === tag}
+                            recommended={triageRecommended === tag || satisfiedAdvised === tag}
+                            badge={satisfiedAdvised === tag ? 'Review found every item met' : undefined}
                             className={`sresolution${!visible ? ' sresolution--draft' : ''}`}
                             data-resolution={visible ? tag : undefined}
                             id={visible ? `resolution-${tag}` : undefined}
@@ -1721,6 +1750,14 @@ export function Standing({
                                   waitId={visible ? waitId : null}
                                   reason={standing.reason}
                                   triaged={triageAdvised}
+                                />
+                              ) : null}
+                              {visible && tag === 'ConfirmSatisfied' && waitId !== null ? (
+                                <ConfirmSatisfied
+                                  project={project}
+                                  issue={issue}
+                                  waitId={waitId}
+                                  primary={recommended === 'ConfirmSatisfied'}
                                 />
                               ) : null}
                               {visible && tag === 'Close' && waitId !== null ? (

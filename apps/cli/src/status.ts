@@ -401,6 +401,7 @@ const NAMES: Record<string, string> = {
   approved: 'approved, not yet taken up',
   waiting: 'waiting on you',
   landed: 'landed',
+  satisfied: 'satisfied',
 }
 
 /**
