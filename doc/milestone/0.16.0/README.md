@@ -1,20 +1,23 @@
-# 0.16.0: coming from Vibe Kanban
+# 0.16.0: more agents, through ACP
 
 Everything written while planning 0.16.0, in one place. The milestone on GitHub
 is `0.16.0`.
 
 | File | What it is |
 |---|---|
+| [0.16.md](0.16.md) | The plan, as narrowed on 2026-11-18: an ACP runtime for `implement`, a GitLab remote with local tickets as an acceptance run, Linear if there is time |
 | [vibe-kanban-demand-vs-lingtai.md](vibe-kanban-demand-vs-lingtai.md) | What Vibe Kanban's users ask for, against what Lingtai already does |
 
 ## Moved here from 0.15.0
 
 On 2026-11-16 the operator narrowed 0.15.0 to four parts
-([../0.15.0/0.15.md](../0.15.0/0.15.md)) and moved three here, beside this
-milestone's theme of coming to Lingtai from another tool. None is planned yet:
+([../0.15.0/0.15.md](../0.15.0/0.15.md)) and moved three here. On 2026-11-18,
+narrowing 0.16.0 itself ([0.16.md](0.16.md)):
 
-- **A GitLab or Bitbucket remote, local tickets documented**, with the epic #340
-  (tickets from GitLab, Linear or Jira).
-- **A first run measured on a clean machine.**
+- **A GitLab or Bitbucket remote, local tickets documented** became the GitLab
+  acceptance run; the epic #340 stays here for its Linear half only, if there
+  is time.
+- **A first run measured on a clean machine** is that same acceptance run.
 - **[0129](../../decisions/0129-one-module-owns-each-aggregate.md)'s other
-  owners**: Control, Integration and Attempt. Ticket's owner is built in 0.15.0.
+  owners**, Control, Integration and Attempt, are out of 0.16.0, unless the ACP
+  runtime adds Attempt events (0.16.md, question 5).
