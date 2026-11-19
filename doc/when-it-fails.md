@@ -10,7 +10,7 @@ Things go wrong while a ticket is being built: an API is down, a test is flaky, 
 
 **One quick AI look** handles some. When a rule cannot tell what to do, such as which lines a review wants changed or how to cut up a ticket that ran out of time, one short AI call reads what happened and answers. It costs cents.
 
-**You** are asked only for a decision: what an unclear ticket meant, whether to try again after a limit ran out. Lingtai never answers that for you.
+**You** are asked only for a decision: what an unclear ticket meant, how to go on once a limit that bounds the retries has run out. Lingtai never answers that for you.
 
 Past its limit, a tier hands up to the next one, and the last one is you.
 
