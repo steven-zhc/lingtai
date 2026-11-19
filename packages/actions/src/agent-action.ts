@@ -1361,8 +1361,14 @@ function reviewAnswer(
   const scenarios = new Set(recheck.map((f) => f.failureScenario))
   const isRecheck = (f: ActionFinding): boolean => scenarios.has(f.failureScenario)
   const fresh = findings.filter((f) => !isRecheck(f))
-  const demoted = [...(hunks === null ? fresh : demoteOutsideDiff(fresh, hunks, keepPaths))]
-  const afterFix = deltaHunks === undefined ? demoted : demoteOutsideFix(demoted, deltaHunks, keepPaths)
+  // With a delta the delta alone decides (#1283): a file a resolution reverted to the base is in the
+  // delta and outside the whole diff, and the whole-diff check would demote it before this one saw it.
+  const afterFix =
+    deltaHunks !== undefined
+      ? demoteOutsideFix(fresh, deltaHunks, keepPaths)
+      : hunks === null
+        ? fresh
+        : demoteOutsideDiff(fresh, hunks, keepPaths)
   let at = 0
   const kept = findings.map((f) => (isRecheck(f) ? f : afterFix[at++]!))
   const verdict = verdictFor(kept)
