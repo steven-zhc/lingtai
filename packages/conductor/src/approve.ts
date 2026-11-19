@@ -1,3 +1,11 @@
+import { continuationOf } from '@lingtai/domain/wait'
+import {
+  type EventStore,
+  eventStore,
+  log as processLog,
+  readThroughSnapshot,
+  type SnapshotReadOptions,
+} from '@lingtai/event-store'
 import {
   approvalSha,
   reduceAttempt,
@@ -8,14 +16,6 @@ import {
   ticketStream,
   type TriagePick,
 } from '@lingtai\/domain'
-import { continuationOf } from '@lingtai/domain/wait'
-import {
-  type EventStore,
-  eventStore,
-  log as processLog,
-  readThroughSnapshot,
-  type SnapshotReadOptions,
-} from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { decidingEffect } from './deciding.ts'

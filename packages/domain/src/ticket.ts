@@ -22,7 +22,6 @@
 import type { WaitId } from './action.ts'
 import { claimShapeOf } from './claims.ts'
 import type { Envelope, ToAppend } from './envelope.ts'
-import type { TriagePick } from './triage.ts'
 import {
   parsePayload,
   type PayloadOf,
@@ -33,6 +32,7 @@ import {
 } from './events.ts'
 import { actionFor, type CauseAction, type CauseBound, type CauseCounter, type CauseOrigin } from './failure/respond.ts'
 import { agentBranchOf, isTicketStream, parseTicketStream } from './streams.ts'
+import type { TriagePick } from './triage.ts'
 import { waitWords } from './wait-words.ts'
 import {
   allowedResolutions,
@@ -1075,7 +1075,10 @@ export type ResolveRefusal =
 function sameAnswers(submitted: Readonly<Record<string, TriagePick>>, recorded: Resolution | undefined): boolean {
   if (recorded === undefined || recorded._tag !== 'AnswerQuestions') return false
   const a = Object.entries(submitted)
-  return a.length === Object.keys(recorded.answers).length && a.every(([k, v]) => JSON.stringify(recorded.answers[k]) === JSON.stringify(v))
+  return (
+    a.length === Object.keys(recorded.answers).length &&
+    a.every(([k, v]) => JSON.stringify(recorded.answers[k]) === JSON.stringify(v))
+  )
 }
 
 export function resolveWaitTransition(

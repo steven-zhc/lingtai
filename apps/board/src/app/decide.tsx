@@ -313,7 +313,8 @@ export function ContinueFixing({
       {done ? null : (
         <button
           className={primary ? 'btn pri' : 'btn'}
-          disabled={pending}
+          disabled={pending || triage?.refusal != null}
+          title={triage?.refusal ?? undefined}
           onClick={() => {
             setPending(true)
             setDetail(null)
@@ -460,11 +461,13 @@ export function EditBodyAndRequeue({
       allowedResolutions(reason, triaged).includes('AnswerQuestions') ? (
         <button
           className="btn pri"
-          disabled={pending || doneWaitId === waitId || edited}
+          disabled={pending || doneWaitId === waitId || edited || triage.refusal !== null}
           title={
-            edited
-              ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
-              : undefined
+            triage.refusal !== null
+              ? triage.refusal
+              : edited
+                ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
+                : undefined
           }
           onClick={() => {
             setPending(true)
