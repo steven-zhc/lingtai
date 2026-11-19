@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
+import { TriageChoices } from '../src/app/triage-picks.tsx'
 import { triageHeadLine, type MirrorHead } from '../src/lib/triage-head.ts'
 
 function draw(status: TriageStatus, headLine?: string): string {
@@ -106,7 +107,7 @@ describe('current wait triage band', () => {
         ],
       }),
     )
-    expect(html).toContain('<legend class="triage-choices-question">&lt;question&gt;</legend>')
+    expect(html).toContain('<legend class="triage-choices-question">1. &lt;question&gt;</legend>')
     expect(html).toContain('<span class="triage-choice-text">&lt;answer&gt;</span>')
     expect(html).toContain('<span class="triage-choice-text">&lt;other answer&gt;</span>')
     expect(html).toContain('<span class="triage-choice-selected">Selected</span>')
@@ -203,5 +204,49 @@ describe('current wait triage band', () => {
     expect(html).not.toContain(_tag)
     expect(html).toContain('&lt;plain summary&gt;')
     expect(html).toContain('Recommends Close')
+  })
+})
+
+describe('every question kind (#1255)', () => {
+  // The recommended answer is the second the agent wrote.
+  const question = {
+    id: 'q',
+    text: '<question>',
+    answers: [
+      { id: 'a', text: '<first>' },
+      { id: 'b', text: '<second>' },
+      { id: 'c', text: '<third>' },
+    ],
+    recommended: 'b',
+  }
+  const ordered = (html: string) => {
+    const at = (s: string) => html.indexOf(`>${s}<`)
+    expect(html).toContain('1. &lt;question&gt;')
+    const order = ['&lt;second&gt;', '&lt;first&gt;', '&lt;third&gt;', 'My own answer'].map(at)
+    expect(order.every((n) => n >= 0)).toBe(true)
+    expect([...order].sort((x, y) => x - y)).toEqual(order)
+    // Recommended sits on the first rendered choice.
+    expect(html.indexOf('Recommended')).toBeGreaterThan(order[0]!)
+    expect(html.indexOf('Recommended')).toBeLessThan(order[1]!)
+  }
+
+  it('triage UndecidedQuestion', () => {
+    ordered(draw(advised({ _tag: 'UndecidedQuestion', questions: [question] })))
+  })
+
+  it('a ConflictingHunks divergent hunk', () => {
+    ordered(
+      draw(
+        advised({
+          _tag: 'ConflictingHunks',
+          total: 1,
+          hunks: [{ _tag: 'Divergent', path: 'a.ts', line: 3, question }],
+        }),
+      ),
+    )
+  })
+
+  it.each(['design', 'implement Unclear'])("the agent's own question (%s)", () => {
+    ordered(renderToStaticMarkup(<TriageChoices question={question} index={0} source="asked" />))
   })
 })

@@ -14,7 +14,7 @@ type Picks = {
 }
 
 /** The radio value of the own-answer option. Page-only: it is never sent, a pick is `{ own }` instead. */
-export const OWN_VALUE = '\u0000own'
+export const OWN_VALUE = '__own__'
 /** A text the person has made their own, with the wait it was written under. */
 type Draft = { waitId: WaitId | null; text: string }
 type AnswerDraft = Draft & { open: boolean }
