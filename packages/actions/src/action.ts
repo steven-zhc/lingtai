@@ -306,9 +306,10 @@ interface ActionResultFields {
    */
   interrupted?: InterruptedCause
   /**
-   * **What the agent declared, where the facts did not clear it** (0108 §21, #1250): `AgentFailed`,
-   * `Disputed` or `Unclear` — never `Implemented`, which is a `passed` with a `head`. Absent
-   * everywhere else, including on a kept `run:`'s own "nothing to commit".
+   * **What the agent declared** (0108 §21, #1250), carried on the work action's result: `Implemented`
+   * on its `passed` with a `head`, and `AgentFailed`, `Disputed` or `Unclear` on a `did-not-finish`
+   * (an `Unclear` may carry the `head` it left). The stored outcome is built from it, so a work-action
+   * adapter must set it. Absent on every other action, including a kept `run:`'s own "nothing to commit".
    */
   declared?: ImplementOutcome
   /**
@@ -796,7 +797,7 @@ export interface PipelineResult {
     locator?: string
     /** How an agent action was cut off, where one was. `ActionResult.interrupted`. */
     interrupted?: InterruptedCause
-    /** What the agent declared where the facts did not clear it. `ActionResult.declared`. */
+    /** What the agent declared, `Implemented` included. `ActionResult.declared`. */
     declared?: ImplementOutcome
     /** The three fields a real conflict carries, where the lane refused with one. `ActionResult.conflict`. */
     conflict?: { paths: string[]; baseSha: string; headSha: string }

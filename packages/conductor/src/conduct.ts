@@ -5112,8 +5112,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const moved = head !== startedAt
           // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
           stoppedBy = moved ? null : 'no-commits'
-          if (moved) {
-            yield* recordDiff(branch, head)
+          if (moved) yield* recordDiff(branch, head)
+          // Completion is proposed only for what the agent declared `Implemented`; a run that is
+          // `AgentFailed` or `Unclear` has not offered finished work, and no check follows it.
+          if (decided._tag === 'Implemented') {
             yield* appendNow(runId, [
               {
                 type: 'RunProposedCompletion',
@@ -5199,8 +5201,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ? ({ on: 'findings', findings } as const)
               : ({ on: 'output', output: said } as const)
           // How many findings the fixer is shown, which is the range a `Disputed` may name: a
-          // refusal that is one command's output is finding 1 (#1250).
-          const offered = refusal.on === 'output' ? 1 : refusal.findings.length
+          // refusal that is one command's output, or a merge's, is finding 1 (#1250).
+          const offered =
+            refusal.on === 'output'
+              ? 1
+              : refusal.on === 'conflict'
+                ? Math.max(1, refusal.findings.length)
+                : refusal.findings.length
 
           // Keyed on where the fix came from and not on `refusal`: a conflict round
           // keeps its own session id whichever brief it was given.
