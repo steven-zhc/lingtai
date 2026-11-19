@@ -65,6 +65,30 @@ describe('reportQuery', () => {
   })
 })
 
+describe('the handled-for-you address (#1285)', () => {
+  it('reads a kind, an answerer and a cursor, and writes them back with the anchor', () => {
+    const q = reportQuery({ handled: 'build', by: 'system', before: '2026-10-27T10:00:00.000Z,ticket-x-1' }, NOW)
+    expect(q.handled).toMatchObject({ kind: 'build', by: 'system', before: { ticket: 'ticket-x-1' } })
+    expect(reportHref(q)).toBe(
+      '/report?handled=build&by=system&before=2026-10-27T10%3A00%3A00.000Z%2Cticket-x-1#handled',
+    )
+    expect(reportHref(q, { handled: null })).toBe('/report')
+    expect(reportQuery({ handled: 'all' }, NOW).handled).toEqual({ kind: 'all', by: null, before: null })
+  })
+
+  it('drops a kind it does not know and says so, and a cursor that is not one', () => {
+    const q = reportQuery({ handled: 'mystery' }, NOW)
+    expect(q.handled).toBeNull()
+    expect(q.note).toContain('problem kind was not read')
+    expect(reportQuery({ handled: 'setup', before: 'nope' }, NOW).handled?.before).toBeNull()
+  })
+
+  it('keeps the drill-down when a sort link is followed', () => {
+    const q = reportQuery({ handled: 'all', by: 'you' }, NOW)
+    expect(reportHref(q, { sort: 'cost' })).toBe('/report?sort=cost&handled=all&by=you#handled')
+  })
+})
+
 describe('reportChip', () => {
   const ok = { lag: 0 }
   it('is current when both are at the head', () => {

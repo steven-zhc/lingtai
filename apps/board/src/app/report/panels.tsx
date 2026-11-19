@@ -497,15 +497,8 @@ type Group = 'system' | 'you'
 function CheckMark() {
   return (
     <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      <circle cx="7" cy="7" r="6.25" fill="var(--pass-soft)" stroke="var(--pass)" strokeWidth="1.5" />
-      <path
-        d="M4 7.2l2 2 4-4.4"
-        fill="none"
-        stroke="var(--pass)"
-        strokeWidth="1.6"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
+      <circle cx="7" cy="7" r="6.25" strokeWidth="1.5" />
+      <path d="M4 7.2l2 2 4-4.4" fill="none" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   )
 }

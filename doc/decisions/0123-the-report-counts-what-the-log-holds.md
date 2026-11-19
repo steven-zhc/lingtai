@@ -224,6 +224,14 @@ The operator's decisions in epic #648 are the inputs here.
    - figure tiles: landed (with closed and open), median refusal fixes, the
      5-or-more share, the 0-or-1 share, spend in the window (by run day) with
      its unknown count, median machine time;
+   - **handled for you** (#1285): the window's problems by who finally answered
+     them — *N solved without you*, the share, *M needed you*, a mark per
+     problem, the two groups of kinds (each count linking to
+     `?handled=<kind|all>&by=system|you`, which lists the problems behind it,
+     twenty to a page, in the same panel), what answering them cost (reported,
+     estimated and unknown apart), per-day stacked bars and the latest six.
+     Its kinds take series colours: `build` and `too-big` are `--s5` and `--s6`,
+     not the amber the design drew them in;
    - five panels: refusal fixes by bucket (0, 1, 2, 3, 4, 5+) stacked by kind;
      **reviews to pass**, the share of tickets still not passed after k
      reviews, a step line from 100% down with steps 1 to 6 and then one 7+
