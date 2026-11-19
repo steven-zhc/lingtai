@@ -1125,6 +1125,14 @@ describe('the hatch, and what may not draw it', () => {
       'pending',
     ])
   })
+
+  // #1252: a satisfied ticket's steps that recorded nothing were never meant to run.
+  it('draws a satisfied ending as skipped where a landed one draws never-ran', () => {
+    const landed = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, 'landed')?.steps.map((p) => p.state)
+    const satisfied = progressOf(reduceAttempt(landedPastMerge()), MERGE_PLAN, 'satisfied')?.steps.map((p) => p.state)
+    expect(satisfied).not.toContain('never-ran')
+    expect(satisfied?.length).toBe(landed?.length)
+  })
 })
 
 // --- what a lane costs, and what it says -----------------------------------

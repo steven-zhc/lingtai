@@ -1615,10 +1615,12 @@ export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
       .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
       .slice(0, LANDED_OPEN),
   ]
-  return open.filter((t) => t.runId !== null).map((t) => ({
-    task: t,
-    ending: t.state === 'landed' ? ('landed' as const) : t.state === 'satisfied' ? ('satisfied' as const) : null,
-  }))
+  return open
+    .filter((t) => t.runId !== null)
+    .map((t) => ({
+      task: t,
+      ending: t.state === 'landed' ? ('landed' as const) : t.state === 'satisfied' ? ('satisfied' as const) : null,
+    }))
 }
 
 /**

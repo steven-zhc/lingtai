@@ -422,7 +422,9 @@ export function progressOf(
       name,
       // A point that ran nothing at all says so in every cell rather than
       // leaving them reading as *not reached yet*.
-      state: byAction.get(name) ?? (stepState === 'never-ran' ? 'never-ran' : stepState === 'skipped' ? 'skipped' : 'pending'),
+      state:
+        byAction.get(name) ??
+        (stepState === 'never-ran' ? 'never-ran' : stepState === 'skipped' ? 'skipped' : 'pending'),
     }))
     return { step, planned, state: stepState, actions }
   })
