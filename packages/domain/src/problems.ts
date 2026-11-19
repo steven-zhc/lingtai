@@ -1,5 +1,5 @@
 /**
- * **The problems a step raised, and who finally answered each** (#1284, 0123 §2's
+ * **The problems a step raised, and the group each belongs to** (#1284, 0123 §2's
  * `problems`) — the figures behind *handled for you*.
  *
  * A problem cannot be reduced one event at a time: a route's answer is a wait that
@@ -8,9 +8,9 @@
  * reduced `waits` and `claims` on every save. This is the one rule; nothing else
  * decides a kind or a `system`/`you`.
  *
- * **One problem is counted once, by who finally answered it.** A route that opened
- * a wait is not a problem on its own: the pair is one, with the route's kind and
- * the wait's answer. Nothing on the log links the two (`ProposalRouted` carries no
+ * **One problem is counted once, grouped by its kind** (`you` for `asked` and
+ * `setup`, `system` for every other kind, whoever answered it). A route that opened
+ * a wait is not a problem on its own: the pair is one, with the route's kind. Nothing on the log links the two (`ProposalRouted` carries no
  * `waitId`), so a wait with a `run` claims the **last** route (or redo group) on
  * that run at or before the wait's `at`, if its tags agree: the route batch is
  * appended before the pass's ending, so on one run the route that ended the pass is
@@ -51,7 +51,7 @@ export type Raised =
       readonly decision: 'Selected' | 'Escalated'
     }
   | { readonly _tag: 'Redo'; readonly seq: string; readonly at: string; readonly runId: string; readonly step: string }
-  /** A `WaitResolved`, kept because the ticket reduce keeps only the first and the last one decides. */
+  /** A `WaitResolved`, kept so a `Split` resolution is known: it tells `too-big` apart, whatever resolved the wait after. */
   | {
       readonly _tag: 'Answer'
       readonly seq: string
