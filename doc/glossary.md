@@ -2,32 +2,39 @@
 
 ## What happens next
 
-Seven words say what happens next to a ticket, and one question decides what
-each costs: does it **continue the saved branch**, or **cut a new branch from
-the base**? This section describes what is built. Where it and the code
-disagree, the code is right and this is corrected.
+When an attempt stops short, one question decides what the answer costs: does
+it **continue the saved head**, or **start from the base**? Who answers is the
+other: a rule (free), a cause the system acts on, or a person — and a person
+only for a spent bound, an unclear requirement or a broken environment. This
+section describes what is built. Where it and the code disagree, the code is
+right and this is corrected.
 
-| | Continues the saved branch | Cuts a new branch from the base |
+| | Continues the saved head | Starts from the base |
 |---|---|---|
-| **The machine** | **refusal fix** (修复轮) — another `design` or `implement` in the same worktree, carrying what refused it. Code: `FixRefusal` (`packages/domain/src/attempt-next.ts`). Bounded by `runtime.limits.attempt.refusalFixes` (merge conflicts have their own bound, `runtime.limits.attempt.conflictResolutions`). | **new attempt** (重来) — the ticket is released and claimed again. Code: `Requeued{cause: NewAttempt}` as a `AttemptNext`, `TicketReleased{cause: NewAttempt}` on the log (`packages/domain/src/events.ts`, `packages/conductor/src/conduct.ts`). Bounded by `runtime.limits.ticket.newAttempts`. |
-| **A person** | **FixRefusal** (批一轮) — one more `implement` on the saved head, then build → review → proposed; ends at a person. Board: *Fix the refusal on the saved work*; CLI: `lingtai fix-refusal`.<br>**Approve** (批准) — no new work; continue past the refusal. Board: *Approve and continue*; CLI: `lingtai approve` (`apps/cli/src/approve.ts`). | **StartNewAttempt** (重新排队) — `TicketReleased{cause: ByPerson}`; spends none of the ticket's new attempts, because only `cause: NewAttempt` is counted. Board: *Start a new attempt from base*; CLI: `lingtai start-new-attempt`.<br>**EditBodyAndStartNewAttempt** — write into the body, then start a new attempt. Board: *Add to the ticket and start a new attempt*; CLI: `lingtai start-new-attempt --into-body`. |
+| **The machine** | **fix the refusal** (`fixRefusal`) — another `implement` in the same worktree, carrying what refused it; bounded by `runtime.limits.attempt.refusalFixes`.<br>**resolve the conflict** (`resolveConflict`) — the same for a merge conflict; bounded by `runtime.limits.attempt.conflictResolutions`.<br>**redo the step** (`redoStep`, and `writeSpentOnThenRedoStep` for *too big*) — the step that did not finish runs again, whole, from the attempt's head; bounded by `stepRedos`, a constant (3).<br>**ask a person** (`askPerson`) — only for a limit, an unclear requirement or the environment; bounded by `personAsks`, a constant (5 question waits per ticket, counted when each opens). | **start a new attempt** (`startNewAttempt`) — the ticket is released and claimed again; bounded by `runtime.limits.ticket.newAttempts`, across the ticket.<br>**split the ticket** (`splitTicket`) — triage's plan opens children and the parent waits behind them; bounded by `ticketSplits`, a constant (1 per root ticket). |
+| **A person** | **FixRefusal** — one more `implement` on the saved head, then build → review → proposed. Board: *Fix the refusal on the saved work*; CLI: `lingtai fix-refusal`.<br>**RedoStep** — the step a crash or a red stopped runs again, whole, on the saved head; spends nothing. CLI: `lingtai redo-step`.<br>**Approve** — no new work; continue past the refusal. CLI: `lingtai approve`.<br>**AnswerQuestions** — writes the answers into the body and continues the step that asked (a question raised at `build`, `proposed` or `merge` goes back to `implement`). | **StartNewAttempt** — spends none of the ticket's new attempts, because only a machine's is counted. Board: *Start a new attempt from base*; CLI: `lingtai start-new-attempt`.<br>**EditBodyAndStartNewAttempt** — write into the body, then start a new attempt. Board: *Add to the ticket and start a new attempt*; CLI: `lingtai start-new-attempt --into-body`.<br>**Close** — ends the ticket. CLI: `lingtai close`. |
 
-- **Continuation** (续跑) is the umbrella for every move a person makes in the
-  left column: the conductor calls `runPass({ from: … })`, which still starts
-  at `admit` and runs `prepared`, then jumps to the step the move resumes at
-  rather than walking the steps between (`packages/conductor/src/run-attempt.ts`;
-  scheduled by `requestContinuation` in
-  `packages/conductor/src/resolve-wait.ts`). The machine's refusal fix is not
-  one: it stays inside the same `runPass` loop. Neither move in the right
-  column is one; each starts a new attempt.
-- A requeued attempt is still told about earlier attempts and where their commits
-  are (`attemptBrief` and the arms on origin, `packages/conductor/src/prompt.ts`),
-  so it can reuse that work — but it is new development and goes through build
-  and review again.
+- The bounds the machine spends are counted on the attempt's stream
+  (`refusalFixes`, `conflictResolutions`, `stepRedos`) or the ticket's
+  (`newAttempts`, across the ticket; `ticketSplits`, once per root ticket;
+  `personAsks`, one per question wait when it opens), so a restart, a release
+  or a person's resolution resets none of them
+  (`BOUNDS`, `packages/domain/src/failure/respond.ts`).
+- **Continuation** is the umbrella for every move in the left column: the
+  conductor calls `runPass({ from: … })`, which still starts at `admit` and runs
+  `prepared`, then jumps to the step the move resumes at
+  (`packages/conductor/src/run-attempt.ts`; scheduled by `requestContinuation`
+  in `packages/conductor/src/resolve-wait.ts`). Nothing in the right column is
+  one; each starts a new attempt.
+- A new attempt is told about earlier attempts and where their commits are
+  (`attemptBrief`, `packages/conductor/src/prompt.ts`), but **nothing is carried
+  to it**: it starts from the base and its brief says why the old approach was
+  wrong. A cut-off `implement`'s uncommitted code is committed to its branch as
+  a `wip:` commit, so a continuation keeps it.
 - A person's moves are the `Resolution` type of
-  [0118](decisions/0118-a-hold-explains-itself.md) §1; the granted round is
-  [0108](decisions/0108-a-refusal-buys-a-round.md) §8 and restart counting is
-  0120 §5.
+  [0118](decisions/0118-a-hold-explains-itself.md) §1; the machine's are
+  [0108](decisions/0108-a-refusal-buys-a-round.md) §8. The old recipe keys
+  `rounds` and `restarts` are refused by name, and the refusal names the new key.
 - [The attempt](the-attempt.html) shows where each of these arrives from.
 
 ## Words on the board
@@ -46,7 +53,12 @@ another word defines it where it is used or does without it.
 | **Run log** | What an agent printed while it ran, kept until the attempt lands. The one place *run* appears on its own. | *output*, *transcript* |
 | **Waiting on you** | The state of a ticket that has stopped for a person. | *held*, *blocked*, when a person is what it waits for |
 | **Decision** | What a person is asked to choose while a ticket is waiting on them, and the move they choose. | *judgement*, *resolution*, *wait* |
-| **Triage**, **judge** | The two agents that advise on a decision: triage on why it stopped, the judge on a reviewer's findings. They name who advised, never the decision itself. | |
+| **Triage**, **judge** | The two agents that each **name a cause** — triage why a wait would open, the judge what a reviewer's findings come to — and never an action: the system acts on the cause (`actionFor`, `packages/domain/src/failure/respond.ts`). A judge answers within the bounds; triage answers where a wait would open. | *advisor* |
+| **Account lock** | A platform's limit on an account — a runtime's usage limit or GitHub's rate limit — with its `until`; it holds the projects that use that account and lifts at its reset (or, where none was named, at a fallback delay) or by `lingtai account lift`. | *runtime limit* as a kind of its own |
+| **base-red** | The reason a ticket is passed over because a check of `build` fails on the base itself: it is the project's fault, not the ticket's, and it lifts when the base's head moves. | *blocked* |
+| **Why nothing runs** | The one sentence under `Queue` in `lingtai status` and at the top of the board's Queued column, saying what holds the queued tickets. | *stuck* |
+| **satisfied** | How a ticket ends when its work was already on the base: shown as *satisfied* on the Landed row, the task page and `/landed`. | *landed*, *closed* |
+| **redo the step** | Run the step that did not finish again, whole, from the attempt's head. Shown as *the step is being redone*. | *retry* |
 
 How these appear:
 
@@ -92,8 +104,8 @@ Lingtai is an event log. Everything else is what the log's events add up to.
   projection or a caller's join.
 - **Attempt** (尝试) — one try at changing a ticket: Lingtai claims it and works it
   through the steps once. One attempt is one `pass-…` stream. A continuation
-  (Approve, FixRefusal) stays in the same attempt; a StartNewAttempt or a machine's new attempt starts
-  a new one. Say *attempt*, never *pass* or *run*, for this. Names the log already
+  (`Approve`, `FixRefusal`, `RedoStep`, an answer, an account-limit continuation) stays in the same attempt;
+  `startNewAttempt`, a person's `StartNewAttempt` and a split parent's return attempt start a new one. Say *attempt*, never *pass* or *run*, for this. Names the log already
   holds stay as they are, because an event never changes: the `pass-` stream prefix,
   the `runId` field (the attempt's stream id) and the `Run…` event names.
 - **Agent run** — one invocation of an agent inside an attempt: the implement, each
@@ -119,10 +131,10 @@ The states, one per kind of stream:
 
 | State | Stream | What it is |
 |---|---|---|
-| **AttemptState** | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a fix round, and the plan and instants the board's rail draws. `packages/domain/src/attempt.ts`. |
+| **AttemptState** | `pass-…`, one per attempt | One attempt at one ticket: the run's lifecycle, the agent's head and what it produced, the step it is in and each step's verdict and the commit it was made on, how it ended (refused, failed), what it saved for a refusal fix, and the plan and instants the board's rail draws. `packages/domain/src/attempt.ts`. |
 | **TicketState** | `ticket-{project}-{issue}`, one per issue | One ticket across all its attempts: where it stands (backlog, claimed, waiting on a person, closed, landed), what it is (title, kind, project, issue), its attempts and how each ended, the last thing a person did to it, and what Lingtai wrote back to GitHub. `packages/domain/src/ticket.ts`. |
 | **ControlState** | `ctl-conductor`, one per machine | Whether the conductor may take work: `paused`, `by` and `reason` carry one pause, the setup's (conductor-wide, holding across starts, lifted by `lingtai resume`), and there is no `until` — nothing about it lifts by the clock. It also carries a standing request to drain, which lasts until the next start. A person's pause, the ceiling and a usage limit are locks, and none of them is this `paused`. `packages/domain/src/control.ts`. |
-| **Lock** | read from `prj-{project}`, the control stream (the ceiling) and `acct-{runtime}` | Something that holds one project's new work, shown on the board's banner and lifted by something specific ([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md)). Three kinds: a **project's pause** (`lingtai pause [project]`, lifted by `lingtai resume [project]`); **the day's ceiling** (lifted at midnight, by the configuration, or by `lingtai ceiling raise <usd>`); and **a runtime's usage limit** (`acct-{runtime}`: lifted at its `until` or by `lingtai account lift <runtime>`). A lock stops new work, discussions and triage, never an attempt in flight. The setup's pause is not one: it is `ControlState`'s. |
+| **Lock** | read from `prj-{project}`, the control stream (the ceiling) and `acct-{runtime}` | Something that holds one project's new work, shown on the board's banner and lifted by something specific ([0126](decisions/0126-a-stop-is-a-lock-and-an-unlock.md)). Three kinds: a **project's pause** (`lingtai pause [project]`, lifted by `lingtai resume [project]`); **the day's ceiling** (lifted at midnight, by the configuration, or by `lingtai ceiling raise <usd>`); and **an account lock** (a runtime's usage limit or GitHub's rate limit, `acct-{account}`: lifted at its `until` or by `lingtai account lift <account>`). A lock stops new work, discussions and triage, never an attempt in flight. The setup's pause is not one: it is `ControlState`'s. |
 | **ProjectState** | `prj-{project}`, one per project | What Lingtai was told about a project: its owner, base branch, the recipe a person declared (the file's text and its hash, with every version and who made it) and the sandbox state observed for it, and a refusal nothing has recovered from yet. The file `~/.lingtai/<project>/recipe.yml` is what a person writes; a hand edit is recorded the next time anything reads it, and nothing writes the file from the log. `packages/domain/src/project.ts`. |
 | **IntegrationState** | `int-{project}-{base}`, one per base branch | The merge lane for one base branch: idle or attempting which ticket's head, and how many attempts. `packages/domain/src/integration.ts`. |
 | **ChatState** | `chat-…`, one per discussion | One discussion with an agent about a ticket: its asks and answers, and how many are answered. `packages/domain/src/chat.ts`. |

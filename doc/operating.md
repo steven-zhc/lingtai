@@ -470,8 +470,17 @@ takes (`assignee`, `#373`) and what one of its attempts may spend (`limits`,
 ```yaml
 runtime:
   agent: claude-code    # a step's own `agent:` still wins over this
-  limits: { turns: 300, wall: 2h, rounds: 2, restarts: 0 }
+  limits:
+    run: { turns: 300, wall: 2h }                       # one agent run
+    attempt: { refusalFixes: 6, conflictResolutions: 6 } # what one attempt may buy
+    ticket: { newAttempts: 2 }                          # what one ticket may buy
 ```
+
+The old keys `rounds` and `restarts` are refused by name, and the refusal names
+the key to write instead (`boundsThePass`, `packages/recipe/src/recipe.ts`):
+*`rounds` bounds the attempt or the ticket and not one call … Write it at
+`runtime.limits.attempt.refusalFixes` and `runtime.limits.attempt.conflictResolutions`*.
+`run.usd` is an optional dollar ceiling on one run, absent unless written.
 
 A recipe that names no `runtime.agent` gets the one runtime signed in on this
 machine; with several or none it is refused by name rather than one picked, and
@@ -695,7 +704,7 @@ from the repository to decide them. It does ask, once a recipe already exists:
 the writer and its model (`--agent`, `--model`, #398), the cold reviewer and its
 model (`--reviewer`, `--reviewer-model`, #398), where tickets come from and
 which labels are work (`--tickets`, `--kinds`, #396), the landing branch
-(`--land`), and the limits (`--rounds`, `--wall`, `--budget`, #399). Each
+(`--land`), and the limits (`--refusal-fixes`, `--conflict-resolutions`, `--wall`, `--budget`, #399; `ticket.newAttempts` is written in the recipe). Each
 answer is written as soon as it is given, never collected for one write at the
 end.
 
@@ -1068,7 +1077,7 @@ the banner is the one place that says why a project's work does not start.
 - **A project's pause.** `lingtai pause [project]` and `lingtai resume
   [project]`; with no project, every registered project. It takes no reason.
   With one project selected, the bar has a `Pause` beside `Recipe`. It holds
-  only that project, and it holds across restarts. Only `resume` (or the bar's
+  only that project, and it holds across a daemon's restart. Only `resume` (or the bar's
   button) lifts it.
 - **The day's ceiling.** `limits.day_usd` was reached today. It lifts at
   midnight, when the configuration raises or removes the ceiling, or when a
@@ -1076,11 +1085,45 @@ the banner is the one place that says why a project's work does not start.
   ceiling raise <usd>` in the CLI. The raise is refused until the ceiling has
   been reached and while today's spend cannot be read; it lasts until midnight
   and leaves `limits.day_usd` as it was.
-- **A runtime's usage limit.** The runtime (`claude-code` or `codex`) said its
-  account is over its limit. It lifts at the `until` the runtime named, or when
-  a person who knows it is over lifts it: on the banner, or `lingtai account
-  lift <runtime>` (which appends nothing when no limit stands). **Never a
-  restart.** It holds only the projects whose recipe uses that runtime.
+- **An account lock.** An account is a platform's: a runtime's usage limit
+  (`claude-code`, `codex`) and GitHub's rate limit are both account locks, each
+  with an `until`. The banner names the limit and its reset in `limitSentence`'s
+  words (`packages/domain/src/failure/explain.ts`): *`<account>`'s `<kind>`,
+  resets `<when>`*, or *— no reset named* where the platform named none, and
+  *— passed* once the reset has gone by. Where the platform named no reset the lock's
+  `until` is a fallback and not a person's to wait on: a runtime's is the
+  recipe's `source.backoff`, GitHub's is one minute doubling up to an hour
+  (`githubLimitUntil`, `packages/domain/src/failure/respond.ts`), and the
+  conductor lifts the lock itself when that passes. A person may lift it sooner:
+  on the banner, or `lingtai account lift <account>` (which appends nothing when
+  no limit stands; accounts: `claude-code`, `codex`, `github`).
+  **Never a restart.** It holds only the projects that use that account.
+  **A run the limit cut off** is released to the queue without a wait; the first
+  claim after the lock lifts continues the same attempt, re-cut at the saved
+  head with the cut-off step redone whole, spending no `stepRedos`. While it is
+  queued under the lock a person may `lingtai close` it or lift the lock.
+
+**A red base is not a lock.** When a check of `build` fails on the base itself,
+the base is the project's problem and not a ticket's (`base-red.ts`,
+`packages/conductor/src/base-red.ts`): the item is released keeping its head
+and passed over with the reason `base-red`, and the log line reads
+*base-red: `<command>` failed on `<sha>`; `<n>` passed over until `<base>` moves*.
+Nothing watches the base; the next attempt claimed asks once whether the base's
+head has moved since the red (`lookAtBase`), with no agent paid for the look.
+Green, the item continues from its saved head with the new base merged in. A
+base that could not be read passes everything over too, because an unread base
+is not a green one. What a person does: make the base pass, or drop the check
+from `build` — a failing command the recipe no longer lists is not red. The one
+ticket opened to make the base green is never passed over.
+
+**Why nothing runs.** With work queued and nothing in flight, `lingtai status`
+prints one sentence under `Queue`, and the board's Queued column carries the
+same sentence at its top (`whyNothingRuns`,
+`packages/conductor/src/why-nothing-runs.ts`; `whyLine`,
+`apps/board/src/lib/why-line.ts`). It names its roots in the order they are
+tried: the daemon not running, a drain, a lock, a red or unreadable base, then
+a chain of *blocked by* followed to the ticket at its end. A queue of tickets
+that are all held says nothing — a hold is a person's choice, not a stop.
 
 `lingtai doctor` carries the person's pauses in its `daemon: paused projects`
 row, at level `info`.
@@ -1535,7 +1578,7 @@ the daemon recorded as yours. `service restart` does none of that — it starts
 whatever the checkout holds — and it is the plumbing for a rewritten unit that
 must be loaded now.
 
-So the three restarts differ in what they refuse before they act, and in what
+So the three of them differ in what they refuse before they act, and in what
 they cover:
 
 | | refuses first | covers |
@@ -1652,7 +1695,7 @@ Whether the conductor is under the *setup's pause* is a third fact and stays its
 own chip, absent unless there is something to say; a project's pause, the day's
 ceiling and a usage limit are the banner's, not the bar's.
 
-Neither restarts anything: `lingtai doctor` never writes, and a daemon still
+Neither starts the daemon again: `lingtai doctor` never writes, and a daemon still
 does not restart itself when `main` moves — that remains open, and 0042 decided
 only that the restart is a command somebody types. Take the commits with it:
 
@@ -1664,6 +1707,86 @@ pnpm lingtai restart "taking 3 commits"   # drains, checks, and starts — itsel
 for the minutes between a merge and a restart; a doctor that went red for it
 would be red most afternoons, and a check that is always red is one nobody
 reads.
+
+### When an attempt fails
+
+A failure is answered in three layers, and a person is the last of them
+(0108 §6, §16):
+
+1. **A rule** answers what is mechanical or transient, free: no agent is paid.
+2. **A cause the system acts on.** A judge (within the bounds) or triage (where
+   a wait would open) **names a cause** and never an action; the system chooses
+   the action and carries it out (`actionFor`,
+   `packages/domain/src/failure/respond.ts`).
+3. **A person**, asked only for a *limit* (a bound is spent), an *unclear*
+   requirement or a broken *environment* (`AskPersonWhy`).
+
+**The actions and their bounds.** Each bound has its own scope. `refusalFixes`,
+`conflictResolutions`, `stepRedos`, `baseBranchMerges` and `landingRetries` are
+counted on the attempt's own stream. `newAttempts` is counted across the whole
+ticket, and `ticketSplits` and `personAsks` are spent once per root ticket and
+on the ticket's own stream, so a split parent that returns in a new attempt has
+no second split. **No counter is reset by a daemon restart, a release or a
+person's resolution**. The recipe keys are
+`runtime.limits.*`; the rest are constants in `BOUNDS` — *"a constant and not a
+recipe knob: a knob is a value somebody can set to a loop."*
+
+| Action | What it does | Starts from | Bound | Value |
+|---|---|---|---|---|
+| `fixRefusal` | one more `implement` carrying what refused it | the saved head | `attempt.refusalFixes` | recipe, 6 |
+| `resolveConflict` | the same for a merge conflict | the saved head | `attempt.conflictResolutions` | recipe, 6 |
+| `redoStep` | the step that did not finish runs again, whole | the saved head | `stepRedos` | constant, 3 |
+| `writeSpentOnThenRedoStep` | writes where the turns went into the body, then redoes | the saved head | `stepRedos` | constant, 3 |
+| `startNewAttempt` | the ticket is released and claimed again | the base | `ticket.newAttempts` | recipe, 2, across the ticket |
+| `splitTicket` | triage's plan opens child tickets | the base | `ticketSplits` | constant, 1 per root ticket |
+| `askPerson` | a wait for a limit, a question or the environment | — | `personAsks` | constant, 5 questions per ticket; only a question wait is counted (below) |
+
+Two more are done by the conductor and not chosen from a cause: a base that
+moved is merged in (`baseBranchMerges`, 10 per attempt) and a landing origin
+refused is tried again (`landingRetries`, 3 per attempt, on the same waits as a
+step redo). With a recipe key at zero the action is not bought and the wait is
+a person's.
+
+**A step redone.** A step that did not finish — a crash, a missing receipt, an
+unreadable answer — is redone **whole from the attempt's head**, after 1, then
+5, then 15 minutes (`stepRedoWaits`), spending one `stepRedos`; the agent's
+brief ends with one paragraph saying why. A run that met `run.turns` or
+`run.wall` goes to triage, which answers *only unfinished* (redo) or *too big*
+(write where the turns went into the body and redo, or split). If triage's
+answer failed or went stale it is asked `triageRetries` (1) more time; with no
+usable answer after that the wait is yours, and the page says so.
+
+**What is kept.** A cut-off `implement`'s uncommitted code is committed by
+Lingtai to `agent/<n>` as a `wip:` commit, so a continuation and the landing
+lane carry it. **Nothing is carried to a new attempt**: it starts from the base
+and its brief says why the old approach was wrong.
+
+**What a person sees.** A wait the system resolved shows **one line** — the
+cause it read, what it did and the bound used — on the card, the task page's
+record and `lingtai status`, with triage's summary one click away.
+`systemLine` builds it and `systemLineText` joins it
+(`packages/domain/src/wait-words.ts`): *Triage read only unfinished; the step is
+being redone — 2 of 3 redos used*. A wait the system read and left to a person
+says why instead (`heldLine`): *a person is asked*, and the bound spent, as in
+*3 of 3 redos used*. A wait that stays open is one of the three kinds. A
+question — from `design`, from `implement`'s `Unclear`, or from triage — is up
+to five questions with a recommended answer first and a box for your own;
+answering writes into the body and continues the step that asked — except that
+a question raised at `build`, `proposed` or `merge` goes back to `implement`,
+because those steps do not read the changed body (`answerStepOf`,
+`packages/domain/src/wait.ts`). Each question wait spends one of the five
+`personAsks` **when it opens**, answered or not (`isPersonAsk`); a wait for a
+limit or for the environment is not counted. With none left the next question
+becomes an `AskLimit` wait and nothing continues on its own.
+
+**Already done.** `implement` may declare the work already on the base, and
+`review` checks each `## Done when` item at the base's sha. The ticket then ends
+**`satisfied`** — at once for a split parent, after a person confirms otherwise
+(*already satisfied on `<sha>` — confirm to end it, or send it round again*,
+`wait-words.ts`) — and reads *satisfied* on the Landed row, the task page and
+`/landed`. **A split**: triage's plan opens up to 8 children, the parent keeps
+its `## Done when` and waits behind them, and when the last closes it is taken
+once more to check its own list.
 
 ### Decide, on the board
 
@@ -1696,7 +1819,10 @@ The same decisions from the terminal, if you prefer:
 ```bash
 pnpm lingtai approve nextloom-ai-admin --issue 120
 pnpm lingtai approve nextloom-ai-admin --issue 120 --note "the review finding is out of scope"
-pnpm lingtai requeue nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
+pnpm lingtai fix-refusal nextloom-ai-admin --issue 120
+pnpm lingtai redo-step nextloom-ai-admin --issue 120
+pnpm lingtai start-new-attempt nextloom-ai-admin --issue 120 --note "the block was the harness, not the diff"
+pnpm lingtai start-new-attempt nextloom-ai-admin --issue 120 --into-body "use the second design"
 pnpm lingtai close nextloom-ai-admin --issue 120 "superseded — the design this describes is not the design"
 ```
 
@@ -1716,21 +1842,32 @@ you would otherwise be merging something you have not read. When a gate still
 refuses that head, `--note` is required: approving waives each refusing gate,
 with the note as the reason, in the same append as the approval. `--reject` is
 gone — it asked the same question again and ended nothing; to disagree with the
-diff, `requeue` it.
+diff, send it round again with one of the three moves below.
 
-`requeue` ends a wait with **a new run**, whether or not there is a diff to
-approve (`#150`): an item held for approval — after which an approval of the
-diff you sent back is refused, and while one is still merging the requeue is
-refused instead — or one
-that blocked — an integration that conflicted, a gate that failed for a reason
-that was never about the change — goes back to the queue, and the next turn cuts
-a fresh branch from a base that has since moved. It refuses by naming the state
-the item is actually in, so *`ticket-lingtai-122` is claimed, not blocked* is the
-answer rather than "not blocked". `--note` is optional (`#424`): a requeue cuts
-a fresh attempt with the recipe's own rounds again rather than overruling
-anything, and the actor is still recorded in `by`, so it is not anonymous
-either way. It appends the same `WorkItemUnblocked` the board's button does and
-makes no GitHub call — `reconcile` converges the label the block left behind.
+The person's moves differ in what they start from (`lingtai <verb> --help`):
+
+- `lingtai fix-refusal` — *one more implementation round on saved work*: one
+  more `implement` on the saved head carrying the refusal's evidence, then the
+  checks again without waiving a refusal. `--if-head <sha>` refuses if the saved
+  head is a different commit.
+- `lingtai redo-step` — *run the step that stopped again, on the saved work*:
+  the same attempt runs the step a crash or a red stopped again, whole, on its
+  saved head: no fixer, nothing cut from base, and nothing spent.
+- `lingtai start-new-attempt` — *end a wait with a new run*: queues a new
+  attempt for a blocked item, held for approval or not, that cuts a fresh branch
+  from a base that has since moved. It spends none of the ticket's `newAttempts`,
+  because only a machine's new attempt is counted. `--into-body <text>` writes
+  into the ticket's body first; the board says *Start a new attempt from base*
+  and *Add to the ticket and start a new attempt*.
+
+`--note` is optional (`#424`), and the actor is recorded in `by` either way.
+A move refuses by naming the state the item is actually in, so
+*`ticket-lingtai-122` is claimed, not blocked* is the answer rather than "not
+blocked". The moves append to the log and `reconcile` converges the label the
+block left behind, but not every one is local: `start-new-attempt --into-body`
+writes the issue through GitHub, and `fix-refusal` and `redo-step` check the
+remote refs before they resolve the wait, so with GitHub unreachable they
+refuse and the wait stays unresolved. There is no `lingtai requeue`: the verb is retired.
 
 `ask` and `answer` are the pair for a decision **before** any run (`#147`):
 
@@ -1743,9 +1880,9 @@ pnpm lingtai answer lingtai --issue 51 "the second — refuse at the hook"
 holds or one already asking; nothing is claimed and no worktree is cut, and the
 queue passes over it because the reducer says blocked. `lingtai status` prints the
 question rather than counting it. A question asked by mistake is withdrawn with
-`lingtai requeue ... --note "<why>"`, which writes the unblock `withdrawn` so no
+`lingtai start-new-attempt ... --note "<why>"`, which writes the unblock `withdrawn` so no
 attempt is told it. `answer` refuses a block a run is holding —
-that is `approve` or `requeue` — and its choice is kept by the reducer and carried
+that is `approve` or `start-new-attempt` — and its choice is kept by the reducer and carried
 into every later attempt's prompt, so nobody edits the issue body to reach the
 agent.
 
@@ -1770,7 +1907,7 @@ nothing merges because of one. It is a verdict on the record — the card shows 
 counts it, the next attempt is not told the gate died — and the item stays
 where it was. So the command ends by saying what the item is still waiting on:
 a held run is still `approve`'s to merge, and a blocked one is still blocked,
-with `requeue` the move left and a new head this waiver will not count on.
+with `start-new-attempt` the move left and a new head this waiver will not count on.
 
 ### Let it merge
 
@@ -1831,7 +1968,8 @@ Every refusal names itself. The common ones:
 | `stopped at env: … declared in env.required and not set in ~/.lingtai/env/<project>.env` | The recipe requires a name nothing supplies. Nothing was claimed and nothing was spent. The message names the command: `lingtai env set <project> <NAME>`, which reads the value from stdin unechoed. That file is the only place an agent's values come from — a name exported in your shell, or written in `~/.lingtai/config.yml`, never reaches it. |
 | `env.required: …` names something nothing supplies | The recipe requires a name and no file has it. `allow`, `deny` and `required` are all valid keys since [0021](decisions-archive/0021-the-recipe-decides-the-environment.md); the schema stays strict so a stale key fails loudly instead of resolving to "requires nothing". |
 | `stopped at discover: excluded-label` | That issue carries a label the recipe's `source.exclude` names. Every reason an issue is passed over is the recipe's — there is no built-in list. |
-| `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next turn asks GitHub again (#131). |
+| `stopped at discover: blocked-by` | GitHub says an open issue still blocks that one. Close the blocker, or remove the **blocked by** link on the ticket; there is nothing to clear here, since the next turn asks GitHub again (#131). *Why nothing runs* names the chain's root. |
+| `stopped at discover: base-red` | A check of `build` fails on the base itself, so every ticket is passed over until the base's head moves. Make the base pass, or drop the check from `build`; nothing is held on the ticket (*What stops new work*). |
 | `stopped at prepare: the install action refused` | An action at the `prepared` point refused — usually dependencies that did not install in a fresh worktree. Nothing expensive ran; that is the point of failing here. |
 | `did not merge (stale): the card showed …` | The branch moved between reading and deciding. Reload and read it again. |
 | `a waiver needs a reason` | A waiver records who and why. Both, always. |
@@ -1840,7 +1978,7 @@ Every refusal names itself. The common ones:
 ## The report page
 
 `/report` on the board — the *report* link in the footer — shows how
-the pipeline is doing over a window of local days: the figure tiles, fix rounds
+the pipeline is doing over a window of local days: the figure tiles, refusal fixes
 by bucket, the review survival curve, landings per day, spend per day, why work
 stopped to wait, a table per kind, and the eight tickets that went round most,
 each linking to its task page ([0123](decisions/0123-the-report-counts-what-the-log-holds.md) §7).
@@ -2436,7 +2574,7 @@ So, before updating, run `lingtai doctor` and note any `daemon: liveness` row
 that says `paused by …` for a pause that is not the setup's. **Pause before the
 new daemon starts, never after:** the new daemon takes queued work the moment it
 starts, and a pause appended afterwards does not stop an attempt already begun.
-Stop the old daemon so that nothing restarts it: where a supervisor (launchd
+Stop the old daemon so that nothing starts it again: where a supervisor (launchd
 KeepAlive, systemd `Restart=always`) keeps it, `lingtai service shutdown`,
 which unloads the service — a bare `lingtai shutdown` only drains, and the
 supervisor starts the new checkout's daemon on its own during the restart delay,
@@ -2497,7 +2635,7 @@ The steps, in this order:
    replay finishes.
 4. `pnpm lingtai restart "picking up #…"`, with `lingtai doctor` green first.
 5. Restart the board, by its port (`:17820`). It holds a projector on the old
-   code, and its runner meets the new table until it restarts.
+   code, and its runner meets the new table until it is started again.
 
 Three things can be stale after the merge, and they are told apart by what
 `lingtai doctor` says. **A column was added**: `doctor` reports the projection as
@@ -2532,7 +2670,7 @@ finding's status from the one reduce. Rebuild `finding_backlog`.
 **#834 — `task_view` takes the ticket's state: `approved` after a grant, Close
 `waiting`, `landed` only on `TicketLanded`.** `task_view` gains a column
 (`ticket`) and a table (`task_view_ticket`), so `doctor` reports it as drifted. A
-card whose fix round was granted leaves Queued, and `lingtai status` and the
+card whose refusal fix a person granted leaves Queued, and `lingtai status` and the
 drain stop counting it as queued. A close stays `waiting` until `TicketClosed`
 lands, instead of showing `queued` for a moment. A merge alone no longer reads
 `landed`. The question beside an answer is worded from the resolution's reason.
