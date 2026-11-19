@@ -937,6 +937,8 @@ export interface AttemptOptions {
    * where a caller says nothing, and the route then ends at a person: a merge
    * this pass cannot make is not one it pretends to have made.
    */
+  /** Whether the ticket carries a split (#1251): see `AttemptPortOptions.splitParent`. */
+  readonly splitParent?: boolean
   readonly mergeBase?: (toSha: string) => Promise<{ readonly head: string } | { readonly failed: string }>
   /** `AttemptPortOptions.stepRedoWaits`: a test walking on the real clock hands none, and waits none. */
   readonly stepRedoWaits?: readonly Duration.Input[]
@@ -1204,6 +1206,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
     ...(options.baseFirst === undefined ? {} : { baseFirst: options.baseFirst }),
+    ...(options.splitParent === undefined ? {} : { splitParent: options.splitParent }),
   }
 }
 

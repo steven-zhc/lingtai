@@ -4044,3 +4044,146 @@ describe('a step redone whole is reset to the head first, then run from its firs
     expect(order).toEqual(['merge', 'reset', 'in true'])
   })
 })
+
+describe('an implementer that found the work already on the base (#1251, 0108 §21)', () => {
+  const BASE = 'b45e000'
+  const items = [
+    { item: 'the importer takes the lock', evidence: 'src/importer.ts:12' },
+    { item: 'a test pins it', evidence: 'unit/importer.test.ts:30' },
+  ]
+  /** An implementer that changed nothing and declared `AlreadyDone`, carrying what `conduct.ts` adds. */
+  const alreadyDone = (): Action => ({
+    name: 'write the change',
+    kind: 'agent',
+    yields: 'commit',
+    run: async () => ({
+      verdict: 'passed',
+      evidence: 'nothing to change',
+      findings: [],
+      declared: { _tag: 'AlreadyDone', items, baseSha: BASE, bodyVersion: 4 },
+    }),
+  })
+  const reviewing = (answer: (ctx: ActionContext) => ActionResult, seen: ActionContext[]): Action => ({
+    name: 'cold reviewer',
+    kind: 'agent',
+    yields: 'verdict',
+    run: async (ctx) => {
+      seen.push(ctx)
+      return answer(ctx)
+    },
+  })
+  const ceilings = { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 }
+  const recipe = recipeWith({ review: [{ name: 'cold reviewer', agent: 'claude-code', prompt: 'look' }] })
+
+  it('runs review on the evidence at the base — build is not visited — and a person confirms a ticket with no split', async () => {
+    const seen: ActionContext[] = []
+    const { bodies } = watching()
+    const { actionsAt, ran } = watchingActions({
+      implement: [alreadyDone()],
+      review: [reviewing(() => PASSED, seen)],
+    })
+    const { emit } = events()
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt, ceilings })
+
+    // The agent was dispatched, once, and handed the evidence and the base — not a diff.
+    expect(seen).toHaveLength(1)
+    expect(seen[0]!.alreadyDone).toEqual({ baseSha: BASE, items })
+    expect(ran.map((r) => r.step)).not.toContain('build')
+    expect(ran.map((r) => r.step)).not.toContain('merge')
+    expect(result.routes.map((r) => r.reply)).toMatchObject([{ _tag: 'Selected', candidate: 'check-done' }])
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'SatisfiedUnconfirmed', baseSha: BASE, bodyVersion: 4, items },
+    })
+    expect(outcomeOf(result.end)).toBe('blocked')
+  })
+
+  it('ends a split parent satisfied at once, naming the base, the body version and each item', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({
+      implement: [alreadyDone()],
+      review: [reviewing(() => PASSED, [])],
+    })
+    const { emit } = events()
+    const result = await runAttempt({ recipe, context, emit, bodies, actionsAt, ceilings, splitParent: true })
+
+    expect(result.end).toEqual({ _tag: 'Satisfied', baseSha: BASE, bodyVersion: 4, items })
+    expect(outcomeOf(result.end)).toBe('satisfied')
+  })
+
+  it('asks a person where no reviewer answered, rather than calling an unread claim satisfied', async () => {
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({ implement: [alreadyDone()], review: [] })
+    const { emit } = events()
+    const result = await runAttempt({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings,
+      splitParent: true,
+    })
+
+    expect(result.end).toMatchObject({
+      _tag: 'WaitOnPerson',
+      reason: { _tag: 'ProposedEscalated', proposal: { _tag: 'AlreadyDone' } },
+    })
+  })
+
+  it('answers an unmet item as fixRefusal by rule — no judge is dispatched, even one declared at findings — and review is ordinary after it', async () => {
+    const seen: ActionContext[] = []
+    const unmet: ActionFinding = {
+      file: 'src/importer.ts',
+      line: 12,
+      claim: 'the lock is not taken at the base',
+      failureScenario: 'a test pins it',
+      severity: 'major',
+    }
+    let implementations = 0
+    const { bodies } = watching()
+    const { actionsAt } = watchingActions({})
+    const at: AttemptOptions['actionsAt'] = (step, actions) =>
+      step === 'implement'
+        ? [implementations++ === 0 ? alreadyDone() : committedSomething('write the change', COMMITTED)]
+        : step === 'review'
+          ? [
+              reviewing(
+                (ctx) =>
+                  ctx.alreadyDone === undefined
+                    ? PASSED
+                    : { verdict: 'failed', evidence: 'one item unmet', findings: [unmet] },
+                seen,
+              ),
+            ]
+          : actionsAt(step, actions)
+    const { emit } = events()
+    let judged = 0
+    const result = await runAttempt({
+      recipe: recipeWith({ review: [{ name: 'cold reviewer', agent: 'claude-code', prompt: 'look' }], proposed: [] }),
+      context,
+      emit,
+      bodies,
+      actionsAt: at,
+      ceilings,
+      judge: async () => {
+        judged += 1
+        return { next: 'implement', named: 'test', why: 'asked' }
+      },
+    })
+
+    expect(judged).toBe(0)
+    expect(result.routes.map((r) => r.reply)).toMatchObject([
+      { _tag: 'Selected', candidate: 'check-done' },
+      { _tag: 'Selected', candidate: 'fix-lines' },
+    ])
+    expect(result.routes[1]!.offer.proposal).toMatchObject({
+      _tag: 'ReviewFindings',
+      findings: [{ failureScenario: 'a test pins it' }],
+    })
+    // Implement again on the head, then an ordinary review: the check is over.
+    expect(implementations).toBe(2)
+    expect(seen.map((c) => c.alreadyDone !== undefined)).toEqual([true, false])
+    expect(seen[1]!.recheck).toEqual([unmet])
+  })
+})
