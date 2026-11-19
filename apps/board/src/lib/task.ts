@@ -13,6 +13,7 @@ import {
   reduceChat,
   reduceTicket,
   claimShapeOf,
+  splitActivityOf,
   splitProgressOf,
   isAttemptStream,
   parseTicketStream,
@@ -2010,6 +2011,9 @@ async function startEstimateFor(state: string, project: string, now: Date): Prom
   return { typical, ceilingReached: reached }
 }
 
+/** How long a split may leave the log silent and still read *writing*: each child and link is an append of its own. */
+const SPLIT_QUIET_MS = 5 * 60_000
+
 export async function loadTask(taskId: string): Promise<TaskDetail | null> {
   // The control stream is read for the seven types the reducer handles only: it
   // also holds a `Reconciled` per daemon start, 22 KB each and never read here
@@ -2158,13 +2162,17 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
     if (planned || started) {
       const state = await readProject(ticket.project)
       const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
-      // A split the daemon writes is *writing* while the daemon that started it is beating (`SplitStarted.instance`).
+      // A beating daemon says the process is up, not that a writer is: a writer whose last append failed has left
+      // the daemon beating and the log silent. So *writing* also needs the split to have done something on the log
+      // lately; a quiet one reads *interrupted*, which the daemon's next look finishes.
       const daemon = await readStatus()
+      const active = splitActivityOf(own, waitId)
       standing.split = {
         progress: splitProgressOf(own, {
           waitId,
           instance: daemon === null ? '' : `daemon:${daemon.pid}@${daemon.startedAt.toISOString()}`,
-          running: daemon !== null && lastBeat(daemon).up,
+          running:
+            daemon !== null && lastBeat(daemon).up && active !== null && Date.now() - active.getTime() < SPLIT_QUIET_MS,
         }),
         tickets,
       }

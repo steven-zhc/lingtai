@@ -118,3 +118,21 @@ export function splitLastOf(events: readonly Envelope[], waitId: string): SplitL
   if (last.type === 'SplitFailed') return { _tag: 'failed', at: last.at }
   return { _tag: 'started', instance: (last.data as PayloadOf<'SplitStarted'>).instance }
 }
+
+/** When a wait's split last did anything on the log — started, wrote a child or a link, or ended — or null. */
+export function splitActivityOf(events: readonly Envelope[], waitId: string): Date | null {
+  let at: Date | null = null
+  for (const e of events) {
+    if (
+      (e.type === 'SplitStarted' ||
+        e.type === 'SplitChildWritten' ||
+        e.type === 'SplitLinkWritten' ||
+        e.type === 'SplitFailed' ||
+        e.type === 'TicketSplit') &&
+      (e.data as { waitId?: string }).waitId === waitId &&
+      (at === null || e.at > at)
+    )
+      at = e.at
+  }
+  return at
+}

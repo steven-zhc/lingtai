@@ -170,7 +170,7 @@ describe('catchUpSplits', () => {
 describe('onSplitStarted', () => {
   it('runs this daemon’s own decision at once, and leaves another instance’s to the catch-up', async () => {
     const s = await setup()
-    await s.append([s.started(INSTANCE), s.started('daemon:5@elsewhere')])
+    await s.append([s.started('daemon:5@elsewhere'), s.started(INSTANCE)])
     const events = await s.store.read(s.ticketId)
     const mine = events.find(
       (e) => e.type === 'SplitStarted' && (e.data as { instance: string }).instance === INSTANCE,
@@ -184,6 +184,20 @@ describe('onSplitStarted', () => {
       }).pipe(Effect.provide(TestClock.layer())),
     )
     expect(s.requests.map((r) => r.waitId)).toEqual([s.waitId])
+  })
+
+  it("does not run a decision whose attempt has since failed: the retry is the catch-up's, after the backoff", async () => {
+    const s = await setup()
+    await s.append([s.started(INSTANCE), s.failed()])
+    const events = await s.store.read(s.ticketId)
+    const mine = events.find((e) => e.type === 'SplitStarted')!
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* onSplitStarted(mine, s.ports)
+        yield* settle
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+    expect(s.requests).toEqual([])
   })
 
   it('leaves a held project to the catch-up', async () => {

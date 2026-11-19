@@ -13,7 +13,7 @@
 import { reduceTicket, splitLastOf, ticketStream, type Envelope, type PayloadOf, type WaitId } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
 import type { TaskCard } from '@lingtai/projector'
-import { Clock, Effect } from 'effect'
+import { Clock, Effect, Fiber } from 'effect'
 
 export interface SplitRequest {
   project: string
@@ -80,10 +80,32 @@ export const runSplit = (deps: SplitPorts, request: SplitRequest): Effect.Effect
  */
 export const startSplit = (deps: SplitPorts, request: SplitRequest): Effect.Effect<void> =>
   Effect.suspend(() => {
-    if (deps.running.has(request.waitId)) return Effect.void
+    if (closed || deps.running.has(request.waitId)) return Effect.void
     deps.running.add(request.waitId)
-    return Effect.forkDetach(guarded(deps, request)).pipe(Effect.asVoid)
+    return Effect.gen(function* () {
+      const fiber = yield* Effect.forkDetach(
+        guarded(deps, request).pipe(Effect.ensuring(Effect.sync(() => WRITERS.delete(request.waitId)))),
+      )
+      // Only while the writer still holds the wait: one that already ended has nothing left to interrupt.
+      if (deps.running.has(request.waitId)) WRITERS.set(request.waitId, fiber)
+    })
   })
+
+/** The writers running in this process, by wait: the drain's to wait for or interrupt (0030). */
+const WRITERS = new Map<string, Fiber.Fiber<void>>()
+let closed = false
+
+/**
+ * Called by the daemon's shutdown once the passes are done: no writer starts after it, and each one running is
+ * interrupted and waited for. A child being written is uninterruptible (`writeChild`), so it is recorded first; the
+ * next start's catch-up finishes the split as an interrupted one.
+ */
+export const interruptSplits: Effect.Effect<void> = Effect.suspend(() => {
+  closed = true
+  const fibers = [...WRITERS.values()]
+  WRITERS.clear()
+  return Effect.forEach(fibers, (fiber) => Fiber.interrupt(fiber), { concurrency: 'unbounded' }).pipe(Effect.asVoid)
+})
 
 /**
  * A `SplitStarted` the decision just appended. Only this daemon's own start is run live; another instance's
@@ -95,6 +117,10 @@ export const onSplitStarted = (event: Envelope, deps: SplitPorts): Effect.Effect
     const data = event.data as PayloadOf<'SplitStarted'>
     const ours = yield* deps.instance()
     if (data.instance !== ours) return
+    // Delivery is late by nature: a writer that started and failed since has left its `SplitFailed`, and the retry
+    // of that is the catch-up's, once `source.backoff` has passed. Only an attempt still standing is run live.
+    const last = splitLastOf(yield* Effect.tryPromise(() => deps.store.read(event.streamId)), data.waitId)
+    if (last._tag !== 'started' || last.instance !== ours) return
     const parsed = parseStream(event.streamId)
     if (parsed === null) return
     const held = yield* (deps.locked ?? notLocked)(parsed.project)

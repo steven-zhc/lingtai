@@ -64,7 +64,7 @@ import type { RestartArgs } from './restart.ts'
 import { openDaemon, prepareRestart, queueForTheLock, startRecorder, restartSupervised } from './restart.ts'
 import { releaseSandbox } from './sandbox.ts'
 import { keeper, serviceCommand, type ServiceOptions } from './service.ts'
-import { catchUpRegisteredSplits } from './split-run.ts'
+import { catchUpRegisteredSplits, interruptSplits } from './split-run.ts'
 import type { Steps } from './steps.ts'
 import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { flushTracing, startTracing } from './tracing.ts'
@@ -255,6 +255,7 @@ export function daemonStopping(ports: StoppingPorts) {
         yield* ports.beacon.stop('stopping')
         // The projections are stopped and the lock is released by this; what it
         // does not do, and must not, is wait for the pass.
+        yield* interruptSplits
         yield* ports.daemon.stop()
         yield* ports.daemon.stopped()
         yield* ratesSettled
@@ -320,6 +321,8 @@ export function daemonStopping(ports: StoppingPorts) {
       // The drain itself. No timeout around this one on purpose (§6).
       const loop = ports.loop()
       if (loop) yield* loop.stop()
+      // A split writer is not a pass: interrupted here, so nothing is created after the store closes.
+      yield* interruptSplits
       clearTimeout(timer)
       if (stopping) return
       stopping = true
