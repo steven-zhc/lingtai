@@ -3,7 +3,6 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { TriageBand } from '../src/app/standing.tsx'
-import { TriageChoices } from '../src/app/triage-picks.tsx'
 import { triageHeadLine, type MirrorHead } from '../src/lib/triage-head.ts'
 
 function draw(status: TriageStatus, headLine?: string): string {
@@ -244,9 +243,5 @@ describe('every question kind (#1255)', () => {
         }),
       ),
     )
-  })
-
-  it.each(['design', 'implement Unclear'])("the agent's own question (%s)", () => {
-    ordered(renderToStaticMarkup(<TriageChoices question={question} index={0} source="asked" />))
   })
 })

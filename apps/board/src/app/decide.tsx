@@ -405,7 +405,7 @@ export function EditBodyAndRequeue({
   const [, startTransition] = useTransition()
   const triage = useTriageDraft()
   const composed = triage?.waitId === waitId ? triage.text : ''
-  const body = triage?.body ?? null
+  const body = triage?.body ?? (waitId === null ? (triage?.retainedOwn ?? null) : null)
   const draftWaitId = body?.waitId ?? null
   const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
   // What the agent asked: its questions drawn as choices, or the prose where it asked in prose (#1253).

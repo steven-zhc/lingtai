@@ -489,3 +489,55 @@ it('draws a question asked in prose as the paragraph it was', () => {
   const html = renderToStaticMarkup(mount(waitId, () => editor(waitId, reason)))
   expect(html).toContain('<p>which of the two?</p>')
 })
+
+const unrecommendedFirst = {
+  id: 'q',
+  text: '<question>',
+  recommended: 'b',
+  answers: [
+    { id: 'a', text: '<first>' },
+    { id: 'b', text: '<second>' },
+    { id: 'c', text: '<third>' },
+  ],
+}
+
+it.each([
+  [
+    'design (AgentQuestion)',
+    { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: [unrecommendedFirst] },
+  ],
+  [
+    "implement's Unclear (ProposedEscalated InputNeeded)",
+    {
+      _tag: 'ProposedEscalated',
+      proposal: { _tag: 'InputNeeded', from: 'implement', questions: [unrecommendedFirst], said: '' },
+    },
+  ],
+])('the page draws %s numbered, recommended first, own answer last (#1255)', (_name, raw) => {
+  harness.values = []
+  const waitId = aWaitId()
+  const reason = raw as unknown as WaitReason
+  const asked = [unrecommendedFirst]
+  const html = renderToStaticMarkup(mount(waitId, () => editor(waitId, reason), { asked }))
+  expect(html).toContain('1. &lt;question&gt;')
+  const at = (t: string) => html.indexOf(`>${t}<`)
+  const order = ['&lt;second&gt;', '&lt;first&gt;', '&lt;third&gt;', 'My own answer'].map(at)
+  expect(order.every((n) => n >= 0)).toBe(true)
+  expect([...order].sort((x, y) => x - y)).toEqual(order)
+  expect(html.indexOf('Recommended')).toBeGreaterThan(order[0]!)
+  expect(html.indexOf('Recommended')).toBeLessThan(order[1]!)
+})
+
+it('keeps an own answer on the page when another person resolves the wait (#1255)', () => {
+  harness.values = []
+  const waitId = aWaitId()
+  const asked = [unrecommendedFirst as unknown as ReturnType<typeof question>]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  mount(waitId, () => editor(waitId, reason), { asked })
+  ;(harness.triage as { pickOwn: (i: number, s: 'asked') => void }).pickOwn(0, 'asked')
+  mount(waitId, () => editor(waitId, reason), { asked })
+  ;(harness.triage as { setOwn: (i: number, t: string, s: 'asked') => void }).setOwn(0, 'my own words', 'asked')
+  const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+  expect(html).toContain('my own words')
+  expect(html).toContain('Your unsent draft is below')
+})

@@ -29,6 +29,8 @@ type TriageDraft = {
   refusal: string | null
   /** The body editor's draft once the person has edited it or added to it; null while it follows the picks. */
   body: Draft | null
+  /** The own answers written under a wait, kept as text so they outlive it like a body draft does; null when none. */
+  retainedOwn: Draft | null
   setBody: (text: string) => void
   /** The answer box's draft, and whether the box is open — open from an add as well as from its button. */
   answer: AnswerDraft | null
@@ -91,9 +93,10 @@ export function TriagePicks({
   const askedAnswers = picks.waitId === waitId ? picks.asked : {}
   const ownAnswers = picks.waitId === waitId ? picks.ownAnswers : {}
   const ownAsked = picks.waitId === waitId ? picks.ownAsked : {}
-  const [drafts, setDrafts] = useState<{ body: Draft | null; answer: AnswerDraft | null }>({
+  const [drafts, setDrafts] = useState<{ body: Draft | null; answer: AnswerDraft | null; own: Draft | null }>({
     body: null,
     answer: null,
+    own: null,
   })
   const askedList = asked ?? []
   const selected = (index: number, question: TriageQuestion, source: AnswerSource = 'triage') =>
@@ -134,12 +137,18 @@ export function TriagePicks({
         ? { asked: { ...c.asked, [index]: { own: c.ownAsked[index] ?? '' } } }
         : { answers: { ...c.answers, [index]: { own: c.ownAnswers[index] ?? '' } } },
     )
-  const setOwn = (index: number, own: string, source: AnswerSource = 'triage') =>
+  const setOwn = (index: number, own: string, source: AnswerSource = 'triage') => {
     update(source, (c) =>
       source === 'asked'
         ? { ownAsked: { ...c.ownAsked, [index]: own }, asked: { ...c.asked, [index]: { own } } }
         : { ownAnswers: { ...c.ownAnswers, [index]: own }, answers: { ...c.answers, [index]: { own } } },
     )
+    // The own words also go where a draft goes, so a wait ending under them does not take them (#1255).
+    const written = { ...(source === 'asked' ? ownAsked : ownAnswers), [index]: own }
+    const other = source === 'asked' ? ownAnswers : ownAsked
+    const chosen = [...Object.values(other), ...Object.values(written)].filter((t) => t.trim() !== '')
+    setDrafts((current) => ({ ...current, own: { waitId, text: chosen.join('\n\n') } }))
+  }
 
   // A draft belongs to the wait it was written under, and is never cleared when
   // that wait ends: the person is told to copy it before leaving.
@@ -181,6 +190,7 @@ export function TriagePicks({
         text,
         picks: answers,
         refusal,
+        retainedOwn: drafts.own,
         body,
         setBody,
         answer,
