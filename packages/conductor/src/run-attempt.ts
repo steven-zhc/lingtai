@@ -1619,11 +1619,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       options.from.approvedHead !== undefined &&
       (options.from.step === 'proposed' ||
         options.from.step === 'merge' ||
-        (options.from.approvedNow !== true && options.from.step === 'build'))
+        (options.from.approvedNow !== true && options.from.step === 'build') ||
+        // A resumed review of a conflict round's resolution still carries the approval it was measured from (#1279).
+        options.from.conflictResolved !== undefined)
     const resolveApproval = () => {
       if (!approvalPending || onSha === '' || options.from?.approvedHead === undefined) return
       approvalPending = false
-      if (options.from.approvedNow !== true && onSha === options.from.approvedHead) return
+      // The resolution of a conflict round was never read by the person: the baseline is theirs, the head is not (#1279).
+      if (options.from.conflictResolved !== undefined) return
       approvedAt = onSha
       // After the system's own merges the baseline is the approved head, not what an earlier review read (#1279).
       if (onSha !== options.from.approvedHead) {
@@ -2359,7 +2362,11 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             }
             mergedOnto = asked.baseSha
             // The review that passed before the round read `reviewedHead`; the resumed one is measured from it (#1274).
-            if (options.from.reviewedHead !== undefined)
+            if (options.from.approvedHead !== undefined) {
+              // A person's approval is the baseline, with no overlap kept open (#1279).
+              mergedSinceReview = { reviewed: options.from.approvedHead, base: asked.baseSha, overlap: [] }
+              baselineApproved = true
+            } else if (options.from.reviewedHead !== undefined)
               mergedSinceReview = {
                 reviewed: options.from.reviewedHead,
                 base: asked.baseSha,

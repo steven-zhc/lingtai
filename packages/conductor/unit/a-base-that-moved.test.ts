@@ -282,6 +282,15 @@ describe('what the next review is told it already read (#671)', () => {
     }
   })
 
+  it('carries a standing approval through a retry on the unchanged head (#1279)', async () => {
+    const { reviewSaw } = await walk([moved('base-1', ['src/recipe.ts'])], async () => ({ head: 'merged-1' }), [], {
+      step: 'proposed',
+      waive: [],
+      approvedHead: 'abc1234def',
+    })
+    expect(reviewSaw).toHaveLength(0)
+  })
+
   it('carries it across two base moves in a row (#1279)', async () => {
     const { reviewSaw } = await walk([moved('base-1'), moved('base-2')], async () => ({ head: 'merged-1' }), [], {
       step: 'proposed',

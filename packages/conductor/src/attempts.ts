@@ -310,6 +310,18 @@ export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: s
 }
 
 /**
+ * **Whether the only `implement` since `at` is a conflict round** (#1279): the last conflicting merge is at or after
+ * `at`, no `implement` came between `at` and it, and no reviewer has read the resolution yet. A person's approval
+ * survives that round, as it does not survive a fix.
+ */
+export function onlyAConflictRoundSince(outcomes: ReturnType<typeof stepOutcomesOf>, at: number): boolean {
+  const merged = outcomes.findLastIndex((o) => o.step === 'merge' && conflictedIn(o) !== null)
+  if (merged < at) return false
+  if (outcomes.slice(at + 1, merged).some((o) => o.step === 'implement')) return false
+  return !outcomes.slice(merged + 1).some((o) => o.step === 'review' && reviewerRanIn(o))
+}
+
+/**
  * **A check of declared evidence still standing** (#1251): read off the `implement` step's own recorded outcome,
  * `AlreadyDone` with the base and body version `conduct.ts` stored on it, while nothing but a `review` has run
  * since. The `CheckDone` route is not the source: its append is best-effort, and a continuation that lost it

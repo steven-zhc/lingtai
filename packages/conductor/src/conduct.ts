@@ -269,6 +269,7 @@ import {
   armForState,
   alreadyDoneOf,
   conflictResolvedOf,
+  onlyAConflictRoundSince,
   reviewedHeadOf,
   diffBaseShaOf,
   landedOnBaseOf,
@@ -878,7 +879,8 @@ function approvalOf(
   const at = outcomes.findLastIndex(
     (o) => (o.step === 'proposed' || o.step === 'merge') && o.actions.some((a) => a.onSha === head),
   )
-  if (at < 0 || outcomes.slice(at + 1).some((o) => o.step === 'implement')) return {}
+  if (at < 0) return {}
+  if (outcomes.slice(at + 1).some((o) => o.step === 'implement') && !onlyAConflictRoundSince(outcomes, at)) return {}
   return {
     approvedHead: head,
     ...(last!.waitId === approvedWaitId ? { approvedNow: true as const } : {}),
