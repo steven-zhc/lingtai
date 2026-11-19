@@ -97,6 +97,7 @@ import {
 import {
   continuationOf,
   grantCriterion,
+  answerStepOf,
   rerunStepOf,
   standingFor,
   waivedActionsAt,
@@ -345,8 +346,13 @@ import {
 
 /** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
-  return waits.filter((w) => w.resolution?._tag === 'RedoStep' && 'run' in w.reason && w.reason.run.runId === runId)
-    .length
+  // An `AnswerQuestions` continues the asking step the same way, so it spends a suffix too (#1254): two `design` dispatches never share an id.
+  return waits.filter(
+    (w) =>
+      (w.resolution?._tag === 'RedoStep' || w.resolution?._tag === 'AnswerQuestions') &&
+      'run' in w.reason &&
+      w.reason.run.runId === runId,
+  ).length
 }
 
 /** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
@@ -1566,8 +1572,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * named the offer. No grant, no criterion and no round: the counters are the attempt's own, unchanged.
        */
       const approvedWait = waitsFromState(reduced).find((w) => w.waitId === approvedWaitId)
-      if (approvedWait?.resolution?._tag === 'RedoStep') {
-        const step = rerunStepOf(reason)
+      if (approvedWait?.resolution?._tag === 'RedoStep' || approvedWait?.resolution?._tag === 'AnswerQuestions') {
+        // **An `AnswerQuestions` is a redo of the step that asked** (#1254, 0108 §12): the same re-cut on the saved head,
+        // the same counters, no `stepRedos` spent — and no recorded prompt replayed, which would send the old body.
+        const answering = approvedWait.resolution._tag === 'AnswerQuestions'
+        const step = answering
+          ? answerStepOf(reason, reduced.waits.find((w) => w.waitId === approvedWaitId)?.triage.result)
+          : rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
         const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
@@ -1576,11 +1587,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
         const cutOff = cutOffPromptOf(runEvents)
         // The call the stop cut off is the rerun step's own: another step's last call is not it.
-        const cutOffFor = cutOff !== null && cutOff.for.step === step ? cutOff.for : null
+        const cutOffFor = answering ? null : cutOff !== null && cutOff.for.step === step ? cutOff.for : null
         const recordedPrompt =
           cutOff?.prompt == null || cutOffFor === null ? null : yield* recordedPromptOf(cutOff.prompt)
         return {
           step,
+          answered: answering
+            ? {
+                key: `${ticketId}/${approvedWaitId}`,
+                accountReruns,
+                // Measured from where the asking step began, not from the saved head: commits it made before asking count (#1254).
+                startedAt: stepStartedAtOf(runEvents, step) ?? undefined,
+              }
+            : undefined,
           waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, step),
           grantRef: undefined,
           advice: undefined,
@@ -4506,8 +4525,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
-          // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
-          personAsks: personAsksFromState(reduced),
           diff: (from?: string) =>
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),
@@ -5850,6 +5867,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
                 ...(continuation.reviewedHead !== null ? { reviewedHead: continuation.reviewedHead } : {}),
                 ...(continuation.alreadyDone !== null ? { alreadyDone: continuation.alreadyDone } : {}),
+                ...('answered' in continuation && continuation.answered !== undefined
+                  ? { answered: continuation.answered }
+                  : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
                       redo: {

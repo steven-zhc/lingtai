@@ -456,13 +456,17 @@ export const onWaitStarted = (
     )
     if (daemonStartedAt === null) return
     const context = { declared: triage !== null, daemonStartedAt }
-    if (triageStatus(reason, triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null) return
+    // The reduced wait's reason decides, not the event's: the sixth ask is the `AskLimit` wait and triage never queues it (#1254).
+    const standing = (ev: readonly Envelope[]) =>
+      reduceTicket(ev).waits.findLast((w) => w.waitId === waitId)?.reason ?? reason
+    if (triageStatus(standing(events), triageFactsOf(events, waitId), context)._tag !== 'Queued' || triage === null)
+      return
     yield* enqueueTriage(
       { ticketId: event.streamId, waitId },
       Effect.gen(function* () {
         const latest = yield* lift(() => deps.store.read(event.streamId))
         if (!currentWait(latest, waitId)) return
-        if (triageStatus(reason, triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
+        if (triageStatus(standing(latest), triageFactsOf(latest, waitId), context)._tag !== 'Queued') return
         const why = yield* (deps.locked ?? notLocked)(parsed.project).pipe(
           recoverWith((err) => Effect.succeed(messageOf(err))),
         )

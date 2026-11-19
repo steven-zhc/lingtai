@@ -1032,7 +1032,12 @@ export function Standing({
   // only thing the moves row below reads to decide (#442). `[]` where there
   // is no reason to read — a wait that could not be reduced, or no wait at all
   // — so every move below is drawn as absent rather than guessed at.
-  const allowed = standing.reason === null ? [] : allowedResolutions(standing.reason)
+  const triagedResult =
+    standing.triageStatus?._tag === 'Done' && standing.triageStatus.result._tag !== 'TriageFailed'
+      ? standing.triageStatus.result
+      : null
+  // Triage's own answer counts: an `UndecidedQuestion` is answerable whatever the wait began as (#1254).
+  const allowed = standing.reason === null ? [] : allowedResolutions(standing.reason, triagedResult)
   // There is a document to send exactly when there is one to show. `problem` is
   // the case #76 is about — an unregistered project, a template that is not
   // there — and a Send on a prompt nobody could compose would send whatever the
@@ -1736,12 +1741,15 @@ export function Standing({
                                   </Gh>
                                 )
                               ) : null}
-                              {tag === 'EditBodyAndStartNewAttempt' ? (
+                              {tag === 'EditBodyAndStartNewAttempt' ||
+                              (tag === 'AnswerQuestions' && !allowed.includes('EditBodyAndStartNewAttempt')) ? (
                                 <EditBodyAndRequeue
+                                  answerOnly={tag === 'AnswerQuestions'}
                                   project={project}
                                   issue={issue}
                                   waitId={visible ? waitId : null}
                                   reason={standing.reason}
+                                  triaged={triageAdvised}
                                 />
                               ) : null}
                               {visible && tag === 'ConfirmSatisfied' && waitId !== null ? (

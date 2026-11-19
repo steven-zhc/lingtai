@@ -18,7 +18,7 @@ import type { BlockRecommendation, PayloadOf, ReleaseCause } from './events.ts'
 import { fromOf } from './proposal.ts'
 import { resolveOffer, routeMove, type RouteDecision, type RouteMove } from './routing.ts'
 import { agentBranchOf, parseTicketStream } from './streams.ts'
-import { reduceTicket, type TicketState } from './ticket.ts'
+import { personAsksSpent, reduceTicket, type TicketState } from './ticket.ts'
 import type { Finding, Step } from './vocabulary.ts'
 import { waitWords } from './wait-words.ts'
 import type { Resolution, TriageFacts, TriageResult, WaitReason } from './wait.ts'
@@ -120,8 +120,8 @@ export function waitsFromState(state: TicketState): WaitFold[] {
 }
 
 /**
- * How many times the ticket has stopped at `design` to ask a person — every such wait, resolved or not (`#649`).
- * Counts `design`'s `AgentQuestion` only; `implement`'s `Unclear` and triage's questions join it in a later ticket (#1254).
+ * How many times the ticket has stopped to ask a person — every wait that was a `design` question, an `implement`'s
+ * `Unclear`, an `InputNeeded`, or a triage's `UndecidedQuestion`, resolved or not (0108 §22, #1254).
  */
 export function personAsksOf(events: readonly Envelope[]): number {
   return personAsksFromState(reduceTicket(events))
@@ -129,7 +129,7 @@ export function personAsksOf(events: readonly Envelope[]): number {
 
 /** `personAsksOf` over a state already reduced. */
 export function personAsksFromState(state: TicketState): number {
-  return waitsFromState(state).filter((w) => w.reason._tag === 'AgentQuestion' && w.reason.step === 'design').length
+  return personAsksSpent(state.waits)
 }
 
 // ----------------------------------------------------------- triageFactsOf ----

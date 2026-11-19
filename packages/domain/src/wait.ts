@@ -246,7 +246,23 @@ const AgentCrashed = z.object({
   standing: z.object({ waitId: WaitId, reason: StandingReason }).optional(),
 })
 
-/** A wait is exactly one of these twelve — 0118 §1's table, flattened. */
+/**
+ * **The ticket has stopped to ask a person five times already** (0108 §22, #1254): the sixth `AgentQuestion`,
+ * `InputNeeded` or triaged `UndecidedQuestion` is this wait instead, naming `personAsks` and `5 of 5`. Never appended
+ * by anything: the ticket's reduce writes it over the stop that would have been the sixth (`reduceWaits`), so every
+ * reader reads one wait rather than computing a limit of its own. `asked` is the stop it stands for.
+ */
+const AskLimit = z.object({
+  _tag: z.literal('AskLimit'),
+  /** Copied from `asked`, so every reader that looks for `run` still finds it. */
+  run: AttemptRef,
+  bound: z.literal('personAsks'),
+  used: z.number(),
+  allowed: z.number(),
+  asked: z.discriminatedUnion('_tag', [...StandingReason.options, AgentCrashed]),
+})
+
+/** A wait is exactly one of these thirteen — 0118 §1's table, flattened. */
 export const WaitReason = z.discriminatedUnion('_tag', [
   OwnQuestion,
   AgentQuestion,
@@ -261,6 +277,7 @@ export const WaitReason = z.discriminatedUnion('_tag', [
   SetupRefused,
   AnswerUnreadable,
   SatisfiedUnconfirmed,
+  AskLimit,
 ])
 export type WaitReason = z.infer<typeof WaitReason>
 
@@ -278,6 +295,18 @@ const RedoStep = z.object({
   onSha: z.string(),
   ref: z.string().nullable(),
 })
+/**
+ * **Answer what the step asked, then continue that step on its saved head** (#1254, 0118 §6): the picked answers are
+ * written into the body's section for the wait before it resolves, and the asking step runs again, spending no
+ * `stepRedos`. `answers` maps a question's index to the answer id picked (JSON keys are strings); a missing index takes
+ * the recommended answer. `onSha` and `ref` are `RedoStep`'s.
+ */
+const AnswerQuestions = z.object({
+  _tag: z.literal('AnswerQuestions'),
+  onSha: z.string(),
+  ref: z.string().nullable(),
+  answers: z.record(z.string(), z.string()),
+})
 /** A person agrees the ticket is already satisfied by the base: ends it `satisfied` (#1251). A `SatisfiedUnconfirmed` only. */
 const ConfirmSatisfied = z.object({ _tag: z.literal('ConfirmSatisfied') })
 /** A new pass, from the base. */
@@ -294,6 +323,7 @@ export const Resolution = z.discriminatedUnion('_tag', [
   Approve,
   FixRefusal,
   RedoStep,
+  AnswerQuestions,
   StartNewAttempt,
   EditBodyAndStartNewAttempt,
   AnswerQuestion,
@@ -348,7 +378,14 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
     case 'OwnQuestion':
       return ['AnswerQuestion', 'StartNewAttempt', 'Close']
     case 'AgentQuestion':
-      return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+      // Nothing to answer where the question was prose: only the ways out (#1254).
+      return reason.questions.length > 0
+        ? ['AnswerQuestions', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+        : ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+    case 'AskLimit':
+      // Written out, never filtered from `asked`'s row: nothing here answers a question (0108 §22). `RedoStep` is
+      // appended by `allowedResolutions` from `rerunStepOf`.
+      return ['EditBodyAndStartNewAttempt', 'Close']
     case 'SatisfiedUnconfirmed':
       return ['ConfirmSatisfied', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
     case 'SignoffRequired':
@@ -369,6 +406,9 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
           // this row is `StartNewAttempt`, `Close` — no body edit.
           return ['StartNewAttempt', 'Close']
         case 'InputNeeded':
+          return reason.proposal.questions.length > 0
+            ? ['AnswerQuestions', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+            : ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         // #1251: the work is already on the base and nothing has checked it yet, so only a way out.
         case 'AlreadyDone':
           return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
@@ -530,7 +570,7 @@ export function standingFor(input: {
   if (input.head === null || input.head !== input.onSha) return null
   const resumed = input.resumed
   if (resumed.reason._tag === 'AgentCrashed') return resumed.reason.standing ?? null
-  if (resumed.reason._tag === 'SatisfiedUnconfirmed') return null
+  if (resumed.reason._tag === 'SatisfiedUnconfirmed' || resumed.reason._tag === 'AskLimit') return null
   return { waitId: resumed.waitId, reason: resumed.reason }
 }
 
@@ -544,15 +584,108 @@ export function standingFor(input: {
  * and `FixerDisagrees`, which `moves.ts` did not refuse before the switch.
  * `OwnQuestion` has no `run` and is unaffected.
  */
-export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
+export function allowedResolutions(reason: WaitReason, triage?: TriageResult | null): Resolution['_tag'][] {
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
   const fixable = grantCriterion(reason) !== null
+  // A wait triage answered `UndecidedQuestion` is a question for a person, whatever it began as (#1254, 0108 §22): its
+  // four resolutions replace the origin's table, so no `Approve`, `FixRefusal` or `RedoStep` goes round the answer.
+  if (triagedAsk(reason, triage) !== null)
+    return ['AnswerQuestions', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
   return [
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['FixRefusal'] as const) : []),
     ...(rerunStepOf(reason) !== null && !unpushed ? (['RedoStep'] as const) : []),
   ]
+}
+
+/** How many times a ticket may stop to ask a person (0108 §8, §22): `BOUNDS.personAsks` is this. */
+export const PERSON_ASKS = 5
+
+/**
+ * Whether a stop is one the ticket spends a `personAsks` on (#1254): an `AgentQuestion`, an `InputNeeded` escalation,
+ * or any wait triage answered `UndecidedQuestion`. A limit wait is never one — the count stops at its bound.
+ */
+export function isPersonAsk(reason: WaitReason, triage: TriageResult | null | undefined): boolean {
+  if (reason._tag === 'AskLimit' || reason._tag === 'OwnQuestion') return false
+  if (reason._tag === 'AgentQuestion') return true
+  if (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded') return true
+  return triageCauseOf(triage)?._tag === 'UndecidedQuestion'
+}
+
+/**
+ * The reason a stop is recorded with once the asks already spent are counted: itself, or the `personAsks` limit wait
+ * where it would be the sixth. `spent` is how many other waits count.
+ */
+export function limitedReason(reason: WaitReason, triage: TriageResult | null | undefined, spent: number): WaitReason {
+  if (!isPersonAsk(reason, triage) || spent < PERSON_ASKS || !('run' in reason)) return reason
+  return {
+    _tag: 'AskLimit',
+    run: reason.run,
+    bound: 'personAsks',
+    used: spent,
+    allowed: PERSON_ASKS,
+    asked: reason as never,
+  }
+}
+
+/** The `UndecidedQuestion` triage answered a wait with, where it did and asked something (#1254). A limit wait asks nothing. */
+function triagedAsk(reason: WaitReason, triage: TriageResult | null | undefined): { questions: number } | null {
+  if (reason._tag === 'AskLimit' || reason._tag === 'OwnQuestion') return null
+  const cause = triageCauseOf(triage)
+  if (cause === null || cause._tag !== 'UndecidedQuestion' || cause.questions.length === 0) return null
+  return { questions: cause.questions.length }
+}
+
+/**
+ * The step an `AnswerQuestions` continues (#1254): the one that asked. A triaged `UndecidedQuestion` continues the
+ * step its wait names where a step can be redone with a changed body (`design`, `implement`, `review`, `prepared`),
+ * and `implement` otherwise — `build`, `proposed` and `merge` read no body, and the answers change what is built.
+ * `null` for a reason nothing asked a question of.
+ */
+export function answerStepOf(reason: WaitReason, triage?: TriageResult | null): Step | null {
+  switch (reason._tag) {
+    case 'AgentQuestion':
+      return reason.step
+    case 'AskLimit':
+      return answerStepOf(reason.asked, triage)
+    case 'OwnQuestion':
+      return null
+    default:
+      break
+  }
+  if (reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded') return reason.proposal.from
+  if (triagedAsk(reason, triage) === null) return null
+  const named = stepNamedBy(reason)
+  return named === 'design' || named === 'implement' || named === 'review' || named === 'prepared' ? named : 'implement'
+}
+
+/** The step a wait's own reason says it stopped at, `null` where it names none. */
+function stepNamedBy(reason: WaitReason): Step | null {
+  if (reason._tag === 'AgentCrashed' && reason.standing !== undefined) return stepNamedBy(reason.standing.reason)
+  switch (reason._tag) {
+    case 'AgentCrashed':
+    case 'CheckRefused':
+    case 'SignoffRequired':
+    case 'AgentQuestion':
+    case 'SetupRefused':
+    case 'AnswerUnreadable':
+      return reason.step
+    case 'ProposedEscalated':
+      return fromOf(reason.proposal)
+    case 'MergeRefused':
+      return 'merge'
+    case 'FixerDisagrees':
+    case 'SatisfiedUnconfirmed':
+      return 'proposed'
+    case 'NothingProduced':
+      return 'implement'
+    case 'AskLimit':
+      return stepNamedBy(reason.asked)
+    case 'BudgetExhausted':
+    case 'OwnQuestion':
+      return null
+  }
 }
 
 /**
@@ -563,6 +696,15 @@ export function allowedResolutions(reason: WaitReason): Resolution['_tag'][] {
  */
 export function rerunStepOf(reason: WaitReason): Step | null {
   switch (reason._tag) {
+    // The limit wait redoes the step the asking wait would have continued (0108 §22): offered for every origin.
+    case 'AskLimit':
+      return (
+        answerStepOf(reason.asked, null) ??
+        (() => {
+          const named = stepNamedBy(reason.asked)
+          return named === 'design' || named === 'implement' || named === 'review' ? named : 'implement'
+        })()
+      )
     case 'AgentCrashed':
       if (reason.standing !== undefined) return null
       return reason.step === 'design' || reason.step === 'implement' || reason.step === 'review' ? reason.step : null
@@ -660,6 +802,7 @@ export function continuationOf(
     }
     case 'OwnQuestion':
     case 'AgentQuestion':
+    case 'AskLimit':
     case 'SatisfiedUnconfirmed':
     case 'NothingProduced':
     case 'BudgetExhausted':
@@ -759,7 +902,10 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
     case 'BudgetExhausted':
     case 'AgentCrashed':
       return 'StartNewAttempt'
+    case 'AgentQuestion':
+      return reason.questions.length > 0 ? 'AnswerQuestions' : null
     case 'ProposedEscalated':
+      if (reason.proposal._tag === 'InputNeeded') return reason.proposal.questions.length > 0 ? 'AnswerQuestions' : null
       return reason.proposal._tag === 'BudgetExhausted' ||
         reason.proposal._tag === 'DiffTooLarge' ||
         reason.because._tag === 'BaseRed'
@@ -769,7 +915,7 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
     case 'SatisfiedUnconfirmed':
       return 'ConfirmSatisfied'
     case 'OwnQuestion':
-    case 'AgentQuestion':
+    case 'AskLimit':
     case 'FixerDisagrees':
     case 'NothingProduced':
     case 'CheckRefused':
@@ -798,7 +944,7 @@ function causeResolution(cause: Cause): Resolution['_tag'] {
     case 'SetupBroken':
       return 'RedoStep'
     case 'UndecidedQuestion':
-      return 'EditBodyAndStartNewAttempt'
+      return 'AnswerQuestions'
     // the person's own split stays until #1262 removes it
     case 'TicketTooBig':
       return cause.plan !== null ? 'Split' : 'RedoStep'
@@ -829,7 +975,9 @@ export function recommendedResolution(
   // the judge read only the findings, triage read the ticket, the diff and the
   // code with the judge's routing in front of it, so the judge's routing is
   // not drawn as a competing reading (decided 2026-10-25).
-  const allowed = allowedResolutions(reason).filter((tag) => tag !== 'FixRefusal' || options.savedHead !== false)
+  const allowed = allowedResolutions(reason, status._tag === 'Done' ? status.result : null).filter(
+    (tag) => tag !== 'FixRefusal' || options.savedHead !== false,
+  )
   const toDefault = () => {
     const fallback = defaultResolution(reason)
     return fallback !== null && allowed.includes(fallback) ? fallback : null
@@ -880,7 +1028,9 @@ export function waitMoves(
   reason: WaitReason,
   input: { triage: TriageResult | null; savedHead?: boolean },
 ): { first: Resolution['_tag'] | null; rest: Resolution['_tag'][] } {
-  const allowed: Resolution['_tag'][] = allowedResolutions(reason).filter((tag) => tag !== 'Split' && tag !== 'Close')
+  const allowed: Resolution['_tag'][] = allowedResolutions(reason, input.triage).filter(
+    (tag) => tag !== 'Split' && tag !== 'Close',
+  )
   const recommended = recommendedResolution(
     reason,
     input.triage === null ? { _tag: 'NotDeclared' } : { _tag: 'Done', result: input.triage },
@@ -1167,6 +1317,8 @@ export function triageStatus(
     case 'OwnQuestion':
     case 'SignoffRequired':
     case 'SatisfiedUnconfirmed':
+    // The limit wait is a person's alone: triage must never queue it, or its `RedoStep` would continue on its own (0108 §22, #1254).
+    case 'AskLimit':
       return { _tag: 'NotNeeded' }
     case 'AgentQuestion':
     case 'FixerDisagrees':

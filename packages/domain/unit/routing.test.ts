@@ -134,24 +134,13 @@ const ALL_PROPOSALS = [
 describe('offerFor: zero spent', () => {
   const zero: Spent = { rounds: 0, newAttempts: 0 }
 
-  it('InputNeeded{design}: state-assumption{round 1} and hand-to-person, nothing unavailable', () => {
-    expect(offerFor(inputNeededDesign, policy, zero)).toEqual({
-      proposal: inputNeededDesign,
-      available: [
-        { id: 'state-assumption', next: { _tag: 'FixRefusal', to: 'design', round: 1 } },
-        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
-      ],
-      unavailable: [],
-    })
-  })
-
-  it('InputNeeded{implement}: state-assumption routes back to implement, not fix-lines', () => {
-    expect(offerFor(inputNeededImplement, policy, zero)).toEqual({
-      proposal: inputNeededImplement,
-      available: [
-        { id: 'state-assumption', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
-        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
-      ],
+  it.each([
+    ['design', inputNeededDesign],
+    ['implement', inputNeededImplement],
+  ])('InputNeeded{%s}: only a person is on offer — no agent decides in their place (0108 §22)', (_from, proposal) => {
+    expect(offerFor(proposal, policy, zero)).toEqual({
+      proposal,
+      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
       unavailable: [],
     })
   })
@@ -423,12 +412,10 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
 describe('offerFor: at the rounds ceiling', () => {
   const atRounds: Spent = { rounds: 2, newAttempts: 0 }
 
-  it('InputNeeded: state-assumption is unavailable{CeilingReached{rounds}}', () => {
-    expect(offerFor(inputNeededDesign, policy, atRounds)).toEqual({
-      proposal: inputNeededDesign,
-      available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
-      unavailable: [{ id: 'state-assumption', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } }],
-    })
+  it('InputNeeded: a spent rounds ceiling changes nothing — a question never bought a round', () => {
+    expect(offerFor(inputNeededDesign, policy, atRounds)).toEqual(
+      offerFor(inputNeededDesign, policy, { rounds: 0, newAttempts: 0 }),
+    )
   })
 
   it('BuildRed: fix-lines is unavailable{CeilingReached{rounds}}', () => {

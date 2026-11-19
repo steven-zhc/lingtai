@@ -352,10 +352,15 @@ Changes state — `--json` on its verdict (version 1).
 lingtai answer <project> --issue <n> "<choice>" [--json]
   Answer it on the record: back in the queue, and every attempt at
   the ticket is told the answer — no editing the issue body.
+lingtai answer <project> --issue <n> [--pick <q>=<a> ...] [--json]
+  Answer what a step or triage asked: the answers are written into
+  the ticket body, then the step that asked continues on its saved
+  work. A question with no --pick takes its recommended answer.
 ```
 
 ```sh
 lingtai answer lingtai --issue <n> "use the second option"
+lingtai answer lingtai --issue <n> --pick 1=b
 ```
 
 ### lingtai ask

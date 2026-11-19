@@ -61,7 +61,7 @@ import type { JudgeWhen, Proposal } from '../proposal.ts'
 import type { CandidateId, ExcludedCandidate } from '../route.ts'
 import { ImpossibleRouteError, type Candidate, type RouteOffer, type RoutingPolicy } from '../routing.ts'
 import { STEPS, type Step } from '../vocabulary.ts'
-import type { Cause } from '../wait.ts'
+import { PERSON_ASKS, type Cause } from '../wait.ts'
 import { classify } from './classify.ts'
 
 /** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
@@ -585,8 +585,8 @@ export const BOUNDS = {
   landingRetries: 3,
   /** At most this many base merges per attempt, then a person (#593). They cost no agent, so it bounds a base that keeps moving. */
   baseBranchMerges: 10,
-  /** At most this many times a ticket stops to ask a person, then the agent assumes and proceeds (#649). */
-  personAsks: 5,
+  /** At most this many times a ticket stops to ask a person, then a person decides: the sixth stop is the `AskLimit` wait and an agent never assumes (0108 §22, #1254). */
+  personAsks: PERSON_ASKS,
   /** A triage whose answer failed or went stale is asked this many more times, then the wait is a person's (0118 §3, #1258). */
   triageRetries: 1,
   /** A ticket is split at most once per root (#1261): spent by its first `SplitStarted` for any wait. */
@@ -701,7 +701,8 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
   // left without a cell here is a `tsc` error, not a silent fallthrough.
   switch (proposal._tag) {
     case 'InputNeeded':
-      round('state-assumption', proposal.from, true)
+      // Nothing is offered, as for `SandboxRefused`: an agent never decides in a person's place (0108 §22), so a
+      // question is answered by `askPerson` within `personAsks` and no judge is paid a round for it (#1254).
       break
     case 'BuildRed':
       round('fix-lines', 'implement', proposal.output.trim() !== '')

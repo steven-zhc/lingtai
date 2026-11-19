@@ -185,7 +185,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 7: an `AgentQuestion` or `InputNeeded` carries `questions` and `said`, not `question` (#1253); a version-6 snapshot holds the string.
   // 8: a `TicketSatisfied` ends a ticket `satisfied` (#1251); a version-7 snapshot cannot hold it.
   // 9: a wait's `resolution` carries the optional `spent` of a triage resolution (#1258); a version-8 snapshot may have lost it.
-  version: 9,
+  // 10: an `AnswerQuestions` resolution, and a wait's reason is the `AskLimit` where it would be the sixth ask (#1254); a version-8 snapshot holds neither.
+  version: 10,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

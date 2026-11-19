@@ -399,7 +399,13 @@ export function resolveTicketWaitEffect<R>(
     const { resolution, answers } = prepared.prepared
     const written = prepared.prepared.wroteBody === true
     // What is written is checked, not what was asked: `prepare` may rewrite a resolution (a grant's head), never its kind.
-    if (resolution._tag !== options.resolution._tag || !allowedResolutions(block.reason).includes(resolution._tag)) {
+    if (
+      resolution._tag !== options.resolution._tag ||
+      !allowedResolutions(
+        block.reason,
+        state.waits.findLast((w) => w.waitId === options.waitId)?.triage.result,
+      ).includes(resolution._tag)
+    ) {
       return {
         ok: false,
         refusal: { reason: 'not-offered', resolution: resolution._tag, waitReason: block.reason },

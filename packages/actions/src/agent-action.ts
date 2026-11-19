@@ -56,7 +56,6 @@ import { runtimeVersionOfEffect, type RunOutcome, type RunSandbox, type Runtime 
 import type { RunTrace } from '@lingtai/agent/run-log'
 import { AskedQuestions, askedText, type RuntimeId, type Step, type TriageQuestion } from '@lingtai/domain'
 import {
-  BOUNDS,
   composePrompt,
   REFUSED_ABOUT,
   REVIEW_ANSWER_JSON_SCHEMA,
@@ -78,7 +77,6 @@ import {
   type ActionFinding,
   type ActionResult,
   type ActionSpent,
-  type SentBack,
 } from './action.ts'
 import { boundedEvidence } from './command.ts'
 import { demoteOutsideDiff, demoteOutsideFix, hunksOf, type DiffHunks } from './diff-hunks.ts'
@@ -150,10 +148,6 @@ export interface AgentActionDeps {
   /** The ticket, exactly as the implementer received it. Fetched lazily so a
    *  recipe without an agent action costs no API call. */
   issue: () => Promise<ReviewIssue>
-  /** How many times this ticket has already stopped at `design` with an
-   *  `AgentQuestion` (`personAsksOf`, counted at claim). Absent is 0. From `BOUNDS.personAsks` the
-   *  design brief forbids the fence (`#649`). `dispatchDeps` forwards it by hand. */
-  personAsks?: number
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
   diff: (from?: string) => Promise<string | DiffRead>
@@ -220,7 +214,6 @@ export interface AgentActionDeps {
 export interface AgentPortDeps {
   runtime: Runtime
   issue(): Effect.Effect<ReviewIssue>
-  personAsks?: number
   diff(from?: string): Effect.Effect<string | DiffRead>
   diffSinceMerge?(reviewed: string, base: string): Effect.Effect<string | DiffRead>
   landed?(moved: {
@@ -246,7 +239,6 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
   const lifted: { [K in keyof Required<AgentActionDeps>]: AgentPortDeps[K] } = {
     runtime: deps.runtime,
     issue: () => liftPromise(() => deps.issue()),
-    personAsks: deps.personAsks,
     diff: (from) => liftPromise(() => deps.diff(from)),
     diffSinceMerge:
       deps.diffSinceMerge === undefined
@@ -1444,13 +1436,8 @@ function reviewAnswer(
  * and `createDraftAction` takes the agent at its word, which is `parseFindings`'s
  * own rule about severity read the other way round (0031 §1).
  */
-export function buildDesignPrompt(
-  spec: AgentActionSpec,
-  issue: ReviewIssue,
-  again: SentBack | null = null,
-  asks: number = 0,
-): string {
-  return composePrompt(designPromptParts(spec, issue, again, asks)).handed
+export function buildDesignPrompt(spec: AgentActionSpec, issue: ReviewIssue): string {
+  return composePrompt(designPromptParts(spec, issue)).handed
 }
 
 const BODY_SLOT = '\u0000body\u0000'
@@ -1463,14 +1450,9 @@ const BODY_SLOT = '\u0000body\u0000'
  * is written once with a slot where the body goes and split at it, and a prompt
  * that cannot be split that way (a NUL in the recipe's own words) is one plain part.
  */
-export function designPromptParts(
-  spec: AgentActionSpec,
-  issue: ReviewIssue,
-  again: SentBack | null = null,
-  asks: number = 0,
-): PromptPart[] {
-  const pieces = designText(spec, { ...issue, body: BODY_SLOT }, again, asks).split(BODY_SLOT)
-  if (pieces.length !== 2) return [designText(spec, issue, again, asks)]
+export function designPromptParts(spec: AgentActionSpec, issue: ReviewIssue): PromptPart[] {
+  const pieces = designText(spec, { ...issue, body: BODY_SLOT }).split(BODY_SLOT)
+  if (pieces.length !== 2) return [designText(spec, issue)]
   const body: PromptPart =
     issue.bodyAt === undefined
       ? issue.body
@@ -1478,29 +1460,7 @@ export function designPromptParts(
   return [pieces[0]!, body, pieces[1]!]
 }
 
-function designText(
-  spec: AgentActionSpec,
-  issue: ReviewIssue,
-  /**
-   * Why this step is being run a second time, or null on the way through.
-   *
-   * The other half of 0058 §3c's sentence: a judge may answer a design's question
-   * with *that step again*, and a design agent handed the round with no memory of
-   * asking would ask it again — one round bought, the same question, and a person
-   * at the end of it anyway. `sentBackTo` in `packages/conductor/src/run-attempt.ts` is
-   * what computes it, off this pass's own visits.
-   */
-  again: SentBack | null = null,
-  /**
-   * How many times this ticket has already stopped at design for a person
-   * (`personAsksOf`), and the fence is forbidden from `BOUNDS.personAsks` on (`#649`): a
-   * ticket stops here at most that many times, then the agent writes its assumptions.
-   */
-  asks: number = 0,
-): string {
-  // A judge's send-back forbids the fence too: `sentBackBlock` says *do not ask
-  // again*, and a section that still taught the fence would contradict it.
-  const asking = asks < BOUNDS.personAsks && again === null
+function designText(spec: AgentActionSpec, issue: ReviewIssue): string {
   return `You are writing the design note for a change nobody has written yet. You
 have the ticket and the worktree it will be made in, and nothing has been
 committed. What you write is handed to the agent that does the work, beside the
@@ -1523,7 +1483,7 @@ whose shape is obvious from the ticket does not need a design, and a document
 written anyway is a paragraph the implementing agent will work from instead of
 from the issue. If this is one of those, reply with nothing at all.
 
-${asking ? ASKING_BLOCK : ASSUMING_BLOCK}
+${ASKING_BLOCK}
 
 Read whatever you need to in this worktree. **Do not change it**: do not edit a
 file, do not run a command that writes one, and do not commit. The agent that
@@ -1531,8 +1491,9 @@ does the work runs in this same worktree after you and starts from what you
 return, not from what you left behind — so anything you write here is turns
 nobody reads.
 
-${asking ? 'Reply with the document and nothing else, or with the `question` block and\nnothing else' : 'Reply with the document and nothing else'}: no preamble, no summary of what you read, no offer to continue.
-${again === null ? '' : `\n${sentBackBlock(again)}\n`}${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ''}`
+Reply with the document and nothing else, or with the \`question\` block and
+nothing else: no preamble, no summary of what you read, no offer to continue.
+${spec.prompt ? `\n## Also for this project\n\n${spec.prompt}\n` : ''}`
 }
 
 /** The edges a ticket may leave undecided, and the same nine whether the brief asks or assumes. */
@@ -1592,56 +1553,7 @@ names the \`id\` of the answer you would choose. Every \`id\` is short and uniqu
 does not say which wins* is a question. The test: if you cannot say what you would
 have to be **told** before you could write the document, you do not have a
 question — you have a preference, and the document is where preferences go. It
-stops the pass: either a person answers it, or you are asked again and told to
-state your assumption instead.`
-
-/**
- * The form with no fence in it (`#649`): this ticket has already stopped at design
- * twice, or a judge sent the pass back here. The assumption is written where the
- * implementer and the reviewer both see it.
- */
-const ASSUMING_BLOCK = `## Where the ticket leaves an edge undecided
-
-Check the ticket's edges against this list:
-
-${EDGE_CHECKLIST}
-
-You may not ask: this ticket has stopped for a person already. For each edge the
-ticket leaves open, write the reading you took and why, in the document, under a
-heading \`## Assumptions\` — where the agent that writes the code and the reviewer
-that reads it both see it. Anything the body answers, or lists under
-\`## Out of scope\`, is decided and needs no entry. A ticket with nothing open
-needs no heading, and answering with nothing stays a real answer.`
-
-/**
- * **You asked, somebody answered, and the answer is *design it anyway*** —
- * 0058 §3c's second half, and the only thing that makes it worth more than the
- * first (`#294`).
- *
- * A judge that routes a `needs-input` back to `design` has bought a round, and
- * the round is worth nothing if the agent it buys arrives with no memory of the
- * question: it reads the same ticket, finds the same gap, and asks the same
- * thing. So what the judge said travels, and the instruction it travels with is
- * the one the ADR names — *state your assumption* — because an assumption written
- * into the document is a thing the implementer and the cold reviewer can both see
- * and argue with, where a second question is the pass stopping twice over one
- * ticket.
- *
- * `asked` is null where the round was bought on something other than a question,
- * which at this step is nothing today: `design`'s only route to the router is
- * `needs-input`. It is written for the null anyway, because the field is
- * `SentBack`'s and not this step's.
- */
-function sentBackBlock(again: SentBack): string {
-  return `## You are at this step a second time
-
-${again.asked === null ? '' : `You asked:\n\n${again.asked}\n\n`}The answer: ${again.why}
-
-**Do not ask again.** Write the design on a stated assumption: say which reading
-you took and why, in the document, where the agent that writes the code and the
-reviewer that reads it both see it. An assumption on the page is something either
-of them can disagree with; a second question is this ticket stopping twice.`
-}
+stops the pass: a person answers it, or decides the ticket, and you are never asked to decide in their place.`
 
 /**
  * **What a design agent answered — and there are three of those, not two**
@@ -1804,7 +1716,7 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           context,
           spec.name,
           composePrompt([
-            ...designPromptParts(spec, issue, context.again ?? null, deps.personAsks ?? 0),
+            ...designPromptParts(spec, issue),
             ...(context.redo === undefined ? [] : [`\n\n${redoParagraph(context.redo)}`]),
           ]),
           context.redo === undefined ? undefined : redoParagraph(context.redo),

@@ -123,7 +123,7 @@ describe('waitsOf', () => {
 })
 
 describe('personAsksOf', () => {
-  it('counts the design AgentQuestion waits, and not implement or any other', () => {
+  it('counts every wait that asked a person — a design question and an implement one — and not an OwnQuestion', () => {
     const item = makeStream('ticket-1')
     const events = [
       ...aWait(item, {
@@ -142,7 +142,7 @@ describe('personAsksOf', () => {
       } as never),
       ...aWait(item, { _tag: 'OwnQuestion', question: 'which base?', by: 'steven' }),
     ]
-    expect(personAsksOf(events)).toBe(1)
+    expect(personAsksOf(events)).toBe(2)
   })
 })
 

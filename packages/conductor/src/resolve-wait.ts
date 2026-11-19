@@ -287,7 +287,12 @@ export function resolveWaitHoldingEffect(
     // notice (`unscheduled`, below, and `approve()`'s own "way out" above), not
     // a reason to say the approval itself did not happen.
     let unscheduled: string | undefined
-    if (resolution._tag === 'Approve' || resolution._tag === 'FixRefusal' || resolution._tag === 'RedoStep') {
+    if (
+      resolution._tag === 'Approve' ||
+      resolution._tag === 'FixRefusal' ||
+      resolution._tag === 'RedoStep' ||
+      resolution._tag === 'AnswerQuestions'
+    ) {
       const parsed = parseTicketStream(ticketId)
       if (parsed !== null) {
         unscheduled = (yield* requestContinuation(store, options.by, parsed.project, parsed.issue, runId!)) ?? undefined
@@ -371,7 +376,7 @@ function prepare(
       resolution = { _tag: 'FixRefusal', onSha: head, ref }
     }
 
-    if (resolution._tag === 'RedoStep') {
+    if (resolution._tag === 'RedoStep' || resolution._tag === 'AnswerQuestions') {
       // **The saved head a rerun continues from** (#1218): `rerunHeadOf`'s own table, the one the re-cut reads, so
       // what this accepts is exactly what the next pass can cut. Every refusal is before any append.
       if (block.runId === null)
@@ -430,7 +435,10 @@ function prepare(
           })
         }
       }
-      resolution = { _tag: 'RedoStep', onSha: at, ref: atRef }
+      resolution =
+        resolution._tag === 'RedoStep'
+          ? { _tag: 'RedoStep', onSha: at, ref: atRef }
+          : { ...resolution, onSha: at, ref: atRef }
     }
 
     if (resolution._tag === 'Approve') {
@@ -445,6 +453,60 @@ function prepare(
     let wroteBody = false
     if (resolution._tag === 'EditBodyAndStartNewAttempt' && options.writtenSection !== undefined)
       recorded = { picks: [], section: options.writtenSection }
+    if (resolution._tag === 'AnswerQuestions') {
+      // **The answers are written before the wait resolves** (#1254, 0118 §6), and after every refusal above — the saved
+      // head is checked first, so a body is never written for a continuation that cannot run. A failed write resolves
+      // nothing: the wait stays open and the page keeps the person's text.
+      const wait = item.waits.findLast((w) => w.waitId === options.waitId)
+      const reason = wait?.reason
+      const own =
+        reason === undefined
+          ? []
+          : reason._tag === 'AgentQuestion'
+            ? reason.questions
+            : reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded'
+              ? reason.proposal.questions
+              : []
+      // A prose-only wait has no questions of its own: triage's are the ones the person was shown (#1254).
+      const triaged = triageCauseOf(wait?.triage.result)
+      const asked =
+        own.length > 0 ? own : triaged !== null && triaged._tag === 'UndecidedQuestion' ? triaged.questions : []
+      if (asked.length === 0)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'not-offered',
+          detail: 'There is nothing to answer on this wait — nothing was resolved.',
+        })
+      const picks = Object.fromEntries(Object.entries(resolution.answers).map(([index, id]) => [Number(index), id]))
+      const answers = triageAnswersText({ _tag: 'UndecidedQuestion', questions: asked }, picks)
+      if (!answers.ok)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'stale',
+          detail: `${answers.detail} — nothing was written or resolved. Reload and read it again.`,
+        })
+      if (options.github === undefined)
+        return refuse({
+          ok: false,
+          ticketId,
+          reason: 'no-github',
+          detail:
+            'The answers have to be written into the body first, and there is no GitHub to write to — nothing was resolved.',
+        })
+      const result = yield* writeSectionEffect({
+        store,
+        github: options.github,
+        ticketId,
+        key: `${ticketId}/${options.waitId}`,
+        text: answers.text,
+        verified: true,
+      })
+      if (!result.written) return refuse({ ok: false, ticketId, reason: 'write-failed', detail: result.detail })
+      wroteBody = true
+      recorded = { picks: answers.picks, section: answers.text }
+    }
     if (resolution._tag === 'FixRefusal' || resolution._tag === 'StartNewAttempt') {
       const triage = triageFactsFromState(item, options.waitId).result
       const triaged = triageCauseOf(triage)

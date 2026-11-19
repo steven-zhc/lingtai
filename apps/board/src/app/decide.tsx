@@ -14,7 +14,13 @@
  * was read. That has to be visible, not swallowed.
  */
 import { askedText, type WaitId } from '@lingtai/domain'
-import type { Resolution, WaitReason } from '@lingtai/domain/wait'
+import {
+  allowedResolutions,
+  triageCauseOf,
+  type Resolution,
+  type TriageResult,
+  type WaitReason,
+} from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
@@ -28,6 +34,7 @@ import {
   confirmSatisfiedCard,
   continueFixingCard,
   rerunStepCard,
+  answerQuestionsCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -379,11 +386,17 @@ export function EditBodyAndRequeue({
   issue,
   waitId,
   reason,
+  triaged = null,
+  answerOnly = false,
 }: {
   project: string
   issue: number
   waitId: WaitId | null
   reason: WaitReason | null
+  /** The wait offers the answering but no body edit: only the picked answers and their button are drawn (#1254). */
+  answerOnly?: boolean
+  /** What triage answered on this wait: an `UndecidedQuestion` is answerable whatever the wait began as (#1254). */
+  triaged?: TriageResult | null
 }) {
   const [pending, setPending] = useState(false)
   const [detail, setDetail] = useState<string | null>(null)
@@ -395,7 +408,14 @@ export function EditBodyAndRequeue({
   const draftWaitId = body?.waitId ?? null
   const currentText = waitId === null ? (body?.text ?? '') : body?.waitId === waitId ? body.text : composed
   // What the agent asked: its questions drawn as choices, or the prose where it asked in prose (#1253).
-  const asked = askedOf(reason)
+  const ownAsked = askedOf(reason)
+  const triageCause = triageCauseOf(triaged)
+  const triageAsked =
+    ownAsked.length === 0 && triageCause !== null && triageCause._tag === 'UndecidedQuestion'
+      ? triageCause.questions
+      : []
+  const asked = ownAsked.length > 0 ? ownAsked : triageAsked
+  const askedSource = ownAsked.length > 0 ? 'asked' : 'triage'
   const asking =
     reason?._tag === 'AgentQuestion'
       ? reason
@@ -403,6 +423,8 @@ export function EditBodyAndRequeue({
         ? reason.proposal
         : null
   const question = asking === null ? null : askedText(asking)
+  // The answer button writes the picked answers, never the textarea: where the text was changed it is not offered (#1254).
+  const edited = waitId !== null && body?.waitId === waitId && body.text !== composed
 
   if (waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
 
@@ -414,22 +436,56 @@ export function EditBodyAndRequeue({
         </p>
       ) : null}
       {asked.length > 0 ? (
-        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source="asked" />)
+        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source={askedSource} />)
       ) : question !== null ? (
         <p>{question}</p>
       ) : null}
-      <label className="reason">
-        <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
-        <textarea
-          value={currentText}
-          placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
-          onChange={(event) => {
-            triage?.setBody(event.target.value)
-            if (draftWaitId !== waitId) setDetail(null)
+      {answerOnly ? null : (
+        <label className="reason">
+          <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
+          <textarea
+            value={currentText}
+            placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
+            onChange={(event) => {
+              triage?.setBody(event.target.value)
+              if (draftWaitId !== waitId) setDetail(null)
+            }}
+          />
+        </label>
+      )}
+      {waitId !== null &&
+      asked.length > 0 &&
+      triage !== null &&
+      reason !== null &&
+      allowedResolutions(reason, triaged).includes('AnswerQuestions') ? (
+        <button
+          className="btn pri"
+          disabled={pending || doneWaitId === waitId || edited}
+          title={
+            edited
+              ? 'You changed the answer text: this sends the picked answers only. Revert it, or use the edit below.'
+              : undefined
+          }
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await answerQuestionsCard({
+                project,
+                issue,
+                waitId,
+                answers: Object.fromEntries(asked.map((q, index) => [index, triage.selected(index, q, askedSource)])),
+              })
+              setPending(false)
+              setDoneWaitId(result.ok ? waitId : null)
+              setDetail(result.detail)
+            })
           }}
-        />
-      </label>
-      {waitId !== null ? (
+        >
+          {pending ? '…' : 'Answer and continue the step'}
+        </button>
+      ) : null}
+      {waitId !== null && !answerOnly ? (
         <button
           className="btn"
           disabled={pending || doneWaitId === waitId || !currentText.trim()}

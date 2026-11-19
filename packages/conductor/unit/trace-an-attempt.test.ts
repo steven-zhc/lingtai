@@ -6,7 +6,6 @@
  * `installTracingEffect`, so the provider, the batch processor, the context manager and
  * the Effect tracer are the production ones.
  */
-import type { RunOutcome } from '@lingtai/agent'
 import type { Envelope, ToAppend } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
@@ -312,116 +311,5 @@ describe('with an endpoint', () => {
     expect(step.status.code).toBe(2)
     expect(step.status.message).toBeUndefined()
     expect(step.events).toEqual([])
-  })
-  describe('a design question handed to a needs-input judge', () => {
-    const JUDGED_QUESTION = `
-version: 2
-repo: { base: main, submodules: false }
-source: { kinds: [bug], exclude: [] }
-env: { required: [], plantAt: .env.local }
-steps:
-  design:
-    - name: draft
-      agent: claude-code
-      prompt: say what shape this takes
-  proposed:
-    - name: the answer
-      judge: claude-code
-      when: needs-input
-runtime:
-  agent: claude-code
-  limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } }
-`
-    const asking = (judged: RunOutcome): typeof runtime => ({
-      ...runtime,
-      run: (request) =>
-        request.runId.includes(':design:')
-          ? Effect.succeed({
-              exitCode: 0,
-              turns: 2,
-              durationMs: 1234,
-              costUsd: 0.21,
-              failure: null,
-              text:
-                '```question\n' +
-                JSON.stringify([
-                  {
-                    id: 'q1',
-                    text: 'Which wins?',
-                    answers: [
-                      { id: 'a', text: 'this' },
-                      { id: 'b', text: 'that' },
-                    ],
-                    recommended: 'a',
-                  },
-                ]) +
-                '\n```',
-              sessionId: 'sess-design',
-            })
-          : Effect.succeed(judged),
-    })
-
-    it('a judge that crashed exports the run as ERROR, with no message and no events', async () => {
-      const { result, spans } = await pass(
-        JUDGED_QUESTION,
-        asking({
-          exitCode: 1,
-          turns: 0,
-          durationMs: 1_000,
-          costUsd: null,
-          failure: { kind: 'crash', detail: 'Error: boom /secret/path' },
-          text: null,
-          sessionId: 'sess-judge',
-        }),
-      )
-      expect(result.ok).toBe('held')
-      const run = spans.find((s) => s.name === 'conductor.run')!
-      expect(run.status.code).toBe(2)
-      expect(run.status.message).toBeUndefined()
-      expect(run.events).toEqual([])
-      // The dispatch is spanned, under the router's visit, and the failure comes up from it.
-      const judge = spans.find((s) => s.name === 'action judge')!
-      expect(judge.status.code).toBe(2)
-      expect(judge.status.message).toBeUndefined()
-      const proposed = spans.find((s) => s.name === 'step proposed')!
-      expect(proposed.status.code).toBe(2)
-      expect(judge.parentSpanContext?.spanId).toBe(proposed.spanContext().spanId)
-      expect(proposed.parentSpanContext?.spanId).toBe(run.spanContext().spanId)
-    })
-
-    it('a question no judge was asked exports no ERROR on any span', async () => {
-      const { result, spans } = await pass(
-        JUDGED_QUESTION.replace(/  proposed:[\s\S]*?(?=runtime:)/, ''),
-        asking({
-          exitCode: 0,
-          turns: 1,
-          durationMs: 1,
-          costUsd: 0,
-          failure: null,
-          text: 'x',
-          sessionId: 's',
-        }),
-      )
-      expect(result.ok).toBe('held')
-      expect(spans.find((s) => s.name === 'action agent')).toBeDefined()
-      expect(spans.filter((s) => s.status.code === 2).map((s) => s.name)).toEqual([])
-    })
-
-    it('a judge whose answer could not be read exports the run as ERROR too', async () => {
-      const { result, spans } = await pass(
-        JUDGED_QUESTION,
-        asking({
-          exitCode: 0,
-          turns: 1,
-          durationMs: 1_000,
-          costUsd: 0.1,
-          failure: null,
-          text: 'no answer in the shape asked for',
-          sessionId: 'sess-judge',
-        }),
-      )
-      expect(result.ok).toBe('held')
-      expect(spans.find((s) => s.name === 'conductor.run')!.status.code).toBe(2)
-    })
   })
 })

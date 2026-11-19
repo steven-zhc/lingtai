@@ -331,13 +331,11 @@ describe('a destination fails three ways, and a step has one way to say so', () 
     })
 
     /**
-     * **What separates the two costs is that this one is answerable.** A
-     * `did-not-finish` reaches nobody; a question reaches `proposed` with the
-     * step that asked on the offer, so a `judge:` declared at `needs-input` can
-     * answer it and a person is the floor rather than the only reading — 0058
-     * §3c's *that step again, stating the assumption*.
+     * **A question is answered by a person and by nobody else** (0108 §22): the offer holds no candidate at all
+     * for it, so no judge is paid for one and the step that asked is never run again on a stated assumption. The
+     * answer is the person's, and it continues the step that asked (`AnswerQuestions`).
      */
-    it('arrives with somewhere to go, which a crash never does', () => {
+    it('arrives with nowhere to go but a person, and nothing excluded', () => {
       const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which space?' }
       const offer = offerFor(
         proposal,
@@ -345,37 +343,8 @@ describe('a destination fails three ways, and a step has one way to say so', () 
         { rounds: 0, newAttempts: 0 },
       )
 
-      expect(offer.available.map((candidate) => destinationOf(candidate, proposal)).sort()).toEqual([
-        'design',
-        'waiting',
-      ])
-      // Nobody but the step that asked knows the question, so the offer is that
-      // step and a person, and never `implement`.
-      expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).not.toContain('implement')
-    })
-
-    /**
-     * **And what `design` on that offer costs is a round**, which is why *none
-     * of the three buys a fix round* is the wrong reading of *`design` may not
-     * refuse*: a round is bought at the router, and refusing is a different
-     * transaction (0058 §3). Spend the ceiling and the same question is
-     * answerable only by a person — so a `judge:` declared at
-     * `when: needs-input` that keeps answering `design` is paying for a second
-     * design run each time, up to `runtime.limits.rounds` and no further.
-     */
-    it('charges a round for `design` again, and stops offering it once they are spent', () => {
-      const proposal: Proposal = { _tag: 'InputNeeded', from: 'design', questions: [], said: 'which space?' }
-      const offer = offerFor(
-        proposal,
-        { refusalFixes: SPARE.refusalFixes, newAttempts: SPARE.newAttempts, conflictResolutions: SPARE.refusalFixes },
-        { rounds: SPARE.refusalFixes, newAttempts: 0 },
-      )
-
       expect(offer.available.map((candidate) => destinationOf(candidate, proposal))).toEqual(['waiting'])
-      // Unavailable rather than absent: having no round left is the budget's
-      // answer and not the workflow's, which is the distinction `available`/
-      // `unavailable` exist to keep.
-      expect(offer.unavailable.map((candidate) => candidate.id)).toEqual(['state-assumption'])
+      expect(offer.unavailable).toEqual([])
     })
   })
 })

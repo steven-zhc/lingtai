@@ -418,6 +418,23 @@ export function waitWords(
     case 'SetupRefused':
       return acknowledgement(stepLine(reason.step, 'refused', reason.why), reason.run, reason.why)
 
+    case 'AskLimit': {
+      // 0108 §22: the five stops are spent, so a person decides and nothing continues on its own.
+      const used = `This ticket has stopped to ask a person ${reason.used} of ${reason.allowed} times (\`${reason.bound}\`), so it will not ask again.`
+      const asked =
+        reason.asked._tag === 'AgentQuestion'
+          ? askedText(reason.asked)
+          : reason.asked._tag === 'ProposedEscalated' && reason.asked.proposal._tag === 'InputNeeded'
+            ? askedText(reason.asked.proposal)
+            : waitWords(reason.asked, pass).line
+      return {
+        line: `${used} It wanted to ask: ${said(asked, 400)}`,
+        short: null,
+        needs: 'judgement',
+        diagnosis: null,
+      }
+    }
+
     case 'AnswerUnreadable': {
       if (reason.step === 'review' || reason.step === 'proposed') {
         const prefix =

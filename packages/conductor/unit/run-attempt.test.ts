@@ -841,23 +841,8 @@ describe('every step that does not pass arrives at proposed', () => {
       ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
-    // 0058 §3c: *that step again with "state your assumption"*, or a person —
-    // and with no judge built for `needs-input` (`BUILT_IN_FOR`), the pass
-    // held with a person even though the round was there to spend and
-    // `implement` was genuinely on offer (`#462`'s own fix round, finding 1:
-    // this is not the same sentence a spent ceiling would have left).
-    expect(result.routes).toMatchObject([
-      {
-        from: 'implement',
-        chose: 'waiting',
-        to: 'waiting',
-        why:
-          'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, ' +
-          'so the attempt is held for a person rather than the workflow choosing from `implement`, ' +
-          '`waiting` on its own (0061 §3)',
-        ceiling: null,
-      },
-    ])
+    // 0108 §22: nothing is on offer but a person — no judge decides in their place — and no round is bought.
+    expect(result.routes).toMatchObject([{ from: 'implement', chose: 'waiting', to: 'waiting', ceiling: null }])
     expect(result.stopped).toMatchObject({
       step: 'implement',
       ending: { ending: 'asked' },
@@ -881,7 +866,7 @@ describe('every step that does not pass arrives at proposed', () => {
    * from: `design`'s body is `{ ending: "passed" }` and always was, and the token
    * is its plugin's.
    */
-  it('sends a design question back to `design`, and tells it what it asked', async () => {
+  it('holds a design question for a person, and never sends it back to `design`', async () => {
     const question = 'the ticket asks for two incompatible things and does not say which wins'
     /** What each `design` dispatch was told about why it is running. */
     const told: (ActionContext['again'] | undefined)[] = []
@@ -925,25 +910,14 @@ describe('every step that does not pass arrives at proposed', () => {
       bodies,
       actionsAt,
       ceilings: { refusalFixes: 2, conflictResolutions: 2, newAttempts: 0, newAttemptsSpent: 0 },
-      judge: async () => ({ next: 'design', named: 'test', why: 'because a test said so' }),
     })
 
-    // The route 0058 §3c names, and the step that asked is the step it went to:
-    // nobody but `design` knows the question, so nothing else was on offer.
-    expect(result.routes).toMatchObject([
-      { from: 'design', chose: 'design', to: 'design', why: 'because a test said so', ceiling: null },
-    ])
-    // Null on the way through, and the question on the way back — which is the
-    // assertion the round is worth something because of.
-    expect(told[0]).toBeNull()
-    expect(told[1]).toMatchObject({ asked: question, why: 'because a test said so', printed: null })
-    // And the second draft is what `implement` works from, so the round produced
-    // the document the first visit could not.
-    expect(result.stopped).toBeNull()
-    expect(result.steps.filter((visit) => visit.step === 'design').at(-1)?.ending).toMatchObject({
-      ending: 'passed',
-      design: { document: 'assume the first reading' },
-    })
+    // The question goes to a person and the pass stops there (0108 §22): `design` is never run again on a stated
+    // assumption, so the agent never decides in the person's place.
+    expect(result.routes).toMatchObject([{ from: 'design', chose: 'waiting', to: 'waiting', ceiling: null }])
+    expect(told).toEqual([null])
+    expect(result.stopped).toMatchObject({ step: 'design', ending: { ending: 'asked' } })
+    expect(result.end._tag).toBe('WaitOnPerson')
   })
 
   // ------------------------------------------ what crosses design → implement ----

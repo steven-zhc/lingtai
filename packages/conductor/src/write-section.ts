@@ -50,6 +50,8 @@ interface WriteSectionOptions {
   ticketId: string
   key: string
   text: string
+  /** The read-back is the verification: where it fails the outcome is unknown, never assumed written (0118 §6, #1254). */
+  verified?: boolean
 }
 
 /** The issue's body, or the reason it could not be read — the read and the `.body` access both inside the catch. */
@@ -107,7 +109,7 @@ export function writeSectionEffect(options: WriteSectionOptions): Effect.Effect<
         // Only a failed or unattempted write leaves it genuinely unknown
         // whether a retry would duplicate the section, which is when to stop
         // rather than guess.
-        if (told.recorded === 'IssueUpdated') return { written: true }
+        if (told.recorded === 'IssueUpdated' && options.verified !== true) return { written: true }
         return {
           written: false,
           detail: `the write's outcome is on the log, but the read-back failed: ${errorMessage(readBack.failure)}`,

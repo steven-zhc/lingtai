@@ -18,6 +18,11 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     consequence:
       'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no refusal fix or new attempt is spent.',
   },
+  AnswerQuestions: {
+    title: 'Answer and continue the step',
+    consequence:
+      'Write the answers into the ticket body, then run the step that asked again on its saved work. No new attempt starts and no step redo is spent; it uses one of the ticket’s five asks, which are already counted.',
+  },
   ConfirmSatisfied: {
     title: 'Confirm it is already satisfied',
     consequence:
