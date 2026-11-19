@@ -147,7 +147,7 @@ export interface TicketReportRow {
   ticket: string
   project: string | null
   kind: string | null
-  outcome: 'open' | 'landed' | 'closed'
+  outcome: 'open' | 'landed' | 'satisfied' | 'closed'
   outcomeAt: Date | null
   passes: number
   fixRounds: number
@@ -310,7 +310,8 @@ function save(ctx: ProjectionContextPort, s: State): Effect.Effect<void> {
     const project = parseTicketStream(s.ticket)?.project ?? null
     const t = s.ticketState
     const status = t.lifecycle.status
-    const outcome = status === 'landed' ? 'landed' : status === 'closed' ? 'closed' : 'open'
+    const outcome =
+      status === 'landed' ? 'landed' : status === 'satisfied' ? 'satisfied' : status === 'closed' ? 'closed' : 'open'
     // `since` is the last lifecycle event's `at` (D11), which is the landing or the close while it is one.
     const outcomeAt = outcome === 'open' ? null : t.since
     // The landing run is the last claim (`claims` already leaves continuations out); `TicketLanded` does not name it.
@@ -535,6 +536,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
           }
 
           case 'TicketLanded':
+          case 'TicketSatisfied':
             change = endIntervals
             break
 

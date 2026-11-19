@@ -958,7 +958,7 @@ describe('the one `proposed` will hold', () => {
    * instead of three.
    */
   it('accepts every name something answers, and no name nothing answers', () => {
-    expect(BUILT_IN_JUDGES).toEqual(['same-worktree', 'merge-the-base'])
+    expect(BUILT_IN_JUDGES).toEqual(['same-worktree', 'merge-the-base', 'check-the-evidence'])
     for (const answered of [...BUILT_IN_JUDGES, ...RuntimeId.options]) {
       expect(judgePlugin.schema.safeParse({ name: 'j', judge: answered, when: 'red' }).success, answered).toBe(true)
     }
@@ -1589,6 +1589,18 @@ describe('a dispatch is one shape', () => {
       expect(why).toContain('`when: sandbox-refused`')
       expect(why).toContain("the operator's")
     }
+  })
+
+  /** #1250: a run that committed nothing is `AgentFailed` and redone by rule, so no judge is asked at it. */
+  it('refuses a `judge:` at `when: nothing-produced` by name, saying why it is gone', () => {
+    const refused = Recipe.safeParse({
+      ...BASE,
+      steps: { proposed: [{ name: 'a silent agent', judge: 'claude-code', when: 'nothing-produced' }] },
+    })
+    expect(refused.success).toBe(false)
+    const why = refused.error!.issues.map((issue) => issue.message).join('\n')
+    expect(why).toContain('"nothing-produced" is a retired reason')
+    expect(why).toContain('AgentFailed')
   })
 
   /**

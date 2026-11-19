@@ -37,7 +37,7 @@ import {
   triageFactsFromState,
   ticketReducer,
   MERGE_HUNKS_ONE_BY_ONE,
-  TRIAGE_TEXT_MAX,
+  cut,
   type Envelope,
   type PayloadOf,
   type WaitId,
@@ -525,9 +525,7 @@ function containmentId(waitId: WaitId): string {
 }
 
 /** A `why` clipped to `TriageFailed.why`'s own bound — never the append that was meant to record the failure. */
-function clip(text: string): string {
-  return text.length > TRIAGE_TEXT_MAX ? text.slice(0, TRIAGE_TEXT_MAX) : text
-}
+const clip = (text: string): string => cut(text)
 
 export interface TriagePorts extends SnapshotReadOptions {
   store: EventStore

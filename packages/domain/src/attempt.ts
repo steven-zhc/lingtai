@@ -18,6 +18,7 @@
 import { isReached, reviewSummaryOf, type Reached, type StepOutcome } from './action.ts'
 import type { Envelope } from './envelope.ts'
 import type { Invocation, PayloadOf, RunFailureKind, RuntimeId, Severity, SpentFor } from './events.ts'
+import { unclearText } from './implement-outcome.ts'
 import { routeMove, type StoredRoute } from './routing.ts'
 import type { Finding, Step } from './vocabulary.ts'
 
@@ -344,6 +345,19 @@ export function verdictOf(action: Reached): StepVerdict {
           // `question` first: an agent that asked is `asked` whether or not it
           // also committed. A `head` of `null` is *produced nothing*.
           if (action.result.question !== null) return 'asked'
+          // What the agent declared decides, where it declared (#1250).
+          if (action.result.outcome != null) {
+            switch (action.result.outcome._tag) {
+              case 'Unclear':
+                return 'asked'
+              case 'Implemented':
+              case 'AlreadyDone':
+                return 'passed'
+              case 'AgentFailed':
+              case 'Disputed':
+                return 'did-not-finish'
+            }
+          }
           return action.result.head !== null ? 'passed' : 'did-not-finish'
         case 'Interrupted':
           return 'did-not-finish'
@@ -416,7 +430,10 @@ export function verdictOf(action: Reached): StepVerdict {
 function questionOf(action: Reached): string | null {
   switch (action.yields) {
     case 'commit':
-      return action.result._tag === 'Completed' ? action.result.question : null
+      return action.result._tag === 'Completed'
+        ? (action.result.question ??
+            (action.result.outcome?._tag === 'Unclear' ? unclearText(action.result.outcome) : null))
+        : null
     case 'design':
       return action.result._tag === 'Asked' ? action.result.question : null
     case 'signoff':

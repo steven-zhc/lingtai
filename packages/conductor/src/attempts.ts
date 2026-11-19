@@ -308,6 +308,38 @@ export function conflictResolvedOf(runEvents: readonly Envelope[]): { baseSha: s
   return conflictedIn(outcomes[at]!)
 }
 
+/**
+ * **A check of declared evidence still standing** (#1251): read off the `implement` step's own recorded outcome,
+ * `AlreadyDone` with the base and body version `conduct.ts` stored on it, while nothing but a `review` has run
+ * since. The `CheckDone` route is not the source: its append is best-effort, and a continuation that lost it
+ * would resume the review as an ordinary one and pass an empty diff unread. A fix round after a refused check is
+ * an `implement` visit, which ends the standing check.
+ */
+export function alreadyDoneOf(runEvents: readonly Envelope[]): {
+  baseSha: string
+  bodyVersion: number
+  items: { item: string; evidence: string }[]
+} | null {
+  const outcomes = stepOutcomesOf(runEvents)
+  const at = outcomes.findLastIndex((o) => o.step === 'implement')
+  if (at < 0) return null
+  // A continuation's own `admit` and `prepared` are setup, not progress: only a later `implement` ends the check.
+  if (outcomes.slice(at + 1).some((o) => o.step !== 'review' && o.step !== 'admit' && o.step !== 'prepared'))
+    return null
+  for (const action of outcomes[at]!.actions) {
+    if (action.yields !== 'commit' || action.result._tag !== 'Completed') continue
+    const declared = action.result.outcome
+    if (declared?._tag !== 'AlreadyDone') continue
+    if (declared.baseSha === undefined || declared.bodyVersion === undefined) return null
+    return {
+      baseSha: declared.baseSha,
+      bodyVersion: declared.bodyVersion,
+      items: declared.items.map((i) => ({ ...i })),
+    }
+  }
+  return null
+}
+
 function reviewerRanIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   return outcome.actions.some(
     (a) =>

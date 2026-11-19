@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { askedText, cutProse, type JudgeWhen, STEPS, TRIAGE_TEXT_MAX, triageQuestionsOf } from '@lingtai/domain'
 import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
@@ -118,7 +118,7 @@ interface WhenRow {
   readonly weigh: string
 }
 
-/** Every reason but `nothing-produced`: a step refused, and said what it did. */
+/** Every reason but `fixer-disagrees`: a step refused, and said what it did. */
 const REFUSED_ROW: WhenRow = {
   arrived: (on, evidence) => `${
     on.findings.length > 0
@@ -136,31 +136,6 @@ name specific lines, with failure scenarios an edit would answer, are the lines.
 Findings that say the shape of the change is wrong — the wrong seam, the wrong
 data structure, a rule in the wrong module — are the approach, and another round
 patching those lines spends money to arrive back here.`,
-}
-
-/** 0108 §18: the implementer committed nothing — the ticket is unclear, or the work is unfinished. */
-const NOTHING_PRODUCED_ROW: WhenRow = {
-  arrived: (on) => `The implementer committed nothing. The ticket it was given:
-
-${
-  on.ticket === null || on.ticket === undefined
-    ? 'The ticket could not be read.'
-    : `**${on.ticket.title}**\n\n${on.ticket.body}`
-}
-
-Its last message:
-
-${on.said === null || on.said === undefined || on.said.trim() === '' ? '(it said nothing)' : on.said.slice(0, 8_000)}`,
-  means: {
-    implement:
-      'one more round in the same worktree, told what the implementer said — for when the work ' +
-      'is unfinished and the ticket is clear',
-  },
-  weigh: `The question is **whether the ticket is unclear or the work is unfinished**. If the
-ticket does not say what is wanted, contradicts itself, or asks for something the
-code cannot support, a person has to say what is missing: choose \`waiting\` and
-say what. If the ticket is clear and the message names what is left, or where the
-work stopped, another round can finish it: choose \`implement\`.`,
 }
 
 /** 0108 §18: the fixer declined a round — it changed nothing and said why. */
@@ -196,12 +171,13 @@ const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   'setup-refused': REFUSED_ROW,
   'check-refused': REFUSED_ROW,
   'answer-unreadable': REFUSED_ROW,
-  'nothing-produced': NOTHING_PRODUCED_ROW,
   'fixer-disagrees': FIXER_DISAGREES_ROW,
   'merge-refused': REFUSED_ROW,
   'budget-exhausted': REFUSED_ROW,
   'base-moved': REFUSED_ROW,
   'sandbox-refused': REFUSED_ROW,
+  // Never asked: `check-done` is a rule's move, taken before any judge (#1251).
+  'already-done': REFUSED_ROW,
 }
 
 /** What a judge at `findings` is told each cause it may answer means — `wait.ts`'s own words for them. */
@@ -249,7 +225,7 @@ One JSON object, and nothing else that could be read as one:
 \`\`\`
 
 Answer with exactly one of those. A \`fixes\` entry names \`path\`, \`line\` (or null) and \`what\` to change; a question has an \`id\`, \`text\`, \`answers\` and a \`recommended\` answer id; a question
-carries two to four answers. An answer that is not one cause is not read, and you will not be asked again.`
+carries two to four answers. Every text field is at most ${TRIAGE_TEXT_MAX} characters and prose over it is cut; an \`id\`, \`path\` or \`recommended\` over it is not read. An answer that is not one cause is not read, and you will not be asked again.`
 }
 
 function judgeText(on: Judging, evidence: string): string {
@@ -267,7 +243,7 @@ A pass over one ticket did not pass. You decide where it goes.
 The reason the step gave is **\`${on.when}\`**.
 
 ${row.arrived(on, evidence)}
-
+${on.questions.length > 0 ? `\n## The questions the implementer asked\n\n${askedText({ questions: on.questions })}\n` : ''}
 ## The choices
 
 These are the only destinations on offer. The list is the workflow's: it has
@@ -337,7 +313,7 @@ export function chosenIn(text: string | null): { readonly next: Destination; rea
   for (const candidate of candidates) {
     let value: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      value = cutProse(JSON.parse(candidate.trim()))
     } catch {
       continue
     }
@@ -368,7 +344,7 @@ const CAUSE_TAGS = [
 /**
  * **The cause a judge at `findings` answered** (0108 §6): `{ cause }` where it is one of `JUDGE_CAUSES` and
  * within the bounds triage's is, `{ refused }` naming a cause a judge may not answer or a question with fewer than
- * two answers, and null where there is no cause to read. Nothing is repaired, and nothing is asked again.
+ * two answers, and null where there is no cause to read. Prose over the bound is cut; nothing else is repaired, and nothing is asked again.
  */
 export function causeIn(
   text: string | null,
@@ -378,35 +354,38 @@ export function causeIn(
   // Every balanced object in the text is a candidate too, so two unfenced answers are two candidates and
   // not one suffix that fails to parse and hides the first.
   candidates.push(...balancedObjects(text))
-  const found: { cause: Cause; summary: string }[] = []
+  const found: { cause: Cause; summary: string; key: string }[] = []
   let refused: string | null = null
   for (const candidate of candidates) {
-    let value: unknown
+    let raw: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      raw = JSON.parse(candidate.trim())
     } catch {
       continue
     }
+    // Ambiguity is judged on the cause as written: cutting could make two different causes identical.
+    const key = JSON.stringify((raw as { cause?: unknown } | null)?.cause)
+    const value = cutProse(raw)
     const cause = (value as { cause?: { _tag?: unknown } } | null)?.cause
     if (cause === undefined || cause === null || typeof cause !== 'object') continue
     const tag = cause._tag
     if (typeof tag === 'string' && CAUSE_TAGS.includes(tag) && !(JUDGE_CAUSES as readonly string[]).includes(tag)) {
-      found.push({ cause: cause as Cause, summary: '' })
+      found.push({ cause: cause as Cause, summary: '', key })
       refused ??= tag
       continue
     }
     const parsed = JudgeAnswer.safeParse(value)
     if (!parsed.success) return null
     if (triageQuestionsOf(parsed.data.cause as Cause).some(({ question }) => question.answers.length < 2)) {
-      found.push({ cause: parsed.data.cause as Cause, summary: '' })
+      found.push({ cause: parsed.data.cause as Cause, summary: '', key })
       refused ??= 'a question with fewer than two answers'
       continue
     }
-    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() })
+    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim(), key })
   }
   // The same answer seen through several candidates (a fence, then the text) is one answer; two different
   // causes are an ambiguous one, and an ambiguous answer is not read.
-  if (new Set(found.map((f) => JSON.stringify(f.cause))).size !== 1) return null
+  if (new Set(found.map((f) => f.key)).size !== 1) return null
   if (refused !== null) return { refused }
   return found[0]!
 }

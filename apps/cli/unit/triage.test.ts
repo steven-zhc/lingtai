@@ -926,7 +926,7 @@ describe('waitTriage', () => {
 
     it('still refuses an over-bound structured answer', async () => {
       const store = createMemoryEventStore()
-      const fix = { path: 'a.ts', line: 1, what: 'x'.repeat(501) }
+      const fix = { path: 'x'.repeat(1201), line: 1, what: 'x' }
       const { runtime } = stubRuntime(() =>
         outcomeOf({
           structured: {

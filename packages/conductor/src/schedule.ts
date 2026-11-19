@@ -433,7 +433,8 @@ function told(sink: () => void): void {
 }
 
 function reportEnding(log: (line: string) => void, result: RunOnceResult): void {
-  if (result.ok === true) log(`landed ${result.mergeCommit.slice(0, 7)}`)
+  if (result.ok === true)
+    log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
   else if (result.ok === 'held') log(`held at ${result.step}`)
   else log(`stopped at ${result.stage}: ${result.detail}`)
 }

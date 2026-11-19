@@ -79,6 +79,10 @@ const EXPECTED: Record<string, Pick<Fixture, 'expectedQuestion'>> = {
   setuprefused: {
     expectedQuestion: 'the `prepared` step refused: npm install failed',
   },
+  // The card draws no sentence of its own for it yet: how the board draws this wait is #1252's.
+  satisfiedunconfirmed: {
+    expectedQuestion: null,
+  },
   answerunreadable: {
     expectedQuestion:
       'agent/answerunreadable is waiting on you. `review`&#x27;s findings could not be read at all: not json',

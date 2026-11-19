@@ -21,7 +21,7 @@
 import { z } from 'zod'
 
 import type { StepOutcome } from './action.ts'
-import { FixRound, LandAgain, MergeBase, RequeueCause, RerunStep, type AttemptNext } from './attempt-next.ts'
+import { CheckDone, FixRound, LandAgain, MergeBase, RequeueCause, RerunStep, type AttemptNext } from './attempt-next.ts'
 import { copiedFieldsOf, Proposal, StoredProposal } from './proposal.ts'
 import { CandidateId, ExcludedCandidate, RouteEscalation } from './route.ts'
 import { AttemptRef, RecordedCause } from './wait.ts'
@@ -50,6 +50,7 @@ const CandidateNext = z.discriminatedUnion('_tag', [
   FixRound,
   MergeBase,
   LandAgain,
+  CheckDone,
   RerunStep,
   z.object({ _tag: z.literal('Requeued'), cause: RequeueCause }),
   HandToPerson,

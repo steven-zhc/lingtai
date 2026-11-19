@@ -34,7 +34,6 @@ import {
   READS_PER_TURN,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
-  TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
   TriageQuestion,
 } from './triage.ts'
@@ -95,6 +94,20 @@ const SignoffRequired = z.object({
   step: Step.extract(['proposed', 'merge']),
   action: z.string(),
   question: z.string(),
+})
+
+/**
+ * **The work is already on the base, and `review` agrees item by item; a person confirms** (#1251,
+ * 0108 §21). Carries what `TicketSatisfied` will record, so confirming reads the wait alone.
+ * `reading` is the reviewer's per-item reading.
+ */
+const SatisfiedUnconfirmed = z.object({
+  _tag: z.literal('SatisfiedUnconfirmed'),
+  run: AttemptRef,
+  baseSha: z.string(),
+  bodyVersion: z.number().int(),
+  items: z.array(z.object({ item: z.string(), evidence: z.string() })),
+  reading: z.string(),
 })
 
 /** A fix round's `implement` changed nothing — the fixer disagrees with the reviewer. */
@@ -247,6 +260,7 @@ export const WaitReason = z.discriminatedUnion('_tag', [
   AgentCrashed,
   SetupRefused,
   AnswerUnreadable,
+  SatisfiedUnconfirmed,
 ])
 export type WaitReason = z.infer<typeof WaitReason>
 
@@ -264,6 +278,8 @@ const RedoStep = z.object({
   onSha: z.string(),
   ref: z.string().nullable(),
 })
+/** A person agrees the ticket is already satisfied by the base: ends it `satisfied` (#1251). A `SatisfiedUnconfirmed` only. */
+const ConfirmSatisfied = z.object({ _tag: z.literal('ConfirmSatisfied') })
 /** A new pass, from the base. */
 const StartNewAttempt = z.object({ _tag: z.literal('StartNewAttempt') })
 /** Write into the body, then requeue. */
@@ -281,6 +297,7 @@ export const Resolution = z.discriminatedUnion('_tag', [
   StartNewAttempt,
   EditBodyAndStartNewAttempt,
   AnswerQuestion,
+  ConfirmSatisfied,
   // the person's approved plan (0118 §12); a structural fault never parses, so never reaches the log
   SplitResolution,
   Close,
@@ -332,6 +349,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
       return ['AnswerQuestion', 'StartNewAttempt', 'Close']
     case 'AgentQuestion':
       return ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
+    case 'SatisfiedUnconfirmed':
+      return ['ConfirmSatisfied', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
     case 'SignoffRequired':
     case 'CheckRefused':
     case 'FixerDisagrees':
@@ -350,6 +369,8 @@ function tableResolutions(reason: WaitReason): Resolution['_tag'][] {
           // this row is `StartNewAttempt`, `Close` — no body edit.
           return ['StartNewAttempt', 'Close']
         case 'InputNeeded':
+        // #1251: the work is already on the base and nothing has checked it yet, so only a way out.
+        case 'AlreadyDone':
           return ['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close']
         // `#471`'s seven, each given the direct `WaitReason` variant's own
         // row (`:217-240` above) rather than a new one — `#471`'s equality
@@ -509,6 +530,7 @@ export function standingFor(input: {
   if (input.head === null || input.head !== input.onSha) return null
   const resumed = input.resumed
   if (resumed.reason._tag === 'AgentCrashed') return resumed.reason.standing ?? null
+  if (resumed.reason._tag === 'SatisfiedUnconfirmed') return null
   return { waitId: resumed.waitId, reason: resumed.reason }
 }
 
@@ -632,11 +654,13 @@ export function continuationOf(
         case 'AnswerUnreadable':
         case 'NothingProduced':
         case 'BudgetExhausted':
+        case 'AlreadyDone':
           return null
       }
     }
     case 'OwnQuestion':
     case 'AgentQuestion':
+    case 'SatisfiedUnconfirmed':
     case 'NothingProduced':
     case 'BudgetExhausted':
     case 'AgentCrashed':
@@ -743,6 +767,7 @@ function defaultResolution(reason: WaitReason): Resolution['_tag'] | null {
         : null
     case 'OwnQuestion':
     case 'AgentQuestion':
+    case 'SatisfiedUnconfirmed':
     case 'FixerDisagrees':
     case 'NothingProduced':
     case 'CheckRefused':
@@ -908,7 +933,7 @@ const UndecidedQuestion = z.strictObject({
 const FixableLines = z.strictObject({ _tag: z.literal('FixableLines'), fixes: z.array(LineFix).max(TRIAGE_FIXES_MAX) })
 
 /** Patching will not converge — and why, in one sentence. */
-const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach'), why: z.string().max(TRIAGE_SENTENCE_MAX) })
+const WrongApproach = z.strictObject({ _tag: z.literal('WrongApproach'), why: z.string().max(TRIAGE_TEXT_MAX) })
 
 const conflictingHunks = <H extends z.ZodType<{ _tag: string }>>(hunk: H) =>
   z
@@ -986,8 +1011,8 @@ const TriageFailed = z.strictObject({ _tag: z.literal('TriageFailed'), why: z.st
 
 /** What the card shows of a cause: one sentence, and one more of what the ticket wants — `null` where the body does not say. */
 const answerParts = {
-  summary: z.string().max(TRIAGE_SENTENCE_MAX),
-  want: z.string().max(TRIAGE_SENTENCE_MAX).nullable(),
+  summary: z.string().max(TRIAGE_TEXT_MAX),
+  want: z.string().max(TRIAGE_TEXT_MAX).nullable(),
 }
 
 /** What the model answers: a cause and no action (0118 §1); a plan's children name no `kind` (#1271). */
@@ -1057,8 +1082,8 @@ export const TRIAGE_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
 
 /** The flat reply `parseTriage` reads, out of the envelope a runtime answered in. */
 export function unwrapTriageEnvelope(structured: unknown): unknown {
-  // Not validated here: an over-bound answer must reach `parseTriage` whole,
-  // so its refusal names the field rather than the envelope.
+  // Not validated here: an answer must reach `parseTriage` whole,
+  // so a refusal of its shape names the field rather than the envelope, and prose over the bound is cut there.
   if (typeof structured !== 'object' || structured === null) return structured
   const { read, answer } = structured as { read?: unknown; answer?: unknown }
   if (read !== null && read !== undefined) return { read }
@@ -1139,6 +1164,7 @@ export function triageStatus(
   switch (reason._tag) {
     case 'OwnQuestion':
     case 'SignoffRequired':
+    case 'SatisfiedUnconfirmed':
       return { _tag: 'NotNeeded' }
     case 'AgentQuestion':
     case 'FixerDisagrees':

@@ -221,11 +221,9 @@ describe('when the agent meets the wall', () => {
     expect(blocked).toBeDefined()
     const cols = waitWords((blocked!.data as { reason: WaitReason }).reason)
     expect(cols.needs).toBe('acknowledgement')
-    expect(cols.line).toContain('out-of-turns')
-    // The recommendation is *narrow or split the ticket*, which is the whole of
-    // why the turn limit keeps a diagnosis of its own.
-    expect(cols.diagnosis?.what).toContain('scope alarm')
-    expect(cols.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
+    // A run cut off at its turns is `AgentFailed` (#1250): redone by rule until the redos are spent,
+    // and then the hold is an ordinary crash's, in the conductor's own words.
+    expect(cols.line).toContain('ended abnormally')
   })
 
   it('publishes the commits it made, and names them for the next attempt', async () => {
@@ -315,7 +313,6 @@ describe('when the agent meets the wall', () => {
       // Still a person's, and still with the move that is actually left on it.
       const blocked = waitWords((item.find((e) => e.type === 'WaitStarted')!.data as { reason: WaitReason }).reason)
       expect(blocked.needs).toBe('acknowledgement')
-      expect(blocked.diagnosis?.recommendation).toMatchObject({ action: 'requeue' })
     }
 
     // And the refs still went on the arm that committed, which is what the next
@@ -694,32 +691,46 @@ describe('when the agent meets the wall', () => {
       async (kind) => {
         const { did, run } = await hitTheWallDirty(true, { ends: stopsWith(kind) })
         const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
-        // A crash is redone by rule (#1249), and each run that stopped leaves its own WIP.
-        if (kind === 'crash') expect(kept.length).toBeGreaterThanOrEqual(1)
-        else expect(kept).toHaveLength(1)
+        // A run that ended abnormally is redone by rule (#1249, #1250), and each leaves its own WIP.
+        expect(kept.length).toBeGreaterThanOrEqual(1)
         expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: kind })
         expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
-        // A redone crash resets to the head, so the published head is the WIP only where nothing is redone.
-        if (kind !== 'crash') {
-          const refs = run.find((e) => e.type === 'RunRefsPublished')
-          expect(refs!.data).toMatchObject({ headSha: WIP_SHA })
-        }
       },
     )
 
-    it('makes no WIP on a normal end with no commit, however dirty the tree', async () => {
+    it('keeps a dirty tree when a normal end declared Implemented but committed nothing', async () => {
       const normal = (() =>
         Effect.succeed({
           exitCode: 0,
           turns: 3,
           durationMs: 1000,
           costUsd: 1,
-          text: 'done',
+          text: 'done\n```outcome\n{"outcome": "Implemented"}\n```',
           sessionId: 'sess',
         })) as unknown as Runtime['run']
       const { did, run } = await hitTheWallDirty(false, { ends: normal })
-      expect(did).not.toContain('git commit --no-verify')
-      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
+      // `Implemented` that moved nothing is corrected to `AgentFailed`, and is kept (#1276).
+      expect(did).toContain('git commit --no-verify')
+      expect(run.find((e) => e.type === 'RunKeptUncommitted')!.data).toMatchObject({ stoppedBy: 'agent-failed' })
+    })
+
+    it('keeps the dirty tree before the redo when the agent ends normally with no outcome block (#1276)', async () => {
+      const noBlock = (() =>
+        Effect.succeed({
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1000,
+          costUsd: 1,
+          text: 'I am done, no block here',
+          sessionId: 'sess',
+        })) as unknown as Runtime['run']
+      const { did, run } = await hitTheWallDirty(true, { ends: noBlock })
+      const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+      expect(kept.length).toBeGreaterThanOrEqual(1)
+      expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: 'agent-failed' })
+      expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
+      // The commit holds the edits before the step is redone; its account is appended later, with the publish.
+      expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append StepRedone'))
     })
 
     it('makes no WIP for a run that never started', async () => {
@@ -1190,12 +1201,11 @@ describe('when the agent meets the wall', () => {
       const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
 
       const refs = run.filter((e) => e.type === 'RunRefsPublished')
-      expect(refs.map((e) => (e.data as { outcome: string }).outcome)).toEqual(['nothing-committed', 'published'])
-      expect(String((refs[0]!.data as { detail: string }).detail)).toContain('EAGAIN')
-      // **The retry's own row must not repeat the first attempt's stale
-      // failure** — the second keep succeeded, so this row's `detail` says
-      // nothing about a failed commit.
-      expect(refs[1]!.data).toMatchObject({ outcome: 'published', detail: null })
+      // The run is redone by rule (#1250), so the two failed commits are spent by the runs before the
+      // one that publishes; **the row it writes must not repeat their failure** — the keep succeeded,
+      // so its `detail` says nothing about a failed commit.
+      expect(did.filter((d) => d === 'git commit (failed)')).toHaveLength(2)
+      expect(refs[0]!.data).toMatchObject({ outcome: 'published', detail: null })
 
       const kept = run.find((e) => e.type === 'RunKeptUncommitted')
       expect(kept!.data).toMatchObject({ sha: WIP_SHA, stoppedBy: 'out-of-turns' })

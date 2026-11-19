@@ -390,7 +390,8 @@ export function conductWork(
 
       /** Whether the work loop should look again: a pass that declined before doing any work freed nothing. */
       const report = (result: RunOnceResult): boolean => {
-        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        if (result.ok === true)
+          options.log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
         else if (result.ok === 'held') options.log(`held at ${result.step}`)
         else options.log(`stopped at ${result.stage}: ${result.detail}`)
         tellEnding(result)
@@ -491,7 +492,8 @@ export function conductWork(
           continue
         }
         options.outcome.ran += 1
-        if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+        if (result.ok === true)
+          options.log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
         else if (result.ok === 'held') options.log(`held at ${result.step}`)
         else options.log(`stopped at ${result.stage}: ${result.detail}`)
         tellEnding(result)
@@ -582,7 +584,8 @@ export function conductWork(
               .runOnce({ ...common, issue: Number(asked.issue) })
               .pipe(Effect.provide(tracedPorts))
             options.outcome.ran += 1
-            if (result.ok === true) options.log(`landed ${result.mergeCommit.slice(0, 7)}`)
+            if (result.ok === true)
+              options.log(`${result.satisfied === true ? 'satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)}`)
             else if (result.ok === 'held') options.log(`held at ${result.step}`)
             else options.log(`stopped at ${result.stage}: ${result.detail}`)
             tellEnding(result)
@@ -748,7 +751,7 @@ export function endingLine(result: RunOnceResult, options: { project: string; pr
     .map((v) => `${v.step} ${v.ending === 'passed' ? symbol.pass() : symbol.fail()}`)
   const where =
     result.ok === true
-      ? `landed in ${result.mergeCommit.slice(0, 7)}`
+      ? `${result.satisfied === true ? 'already satisfied on' : 'landed in'} ${result.mergeCommit.slice(0, 7)}`
       : result.ok === 'held'
         ? `waiting for you: ${summary?.wait === undefined ? 'the board' : waitCommand(waitMoves(summary.wait, { triage: null }), { project: options.project, issue: ref, reason: summary.wait })}`
         : `stopped at ${result.stage}: ${result.detail.replace(/\s+/g, ' ').trim()}`
