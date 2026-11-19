@@ -268,15 +268,68 @@ describe('what the next review is told it already read (#671)', () => {
     })
   })
 
-  it('names the approved head to the review of the merge that came after the approval', async () => {
+  it('carries a person’s approval across a clean merge: build runs, review does not (#1279)', async () => {
+    for (const paths of [['src/recipe.ts'], []]) {
+      const { reviewSaw, started } = await walk([moved('base-1', paths)], async () => ({ head: 'merged-1' }), [], {
+        step: 'proposed',
+        waive: [],
+        approvedHead: 'abc1234def',
+        approvedNow: true,
+      })
+      expect(reviewSaw).toHaveLength(0)
+      const steps = started.map((s) => s.step)
+      expect(steps.slice(steps.indexOf('merge'))).toEqual(['merge', 'build', 'proposed', 'merge'])
+    }
+  })
+
+  it('carries a standing approval through a retry on the unchanged head (#1279)', async () => {
+    const { reviewSaw } = await walk([moved('base-1', ['src/recipe.ts'])], async () => ({ head: 'merged-1' }), [], {
+      step: 'proposed',
+      waive: [],
+      approvedHead: 'abc1234def',
+    })
+    expect(reviewSaw).toHaveLength(0)
+  })
+
+  it('carries it across two base moves in a row (#1279)', async () => {
+    const { reviewSaw } = await walk([moved('base-1'), moved('base-2')], async () => ({ head: 'merged-1' }), [], {
+      step: 'proposed',
+      waive: [],
+      approvedHead: 'abc1234def',
+      approvedNow: true,
+    })
+    expect(reviewSaw).toHaveLength(0)
+  })
+
+  it('keeps the carry when the attempt is resumed at build after the merge (#1279)', async () => {
+    const { reviewSaw, started } = await walk([], async () => ({ head: 'merged-1' }), [], {
+      step: 'build',
+      waive: [],
+      approvedHead: 'old0000',
+    })
+    expect(reviewSaw).toHaveLength(0)
+    expect(started.map((s) => s.step)).not.toContain('review')
+  })
+
+  it('does not carry for a retry that is not an approval (#1279)', async () => {
     const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [], {
       step: 'proposed',
       waive: [],
     })
+    expect(reviewSaw.length).toBeGreaterThan(0)
+  })
 
+  it('reads a fix round after a red build from the approved head, with no overlap open (#1279)', async () => {
+    const red: ActionResult = { verdict: 'failed', evidence: 'red', findings: [], because: 'red' }
+    const { reviewSaw } = await walk([moved('base-1')], async () => ({ head: 'merged-1' }), [red], {
+      step: 'proposed',
+      waive: [],
+      approvedHead: 'abc1234def',
+      approvedNow: true,
+    })
     expect(reviewSaw).toHaveLength(1)
-    expect(reviewSaw[0]?.reviewedSha).toBe('abc1234def')
-    expect(reviewSaw[0]?.landedOnBase).toMatchObject({ toSha: 'base-1' })
+    expect(reviewSaw[0]?.mergedSinceReview).toEqual({ reviewed: 'abc1234def', base: 'base-1', overlap: [] })
+    expect(reviewSaw[0]?.reviewedSha).toBeUndefined()
   })
 
   it('does not name it for a continuation that is a fix round (a grant)', async () => {

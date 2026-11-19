@@ -363,6 +363,17 @@ fixes the actions, their bounds and the endings that router works inside.
     head, the base and the checks it read. At most `baseBranchMerges` times
     an attempt; then `askPerson(limit)`.
 
+    **A person's approval carries across any clean base merge (#1279).**
+    `build` runs again on the merge commit and `review` is not visited; a red
+    `build` is never waived and buys a round as ever. The approval follows
+    only the system's own merges, never an agent's commit. After a conflict
+    the review is scoped to the resolution, measured from the approved head
+    with no overlap path kept open, so a finding outside it is a `minor`.
+    Only an `Approve` carries it: a retry or an answer at the same step is not
+    an approval. A continuation after the carry rebuilds it from the log (the
+    last approval's head, with no `implement` since) and keeps the approved head
+    as the baseline.
+
 14. **A diff the reviewer cannot read whole buys no reviewer.** Before
     `review`, the diff the reviewer would be handed is measured the way it is
     clipped, against `runtime.budget.diff`. When it is longer, no reviewer and
