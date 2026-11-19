@@ -41,6 +41,7 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   passTimes: [],
   reviews: [],
   waits: [],
+  problems: [],
   cost: { Action: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
   title: 'fix(end): the point runs',
   mergeCommit: 'abcdef1234567',

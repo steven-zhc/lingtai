@@ -57,6 +57,7 @@ The operator's decisions in epic #648 are the inputs here.
    | refusal fixes | distinct `(pass, round)` pairs among the ticket's `RunSpent` events whose `for` is `Action` with `round ≥ 1` (0110 §10), **summed over every attempt of the ticket** |
    | reviews | each review's `StepEnded` on the ticket's attempt streams (`outcome.step` is `review`), with its `round`, its time, and the count of its findings that are `blocker` or `major`; a review passed when it has none of those **and** every action of the step cleared, so an interrupted review has not passed |
    | waits | `WaitStarted` on the ticket's stream, each with its reason's tag, its latest `WaitTriaged` cause if any, and its `WaitResolved` resolution |
+| problems | one entry per problem a step raised — a `ProposalRouted` (or the retired `PassRouted`), or a step a crash cut off and `StepRedone` ran again — with its kind (`PROBLEM_KINDS`, anything unnamed is `other`), its own time, its attempt and **who finally answered it**: `system` (a route the router selected, or a wait resolved `by: 'triage'`) or `you` (a person, or still open; a question or a broken setup is always `you`). **One problem is counted once**: a route that opened a wait is that wait's problem, with the route's kind and the wait's answer. Nothing on the log links them, so a wait claims the last route (or redo group) on its run at or before its own time whose tag agrees with its reason; a route whose move then failed is claimed the same way. A route nobody claimed counts as itself, and an escalation with no wait is `you`. Computed by `problemsOf` from the stored routes and redos and the ticket's reduced waits on every save |
    | machine time | one interval per claim and per continuation, from it to the earlier of the first `TicketLanded`, `WaitStarted`, `TicketReleased` or `TicketClosed` after it and its last sign of life (below), summed. The approval itself starts nothing; the continuation after it opens its own interval |
    | cost | the ticket's `RunSpent` events, split by purpose: Work, Answering, Judge, Triage, Discussion (`apps/board/src/lib/spend.ts:30`) |
    | unknown | the number of the ticket's `RunSpent` events with no reported or priced cost, plus one for each claim that has no `Action` `RunSpent` at all. A claim is one `runId` (0109 §5), so this is the board's rule (`withNoSpendFallback`, `apps/board/src/lib/spend.ts:113`) and a continuation adds nothing |
@@ -171,7 +172,8 @@ The operator's decisions in epic #648 are the inputs here.
    `task_view`, `finding_backlog` and `spend`: one row per ticket holding the
    facts of §2 (outcome and its time, attempts, refusal fixes, reviews with their
    rounds, times and blocking counts, waits with their
-   reasons and resolutions, machine time, cost by purpose, unknown count, and
+   reasons and resolutions, the problems of §2,
+   machine time, cost by purpose, unknown count, and
    the time of every attempt, so a window can place an open ticket) and, for a
    landed ticket, **its landing facts**: title, merge commit, the landing
    attempt's number, that attempt's refusal fixes and last `RunProducedDiff`

@@ -32,6 +32,7 @@ function row(over: Partial<ReportTicketRow> & { issue?: string; project?: string
     passTimes: [new Date(2026, 9, 10, 11, 50).toISOString()],
     reviews: [],
     waits: [],
+    problems: [],
     cost: {
       Work: { reportedCents: 300, reportedRuns: 1, estimatedUsd: 0.55, estimatedRuns: 1, unknown: 0 },
     },
