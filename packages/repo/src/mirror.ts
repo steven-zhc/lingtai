@@ -59,7 +59,10 @@ export const refShaStrictEffect = (
     signal: options.signal,
   }).pipe(
     Effect.catchTag('RepoFailed', (error) =>
-      error.exitCode === 1 && (error.stdout ?? '').trim() === '' ? Effect.succeed(null) : Effect.fail(error),
+      // A missing ref is exit 1 and silence; a broken ref exits 1 too, with git's warning on stderr.
+      error.exitCode === 1 && (error.stdout ?? '').trim() === '' && (error.stderr ?? '').trim() === ''
+        ? Effect.succeed(null)
+        : Effect.fail(error),
     ),
   )
 

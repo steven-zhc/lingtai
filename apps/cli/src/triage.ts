@@ -898,7 +898,7 @@ const gatherEvidence = (
  * The action is named once here only to know which head to look for; `actOnTriageTransition` names it again from the same
  * counters and is the one that decides.
  */
-const readActContext = (
+export const readActContext = (
   deps: TriagePorts,
   request: WaitTriageRequest,
   state: TicketState,
