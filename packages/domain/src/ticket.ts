@@ -1375,7 +1375,13 @@ export function finishTriageTransition(
   return { ok: true, events: [triagedEvent(input)] }
 }
 
-export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered' | 'plan-refused'
+export type ActOnTriageRefusal =
+  | 'wait-not-current'
+  | 'changed'
+  | 'head-moved'
+  | 'not-offered'
+  | 'plan-refused'
+  | 'cause-refused'
 
 /** What the runner read at answer time and the pure transition cannot: the attempt's head, its counters, the heads a move names. */
 export type ActContext = {
@@ -1402,6 +1408,8 @@ export type ActOnTriageDecision = {
   events: ToAppend[]
   action: CauseAction | null
   resolution: Resolution | null
+  /** The `spent-on` section text to write before the append (#1260), or `null`: nothing is written. */
+  section?: string | null
 }
 
 /**
@@ -1413,7 +1421,10 @@ export type ActOnTriageDecision = {
  * effect. The resolution goes through `resolveWaitTransition` and `resolvedEvents`, the person's own path, so what it
  * accepts is what a person may choose and a new attempt releases the claim.
  *
- * `writeSpentOnThenRedoStep` (#1260) is not built: it records only `WaitTriaged` and the wait stays a person's.
+ * `writeSpentOnThenRedoStep` and a `redoStep` of a cut-off run (#1260) resolve as `RedoStep`, and hand back the
+ * section text (`section`) the caller writes **before** the append, as #1254's person path does: a failed write
+ * resolves nothing. No text is a plain `RedoStep`. A run that met its limit admits only `Unfinished` and
+ * `TicketTooBig`: any other cause is `cause-refused`, a failed triage.
  * `splitTicket` (#1262) records `WaitTriaged` and `SplitStarted` — the decision — in one append and resolves nothing:
  * the daemon's writer ends the wait. A plan with problems is `plan-refused`, a failed triage, never a partial split.
  */
@@ -1429,6 +1440,16 @@ export function actOnTriageTransition(
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: 'wait-not-current' }
   if (streamChanged(state, input)) return { ok: false, refusal: 'changed' }
   const { context } = input
+  if (
+    context.origin === 'run-limit' &&
+    input.result.cause._tag !== 'Unfinished' &&
+    input.result.cause._tag !== 'TicketTooBig'
+  )
+    return {
+      ok: false,
+      refusal: 'cause-refused',
+      why: `${input.result.cause._tag} is not a cause for a run that met its limit: say Unfinished or TicketTooBig`,
+    }
   const triaged = triagedEvent(input)
   const action = actionFor(input.result.cause, context.origin, context.counters)
   const advice: ActOnTriageDecision = { ok: true, events: [triaged], action, resolution: null }
@@ -1457,7 +1478,7 @@ export function actOnTriageTransition(
     }
     return { ok: true, events: [triaged, started], action, resolution: null }
   }
-  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep') return advice
+  if (action._tag === 'askPerson') return advice
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
@@ -1473,6 +1494,7 @@ export function actOnTriageTransition(
     case 'startNewAttempt':
       resolution = { _tag: 'StartNewAttempt' }
       break
+    case 'writeSpentOnThenRedoStep':
     case 'redoStep':
       if (context.redo === null) return { ok: false, refusal: 'head-moved' }
       resolution = { _tag: 'RedoStep', onSha: context.redo.onSha, ref: context.redo.ref }
@@ -1487,15 +1509,24 @@ export function actOnTriageTransition(
   }
   const decided = resolveWaitTransition(state, { waitId: input.waitId, resolution })
   if (!decided.ok || decided.kind !== 'proceed') return { ok: false, refusal: 'not-offered' }
+  const cause = input.result.cause
+  const text =
+    action._tag === 'writeSpentOnThenRedoStep'
+      ? action.spentOn
+      : action._tag === 'redoStep' && cause._tag === 'Unfinished'
+        ? cause.addToBody
+        : null
+  const section = text === null || text.trim() === '' ? null : text.trim()
   const resolved = resolvedEvents(state, decided.block, {
     waitId: input.waitId,
     by: 'triage',
     resolution,
     note: input.result.summary,
+    ...(section === null ? {} : { answers: { picks: [], section } }),
     system: bound === null ? {} : { spent: { bound, n: context.counters[bound].used + 1 } },
   })
   if (!resolved.ok) return { ok: false, refusal: 'not-offered' }
-  return { ok: true, events: [triaged, ...resolved.events], action, resolution }
+  return { ok: true, events: [triaged, ...resolved.events], action, resolution, section }
 }
 
 export type CloseDecline =

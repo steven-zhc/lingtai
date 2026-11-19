@@ -718,6 +718,11 @@ export function rerunStepOf(reason: WaitReason): Step | null {
           return 'build'
         case 'CheckRefused':
           return fromOf(reason.proposal) === 'proposed' ? 'proposed' : null
+        // A run that met `run.turns` or `run.usd` is redone from its head (#1260), the step it was cut off at.
+        case 'BudgetExhausted': {
+          const from = reason.proposal.from
+          return from === 'design' || from === 'implement' || from === 'review' ? from : null
+        }
         default:
           return null
       }

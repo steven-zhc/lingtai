@@ -573,6 +573,11 @@ export function finishTriage(
     result: FinishTriageInput['result'] | (() => FinishTriageInput['result'])
     /** What the transition cannot read itself, read against the state just read. Absent: the answer is advice only. */
     act?: (state: TicketState) => Effect.Effect<ActContext, unknown>
+    /**
+     * Writes the ticket's one `spent-on` section (#1260). A port rather than an import: `write-section.ts` imports this
+     * file. Absent where a section is owed, the redo is not carried out and the answer stays advice.
+     */
+    writeSection?: (text: string) => Effect.Effect<{ written: true } | { written: false; detail: string }>
   } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
 ): Effect.Effect<FinishTriageResult, unknown> {
   return Effect.gen(function* () {
@@ -611,7 +616,7 @@ export function finishTriage(
       since,
     }
     let decided:
-      | { ok: true; events: ToAppend[]; resolution: Resolution | null }
+      | { ok: true; events: ToAppend[]; resolution: Resolution | null; section?: string | null }
       | { ok: false; refusal: TriageRefusal; why?: string }
     if (result._tag === 'TriageAnswered' && options.act !== undefined) {
       const read = yield* Effect.exit(options.act(state))
@@ -629,12 +634,27 @@ export function finishTriage(
       decided = finished.ok ? { ...finished, resolution: null } : { ok: false, refusal: finished.refusal.reason }
     }
     if (decided.ok) {
-      const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+      let events = decided.events
+      let resolution = decided.resolution
+      // The section is written before the wait resolves, as #1254's person path does: a write that failed resolves
+      // nothing, and the answer stays advice on a wait that is still a person's. The key is the ticket's, so a second
+      // cut-off run replaces the first's note in place and the body never grows past one.
+      if (decided.section != null && resolution !== null) {
+        const wrote =
+          options.writeSection === undefined
+            ? ({ written: false, detail: 'no way to write the body' } as const)
+            : yield* options.writeSection(decided.section)
+        if (!wrote.written) {
+          events = events.slice(0, 1)
+          resolution = null
+        }
+      }
+      const lost = yield* appendLost(options.store, ticketId, state.version, events)
       if (lost) return { ok: false, lost: true } as const
       const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
       return {
         ok: true,
-        resolved: decided.resolution === null ? null : { resolution: decided.resolution, runId: block?.runId ?? null },
+        resolved: resolution === null ? null : { resolution, runId: block?.runId ?? null },
       } as const
     }
     // The refusal is a failure of this attempt, and a record of it: bound to the version just read.
