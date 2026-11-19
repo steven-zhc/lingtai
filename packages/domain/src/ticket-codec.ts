@@ -37,7 +37,13 @@ const Wait = z.strictObject({
   waitId: WaitId,
   reason: WaitReason,
   at: IsoDate,
-  resolution: z.strictObject({ resolution: Resolution, by: z.string() }).nullable(),
+  resolution: z
+    .strictObject({
+      resolution: Resolution,
+      by: z.string(),
+      spent: z.strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() }).optional(),
+    })
+    .nullable(),
   triage: z.strictObject({
     started: z.strictObject({ attempt: z.number(), at: IsoDate, by: TriageStartedBy }).nullable(),
     result: TriageResult.nullable(),

@@ -388,6 +388,17 @@ export const WaitResolved = z.object({
   resolution: Resolution,
   note: z.string(),
   /**
+   * **The bound a system resolution spent, and the number the continuation will itself record for it** (#1258). Only a
+   * `by: 'triage'` resolution carries it: a person's spends nothing. A reader takes the larger of this and the
+   * attempt's own counter, never their sum, so the spend is one whether or not the continuation has run.
+   */
+  spent: z
+    .object({
+      bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']),
+      n: z.number().int().positive(),
+    })
+    .optional(),
+  /**
    * The copy of what a resolution wrote into the body (#924): the answer id
    * chosen for each of triage's questions, and the section exactly as handed to
    * the write. Absent when nothing was written; never empty.

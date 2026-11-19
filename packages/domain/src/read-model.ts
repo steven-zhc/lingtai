@@ -376,3 +376,28 @@ export function boardFactOf(event: Envelope, endedAt: (version: number) => StepO
       return []
   }
 }
+
+// ------------------------------------------------------------ triageSpentOf ----
+
+/**
+ * **What triage's own resolutions have spent for one attempt, per bound** (#1258): the highest `spent.n` among the waits
+ * on `runId` that a `WaitResolved{by: 'triage'}` closed. A person's resolution carries none and adds nothing.
+ *
+ * A reader takes `max(the attempt's own counter, this)` and never the sum: `n` is the number the continuation will
+ * itself record for the same bound, so once it has, the two say one spend, and before it has this says it alone — a
+ * restart between the append and the effect neither loses it nor counts it twice (the attempt reducer's own idiom: *a
+ * rerun in place raises the count by its own number, never by one*, #1201).
+ */
+export function triageSpentOf(
+  state: TicketState,
+  runId: string,
+): { refusalFixes: number; conflictResolutions: number; stepRedos: number } {
+  const out = { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 }
+  for (const w of state.waits) {
+    const r = w.resolution
+    if (r === null || r.by !== 'triage' || r.spent === undefined) continue
+    if (!('run' in w.reason) || w.reason.run.runId !== runId) continue
+    out[r.spent.bound] = Math.max(out[r.spent.bound], r.spent.n)
+  }
+  return out
+}
