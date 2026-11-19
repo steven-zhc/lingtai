@@ -137,6 +137,29 @@ describe('/landed page', () => {
     expect(out).not.toMatch(/amber|var\(--signal\)/)
   })
 
+  it('names the system as the ender of a satisfied split parent, whatever earlier decision it carries (#1252)', () => {
+    const split = row({
+      outcome: 'satisfied',
+      summary: null,
+      satisfiedAt: 'abcdef1234567',
+      waits: [{ waitId: 'w1', at: '', reason: 'x', triage: null, resolution: 'Split', by: 'alice', onSha: null }],
+    })
+    const out = html(data([split]))
+    expect(out).toContain('Ended by the system')
+    expect(out).toContain('A person decided:')
+    const confirmed = row({
+      outcome: 'satisfied',
+      summary: null,
+      satisfiedAt: 'abcdef1234567',
+      waits: [
+        { waitId: 'w2', at: '', reason: 'x', triage: null, resolution: 'ConfirmSatisfied', by: 'bob', onSha: null },
+      ],
+    })
+    const out2 = html(data([confirmed]))
+    expect(out2).not.toContain('Ended by the system')
+    expect(out2).toContain('— bob')
+  })
+
   it('says nothing has landed, or nothing landed for the project, and no Earlier link', () => {
     expect(html(data([]))).toContain('nothing has landed yet')
     const filtered = renderToStaticMarkup(<LandedView data={data([])} query={{ ...query, project: 'p' }} env={env} />)

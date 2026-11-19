@@ -56,9 +56,11 @@ describe('the satisfied ending (#1252)', () => {
 
   it('draws the source tag the context names', () => {
     const html = renderToStaticMarkup(
-      <SatisfiedItems items={[{ item: 'one', evidence: 'landed in #1313' }]} children={[1313]} base="release" />,
+      <SatisfiedItems items={[{ item: 'one', evidence: 'landed in #1313 as abc' }]} children={[1313]} base="release" />,
     )
-    expect(html).toContain('#1313')
+    expect(html).toContain('<span class="ssatisfied-source"> #1313</span>')
+    const none = renderToStaticMarkup(<SatisfiedItems items={[{ item: 'one', evidence: 'x' }]} />)
+    expect(none).not.toContain('ssatisfied-source')
   })
 
   it('draws each item with its evidence, and says so when there is none', () => {

@@ -107,7 +107,8 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
 
 function Notes({ row, entries }: { row: TicketReportRow; entries: readonly BacklogEntry[] }) {
   const decisions = row.waits.filter((w) => w.resolution !== null)
-  const bySystem = row.outcome === 'satisfied' && decisions.length === 0
+  // Who ended it is whether a person confirmed it, not whether any decision exists: a split parent carries its Split wait's.
+  const bySystem = row.outcome === 'satisfied' && !decisions.some((w) => w.resolution === 'ConfirmSatisfied')
   if (!bySystem && decisions.length === 0 && entries.length === 0 && row.summaryClipped === null) return null
   return (
     <div className="ld-notes">
