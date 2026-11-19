@@ -84,9 +84,9 @@ describe('the home page says where each failure goes', () => {
     expect(html).toContain('href="#replay">See it above ↑')
   })
 
-  it('hides the drawing until script runs, and opens the FAQ table', () => {
+  it('hides the drawing until script runs, and leaves the FAQ table closed', () => {
     expect(html).toMatch(/class="fp-live"[^>]*hidden/)
-    expect(html).toMatch(/<details class="faq-item faq-wide" open/)
+    expect(html).toMatch(/<details class="faq-item faq-wide">/)
   })
 
   it('hands the drawing all seven paths, since it reads no copy from the page', () => {
