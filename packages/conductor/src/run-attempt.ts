@@ -1071,6 +1071,8 @@ export interface AttemptOptions {
      * continuation that resumes the review is still owed the conflict block and question.
      */
     readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /** The head the last review read before the base merge a continuation resumes after (#1274). */
+    readonly reviewedHead?: string
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** One fix dispatch authorized by the wait resolution, consumed on the first implement visit. */
@@ -1529,7 +1531,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      */
     let reviewedSha: string | null = null
     /** A review read `reviewed`; a base merge onto `base` came after it, and no review has read the merged head whole (#1274). */
-    let mergedSinceReview: { reviewed: string; base: string; overlap: readonly string[] } | null = null
+    let mergedSinceReview: { reviewed: string; base: string; overlap: readonly string[] } | null =
+      options.from?.reviewedHead !== undefined && options.from.landedOnBase !== undefined
+        ? {
+            reviewed: options.from.reviewedHead,
+            base: options.from.landedOnBase.toSha,
+            overlap: options.from.landedOnBase.paths,
+          }
+        : null
     /**
      * The merge commit a disjoint base move (#1210) carried the last review to: a
      * review that read the head whole stands for a tree the base's unrelated
@@ -2196,6 +2205,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               ...(found.branchSha === undefined ? {} : { branchSha: found.branchSha }),
             }
             mergedOnto = asked.baseSha
+            // The review that passed before the round read `reviewedHead`; the resumed one is measured from it (#1274).
+            if (options.from.reviewedHead !== undefined)
+              mergedSinceReview = {
+                reviewed: options.from.reviewedHead,
+                base: asked.baseSha,
+                overlap: landedOnBase.paths,
+              }
           }
         }
       }

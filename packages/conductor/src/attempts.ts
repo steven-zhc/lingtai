@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
 import {
   headOf,
+  reviewSummaryOf,
   reduceAttempt,
   rerunHeadOf,
   reduceTicket,
@@ -662,4 +663,30 @@ export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
   if (!('atBase' in head)) return head
   const base = diffBaseShaOf(runEvents)
   return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null }
+}
+
+/**
+ * **The head the last review read, before a base merge no review has read since** (#1274): what
+ * a continuation needs, with the merge's base, to measure the next review from the merge baseline
+ * rather than review the whole head again. `null` where the walk cannot say — no review read it
+ * whole, the read was clipped, or another merge came between (its commit is not on the log).
+ * The head is the last one a step recorded before that review.
+ */
+export function reviewedHeadOf(runEvents: readonly Envelope[]): string | null {
+  const outcomes = stepOutcomesOf(runEvents)
+  const merged = outcomes.findLastIndex((o) => o.step === 'merge' && (conflictedIn(o) !== null || movedIn(o) !== null))
+  if (merged < 0) return null
+  if (outcomes.slice(merged + 1).some((o) => o.step === 'review' && reviewerRanIn(o))) return null
+  const review = outcomes.slice(0, merged).findLastIndex((o) => o.step === 'review' && reviewerRanIn(o))
+  if (review < 0) return null
+  if (reviewSummaryOf(outcomes[review]!)?.clipped !== undefined) return null
+  if (outcomes.slice(review + 1, merged).some((o) => o.step === 'merge')) return null
+  // A merge before the review moved the head by a commit no step recorded.
+  if (outcomes.slice(0, review).some((o) => o.step === 'merge' && (conflictedIn(o) !== null || movedIn(o) !== null)))
+    return null
+  for (let i = review - 1; i >= 0; i--) {
+    const head = headOf(outcomes[i]!)
+    if (head !== null) return head
+  }
+  return null
 }

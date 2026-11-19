@@ -257,6 +257,7 @@ import {
 import {
   armForState,
   conflictResolvedOf,
+  reviewedHeadOf,
   diffBaseShaOf,
   landedOnBaseOf,
   priorAttemptsFromState,
@@ -1425,6 +1426,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             diffBaseSha: diffBaseShaOf(releasedEvents),
             landedOnBase: landedOnBaseOf(releasedEvents),
             conflictResolved: conflictResolvedOf(releasedEvents),
+            reviewedHead: reviewedHeadOf(releasedEvents),
             baseRed: { toSha: baseRead.at, fromSha: cause.baseSha, action },
             released: {
               by: 'release' as const,
@@ -1485,6 +1487,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(releasedEvents),
           landedOnBase: landedOnBaseOf(releasedEvents),
           conflictResolved: conflictResolvedOf(releasedEvents),
+          reviewedHead: reviewedHeadOf(releasedEvents),
           released: {
             by: 'release' as const,
             runId: releasedFrom.runId,
@@ -1549,6 +1552,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           diffBaseSha: diffBaseShaOf(runEvents),
           landedOnBase: landedOnBaseOf(runEvents),
           conflictResolved: conflictResolvedOf(runEvents),
+          reviewedHead: reviewedHeadOf(runEvents),
           released: {
             by: 'person' as const,
             runId: options.continuing.runId,
@@ -1685,6 +1689,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         diffBaseSha: diffBaseShaOf(runEvents),
         landedOnBase: landedOnBaseOf(runEvents),
         conflictResolved: conflictResolvedOf(runEvents),
+        reviewedHead: reviewedHeadOf(runEvents),
       }
     })
 
@@ -5685,6 +5690,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   ? { conflict: continuation.conflict }
                   : {}),
                 ...(continuation.conflictResolved !== null ? { conflictResolved: continuation.conflictResolved } : {}),
+                ...(continuation.reviewedHead !== null ? { reviewedHead: continuation.reviewedHead } : {}),
                 ...(continuation.released?.rerun.for != null
                   ? {
                       redo: {
