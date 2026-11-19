@@ -31,24 +31,28 @@ function measure(box: HTMLElement): Geo | null {
   const tableRight = t.right - b.left
   const tableBottom = t.bottom - b.top
   const gutter = b.width - tableRight
-  if (gutter < MIN_GUTTER || f.width === 0 || h.width === 0) return null
+  if (h.width === 0) return null
   const top = h.top - b.top
   const bottom = h.bottom - b.top
-  if (top - tableBottom < 24) return null
+  // The bracket belongs to the heading and stays; only the line into it needs the gutter.
+  const drawLine = gutter >= MIN_GUTTER && f.width > 0 && top - tableBottom >= 24
 
   const x0 = tableRight + MARGIN
   const y0 = f.top - b.top + f.height / 2
   const lane = tableRight + Math.min(gutter * 0.5, 56)
   const mid = (top + bottom) / 2
-  const bx = h.right - b.left + 14
+  const bx = Math.min(h.right - b.left + 14, b.width - 14)
   const tip = bx + 8
   const turn = Math.max(top, tableBottom + 8)
   const n = (v: number) => Math.round(v * 10) / 10
 
-  const line =
-    `M ${n(x0)} ${n(y0)} C ${n(x0 + 30)} ${n(y0 - 4)}, ${n(lane)} ${n(y0 + 6)}, ${n(lane)} ${n(y0 + 52)} ` +
-    `L ${n(lane)} ${n(turn)} C ${n(lane)} ${n(mid)}, ${n(lane - 40)} ${n(mid - 4)}, ${n(tip + 6)} ${n(mid)}`
-  const head = `M ${n(tip + 16)} ${n(mid - 7)} L ${n(tip + 5)} ${n(mid)} L ${n(tip + 15)} ${n(mid + 8)}`
+  const line = !drawLine
+    ? ''
+    : `M ${n(x0)} ${n(y0)} C ${n(x0 + 30)} ${n(y0 - 4)}, ${n(lane)} ${n(y0 + 6)}, ${n(lane)} ${n(y0 + 52)} ` +
+      `L ${n(lane)} ${n(turn)} C ${n(lane)} ${n(mid)}, ${n(lane - 40)} ${n(mid - 4)}, ${n(tip + 6)} ${n(mid)}`
+  const head = !drawLine
+    ? ''
+    : `M ${n(tip + 16)} ${n(mid - 7)} L ${n(tip + 5)} ${n(mid)} L ${n(tip + 15)} ${n(mid + 8)}`
   const bracket =
     `M ${n(bx - 8)} ${n(top + 2)} C ${n(bx + 2)} ${n(top)}, ${n(bx + 5)} ${n(top + 6)}, ${n(bx + 4)} ${n(top + 16)} ` +
     `L ${n(bx + 5)} ${n(bottom - 16)} C ${n(bx + 5)} ${n(bottom - 6)}, ${n(bx + 2)} ${n(bottom)}, ${n(bx - 8)} ${n(bottom - 2)}`
@@ -97,8 +101,8 @@ export function RouteArrow() {
             strokeLinecap="round"
             strokeLinejoin="round"
           >
-            <path d={geo.line} />
-            <path d={geo.head} />
+            {geo.line ? <path d={geo.line} /> : null}
+            {geo.head ? <path d={geo.head} /> : null}
             <path d={geo.bracket} />
           </g>
         </svg>

@@ -344,8 +344,6 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
   .fp-chips { gap: 6px; }
   .fp-chip { font-size: 13px; padding: 6px 11px 5px; }
   .fp-head h2 { font-size: 24px; }
-  .faq-wide { overflow-x: auto; }
-  .fp-table { min-width: 640px; }
 }
 
 /* The sandbox: a dark band. The board's own dark tokens, under their own names, scoped to this
@@ -528,7 +526,6 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .ledger a.lg-see { color: var(--accent-ink); white-space: nowrap; }
 .route-arrow { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 2; color: var(--accent-ink); }
 .route-arrow svg { display: block; overflow: visible; }
-@media (max-width: 1080px) { .route-arrow { display: none; } }
 
 .vsm-k { font: 20px var(--hand); color: var(--accent-ink); margin: 0 0 10px; }
 .vsm-term { background: #0f181c; color: #dfe8e8; border-radius: 8px; overflow: hidden; font: 13px/1.6 var(--mono); }
@@ -548,3 +545,7 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .vsm-labels .vsm-picked { background: var(--accent-soft); color: var(--accent-ink); }
 .vsm-then { margin: 12px 0 0; font-size: 14px; line-height: 1.5; color: var(--ink-2); }
 .vsm-then a { color: var(--accent-ink); }
+
+/* The FAQ table sits outside `.fp`, the size container, so its narrow rules are a viewport query. */
+.faq-wide { overflow-x: auto; }
+@media (max-width: 760px) { .fp-table { min-width: 640px; } }
