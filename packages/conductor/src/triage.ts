@@ -353,7 +353,8 @@ const clip = (text: string): string => cut(text)
  * JSON usually gives JSON, and the turn where it does not must not become a
  * crash with no record of why.
  *
- * **No repair.** An answer that misses the schema is never coerced into one
+ * **No repair of shape.** Prose over `TRIAGE_TEXT_MAX` is cut (`cutProse`) and
+ * answered; an answer that misses the schema in any other way is never coerced into one
  * that fits — `parseReply`'s own rule: *"An unreadable reply is not repaired
  * into an answer."* **No action, ever:** a `resolution` key is refused by name,
  * because triage answers a cause and what follows it is the system's (0118 §1).

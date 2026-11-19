@@ -1082,8 +1082,8 @@ export const TRIAGE_ANSWER_JSON_SCHEMA: Record<string, unknown> = (() => {
 
 /** The flat reply `parseTriage` reads, out of the envelope a runtime answered in. */
 export function unwrapTriageEnvelope(structured: unknown): unknown {
-  // Not validated here: an over-bound answer must reach `parseTriage` whole,
-  // so its refusal names the field rather than the envelope.
+  // Not validated here: an answer must reach `parseTriage` whole,
+  // so a refusal of its shape names the field rather than the envelope, and prose over the bound is cut there.
   if (typeof structured !== 'object' || structured === null) return structured
   const { read, answer } = structured as { read?: unknown; answer?: unknown }
   if (read !== null && read !== undefined) return { read }

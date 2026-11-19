@@ -354,35 +354,38 @@ export function causeIn(
   // Every balanced object in the text is a candidate too, so two unfenced answers are two candidates and
   // not one suffix that fails to parse and hides the first.
   candidates.push(...balancedObjects(text))
-  const found: { cause: Cause; summary: string }[] = []
+  const found: { cause: Cause; summary: string; key: string }[] = []
   let refused: string | null = null
   for (const candidate of candidates) {
-    let value: unknown
+    let raw: unknown
     try {
-      value = cutProse(JSON.parse(candidate.trim()))
+      raw = JSON.parse(candidate.trim())
     } catch {
       continue
     }
+    // Ambiguity is judged on the cause as written: cutting could make two different causes identical.
+    const key = JSON.stringify((raw as { cause?: unknown } | null)?.cause)
+    const value = cutProse(raw)
     const cause = (value as { cause?: { _tag?: unknown } } | null)?.cause
     if (cause === undefined || cause === null || typeof cause !== 'object') continue
     const tag = cause._tag
     if (typeof tag === 'string' && CAUSE_TAGS.includes(tag) && !(JUDGE_CAUSES as readonly string[]).includes(tag)) {
-      found.push({ cause: cause as Cause, summary: '' })
+      found.push({ cause: cause as Cause, summary: '', key })
       refused ??= tag
       continue
     }
     const parsed = JudgeAnswer.safeParse(value)
     if (!parsed.success) return null
     if (triageQuestionsOf(parsed.data.cause as Cause).some(({ question }) => question.answers.length < 2)) {
-      found.push({ cause: parsed.data.cause as Cause, summary: '' })
+      found.push({ cause: parsed.data.cause as Cause, summary: '', key })
       refused ??= 'a question with fewer than two answers'
       continue
     }
-    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() })
+    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim(), key })
   }
   // The same answer seen through several candidates (a fence, then the text) is one answer; two different
   // causes are an ambiguous one, and an ambiguous answer is not read.
-  if (new Set(found.map((f) => JSON.stringify(f.cause))).size !== 1) return null
+  if (new Set(found.map((f) => f.key)).size !== 1) return null
   if (refused !== null) return { refused }
   return found[0]!
 }

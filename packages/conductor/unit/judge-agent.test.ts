@@ -301,6 +301,16 @@ describe('a judge at findings answers a cause (0108 §6)', () => {
     expect(causeIn(question('q'.repeat(TRIAGE_TEXT_MAX + 1)))).toBeNull()
   })
 
+  it('does not read two causes that differ only past the bound as one', () => {
+    const fix = (what: string) => ({ _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 1, what }] })
+    const shared = 'w'.repeat(TRIAGE_TEXT_MAX)
+    const text = [
+      JSON.stringify({ cause: fix(`${shared} keep the check`), summary: 's' }),
+      JSON.stringify({ cause: fix(`${shared} remove the check`), summary: 's' }),
+    ].join('\n')
+    expect(causeIn(text)).toBeNull()
+  })
+
   it('tells the judge the bound', () => {
     expect(judgePrompt(ARRIVED)).toContain(`at most ${TRIAGE_TEXT_MAX} characters`)
   })
