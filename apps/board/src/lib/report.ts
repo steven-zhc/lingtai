@@ -36,18 +36,22 @@ export interface HandledQuery {
   kind: ProblemKindOrAll
   by: Answerer | null
   /** The last row of the page before, `(at, ticket)`: a position in the order, not a row id. */
-  before: { at: Date; ticket: string } | null
+  before: { at: Date; ticket: string; seen: number } | null
 }
 type ProblemKindOrAll = ProblemKind | 'all'
 
-/** `<ISO at>,<ticket>`; null when it is not a real date, a comma and a ticket. */
+/** `<ISO at>,<seen>,<ticket>`; null when it is not a real date, a count and a ticket. */
 export function parseHandledCursor(text: string | undefined): HandledQuery['before'] {
   if (text === undefined) return null
   const cut = text.indexOf(',')
-  if (cut < 0) return null
+  const cut2 = text.indexOf(',', cut + 1)
+  if (cut < 0 || cut2 < 0) return null
   const at = new Date(text.slice(0, cut))
-  const ticket = text.slice(cut + 1)
-  return ticket === '' || Number.isNaN(at.getTime()) ? null : { at, ticket }
+  const seen = Number(text.slice(cut + 1, cut2))
+  const ticket = text.slice(cut2 + 1)
+  return ticket === '' || Number.isNaN(at.getTime()) || !Number.isInteger(seen) || seen < 0
+    ? null
+    : { at, ticket, seen }
 }
 
 const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)
@@ -165,7 +169,7 @@ export function reportHref(
   if (h !== null) {
     p.set('handled', h.kind)
     if (h.by !== null) p.set('by', h.by)
-    if (h.before !== null) p.set('before', `${h.before.at.toISOString()},${h.before.ticket}`)
+    if (h.before !== null) p.set('before', `${h.before.at.toISOString()},${h.before.seen},${h.before.ticket}`)
   }
   const s = p.toString()
   const base = s === '' ? '/report' : `/report?${s}`

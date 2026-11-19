@@ -124,7 +124,7 @@ export function shareWithoutYou(system: number, you: number): number | null {
 }
 
 /** Above this many problems the tick strip draws one weighted mark per (kind, group), not one each. */
-export const TICK_LIMIT = 400
+export const TICK_LIMIT = 60
 
 /** The height of the tallest day's stack, in px; the other days are scaled to it. */
 export const DAY_STACK_PX = 106
@@ -137,33 +137,46 @@ interface Placed {
   ticket: string
 }
 
-/** Rows come newest first, ties by ticket: *after* the cursor is further down that order. */
-const isAfter = (r: Placed, c: { at: Date; ticket: string }): boolean => {
-  const t = Date.parse(r.at)
-  const ct = c.at.getTime()
-  return t < ct || (t === ct && r.ticket > c.ticket)
-}
+type Cursor = { at: Date; ticket: string; seen: number }
+
+const sameKey = (r: Placed, c: { at: Date; ticket: string }): boolean =>
+  Date.parse(r.at) === c.at.getTime() && r.ticket === c.ticket
 
 /**
  * Twenty rows after the cursor, and where they sit in the whole: *showing a–b of m*.
- * A cursor is a position in the order and not a row id, so one whose row has left
- * the window still works. Two problems on one ticket with the same millisecond
- * could straddle a page edge and one be skipped; that is accepted.
+ * Rows come newest first, ties by ticket. A cursor is a position in that order and
+ * not a row id, so one whose row has left the window still works: it names the last
+ * row's `(at, ticket)` and how many rows of that very key were already shown, so
+ * problems sharing both a millisecond and a ticket are neither skipped nor repeated.
  */
 export function pageHandled<T extends Placed>(
   rows: readonly T[],
-  before: { at: Date; ticket: string } | null,
-): { rows: T[]; from: number; to: number; total: number; next: { at: Date; ticket: string } | null } {
-  const skipped = before === null ? 0 : rows.filter((r) => !isAfter(r, before)).length
+  before: Cursor | null,
+): { rows: T[]; from: number; to: number; total: number; next: Cursor | null } {
+  let skipped = 0
+  if (before !== null) {
+    const ct = before.at.getTime()
+    const ahead = rows.filter((r) => {
+      const t = Date.parse(r.at)
+      return t > ct || (t === ct && r.ticket < before.ticket)
+    }).length
+    const tied = rows.filter((r) => sameKey(r, before)).length
+    skipped = ahead + Math.min(before.seen, tied)
+  }
   const page = rows.slice(skipped, skipped + HANDLED_PAGE)
   const last = page[page.length - 1]
-  const more = skipped + page.length < rows.length
+  const end = skipped + page.length
+  const first =
+    last === undefined ? -1 : rows.findIndex((r) => sameKey(r, { at: new Date(last.at), ticket: last.ticket }))
   return {
     rows: page,
     from: page.length === 0 ? 0 : skipped + 1,
-    to: skipped + page.length,
+    to: end,
     total: rows.length,
-    next: more && last !== undefined ? { at: new Date(last.at), ticket: last.ticket } : null,
+    next:
+      end < rows.length && last !== undefined
+        ? { at: new Date(last.at), ticket: last.ticket, seen: end - first }
+        : null,
   }
 }
 

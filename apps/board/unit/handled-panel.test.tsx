@@ -57,9 +57,9 @@ describe('HandledPanel', () => {
         problems={null}
       />,
     )
-    expect(out).toContain('<b>5</b>')
+    expect(out).toMatch(/<b><a [^>]*>5<\/a><\/b>/)
     expect(out).toContain('83%')
-    expect(out).toContain('of 6 problems')
+    expect(out).toContain('>6</a> problems')
     expect(out).toContain('AI review found problems')
     expect(out).toContain('auto-fixed')
     expect(out).toContain('the agent asked you a question')
@@ -67,6 +67,15 @@ describe('HandledPanel', () => {
     expect(out).toContain('$50.00 reported · ~$2.50 est.')
     expect(out).toContain('+ 1 unknown')
     expect(out).toContain('of the week&#x27;s spend')
+    const unknownOnly = renderToStaticMarkup(
+      <HandledPanel
+        handled={{ ...handled({ build: [1, 0] }), answeringCost: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }}
+        spend={spend}
+        query={q}
+        problems={null}
+      />,
+    )
+    expect(unknownOnly).not.toContain('of the week')
     expect(out).toContain('<span class="ok">landed</span>')
     expect(out).toContain('/task/ticket-lingtai-1258')
     // no amber

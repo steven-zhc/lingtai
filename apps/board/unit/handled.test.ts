@@ -40,3 +40,18 @@ describe('handled-for-you copy (#1285)', () => {
     expect(windowText('today', new Date(2026, 10, 19), new Date(2026, 10, 20))).toBe('Nov 19 · today')
   })
 })
+
+describe('pageHandled ties', () => {
+  it('walks problems sharing a millisecond and a ticket without skipping any', () => {
+    const at = new Date(Date.UTC(2026, 10, 18, 12)).toISOString()
+    const older = Array.from({ length: 19 }, (_, i) => ({
+      at: new Date(Date.UTC(2026, 10, 18, 13, 0, i)).toISOString(),
+      ticket: 'a',
+    })).reverse()
+    const rows = [...older, ...[0, 1, 2].map(() => ({ at, ticket: 'b' }))]
+    const one = pageHandled(rows, null)
+    expect(one.rows).toHaveLength(20)
+    const two = pageHandled(rows, one.next)
+    expect(two).toMatchObject({ from: 21, to: 22, total: 22, next: null })
+  })
+})

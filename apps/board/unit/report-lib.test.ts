@@ -67,10 +67,10 @@ describe('reportQuery', () => {
 
 describe('the handled-for-you address (#1285)', () => {
   it('reads a kind, an answerer and a cursor, and writes them back with the anchor', () => {
-    const q = reportQuery({ handled: 'build', by: 'system', before: '2026-10-27T10:00:00.000Z,ticket-x-1' }, NOW)
+    const q = reportQuery({ handled: 'build', by: 'system', before: '2026-10-27T10:00:00.000Z,0,ticket-x-1' }, NOW)
     expect(q.handled).toMatchObject({ kind: 'build', by: 'system', before: { ticket: 'ticket-x-1' } })
     expect(reportHref(q)).toBe(
-      '/report?handled=build&by=system&before=2026-10-27T10%3A00%3A00.000Z%2Cticket-x-1#handled',
+      '/report?handled=build&by=system&before=2026-10-27T10%3A00%3A00.000Z%2C0%2Cticket-x-1#handled',
     )
     expect(reportHref(q, { handled: null })).toBe('/report')
     expect(reportQuery({ handled: 'all' }, NOW).handled).toEqual({ kind: 'all', by: null, before: null })

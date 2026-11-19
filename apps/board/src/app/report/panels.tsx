@@ -622,7 +622,15 @@ export function HandledPanel({
     <section className="hfr" id="handled">
       {head}
       <div className="hfr-hero">
-        <b>{system}</b>
+        <b>
+          {system === 0 ? (
+            0
+          ) : (
+            <Link href={href('all', 'system')} scroll={false}>
+              {system}
+            </Link>
+          )}
+        </b>
         <span className="t">
           problems solved
           <br />
@@ -631,10 +639,24 @@ export function HandledPanel({
         <div className="side">
           <div>
             <span className="v">{share === null ? '—' : `${share}%`}</span>
-            <span className="s">of {n} problems</span>
+            <span className="s">
+              of{' '}
+              <Link href={href('all', null)} scroll={false}>
+                {n}
+              </Link>{' '}
+              problems
+            </span>
           </div>
           <div>
-            <span className="v">{you}</span>
+            <span className="v">
+              {you === 0 ? (
+                0
+              ) : (
+                <Link href={href('all', 'you')} scroll={false}>
+                  {you}
+                </Link>
+              )}
+            </span>
             <span className="s">needed you</span>
           </div>
         </div>
@@ -685,7 +707,7 @@ export function HandledPanel({
               {dollars(cost.reportedCents)} reported · ~{dollars(cost.estimatedCents)} est.
             </b>
             {cost.unknown > 0 ? ` + ${cost.unknown} unknown` : ''} in agent runs
-            {cents === 0 ? (
+            {cents === 0 || (centsOf(cost) === 0 && cost.unknown > 0) ? (
               ''
             ) : (
               <>
@@ -698,7 +720,7 @@ export function HandledPanel({
         </div>
         <div className="hfr-days">
           <div className="h">per day · share without you</div>
-          <div className="hfr-cols">
+          <div className="hfr-cols" style={{ gap: days.length <= 14 ? 14 : days.length <= 31 ? 3 : 0 }}>
             {days.map((d, i) => {
               const dayShare = shareWithoutYou(d.system, d.you)
               const labelled = i % every === 0
