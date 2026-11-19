@@ -119,7 +119,7 @@ describe('statedBeforeDispatch', () => {
         'reruns of a run an API error cut off) and up to 5 answers to a person — 2h and 300 turns each, so at ' +
         'most 106h. a spent attempt starts the ticket over from the base up to 2 time(s) before it is yours. ' +
         'other agent steps are not in this figure, each with a bound of its own: design runs once an attempt and ' +
-        'again each time a state-assumption route sends a question back to it, within runtime.limits.run (wall ' +
+        "again each time a person's answer continues it, within runtime.limits.run (wall " +
         'and turns) a run unless its step narrows them; review runs once after each implement and once more ' +
         "after a base-branch merge that touched the branch's files, within runtime.limits.run (wall and turns) " +
         'a run unless its step narrows them; a judge is asked once per refusal it is declared for, within ' +

@@ -320,10 +320,27 @@ const ask = Command.make(
 
 const answer = Command.make(
   'answer',
-  { project: projectArg, issue: integerOption('answer', 'issue'), text: sentenceArg, json, noColor },
+  {
+    project: projectArg,
+    issue: integerOption('answer', 'issue'),
+    text: sentenceArg,
+    pick: Flag.String('pick').pipe(Flag.atLeast(0)),
+    json,
+    noColor,
+  },
   (args) =>
     answerWith('answer', args, (progress) =>
       Effect.gen(function* () {
+        // A wait that asked questions is answered into the body and the step that asked continues (#1254); anything
+        // else is the single choice of a question asked before any run (#147).
+        if (args.text.length === 0 || args.pick.length > 0) {
+          const { answerQuestionsVerdict } = yield* lift(() => import('./answer-questions.ts'))
+          const answered = yield* answerQuestionsVerdict(
+            { project: args.project, issue: args.issue, picks: args.pick },
+            progress,
+          )
+          if (answered !== null) return answered
+        }
         const { answerVerdict } = yield* lift(() => import('./ask.ts'))
         return yield* answerVerdict({ project: args.project, issue: args.issue, text: args.text.join(' ') }, progress)
       }),
@@ -1448,6 +1465,7 @@ function flagValue(args: readonly string[], name: string): string | null | undef
 /** The sentences a flag with no value has always been refused with, and exit 2 (#621). */
 const TAKES: Record<string, { flag: string; sentence: string; trimmed: boolean }[]> = {
   'start-new-attempt': [{ flag: 'into-body', sentence: '--into-body takes text', trimmed: true }],
+  answer: [{ flag: 'pick', sentence: '--pick takes <question number>=<answer id>, like --pick 1=a', trimmed: true }],
   'redo-step': [
     { flag: 'if-head', sentence: '--if-head takes the commit SHA, full or at least 7 characters', trimmed: false },
   ],

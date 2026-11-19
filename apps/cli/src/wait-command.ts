@@ -28,7 +28,7 @@ export function waitCommand(
       const bare = ordered.includes('StartNewAttempt')
       const body = !editsBody
         ? ''
-        : asksForAnswer
+        : asksForAnswer && !ordered.includes('AnswerQuestions')
           ? ' --into-body "<answer>"'
           : bare
             ? ' [--into-body "<text>"]'
@@ -40,6 +40,8 @@ export function waitCommand(
       entries.push(base('fix-refusal'))
     } else if (tag === 'RedoStep') {
       entries.push(base('redo-step'))
+    } else if (tag === 'AnswerQuestions') {
+      entries.push(`${base('answer')} [--pick 1=a]`)
     } else if (tag === 'AnswerQuestion') {
       entries.push(`${base('answer')} "<choice>"`)
     }

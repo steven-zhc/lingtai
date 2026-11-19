@@ -12,6 +12,7 @@ import { TRIAGE_TEXT_MAX } from '../src/triage.ts'
 import {
   adviceResolution,
   allowedResolutions,
+  answerStepOf,
   Resolution as ResolutionSchema,
   rerunStepOf,
   continuationOf,
@@ -575,6 +576,91 @@ describe('allowedResolutions', () => {
     expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
   })
 
+  describe('AnswerQuestions and the personAsks limit wait (#1254)', () => {
+    const question = {
+      id: 'q1',
+      text: 'which?',
+      answers: [
+        { id: 'a', text: 'this' },
+        { id: 'b', text: 'that' },
+      ],
+      recommended: 'a',
+    }
+    const asking = { _tag: 'AgentQuestion', run, step: 'design', questions: [question] }
+
+    it('an AgentQuestion with questions offers AnswerQuestions first, and none where it asked in prose', () => {
+      expect(allowedResolutions(parseReason(asking))).toEqual([
+        'AnswerQuestions',
+        'EditBodyAndStartNewAttempt',
+        'StartNewAttempt',
+        'Close',
+      ])
+      expect(allowedResolutions(parseReason({ ...asking, questions: [], said: 'which?' }))).not.toContain(
+        'AnswerQuestions',
+      )
+    })
+
+    it('an InputNeeded escalation offers AnswerQuestions where it carries questions', () => {
+      const reason = parseReason({
+        _tag: 'ProposedEscalated',
+        run,
+        proposal: { _tag: 'InputNeeded', from: 'implement', questions: [question] },
+        because: { _tag: 'NotAsked' },
+      })
+      expect(allowedResolutions(reason)).toEqual([
+        'AnswerQuestions',
+        'EditBodyAndStartNewAttempt',
+        'StartNewAttempt',
+        'Close',
+      ])
+    })
+
+    it('a wait triage answered UndecidedQuestion offers AnswerQuestions, whatever it began as', () => {
+      const crashed = parseReason({ _tag: 'AgentCrashed', run, step: 'build', cause: 'crash', detail: 'x' })
+      const triaged: TriageResult = {
+        _tag: 'TriageAnswered',
+        cause: { _tag: 'UndecidedQuestion', questions: [question] },
+        summary: 's',
+        want: null,
+      }
+      expect(allowedResolutions(crashed)).not.toContain('AnswerQuestions')
+      expect(allowedResolutions(crashed, triaged)[0]).toBe('AnswerQuestions')
+      expect(recommendedResolution(crashed, { _tag: 'Done', result: triaged })).toBe('AnswerQuestions')
+    })
+
+    it('answerStepOf: the step that asked, and implement where the wait names a step that reads no body', () => {
+      const triaged: TriageResult = {
+        _tag: 'TriageAnswered',
+        cause: { _tag: 'UndecidedQuestion', questions: [question] },
+        summary: 's',
+        want: null,
+      }
+      expect(answerStepOf(parseReason(asking))).toBe('design')
+      expect(answerStepOf(parseReason({ ...asking, step: 'implement' }))).toBe('implement')
+      const at = (step: string) => parseReason({ _tag: 'AgentCrashed', run, step, cause: 'crash', detail: 'x' })
+      for (const step of ['design', 'implement', 'review'] as const) expect(answerStepOf(at(step), triaged)).toBe(step)
+      for (const step of ['build', 'proposed', 'merge'] as const)
+        expect(answerStepOf(at(step), triaged)).toBe('implement')
+      // Nothing asked a question of this wait.
+      expect(answerStepOf(at('implement'))).toBeNull()
+    })
+
+    it('an AskLimit offers exactly EditBodyAndStartNewAttempt, RedoStep and Close — never AnswerQuestions', () => {
+      const limit = parseReason({ _tag: 'AskLimit', run, bound: 'personAsks', used: 5, allowed: 5, asked: asking })
+      expect(allowedResolutions(limit)).toEqual(['EditBodyAndStartNewAttempt', 'Close', 'RedoStep'])
+      expect(rerunStepOf(limit)).toBe('design')
+      const triagedLimit = parseReason({
+        _tag: 'AskLimit',
+        run,
+        bound: 'personAsks',
+        used: 5,
+        allowed: 5,
+        asked: { _tag: 'AgentCrashed', run, step: 'merge', cause: 'crash', detail: 'x' },
+      })
+      expect(rerunStepOf(triagedLimit)).toBe('implement')
+    })
+  })
+
   it('every WaitReason tag is covered above', () => {
     const tags = WaitReasonSchema.options.map((option) => option.shape._tag.value)
     expect(new Set(tags)).toEqual(waitReasonTags)
@@ -941,6 +1027,14 @@ describe('triageStatus', () => {
 
     const reasons = [
       parseOther({ _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'rename to X or Y?' }),
+      parseOther({
+        _tag: 'AskLimit',
+        run,
+        bound: 'personAsks',
+        used: 5,
+        allowed: 5,
+        asked: { _tag: 'AgentQuestion', run, step: 'design', questions: [], said: 'rename to X or Y?' },
+      }),
       parseOther({ _tag: 'FixerDisagrees', run, said: null }),
       parseOther({ _tag: 'NothingProduced', run, said: null }),
       parseOther({
