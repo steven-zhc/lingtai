@@ -986,4 +986,20 @@ describe('reviewedHeadOf (#1274)', () => {
     ]
     expect(reviewedHeadOf(events)).toBe('b'.repeat(40))
   })
+
+  it.each([
+    ['interrupted', { _tag: 'Interrupted', cause: 'crash' }],
+    ['unreadable', { _tag: 'AnswerUnreadable', raw: '?' }],
+  ])('keeps the baseline when the review after the merge was %s', (_, result) => {
+    const e = stream('r')
+    const events = [
+      ...step(e, 'implement', [commit('a')]),
+      ...step(e, 'review', [review('a')]),
+      ...step(e, 'merge', [conflict('1'.repeat(40))]),
+      ...step(e, 'implement', [commit('c')]),
+      ...step(e, 'review', [{ ...act('verdict', result, 'cold'), onSha: 'c'.repeat(40) } as Action]),
+    ]
+    expect(reviewedHeadOf(events)).toBe('a'.repeat(40))
+    expect(conflictResolvedOf(events)).toMatchObject({ baseSha: '1'.repeat(40) })
+  })
 })

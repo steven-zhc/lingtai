@@ -280,7 +280,8 @@ export function landedOnBaseOf(
   const outcomes = stepOutcomesOf(runEvents)
   const at = outcomes.findLastIndex((o) => o.step === 'merge' && movedIn(o) !== null)
   if (at < 0) return null
-  if (outcomes.slice(at + 1).some((o) => o.step === 'review')) return null
+  // A review visit that read nothing (a clipped diff, an interrupted or unreadable reviewer) has not seen the merge.
+  if (outcomes.slice(at + 1).some((o) => o.step === 'review' && reviewerRanIn(o))) return null
   const moved = movedIn(outcomes[at]!)!
   // A disjoint move has no landed section: its review was carried, not shown one (#1210).
   if (moved.paths.length === 0) return null
@@ -340,13 +341,16 @@ export function alreadyDoneOf(runEvents: readonly Envelope[]): {
   return null
 }
 
+/** A reviewer that read the head and answered: not a clipped diff, a reviewer never started or reached, one cut off mid-run, or an answer nobody could read. */
 function reviewerRanIn(outcome: ReturnType<typeof stepOutcomesOf>[number]) {
   return outcome.actions.some(
     (a) =>
       a.yields === 'verdict' &&
       a.result._tag !== 'DiffTooLarge' &&
       a.result._tag !== 'NeverStarted' &&
-      a.result._tag !== 'NotReached',
+      a.result._tag !== 'NotReached' &&
+      a.result._tag !== 'Interrupted' &&
+      a.result._tag !== 'AnswerUnreadable',
   )
 }
 
