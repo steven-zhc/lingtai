@@ -109,4 +109,12 @@ describe('actor-aware refusal fixes (#1258)', () => {
     const run = { ...reduceAttempt([]), implementRound: 0, conflictRounds: 1 }
     expect(continuationSpentWithTriage(run, ticket, 'run-1').refusalFixes).toBe(0)
   })
+
+  it('a triage-only history names no person rounds, so the allowance keeps all of them', async () => {
+    const ticket = await resolvedBy('triage', { bound: 'refusalFixes', n: 1 })
+    const run = { ...reduceAttempt([]), implementRound: 3 }
+    const spent = continuationSpentWithTriage(run, ticket, 'run-1')
+    expect(spent.rounds).toBe(3)
+    expect(spent.personRounds).toBe(0)
+  })
 })

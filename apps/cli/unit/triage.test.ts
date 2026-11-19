@@ -1269,6 +1269,34 @@ describe('waitTriage', () => {
       expect(requests).toHaveLength(0)
     })
 
+    it('a final limits read that stalls past the wall ends the attempt failed and appends no WaitResolved (#1258)', async () => {
+      const store = createMemoryEventStore()
+      const ticketId = ticketStream('lingtai', 72)
+      const waitId = aWaitId()
+      await store.append(ticketId, 0, [
+        { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason: OWN_QUESTION } },
+      ])
+      const { runtime } = stubRuntime(() => ADVISED)
+      const entered = latch()
+      const deps = {
+        ...fakeDeps(store, runtime, { mirror: fakeMirror({ refSha: async () => 'a'.repeat(40) }) }),
+        limits: () => Effect.sync(entered.open).pipe(Effect.andThen(Effect.never)),
+      }
+
+      const held = await waitPastWall(
+        deps,
+        requestOn(ticketId, waitId, { triage: Triage.parse({ limits: { wall: '50ms' } }) }),
+        entered.reached,
+        50,
+      )
+
+      expect(held.result._tag).toBe('TriageFailed')
+      const types = typesOf(await store.read(ticketId))
+      expect(types).not.toContain('WaitResolved')
+      expect(types).not.toContain('TicketReleased')
+      expect(types.at(-1)).toBe('WaitTriaged')
+    })
+
     it('cleans up a checkout that lands after the wall, and does not wait for it', async () => {
       const store = createMemoryEventStore()
       const ticketId = ticketStream('lingtai', 71)

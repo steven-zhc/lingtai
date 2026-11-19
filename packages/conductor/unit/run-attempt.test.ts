@@ -1589,6 +1589,45 @@ describe('a granted fix round', () => {
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
 
+  it("a triage grant after two people's fix rounds still has the recipe's automatic fixes left (#1258)", async () => {
+    let implementations = 0
+    const { bodies } = watching()
+    const { emit } = events()
+    const { actionsAt } = watchingActions({
+      implement: [
+        {
+          ...committedSomething('fix'),
+          run: async () => {
+            implementations += 1
+            return { ...PASSED, head: COMMITTED }
+          },
+        },
+      ],
+      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
+    })
+
+    await runAttempt({
+      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { refusalFixes: 3, conflictResolutions: 3, newAttempts: 0, newAttemptsSpent: 0 },
+      from: {
+        step: 'implement',
+        waive: [],
+        // Two earlier rounds were a person's, the third is triage's own: one of three automatic fixes spent.
+        roundsSpent: 3,
+        personRounds: 2,
+        byTriage: true,
+        grant: { why: 'triage grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+      },
+    })
+
+    // The granted visit, then the fixes the allowance still offers: never held at once as `CeilingReached`.
+    expect(implementations).toBeGreaterThan(1)
+  })
+
   it('keeps the granted round cap after an intervening human approval', async () => {
     let implementations = 0
     const { bodies } = watching()

@@ -822,6 +822,8 @@ export const continuationSpentWithTriage = (run: AttemptState, ticket: TicketSta
     rounds: Math.max(run.implementRound, triage.refusalFixes + personFixRoundsOf(ticket, runId)),
     /** The refusal fixes the allowance has spent: a person's `FixRefusal` rounds are not among them. */
     refusalFixes: Math.max(run.implementRound - personFixRoundsOf(ticket, runId), triage.refusalFixes, 0),
+    /** A person's fix rounds inside `rounds`: the allowance is judged without them. */
+    personRounds: personFixRoundsOf(ticket, runId),
   }
 }
 
@@ -1441,6 +1443,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // Its own dispatch ids: two continuations of one run for a red base must not share them.
             resumedWaitId: `base-red:${releases}` as WaitId,
             roundsSpent: spent.rounds,
+            personRounds: spent.personRounds,
             baseMergesSpent: spent.baseMerges,
             conflictRoundsSpent: spent.conflictRounds,
             stepRedosSpent: spent.stepRedos,
@@ -1501,6 +1504,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           onSha: 'at' in head ? head.at : '',
           resumedWaitId: `account-limit:${releases}` as WaitId,
           roundsSpent: spent.rounds,
+          personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,
@@ -1565,6 +1569,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           onSha: 'at' in head ? head.at : approvedOnSha,
           resumedWaitId: approvedWaitId,
           roundsSpent: spent.rounds,
+          personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,
@@ -1685,6 +1690,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
         roundsSpent: Math.max(lapRound, spentNow.rounds),
+        personRounds: spentNow.personRounds,
         baseMergesSpent: spentNow.baseMerges,
         conflictRoundsSpent: spentNow.conflictRounds,
         stepRedosSpent: spentNow.stepRedos,
@@ -5689,6 +5695,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 waive: continuation.waive,
                 ...(continuation.readClipped === undefined ? {} : { readClipped: continuation.readClipped }),
                 roundsSpent: continuation.roundsSpent,
+                ...(continuation.personRounds === undefined ? {} : { personRounds: continuation.personRounds }),
                 baseMergesSpent: continuation.baseMergesSpent,
                 conflictRoundsSpent: continuation.conflictRoundsSpent,
                 stepRedosSpent: continuation.stepRedosSpent,

@@ -1099,7 +1099,8 @@ const waitTriageWithin = (
     if (deps.limits !== undefined) {
       if (heldRunId === null) boundHead = { head: null }
       else {
-        const read = yield* settle(readThroughSnapshot(deps.store, attemptReducer, heldRunId, 'all', deps))
+        // Under the wall like every other read: one that ignores its signal must not hold the attempt.
+        const read = yield* settle(guard(readThroughSnapshot(deps.store, attemptReducer, heldRunId, 'all', deps)))
         boundHead = read.ok ? { head: read.value.headSha } : null
       }
     }
@@ -1455,8 +1456,14 @@ const waitTriageWithin = (
             ...(deps.limits === undefined || boundHead === null
               ? {}
               : {
+                  // Under the wall, and the wall is checked again once it answers: an attempt that has expired
+                  // records a failure and never resolves the wait (it may have been asked once more already).
                   act: (state: TicketState) =>
-                    readActContext(deps, request, state, final, boundHead!.head, deps.limits!),
+                    guard(readActContext(deps, request, state, final, boundHead!.head, deps.limits!)).pipe(
+                      Effect.flatMap((context) =>
+                        signal.aborted ? Effect.fail(new WallReached()) : Effect.succeed(context),
+                      ),
+                    ),
                 }),
           })
           if (!finished.ok && 'refusal' in finished) {
