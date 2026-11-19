@@ -5,6 +5,7 @@ import { readBooks, type Books } from '@/lib/books'
 import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
 import { CopyCommand } from './copy-command'
+import { FailurePaths } from './failure-paths'
 import { Film } from './film'
 import { ReplayReceipt } from './replay-receipt'
 import { SandboxShield } from './sandbox-shield'
@@ -163,6 +164,8 @@ export function HomePage({ books }: { books: Books | null }) {
             <ReplayReceipt />
           </div>
 
+          <FailurePaths />
+
           <section className="sandbox-pitch" aria-labelledby="sandbox-title">
             <div className="sandbox-inner">
               <div className="sandbox-copy">
@@ -311,8 +314,8 @@ export function HomePage({ books }: { books: Books | null }) {
                 <details className="faq-item">
                   <summary>Will it loop forever?</summary>
                   <p>
-                    No. Each ticket gets a fixed number of fix attempts. When they run out, it stops and asks you what
-                    to do, with a suggested answer.
+                    No. Each ticket gets a fixed number of <a href="#when-it-fails">fix attempts</a>. When they run out,
+                    it stops and asks you what to do, with a suggested answer.
                   </p>
                 </details>
                 <details className="faq-item">
