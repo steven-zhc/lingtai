@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { askedText, type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { askedText, cutProse, type JudgeWhen, STEPS, TRIAGE_TEXT_MAX, triageQuestionsOf } from '@lingtai/domain'
 import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
@@ -225,7 +225,7 @@ One JSON object, and nothing else that could be read as one:
 \`\`\`
 
 Answer with exactly one of those. A \`fixes\` entry names \`path\`, \`line\` (or null) and \`what\` to change; a question has an \`id\`, \`text\`, \`answers\` and a \`recommended\` answer id; a question
-carries two to four answers. An answer that is not one cause is not read, and you will not be asked again.`
+carries two to four answers. Every text field is at most ${TRIAGE_TEXT_MAX} characters and prose over it is cut; an \`id\`, \`path\` or \`recommended\` over it is not read. An answer that is not one cause is not read, and you will not be asked again.`
 }
 
 function judgeText(on: Judging, evidence: string): string {
@@ -313,7 +313,7 @@ export function chosenIn(text: string | null): { readonly next: Destination; rea
   for (const candidate of candidates) {
     let value: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      value = cutProse(JSON.parse(candidate.trim()))
     } catch {
       continue
     }
@@ -344,7 +344,7 @@ const CAUSE_TAGS = [
 /**
  * **The cause a judge at `findings` answered** (0108 §6): `{ cause }` where it is one of `JUDGE_CAUSES` and
  * within the bounds triage's is, `{ refused }` naming a cause a judge may not answer or a question with fewer than
- * two answers, and null where there is no cause to read. Nothing is repaired, and nothing is asked again.
+ * two answers, and null where there is no cause to read. Prose over the bound is cut; nothing else is repaired, and nothing is asked again.
  */
 export function causeIn(
   text: string | null,
@@ -354,35 +354,38 @@ export function causeIn(
   // Every balanced object in the text is a candidate too, so two unfenced answers are two candidates and
   // not one suffix that fails to parse and hides the first.
   candidates.push(...balancedObjects(text))
-  const found: { cause: Cause; summary: string }[] = []
+  const found: { cause: Cause; summary: string; key: string }[] = []
   let refused: string | null = null
   for (const candidate of candidates) {
-    let value: unknown
+    let raw: unknown
     try {
-      value = JSON.parse(candidate.trim())
+      raw = JSON.parse(candidate.trim())
     } catch {
       continue
     }
+    // Ambiguity is judged on the cause as written: cutting could make two different causes identical.
+    const key = JSON.stringify((raw as { cause?: unknown } | null)?.cause)
+    const value = cutProse(raw)
     const cause = (value as { cause?: { _tag?: unknown } } | null)?.cause
     if (cause === undefined || cause === null || typeof cause !== 'object') continue
     const tag = cause._tag
     if (typeof tag === 'string' && CAUSE_TAGS.includes(tag) && !(JUDGE_CAUSES as readonly string[]).includes(tag)) {
-      found.push({ cause: cause as Cause, summary: '' })
+      found.push({ cause: cause as Cause, summary: '', key })
       refused ??= tag
       continue
     }
     const parsed = JudgeAnswer.safeParse(value)
     if (!parsed.success) return null
     if (triageQuestionsOf(parsed.data.cause as Cause).some(({ question }) => question.answers.length < 2)) {
-      found.push({ cause: parsed.data.cause as Cause, summary: '' })
+      found.push({ cause: parsed.data.cause as Cause, summary: '', key })
       refused ??= 'a question with fewer than two answers'
       continue
     }
-    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim() })
+    found.push({ cause: parsed.data.cause as Cause, summary: parsed.data.summary.trim(), key })
   }
   // The same answer seen through several candidates (a fence, then the text) is one answer; two different
   // causes are an ambiguous one, and an ambiguous answer is not read.
-  if (new Set(found.map((f) => JSON.stringify(f.cause))).size !== 1) return null
+  if (new Set(found.map((f) => f.key)).size !== 1) return null
   if (refused !== null) return { refused }
   return found[0]!
 }

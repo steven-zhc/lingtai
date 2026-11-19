@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import type { StepOutcome, WaitId } from '../src/action.ts'
 import { Proposal as ProposalSchema, type Proposal } from '../src/proposal.ts'
-import { TRIAGE_SENTENCE_MAX } from '../src/triage.ts'
+import { TRIAGE_TEXT_MAX } from '../src/triage.ts'
 import {
   adviceResolution,
   allowedResolutions,
@@ -1052,13 +1052,13 @@ describe('TriageResult refuses what 0118 §1 rules out', () => {
     ).toBe(false)
   })
 
-  it('refuses a want past TRIAGE_SENTENCE_MAX', () => {
+  it('refuses a want past TRIAGE_TEXT_MAX', () => {
     expect(
       TriageResultSchema.safeParse({
         _tag: 'TriageAdvised',
         ...base,
         resolution: 'Requeue',
-        want: 'x'.repeat(TRIAGE_SENTENCE_MAX + 1),
+        want: 'x'.repeat(TRIAGE_TEXT_MAX + 1),
       }).success,
     ).toBe(false)
   })

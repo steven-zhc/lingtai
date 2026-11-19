@@ -12,7 +12,6 @@ import {
   MERGE_HUNKS_ONE_BY_ONE,
   TRIAGE_FIXES_MAX,
   TRIAGE_QUESTIONS_MAX,
-  TRIAGE_SENTENCE_MAX,
   TRIAGE_TEXT_MAX,
   type JudgeReply,
   type RouteDecision,
@@ -286,7 +285,7 @@ describe('triageBrief', () => {
     expect(brief).toContain('cause`, `summary`, `want`')
     expect(brief).toMatch(/and no\s+others/)
     expect(brief).toContain('"confidence"')
-    expect(brief).toContain(`at most ${TRIAGE_SENTENCE_MAX} characters`)
+    expect(brief).toContain(`at most ${TRIAGE_TEXT_MAX} characters`)
     expect(brief).toMatch(/Past that bound, send\s+`"hunks": \[\]` with `total`/)
     expect(brief).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
@@ -469,18 +468,18 @@ describe('parseTriage', () => {
     expect(reply.result.want).toBeNull()
   })
 
-  it('refuses a want past TRIAGE_SENTENCE_MAX, and names the bound', () => {
+  it('cuts a summary past TRIAGE_TEXT_MAX and answers', () => {
     const reply = parseTriage(
       JSON.stringify({
         cause: { _tag: 'WrongApproach', why: 'it does not converge' },
-        summary: 'x',
-        want: 'a'.repeat(TRIAGE_SENTENCE_MAX + 1),
+        summary: 'a'.repeat(TRIAGE_TEXT_MAX + 100),
+        want: null,
       }),
     )
-    expect(reply.kind).toBe('refused')
-    if (reply.kind !== 'refused') throw new Error('unreachable')
-    expect(reply.why).toContain('want')
-    expect(reply.why).toContain(`${TRIAGE_SENTENCE_MAX}`)
+    expect(reply.kind).toBe('answered')
+    if (reply.kind !== 'answered') throw new Error('unreachable')
+    expect(reply.result.summary).toHaveLength(TRIAGE_TEXT_MAX)
+    expect(reply.result.summary.endsWith('…')).toBe(true)
   })
 
   it('refuses more than 5 questions, and names the bound', () => {
@@ -528,18 +527,27 @@ describe('parseTriage', () => {
     expect(reply.why).toContain(`${MERGE_HUNKS_ONE_BY_ONE}`)
   })
 
-  it('refuses text over TRIAGE_TEXT_MAX, and names the bound', () => {
-    const reply = parseTriage(
+  it('cuts a fix `what` over TRIAGE_TEXT_MAX, and still refuses a `path` over it', () => {
+    const long = 'x'.repeat(TRIAGE_TEXT_MAX + 1)
+    const cutOne = parseTriage(
       JSON.stringify({
-        cause: { _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 1, what: 'x'.repeat(TRIAGE_TEXT_MAX + 1) }] },
+        cause: { _tag: 'FixableLines', fixes: [{ path: 'a.ts', line: 1, what: long }] },
         summary: 'x',
         want: null,
       }),
     )
-    expect(reply.kind).toBe('refused')
-    if (reply.kind !== 'refused') throw new Error('unreachable')
-    expect(reply.why).toContain('what')
-    expect(reply.why).toContain(`${TRIAGE_TEXT_MAX}`)
+    expect(cutOne.kind).toBe('answered')
+    const refused = parseTriage(
+      JSON.stringify({
+        cause: { _tag: 'FixableLines', fixes: [{ path: long, line: 1, what: 'x' }] },
+        summary: 'x',
+        want: null,
+      }),
+    )
+    expect(refused.kind).toBe('refused')
+    if (refused.kind !== 'refused') throw new Error('unreachable')
+    expect(refused.why).toContain('path')
+    expect(refused.why).toContain(`${TRIAGE_TEXT_MAX}`)
   })
 
   it.each([
