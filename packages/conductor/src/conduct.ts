@@ -5138,7 +5138,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : decidedRaw
           const moved = head !== startedAt
           // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
-          stoppedBy = moved ? null : 'no-commits'
+          stoppedBy = decided._tag === 'AgentFailed' ? 'agent-failed' : moved ? null : 'no-commits'
           if (moved) yield* recordDiff(branch, head)
           // Completion is proposed only for what the agent declared `Implemented`; a run that is
           // `AgentFailed` or `Unclear` has not offered finished work, and no check follows it.
@@ -5152,10 +5152,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             ])
           }
           if (decided._tag !== 'Implemented') {
+            // A normal `AgentFailed` ending is redone and the redo resets, so what it left uncommitted
+            // is kept first, as an abnormal stop's is (0108 §20, #1276).
+            let kept: { head?: string } = moved ? { head } : {}
+            if (decided._tag === 'AgentFailed') {
+              yield* keepUncommittedWork()
+              const left = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
+              kept = left === startedAt ? {} : { head: left }
+            }
             return {
               stopped: (outcome.text ?? '').trim().slice(0, 8_000),
               declared: decided,
-              ...(moved ? { head } : {}),
+              ...kept,
             }
           }
           return { committed: head }
@@ -5442,7 +5450,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // A decline judged the findings or the refusal rather than being cut
             // off mid-run, so `interrupted` does not stand for it either; a
             // crash or a wall does, in the runtime's own word for it (`#468`).
-            stoppedBy = fixed.failure ? fixed.failure.kind : null
+            stoppedBy = fixed.failure ? fixed.failure.kind : decidedFix?._tag === 'AgentFailed' ? 'agent-failed' : null
             yield* keepUncommittedWork()
             const cause = fixed.failure?.kind
             // The head the round left, WIP included, kept on the stored outcome (#1250).
