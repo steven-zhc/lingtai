@@ -698,7 +698,7 @@ describe('when the agent meets the wall', () => {
       },
     )
 
-    it('makes no WIP on a normal end with no commit, however dirty the tree', async () => {
+    it('keeps a dirty tree when a normal end declared Implemented but committed nothing', async () => {
       const normal = (() =>
         Effect.succeed({
           exitCode: 0,
@@ -709,8 +709,28 @@ describe('when the agent meets the wall', () => {
           sessionId: 'sess',
         })) as unknown as Runtime['run']
       const { did, run } = await hitTheWallDirty(false, { ends: normal })
-      expect(did).not.toContain('git commit --no-verify')
-      expect(run.some((e) => e.type === 'RunKeptUncommitted')).toBe(false)
+      // `Implemented` that moved nothing is corrected to `AgentFailed`, and is kept (#1276).
+      expect(did).toContain('git commit --no-verify')
+      expect(run.find((e) => e.type === 'RunKeptUncommitted')!.data).toMatchObject({ stoppedBy: 'agent-failed' })
+    })
+
+    it('keeps the dirty tree before the redo when the agent ends normally with no outcome block (#1276)', async () => {
+      const noBlock = (() =>
+        Effect.succeed({
+          exitCode: 0,
+          turns: 3,
+          durationMs: 1000,
+          costUsd: 1,
+          text: 'I am done, no block here',
+          sessionId: 'sess',
+        })) as unknown as Runtime['run']
+      const { did, run } = await hitTheWallDirty(true, { ends: noBlock })
+      const kept = run.filter((e) => e.type === 'RunKeptUncommitted')
+      expect(kept.length).toBeGreaterThanOrEqual(1)
+      expect(kept[0]!.data).toMatchObject({ ref: 'agent/7', sha: WIP_SHA, stoppedBy: 'agent-failed' })
+      expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append RunKeptUncommitted'))
+      // The commit holds the edits before the step is redone; its account is appended later, with the publish.
+      expect(did.indexOf('git commit --no-verify')).toBeLessThan(did.indexOf('append StepRedone'))
     })
 
     it('makes no WIP for a run that never started', async () => {
