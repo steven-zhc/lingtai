@@ -701,7 +701,7 @@ filter with two, and the only route left was this command or typing
 The gates, the priority order **and the base** are all the recipe's,
 in `~/.lingtai/<project>/recipe.yml` — which is why this command reads nothing
 from the repository to decide them. It does ask, once a recipe already exists:
-the writer and its model (`--agent`, `--model`, #398), the cold reviewer and its
+the writer and its model (`--agent`, `--model`, #398), the AI review and its
 model (`--reviewer`, `--reviewer-model`, #398), where tickets come from and
 which labels are work (`--tickets`, `--kinds`, #396), the landing branch
 (`--land`), and the limits (`--refusal-fixes`, `--conflict-resolutions`, `--wall`, `--budget`, #399; `ticket.newAttempts` is written in the recipe). Each
@@ -1291,6 +1291,16 @@ made is worse than none.
 `terminal-notifier` on your PATH lets a notification open that task's page when
 you click it. Without it `osascript` still delivers one and writes the link into
 the message, because it cannot open a URL itself.
+
+### The running attempt panel
+
+While an attempt runs, its card on the task page (`RunningPanel`,
+`apps/board/src/app/standing.tsx`) has a head with the step and its purpose and
+the last event, a facts row (this step, this attempt with its turns, cost so far,
+fix rounds as *n of N rounds · restarts left*, and *limits* only when none is
+set), any findings or evidence, and the live run log, open while the run is
+live. A finished step shows how long it took on the rail. Design:
+`doc/design/1290.md`.
 
 ### The board's lifecycle
 
@@ -1978,11 +1988,40 @@ Every refusal names itself. The common ones:
 ## The report page
 
 `/report` on the board — the *report* link in the footer — shows how
-the pipeline is doing over a window of local days: the figure tiles, refusal fixes
-by bucket, the review survival curve, landings per day, spend per day, why work
-stopped to wait, a table per kind, and the eight tickets that went round most,
-each linking to its task page ([0123](decisions/0123-the-report-counts-what-the-log-holds.md) §7).
+the pipeline is doing over a window of local days: the figure tiles, *handled for
+you*, then the panels *Fix rounds per landed ticket*, *Reviews needed to pass*,
+*Spend each day*, *Landed each day*, *Spend by purpose* beside *By ticket type*,
+*Tickets that took the most work* (the eight that went round most, each linking
+to its task page) and *Why work stopped for a person*
+([0123](decisions/0123-the-report-counts-what-the-log-holds.md) §7;
+`apps/board/src/app/report/grid.tsx`).
 `lingtai report` prints the same figures, because both call one function.
+
+### Handled for you
+
+*Handled for you* is the report's answer to *how much did the system deal with
+without me?* It is drawn on `/report` (`HandledPanel`, `apps/board/src/app/report/panels.tsx`)
+and on the home page's card (`apps/board/src/app/page.tsx`). A **problem** is
+something a step raised that a person could have been asked about: AI review
+found problems, newer changes landed first, two changes touched the same code,
+tests or build broke, the agent stopped halfway, AI review rejected the approach,
+the agent disputed a review finding, a task too big for one change, the agent
+asked you a question, setup broke in your environment. The names and the *auto-…*
+verbs are `HANDLED_ROWS` in `apps/board/src/lib/handled.ts`, frozen there from
+`doc/design/handled-for-you.html` — *auto-fixed*, *auto-merged, re-tested*,
+*auto-combined*, *auto-restarted*, *auto-started over*, *AI judge decided*,
+*auto-split*.
+
+Each problem is counted once, under whoever finally answered it
+(`packages/domain/src/problems.ts`). **Auto-fixed** (`system`) is a route the
+router selected or a wait resolved by triage. **Needed you** (`you`) is a person's
+answer, anything still open, every question and every broken setup, and it also
+records **what you did** — the move that answered it.
+
+The figures come from the `ticket_report` projection and are read when the page
+renders. After a change to how problems are counted, replay it:
+`lingtai projection rebuild ticket_report` (the page prints this itself when its
+read fails).
 
 - **The filters are the address.** `?window=today|7d`, `?from=&to=` (a range
   wins over `window=`), `?kind=` repeated (an empty `kind=` is unclassified),
@@ -2530,7 +2569,7 @@ recipes and the environment files are all untouched.
 - **What was decided about a minor finding.** `finding_backlog` reduces to
   nothing along with everything else, so an accept or a decline — and the
   reason given for either — is gone unless the *Before* step above noted it.
-  Without that note, the next cold review raises a declined finding again,
+  Without that note, the next AI review raises a declined finding again,
   and a person re-decides it with nothing to go on short of restoring the
   archive dump and reading `events` back out of it, the way the Check step
   above does.
