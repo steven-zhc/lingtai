@@ -349,7 +349,7 @@ say different things about the same recipe
 | `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
 | `runtime.limits.attempt.refusalFixes` | `6` | how many times an attempt sends the agent back **into the same worktree**, carrying what a build or review refused. `0` buys no fix, and a refusal then goes to a person |
 | `runtime.limits.attempt.conflictResolutions` | `6` | how many times an attempt sends the agent back to resolve a merge conflict. Two things that mean differently have two names even where their values agree. `0` buys no resolution |
-| `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build and a conflict with only mechanical hunks never buy one. Not a daemon restart. `0` means a spent attempt asks a person |
+| `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build buys one only when triage names `WrongApproach` after its `refusalFixes` are spent (`StartNewAttempt` is permitted for `BuildRed`); a conflict with only mechanical hunks never does. Not a daemon restart. `0` means a spent attempt asks a person |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
@@ -1496,14 +1496,16 @@ since that ticket is `model:` and `limits:` — which model buys the judgement a
 what that one call may spend, the same two fields with the same meanings
 `agent:` carries (0070 §3) — because the cheapest call in an attempt by two orders
 of magnitude was the one with no way to ask for a cheap model. A built-in takes
-neither: it is a function the router applies and spends nothing. The workflow counts what is spent, works out the set of steps on offer
-(`stepsOnOffer` in `packages/conductor/src/judge.ts`) and hands the judge that
-set; **the set depends on how far the attempt got, not only on what is left to
-spend**, so `prepared`'s refusal offers no `implement` with every round unspent,
-because no agent has run and there is no diff to fix. A judge answers *which of
-these*, never *what is legal*, and one that returns a step it was not offered
-is refused by name and the attempt is held for a person — 0061 §8's rule once
-more, and the reason a wrong answer costs one attempt rather than running for ever.
+neither: it is a function the router applies and spends nothing. A judge at
+`findings` is handed no set of steps: it **names a cause** from `JUDGE_CAUSES`, and
+the workflow, not the judge, chooses the action (`actionFor` in
+`packages/domain/src/failure/respond.ts`) and counts what is spent against it.
+A judge answers *which cause*, never *what is legal*, and a cause it may not give
+is refused by name and the attempt is held for a person. A valid cause whose
+bound is spent — `FixableLines` with `refusalFixes` used up, say — is not a wrong
+answer: the system opens a `limit` wait naming the bound, and the judge's
+configuration is not at fault. That is the reason a wrong answer costs one
+attempt rather than running for ever.
 
 **`stepsOnOffer` is the whole of that bound, so every rule the workflow has to
 say *no agent for this one* is in it** — a rule left where it used to live is a
@@ -1653,7 +1655,8 @@ each says the part an operator can act on:
   clause its `CALLED_DIRECTLY` row used to, because a judge written at the wrong
   step is exactly who needs it: at `proposed` the one entry whose `when:` matches
   the reason the last step gave, with the workflow counting the fixes and
-  new attempts and the judge only choosing from what it is offered (0061 §3).
+  new attempts and the judge only naming a cause from those it may give, the
+  system choosing the action (0061 §3, 0108 §6).
 
 Where each step's list comes from. **There is one call site, and it names its
 step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runAttempt`, which
