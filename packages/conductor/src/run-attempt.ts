@@ -1095,6 +1095,10 @@ export interface AttemptOptions {
       readonly bodyVersion: number
       readonly items: readonly { readonly item: string; readonly evidence: string }[]
     }
+    /** The head a person approved on this run, no agent commit since (#1279): a continuation after the system's own merges still carries it. */
+    readonly approvedHead?: string
+    /** This continuation answers that approval itself, rather than following it (#1279). */
+    readonly approvedNow?: true
     /** A prior human grant caps automatic fix routing across later continuations. */
     readonly roundLimit?: number
     /** The grant is triage's (#1258): only a person's grant caps a lap to one round, so triage's follows the recipe. */
@@ -1605,9 +1609,19 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       options.from.grant === undefined &&
       // An approval to read the diff clipped is not a head that was read whole (#892).
       options.from.readClipped === undefined &&
-      (options.from.step === 'proposed' || options.from.step === 'merge')
+      options.from.approvedHead !== undefined &&
+      (options.from.approvedNow === true
+        ? options.from.step === 'proposed' || options.from.step === 'merge'
+        : options.context.onSha !== options.from.approvedHead &&
+          (options.from.step === 'proposed' || options.from.step === 'merge' || options.from.step === 'build'))
         ? options.context.onSha
         : null
+    // After the system's own merges the baseline is the approved head, not what an earlier review read (#1279).
+    if (approvedAt !== null && options.from?.approvedHead !== undefined && approvedAt !== options.from.approvedHead) {
+      mergedSinceReview = { reviewed: options.from.approvedHead, base: options.context.onSha, overlap: [] }
+      baselineApproved = true
+      if (options.from.step === 'build') reviewCarriedTo = approvedAt
+    }
     /** Where in `steps` the current lap started, so that `recheck` can be read off it. */
     let lapStart = 0
     /**
@@ -1682,8 +1696,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
       }
       mergedOnto = baseSha
-      const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? approved
-      if (reviewedSha === null && mergedSinceReview === null && approved !== null) baselineApproved = true
+      // A person's approval is the baseline whatever context was restored from an earlier review (#1279).
+      const reviewedBefore =
+        approved !== null
+          ? mergedSinceReview !== null && baselineApproved
+            ? mergedSinceReview.reviewed
+            : approved
+          : (reviewedSha ?? mergedSinceReview?.reviewed ?? null)
+      if (approved !== null) baselineApproved = true
       mergedSinceReview =
         reviewedBefore === null
           ? null

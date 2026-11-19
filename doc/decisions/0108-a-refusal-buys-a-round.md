@@ -369,8 +369,10 @@ fixes the actions, their bounds and the endings that router works inside.
     only the system's own merges, never an agent's commit. After a conflict
     the review is scoped to the resolution, measured from the approved head
     with no overlap path kept open, so a finding outside it is a `minor`.
-    Known gap: a restart between the carry and the landing loses it, and the
-    continuation falls back to the #1274 rule.
+    Only an `Approve` carries it: a retry or an answer at the same step is not
+    an approval. A continuation after the carry rebuilds it from the log (the
+    last approval's head, with no `implement` since) and keeps the approved head
+    as the baseline.
 
 14. **A diff the reviewer cannot read whole buys no reviewer.** Before
     `review`, the diff the reviewer would be handed is measured the way it is
