@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import { kindCopy } from '@/lib/handled-copy'
+import { handledRow } from '@/lib/handled'
 import type { HandledToday } from '@/lib/handled-today'
 
 /** The empty Waiting column's card (#1286, `doc/design/handled-for-you.html`, second tab). */
@@ -54,21 +54,25 @@ export function HandledCard({
             <i
               key={`${g}:${i}`}
               className={m.you ? 'you' : undefined}
-              style={m.you ? undefined : { background: kindCopy(m.kind).colour }}
+              style={m.you ? undefined : { background: handledRow(m.kind).colour }}
             />
           )),
         )}
       </div>
       <ul className="handled-leg">
         {today.kinds.map((k) => {
-          const c = kindCopy(k.kind)
+          const c = handledRow(k.kind)
           return (
-            <li key={k.kind} title={c.hint}>
+            <li key={k.kind} title={c.hover}>
               <i style={{ background: c.colour }} />
               <span>
-                <span className="w">{c.problem}</span>
-                <span className="ar">→</span>
-                <span className="d">{c.action}</span>
+                <span className="w">{c.wrong}</span>
+                {c.did === undefined ? null : (
+                  <>
+                    <span className="ar">→</span>
+                    <span className="d">{c.did}</span>
+                  </>
+                )}
               </span>
               <b>{k.count}</b>
             </li>

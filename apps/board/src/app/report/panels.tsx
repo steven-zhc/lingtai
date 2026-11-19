@@ -25,6 +25,9 @@ import {
   dayText,
   HANDLED_ORDER,
   handledRow,
+  moveOf,
+  moveRow,
+  neededRows,
   pageHandled,
   shareWithoutYou,
   TICK_LIMIT,
@@ -579,39 +582,49 @@ export function HandledPanel({
   const noun = query.which === 'today' ? "today's" : query.which === '7d' ? "the week's" : "the range's"
 
   const rows = (g: Group) =>
-    groups
-      .filter((x) => x.g === g && x.count > 0)
-      .map(({ kind, count }) => {
-        const r = handledRow(kind)
-        const link = (
-          <Link href={href(kind, g)} scroll={false}>
-            {count}
-          </Link>
-        )
-        return g === 'system' ? (
-          <tr key={kind} title={r.hover === '' ? undefined : r.hover}>
-            <td>
-              <span className="dot" style={{ background: r.colour }} />
-              <span className={kind === 'other' ? 'w other' : 'w'}>{r.wrong}</span>
-              {r.did === undefined ? null : (
-                <>
-                  <span className="ar">→</span>
-                  <span className="d">{r.did}</span>
-                </>
-              )}
-            </td>
-            <td className="n">{link}</td>
-          </tr>
-        ) : (
-          <tr key={kind} className="you" title={r.hover === '' ? undefined : r.hover}>
-            <td>
-              <span className="dot" />
-              <span className={kind === 'other' ? 'w other' : 'y2'}>{r.wrong}</span>
-            </td>
-            <td className="n">{link}</td>
-          </tr>
-        )
-      })
+    g === 'you'
+      ? neededRows(handled.needed).map(({ kind, verb, hover, count }) => {
+          const r = handledRow(kind)
+          return (
+            <tr key={`${kind}:${verb}`} className="you" title={hover === '' ? undefined : hover}>
+              <td>
+                <span className="dot" />
+                <span className={kind === 'other' ? 'w other' : 'y2'}>{r.wrong}</span>
+                <span className="ar">→</span>
+                <span className="d">{verb}</span>
+              </td>
+              <td className="n">
+                <Link href={href(kind as HandledQuery['kind'], g)} scroll={false}>
+                  {count}
+                </Link>
+              </td>
+            </tr>
+          )
+        })
+      : groups
+          .filter((x) => x.g === g && x.count > 0)
+          .map(({ kind, count }) => {
+            const r = handledRow(kind)
+            return (
+              <tr key={kind} title={r.hover === '' ? undefined : r.hover}>
+                <td>
+                  <span className="dot" style={{ background: r.colour }} />
+                  <span className={kind === 'other' ? 'w other' : 'w'}>{r.wrong}</span>
+                  {r.did === undefined ? null : (
+                    <>
+                      <span className="ar">→</span>
+                      <span className="d">{r.did}</span>
+                    </>
+                  )}
+                </td>
+                <td className="n">
+                  <Link href={href(kind, g)} scroll={false}>
+                    {count}
+                  </Link>
+                </td>
+              </tr>
+            )
+          })
 
   const days = handled.days
   const biggest = Math.max(1, ...days.map((d) => d.system + d.you))
@@ -771,7 +784,9 @@ export function HandledPanel({
                     />
                     <span className="m">
                       <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
-                      <span className="d">{p.answeredBy === 'you' ? 'needed you' : (verb ?? r.wrong)}</span>
+                      <span className="d">
+                        {p.answeredBy === 'you' ? moveRow(moveOf(p), p.kind).verb : (verb ?? r.wrong)}
+                      </span>
                     </span>
                     <span className="t">
                       {p.outcome === 'landed' ? (
@@ -843,6 +858,7 @@ function HandledProblems({
                 <td>
                   {r.wrong}
                   {p.answeredBy === 'system' && r.did !== undefined ? ` → ${r.did}` : ''}
+                  {p.answeredBy === 'you' ? ` → ${moveRow(moveOf(p), p.kind).verb}` : ''}
                 </td>
                 <td>{p.answeredBy === 'system' ? 'Lingtai' : 'you'}</td>
                 <td>{p.outcome}</td>

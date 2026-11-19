@@ -181,7 +181,10 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
 describe('problemsOf yourMove (#1288)', () => {
   it('a person approving a ReviewFindings wait is Approve; open is null; a system problem has none', () => {
     const r = route('ReviewFindings', null, 1)
-    expect(one([r], [escalated('ReviewFindings', 2, 'alice')])).toMatchObject({ answeredBy: 'you', yourMove: 'Approve' })
+    expect(one([r], [escalated('ReviewFindings', 2, 'alice')])).toMatchObject({
+      answeredBy: 'you',
+      yourMove: 'Approve',
+    })
     expect(one([r], [escalated('ReviewFindings', 2)])).toMatchObject({ answeredBy: 'you', yourMove: null })
     const sys = one([r], [escalated('ReviewFindings', 2, 'triage')])
     expect(sys.answeredBy).toBe('system')
