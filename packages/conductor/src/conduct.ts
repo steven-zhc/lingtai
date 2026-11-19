@@ -1416,7 +1416,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               : { cannot: `the saved head ${cause.headSha.slice(0, 7)} of ${branch} is no longer on origin` }
           const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
           const releasedState = reduceAttempt(releasedEvents)
-          const spent = continuationSpent(releasedState)
+          const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId)
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
@@ -1436,7 +1436,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             onSha: 'at' in head ? head.at : '',
             // Its own dispatch ids: two continuations of one run for a red base must not share them.
             resumedWaitId: `base-red:${releases}` as WaitId,
-            roundsSpent: continuationRound(releasedState, false),
+            roundsSpent: spent.rounds,
             baseMergesSpent: spent.baseMerges,
             conflictRoundsSpent: spent.conflictRounds,
             stepRedosSpent: spent.stepRedos,
@@ -1470,7 +1470,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const releasedEvents = yield* Effect.promise(() => store.read(releasedFrom.runId))
         const releasedState = reduceAttempt(releasedEvents)
         const head = releasedHeadOf(releasedEvents)
-        const spent = continuationSpent(releasedState)
+        const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
         const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
         // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
@@ -1496,7 +1496,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : '',
           resumedWaitId: `account-limit:${releases}` as WaitId,
-          roundsSpent: continuationRound(releasedState, false),
+          roundsSpent: spent.rounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,

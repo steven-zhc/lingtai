@@ -532,6 +532,23 @@ export function finishTriage(
 ): Effect.Effect<FinishTriageResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
+    // A retry after a lost acknowledgement: this attempt's answer already landed (and with it the resolution), so it is
+    // reported as what it was, never refused as a wait that is no longer current — the caller still owes the continuation.
+    const landedWait = state.waits.findLast((w) => w.waitId === options.waitId)
+    if (
+      landedWait !== undefined &&
+      landedWait.triage.started?.attempt === options.attempt &&
+      landedWait.triage.result?._tag === 'TriageAnswered'
+    ) {
+      const by = landedWait.resolution
+      return {
+        ok: true,
+        resolved:
+          by !== null && by.by === 'triage' && 'run' in landedWait.reason
+            ? { resolution: by.resolution, runId: landedWait.reason.run.runId }
+            : null,
+      } as const
+    }
     const owed = state.version - options.ifVersion
     const since =
       owed > 0

@@ -871,19 +871,28 @@ const readActContext = (
 ): Effect.Effect<ActContext, unknown> =>
   Effect.gen(function* () {
     const project = parseTicketStream(request.ticketId)?.project ?? ''
-    const limits = (yield* limitsOf(request.ticketId)) ?? { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0 }
+    // No limits readable: nothing is offered, so the answer stays advice (the port's contract), stepRedos included.
+    const read = yield* limitsOf(request.ticketId)
+    const limits = read ?? { refusalFixes: 0, conflictResolutions: 0, newAttempts: 0 }
     const runId = state.lifecycle.status === 'blocked' ? state.lifecycle.runId : null
     const run = runId === null ? null : yield* readThroughSnapshot(deps.store, attemptReducer, runId, 'all', deps)
     const spent =
       runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
     const counters = {
-      refusalFixes: { used: Math.max(run?.implementRound ?? 0, spent.refusalFixes), allowed: limits.refusalFixes },
+      // A conflict resolution's continuation opens an implement round too, and is its own budget: not a refusal fix.
+      refusalFixes: {
+        used: Math.max(Math.max((run?.implementRound ?? 0) - (run?.conflictRounds ?? 0), 0), spent.refusalFixes),
+        allowed: limits.refusalFixes,
+      },
       newAttempts: { used: state.newAttempts.length, allowed: limits.newAttempts },
       conflictResolutions: {
         used: Math.max(run?.conflictRounds ?? 0, spent.conflictResolutions),
         allowed: limits.conflictResolutions,
       },
-      stepRedos: { used: Math.max(run?.stepRedos ?? 0, spent.stepRedos), allowed: BOUNDS.stepRedos },
+      stepRedos: {
+        used: Math.max(run?.stepRedos ?? 0, spent.stepRedos),
+        allowed: read === null ? 0 : BOUNDS.stepRedos,
+      },
       ticketSplits: { used: 0, allowed: BOUNDS.ticketSplits },
       personAsks: { used: personAsksFromState(state), allowed: BOUNDS.personAsks },
     } as const

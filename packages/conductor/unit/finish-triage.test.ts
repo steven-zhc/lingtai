@@ -162,6 +162,15 @@ describe('finishTriage (#1258)', () => {
     })
   })
 
+  it('a retry after a lost acknowledgement reports the committed resolution, not a failure', async () => {
+    const s = await started()
+    const first = await finish(s, { act })
+    expect(first).toMatchObject({ ok: true, resolved: { runId: 'run-1' } })
+    const again = await finish(s, { act })
+    expect(again).toMatchObject({ ok: true, resolved: { resolution: { _tag: 'RedoStep' }, runId: 'run-1' } })
+    expect((await types(s)).filter((t) => t === 'WaitTriaged')).toHaveLength(1)
+  })
+
   it('a read that fails is never taken as unchanged: the answer acts on nothing', async () => {
     const s = await started()
     expect(await finish(s, { act: () => Effect.fail(new Error('store down')) })).toEqual({
