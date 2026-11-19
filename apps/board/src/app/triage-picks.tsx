@@ -16,7 +16,12 @@ type Picks = {
 /** The radio value of the own-answer option. Page-only: it is never sent, a pick is `{ own }` instead. */
 export const OWN_VALUE = '__own__'
 /** A text the person has made their own, with the wait it was written under. */
-type Draft = { waitId: WaitId | null; text: string }
+type Draft = {
+  waitId: WaitId | null
+  text: string
+  /** For a body edited after its wait ended: the retained own words the text already holds, so they are not joined again. */
+  absorbed?: string | null
+}
 type AnswerDraft = Draft & { open: boolean }
 /** The two resolutions whose text a discussion answer can be added to. */
 export type DraftTarget = 'EditBodyAndStartNewAttempt' | 'AnswerQuestion'
@@ -155,7 +160,11 @@ export function TriagePicks({
   const body = drafts.body
   const answer = drafts.answer
   const target = waitId === null ? null : draftTarget(recommended)
-  const setBody = (next: string) => setDrafts((current) => ({ ...current, body: { waitId, text: next } }))
+  const setBody = (next: string) =>
+    setDrafts((current) => ({
+      ...current,
+      body: { waitId, text: next, ...(waitId === null ? { absorbed: current.own?.text ?? null } : {}) },
+    }))
   const setAnswer = (next: string) =>
     setDrafts((current) => ({ ...current, answer: { waitId, text: next, open: true } }))
   const closeAnswer = () =>

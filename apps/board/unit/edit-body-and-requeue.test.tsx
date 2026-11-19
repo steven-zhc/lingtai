@@ -590,4 +590,18 @@ describe('an own answer and the other retained drafts (#1255)', () => {
     expect(html).toContain('my own words!')
     expect(html.split('my own words').length - 1).toBe(1)
   })
+
+  it("keeps a later wait's own answer beside an earlier wait's edited draft", () => {
+    typeOwn(aWaitId())
+    mount(null, () => editor(null, reason), { asked })
+    ;(harness.triage as Api).setBody('my own words (edited A)')
+    const b = aWaitId()
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).pickOwn(0, 'asked')
+    mount(b, () => editor(b, reason), { asked })
+    ;(harness.triage as Api).setOwn(0, 'B unsent', 'asked')
+    const html = renderToStaticMarkup(mount(null, () => editor(null, reason), { asked }))
+    expect(html).toContain('my own words (edited A)')
+    expect(html).toContain('B unsent')
+  })
 })
