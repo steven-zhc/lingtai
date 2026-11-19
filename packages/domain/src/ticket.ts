@@ -1253,6 +1253,11 @@ function triagedEvent(input: TriagedInput): ToAppend {
   }
 }
 
+/** The record that stands in for an answer that was not acted on: `TriageFailed{why}`, which resolves nothing. */
+export function triageFailedEvent(input: Omit<TriagedInput, 'result'> & { why: string }): ToAppend {
+  return triagedEvent({ ...input, result: { _tag: 'TriageFailed', why: input.why } })
+}
+
 /**
  * A triage's answer is recorded while its wait is current and the ticket is unchanged since the version it read.
  * `ifVersion` is required: `since` is the stream's events after it, which `state` already holds.

@@ -44,7 +44,9 @@ import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-en
 import {
   type PayloadOf,
   type SpentFor,
+  type TicketState,
   type WaitId,
+  triageSpentOf,
   WIP_COMMIT_PREFIX,
   accountLimitReleases,
   releasesOf,
@@ -802,6 +804,23 @@ export const continuationSpent = (run: AttemptState) => ({
   landingRetries: run.landingRetries ?? 0,
 })
 
+/**
+ * **What a held attempt has spent, with what triage's own resolutions spent before the continuation could record it**
+ * (#1258): each counter is the larger of the attempt's own and `triageSpentOf`'s, never their sum — the number a triage
+ * resolution carries is the one the continuation records itself, so once it has there is one spend, and before it has
+ * this says it alone, whatever restarts between the append and the effect.
+ */
+export const continuationSpentWithTriage = (run: AttemptState, ticket: TicketState, runId: string) => {
+  const own = continuationSpent(run)
+  const triage = triageSpentOf(ticket, runId)
+  return {
+    ...own,
+    conflictRounds: Math.max(own.conflictRounds, triage.conflictResolutions),
+    stepRedos: Math.max(own.stepRedos, triage.stepRedos),
+    rounds: Math.max(run.implementRound, triage.refusalFixes),
+  }
+}
+
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
 const causeText = (cause: unknown): string =>
   cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'no explanation was given'
@@ -1519,7 +1538,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const step = rerunStepOf(reason)
         if (step === null) return null
         const head = releasedHeadOf(runEvents)
-        const spent = continuationSpent(runState)
+        const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId)
         const accountReruns =
           accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
@@ -1541,7 +1560,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : approvedOnSha,
           resumedWaitId: approvedWaitId,
-          roundsSpent: continuationRound(runState, false),
+          roundsSpent: spent.rounds,
           baseMergesSpent: spent.baseMerges,
           conflictRoundsSpent: spent.conflictRounds,
           stepRedosSpent: spent.stepRedos,
@@ -1569,12 +1588,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const granted = reduced.lifecycle.grantRef !== undefined
       // A crash that stands in for a wait carries that wait's advice (#654).
       const adviceWaitId = reason._tag === 'AgentCrashed' ? (reason.standing?.waitId ?? approvedWaitId) : approvedWaitId
+      const byTriage = new Set(reduced.waits.filter((w) => w.resolution?.by === 'triage').map((w) => w.waitId))
+      // Only a person's grants cap a lap: a round triage bought is the allowance's own (#1258).
       const priorGrant = waitsFromState(reduced).some(
         (wait) =>
           wait.resolution?._tag === 'FixRefusal' &&
+          !byTriage.has(wait.waitId) &&
           'run' in wait.reason &&
           wait.reason.run.runId === options.continuing!.runId,
       )
+      const spentNow = continuationSpentWithTriage(runState, reduced, options.continuing.runId)
+      const grantedBy = byTriage.has(approvedWaitId) ? 'triage' : 'person'
       const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
@@ -1648,16 +1672,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted && grantedAdviceFromState(reduced, adviceWaitId) !== undefined
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
-        roundsSpent: continuationRound(runState, granted),
-        baseMergesSpent: continuationSpent(runState).baseMerges,
-        conflictRoundsSpent: continuationSpent(runState).conflictRounds,
-        stepRedosSpent: continuationSpent(runState).stepRedos,
-        landingRetriesSpent: continuationSpent(runState).landingRetries,
+        roundsSpent: Math.max(continuationRound(runState, granted), spentNow.rounds),
+        baseMergesSpent: spentNow.baseMerges,
+        conflictRoundsSpent: spentNow.conflictRounds,
+        stepRedosSpent: spentNow.stepRedos,
+        landingRetriesSpent: spentNow.landingRetries,
         ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
         ...(criterion !== null
           ? {
               grant: {
-                why: 'A person granted one checked fix round.',
+                why: grantedBy === 'triage' ? 'Triage granted one checked fix round.' : 'A person granted one checked fix round.',
                 asked: null,
                 printed: criterion.printed,
               },

@@ -34,7 +34,11 @@ import {
   type WaitId,
   askTransition,
   closeChecks,
+  actOnTriageTransition,
   finishTriageTransition,
+  triageFailedEvent,
+  type ActContext,
+  type ActOnTriageRefusal,
   startTriageTransition,
   type FinishTriageDecline,
   type StartTriageDecline,
@@ -448,7 +452,13 @@ export function askTicketEffect(
 /** What a triage command reads and appends through: the narrowest store the daemon's catch-up already holds. */
 export type TriageStore = Pick<EventStore, 'read' | 'readTypes' | 'append'>
 
-export type StartTriageResult = { ok: true } | { ok: false; refusal: StartTriageDecline } | { ok: false; lost: true }
+type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
+
+export type StartTriageResult =
+  /** `version` is the ticket's version once `TriageStarted` landed: what the answer is bound to (#1258). */
+  | { ok: true; version: number }
+  | { ok: false; refusal: StartTriageDecline }
+  | { ok: false; lost: true }
 
 /**
  * `TriageStarted` at the attempt the caller fixed. Refused when the wait is not current or the reduce already holds
@@ -485,44 +495,85 @@ export function startTriage(
     })
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
-    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+    // An append at an expected version lands at the next ones, so this is the version it left the stream at.
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true, version: state.version + decided.events.length } as const)
   })
 }
 
-type FinishTriageInput = Parameters<typeof finishTriageTransition>[1]
+/** Why a triage's answer was not acted on: what `actOnTriageTransition` refuses, or the read an act needed failing. */
+export type TriageRefusal = ActOnTriageRefusal | 'unreadable'
 
-export type FinishTriageResult = { ok: true } | { ok: false; refusal: FinishTriageDecline } | { ok: false; lost: true }
+export type FinishTriageResult =
+  /** `resolved` is what the same append resolved the wait with (`by: 'triage'`), or `null` when only the answer was recorded. */
+  | { ok: true; resolved: { resolution: Resolution; runId: string | null } | null }
+  /** The answer was not recorded as one: `WaitTriaged{TriageFailed{why: refusal}}` stands in its place. */
+  | { ok: false; refusal: TriageRefusal }
+  | { ok: false; lost: true }
 
 /**
- * `WaitTriaged`, while the wait is current. `ifVersion` is the version a caller decided on: a stream that moved since
- * is `lost` (a refusal `changed`, said the way a conflict is). The retry loop stays the caller's (0015).
+ * `WaitTriaged`, and — when `act` is given and the answer is one the system can act on — `WaitResolved{by: 'triage'}` in
+ * **the same append**, bound to the wait, the version `ifVersion` and what `act` read (#1258). `ifVersion` is the version
+ * `TriageStarted` left the stream at; the stream is unchanged since it when everything after it is this triage's own
+ * `RunPrompted`/`RunSpent` (`unchangedSince`). A version conflict is `lost`: the caller reads again, so the whole check
+ * is made again, never the version moved.
+ *
+ * A refusal records `WaitTriaged{TriageFailed{why: <the refusal>}}` at the version just read — an expected-version
+ * append that checks nothing about the wait, so it never interleaves with another append and never resolves anything.
  */
 export function finishTriage(
   ticketId: string,
   options: SnapshotReadOptions & {
     store: TriageStore
-    ifVersion?: number
+    ifVersion: number
     /** A function is settled after the read, so what changed while it ran (a caller's abort) is seen. */
     result: FinishTriageInput['result'] | (() => FinishTriageInput['result'])
+    /** What the transition cannot read itself, read against the state just read. Absent: the answer is advice only. */
+    act?: (state: TicketState) => Effect.Effect<ActContext, unknown>
   } & Pick<FinishTriageInput, 'waitId' | 'attempt' | 'headSha' | 'by'>,
 ): Effect.Effect<FinishTriageResult, unknown> {
   return Effect.gen(function* () {
     const state = yield* readThroughSnapshot(options.store, ticketReducer, ticketId, 'all', options)
-    const decided = finishTriageTransition(state, {
+    const owed = state.version - options.ifVersion
+    const since = owed > 0 ? yield* Effect.tryPromise({ try: () => options.store.read(ticketId, options.ifVersion + 1), catch: (e) => e }) : []
+    // Read a moment apart, the two can disagree about where the stream ends: read again rather than guess.
+    if (since.length !== Math.max(owed, 0)) return { ok: false, lost: true } as const
+    const result = typeof options.result === 'function' ? options.result() : options.result
+    const input = {
       waitId: options.waitId,
       attempt: options.attempt,
       headSha: options.headSha,
-      result: typeof options.result === 'function' ? options.result() : options.result,
       by: options.by,
-      ...(options.ifVersion === undefined ? {} : { ifVersion: options.ifVersion }),
-    })
-    if (!decided.ok) {
-      return decided.refusal.reason === 'changed'
-        ? ({ ok: false, lost: true } as const)
-        : ({ ok: false, refusal: decided.refusal } as const)
+      ifVersion: options.ifVersion,
+      since,
     }
-    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
-    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+    let decided: { ok: true; events: ToAppend[]; action?: unknown } | { ok: false; refusal: TriageRefusal }
+    if (result._tag === 'TriageAnswered' && options.act !== undefined) {
+      const read = yield* Effect.exit(options.act(state))
+      if (Exit.isFailure(read) && Cause.hasInterruptsOnly(read.cause)) return yield* Effect.failCause(read.cause)
+      // A read that fails is never taken as unchanged (#1258): the answer acts on nothing and is recorded failed.
+      decided = Exit.isFailure(read)
+        ? { ok: false, refusal: 'unreadable' }
+        : actOnTriageTransition(state, { ...input, result, context: read.value })
+    } else {
+      const finished = finishTriageTransition(state, { ...input, result })
+      decided = finished.ok ? finished : { ok: false, refusal: finished.refusal.reason }
+    }
+    if (decided.ok) {
+      const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+      if (lost) return { ok: false, lost: true } as const
+      const resolved = decided.events.find((e) => e.type === 'WaitResolved')
+      const data = resolved?.data as PayloadOf<'WaitResolved'> | undefined
+      const block = state.lifecycle.status === 'blocked' ? state.lifecycle : null
+      return {
+        ok: true,
+        resolved: data === undefined ? null : { resolution: data.resolution, runId: block?.runId ?? null },
+      } as const
+    }
+    // The refusal is a failure of this attempt, and a record of it: bound to the version just read.
+    const { since: _since, ifVersion: _ifVersion, ...recorded } = input
+    const failed = triageFailedEvent({ ...recorded, why: decided.refusal })
+    const lost = yield* appendLost(options.store, ticketId, state.version, [failed])
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: false, refusal: decided.refusal } as const)
   })
 }
 
