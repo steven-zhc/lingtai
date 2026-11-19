@@ -66,13 +66,16 @@ export function whenOf(proposal: Proposal): JudgeWhen {
     case 'AnswerUnreadable':
       return 'answer-unreadable'
     case 'NothingProduced':
-      return 'nothing-produced'
+      // Retired (#1250): nothing proposes it, and a person's answer to an old wait is not a judge's.
+      return 'needs-input'
     case 'FixerDisagrees':
       return 'fixer-disagrees'
     case 'MergeRefused':
       return 'merge-refused'
     case 'BaseMoved':
       return 'base-moved'
+    case 'AlreadyDone':
+      return 'already-done'
     case 'BudgetExhausted':
       return 'budget-exhausted'
     case 'SandboxRefused':
@@ -90,6 +93,8 @@ const MECHANICAL_WANTS: Record<BuiltInJudge, Destination> = {
   'same-worktree': 'implement',
   // The merged code is built and reviewed again, and no round is spent (#593).
   'merge-the-base': 'build',
+  // The declared evidence is checked by `review`, with no diff and no round spent (#1251).
+  'check-the-evidence': 'review',
 }
 
 /**
@@ -109,6 +114,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
         return 'build'
       case 'LandAgain':
         return 'merge'
+      case 'CheckDone':
+        return 'review'
       case 'RerunStep':
         return candidate.next.step
       case 'Requeued':
@@ -124,6 +131,8 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       return 'build'
     case 'land-again':
       return 'merge'
+    case 'check-done':
+      return 'review'
     case 'rerun-setup':
       return 'prepared'
     case 'ask-again':
@@ -178,7 +187,9 @@ export function replyFor(
       offering,
       findings: arrived.findings,
       evidence: arrived.evidence,
-      ...(offer.proposal._tag === 'NothingProduced' ? { said: offer.proposal.said } : {}),
+      // An `Unclear` implement's judge reads the questions themselves — text, answers and the
+      // recommended one — never clipped with the prose (#1250, #1275).
+      questions: offer.proposal._tag === 'InputNeeded' ? offer.proposal.questions : [],
     }
     const answer = judge === undefined ? { noJudge: true as const } : yield* judge(on)
 

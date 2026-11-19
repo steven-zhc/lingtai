@@ -370,6 +370,14 @@
   {
     "file": "packages/projector/src/ticket-report.ts",
     "function": "reduce",
+    "type": "TicketSatisfied",
+    "count": 1,
+    "class": "join",
+    "reason": "Closes the open intervals; which events end an interval is 0123 §2's rule and exists only here."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
     "type": "WaitStarted",
     "count": 1,
     "class": "join",

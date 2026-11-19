@@ -125,7 +125,7 @@
  * the ending happened, and neither does this file's failure to resolve them.
  */
 import type { ActionContext, ActionFinding, InterruptedCause, TheDesign } from '@lingtai/actions'
-import type { Envelope, RuntimeId, ToAppend } from '@lingtai/domain'
+import type { Envelope, ImplementOutcome, RuntimeId, ToAppend, TriageQuestion } from '@lingtai/domain'
 import type { Cause as TriageCause } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // Type-only, and the shape is imported rather than redeclared for the reason
@@ -240,18 +240,21 @@ export type { SentBack }
  * which is the whole of what separates it from `Asked` — and since `#296` that
  * separation is two endings rather than two values of one `because`.
  *
- * `interrupted` and `committedNothing` are `#466`'s, optional and widened
+ * `interrupted` is `#466`'s and `declared` is #1250's, optional and widened
  * rather than a fifth arm on `Worked`: the dispatch that builds this already
  * knows the runtime's own failure kind (`firstDispatch`, `fixRound`), or that
  * the agent ran to the end and left no commit, and carrying either here is
  * what lets `createWorkAction` set `ActionResult.interrupted`/
- * `.committedNothing` without a second reading of `stopped`'s sentence
+ * `.declared` without a second reading of `stopped`'s sentence
  * (0031 §1).
  */
 export interface Stopped {
   readonly stopped: string
   readonly interrupted?: InterruptedCause
-  readonly committedNothing?: true
+  /** What the agent declared where it ran to the end and the facts did not bear it out (#1250). */
+  readonly declared?: ImplementOutcome
+  /** The commit it left, where it left one beside a declared outcome — an `Unclear` keeps them. */
+  readonly head?: string
 }
 
 /**
@@ -358,13 +361,12 @@ export interface Judging {
   /** What the step printed when it did not pass; the question, for `needs-input`. */
   readonly evidence: string
   /**
-   * The ticket the attempt read, for `nothing-produced` alone (#1198): *is the
-   * ticket unclear* cannot be judged without it. Absent for every other reason,
-   * so their prompts do not grow by a body. `null` where the attempt had none.
+   * The questions an `Unclear` implement declared, whole — text, answers and the
+   * recommended one — and `[]` for every other proposal (#1275). Their own field
+   * and not part of `evidence`, so the 8,000-character cut on the prose never
+   * reaches them and the evidence still matches the `StepEnded` that stored it.
    */
-  readonly ticket?: { readonly title: string; readonly body: string } | null
-  /** The implementer's last message, for `nothing-produced` alone (#1198). */
-  readonly said?: string | null
+  readonly questions: readonly TriageQuestion[]
 }
 
 /**
@@ -385,7 +387,7 @@ type Arrival = Omit<Judging, 'offering'> & {
    * fields and the set, and what keeps it that way is the key-set assertion at
    * the end of `attempt-steps.test.ts`'s *offers a judge only the steps the pass
    * reached*: `Object.keys` of the brief is exactly `evidence`, `findings`,
-   * `offering`, `when`. A field added to `Judging` fails there by name, which is
+   * `offering`, `questions`, `when`. A field added to `Judging` fails there by name, which is
    * the whole reason that assertion is a key set rather than a spot check.
    */
   readonly unreadable: boolean
@@ -609,6 +611,8 @@ export function whatArrived(arriving: StepReached): Omit<Arrival, 'when'> {
     // two the loop routes — and it is the words a person reads beside the
     // judge's (0043).
     evidence: 'detail' in ending ? ending.detail : '',
+    // Questions are filled where the proposal is known, in `replyFor` (#1275).
+    questions: [],
     // `#279`'s own rule: by verdict, off the action that stopped the pipeline.
     // Only an `agent:` action has an answer to parse, and `agentPlugin.at`
     // puts one at `merge` as well as at `review`.

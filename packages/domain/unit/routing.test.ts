@@ -326,20 +326,9 @@ describe("offerFor: #471's seven — a born-before-implement step leaves fix-lin
     expect(other.available.map((c) => c.id)).not.toContain('rerun-setup')
   })
 
-  it('NothingProduced with something said: fix-lines{round 1} and hand-to-person, and no restart (0108 §18)', () => {
+  it('NothingProduced, retired (#1250): hand-to-person alone, whatever it said — no round is offered', () => {
     expect(offerFor(nothingProduced, policy, zero)).toEqual({
       proposal: nothingProduced,
-      available: [
-        { id: 'fix-lines', next: { _tag: 'FixRefusal', to: 'implement', round: 1 } },
-        { id: 'hand-to-person', next: { _tag: 'HandToPerson' } },
-      ],
-      unavailable: [{ id: 'restart', because: { _tag: 'NoCriterion' } }],
-    })
-  })
-
-  it('NothingProduced with `said` null: hand-to-person alone, fix-lines and restart unavailable{NoCriterion}', () => {
-    expect(offerFor(nothingProducedNull, policy, zero)).toEqual({
-      proposal: nothingProducedNull,
       available: [{ id: 'hand-to-person', next: { _tag: 'HandToPerson' } }],
       unavailable: [
         { id: 'fix-lines', because: { _tag: 'NoCriterion' } },

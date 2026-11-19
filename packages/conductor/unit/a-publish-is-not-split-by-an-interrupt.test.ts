@@ -75,6 +75,8 @@ describe('a publish whose pass is interrupted while the push is pending', () => 
             project,
             client,
             runtime: atTheWall,
+            // A run cut off at its turns is `AgentFailed` and redone (#1250); not after real minutes.
+            stepRedoWaits: ['0 millis', '0 millis', '0 millis'],
             issue: 7,
             hookBinary: '/tmp/fake/lingtai-hook',
             prompt: 'fix {{issue}}',

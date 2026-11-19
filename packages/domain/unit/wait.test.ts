@@ -420,6 +420,16 @@ describe('allowedResolutions', () => {
       expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'Close'])
     })
 
+    it('AlreadyDone: Requeue, EditBodyAndRequeue, Close — nothing has checked it, so no Approve (#1251)', () => {
+      const reason = parseProposed({
+        _tag: 'AlreadyDone',
+        items: [{ item: 'it works', evidence: 'src/a.ts:1' }],
+        baseSha: 'a'.repeat(40),
+        bodyVersion: 1,
+      })
+      expect(allowedResolutions(reason)).toEqual(['StartNewAttempt', 'EditBodyAndStartNewAttempt', 'Close'])
+    })
+
     it('every Proposal tag is covered above', () => {
       const tags = ProposalSchema.options.map((option) => option.shape._tag.value)
       expect(new Set(tags)).toEqual(proposalTags)
@@ -434,6 +444,25 @@ describe('allowedResolutions', () => {
   it('NothingProduced: EditBodyAndRequeue, Requeue, Close — no Approve, there is nothing on the branch', () => {
     const reason = parseReason({ _tag: 'NothingProduced', run, said: null })
     expect(allowedResolutions(reason)).toEqual(['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Split', 'Close'])
+  })
+
+  it('SatisfiedUnconfirmed: exactly ConfirmSatisfied, EditBodyAndStartNewAttempt, StartNewAttempt, Close (#1251)', () => {
+    const reason = parseReason({
+      _tag: 'SatisfiedUnconfirmed',
+      run,
+      baseSha: 'a'.repeat(40),
+      bodyVersion: 3,
+      items: [{ item: 'it works', evidence: 'src/a.ts:1' }],
+      reading: 'every item is met',
+    })
+    expect(allowedResolutions(reason)).toEqual([
+      'ConfirmSatisfied',
+      'EditBodyAndStartNewAttempt',
+      'StartNewAttempt',
+      'Close',
+    ])
+    // `SignoffRequired` is not reused: `Approve` would waive a refusal that is not there.
+    expect(allowedResolutions(reason)).not.toContain('Approve')
   })
 
   it('BudgetExhausted: EditBodyAndRequeue, Requeue, Close', () => {
@@ -873,8 +902,16 @@ describe('triageStatus', () => {
     want: null,
   }
 
-  it("NotNeeded for OwnQuestion and SignoffRequired, whatever the facts or declared say — a WaitTriaged doesn't make it Done", () => {
+  it("NotNeeded for OwnQuestion, SignoffRequired and SatisfiedUnconfirmed, whatever the facts or declared say — a WaitTriaged doesn't make it Done", () => {
     const reasons = [
+      parseReason({
+        _tag: 'SatisfiedUnconfirmed',
+        run,
+        baseSha: 'a'.repeat(40),
+        bodyVersion: 1,
+        items: [],
+        reading: '',
+      }),
       parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
       parseReason({ _tag: 'SignoffRequired', run, step: 'proposed', action: 'human:ship', question: 'ship it?' }),
     ]
@@ -929,7 +966,9 @@ describe('triageStatus', () => {
 
     it('every WaitReason tag but the two NotNeeded ones is covered above', () => {
       const allTags = WaitReasonSchema.options.map((option) => option.shape._tag.value)
-      const expected = new Set(allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired'))
+      const expected = new Set(
+        allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired' && tag !== 'SatisfiedUnconfirmed'),
+      )
       expect(otherTags).toEqual(expected)
     })
   })

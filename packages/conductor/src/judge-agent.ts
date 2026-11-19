@@ -31,7 +31,7 @@ import type { ActionFinding } from '@lingtai/actions'
  * count, so there is no number here for a prompt to leak and no arithmetic for
  * one to argue with. A judge cannot widen what it cannot see.
  */
-import { type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
+import { askedText, type JudgeWhen, STEPS, triageQuestionsOf } from '@lingtai/domain'
 import { JUDGE_CAUSES, JudgeAnswer, type Cause } from '@lingtai/domain/wait'
 
 import type { Judging } from './attempt-steps.ts'
@@ -118,7 +118,7 @@ interface WhenRow {
   readonly weigh: string
 }
 
-/** Every reason but `nothing-produced`: a step refused, and said what it did. */
+/** Every reason but `fixer-disagrees`: a step refused, and said what it did. */
 const REFUSED_ROW: WhenRow = {
   arrived: (on, evidence) => `${
     on.findings.length > 0
@@ -136,31 +136,6 @@ name specific lines, with failure scenarios an edit would answer, are the lines.
 Findings that say the shape of the change is wrong — the wrong seam, the wrong
 data structure, a rule in the wrong module — are the approach, and another round
 patching those lines spends money to arrive back here.`,
-}
-
-/** 0108 §18: the implementer committed nothing — the ticket is unclear, or the work is unfinished. */
-const NOTHING_PRODUCED_ROW: WhenRow = {
-  arrived: (on) => `The implementer committed nothing. The ticket it was given:
-
-${
-  on.ticket === null || on.ticket === undefined
-    ? 'The ticket could not be read.'
-    : `**${on.ticket.title}**\n\n${on.ticket.body}`
-}
-
-Its last message:
-
-${on.said === null || on.said === undefined || on.said.trim() === '' ? '(it said nothing)' : on.said.slice(0, 8_000)}`,
-  means: {
-    implement:
-      'one more round in the same worktree, told what the implementer said — for when the work ' +
-      'is unfinished and the ticket is clear',
-  },
-  weigh: `The question is **whether the ticket is unclear or the work is unfinished**. If the
-ticket does not say what is wanted, contradicts itself, or asks for something the
-code cannot support, a person has to say what is missing: choose \`waiting\` and
-say what. If the ticket is clear and the message names what is left, or where the
-work stopped, another round can finish it: choose \`implement\`.`,
 }
 
 /** 0108 §18: the fixer declined a round — it changed nothing and said why. */
@@ -196,12 +171,13 @@ const WHEN_ROWS: Record<JudgeWhen, WhenRow> = {
   'setup-refused': REFUSED_ROW,
   'check-refused': REFUSED_ROW,
   'answer-unreadable': REFUSED_ROW,
-  'nothing-produced': NOTHING_PRODUCED_ROW,
   'fixer-disagrees': FIXER_DISAGREES_ROW,
   'merge-refused': REFUSED_ROW,
   'budget-exhausted': REFUSED_ROW,
   'base-moved': REFUSED_ROW,
   'sandbox-refused': REFUSED_ROW,
+  // Never asked: `check-done` is a rule's move, taken before any judge (#1251).
+  'already-done': REFUSED_ROW,
 }
 
 /** What a judge at `findings` is told each cause it may answer means — `wait.ts`'s own words for them. */
@@ -267,7 +243,7 @@ A pass over one ticket did not pass. You decide where it goes.
 The reason the step gave is **\`${on.when}\`**.
 
 ${row.arrived(on, evidence)}
-
+${on.questions.length > 0 ? `\n## The questions the implementer asked\n\n${askedText({ questions: on.questions })}\n` : ''}
 ## The choices
 
 These are the only destinations on offer. The list is the workflow's: it has

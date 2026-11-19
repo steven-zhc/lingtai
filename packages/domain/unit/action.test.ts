@@ -12,7 +12,6 @@ import { describe, expect, it } from 'vitest'
 import {
   Action,
   accepts,
-  changedNothing,
   cleared,
   decidingAction,
   designOf,
@@ -473,29 +472,6 @@ describe('reviewSummaryOf', () => {
 
   it('null off the review step', () => {
     expect(reviewSummaryOf(outcome('build', [withSummary('x')]))).toBeNull()
-  })
-})
-
-describe('changedNothing', () => {
-  it('an empty implement: true', () => {
-    expect(changedNothing(outcome('implement', []))).toBe(true)
-  })
-
-  it('a non-implement step: false, whatever its actions', () => {
-    expect(changedNothing(outcome('build', []))).toBe(false)
-  })
-
-  it('implement with a cleared commit that carries no head: true', () => {
-    expect(changedNothing(outcome('implement', [commitAction(null)]))).toBe(true)
-  })
-
-  it('implement with a commit that carries a head: false', () => {
-    expect(changedNothing(outcome('implement', [commitAction('sha-1')]))).toBe(false)
-  })
-
-  it('implement with an uncleared action: false', () => {
-    const result = outcome('implement', [commitAction(null, 'rename to X or Y?')])
-    expect(changedNothing(result)).toBe(false)
   })
 })
 

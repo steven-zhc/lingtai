@@ -486,24 +486,24 @@ describe('snapshotCensus (#879)', () => {
   })
 
   it('is ok when every row is usable', async () => {
-    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('control', 7, 3, 3)])))
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('control', 8, 3, 3)])))
     expect(r.status).toBe('ok')
     expect(r.detail).toBe('3 snapshots, 3 usable (2 KB)')
   })
 
   it('reports an older version as void, naming reducer and version', async () => {
     const r = await Effect.runPromise(
-      snapshotCensus(() => Effect.succeed([row('control', 1, 1, 1, 14_000), row('control', 7, 4, 4)])),
+      snapshotCensus(() => Effect.succeed([row('control', 1, 1, 1, 14_000), row('control', 8, 4, 4)])),
     )
     expect(r.status).toBe('info')
     expect(r.detail).toBe('5 snapshots, 4 usable (2 KB) · void: control v1 ×1 (14 KB, older version)')
   })
 
   it('reports an unanchored current-version row as void by anchor', async () => {
-    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('attempt', 13, 3, 1, 3000)])))
+    const r = await Effect.runPromise(snapshotCensus(() => Effect.succeed([row('attempt', 14, 3, 1, 3000)])))
     expect(r.status).toBe('info')
     expect(r.detail).toContain('1 usable')
-    expect(r.detail).toContain('attempt v13 ×2')
+    expect(r.detail).toContain('attempt v14 ×2')
     expect(r.detail).toContain('anchor no longer holds')
   })
 

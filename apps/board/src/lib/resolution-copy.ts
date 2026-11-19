@@ -18,6 +18,11 @@ export const RESOLUTION_COPY: Record<Resolution['_tag'], { title: string; conseq
     consequence:
       'Run the step that stopped again, in this attempt, on its saved head. No fixer is dispatched and nothing is cut from base; no refusal fix or new attempt is spent.',
   },
+  ConfirmSatisfied: {
+    title: 'Confirm it is already satisfied',
+    consequence:
+      'End the ticket as satisfied by what the base already holds. Nothing is merged, and the recipe’s `when: satisfied` actions run.',
+  },
   AnswerQuestion: {
     title: 'Answer the question',
     consequence: 'Give the answer to the next attempt, or withdraw the question and return the ticket to the queue.',

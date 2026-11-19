@@ -195,6 +195,14 @@ export function closeHoldingEffect(
             // Not an error a person needs to work around: it is done, and saying so is
             // more useful than appending a second ending over the first.
             return { ok: false, ticketId, reason: 'landed', detail: `${ticketId} landed — there is nothing to close` }
+          case 'satisfied':
+            // Terminal too (#1251): the base already held the work, and `lingtai close` refuses it as it does a landing.
+            return {
+              ok: false,
+              ticketId,
+              reason: 'landed',
+              detail: `${ticketId} was already satisfied by the base — there is nothing to close`,
+            }
           case 'changed':
             return {
               ok: false,

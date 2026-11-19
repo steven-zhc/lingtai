@@ -19,7 +19,7 @@ export interface ReportTicketRow {
   ticket: string
   project: string | null
   kind: string | null
-  outcome: 'open' | 'landed' | 'closed'
+  outcome: 'open' | 'landed' | 'satisfied' | 'closed'
   outcomeAt: Date | null
   passes: number
   fixRounds: number
@@ -365,6 +365,7 @@ export const REASON_WORDS: Record<WaitReason['_tag'], string> = {
   AgentCrashed: 'a decision after the agent stopped',
   SetupRefused: 'a fix to the setup',
   AnswerUnreadable: 'a decision on an unreadable answer',
+  SatisfiedUnconfirmed: 'your confirmation that it was already done',
 }
 
 /** How a wait ended. */
@@ -373,6 +374,7 @@ export const RESOLUTION_WORDS: Record<Resolution['_tag'], string> = {
   FixRefusal: 'a refusal fix granted',
   RedoStep: 'the step run again',
   AnswerQuestion: 'answered',
+  ConfirmSatisfied: 'confirmed satisfied',
   StartNewAttempt: 'started over',
   EditBodyAndStartNewAttempt: 'ticket edited, started over',
   Split: 'split',

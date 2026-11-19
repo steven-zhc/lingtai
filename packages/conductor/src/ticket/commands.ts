@@ -39,6 +39,9 @@ import {
   type FinishTriageDecline,
   type StartTriageDecline,
   closeTransition,
+  confirmSatisfiedTransition,
+  satisfyTransition,
+  type SatisfyRefusal,
   reduceTicket,
   resolvedEvents,
   resolveWaitTransition,
@@ -722,6 +725,87 @@ export function landTicketEffect(
     },
     ...(input.endPlan ?? []),
   ])
+}
+
+/** What ending a ticket as satisfied answered: done, refused by the reducer's own transition, or the stream moved. */
+export type SatisfyTicketResult = { ok: true } | { ok: false; refusal: SatisfyRefusal } | { ok: false; lost: true }
+
+/**
+ * `TicketSatisfied` and the end plan, **one append** (#1251, 0108 §21), as `landTicketEffect` does for a landing:
+ * a split parent whose children did the work and whose check passed ends here at once. A ticket already ended is
+ * refused by `satisfyTransition`, so a second `TicketSatisfied` is not appended.
+ */
+export function satisfyTicketEffect(
+  ticketId: string,
+  input: {
+    baseSha: string
+    bodyVersion: number
+    items: PayloadOf<'TicketSatisfied'>['items']
+    endPlan?: readonly ToAppend[]
+  },
+  store: EventStore,
+  options: SnapshotReadOptions = {},
+): Effect.Effect<SatisfyTicketResult> {
+  return Effect.gen(function* () {
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options).pipe(Effect.orDie)
+    const decided = satisfyTransition(state, {
+      baseSha: input.baseSha,
+      bodyVersion: input.bodyVersion,
+      items: input.items,
+      ended: input.endPlan ?? [],
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    const lost = yield* appendLost(store, ticketId, state.version, decided.events).pipe(Effect.orDie)
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true } as const)
+  })
+}
+
+/**
+ * **A person confirms a non-split ticket is already satisfied** (#1251): the wait's `ConfirmSatisfied`,
+ * `TicketSatisfied` and the end plan for `satisfied` in one append, shaped like `closeTicketEffect`. `loadEnd` reads
+ * the recipe's `end` steps and runs only once the wait has said it can be confirmed.
+ */
+export function confirmSatisfiedEffect<R>(
+  ticketId: string,
+  options: {
+    store: EventStore
+    by: string
+    waitId: WaitId
+    note?: string
+    loadEnd: Effect.Effect<{ ok: true; end: readonly StepAction[] } | { ok: false; refused: R }, unknown>
+  },
+): Effect.Effect<
+  | { ok: true; ended: readonly ToAppend[] }
+  | { ok: false; refusal: SatisfyRefusal }
+  | { ok: false; refused: R }
+  | { ok: false; lost: true },
+  unknown
+> {
+  return Effect.gen(function* () {
+    const events = yield* Effect.promise(() => options.store.read(ticketId))
+    const state = reduceTicket(events)
+    // Decided before the recipe is read, so a stale page is refused without a read it did not need; the end plan
+    // is resolved against the same stream the append is checked at.
+    const first = confirmSatisfiedTransition(state, {
+      waitId: options.waitId,
+      by: options.by,
+      note: options.note ?? '',
+      ended: [],
+    })
+    if (!first.ok) return { ok: false, refusal: first.refusal } as const
+    const loaded = yield* options.loadEnd
+    if (!loaded.ok) return { ok: false, refused: loaded.refused } as const
+    const ended = resolveEndActions(events, loaded.end, 'satisfied')
+    const decided = confirmSatisfiedTransition(state, {
+      waitId: options.waitId,
+      by: options.by,
+      note: options.note ?? '',
+      ended,
+    })
+    if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    const lost = yield* appendLost(options.store, ticketId, state.version, decided.events)
+    return lost ? ({ ok: false, lost: true } as const) : ({ ok: true, ended } as const)
+  })
 }
 
 /** `WaitStarted` and the end plan, one append, for the landing's reason. */

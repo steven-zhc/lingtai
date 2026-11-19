@@ -317,4 +317,16 @@ add('AnswerUnreadable', 'answerunreadable', (item) => [
   }),
 ])
 
+add('SatisfiedUnconfirmed', 'satisfiedunconfirmed', (item) => [
+  ...aClaim(item, 'pass-pin-satisfiedunconfirmed'),
+  ...aWait(item, {
+    _tag: 'SatisfiedUnconfirmed',
+    run: { runId: 'pass-pin-satisfiedunconfirmed' },
+    baseSha: SHA,
+    bodyVersion: 1,
+    items: [{ item: 'it works', evidence: 'src/a.ts:1' }],
+    reading: 'every item is met on the base',
+  }),
+])
+
 export const WAIT_FIXTURES: readonly WaitFixture[] = FIXTURES

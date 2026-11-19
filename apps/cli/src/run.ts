@@ -724,7 +724,9 @@ export function run(
       })
 
       if (result.ok === true) {
-        log(`${symbol.pass()} landed ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`)
+        log(
+          `${symbol.pass()} ${result.satisfied === true ? 'already satisfied on' : 'landed'} ${result.mergeCommit.slice(0, 7)} — ${result.ticketId}`,
+        )
         return 0
       }
       if (result.ok === 'held') {

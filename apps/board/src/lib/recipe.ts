@@ -558,7 +558,6 @@ const NOT_YET_ROUTED: ReadonlySet<string> = new Set([
   'setup-refused',
   'check-refused',
   'answer-unreadable',
-  'nothing-produced',
   'fixer-disagrees',
   'merge-refused',
   'budget-exhausted',
