@@ -2909,6 +2909,29 @@ describe('a review after a base merge looks only at the resolution and the overl
     expect(result.verdict).toBe('failed')
   })
 
+  it('keeps a finding blocking inside a resolution hunk on a file the whole diff does not touch (#1283)', async () => {
+    const reverted = [
+      'diff --git a/src/reverted.ts b/src/reverted.ts',
+      '--- a/src/reverted.ts',
+      '+++ b/src/reverted.ts',
+      '@@ -1,2 +1,2 @@',
+      '-a',
+      '+b',
+      ' c',
+      '',
+    ].join('\n')
+    const dropped =
+      'diff --git a/src/dropped.ts b/src/dropped.ts\ndeleted file mode 100644\n--- a/src/dropped.ts\n+++ /dev/null\n@@ -1,2 +0,0 @@\n-a\n-b\n'
+    const inside = finding({ file: 'src/reverted.ts', line: 1, claim: 'the revert undoes the branch' })
+    const gone = finding({ file: 'src/dropped.ts', line: 1, claim: 'the resolution dropped the file' })
+    const outside = finding({ file: 'src/reverted.ts', line: 900, claim: 'elsewhere in the same file' })
+    const { action } = build(answer([inside, gone, outside]), async () => `${RESOLUTION}${reverted}${dropped}`)
+    const result = await action.run(MERGED)
+
+    expect(result.findings.map((f) => f.severity)).toEqual(['blocker', 'blocker', 'minor'])
+    expect(result.verdict).toBe('failed')
+  })
+
   it('treats an empty delta as an empty delta: only overlap and rechecks can block', async () => {
     const { action, runtime } = build(answer([finding(), OVERLAP_FINDING]), async () => '')
     const result = await action.run(MERGED)
