@@ -22,7 +22,7 @@ import { diagnoseRefusal } from './failure/explain.ts'
 import type { Proposal } from './proposal.ts'
 import { askedText } from './triage.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
-import type { EscalationBecause, AttemptRef, WaitReason } from './wait.ts'
+import type { EscalationBecause, AttemptRef, Resolution, TriageResult, WaitReason } from './wait.ts'
 
 /**
  * The sentence a wait prints and the facts needed to describe the hold.
@@ -463,4 +463,115 @@ export function judgeCauseWords(cause: { readonly _tag: string }): string {
     default:
       return `the judge read ${cause._tag}`
   }
+}
+
+// ------------------------------------------------------------ systemLine ----
+
+/** What one reading of a system resolution says, in parts so each place can lay it out (#1259). */
+export interface SystemLine {
+  /** What the system did, present tense: *the step is being redone*. */
+  readonly action: string
+  /** *Triage read <cause>*, or null where the `WaitTriaged` was not found — a cause is never made up. */
+  readonly because: string | null
+  /** *2 of 3 redos used*, *bound unknown* when it could not be read, null when there is no action to bound. */
+  readonly bound: string | null
+}
+
+/** The bounds a triage resolution can spend, as the recipe's numbers a reader joins them with. */
+export type SystemLimits = {
+  readonly refusalFixes: number
+  readonly conflictResolutions: number
+  readonly newAttempts: number
+} | null
+
+/** What a cause says in words, past tense — a statement of what triage read, not an instruction to a person. */
+const CAUSE_READ: Record<Extract<TriageResult, { _tag: 'TriageAnswered' }>['cause']['_tag'], string> = {
+  UndecidedQuestion: 'a question only a person can answer',
+  FixableLines: 'lines to fix',
+  WrongApproach: 'the approach as wrong',
+  ConflictingHunks: 'conflicting hunks',
+  TicketTooBig: 'the ticket as too big',
+  SetupBroken: 'the setup as broken',
+  Unfinished: 'only unfinished',
+}
+
+type SystemResolved = {
+  readonly resolution: Resolution
+  readonly by: string
+  /** The resolution's note: all a missing `WaitTriaged` leaves to say. */
+  readonly note?: string
+  readonly spent?: { readonly bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos'; readonly n: number }
+}
+
+/**
+ * **One sentence for a wait the system resolved** (#1259): the action, the cause's words, and the bound used.
+ * `counter` is read at render by the caller (`systemBoundOf`), null where it could not be — then the bound says so,
+ * never `0 of N`. `triage` null, or not an answer, gives no cause.
+ */
+export function systemLine(
+  resolved: SystemResolved,
+  triage: TriageResult | null,
+  counter: { readonly used: number; readonly allowed: number } | null,
+): SystemLine {
+  const cause = triage !== null && triage._tag === 'TriageAnswered' ? triage.cause : null
+  // No cause found: the note is the evidence that is left, and no cause is made up (#1259).
+  const note = (resolved.note ?? '').trim()
+  const bare: SystemLine = {
+    action:
+      note === '' ? 'resolved by triage' : `resolved by triage: ${note.length > 160 ? `${note.slice(0, 159)}…` : note}`,
+    because: null,
+    bound: null,
+  }
+  const resolution = resolved.resolution
+  let action: string
+  let noun: string
+  switch (resolution._tag) {
+    case 'FixRefusal': {
+      const conflict =
+        resolved.spent !== undefined
+          ? resolved.spent.bound === 'conflictResolutions'
+          : cause !== null && cause._tag === 'ConflictingHunks'
+      action = conflict ? 'the conflict is being resolved' : 'the lines are being fixed'
+      noun = conflict ? 'conflict resolutions' : 'fix rounds'
+      break
+    }
+    case 'RedoStep':
+      action = 'the step is being redone'
+      noun = 'redos'
+      break
+    case 'StartNewAttempt':
+      action = 'a new attempt is being started'
+      noun = 'new attempts'
+      break
+    case 'Approve':
+    case 'AnswerQuestions':
+    case 'EditBodyAndStartNewAttempt':
+    case 'AnswerQuestion':
+    case 'ConfirmSatisfied':
+    case 'Split':
+    case 'Close':
+      return bare
+  }
+  if (cause === null) return bare
+  return {
+    action,
+    because: `Triage read ${CAUSE_READ[cause._tag]}`,
+    bound: counter === null ? 'bound unknown' : `${counter.used} of ${counter.allowed} ${noun} used`,
+  }
+}
+
+/**
+ * **What a card or `status` says where the ticket's log could not be read** (#1259): a failed read is not "triage
+ * resolved nothing", so the line says what it could not tell, and that the bound is unknown with it.
+ */
+export const SYSTEM_LINE_UNREAD: SystemLine = {
+  action: 'whether triage resolved a wait could not be read',
+  because: null,
+  bound: 'bound unknown',
+}
+
+/** The line as one sentence: *Triage read only unfinished; the step is being redone — 2 of 3 redos used*. */
+export function systemLineText(line: SystemLine): string {
+  const head = line.because === null ? line.action : `${line.because}; ${line.action}`
+  return line.bound === null ? head : `${head} — ${line.bound}`
 }

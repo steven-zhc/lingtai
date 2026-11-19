@@ -75,7 +75,16 @@ export function Ticket({ ticket, pending = false }: { ticket: TicketView; pendin
 }
 
 /** The Ticket tab: what was asked, then the ticket stream's events (#885). */
-export function TicketTab({ detail, answer }: { detail: TicketTabDetail; answer: Answered<TicketAnswer> }) {
+export function TicketTab({
+  detail,
+  answer,
+  eventsOpen = false,
+}: {
+  detail: TicketTabDetail
+  answer: Answered<TicketAnswer>
+  /** Open the Events section, for a link that points at a record row (#1259). */
+  eventsOpen?: boolean
+}) {
   const base = detail.ticket
   return (
     <div className="atab">
@@ -104,7 +113,7 @@ export function TicketTab({ detail, answer }: { detail: TicketTabDetail; answer:
       ) : (
         <p className="empty">This id is not a ticket.</p>
       )}
-      <details className="asec">
+      <details className="asec" open={eventsOpen}>
         <summary>
           <span className="hdocname">Events</span>
           <span className="hdocsize">{detail.events.length}</span>
