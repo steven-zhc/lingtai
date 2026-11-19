@@ -1,4 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
+import { report as buildReport } from '@lingtai/conductor/report'
 // The subpath, not the barrel: the board reads the control stream and hosts
 // no work, and `@lingtai/daemon` would drag the work loop and the runtime in
 // behind it — the same reason the actions import `@lingtai/conductor/decide`.
@@ -33,12 +34,14 @@ import {
 } from '@/lib/board'
 import { nearCeiling, readDayReading } from '@/lib/day-spend'
 import { footerLags } from '@/lib/footer'
+import { handledToday } from '@/lib/handled-today'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
+import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
@@ -54,6 +57,7 @@ import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { FilterMenu } from './filter-menu.tsx'
 import { Footer, FooterPending, landedCount } from './footer.tsx'
+import { HandledCard } from './handled-card.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
 import { LockRows, pauseSlot } from './lock-banner.tsx'
@@ -896,7 +900,37 @@ async function CountPart({
     )
   }
   if (col.id === 'landed') return <LandedCount count={col.cards.length} only={shape(board, ctx.param).only} />
-  return <span className="ct">{col.cards.length}</span>
+  return <span className={col.cards.length === 0 ? 'ct zero' : 'ct'}>{col.cards.length}</span>
+}
+
+/**
+ * The empty Waiting column's card (#1286). Only reached once the column is known
+ * to be empty, since the read takes the project's whole `ticket_report`. A read
+ * that fails or whose lag is unknown shows the note, never a zero.
+ */
+async function HandledPart({ only, note }: { only: string | undefined; note: string }) {
+  const now = new Date()
+  const today = reportQuery({ project: only, window: 'today' }, now)
+  const week = reportQuery({ project: only }, now)
+  const empty = <p className="empty">{note}</p>
+  try {
+    const data = await currentReport(today.project, today.window.from)
+    const cur = data.currency.ticketReport
+    if (cur.error !== undefined || cur.lag === null) return empty
+    const handled = handledToday(
+      buildReport({
+        tickets: data.tickets,
+        spend: data.spend,
+        window: today.window,
+        project: today.project,
+        kinds: null,
+      }).handled,
+    )
+    if (handled === null) return empty
+    return <HandledCard today={handled} todayHref={reportHref(today)} weekHref={reportHref(week)} />
+  } catch {
+    return empty
+  }
 }
 
 async function CardsPart({
@@ -980,6 +1014,18 @@ async function CardsPart({
           board={boardHalf}
           empty={<p className="empty">{emptyNote(col.id, control.paused, only)}</p>}
         />
+      </Suspense>
+    )
+  }
+  if (col.cards.length === 0 && col.id === 'waiting') {
+    return (
+      <Suspense key={`handled:${projectKey}`} fallback={<Skeleton shape="handled" count={1} />}>
+        <div className="arrive">
+          <HandledPart
+            only={only}
+            note={emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
+          />
+        </div>
       </Suspense>
     )
   }

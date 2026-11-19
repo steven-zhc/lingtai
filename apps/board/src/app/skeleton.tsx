@@ -7,7 +7,7 @@
  * is the task page's GitHub parts (#898), which draw `lines`.
  */
 
-export type SkeletonShape = 'card' | 'lines' | 'cells' | 'whynot'
+export type SkeletonShape = 'card' | 'lines' | 'cells' | 'whynot' | 'handled'
 
 export function Skeleton({
   shape,
@@ -33,6 +33,15 @@ export function Skeleton({
         shape === 'whynot' ? (
           <div key={i} className="sk-whynot" aria-hidden="true">
             <span className="sk-bar sk-id" />
+            <span className="sk-bar sk-line" />
+          </div>
+        ) : shape === 'handled' ? (
+          <div key={i} className="sk-card sk-handled" aria-hidden="true">
+            <span className="sk-bar sk-id" />
+            <span className="sk-bar sk-title" />
+            <span className="sk-bar sk-rail" />
+            <span className="sk-bar sk-line" />
+            <span className="sk-bar sk-line" />
             <span className="sk-bar sk-line" />
           </div>
         ) : shape === 'card' ? (
