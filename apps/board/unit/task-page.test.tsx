@@ -609,16 +609,19 @@ describe('a running task', () => {
     expect(arrangement(page(running()))).toMatchSnapshot()
   })
 
-  it("follows the run's log inside the running panel, closed, in the slot and the teal", () => {
+  it("follows the run's log inside the running panel, open, in the slot and the teal", () => {
     const html = page(running())
     const panel = html.slice(html.indexOf('data-rank="running"'), html.indexOf('data-rank="discussion"'))
-    expect(panel).toContain('<details class="alog slog"')
-    expect(panel).not.toContain('<details class="alog slog" open=""')
+    expect(panel).toContain('class="alog slog running-log"')
+    expect(panel).not.toContain('<details')
+    expect(panel).not.toContain('no limit')
+    expect(panel).not.toContain('Nothing is needed from you.')
+    expect(panel).not.toContain('Then')
     expect(html).not.toContain('class="swhere"')
     expect(html).not.toContain('Where it is')
     expect(html).toContain('class="standing live"')
     // One follower for one file: the attempt row points up instead.
-    expect(html.split('<details class="alog').length - 1).toBe(1)
+    expect(html.split('class="alog slog').length - 1).toBe(1)
     // And the attempt's own tab says so rather than opening a second one.
     const t = running()
     const tab = renderToStaticMarkup(

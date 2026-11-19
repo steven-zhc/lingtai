@@ -37,7 +37,7 @@
  */
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 
-import { openFor, saidLast, scannedAll, tailRule } from '@/lib/said'
+import { openFor, saidLast, tailRule } from '@/lib/said'
 
 import { useLatch } from './latch.tsx'
 

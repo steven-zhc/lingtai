@@ -1,5 +1,5 @@
 import { inWords } from '@lingtai/conductor/queue'
-import { SEVERITIES, type Envelope, type Finding, type Step } from '@lingtai/domain'
+import { SEVERITIES, stepDurationsMs, type Envelope, type Finding, type Step } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 
 import { billOf, billText, spendChip, totalBill, type SpendCurrency } from './spend.ts'
@@ -52,29 +52,12 @@ export interface RunningPanelView {
   stepTimes: Partial<Record<Step, string>>
 }
 
-/**
- * The time each step took, from the attempt's own events: a `StepStarted` paired
- * with the next `StepEnded` for the same step. The latest completed pair wins —
- * after a fix round an earlier round's review time describes a verdict since
- * replaced. A step with no completed pair (still in flight, or `claim`, which
- * writes no step events) has no entry; nothing is made up.
- */
-export function stepTimesOf(events: readonly Pick<Envelope, 'type' | 'at' | 'data'>[]): Partial<Record<Step, string>> {
-  const started = new Map<string, number>()
+/** The time each finished step took, in words (`stepDurationsMs` pairs the events). */
+export function stepTimesOf(
+  events: readonly { type: string; at: Date; data: unknown }[],
+): Partial<Record<Step, string>> {
   const out: Partial<Record<Step, string>> = {}
-  for (const e of events) {
-    if (e.type === 'StepStarted') {
-      const d = e.data as { step?: Step }
-      if (d.step !== undefined) started.set(d.step, e.at.getTime())
-    } else if (e.type === 'StepEnded') {
-      const step = (e.data as { outcome?: { step?: Step } }).outcome?.step
-      const from = step === undefined ? undefined : started.get(step)
-      if (step === undefined || from === undefined) continue
-      const ms = e.at.getTime() - from
-      started.delete(step)
-      if (Number.isFinite(ms) && ms >= 0) out[step] = inWords(ms)
-    }
-  }
+  for (const [step, ms] of Object.entries(stepDurationsMs(events)) as [Step, number][]) out[step] = inWords(ms)
   return out
 }
 

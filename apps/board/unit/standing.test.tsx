@@ -1200,13 +1200,12 @@ describe('the block, rendered', () => {
     const running: RunningPanelView = {
       head: { label: 'Running', step: 'build', round: null },
       line: { kind: 'step', step: 'build', actions: ['pnpm test'] },
-      ask: 'Nothing is needed from you.',
-      then: ['review', 'merge'],
+      stepTimes: {},
       said: [],
       watch: null,
       meters: {
         runId: 'r1',
-        round: { since: '2026-11-05T00:00:00.000Z', budget: '1h', of: 'round 1 of 4' },
+        round: { since: '2026-11-05T00:00:00.000Z', budget: '1h' },
         attempt: {
           since: '2026-11-05T00:00:00.000Z',
           turns: '0 turns in agent runs that have ended',
@@ -1231,10 +1230,11 @@ describe('the block, rendered', () => {
     )
     const panel = html.slice(html.indexOf('data-rank="running"'))
     expect(html).toContain('<div class="sreading sreading--advised">')
-    expect(panel).toContain('Nothing is needed from you.')
-    expect(panel).toContain('review → merge, unless a step sends it back.')
+    expect(panel).not.toContain('Nothing is needed from you.')
+    expect(panel).not.toContain('unless a step sends it back')
+    expect(panel).not.toContain('no limit')
     expect(panel.indexOf('data-rank="discussion"')).toBeGreaterThan(0)
-    expect(panel).toContain('This round')
+    expect(panel).toContain('this step')
     expect(panel).toContain('at most 150 turns a run')
     expect(panel).toContain('at most $5.00 a run')
     expect(panel).toContain('nothing billed yet')
@@ -1251,8 +1251,7 @@ describe('the block, rendered', () => {
     const running: RunningPanelView = {
       head: { label: 'Running', step: 'implement', round: null },
       line: { kind: 'step', step: 'implement', actions: ['agent'] },
-      ask: 'Nothing is needed from you.',
-      then: ['review', 'merge'],
+      stepTimes: {},
       said: [null],
       meters: null,
       watch: {

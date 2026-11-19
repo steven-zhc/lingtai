@@ -2,7 +2,7 @@ import type { Finding } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import { sinceText } from '../src/lib/progress.ts'
-import { runningPanelOf, type RunningContext } from '../src/lib/running.ts'
+import { runningPanelOf, stepTimesOf, type RunningContext } from '../src/lib/running.ts'
 import type { AttemptView } from '../src/lib/task.ts'
 
 const panelOf = (r: AttemptView) => runningPanelOf(r, null)
@@ -40,8 +40,6 @@ describe('runningPanelOf', () => {
     const p = panelOf(run({ stepNow: at('implement', 0) }))
     expect(p.head).toEqual({ label: 'Running', step: 'implement', round: null })
     expect(p.line).toEqual({ kind: 'step', step: 'implement', actions: ['agent'] })
-    expect(p.ask).toBe('Nothing is needed from you.')
-    expect(p.then).toEqual(['build', 'review', 'merge'])
   })
 
   it('a refusal fix with two findings puts the worst in the line and both beneath, worst first', () => {
@@ -78,48 +76,15 @@ describe('runningPanelOf', () => {
     expect(p.line).toEqual({ kind: 'between' })
   })
 
-  it('then skips steps whose planned is empty, and is null when nothing is planned', () => {
-    const p = panelOf(run({ stepNow: at('implement', 0), progress: plan({ implement: ['agent'], merge: ['merge'] }) }))
-    expect(p.then).toEqual(['merge'])
-    expect(panelOf(run({ stepNow: at('build', 0), progress: plan({}) })).then).toBeNull()
-    expect(panelOf(run({ stepNow: at('build', 0), progress: null })).then).toBeNull()
-  })
-
   it('with no plan known the step row is unknown, not an empty list', () => {
     const p = panelOf(run({ stepNow: at('prepared', 0), progress: plan({}) }))
     expect(p.line).toMatchObject({ kind: 'step', actions: null })
-  })
-
-  it('between steps, then starts after the leading steps that are done, not the furthest one that ran', () => {
-    const progress = plan({ implement: ['agent'], build: ['run'], review: ['agent'], merge: ['merge'] })
-    const states: Record<string, string> = { implement: 'passed', build: 'pending', review: 'failed', merge: 'pending' }
-    const steps = (progress as unknown as { steps: { step: string; state: string }[] }).steps
-    for (const s of steps) s.state = states[s.step]!
-    expect(panelOf(run({ progress })).then).toEqual(['build', 'review', 'merge'])
   })
 
   it('a recorded plan that is empty everywhere is known: an empty row and nothing further, not unreadable', () => {
     const progress = { ...plan({}), planKnown: true } as unknown as AttemptView['progress']
     const p = panelOf(run({ stepNow: at('implement', 0), progress }))
     expect(p.line).toEqual({ kind: 'step', step: 'implement', actions: [] })
-    expect(p.then).toEqual([])
-  })
-
-  it('between steps after a standing refusal, steps whose verdicts are stale run again, and those passed on the new head are done', () => {
-    const progress = plan({ implement: ['agent'], build: ['run'], review: ['agent'], merge: ['merge'] })
-    const states: Record<string, string> = { implement: 'passed', build: 'passed', review: 'failed', merge: 'pending' }
-    const steps = (progress as unknown as { steps: { step: string; state: string }[] }).steps
-    for (const s of steps) s.state = states[s.step]!
-    const refusal = { key: 'review:cold', evidence: 'x', findings: [] }
-    const verdicts = (buildStale: boolean) =>
-      [
-        { step: 'build:run', state: 'passed', stale: buildStale, evidence: null, onSha: null, findings: [] },
-        { step: 'review:cold', state: 'failed', stale: true, evidence: null, onSha: null, findings: [] },
-      ] as AttemptView['steps']
-    // Build's verdict is about the old head: it runs again.
-    expect(panelOf(run({ progress, refusal, steps: verdicts(true) })).then).toEqual(['build', 'review', 'merge'])
-    // Build has passed on the new head, review's refusal still standing: review is next.
-    expect(panelOf(run({ progress, refusal, steps: verdicts(false) })).then).toEqual(['review', 'merge'])
   })
 })
 
@@ -159,17 +124,27 @@ describe('runningPanelOf meters', () => {
     expect(panelOf(withNow(60_000)).meters).toBeNull()
   })
 
-  it('a refusal fix reads round N of the recipe ceiling', () => {
+  it('the round meter is the phase clock and its limit, and nothing about the round number', () => {
     const m = runningPanelOf(withNow(900_000, { stepNow: at('implement', 1) }), ctx())!.meters!
-    expect(m.round).toEqual({ since: SINCE, budget: '15m', of: 'round 1 of 4' })
+    expect(m.round).toEqual({ since: SINCE, budget: '15m' })
   })
 
-  it('a granted round says granted, and an unknown ceiling drops the of', () => {
-    const granted = row({ grant: 'w1', round: 2 })
-    const m = runningPanelOf(withNow(null, { stepNow: at('implement', 2) }), ctx({ rows: [granted] })).meters!
-    expect(m.round).toEqual({ since: SINCE, budget: null, of: 'round 2, granted' })
-    const unknown = runningPanelOf(withNow(null, { stepNow: at('implement', 1) }), ctx({ rounds: null })).meters!
-    expect(unknown.round!.of).toBe('round 1')
+  it('pairs each step start with its end, the latest completed visit winning, and nothing for one in flight', () => {
+    const ev = (type: string, sec: number, data: unknown) => ({
+      type,
+      at: new Date(Date.UTC(2026, 10, 5, 0, sec, 0)),
+      data,
+    })
+    const times = stepTimesOf([
+      ev('StepStarted', 0, { step: 'implement', round: 0 }),
+      ev('StepEnded', 3, { outcome: { step: 'implement' } }),
+      ev('StepStarted', 4, { step: 'review', round: 0 }),
+      ev('StepEnded', 9, { outcome: { step: 'review' } }),
+      ev('StepStarted', 10, { step: 'review', round: 0 }),
+      ev('StepEnded', 12, { outcome: { step: 'review' } }),
+      ev('StepStarted', 13, { step: 'merge', round: 0 }),
+    ])
+    expect(times).toEqual({ implement: '3m', review: '2m' })
   })
 
   it('sums turns over the rows and bills them', () => {
