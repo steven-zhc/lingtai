@@ -24,19 +24,19 @@ type LedgerRow = {
 const LEDGER: LedgerRow[] = [
   {
     key: "Who says it's done",
-    alone: 'The agent, or your own scripts',
-    lingtai: 'Your checks, a cold review, and your OK',
+    alone: 'The agent, running its own checks',
+    lingtai: 'Your checks, run apart from the agent, a second AI review, and your OK',
+  },
+  {
+    key: 'The workflow',
+    alone: 'Skills and prompts you write, and keep working',
+    lingtai: 'Built in: steps you set once in a recipe. Your skills still work — for the task, not the process.',
   },
   {
     key: 'When something breaks',
-    alone: 'It stops, or tries the same thing again. You find out later.',
+    alone: 'It stops and asks you what to do — even for things it could fix itself.',
     lingtai: 'A router picks the fix: a rule for most, one quick AI look for some, you only when it must.',
     see: { href: '#when-it-fails', label: 'See how ↓' },
-  },
-  {
-    key: 'Checks',
-    alone: 'Run by the agent as part of its work',
-    lingtai: "Run separately; the agent can't skip them",
   },
   { key: 'Rules', alone: 'Usually in the repo it can edit', lingtai: 'Outside anything it can edit' },
   {
@@ -47,6 +47,14 @@ const LEDGER: LedgerRow[] = [
   { key: 'After a crash', alone: 'Depends on your session', lingtai: 'Saved; it carries on after a restart' },
   { key: 'Cost', alone: "Your provider's dashboard", lingtai: 'Per ticket, with a daily limit' },
   { key: 'Record', alone: 'The chat transcript', lingtai: 'Every step recorded, and a receipt' },
+]
+
+const PROMPTS: [string, string][] = [
+  ['Read issue #1 with gh, make a branch, and implement it.', 'Done — I added a ReadingTime component.'],
+  ['Run the tests and fix anything that fails.', 'One failed; fixed. 42 passed.'],
+  ['Review your change for bugs and edge cases.', 'Found one: it rounds down. Fixed.'],
+  ['main moved. Rebase and fix the conflicts.', 'Rebased; one conflict in ChapterMeta, resolved.'],
+  ['Run the tests again, then open a PR.', 'Tests pass. PR opened.'],
 ]
 
 export const metadata: Metadata = { alternates: { canonical: '/' } }
@@ -98,7 +106,7 @@ export function HomePage({ books }: { books: Books | null }) {
                 <p className="kicker">
                   Replay <span className="tag ill">ILLUSTRATION</span>
                 </p>
-                <h2 id="replay-title">The agent got it wrong. Twice.</h2>
+                <h2 id="replay-title">Three things went wrong. You slept through them.</h2>
                 <p className="sub">Scroll down. The receipt beside it fills in one step at a time.</p>
                 <div className="rp-scenes">
                   <div className="rp-scene" data-step="1" id="s1">
@@ -127,46 +135,58 @@ export function HomePage({ books }: { books: Books | null }) {
                     <pre className="term">
                       <span className="bad">✗</span> reading-time.test.ts{'\n'}
                       {'  '}expected &quot;6 min read&quot;, received &quot;7 min read&quot;{'\n'}
-                      <span className="dim">round 1</span>
+                      <span className="dim">fix round 1</span>
                       {'  '}
                       <span className="ok">✓</span> check{'  '}
                       <span className="ok">✓</span> build
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="4" id="s4">
-                    <div className="time">23:20 · A COLD REVIEW</div>
-                    <h3>The cold review finds another bug.</h3>
+                    <div className="time">23:20 · A SECOND AI REVIEW</div>
+                    <h3>A second AI review finds another bug.</h3>
                     <p>One more fix, then the review passes.</p>
                     <pre className="term">
                       <span className="dim">review</span> <span className="bad">✗</span> rounds 5.4 minutes up to 6
                       {'\n'}
-                      <span className="dim">round 2</span> <span className="ok">✓</span> review
+                      <span className="dim">fix round 2</span> <span className="ok">✓</span> review
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="5" id="s5">
-                    <div className="time">23:41 → 07:31 · YOU</div>
-                    <h3>It stops and asks. You approve in the morning.</h3>
-                    <p>You asked to approve first, so nothing lands until you do.</p>
+                    <div className="time">03:12 · WHILE YOU SLEEP</div>
+                    <h3>Someone else changed main. It sorts that out too.</h3>
+                    <p>
+                      Their change and yours touched the same line. An AI combined the two, and your checks and the
+                      review ran again. Nobody woke you.
+                    </p>
+                    <pre className="term">
+                      <span className="dim">main moved</span> 2 commits{'\n'}
+                      <span className="bad">conflict</span> ChapterMeta.tsx{'\n'}
+                      <span className="ok">✓</span> combined{'  '}
+                      <span className="ok">✓</span> checks{'  '}
+                      <span className="ok">✓</span> review
+                    </pre>
+                  </div>
+                  <div className="rp-scene" data-step="6" id="s6">
+                    <div className="time">07:31 · YOU</div>
+                    <h3>You read the receipt over coffee, and it lands.</h3>
+                    <p>
+                      You asked to OK merges yourself, so it waited for one click. Turn that off and it lands on its
+                      own.
+                    </p>
                     <div className="frame">
                       <div className="wait">
                         <div className="cause">
-                          <small>READY TO LAND · YOU ASKED TO APPROVE FIRST</small>
+                          <small>READY TO LAND · 3 PROBLEMS HANDLED FOR YOU</small>
                         </div>
                         <div className="moves">
                           <span className="btn pri">
-                            Approve<small>RECOMMENDED</small>
+                            Approve and continue<small>RECOMMENDED</small>
                           </span>
-                          <span className="btn">Requeue</span>
+                          <span className="btn">Start a new attempt from base</span>
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div className="rp-scene" data-step="6" id="s6">
-                    <div className="time">07:31 · MERGED</div>
-                    <h3>It lands. The receipt is stamped.</h3>
-                    <p>Your checks run once more on the latest main, then it merges and the ticket closes.</p>
                     <pre className="term">
-                      <span className="ok">✓</span> checks{'  '}on the latest main{'\n'}
                       <span className="dim">merged</span>
                       {'  '}agent/1 → main{'\n'}
                       <span className="dim">closed</span>
@@ -231,8 +251,8 @@ export function HomePage({ books }: { books: Books | null }) {
                 <p className="kicker">The first question</p>
                 <h2 id="why-title">Why not just give the agent the issue?</h2>
                 <p className="sub">
-                  You can. Then the only proof it worked is <b>the agent saying so</b>. With Lingtai, you get{' '}
-                  <b>the receipt you just watched</b>.
+                  You can — then you drive it, <b>prompt after prompt</b>, and check its work yourself. With Lingtai you{' '}
+                  <b>file the ticket</b>; it runs the rest and hands you a receipt.
                 </p>
               </div>
               <div className="why-pair">
@@ -243,7 +263,14 @@ export function HomePage({ books }: { books: Books | null }) {
                     <span className="why-chip">Codex</span>
                   </figcaption>
                   <div className="vsm">
-                    <p className="vsm-k">You type a prompt</p>
+                    <p className="vsm-k">You file a ticket…</p>
+                    <div className="vsm-issue">
+                      <div className="vsm-ihead">
+                        <span className="vsm-open">● Open</span>
+                        <b>#1 · Add a reading-time badge</b>
+                      </div>
+                    </div>
+                    <p className="vsm-k">…then type prompt after prompt</p>
                     <div className="vsm-term">
                       <div className="vsm-bar">
                         <i />
@@ -251,17 +278,19 @@ export function HomePage({ books }: { books: Books | null }) {
                         <i />
                         <span>claude · chapter-garden</span>
                       </div>
-                      <p className="vsm-in">
-                        <span className="vsm-ps">&gt;</span> Add a reading-time badge to chapter pages. Round up, show
-                        &quot;&lt; 1 min&quot; for short ones. Run the tests when you&apos;re done.
-                      </p>
-                      <p className="vsm-out">
-                        I added a <code>ReadingTime</code> component and wired it into <code>ChapterMeta</code>. I ran{' '}
-                        <code>npm test</code> — 42 passed. Ready for you to review.
-                      </p>
+                      <div className="vsm-prompts">
+                        {PROMPTS.map(([ask, reply], i) => (
+                          <div key={ask}>
+                            <p className="vsm-in">
+                              <span className="vsm-ps">{i + 1}</span> {ask}
+                            </p>
+                            <p className="vsm-out">{reply}</p>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     <p className="vsm-then">
-                      Then <b>you</b> watch it, re-prompt it when it drifts, check its tests, and merge it.
+                      You wait for each answer, decide what to ask next, and type it — five times for one small change.
                     </p>
                   </div>
                 </figure>
@@ -276,24 +305,19 @@ export function HomePage({ books }: { books: Books | null }) {
                     <span className="why-chip">+ your rules</span>
                   </figcaption>
                   <div className="vsm">
-                    <p className="vsm-k">You file a ticket</p>
+                    <p className="vsm-k">You file one ticket</p>
                     <div className="vsm-issue">
                       <div className="vsm-ihead">
                         <span className="vsm-open">● Open</span>
                         <b>#1 · Add a reading-time badge</b>
                       </div>
-                      <p>
-                        Chapter pages show how long they take to read. Round up; under a minute shows &quot;&lt; 1
-                        min&quot;.
-                      </p>
-                      <div className="vsm-labels">
-                        <span>feature</span>
-                        <span className="vsm-picked">Lingtai picked it up</span>
-                      </div>
                     </div>
                     <p className="vsm-then">
-                      Then <b>Lingtai</b> does the rest: runs your tests, has a second AI review the change, waits for
-                      your OK to merge, and keeps a record of what it cost. <a href="#replay">See it above ↑</a>
+                      Lingtai builds it, tests it, has an AI review it and an AI judge settle what&apos;s left, and
+                      fixes the problems on its own. <a href="#replay">See it above ↑</a>
+                    </p>
+                    <p className="vsm-then">
+                      <b>You: nothing, until it needs a decision.</b>
                     </p>
                   </div>
                 </figure>

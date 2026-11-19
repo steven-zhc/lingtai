@@ -78,7 +78,7 @@ describe("the home page's argument", () => {
     const order = [
       'Agents do the work',
       'One ticket, filed to landed.',
-      'The agent got it wrong. Twice.',
+      'Three things went wrong. You slept through them.',
       'Every run is sandboxed.',
       'Why not just give the agent the issue?',
       'Three steps to your first receipt.',
@@ -251,8 +251,11 @@ describe('why not just give the agent the issue', () => {
   )
 
   it.each([
-    ["Who says it's done", 'Your checks, a cold review, and your OK'],
-    ['Checks', "Run separately; the agent can't skip them"],
+    ["Who says it's done", 'Your checks, run apart from the agent, a second AI review, and your OK'],
+    [
+      'The workflow',
+      'Built in: steps you set once in a recipe. Your skills still work — for the task, not the process.',
+    ],
     ['Rules', 'Outside anything it can edit'],
     ['Sandbox', 'Sandboxed: keys unreadable, network allowlisted'],
     ['After a crash', 'Saved; it carries on after a restart'],
@@ -260,6 +263,10 @@ describe('why not just give the agent the issue', () => {
     ['Record', 'Every step recorded, and a receipt'],
   ])('says of %s, with Lingtai: %s', (key, claim) => {
     expect(rows.find((r) => r.key === key)?.lingtai).toBe(claim)
+  })
+
+  it('has no Requeue anywhere on the page', () => {
+    expect(html).not.toContain('Requeue')
   })
 
   it('says the agent alone can read your keys and logins', () => {
@@ -280,7 +287,7 @@ describe('why not just give the agent the issue', () => {
     const ledger = html.slice(html.indexOf('class="ledger"'), html.indexOf('class="fp-head"'))
     expect(ledger).toContain('<table')
     expect(ledger.match(/scope="col"/g)).toHaveLength(2)
-    // the seven it always had, and When something breaks (#1291)
+    // the seven it always had (Checks folded into Who says it's done, The workflow added), and When something breaks
     expect(ledger.match(/scope="row"/g)).toHaveLength(8)
   })
 })
@@ -319,7 +326,7 @@ describe('the replay receipt', () => {
 
   it('has every row empty at 0 and clamps outside 0-6', () => {
     const s = receiptAt(0)
-    expect([s.impl, s.checks, s.review, s.approve]).toEqual(['—', '—', '—', '—'])
+    expect([s.impl, s.checks, s.review, s.main, s.approve]).toEqual(['—', '—', '—', '—', '—'])
     expect(s.status).toBe('Queued')
     expect(receiptAt(99)).toBe(receiptAt(6))
     expect(receiptAt(-1)).toBe(receiptAt(0))
@@ -406,8 +413,10 @@ describe('the replay receipt', () => {
 
   it('puts the replay heading after the hero in the page source', async () => {
     const text = await prose()
-    expect(text.indexOf('The agent got it wrong. Twice.')).toBeGreaterThan(text.indexOf('Agents do the work'))
-    expect(text.indexOf('The agent got it wrong. Twice.')).toBeLessThan(
+    expect(text.indexOf('Three things went wrong. You slept through them.')).toBeGreaterThan(
+      text.indexOf('Agents do the work'),
+    )
+    expect(text.indexOf('Three things went wrong. You slept through them.')).toBeLessThan(
       text.indexOf('Three steps to your first receipt.'),
     )
   })
