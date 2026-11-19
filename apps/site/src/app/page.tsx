@@ -25,7 +25,7 @@ const LEDGER: LedgerRow[] = [
   {
     key: "Who says it's done",
     alone: 'The agent, running its own checks',
-    lingtai: 'Your checks, run apart from the agent, a second AI review, and your OK',
+    lingtai: 'Your checks, run apart from the agent, a second AI review — your OK only if you turn it on',
   },
   {
     key: 'The workflow',
@@ -71,7 +71,7 @@ export function HomePage({ books }: { books: Books | null }) {
                 <p className="kicker">For Claude Code and Codex</p>
                 <h1 id="hero-title">Agents do the work. Lingtai keeps the books.</h1>
                 <p className="lede">
-                  The agent writes the change. Your checks and a cold review decide whether it lands &mdash; and every
+                  The agent writes the change. Your checks and an AI review decide whether it lands &mdash; and every
                   ticket ends in a receipt you can check.
                 </p>
                 <div className="install">
@@ -106,91 +106,50 @@ export function HomePage({ books }: { books: Books | null }) {
                 <p className="kicker">
                   Replay <span className="tag ill">ILLUSTRATION</span>
                 </p>
-                <h2 id="replay-title">Three things went wrong. You slept through them.</h2>
-                <p className="sub">Scroll down. The receipt beside it fills in one step at a time.</p>
+                <h2 id="replay-title">You slept. It shipped.</h2>
+                <p className="sub">
+                  Three things went wrong overnight. Lingtai handled every one. Scroll down; the receipt beside it fills
+                  in one step at a time.
+                </p>
                 <div className="rp-scenes">
                   <div className="rp-scene" data-step="1" id="s1">
                     <div className="time">22:40 · YOU</div>
-                    <h3>You write a ticket. That&apos;s the whole setup.</h3>
-                    <p>One command starts the work.</p>
+                    <h3>You file a ticket and go to bed. The agent starts in a sandbox.</h3>
                     <pre className="term">
-                      <span className="p">$</span> lingtai start{'\n'}
-                      <span className="dim">chapter-garden</span>
-                      {'  '}taking #1{'  '}Add a reading-time badge
+                      <span className="p">$</span> lingtai start{'   '}taking #1 · sandboxed · 3 files changed
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="2" id="s2">
-                    <div className="time">22:51 · THE AGENT</div>
-                    <h3>The agent works in a separate copy of your repo.</h3>
-                    <p>Your own files stay untouched. Every commit is saved.</p>
+                    <div className="time">22:58 · LINGTAI</div>
+                    <h3>Tests broke → auto-fixed.</h3>
                     <pre className="term">
-                      <span className="ok">committed</span> b72d0e3{'  '}add a reading-time badge{'\n'}
-                      {'          '}3 files · +38 −2
+                      <span className="bad">✗</span> expected &quot;6 min read&quot;{'   '}
+                      <span className="dim">rule</span> · fix round 1 <span className="ok">✓</span>
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="3" id="s3">
-                    <div className="time">22:58 · YOUR CHECKS</div>
-                    <h3>Your checks fail. The agent has to fix it.</h3>
-                    <p>It gets the real output and tries again.</p>
+                    <div className="time">23:20 · LINGTAI</div>
+                    <h3>AI review found a bug → auto-fixed.</h3>
                     <pre className="term">
-                      <span className="bad">✗</span> reading-time.test.ts{'\n'}
-                      {'  '}expected &quot;6 min read&quot;, received &quot;7 min read&quot;{'\n'}
-                      <span className="dim">fix round 1</span>
-                      {'  '}
-                      <span className="ok">✓</span> check{'  '}
-                      <span className="ok">✓</span> build
+                      <span className="bad">✗</span> rounds 5.4 minutes up to 6{'   '}
+                      <span className="dim">one look</span> · fix round 2 <span className="ok">✓</span>
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="4" id="s4">
-                    <div className="time">23:20 · A SECOND AI REVIEW</div>
-                    <h3>A second AI review finds another bug.</h3>
-                    <p>One more fix, then the review passes.</p>
+                    <div className="time">03:12 · LINGTAI</div>
+                    <h3>Someone else changed main → auto-combined.</h3>
                     <pre className="term">
-                      <span className="dim">review</span> <span className="bad">✗</span> rounds 5.4 minutes up to 6
-                      {'\n'}
-                      <span className="dim">fix round 2</span> <span className="ok">✓</span> review
+                      <span className="bad">✗</span> conflict in ChapterMeta.tsx{'   '}
+                      <span className="dim">one look</span> · combined <span className="ok">✓</span> tests{' '}
+                      <span className="ok">✓</span> review <span className="ok">✓</span>
                     </pre>
                   </div>
                   <div className="rp-scene" data-step="5" id="s5">
-                    <div className="time">03:12 · WHILE YOU SLEEP</div>
-                    <h3>Someone else changed main. It sorts that out too.</h3>
-                    <p>
-                      Their change and yours touched the same line. An AI combined the two, and your checks and the
-                      review ran again. Nobody woke you.
-                    </p>
-                    <pre className="term">
-                      <span className="dim">main moved</span> 2 commits{'\n'}
-                      <span className="bad">conflict</span> ChapterMeta.tsx{'\n'}
-                      <span className="ok">✓</span> combined{'  '}
-                      <span className="ok">✓</span> checks{'  '}
-                      <span className="ok">✓</span> review
-                    </pre>
-                  </div>
-                  <div className="rp-scene" data-step="6" id="s6">
                     <div className="time">07:31 · YOU</div>
-                    <h3>You read the receipt over coffee, and it lands.</h3>
-                    <p>
-                      You asked to OK merges yourself, so it waited for one click. Turn that off and it lands on its
-                      own.
-                    </p>
-                    <div className="frame">
-                      <div className="wait">
-                        <div className="cause">
-                          <small>READY TO LAND · 3 PROBLEMS HANDLED FOR YOU</small>
-                        </div>
-                        <div className="moves">
-                          <span className="btn pri">
-                            Approve and continue<small>RECOMMENDED</small>
-                          </span>
-                          <span className="btn">Start a new attempt from base</span>
-                        </div>
-                      </div>
-                    </div>
+                    <h3>You wake up to a receipt. It landed at 03:20, on its own.</h3>
                     <pre className="term">
-                      <span className="dim">merged</span>
-                      {'  '}agent/1 → main{'\n'}
-                      <span className="dim">closed</span>
-                      {'  '}#1
+                      <span className="ok">✓</span> merged agent/1 → main 03:20{'   '}
+                      <span className="dim">handled for you</span> · 3 problems · 0 needed you
                     </pre>
                   </div>
                 </div>
@@ -313,8 +272,8 @@ export function HomePage({ books }: { books: Books | null }) {
                       </div>
                     </div>
                     <p className="vsm-then">
-                      Lingtai builds it, tests it, has an AI review it and an AI judge settle what&apos;s left, and
-                      fixes the problems on its own. <a href="#replay">See it above ↑</a>
+                      Lingtai builds it, tests it, has an AI review it, and fixes problems on its own.{' '}
+                      <a href="#replay">See it above ↑</a>
                     </p>
                     <p className="vsm-then">
                       <b>You: nothing, until it needs a decision.</b>
@@ -374,14 +333,21 @@ export function HomePage({ books }: { books: Books | null }) {
             <div className="faq">
               <h3 className="faq-title">Common questions</h3>
               <div className="faq-list">
-                <details className="faq-item faq-wide" open>
+                <details className="faq-item">
+                  <summary>Can I approve before it merges?</summary>
+                  <p>
+                    Yes. Turn on approval in the recipe and it waits for one click before it lands. It is off by
+                    default: your tests and the AI review decide.
+                  </p>
+                </details>
+                <details className="faq-item faq-wide">
                   <summary>What does it do in each case?</summary>
                   <FailurePathsTable />
                 </details>
                 <details className="faq-item">
                   <summary>Will it break main?</summary>
                   <p>
-                    Nothing lands until your checks and the cold review pass. If main is already broken, it stops and
+                    Nothing lands until your checks and the AI review pass. If main is already broken, it stops and
                     tells you, instead of spending money on a bug that isn&apos;t its own.
                   </p>
                 </details>

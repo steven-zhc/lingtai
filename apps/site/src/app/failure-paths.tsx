@@ -11,6 +11,7 @@ import { FailurePathsStage } from './failure-paths-stage'
 type Item = {
   key: string
   say: string
+  chip: string
   lane: 'rule' | 'look' | 'you'
   laneName: string
   what: string
@@ -21,6 +22,7 @@ type Item = {
 const ITEMS: Item[] = [
   {
     key: 'api',
+    chip: 'API down at 3am',
     say: 'The API went down at 3am',
     lane: 'rule',
     laneName: 'Rule',
@@ -30,6 +32,7 @@ const ITEMS: Item[] = [
   },
   {
     key: 'flaky',
+    chip: 'A flaky test',
     say: 'A test is flaky',
     lane: 'rule',
     laneName: 'Rule',
@@ -39,7 +42,8 @@ const ITEMS: Item[] = [
   },
   {
     key: 'review',
-    say: 'The reviewer found a bug',
+    chip: 'AI review found a bug',
+    say: 'AI review found a bug',
     lane: 'look',
     laneName: 'One look',
     what: 'One quick look named the lines to change. The agent fixed them on top of its own work, and your checks and the review ran again.',
@@ -48,6 +52,7 @@ const ITEMS: Item[] = [
   },
   {
     key: 'unclear',
+    chip: 'An unclear ticket',
     say: 'The ticket is unclear',
     lane: 'you',
     laneName: 'You',
@@ -57,6 +62,7 @@ const ITEMS: Item[] = [
   },
   {
     key: 'big',
+    chip: 'A ticket too big',
     say: 'The ticket is too big',
     lane: 'look',
     laneName: 'One look',
@@ -66,6 +72,7 @@ const ITEMS: Item[] = [
   },
   {
     key: 'main',
+    chip: 'Main moved',
     say: 'Someone else changed main',
     lane: 'rule',
     laneName: 'Rule',
@@ -75,6 +82,7 @@ const ITEMS: Item[] = [
   },
   {
     key: 'limit',
+    chip: 'Claude limit ran out',
     say: 'My Claude limit ran out',
     lane: 'rule',
     laneName: 'Rule',
@@ -130,14 +138,13 @@ export function FailurePaths() {
           <h2 id="fp-title">Here is what happens when something breaks.</h2>
           <p className="fp-legend">
             {LEGEND.map((l, i) => (
-              <span key={l.lane}>
-                {i > 0 ? ' · ' : null}
+              <span className="fp-leg" key={l.lane}>
                 <span className={`fp-dot-key fp-${l.lane}`} aria-hidden="true" />
                 <b>{l.bold}</b>
                 {l.rest}
+                {i < LEGEND.length - 1 ? ' · ' : '. Every path has a limit.'}
               </span>
             ))}
-            . Every path has a limit.
           </p>
         </div>
       </div>

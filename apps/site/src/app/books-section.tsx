@@ -60,7 +60,7 @@ const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${num(n)} 
 const joined = (parts: (string | null | false)[]) => parts.filter((p): p is string => !!p).join(' · ')
 
 const PURPOSES: Record<string, { label: string; rest: string; color: string }> = {
-  Work: { label: 'Work', rest: 'writing the code, and the cold review', color: 'var(--accent)' },
+  Work: { label: 'Work', rest: 'writing the code, and the AI review', color: 'var(--accent)' },
   Answering: { label: 'Fixes', rest: 'after failed checks or a refused review', color: 'var(--signal)' },
   Triage: { label: 'Triage', rest: 'telling you why it stopped', color: '#7a8fa0' },
   Judge: { label: 'Judging', rest: '', color: 'var(--pass)' },

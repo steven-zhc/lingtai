@@ -7,7 +7,7 @@ import { describe, expect, it } from 'vitest'
 import { Bar, DOCS_MENU } from '@/app/chrome'
 import { HomePage } from '@/app/page'
 import { Receipt } from '@/app/receipt'
-import { dollars, receiptAt } from '@/app/replay-receipt'
+import { dollars, receiptAt, STEPS } from '@/app/replay-receipt'
 import { SHOTS } from '@/app/shots'
 import { parseBooks } from '@/lib/books'
 import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
@@ -78,7 +78,7 @@ describe("the home page's argument", () => {
     const order = [
       'Agents do the work',
       'One ticket, filed to landed.',
-      'Three things went wrong. You slept through them.',
+      'You slept. It shipped.',
       'Every run is sandboxed.',
       'Why not just give the agent the issue?',
       'Three steps to your first receipt.',
@@ -149,8 +149,9 @@ describe("the home page's argument", () => {
     const html = renderToStaticMarkup(<HomePage books={null} />)
     const faq = html.slice(html.indexOf('class="faq"'))
     const block = faq.slice(0, faq.indexOf('</section>'))
-    expect(block.match(/<details/g)).toHaveLength(5)
+    expect(block.match(/<details/g)).toHaveLength(6)
     for (const q of [
+      'Can I approve before it merges?',
       'What does it do in each case?',
       'Will it break main?',
       'Will it run up a bill?',
@@ -230,7 +231,7 @@ describe("the home page's argument", () => {
     const layout = flat(await readFile(path.resolve(import.meta.dirname, '../src/app/layout.tsx'), 'utf8'))
     expect(layout).toContain("default: 'Lingtai — agents do the work, Lingtai keeps the books'")
     expect(layout).toContain(
-      'Lingtai hands your tickets to Claude Code or Codex, runs your checks and a cold review, and ends every ticket in a receipt you can check',
+      'Lingtai hands your tickets to Claude Code or Codex, runs your checks and an AI review, and ends every ticket in a receipt you can check',
     )
     expect(layout).not.toContain('one at a time')
   })
@@ -251,7 +252,10 @@ describe('why not just give the agent the issue', () => {
   )
 
   it.each([
-    ["Who says it's done", 'Your checks, run apart from the agent, a second AI review, and your OK'],
+    [
+      "Who says it's done",
+      'Your checks, run apart from the agent, a second AI review — your OK only if you turn it on',
+    ],
     [
       'The workflow',
       'Built in: steps you set once in a recipe. Your skills still work — for the task, not the process.',
@@ -293,7 +297,7 @@ describe('why not just give the agent the issue', () => {
 })
 
 describe('the replay receipt', () => {
-  const steps = [0, 1, 2, 3, 4, 5, 6].map(receiptAt)
+  const steps = [0, 1, 2, 3, 4, 5].map(receiptAt)
 
   it('renders a landed and a closed receipt from props', () => {
     const base = {
@@ -317,19 +321,38 @@ describe('the replay receipt', () => {
     expect(closed).not.toContain('rcpt landed')
   })
 
-  it('is stamped only at step 6, and the cost never decreases', () => {
-    expect(steps.map((s) => s.stamped)).toEqual([false, false, false, false, false, false, true])
+  it('is stamped only at step 5, and the cost never decreases', () => {
+    expect(steps.map((s) => s.stamped)).toEqual([false, false, false, false, false, true])
     const cents = steps.map((s) => s.cents)
     expect(cents).toEqual([...cents].sort((a, b) => a - b))
-    expect(dollars(cents[6]!)).toBe('$0.40')
+    expect(dollars(cents[5]!)).toBe('$0.40')
   })
 
-  it('has every row empty at 0 and clamps outside 0-6', () => {
+  it('has every row empty at 0 and clamps outside 0-5', () => {
     const s = receiptAt(0)
-    expect([s.impl, s.checks, s.review, s.main, s.approve]).toEqual(['—', '—', '—', '—', '—'])
+    expect([s.impl, s.checks, s.review, s.main, s.merged, s.handled]).toEqual(['—', '—', '—', '—', '—', '—'])
     expect(s.status).toBe('Queued')
-    expect(receiptAt(99)).toBe(receiptAt(6))
+    expect(receiptAt(99)).toBe(receiptAt(5))
     expect(receiptAt(-1)).toBe(receiptAt(0))
+  })
+
+  it('has five steps, no approval row, and lands on its own at the last', () => {
+    expect(STEPS).toBe(5)
+    const last = receiptAt(5)
+    expect(last.merged).toBe('03:20, on its own')
+    expect(last.handled).toBe('3 problems · 0 needed you')
+    expect(last.status).toBe('✓ Landed')
+    expect(JSON.stringify(steps)).not.toContain('Approved')
+  })
+
+  it('has five scenes, none of them waiting for a click, and a FAQ item about approval first', () => {
+    const html = renderToStaticMarkup(<HomePage books={null} />)
+    expect(html.match(/class="rp-scene"/g)).toHaveLength(5)
+    expect(html).not.toContain('Approve and continue')
+    expect(html).not.toMatch(/cold review|AI judge|The reviewer found/)
+    const faq = html.slice(html.indexOf('class="faq-list"'))
+    expect(faq.indexOf('Can I approve before it merges?')).toBeLessThan(faq.indexOf('What does it do in each case?'))
+    expect(faq).not.toMatch(/<details[^>]* open/)
   })
 
   it('never says log in any state', () => {
@@ -391,7 +414,7 @@ describe('the replay receipt', () => {
     expect(SHOTS.map((s) => s.caption)).toEqual([
       'The board — queued, running, waiting on you, landed',
       'One ticket — every step, the review, what it cost',
-      "Landed — what changed, with the reviewer's summary",
+      "Landed — what changed, with the AI review's summary",
       'Report — how the work converges and what it cost',
     ])
     for (const s of SHOTS) {
@@ -413,11 +436,7 @@ describe('the replay receipt', () => {
 
   it('puts the replay heading after the hero in the page source', async () => {
     const text = await prose()
-    expect(text.indexOf('Three things went wrong. You slept through them.')).toBeGreaterThan(
-      text.indexOf('Agents do the work'),
-    )
-    expect(text.indexOf('Three things went wrong. You slept through them.')).toBeLessThan(
-      text.indexOf('Three steps to your first receipt.'),
-    )
+    expect(text.indexOf('You slept. It shipped.')).toBeGreaterThan(text.indexOf('Agents do the work'))
+    expect(text.indexOf('You slept. It shipped.')).toBeLessThan(text.indexOf('Three steps to your first receipt.'))
   })
 })
