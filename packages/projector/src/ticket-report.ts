@@ -625,6 +625,23 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
             break
           }
 
+          case 'WaitResolved': {
+            const d = event.data as PayloadOf<'WaitResolved'>
+            change = (s) => {
+              const seq = event.seq.toString()
+              if (s.raised.some((r) => r.seq === seq)) return
+              s.raised.push({
+                _tag: 'Answer',
+                seq,
+                at: event.at.toISOString(),
+                waitId: d.waitId,
+                by: d.by,
+                resolution: d.resolution._tag,
+              })
+            }
+            break
+          }
+
           case 'StepRedone':
           case 'StepRerunInPlace': {
             const d = event.data as PayloadOf<'StepRedone'>

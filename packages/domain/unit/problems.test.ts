@@ -177,3 +177,50 @@ describe('problemsOf counts a problem once, by who finally answered it', () => {
     expect(out[0]!.attempt).toBe(1)
   })
 })
+
+describe('problemsOf, the sequences a review refused', () => {
+  const answer = (waitId: string, by: string, resolution: string, m: number): Raised => ({
+    _tag: 'Answer',
+    seq: String(++n),
+    at: at(m).toISOString(),
+    waitId,
+    by,
+    resolution,
+  })
+
+  it('the last resolution decides, not the first the ticket reduce kept', () => {
+    const w = escalated('ReviewFindings', 2, 'triage')
+    const a = [answer('w2', 'triage', 'Approve', 3), answer('w2', 'alice', 'Approve', 4)]
+    expect(one([route('ReviewFindings', null, 1), ...a], [w])).toMatchObject({ answeredBy: 'you' })
+  })
+
+  it('a crash wait claims its redos though a route was appended after them', () => {
+    const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 9, 'alice')
+    const out = problemsOf([redo(1), redo(2), route('ReviewFindings', 'fix-lines', 3)], [w], claims)
+    expect(out.map((p) => [p.kind, p.answeredBy])).toEqual([
+      ['stopped', 'you'],
+      ['review-fixed', 'system'],
+    ])
+  })
+
+  it('the sixth question, wrapped as AskLimit, still pairs with its route', () => {
+    const asked = { _tag: 'AgentQuestion', run: { runId: RUN }, step: 'implement', questions: [] }
+    const w = wait(
+      { _tag: 'AskLimit', run: { runId: RUN }, bound: 'personAsks', used: 5, allowed: 5, asked },
+      2,
+      'alice',
+    )
+    expect(one([route('InputNeeded', null, 1)], [w])).toMatchObject({ kind: 'asked', answeredBy: 'you', waitId: 'w2' })
+  })
+
+  it('a completed split is too-big, answered by the system, whatever the wait’s reason', () => {
+    const w = wait({ _tag: 'BudgetExhausted', run: { runId: RUN } }, 2, 'triage', 'TicketTooBig')
+    const split = answer('w2', 'triage', 'Split', 3)
+    expect(one([split], [w])).toMatchObject({ kind: 'too-big', answeredBy: 'system' })
+  })
+
+  it('a redo whose wait triage diagnosed as a broken setup is setup, you', () => {
+    const w = wait({ _tag: 'AgentCrashed', run: { runId: RUN }, step: 'implement' }, 5, 'triage', 'SetupBroken')
+    expect(one([redo(1)], [w])).toMatchObject({ kind: 'setup', answeredBy: 'you' })
+  })
+})

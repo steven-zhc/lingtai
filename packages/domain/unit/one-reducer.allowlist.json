@@ -426,6 +426,14 @@
   {
     "file": "packages/projector/src/ticket-report.ts",
     "function": "reduce",
+    "type": "WaitResolved",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps every resolution's answerer for `problemsOf`: the ticket reduce keeps the first, and the last one decides (0123 §2)."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
     "type": "WaitStarted",
     "count": 1,
     "class": "join",
