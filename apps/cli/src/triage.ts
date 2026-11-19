@@ -14,6 +14,7 @@
  */
 import { createRuntime, runtimeVersionOfEffect, type Runtime, type RunOutcome } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
+import { diffBaseShaOf } from '@lingtai/conductor'
 import type { TicketListing } from '@lingtai/conductor/discover'
 import { readingFor } from '@lingtai/conductor/discuss'
 import { githubClientForEffect, projectClientEffect } from '@lingtai/conductor/filter'
@@ -31,10 +32,12 @@ import {
   type ReadableRef,
   type TriageEvidence,
 } from '@lingtai/conductor/triage'
+import { writeSectionEffect, type WriteSectionResult } from '@lingtai/conductor/write-section'
 import { TRIAGE_EVENTS } from '@lingtai/daemon'
 import {
   BOUNDS,
   actionFor,
+  causeOriginOf,
   parseTicketStream,
   attemptReducer,
   personAsksFromState,
@@ -743,6 +746,27 @@ export function daemonTriagePorts(
                 newAttempts: limits.ticket.newAttempts,
               }
             }),
+          writeSpentOn: (ticketId, text) =>
+            Effect.gen(function* () {
+              const parsed = parseTicketStream(ticketId)
+              const state = parsed === null ? null : yield* readProjectEffect(parsed.project)
+              if (state === null) return { written: false, detail: `${ticketId} has no registered project` } as const
+              const github = yield* githubClientForEffect(state)
+              // One key for the ticket, so a second cut-off run replaces the first's note; verified, because the
+              // redo must not start on a body that only might carry it.
+              return yield* writeSectionEffect({
+                store: eventStore,
+                github,
+                ticketId,
+                key: `${ticketId}/spent-on`,
+                text,
+                verified: true,
+              })
+            }).pipe(
+              Effect.catch((e) =>
+                Effect.succeed({ written: false, detail: e instanceof Error ? e.message : String(e) } as const),
+              ),
+            ),
           prepare,
           prepareCheckout: (project, sha, signal) => prepareTriageCheckout(project, sha, undefined, signal),
           log,
@@ -817,6 +841,11 @@ export interface TriagePorts extends SnapshotReadOptions {
   limits?(
     ticketId: string,
   ): Effect.Effect<{ refusalFixes: number; conflictResolutions: number; newAttempts: number } | null, unknown>
+  /**
+   * Writes the ticket's one `spent-on` section before a `RedoStep` is recorded (#1260). **Absent, a redo that owes a
+   * section is advice only**: the wait stays a person's.
+   */
+  writeSpentOn?(ticketId: string, text: string): Effect.Effect<WriteSectionResult>
   /** `apps/cli/src/discuss.ts`'s `prepare` in production — an empty directory and a settings file that denies every tool. */
   prepare(id: string): Effect.Effect<{ cwd: string; settingsPath: string }, unknown>
   /**
@@ -1064,10 +1093,7 @@ export const readActContext = (
       },
       personAsks: { used: personAsksFromState(state), allowed: BOUNDS.personAsks },
     } as const
-    const origin =
-      request.reason._tag === 'ProposedEscalated' && request.reason.proposal._tag === 'DiffTooLarge'
-        ? ('diff-too-large' as const)
-        : ('other' as const)
+    const origin = causeOriginOf(request.reason)
     const refIs = (ref: string, sha: string): Effect.Effect<boolean, unknown> =>
       deps.remote.refSha({ project, ref }).pipe(Effect.map((found) => found === sha))
     const action = answer._tag === 'TriageAnswered' ? actionFor(answer.cause, origin, counters) : null
@@ -1077,11 +1103,20 @@ export const readActContext = (
       const saved = savedHeadOf(run)
       if (saved._tag === 'Saved' && (yield* refIs(saved.ref, saved.head))) fix = { onSha: saved.head, ref: saved.ref }
     }
-    if (run !== null && runId !== null && action?._tag === 'redoStep') {
+    if (
+      run !== null &&
+      runId !== null &&
+      (action?._tag === 'redoStep' || action?._tag === 'writeSpentOnThenRedoStep')
+    ) {
       const head = rerunHeadOf(run)
       // Only a head read from the remote just now is one a rerun continues on; the recorded base is not offered.
       if ('at' in head && head.atRef !== null && (yield* refIs(head.atRef, head.at)))
         redo = { onSha: head.at, ref: head.atRef }
+      // A run that committed nothing has no ref to check: it continues on the base commit it was cut from.
+      if ('atBase' in head) {
+        const base = diffBaseShaOf(runEvents)
+        if (base !== null) redo = { onSha: base, ref: null }
+      }
     }
     const split =
       action?._tag === 'splitTicket' && splitFacts !== null
@@ -1616,6 +1651,9 @@ const waitTriageWithin = (
             by,
             // Bound to the version `TriageStarted` left: only this triage's own run facts may sit after it.
             ifVersion: boundVersion,
+            ...(deps.writeSpentOn === undefined
+              ? {}
+              : { writeSection: (text: string) => deps.writeSpentOn!(request.ticketId, text) }),
             ...(deps.limits === undefined || boundHead === null
               ? {}
               : {

@@ -1327,6 +1327,11 @@ export function unchangedSince(since: readonly SinceEvent[], waitId: WaitId): bo
   })
 }
 
+/** Whether everything in `since` is a record of a write to GitHub the caller itself just made (`IssueUpdated`, `IssueUpdateFailed`). */
+export function onlyIssueAuditSince(since: readonly SinceEvent[]): boolean {
+  return since.every((e) => e.type === 'IssueUpdated' || e.type === 'IssueUpdateFailed')
+}
+
 /** The stream holds exactly `since` past `ifVersion`, and all of it is this triage's own run facts. */
 function streamChanged(
   state: TicketState,
@@ -1357,6 +1362,17 @@ function triagedEvent(input: TriagedInput): ToAppend {
   }
 }
 
+/** An answer recorded with the system's decision not to act on it: a spent bound, or a body write that failed (#1260). */
+export function triageHeldEvent(
+  input: Omit<TriagedInput, 'result'> & {
+    result: Extract<TriageResult, { _tag: 'TriageAnswered' }>
+    held: NonNullable<Extract<TriageResult, { _tag: 'TriageAnswered' }>['held']>
+  },
+): ToAppend {
+  const { held, ...rest } = input
+  return triagedEvent({ ...rest, result: { ...input.result, held } })
+}
+
 /** The record that stands in for an answer that was not acted on: `TriageFailed{why}`, which resolves nothing. */
 export function triageFailedEvent(input: Omit<TriagedInput, 'result'> & { why: string }): ToAppend {
   return triagedEvent({ ...input, result: { _tag: 'TriageFailed', why: input.why } })
@@ -1375,7 +1391,13 @@ export function finishTriageTransition(
   return { ok: true, events: [triagedEvent(input)] }
 }
 
-export type ActOnTriageRefusal = 'wait-not-current' | 'changed' | 'head-moved' | 'not-offered' | 'plan-refused'
+export type ActOnTriageRefusal =
+  | 'wait-not-current'
+  | 'changed'
+  | 'head-moved'
+  | 'not-offered'
+  | 'plan-refused'
+  | 'cause-refused'
 
 /** What the runner read at answer time and the pure transition cannot: the attempt's head, its counters, the heads a move names. */
 export type ActContext = {
@@ -1388,7 +1410,8 @@ export type ActContext = {
   /** The saved head a `FixRefusal` continues, already checked against the remote ref; `null` when there is none. */
   fix: { onSha: string; ref: string } | null
   /** Where a `RedoStep` re-cuts, already checked against the remote ref; `null` when the attempt has no head a rerun can continue. */
-  redo: { onSha: string; ref: string } | null
+  /** `ref: null` is a run that committed nothing: the redo continues on the attempt's own base commit. */
+  redo: { onSha: string; ref: string | null } | null
   /**
    * What a split needs that the transition cannot read (0118 §12): the daemon's own start id, which `SplitStarted`
    * records as the writer, and the recipe's `source.kinds`. `null` when the answer is not a split.
@@ -1402,6 +1425,8 @@ export type ActOnTriageDecision = {
   events: ToAppend[]
   action: CauseAction | null
   resolution: Resolution | null
+  /** The `spent-on` section text to write before the append (#1260), or `null`: nothing is written. */
+  section?: string | null
 }
 
 /**
@@ -1413,7 +1438,10 @@ export type ActOnTriageDecision = {
  * effect. The resolution goes through `resolveWaitTransition` and `resolvedEvents`, the person's own path, so what it
  * accepts is what a person may choose and a new attempt releases the claim.
  *
- * `writeSpentOnThenRedoStep` (#1260) is not built: it records only `WaitTriaged` and the wait stays a person's.
+ * `writeSpentOnThenRedoStep` and a `redoStep` of a cut-off run (#1260) resolve as `RedoStep`, and hand back the
+ * section text (`section`) the caller writes **before** the append, as #1254's person path does: a failed write
+ * resolves nothing. No text is a plain `RedoStep`. A run that met its limit admits only `Unfinished` and
+ * `TicketTooBig`: any other cause is `cause-refused`, a failed triage.
  * `splitTicket` (#1262) records `WaitTriaged` and `SplitStarted` — the decision — in one append and resolves nothing:
  * the daemon's writer ends the wait. A plan with problems is `plan-refused`, a failed triage, never a partial split.
  */
@@ -1429,6 +1457,16 @@ export function actOnTriageTransition(
   if (!waitIsCurrentOrUnknown(state, input.waitId)) return { ok: false, refusal: 'wait-not-current' }
   if (streamChanged(state, input)) return { ok: false, refusal: 'changed' }
   const { context } = input
+  if (
+    context.origin === 'run-limit' &&
+    input.result.cause._tag !== 'Unfinished' &&
+    input.result.cause._tag !== 'TicketTooBig'
+  )
+    return {
+      ok: false,
+      refusal: 'cause-refused',
+      why: `${input.result.cause._tag} is not a cause for a run that met its limit: say Unfinished or TicketTooBig`,
+    }
   const triaged = triagedEvent(input)
   const action = actionFor(input.result.cause, context.origin, context.counters)
   const advice: ActOnTriageDecision = { ok: true, events: [triaged], action, resolution: null }
@@ -1457,13 +1495,38 @@ export function actOnTriageTransition(
     }
     return { ok: true, events: [triaged, started], action, resolution: null }
   }
-  if (action._tag === 'askPerson' || action._tag === 'writeSpentOnThenRedoStep') return advice
+  if (action._tag === 'askPerson') {
+    // The decision is recorded with the answer, so the wait can say which bound was spent (#1260).
+    if (action.why._tag !== 'limit') return advice
+    const { bound, used } = action.why
+    return {
+      ok: true,
+      events: [
+        triageHeldEvent({
+          ...input,
+          result: input.result,
+          held: { _tag: 'limit', bound, used, allowed: context.counters[bound].allowed },
+        }),
+      ],
+      action,
+      resolution: null,
+    }
+  }
   // A wait the reduce has never seen has no reason to resolve against: advice only.
   const life = state.lifecycle
   if (life.status !== 'blocked' || life.waitId !== input.waitId) return advice
   // A head that was not read is not a head that is unchanged: `null` on either side refuses, `startNewAttempt` needs none.
+  // A run that committed nothing has no head on either side: that absence is unchanged, and the redo it reads
+  // (`ref: null`) continues on the attempt's own base commit (#1260).
+  const noHeadEitherSide =
+    (action._tag === 'redoStep' || action._tag === 'writeSpentOnThenRedoStep') &&
+    context.redo !== null &&
+    context.redo.ref === null &&
+    context.boundHead === null &&
+    context.headNow === null
   if (
     action._tag !== 'startNewAttempt' &&
+    !noHeadEitherSide &&
     (context.boundHead === null || context.headNow === null || context.headNow !== context.boundHead)
   )
     return { ok: false, refusal: 'head-moved' }
@@ -1473,6 +1536,7 @@ export function actOnTriageTransition(
     case 'startNewAttempt':
       resolution = { _tag: 'StartNewAttempt' }
       break
+    case 'writeSpentOnThenRedoStep':
     case 'redoStep':
       if (context.redo === null) return { ok: false, refusal: 'head-moved' }
       resolution = { _tag: 'RedoStep', onSha: context.redo.onSha, ref: context.redo.ref }
@@ -1487,15 +1551,24 @@ export function actOnTriageTransition(
   }
   const decided = resolveWaitTransition(state, { waitId: input.waitId, resolution })
   if (!decided.ok || decided.kind !== 'proceed') return { ok: false, refusal: 'not-offered' }
+  const cause = input.result.cause
+  const text =
+    action._tag === 'writeSpentOnThenRedoStep'
+      ? action.spentOn
+      : action._tag === 'redoStep' && cause._tag === 'Unfinished'
+        ? cause.addToBody
+        : null
+  const section = text === null || text.trim() === '' ? null : text.trim()
   const resolved = resolvedEvents(state, decided.block, {
     waitId: input.waitId,
     by: 'triage',
     resolution,
     note: input.result.summary,
+    ...(section === null ? {} : { answers: { picks: [], section } }),
     system: bound === null ? {} : { spent: { bound, n: context.counters[bound].used + 1 } },
   })
   if (!resolved.ok) return { ok: false, refusal: 'not-offered' }
-  return { ok: true, events: [triaged, ...resolved.events], action, resolution }
+  return { ok: true, events: [triaged, ...resolved.events], action, resolution, section }
 }
 
 export type CloseDecline =

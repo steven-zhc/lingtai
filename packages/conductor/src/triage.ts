@@ -34,7 +34,7 @@ import {
   type PayloadOf,
   type StoredRoute,
 } from '@lingtai/domain'
-import { triageQuestionsOf } from '@lingtai/domain'
+import { runLimitMetBy, triageQuestionsOf } from '@lingtai/domain'
 import { TriageResult, type WaitReason } from '@lingtai/domain/wait'
 
 import { kindOf } from './discover.ts'
@@ -200,6 +200,26 @@ export function triageBrief(input: {
       ? `The ticket could not be read: ${evidence.ticketProblem ?? 'no reason recorded'}.`
       : `#${evidence.ticket.ref} — ${evidence.ticket.title}\n\n${evidence.ticket.body}`
 
+  const met = runLimitMetBy(evidence.reason)
+  // A run cut off at its own limit (0108 §6, #1260): the one case where the budget *is* the finding, and only two
+  // answers are admitted. Other origins keep the brief as it was.
+  const runLimitBlock =
+    met === null
+      ? ''
+      : `
+
+## This run was cut off
+
+The \`${met.step}\` run **met \`${met.limit}\`** and was stopped. Its work is saved and the step will be run again from
+where it left off. Answer only:
+
+- \`Unfinished\` — the run was making progress and would finish given another go. \`addToBody\` is one sentence that
+  would help the next run, or \`null\`.
+- \`TicketTooBig\` — the ticket is more than one run holds. Give a \`plan\` to split it, or \`spentOn\`: a few
+  sentences on where the turns went, which the next run is told.
+
+Any other cause is refused and you are asked again. This replaces the rule above that the budget is never a cause.`
+
   const reasonBlock = `## What the step that stopped said
 
 These are the words of the step that held the pass, quoted as it wrote them.
@@ -330,7 +350,7 @@ To answer:
 
 ${ANSWER_SHAPE}
 
-${RULES}
+${RULES}${runLimitBlock}
 
 ${budget}
 ${input.prompt === undefined || input.prompt.trim() === '' ? '' : `\n${input.prompt.trim()}\n`}`

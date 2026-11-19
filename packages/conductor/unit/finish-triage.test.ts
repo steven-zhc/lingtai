@@ -108,6 +108,95 @@ describe('finishTriage (#1258)', () => {
     expect(events.at(-1)!.data).toMatchObject({ by: 'triage', spent: { bound: 'stepRedos', n: 1 } })
   })
 
+  describe('a section owed before the redo (#1260)', () => {
+    const owing = {
+      _tag: 'TriageAnswered',
+      cause: { _tag: 'TicketTooBig', plan: null, spentOn: 'reading every file' },
+      summary: 'too much',
+      want: null,
+    } as const
+    const limited = () => Effect.map(act(), (c) => ({ ...c, origin: 'run-limit' as const }))
+
+    it('is written first, and then the one append resolves the wait', async () => {
+      const s = await started()
+      const seen: string[] = []
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: (text) => Effect.sync(() => (seen.push(text), { written: true } as const)),
+      })
+      expect(seen).toEqual(['reading every file'])
+      expect(done).toMatchObject({ ok: true, resolved: { resolution: { _tag: 'RedoStep' } } })
+      expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({ answers: { section: 'reading every file' } })
+    })
+
+    it('a write that appended its own audit event does not lose the resolution', async () => {
+      const s = await started()
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: () =>
+          Effect.promise(async () => {
+            const v = (await s.store.read(ticketId)).length
+            await s.store.append(ticketId, v, [
+              {
+                type: 'IssueUpdated',
+                actor: 'conductor',
+                data: { project: 'p', issue: '1', change: 'body', detail: 'ok' },
+              } as never,
+            ])
+            return { written: true } as const
+          }),
+      })
+      expect(done).toMatchObject({ ok: true, resolved: { resolution: { _tag: 'RedoStep' } } })
+      expect((await s.store.read(ticketId)).at(-1)!.type).toBe('WaitResolved')
+    })
+
+    it('a write that failed resolves nothing: only WaitTriaged, the wait stays a still-open wait', async () => {
+      const s = await started()
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: () => Effect.succeed({ written: false, detail: 'github down' } as const),
+      })
+      expect(done).toEqual({ ok: true, resolved: null })
+      expect(await types(s)).toEqual(['TicketClaimed', 'WaitStarted', 'TriageStarted', 'WaitTriaged'])
+      // what stopped the redo is on the answer
+      expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({
+        result: { held: { _tag: 'environment', detail: expect.stringContaining('github down') } },
+      })
+    })
+
+    it('a failed write that appended its own audit event still records the held answer', async () => {
+      const s = await started()
+      const done = await finish(s, {
+        result: owing,
+        act: limited,
+        writeSection: () =>
+          Effect.promise(async () => {
+            const v = (await s.store.read(ticketId)).length
+            await s.store.append(ticketId, v, [
+              {
+                type: 'IssueUpdateFailed',
+                actor: 'conductor',
+                data: { project: 'p', issue: '1', change: 'body', error: 'down' },
+              } as never,
+            ])
+            return { written: false, detail: 'github down' } as const
+          }),
+      })
+      expect(done).toEqual({ ok: true, resolved: null })
+      expect((await s.store.read(ticketId)).at(-1)!.data).toMatchObject({
+        result: { held: { _tag: 'environment' } },
+      })
+    })
+
+    it('no way to write is the same: never a redo as if the body were written', async () => {
+      const s = await started()
+      expect(await finish(s, { result: owing, act: limited })).toEqual({ ok: true, resolved: null })
+    })
+  })
+
   it('with the bound spent only WaitTriaged is recorded and the wait stays', async () => {
     const s = await started()
     const done = await finish(s, { act: () => Effect.map(act(), (c) => ({ ...c, counters: room(3) })) })

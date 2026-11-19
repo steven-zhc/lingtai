@@ -378,18 +378,19 @@ describe('allowedResolutions', () => {
     it('NothingProduced, BudgetExhausted, AnswerUnreadable: EditBodyAndRequeue, Requeue, Close', () => {
       const expected = ['EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
       expect(allowedResolutions(parseProposed({ _tag: 'NothingProduced', said: null }))).toEqual(expected)
-      expect(
-        allowedResolutions(
-          parseProposed({
-            _tag: 'BudgetExhausted',
-            from: 'implement',
-            kind: 'out-of-turns',
-            turns: null,
-            costUsd: null,
-            detail: 'ran out',
-          }),
-        ),
-      ).toEqual(expected)
+      // A run that met its limit also offers the step again (#1260): it is what triage answers with.
+      const budget = (from: 'implement' | 'review' | 'build') =>
+        parseProposed({
+          _tag: 'BudgetExhausted',
+          from,
+          kind: 'out-of-turns',
+          turns: null,
+          costUsd: null,
+          detail: 'ran out',
+        })
+      expect(allowedResolutions(budget('implement'))).toEqual([...expected, 'RedoStep'])
+      expect(rerunStepOf(budget('review'))).toBe('review')
+      expect(rerunStepOf(budget('build'))).toBeNull()
       expect(allowedResolutions(parseProposed({ _tag: 'AnswerUnreadable', from: 'review', raw: 'garbled' }))).toEqual(
         expected,
       )

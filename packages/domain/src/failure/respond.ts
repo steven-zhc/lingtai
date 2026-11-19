@@ -61,7 +61,7 @@ import type { JudgeWhen, Proposal } from '../proposal.ts'
 import type { CandidateId, ExcludedCandidate } from '../route.ts'
 import { ImpossibleRouteError, type Candidate, type RouteOffer, type RoutingPolicy } from '../routing.ts'
 import { STEPS, type Step } from '../vocabulary.ts'
-import { PERSON_ASKS, type Cause } from '../wait.ts'
+import { PERSON_ASKS, type Cause, type WaitReason } from '../wait.ts'
 import { classify } from './classify.ts'
 
 /** Which of `standDown`'s four sources the `until` came from; `AccountLimitReached`'s own field. */
@@ -916,6 +916,43 @@ export type CauseBound =
 
 /** Where the wait a triage answered came from: a run that met `run.turns`/`run.wall`, a diff too large to review (0108 §14), or anything else. */
 export type CauseOrigin = 'run-limit' | 'diff-too-large' | 'other'
+
+/** The limit a run met, in the recipe's own names, and the step it was cut off at. */
+export type RunLimitMet = {
+  readonly step: 'design' | 'implement' | 'review'
+  readonly limit: 'run.turns' | 'run.wall' | 'run.usd'
+}
+
+const isRunStep = (step: Step): step is RunLimitMet['step'] =>
+  step === 'design' || step === 'implement' || step === 'review'
+
+/**
+ * **The limit a wait's run met** (0108 §8, #1260), or `null` when the wait is not a cut-off run: `out-of-turns` is
+ * `run.turns`, `out-of-usd` is `run.usd`, `timeout` is `run.wall` — each at `design`, `implement` or `review`. A
+ * `timeout` at `proposed` or `merge` is a judge or the lane running out of time, and a standing crash is a round a
+ * person granted; neither is a step's own run. A `BudgetExhausted` wait that names no step (the direct form) is read
+ * only through `ProposedEscalated`, which carries `from`.
+ */
+export function runLimitMetBy(reason: WaitReason): RunLimitMet | null {
+  switch (reason._tag) {
+    case 'AgentCrashed':
+      return reason.cause === 'timeout' && reason.standing === undefined && isRunStep(reason.step)
+        ? { step: reason.step, limit: 'run.wall' }
+        : null
+    case 'ProposedEscalated':
+      return reason.proposal._tag === 'BudgetExhausted' && isRunStep(reason.proposal.from)
+        ? { step: reason.proposal.from, limit: reason.proposal.kind === 'out-of-turns' ? 'run.turns' : 'run.usd' }
+        : null
+    default:
+      return null
+  }
+}
+
+/** **The origin of a wait's cause** (0108 §6): the one place it is worked out, so the brief and the act cannot disagree. */
+export function causeOriginOf(reason: WaitReason): CauseOrigin {
+  if (runLimitMetBy(reason) !== null) return 'run-limit'
+  return reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'DiffTooLarge' ? 'diff-too-large' : 'other'
+}
 
 /** What the log says of one bound: how many times it has been spent, and how many it allows. */
 export type CauseCounter = { readonly used: number; readonly allowed: number }

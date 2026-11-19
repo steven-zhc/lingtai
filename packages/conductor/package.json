@@ -14,6 +14,7 @@
     "./repository-list": "./src/repository-list.ts",
     "./decide": "./src/approve.ts",
     "./resolve-wait": "./src/resolve-wait.ts",
+    "./write-section": "./src/write-section.ts",
     "./ask": "./src/ask.ts",
     "./record-prompt": "./src/record-prompt.ts",
     "./discover": "./src/discover.ts",

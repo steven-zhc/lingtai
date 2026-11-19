@@ -49,6 +49,24 @@ const EVIDENCE: TriageEvidence = {
 }
 
 describe('triageBrief', () => {
+  it('says a run was cut off, with its limit and step, only for a run that met one (#1260)', () => {
+    const brief = (reason: WaitReason) => triageBrief({ evidence: { ...EVIDENCE, reason }, served: [], roundsLeft: 4 })
+    const run = { runId: 'run-1' }
+    const proposed = (kind: 'out-of-turns' | 'out-of-usd'): WaitReason => ({
+      _tag: 'ProposedEscalated',
+      run,
+      proposal: { _tag: 'BudgetExhausted', from: 'review', kind, turns: null, costUsd: null, detail: 'x' },
+      because: { _tag: 'NotAsked' },
+    })
+    expect(brief(proposed('out-of-usd'))).toContain('met `run.usd`')
+    expect(brief(proposed('out-of-turns'))).toContain('`review` run **met `run.turns`**')
+    expect(brief({ _tag: 'AgentCrashed', run, step: 'design', cause: 'timeout', detail: 'x' })).toContain('run.wall')
+    expect(brief({ _tag: 'AgentCrashed', run, step: 'merge', cause: 'timeout', detail: 'x' })).not.toContain(
+      'This run was cut off',
+    )
+    expect(brief(REASON)).not.toContain('This run was cut off')
+  })
+
   it("labels the stopping step's words and the judge's reply as claims, before quoting them", () => {
     const brief = triageBrief({ evidence: EVIDENCE, served: [], roundsLeft: 4 })
 
