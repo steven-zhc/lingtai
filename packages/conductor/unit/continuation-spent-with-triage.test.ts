@@ -12,7 +12,7 @@ const ticketId = 'ticket-lingtai-7'
 const waitId = '99999999-9999-4999-8999-999999999999' as WaitId
 const crashed = { _tag: 'AgentCrashed', run: { runId: 'run-1' }, step: 'implement', cause: 'crash', detail: 'x' }
 
-const resolvedBy = async (by: string) => {
+const resolvedBy = async (by: string, spentOf?: { bound: string; n: number }) => {
   const store = createMemoryEventStore()
   await store.append(ticketId, 0, [
     {
@@ -29,7 +29,7 @@ const resolvedBy = async (by: string) => {
         by,
         resolution: { _tag: 'RedoStep', onSha: 'abc', ref: 'agent/7' },
         note: '',
-        ...(by === 'triage' ? { spent: { bound: 'stepRedos', n: 1 } } : {}),
+        ...(by === 'triage' ? { spent: spentOf ?? { bound: 'stepRedos', n: 1 } } : {}),
       },
     },
   ])
@@ -53,5 +53,22 @@ describe('continuationSpentWithTriage', () => {
   it("a person's RedoStep spends nothing", async () => {
     const ticket = await resolvedBy('human:steven')
     expect(continuationSpentWithTriage(reduceAttempt([]), ticket, 'run-1').stepRedos).toBe(0)
+  })
+})
+
+describe('refusal fixes and conflict rounds are independent budgets (#1258)', () => {
+  it('a triage conflict resolution spends conflictRounds and no refusal fix', async () => {
+    const ticket = await resolvedBy('triage', { bound: 'conflictResolutions', n: 1 })
+    const spent = continuationSpentWithTriage(reduceAttempt([]), ticket, 'run-1')
+    expect(spent.conflictRounds).toBe(1)
+    expect(spent.rounds).toBe(0)
+  })
+
+  it('three refusal fixes plus a mechanically routed conflict round still read three rounds', async () => {
+    const ticket = await resolvedBy('human:steven')
+    const run = { ...reduceAttempt([]), implementRound: 3, conflictRounds: 1 }
+    const spent = continuationSpentWithTriage(run, ticket, 'run-1')
+    expect(spent.rounds).toBe(3)
+    expect(spent.conflictRounds).toBe(1)
   })
 })

@@ -1599,6 +1599,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       )
       const spentNow = continuationSpentWithTriage(runState, reduced, options.continuing.runId)
       const grantedBy = byTriage.has(approvedWaitId) ? 'triage' : 'person'
+      // A conflict resolution triage made spends `conflictResolutions` alone: its implement visit re-opens the current
+      // round, so `StepStarted` does not raise `implementRound` and no refusal fix is counted (#1258).
+      const conflictByTriage =
+        grantedBy === 'triage' &&
+        reduced.waits.find((w) => w.waitId === approvedWaitId)?.resolution?.spent?.bound === 'conflictResolutions'
+      const lapRound = continuationRound(runState, granted && !conflictByTriage)
       const criterion = granted ? grantCriterion(reason, standingRefusal(runState)) : null
       const next = granted ? { step: 'implement' as const } : continuationOf(reason, stepOutcomesOf(runEvents))
       if (next === null) return null
@@ -1672,12 +1678,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         ...(granted && grantedAdviceFromState(reduced, adviceWaitId) !== undefined
           ? { advice: grantedAdviceFromState(reduced, adviceWaitId)! }
           : {}),
-        roundsSpent: Math.max(continuationRound(runState, granted), spentNow.rounds),
+        roundsSpent: Math.max(lapRound, spentNow.rounds),
         baseMergesSpent: spentNow.baseMerges,
         conflictRoundsSpent: spentNow.conflictRounds,
         stepRedosSpent: spentNow.stepRedos,
         landingRetriesSpent: spentNow.landingRetries,
-        ...(priorGrant ? { roundLimit: continuationRound(runState, granted) } : {}),
+        ...(priorGrant ? { roundLimit: lapRound } : {}),
         ...(criterion !== null
           ? {
               grant: {

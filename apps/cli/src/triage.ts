@@ -879,9 +879,10 @@ const readActContext = (
     const spent =
       runId === null ? { refusalFixes: 0, conflictResolutions: 0, stepRedos: 0 } : triageSpentOf(state, runId)
     const counters = {
-      // A conflict resolution's continuation opens an implement round too, and is its own budget: not a refusal fix.
+      // A conflict resolution is its own budget (`conflictResolutions`, from the ticket stream's triage spend): its
+      // continuation does not raise `implementRound`, and a mechanically routed conflict never did, so nothing is subtracted.
       refusalFixes: {
-        used: Math.max(Math.max((run?.implementRound ?? 0) - (run?.conflictRounds ?? 0), 0), spent.refusalFixes),
+        used: Math.max(run?.implementRound ?? 0, spent.refusalFixes),
         allowed: limits.refusalFixes,
       },
       newAttempts: { used: state.newAttempts.length, allowed: limits.newAttempts },
