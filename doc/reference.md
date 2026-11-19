@@ -670,7 +670,7 @@ runs **nothing** where a recipe declares nothing, so what an unconfigured attemp
 does is what it always did — `implement` is briefed with `""` and works from the
 issue. **`claim` was the third until `#269`**, when `queuePlugin`
 took it and the take became an action like the cut and the lane. It was six until 2026-09-27, when `runPlugin` took
-`build` and `agentPlugin` took `review`: the build and the cold reviewer had
+`build` and `agentPlugin` took `review`: the build and the AI review had
 shared `proposed:` because it was the only door open, and each has its own step
 now. `admit` was the fourth until `#268` gave the cut to `worktreePlugin` and
 emptied that body — the first of 0061 §3's five names for the attempt's own calls to
@@ -1153,7 +1153,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | a cold reviewer reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
+| `agent:` | an AI review reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
 | `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the attempt runs** (`#310`), so each attempt's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the attempt ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
 | `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the attempt was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
@@ -1189,7 +1189,7 @@ cheap model on `review` actually buys a cheap review.
 §7). The runtime a step's `agent:` names is the one that step runs on —
 `actionsFromRecipe` hands the action `runtimeFor(action.agent)`, and
 `implement`'s dispatch builds the same name — so `review: agent: codex` beside
-`runtime.agent: claude-code` runs its cold review on Codex. What is still refused
+`runtime.agent: claude-code` runs its AI review on Codex. What is still refused
 before the claim is a runtime **nothing on this machine is signed in to**:
 `agentRefusal` (`conductor/src/conduct.ts`) reads every `agent:` in the file and
 not only `runtime.agent`, and a step naming one this machine cannot start stops
@@ -1468,7 +1468,7 @@ proposed:
 ```
 
 **One thing had to be true before any of this could be reached**, and it is not
-about judges: the build and the cold reviewer have to be declared at `build:` and
+about judges: the build and the AI review have to be declared at `build:` and
 `review:` rather than at `proposed:`. `ARRIVE_AT_THE_ROUTER` is the seven steps
 whose refusal *travels* to `proposed`, and `proposed` is not among them because it
 **is** the router — so a check refusing there stops the attempt with no judge asked
@@ -2057,24 +2057,26 @@ Four rules:
   which is under the boundary's ten — that one is the backstop for a promise
   that never settles at all.
 
-## lingtai subcommand — 30
+## lingtai subcommand — 36
 
 Source: `COMMANDS` in `apps/cli/src/commands.ts`; `apps/cli/src/cli.ts` has a subcommand for each, and
 `apps/cli/unit/one-parser.test.ts` holds the two lists equal.
 
-`add` · `run` · `approve` · `backlog` · `requeue` · `ask` · `answer` · `close` ·
+`add` · `run` · `approve` · `backlog` · `report` · `ask` · `answer` · `close` ·
 `ticket` · `attach` · `board` · `status` · `doctor` · `env` · `end` · `start` ·
 `daemon` · `service` · `restart` · `pause` · `resume` · `shutdown` · `now` ·
 `projection` · `version` · `init` · `fix-refusal` · `redo-step` · `start-new-attempt` · `upgrade` · `rollback` ·
-`uninstall`
+`uninstall` · `ceiling` · `account` · `events` · `token`
 
 `daemon` is `start`'s own definition (`startCommand('daemon')` in `cli.ts`),
 kept answering so a supervisor's plist that still has the old name written
 into it does not stop working. `waive` is not among these: it names
 a decision a person can take (below), not a command.
 
-`approve`, `requeue` and `waive` are the decisions a person can take from
-here. The board's are the first two — `apps/board/src/app/actions.ts` imports
+`approve` and `waive` are the decisions a person can take from the CLI, with
+the moves `fix-refusal`, `redo-step` and `start-new-attempt` (described in
+[operating.md](operating.md)). There is no `lingtai requeue`: the verb is
+retired. The board still calls `requeue` as a function — `apps/board/src/app/actions.ts` imports
 `approve` and `requeue` from `@lingtai/conductor/decide` — and a waiver from the
 board is the one `approve` appends for a gate still refusing (`#150`). That the set was not
 countable from the CLI's side is how `requeue` (`#130`) and `waive` (`#129`)

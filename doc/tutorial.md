@@ -44,7 +44,7 @@ Continue when Lingtai prints `created #N`.
 
 ## Step 3 — Start
 
-Starting runs at least two paid agent runs, the writer and the cold reviewer, on
+Starting runs at least two paid agent runs, the writer and the AI review, on
 your signed-in Claude Code account, and more if a check refuses and buys a fix
 round. With Codex signed in as well, the reviewer is Codex. The attempt then
 lands on `lingtai-base` with nobody asked; `main` is never touched.
@@ -67,6 +67,10 @@ git -C chapter-garden merge lingtai-base
 
 Run the merge on `main`. If `lingtai-base` is checked out, the landing holds
 until you switch to another branch.
+
+The change lands on its own once your checks at `build:` and the AI review pass.
+To OK each landing first, declare a `human:` at `proposed:`; see
+[the recipe](recipe.md).
 
 ## Next
 

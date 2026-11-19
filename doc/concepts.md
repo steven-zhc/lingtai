@@ -11,7 +11,7 @@ needs no knowledge of events or internals.
 
 You open a story ticket in Chapter Garden. Lingtai takes it from the queue and
 runs an **attempt**: ten steps, always in the same order. An agent writes the
-change, the recipe's checks run, a cold reviewer reads it, and then the attempt
+change, the recipe's checks run, the AI review reads it, and then the attempt
 stops where the recipe says a person decides.
 
 ![One Chapter Garden ticket goes through the ten steps. A red build or a refusing review returns to implement in the same worktree. A person at the proposed wait either continues the saved work or starts over from base.](img/concepts.svg)
@@ -42,7 +42,7 @@ or cut a new one from the base branch?**
 |                | Continues the saved branch                                                                                                                                      | Starts over from the base branch                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `restarts` limit caps it.                                          |
-| **You**        | At the wait you choose **Approve and continue** or **Fix the refusal on the saved work**. The saved branch carries on.                                               | At the wait you choose **Start a new attempt from base** or **Add to the ticket and start a new attempt**. This is a **requeue**, and a new attempt begins from the base.   |
+| **You**        | At the wait you choose **Approve and continue** or **Fix the refusal on the saved work**. The saved branch carries on.                                               | At the wait you choose **Start a new attempt from base** or **Add to the ticket and start a new attempt**.                                                                    |
 
 Some details that are easy to get wrong:
 
@@ -51,10 +51,18 @@ Some details that are easy to get wrong:
   and `prepared`, then jumps to the step you resumed at. It is an attempt resumed
   on the saved branch, not a fresh one from base, and not the same run carrying
   on.
-- A requeue spends no restart. The board says it plainly: _This neither spends
+- Starting a new attempt from base spends no restart. The board says it plainly: _This neither spends
   nor refunds an automatic restart._
-- A requeued attempt is told about earlier ones and can reuse their commits,
+- A new attempt is told about earlier ones and can reuse their commits,
   but it is new development. It goes through `build` and `review` again.
+
+## Handled for you
+
+The home page and /report show **Handled for you**: one mark per problem a step
+raised. A solid mark is a problem Lingtai got past without you: by a fix round,
+a restart, or by merging the updated base when another change landed (that
+spends neither). A hollow one **needed you**, and /report lists what you did
+about it.
 
 ## When a step stops
 
