@@ -139,13 +139,28 @@ describe('actOnTriageTransition', () => {
     })
   })
 
-  it('a rerun on an attempt that committed nothing is bound to no head and is allowed', () => {
-    const { state } = waiting()
-    const d = actOnTriageTransition(
-      state,
-      input(state, {}, { boundHead: null, headNow: null, redo: { onSha: 'base', ref: null } }),
-    )
-    expect(d).toMatchObject({ ok: true, action: { _tag: 'redoStep' } })
+  it('a remote ref that moved while triage ran offers no head to continue on: head-moved', () => {
+    const { state } = waiting(refused)
+    expect(actOnTriageTransition(state, input(state, { result: fixable }, { fix: null }))).toEqual({
+      ok: false,
+      refusal: 'head-moved',
+    })
+  })
+
+  it('no head read on either side is not a head that is unchanged: a rerun and a fix are head-moved', () => {
+    const { state } = waiting(refused)
+    const none = { boundHead: null, headNow: null }
+    expect(
+      actOnTriageTransition(state, input(state, {}, { ...none, redo: { onSha: 'base', ref: 'agent/7' } })),
+    ).toEqual({ ok: false, refusal: 'head-moved' })
+    expect(actOnTriageTransition(state, input(state, { result: fixable }, none))).toEqual({
+      ok: false,
+      refusal: 'head-moved',
+    })
+    expect(actOnTriageTransition(state, input(state, {}, { boundHead: null }))).toEqual({
+      ok: false,
+      refusal: 'head-moved',
+    })
   })
 
   it('a start-over needs no head, and releases the claim as a spent new attempt in the same append', () => {

@@ -47,6 +47,25 @@ export const refShaEffect = (options: MirrorOptions & { ref: string }): Effect.E
     signal: options.signal,
   }).pipe(Effect.orElseSucceed(() => null))
 
+/**
+ * `refShaEffect` that can fail: a ref the mirror lacks is `null`, anything else that goes wrong (no mirror, a git error)
+ * fails the read, so a caller that acts on the answer never takes an unreadable mirror for a missing ref.
+ */
+export const refShaStrictEffect = (
+  options: MirrorOptions & { ref: string },
+): Effect.Effect<string | null, RepoFailed> =>
+  gitEffect(['rev-parse', '--verify', '--quiet', `${options.ref}^{commit}`], {
+    cwd: mirrorPathFor(options.project, options.home),
+    signal: options.signal,
+  }).pipe(
+    Effect.catchTag('RepoFailed', (error) =>
+      // A missing ref is exit 1 and silence; a broken ref exits 1 too, with git's warning on stderr.
+      error.exitCode === 1 && (error.stdout ?? '').trim() === '' && (error.stderr ?? '').trim() === ''
+        ? Effect.succeed(null)
+        : Effect.fail(error),
+    ),
+  )
+
 export function refSha(options: MirrorOptions & { ref: string }): Promise<string | null> {
   return Effect.runPromise(refShaEffect(options))
 }
