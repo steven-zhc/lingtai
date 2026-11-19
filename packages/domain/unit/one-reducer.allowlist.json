@@ -314,6 +314,22 @@
   {
     "file": "packages/projector/src/ticket-report.ts",
     "function": "reduce",
+    "type": "PassRouted",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps the retired name's rows for `problemsOf`, read as `ProposalRouted` is (0123 §2)."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
+    "type": "ProposalRouted",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps the route's proposal tag, candidate and decision for `problemsOf` (0123 §2); its answer is a wait on another stream, so it cannot be read here."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
     "type": "RunProducedDiff",
     "count": 1,
     "class": "join",
@@ -342,6 +358,22 @@
     "count": 1,
     "class": "join",
     "reason": "One reviews[] entry per review StepEnded from that payload alone; AttemptState.steps keeps only the latest verdict per key."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
+    "type": "StepRedone",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps a crash's redo for `problemsOf` (0123 §2); no ticket-stream event records it."
+  },
+  {
+    "file": "packages/projector/src/ticket-report.ts",
+    "function": "reduce",
+    "type": "StepRerunInPlace",
+    "count": 1,
+    "class": "join",
+    "reason": "Keeps the retired name's rows for `problemsOf`, read as `StepRedone` is (0123 §2)."
   },
   {
     "file": "packages/projector/src/ticket-report.ts",

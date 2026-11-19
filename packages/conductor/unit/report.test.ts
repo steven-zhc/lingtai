@@ -31,6 +31,7 @@ const ticket = (o: Partial<ReportTicketRow> = {}): ReportTicketRow => ({
   passTimes: [inside.toISOString()],
   reviews: [],
   waits: [],
+  problems: [],
   cost: {},
   ...o,
 })
@@ -468,5 +469,76 @@ describe('resolveWindow', () => {
       from: new Date(2026, 9, 1),
       to: new Date(2026, 9, 4),
     })
+  })
+})
+
+describe('report().handled (#1284)', () => {
+  const p = (kind: string, answeredBy: 'system' | 'you', d: Date): ReportTicketRow['problems'][number] => ({
+    kind: kind as never,
+    at: d.toISOString(),
+    attempt: 1,
+    answeredBy,
+    waitId: null,
+  })
+  const day = (n: number, h = 12) => new Date(2026, 9, n, h)
+  const now = new Date(2026, 9, 28, 15)
+
+  it('counts the window’s problems by kind, day and answerer, and prices answering apart from work', () => {
+    const t = ticket({
+      problems: [
+        p('review-fixed', 'system', day(28)),
+        p('review-fixed', 'system', day(28, 9)),
+        p('review-fixed', 'you', day(27)),
+        p('stopped', 'system', day(22)),
+        p('mystery', 'system', day(1)),
+      ],
+    })
+    const other = ticket({ kind: 'feature', problems: [p('conflict', 'system', day(26))] })
+    const r = run([t, other], {
+      window: resolveWindow('7d', now),
+      spend: [
+        spend({ purpose: 'Action', round: 1, costUsd: 2 }),
+        spend({ purpose: 'Judge', costUsd: 0.5 }),
+        spend({ purpose: 'Triage', costUsd: null, estimatedUsd: 0.25 }),
+        spend({ purpose: 'Triage', costUsd: null, estimatedUsd: null }),
+        spend({ purpose: 'Action', round: 0, costUsd: 9 }),
+      ],
+    })
+    const h = r.handled
+    expect(h.kinds.map((k) => k.kind)).toEqual([
+      'review-fixed',
+      'review-restarted',
+      'base-moved',
+      'conflict',
+      'build',
+      'stopped',
+      'disputed',
+      'too-big',
+      'asked',
+      'setup',
+      'other',
+    ])
+    expect(h.kinds.find((k) => k.kind === 'review-fixed')).toMatchObject({ system: 2, you: 1 })
+    expect(h.kinds.find((k) => k.kind === 'conflict')).toMatchObject({ system: 1, you: 0 })
+    // outside the window: dropped, not folded into `other`
+    expect(h.kinds.find((k) => k.kind === 'stopped')).toMatchObject({ system: 1, you: 0 })
+    expect(h.kinds.find((k) => k.kind === 'other')).toMatchObject({ system: 0, you: 0 })
+    expect(h.days).toHaveLength(7)
+    expect(h.days.map((d) => d.day)).toEqual(r.spend.days.map((d) => d.day))
+    expect(h.days.at(-1)).toMatchObject({ system: 2, you: 0 })
+    expect(h.latest.map((x) => x.at)).toEqual(
+      h.latest
+        .map((x) => x.at)
+        .sort()
+        .reverse(),
+    )
+    expect(h.latest[0]).toMatchObject({ ticket: t.ticket, kind: 'review-fixed' })
+    expect(h.answeringCost).toEqual({ reportedCents: 250, estimatedCents: 25, unknown: 1 })
+  })
+
+  it('respects the kind filter', () => {
+    const t = ticket({ problems: [p('build', 'you', day(28))] })
+    const r = run([t], { kinds: ['feature'], window: resolveWindow('7d', now) })
+    expect(r.handled.kinds.every((k) => k.system === 0 && k.you === 0)).toBe(true)
   })
 })

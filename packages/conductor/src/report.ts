@@ -1,4 +1,3 @@
-import type { Cause, Resolution, WaitReason } from '@lingtai/domain/wait'
 /**
  * The report's one computation (0123 §6, #688): `ticket_report` rows and
  * `spend` rows in, every figure of §3 and §4 out. The page and `lingtai report`
@@ -10,6 +9,9 @@ import type { Cause, Resolution, WaitReason } from '@lingtai/domain/wait'
  * from `spend`; a ticket's own cost is all of its cost from `ticket_report`.
  * Each figure's population is named on its field.
  */
+import { PROBLEM_KINDS } from '@lingtai/domain'
+import type { Problem } from '@lingtai/domain'
+import type { Cause, Resolution, WaitReason } from '@lingtai/domain/wait'
 import type { PurposeCost, ReportReview, ReportWait, SpendRow } from '@lingtai/projector'
 
 import { nextLocalMidnight, startOfLocalDay } from './day-ceiling.ts'
@@ -30,6 +32,8 @@ export interface ReportTicketRow {
   passTimes: string[]
   reviews: ReportReview[]
   waits: ReportWait[]
+  /** What a step raised and who finally answered it (0123 §2, #1284). */
+  problems: Problem[]
   cost: Record<string, PurposeCost>
 }
 
@@ -177,6 +181,28 @@ export interface Report {
   top: TopTicket[]
   /** The eight placed tickets that cost most, any outcome; its own order, whatever `sortBy` says. */
   costliest: TopTicket[]
+  /** *Handled for you* (#1284): the problems steps raised in the window, by who finally answered them. */
+  handled: Handled
+}
+
+export interface HandledCount {
+  system: number
+  you: number
+}
+
+export interface HandledProblem extends Problem {
+  ticket: string
+}
+
+export interface Handled {
+  /** Every kind of `PROBLEM_KINDS`, in its order, a zero included. */
+  kinds: ({ kind: string } & HandledCount)[]
+  /** The same days as `spend.days`. */
+  days: ({ day: string } & HandledCount)[]
+  /** The eight newest problems, newest first. */
+  latest: HandledProblem[]
+  /** What answering them cost in the window: the `Answering`, `Judge` and `Triage` purposes, reported and estimated apart. */
+  answeringCost: Money
 }
 
 export interface ReportInput {
@@ -527,6 +553,24 @@ export function report(input: ReportInput): Report {
     }
   }
 
+  const raised: HandledProblem[] = filtered.flatMap((t) =>
+    t.problems.filter((p) => inWindow(p.at, w)).map((p) => ({ ...p, ticket: t.ticket })),
+  )
+  const countOf = (of: readonly Problem[]): HandledCount => ({
+    system: of.filter((p) => p.answeredBy === 'system').length,
+    you: of.filter((p) => p.answeredBy === 'you').length,
+  })
+  const handled: Handled = {
+    kinds: PROBLEM_KINDS.map((kind) => ({ kind, ...countOf(raised.filter((p) => p.kind === kind)) })),
+    days: days.map(({ day }) => ({ day, ...countOf(raised.filter((p) => dayKey(new Date(p.at)) === day)) })),
+    latest: [...raised]
+      .sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || a.ticket.localeCompare(b.ticket))
+      .slice(0, 8),
+    answeringCost: byPurpose
+      .filter((p) => p.purpose === 'Answering' || p.purpose === 'Judge' || p.purpose === 'Triage')
+      .reduce<Money>((n, p) => addMoney(n, p.money), { reportedCents: 0, estimatedCents: 0, unknown: 0 }),
+  }
+
   const firstReviewIn = filtered.filter((t) => {
     const first = [...t.reviews].sort(seqOrder)[0]
     return first !== undefined && inWindow(first.at, w)
@@ -564,5 +608,6 @@ export function report(input: ReportInput): Report {
     ),
     top: ranked.slice(0, 8).map((r) => topTicket(r.t)),
     costliest: costliest.slice(0, 8).map((r) => topTicket(r.t)),
+    handled,
   }
 }

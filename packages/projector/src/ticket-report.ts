@@ -1,5 +1,5 @@
 import type { Envelope, PayloadOf } from '@lingtai/domain'
-import type { TicketState, TicketWait } from '@lingtai/domain'
+import type { Problem, Raised, TicketState, TicketWait } from '@lingtai/domain'
 import {
   chatStream,
   cleared,
@@ -9,6 +9,7 @@ import {
   isAttemptStream,
   isTicketStream,
   parseTicketStream,
+  problemsOf,
   reviewSummaryOf,
 } from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
@@ -124,6 +125,8 @@ interface State {
   open: OpenInterval[]
   /** Per run: the last diff and the last review summary it produced. Read at `TicketLanded` for the landing run. */
   byRun: Record<string, RunFacts>
+  /** Routes and redos as the log wrote them; `problems` is `problemsOf` over these and the ticket's waits, on every save. */
+  raised: Raised[]
 }
 
 /** What one run left that a landing page shows. A null is unknown, never zero. */
@@ -158,6 +161,8 @@ export interface TicketReportRow {
   passTimes: string[]
   reviews: ReportReview[]
   waits: ReportWait[]
+  /** One per problem a step raised, with who finally answered it (0123 §2, #1284). */
+  problems: Problem[]
   cost: Record<string, PurposeCost>
   /** The ticket's title, off the stored `ticket_state`. */
   title: string | null
@@ -194,6 +199,7 @@ export const TICKET_REPORT_COLUMNS = [
   'pass_times',
   'reviews',
   'waits',
+  'problems',
   'cost',
   'ticket_state',
   'landing_run',
@@ -228,6 +234,7 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
     passTimes: json(row.pass_times, []),
     reviews: json(row.reviews, []),
     waits: json<ReportWait[]>(row.waits, []).map((w) => ({ ...w, by: w.by ?? null, onSha: w.onSha ?? null })),
+    problems: json(columnOf(row, TICKET_REPORT_TABLE, 'problems'), []),
     cost: json(row.cost, {}),
     title: state.title,
     mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
@@ -256,6 +263,7 @@ const fresh = (ticket: string): State => ({
   rounds: [],
   open: [],
   byRun: {},
+  raised: [],
 })
 
 /**
@@ -278,6 +286,7 @@ function load(ctx: ProjectionContextPort, ticket: string): Effect.Effect<{ s: St
         rounds: json(row.rounds, []),
         open: json(row.open_intervals, []),
         byRun: json(row.by_run, {}),
+        raised: json(row.raised, []),
       },
     }
   })
@@ -327,10 +336,10 @@ function save(ctx: ProjectionContextPort, s: State): Effect.Effect<void> {
        (ticket, project, kind, outcome, outcome_at, passes, fix_rounds, machine_ms,
         intervals_empty, intervals_open, unknown_claims, pass_times, reviews, waits, cost,
         paid, rounds, open_intervals, ticket_state, by_run, landing_run, landing_attempt, landing_fix_rounds,
-        diff_files, diff_insertions, diff_deletions, summary, summary_clipped)
+        diff_files, diff_insertions, diff_deletions, summary, summary_clipped, raised, problems)
      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13::jsonb, $14::jsonb,
              $15::jsonb, $16::jsonb, $17::jsonb, $18::jsonb, $19::jsonb,
-             $20::jsonb, $21, $22, $23, $24, $25, $26, $27, $28::jsonb)
+             $20::jsonb, $21, $22, $23, $24, $25, $26, $27, $28::jsonb, $29::jsonb, $30::jsonb)
      on conflict (ticket) do update set
        project = excluded.project, kind = excluded.kind, outcome = excluded.outcome,
        outcome_at = excluded.outcome_at, passes = excluded.passes, fix_rounds = excluded.fix_rounds,
@@ -342,7 +351,8 @@ function save(ctx: ProjectionContextPort, s: State): Effect.Effect<void> {
        by_run = excluded.by_run, landing_run = excluded.landing_run, landing_attempt = excluded.landing_attempt,
        landing_fix_rounds = excluded.landing_fix_rounds, diff_files = excluded.diff_files,
        diff_insertions = excluded.diff_insertions, diff_deletions = excluded.diff_deletions,
-       summary = excluded.summary, summary_clipped = excluded.summary_clipped`,
+       summary = excluded.summary, summary_clipped = excluded.summary_clipped,
+       raised = excluded.raised, problems = excluded.problems`,
       [
         s.ticket,
         project,
@@ -372,6 +382,8 @@ function save(ctx: ProjectionContextPort, s: State): Effect.Effect<void> {
         facts?.diff?.deletions ?? null,
         facts?.summary ?? null,
         facts?.clipped == null ? null : JSON.stringify(facts.clipped),
+        JSON.stringify(s.raised),
+        JSON.stringify(problemsOf(s.raised, t.waits, t.claims)),
       ],
     )
   })
@@ -474,7 +486,9 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         diff_insertions    integer,
         diff_deletions     integer,
         summary            text,
-        summary_clipped    jsonb
+        summary_clipped    jsonb,
+        raised             jsonb not null,
+        problems           jsonb not null
       )`)
       yield* ctx.query('create index if not exists ticket_report_project_idx on ticket_report (project)')
       yield* ctx.query(
@@ -587,6 +601,38 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
             ticket = isTicketStream(d.ticketId) ? d.ticketId : isTicketStream(event.streamId) ? event.streamId : null
             change = (s) => {
               signOfLife(s, event, null)
+            }
+            break
+          }
+
+          case 'ProposalRouted':
+          case 'PassRouted': {
+            const d = event.data as PayloadOf<'ProposalRouted'>
+            ticket = yield* ticketOf(ctx, event.streamId)
+            change = (s) => {
+              const seq = event.seq.toString()
+              if (s.raised.some((r) => r.seq === seq)) return
+              s.raised.push({
+                _tag: 'Route',
+                seq,
+                at: event.at.toISOString(),
+                runId: d.runId,
+                proposal: d.offer.proposal._tag,
+                candidate: d.decision._tag === 'Selected' ? d.decision.candidate : null,
+                decision: d.decision._tag,
+              })
+            }
+            break
+          }
+
+          case 'StepRedone':
+          case 'StepRerunInPlace': {
+            const d = event.data as PayloadOf<'StepRedone'>
+            ticket = yield* ticketOf(ctx, event.streamId)
+            change = (s) => {
+              const seq = event.seq.toString()
+              if (s.raised.some((r) => r.seq === seq)) return
+              s.raised.push({ _tag: 'Redo', seq, at: event.at.toISOString(), runId: d.runId, step: d.step })
             }
             break
           }

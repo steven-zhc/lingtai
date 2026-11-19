@@ -286,3 +286,69 @@ describe('ticket_report', () => {
     expect(once).toEqual(live)
   })
 })
+
+describe('ticket_report problems (#1284)', () => {
+  it('pairs an escalated route with the wait a person answered, from the pass stream and the ticket stream', async () => {
+    const t = makeStream(T)
+    const a = makeStream('pass-pin-a')
+    const route = (decision: PayloadOf<'ProposalRouted'>['decision']) =>
+      a(
+        'ProposalRouted',
+        {
+          runId: 'pass-pin-a',
+          offer: {
+            available: [],
+            unavailable: [],
+            proposal: { _tag: 'ReviewFindings' },
+            ended: { version: 1, action: 'review' },
+          },
+          reply: { _tag: 'NotAsked' },
+          decision,
+        },
+        { at: at(2) },
+      ) as Envelope
+    const events = [
+      claim(t, 'pass-pin-a', 'bug', 0),
+      started(a, 1),
+      route({ _tag: 'Escalated', because: { _tag: 'NotAsked' } }),
+      t(
+        'WaitStarted',
+        {
+          waitId: 'w1' as never,
+          reason: {
+            _tag: 'ProposedEscalated',
+            run: { runId: 'pass-pin-a' },
+            proposal: { _tag: 'ReviewFindings', findings: [] },
+            because: { _tag: 'NotAsked' },
+          },
+        },
+        { at: at(4) },
+      ),
+    ] as Envelope[]
+    const open = await reduce([events])
+    expect(parse(open?.raised)).toHaveLength(1)
+    expect(parse(open?.problems)).toMatchObject([
+      { kind: 'review-fixed', answeredBy: 'you', attempt: 1, waitId: 'w1' as never },
+    ])
+    const resolved = t(
+      'WaitResolved',
+      { waitId: 'w1' as never, resolution: { _tag: 'Approve', onSha: 'x' }, by: 'triage', note: 'n' },
+      { at: at(5) },
+    )
+    const done = await reduce([events, [resolved as Envelope]])
+    expect(parse(done?.problems)).toMatchObject([{ kind: 'review-fixed', answeredBy: 'system' }])
+  })
+
+  it('does not add a fact twice when a batch is replayed', async () => {
+    const t = makeStream(T)
+    const a = makeStream('pass-pin-a')
+    const redo = a(
+      'StepRedone',
+      { runId: 'pass-pin-a', step: 'implement', rerun: 1, said: 's', waitMs: 0 },
+      { at: at(2) },
+    )
+    const row = await reduce([[claim(t, 'pass-pin-a', 'bug', 0), started(a, 1), redo], [redo]])
+    expect(parse(row?.raised)).toHaveLength(1)
+    expect(parse(row?.problems)).toHaveLength(1)
+  })
+})

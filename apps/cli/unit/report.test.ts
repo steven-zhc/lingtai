@@ -44,6 +44,7 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   passTimes: [day(26).toISOString()],
   reviews: [],
   waits: [],
+  problems: [],
   cost: { Work: { reportedCents: 150, reportedRuns: 1, estimatedUsd: 0, estimatedRuns: 0, unknown: 0 } },
   title: null,
   mergeCommit: null,

@@ -22,6 +22,7 @@ const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   passTimes: [],
   reviews: [],
   waits: [],
+  problems: [],
   cost: {},
   title: null,
   mergeCommit: null,

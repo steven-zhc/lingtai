@@ -156,6 +156,8 @@ const EXPECTED: [string, [string, string[]][]][] = [
           'diff_deletions',
           'summary',
           'summary_clipped',
+          'raised',
+          'problems',
         ],
       ],
       ['ticket_report_stream', ['stream_id', 'ticket']],
