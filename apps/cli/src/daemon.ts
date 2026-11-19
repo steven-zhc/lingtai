@@ -69,7 +69,7 @@ import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { flushTracing, startTracing } from './tracing.ts'
 import {
   catchUpChangedTriage,
-  catchUpTriageContinuations,
+  catchUpRegisteredContinuations,
   catchUpRegisteredTriage,
   daemonTriagePorts,
   memoDaemonStartedAt,
@@ -743,6 +743,19 @@ export function daemonCommand(
                 onRecipe: (project, recipe) => recipes.set(project, recipe.triage ?? null),
               })
               for (const [project, triage] of recipes) yield* scanTriage(project, triage)
+              // A continuation a failed request left unasked-for is asked again here, only for the projects this
+              // turn looked at; the `control.continuing` row is the guard beside a live one (#1282).
+              // Asked again after the turn: a pause, a shutdown request or a SIGINT/SIGTERM drain while it ran must stop this append too.
+              const stoppedAfterTurn = yield* claiming
+              const shutdownAfterTurn = (yield* controlRead().pipe(Effect.orDie)).shutdown
+              // A signal drains without a control-stream shutdown, so the daemon's own flags are asked too.
+              if (stoppedAfterTurn === null && !shutdownAfterTurn && !stopping.draining && !stopping.stopping) {
+                yield* catchUpRegisteredContinuations(
+                  [...recipes.keys()].map((project) => ({ project })),
+                  daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+                  (line) => console.error(line),
+                )
+              }
               // The run told GitHub as it went (0022), so there is nothing left
               // here to send and nothing to report about sending it.
               // A routine pass, in the accent — structure, not a verdict. What the
@@ -795,20 +808,12 @@ export function daemonCommand(
             scanTriage,
             (line) => console.error(line),
           )
-          // A resolution triage made whose continuation a stopped conductor never asked for (#1258). Here only: a
-          // catch-up a resume or a recipe change causes can run beside a live continuation.
-          for (const registered of projects) {
-            if (registered.project === null) continue
-            const name = registered.project
-            yield* catchUpTriageContinuations(
-              name,
-              daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
-            ).pipe(
-              recovering((err) =>
-                Effect.sync(() => console.error(`triage continuation catch-up ${name}: ${err.message}`)),
-              ),
-            )
-          }
+          // A resolution triage made whose continuation was never asked for (#1258); also run after every pass (#1282).
+          yield* catchUpRegisteredContinuations(
+            projects,
+            daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+            (line) => console.error(line),
+          )
           // A question asked while nothing was listening is waiting in the stream,
           // exactly as a pause is (0013). After `start`, so the subscription is
           // already up and a question that arrives during this one is not missed.

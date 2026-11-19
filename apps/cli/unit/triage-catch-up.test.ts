@@ -3,11 +3,13 @@ import { anAttemptRef } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { WaitReason } from '@lingtai/domain/wait'
 import { ConcurrencyError } from '@lingtai/event-store'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Triage } from '@lingtai/recipe'
 import { Deferred, Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  catchUpRegisteredContinuations as catchUpContinuations,
   catchUpChangedTriage as catchUpChanged,
   catchUpRegisteredTriage as catchUpRegistered,
   catchUpTriage as catchUp,
@@ -634,5 +636,115 @@ describe('triage catch-up', () => {
     )
     expect(scan).toHaveBeenCalledExactlyOnceWith('lingtai', triage)
     expect(log).toHaveBeenCalledWith('triage catch-up unreadable: invalid recipe')
+  })
+})
+
+describe('triage continuation catch-up on the ordinary pass (#1282)', () => {
+  const stream = ticketStream('lingtai', 7)
+  const setup = async (resolve = true) => {
+    const store = createMemoryEventStore()
+    const waitId = 'wait-7' as WaitId
+    const first = [{ type: 'WaitStarted', actor: 'conductor', data: { waitId, reason } }]
+    await store.append(stream, 0, first as never)
+    if (resolve) {
+      await store.append(stream, 1, [
+        {
+          type: 'WaitResolved',
+          actor: 'conductor',
+          data: { waitId, by: 'triage', resolution: { _tag: 'RedoStep', onSha: 'abc', ref: null }, note: '' },
+        },
+      ] as never)
+    }
+    const ports = (over: Partial<CatchUpTriagePorts> = {}): CatchUpTriagePorts => ({
+      store,
+      readTasks: () => Effect.succeed([{ issue: '7', state: 'approved' as const }]),
+      baseSha: () => Effect.succeed('base'),
+      daemonStartedAt: () => Effect.succeed(startedAt),
+      run: () => Effect.void,
+      ...over,
+    })
+    const requested = async () =>
+      (await store.read('ctl-conductor')).filter((e) => e.type === 'ContinueRequested').map((e) => e.data)
+    return { store, ports, requested }
+  }
+  const scan = (ports: CatchUpTriagePorts, log: (line: string) => void = () => {}, names = ['lingtai']) =>
+    Effect.runPromise(
+      catchUpContinuations(
+        names.map((project) => ({ project })),
+        ports,
+        log,
+      ),
+    )
+
+  it('asks once for a resolved RedoStep with no request, and a second pass asks for nothing more', async () => {
+    const f = await setup()
+    await scan(f.ports())
+    const rows = await f.requested()
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({ project: 'lingtai', issue: '7' })
+    await scan(f.ports())
+    expect(await f.requested()).toHaveLength(1)
+  })
+
+  it('skips a ticket no longer approved', async () => {
+    const f = await setup(false)
+    await scan(f.ports())
+    expect(await f.requested()).toHaveLength(0)
+    const none = await setup()
+    await scan(none.ports({ readTasks: () => Effect.succeed([{ issue: '7', state: 'waiting' as const }]) }))
+    expect(await none.requested()).toHaveLength(0)
+  })
+
+  it('skips an approved card whose ticket was claimed, resolved by triage and then continued', async () => {
+    const store = createMemoryEventStore()
+    const waitId = 'wait-7' as WaitId
+    await store.append(stream, 0, [
+      { type: 'TicketClaimed', actor: 'conductor', data: { runId: 'run-one', worker: 'w', title: null, kind: null } },
+      { type: 'WaitStarted', actor: 'conductor', data: { waitId, reason } },
+      {
+        type: 'WaitResolved',
+        actor: 'conductor',
+        data: { waitId, by: 'triage', resolution: { _tag: 'RedoStep', onSha: 'abc', ref: null }, note: '' },
+      },
+    ] as never)
+    const ports: CatchUpTriagePorts = {
+      store,
+      // the board's card is stale: it still says approved after the continuation
+      readTasks: () => Effect.succeed([{ issue: '7', state: 'approved' as const }]),
+      baseSha: () => Effect.succeed('base'),
+      daemonStartedAt: () => Effect.succeed(startedAt),
+      run: () => Effect.void,
+    }
+    // Control: before the continuation the same ticket is asked for.
+    const before = createMemoryEventStore()
+    await before.append(
+      stream,
+      0,
+      (await store.read(stream)).map(({ type, actor, data }) => ({ type, actor, data })) as never,
+    )
+    await scan({ ...ports, store: before })
+    expect((await before.read('ctl-conductor')).filter((e) => e.type === 'ContinueRequested')).toHaveLength(1)
+    // The continuation claims the run: the ticket leaves `approved`.
+    await store.append(stream, 3, [
+      { type: 'TicketContinued', actor: 'conductor', data: { runId: 'run-one', worker: 'w' } },
+    ] as never)
+    await scan(ports)
+    expect((await store.read('ctl-conductor')).filter((e) => e.type === 'ContinueRequested')).toHaveLength(0)
+  })
+
+  it('skips a locked project and logs a failed lock read while scanning the next', async () => {
+    const f = await setup()
+    await scan(f.ports({ locked: () => Effect.succeed('paused') }))
+    expect(await f.requested()).toHaveLength(0)
+    const log = vi.fn()
+    await scan(
+      f.ports({
+        locked: (project) => (project === 'broken' ? Effect.fail(new Error('no lock')) : Effect.succeed(null)),
+      }),
+      log,
+      ['broken', 'lingtai'],
+    )
+    expect(log).toHaveBeenCalledWith('triage continuation catch-up broken: no lock')
+    expect(await f.requested()).toHaveLength(1)
   })
 })

@@ -48,6 +48,9 @@ import {
   triageFactsOf,
   triageFactsFromState,
   ticketReducer,
+  controlReducer,
+  CONTROL_FOLD_TYPES,
+  CONTROL_STREAM,
   MERGE_HUNKS_ONE_BY_ONE,
   cut,
   type Envelope,
@@ -342,14 +345,19 @@ const finishInterrupted = (ticketId: string, waitId: WaitId, deps: CatchUpTriage
 /**
  * **A resolution triage made whose continuation was never asked for** (#1258): `WaitResolved{by: 'triage'}` and
  * `ContinueRequested` are two appends, and a conductor that stopped between them leaves a ticket `approved` that nothing
- * will look at — a person recovers that by clicking again, and nobody clicks for triage. Run from the daemon's start scan
- * only: a catch-up a resume or a recipe change causes can run beside a live continuation. A request twice is safe,
- * because the pass re-reads the ticket and refuses a request that is stale (`continueTicket`).
+ * will look at — a person recovers that by clicking again, and nobody clicks for triage. Run at the daemon's start and
+ * after every ordinary pass (#1282). A continuation already claimed or running has left `approved`, so it is not seen;
+ * one asked for and not yet claimed has a `control.continuing` row on this run, and that row is the guard — without it a
+ * ticket GitHub declines to continue would gain a row every pass. A request twice is still safe, because the pass
+ * re-reads the ticket and refuses a request that is stale (`continueTicket`).
  */
 export const catchUpTriageContinuations = (project: string, deps: CatchUpTriagePorts) =>
   Effect.gen(function* () {
-    for (const card of yield* deps.readTasks(project)) {
-      if (card.state !== 'approved') continue
+    const cards = (yield* deps.readTasks(project)).filter((card) => card.state === 'approved')
+    if (cards.length === 0) return
+    // Read fresh, and a failed read fails the scan: an empty list would mean "request it".
+    const control = yield* readThroughSnapshot(deps.store, controlReducer, CONTROL_STREAM, CONTROL_FOLD_TYPES, deps)
+    for (const card of cards) {
       const ticketId = ticketStream(project, card.issue)
       const state = yield* readThroughSnapshot(deps.store, ticketReducer, ticketId, 'all', deps)
       const life = state.lifecycle
@@ -358,6 +366,10 @@ export const catchUpTriageContinuations = (project: string, deps: CatchUpTriageP
       if (wait?.resolution?.by !== 'triage') continue
       const tag = wait.resolution.resolution._tag
       if (tag !== 'FixRefusal' && tag !== 'RedoStep') continue
+      const asked = control.continuing.some(
+        (row) => row.project === project && Number(row.issue) === Number(card.issue) && row.runId === life.runId,
+      )
+      if (asked) continue
       const unscheduled = yield* requestContinuation(
         deps.store as EventStore,
         'conductor',
@@ -366,6 +378,26 @@ export const catchUpTriageContinuations = (project: string, deps: CatchUpTriageP
         life.runId,
       )
       if (unscheduled !== null) deps.log?.(`triage ${life.waitId}: continuation not requested — ${unscheduled}`)
+    }
+  })
+
+/** `catchUpTriageContinuations` over every registered project that is not locked; one failed project never stops the rest. */
+export const catchUpRegisteredContinuations = (
+  projects: readonly { project: string | null }[],
+  ports: CatchUpTriagePorts,
+  log: (line: string) => void,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (const registered of projects) {
+      if (registered.project === null) continue
+      const name = registered.project
+      yield* Effect.gen(function* () {
+        const lock = yield* (ports.locked ?? notLocked)(name)
+        if (lock !== null) return
+        yield* catchUpTriageContinuations(name, ports)
+      }).pipe(
+        recoverWith((err) => Effect.sync(() => log(`triage continuation catch-up ${name}: ${(err as Error).message}`))),
+      )
     }
   })
 
