@@ -1117,80 +1117,6 @@ describe('implement dispatches the one agent, and reports what it committed', ()
     expect(asked.dispatch[0]?.context.recheck).toEqual([])
     expect(asked.dispatch[0]?.again).toBeNull()
   })
-
-  /**
-   * The other half of a question, and the reason `SentBack` exists: the judge may
-   * answer a `needs-input` with *that step again, stating your assumption*, which
-   * spends a round and buys another agent run. So the second brief must differ
-   * from the first, and the only thing that can make it differ is what the judge
-   * said — a byte-identical brief buys the same question back and burns every
-   * round arriving at the answer the first one did.
-   *
-   * The judge answers `implement` for this ticket's own reason, since `#462`
-   * moved the routing off `proposed`'s body and into `runAttempt`'s loop: a
-   * `judge:` for `needs-input` is what sends *that step again, stating your
-   * assumption* now, not a body override.
-   */
-  it('is told why it is being run again, and what it asked the first time', async () => {
-    let asks = true
-    const { ports, asked, taking, working } = portsAnswering({
-      dispatch: () => {
-        const answer: Worked = asks ? { asked: 'which of the two files?' } : { committed: COMMITTED }
-        asks = false
-        return answer
-      },
-    })
-    const claiming = createQueueAction({ name: 'take the ticket', ...QUEUE }, taking)
-    const result = await runAttempt({
-      recipe: recipeWith(),
-      context,
-      emit: () => {},
-      bodies: bodiesFor(ports),
-      judge: async (on) =>
-        on.when === 'needs-input'
-          ? { next: 'implement', named: 'test', why: 'state your assumption and carry on' }
-          : { noJudge: true },
-      ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
-      // `claim`'s default, because the body takes nothing since `#269` and a pass
-      // that claimed no item cannot brief an agent.
-      actionsAt: (step, actions) =>
-        step === 'claim'
-          ? [claiming]
-          : step === 'implement'
-            ? [createWorkAction({ name: 'write the change', prompt: '' }, working)]
-            : step === 'merge'
-              ? [
-                  createMergeAction(
-                    { name: 'land the branch', strategy: 'merge-commit' },
-                    { land: async () => ({ merged: MERGED }) },
-                  ),
-                ]
-              : actions.map((a) => canned(a.name, PASSED)),
-    })
-
-    expect(walk(result)).toEqual([
-      'admit:passed',
-      'prepared:passed',
-      'design:passed',
-      'implement:asked',
-      'proposed:routed',
-      'implement:passed',
-      'build:passed',
-      'review:passed',
-      'proposed:passed',
-      'merge:passed',
-      'end:passed',
-    ])
-    expect(asked.dispatch[1]?.again).toEqual({
-      why: 'state your assumption and carry on',
-      asked: 'which of the two files?',
-      // The question is the whole of what this round was bought on, and `asked`
-      // is where it is: `printed` would be the same words twice.
-      printed: null,
-    })
-    expect(asked.dispatch[1]?.context.round).toBe(1)
-    expect(outcomeOf(result.end)).toBe('landed')
-  })
 })
 
 /**
@@ -1847,17 +1773,10 @@ describe('proposed is the only step that routes, and one judge answers each when
       ceilings: { refusalFixes: 1, conflictResolutions: 1, newAttempts: 0, newAttemptsSpent: 0 },
     })
 
-    expect(asked.judge.map((on) => on.when)).toEqual([NEEDS_INPUT])
+    // Nothing is on offer but a person (0108 §22): no judge is paid to answer a question, and none can decide
+    // in the person's place.
+    expect(asked.judge).toEqual([])
     expect(result.routes[0]?.to).toBe('waiting')
-    // Asked (two candidates are on offer), answered `noJudge`, and there is no
-    // built-in for `needs-input` either — the `NotAsked` sentence for *that*,
-    // naming what `judge:` would have to say rather than what a ceiling
-    // already excluded (nothing did): `#462`'s own fix round, finding 1.
-    expect(result.routes[0]?.why).toBe(
-      'no `judge:` is declared for a "needs-input" and there is no built-in that answers one, so ' +
-        'the attempt is held for a person rather than the workflow choosing from `implement`, ' +
-        '`waiting` on its own (0061 §3)',
-    )
     expect(result.end._tag).toBe('WaitOnPerson')
     // The person is shown the step that asked, not the router that sent it.
     expect(result.stopped?.step).toBe('implement')

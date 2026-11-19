@@ -429,7 +429,7 @@ export function waitWords(
             : waitWords(reason.asked, pass).line
       return {
         line: `${used} It wanted to ask: ${said(asked, 400)}`,
-        short: 'asked too often',
+        short: null,
         needs: 'judgement',
         diagnosis: null,
       }

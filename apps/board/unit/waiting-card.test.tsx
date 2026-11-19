@@ -83,6 +83,10 @@ const EXPECTED: Record<string, Pick<Fixture, 'expectedQuestion'>> = {
   satisfiedunconfirmed: {
     expectedQuestion: null,
   },
+  asklimit: {
+    expectedQuestion:
+      'This ticket has stopped to ask a person 5 of 5 times (`personAsks`), so it will not ask again. It wanted to ask: which approach, a sixth time?',
+  },
   answerunreadable: {
     expectedQuestion:
       'agent/answerunreadable is waiting on you. `review`&#x27;s findings could not be read at all: not json',

@@ -329,4 +329,25 @@ add('SatisfiedUnconfirmed', 'satisfiedunconfirmed', (item) => [
   }),
 ])
 
+// The sixth stop to ask is the limit wait the reduce writes (#1254): five asks stood, then a sixth.
+add('AskLimit', 'asklimit', (item) => [
+  ...aClaim(item, 'pass-pin-asklimit'),
+  ...Array.from({ length: 5 }, () =>
+    aWait(item, {
+      _tag: 'AgentQuestion',
+      run: { runId: 'pass-pin-asklimit' },
+      step: 'design',
+      questions: [],
+      said: 'which approach?',
+    }),
+  ).flat(),
+  ...aWait(item, {
+    _tag: 'AgentQuestion',
+    run: { runId: 'pass-pin-asklimit' },
+    step: 'design',
+    questions: [],
+    said: 'which approach, a sixth time?',
+  }),
+])
+
 export const WAIT_FIXTURES: readonly WaitFixture[] = FIXTURES
