@@ -46,6 +46,10 @@ describe('systemLine', () => {
     const l = systemLine({ resolution: redo, by: 'triage' }, answered('Unfinished'), null)
     expect(l.bound).toBe('bound unknown')
   })
+  it('a missing WaitTriaged keeps the note and makes up no cause', () => {
+    const l = systemLine({ resolution: redo, by: 'triage', note: 'only unfinished' }, null, { used: 1, allowed: 3 })
+    expect(l).toEqual({ action: 'resolved by triage: only unfinished', because: null, bound: null })
+  })
   it('a missing WaitTriaged reads resolved by triage, with no cause', () => {
     const l = systemLine({ resolution: redo, by: 'triage' }, null, { used: 1, allowed: 3 })
     expect(l).toEqual({ action: 'resolved by triage', because: null, bound: null })

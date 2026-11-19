@@ -47,6 +47,7 @@ import {
   standingSystemResolution,
   systemLineOf,
   systemLineText,
+  SYSTEM_LINE_UNREAD,
   type SystemLimits,
   type AccountState,
   type CeilingFacts,
@@ -699,7 +700,7 @@ export const readStatus = (
               ) {
                 row.system = yield* Effect.suspend(() =>
                   (reading.systemOf ?? systemOf)(t.taskId, filter.ok ? filter.limits : null),
-                ).pipe(recovering(() => Effect.succeed<string | null>(null)))
+                ).pipe(recovering(() => Effect.succeed<string | null>(systemLineText(SYSTEM_LINE_UNREAD))))
               }
               // Every pass in flight is a row with its step, not only the first (#640).
               if ((t.state === 'running' || t.state === 'verifying') && t.runId) {

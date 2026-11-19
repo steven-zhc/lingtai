@@ -498,6 +498,8 @@ const CAUSE_READ: Record<Extract<TriageResult, { _tag: 'TriageAnswered' }>['caus
 type SystemResolved = {
   readonly resolution: Resolution
   readonly by: string
+  /** The resolution's note: all a missing `WaitTriaged` leaves to say. */
+  readonly note?: string
   readonly spent?: { readonly bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos'; readonly n: number }
 }
 
@@ -512,6 +514,14 @@ export function systemLine(
   counter: { readonly used: number; readonly allowed: number } | null,
 ): SystemLine {
   const cause = triage !== null && triage._tag === 'TriageAnswered' ? triage.cause : null
+  // No cause found: the note is the evidence that is left, and no cause is made up (#1259).
+  const note = (resolved.note ?? '').trim()
+  const bare: SystemLine = {
+    action:
+      note === '' ? 'resolved by triage' : `resolved by triage: ${note.length > 160 ? `${note.slice(0, 159)}…` : note}`,
+    because: null,
+    bound: null,
+  }
   const resolution = resolved.resolution
   let action: string
   let noun: string
@@ -540,14 +550,24 @@ export function systemLine(
     case 'ConfirmSatisfied':
     case 'Split':
     case 'Close':
-      return { action: 'resolved by triage', because: null, bound: null }
+      return bare
   }
+  if (cause === null) return bare
   return {
-    action: cause === null ? 'resolved by triage' : action,
-    because: cause === null ? null : `Triage read ${CAUSE_READ[cause._tag]}`,
-    bound:
-      cause === null ? null : counter === null ? 'bound unknown' : `${counter.used} of ${counter.allowed} ${noun} used`,
+    action,
+    because: `Triage read ${CAUSE_READ[cause._tag]}`,
+    bound: counter === null ? 'bound unknown' : `${counter.used} of ${counter.allowed} ${noun} used`,
   }
+}
+
+/**
+ * **What a card or `status` says where the ticket's log could not be read** (#1259): a failed read is not "triage
+ * resolved nothing", so the line says what it could not tell, and that the bound is unknown with it.
+ */
+export const SYSTEM_LINE_UNREAD: SystemLine = {
+  action: 'whether triage resolved a wait could not be read',
+  because: null,
+  bound: 'bound unknown',
 }
 
 /** The line as one sentence: *Triage read only unfinished; the step is being redone — 2 of 3 redos used*. */

@@ -745,9 +745,8 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
       const spent = (d as { spent?: { bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos'; n: number } }).spent
       const line =
         (typeof waitId === 'string' ? ctx.systemLine?.(waitId) : undefined) ??
-        systemLine({ resolution: f.resolution, by: f.by, spent }, null, null)
-      const said = line.because === null ? 'resolved by triage' : systemLineText(line)
-      return line.because === null && note ? `${said}: ${note}` : said
+        systemLine({ resolution: f.resolution, by: f.by, spent, note: f.note }, null, null)
+      return systemLineText(line)
     }
     return note ? `${f.by}: ${note}` : f.by
   },

@@ -11,8 +11,15 @@ import { TicketTab } from '../../../ticket-tab.tsx'
 export const dynamic = 'force-dynamic'
 
 /** `/task/<id>/ticket`: the Ticket tab (#885). Its loader is its own and never `loadTask`. */
-export default async function TicketTabPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function TicketTabPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>
+  searchParams: Promise<{ events?: string }>
+}) {
   const { id } = await params
+  const { events } = await searchParams
   const taskId = decodeURIComponent(id)
   // Not awaited: the tab is sent and the body streams in (0118 §2). Shared with the layout's read.
   const answer = measure(() => loadTicketAnswer(taskId), { label: '/task github' }).then(([a]) => a)
@@ -23,7 +30,11 @@ export default async function TicketTabPage({ params }: { params: Promise<{ id: 
   return (
     <>
       <TimingMeta timings={timings} />
-      {read.status === 'failed' ? <TabFailed what="the ticket" /> : <TicketTab detail={read.detail} answer={answer} />}
+      {read.status === 'failed' ? (
+        <TabFailed what="the ticket" />
+      ) : (
+        <TicketTab detail={read.detail} answer={answer} eventsOpen={events === '1'} />
+      )}
     </>
   )
 }

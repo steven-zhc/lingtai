@@ -41,6 +41,7 @@ const Wait = z.strictObject({
     .strictObject({
       resolution: Resolution,
       by: z.string(),
+      note: z.string().optional(),
       spent: z
         .strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() })
         .optional(),
@@ -186,7 +187,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 8: a `TicketSatisfied` ends a ticket `satisfied` (#1251); a version-7 snapshot cannot hold it.
   // 9: a wait's `resolution` carries the optional `spent` of a triage resolution (#1258); a version-8 snapshot may have lost it.
   // 10: an `AnswerQuestions` resolution, and a wait's reason is the `AskLimit` where it would be the sixth ask (#1254); a version-8 snapshot holds neither.
-  version: 10,
+  // 11: a wait's `resolution` carries its `note` (#1259); a version-10 snapshot lost it.
+  version: 11,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

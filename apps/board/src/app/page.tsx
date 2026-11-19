@@ -307,15 +307,18 @@ export function Card({
       </Link>
       {/* What the system did instead of asking (#1259): one line, the fact and its reason, in the grey the card's
           quiet facts use — never amber, which is a person being waited on. The summary is one click away, on the
-          task page's record, behind the title above. */}
+          task page's Ticket tab, Events open, and the line itself is the link — the title opens the attempt tab, which
+          does not carry it. */}
       {card.system ? (
         <p className="system-line" data-testid="system-line">
-          {[
-            card.system.because === null ? card.system.action : `${card.system.because}; ${card.system.action}`,
-            card.system.bound,
-          ]
-            .filter((x) => x !== null)
-            .join(' — ')}
+          <Link href={`/task/${encodeURIComponent(card.taskId)}/ticket?events=1`}>
+            {[
+              card.system.because === null ? card.system.action : `${card.system.because}; ${card.system.action}`,
+              card.system.bound,
+            ]
+              .filter((x) => x !== null)
+              .join(' — ')}
+          </Link>
         </p>
       ) : null}
 

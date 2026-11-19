@@ -26,6 +26,7 @@ import {
   ticketStream,
   standingSystemResolution,
   systemLineOf,
+  SYSTEM_LINE_UNREAD,
   waitWords,
   type SystemLine,
 } from '@lingtai/domain'
@@ -1529,8 +1530,8 @@ export async function githubQueue(
 /**
  * **The system's line for each card that still carries one** (#1259). `task_view` has no column for it and a new one is
  * not this ticket's, so the ticket stream is read — only for the states the line can show in (a Waiting card is the
- * wait itself, a Landed one is over), through the snapshot like `laneProgress`'s. A stream that will not read costs
- * that card its line and nothing else.
+ * wait itself, a Landed one is over), through the snapshot like `laneProgress`'s. A stream that will not read gives
+ * that card a line saying so, with the bound unknown — never the absence of one.
  */
 export async function standingSystemLines(
   tasks: readonly TaskCard[],
@@ -1553,7 +1554,8 @@ export async function standingSystemLines(
         const line = wait === null ? null : systemLineOf(state, wait, limitsByProject.get(t.project) ?? null)
         return line === null ? null : ([t.taskId, line] as const)
       } catch {
-        return null
+        // A read that failed is not a wait triage never resolved: the card says it could not tell.
+        return [t.taskId, SYSTEM_LINE_UNREAD] as const
       }
     }),
   )
