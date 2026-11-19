@@ -62,8 +62,16 @@ const guarded = (deps: SplitPorts, request: SplitRequest): Effect.Effect<void> =
     Effect.catchCause((cause) =>
       Effect.sync(() => deps.log?.(`split ${request.waitId} on ${request.ticketId}: ${String(cause)}`)),
     ),
-    Effect.ensuring(Effect.sync(() => deps.running.delete(request.waitId))),
+    Effect.ensuring(
+      Effect.sync(() => {
+        deps.running.delete(request.waitId)
+        ENDINGS.set(request.waitId, (ENDINGS.get(request.waitId) ?? 0) + 1)
+      }),
+    ),
   )
+
+/** How many writers for a wait have ended in this process: a late `SplitStarted` delivery tells a failure it missed by it. */
+const ENDINGS = new Map<string, number>()
 
 /** Run one split here and wait for it; a wait already being written in this process is left to its writer. */
 export const runSplit = (deps: SplitPorts, request: SplitRequest): Effect.Effect<void> =>
@@ -102,8 +110,8 @@ let closed = false
  */
 export const interruptSplits: Effect.Effect<void> = Effect.suspend(() => {
   closed = true
+  // Not cleared: a writer leaves the registry when it has ended, so a second call still finds and awaits it.
   const fibers = [...WRITERS.values()]
-  WRITERS.clear()
   return Effect.forEach(fibers, (fiber) => Fiber.interrupt(fiber), { concurrency: 'unbounded' }).pipe(Effect.asVoid)
 })
 
@@ -115,17 +123,21 @@ export const onSplitStarted = (event: Envelope, deps: SplitPorts): Effect.Effect
   Effect.gen(function* () {
     if (event.type !== 'SplitStarted') return
     const data = event.data as PayloadOf<'SplitStarted'>
+    const endedBefore = ENDINGS.get(data.waitId) ?? 0
     const ours = yield* deps.instance()
     if (data.instance !== ours) return
     // Delivery is late by nature: a writer that started and failed since has left its `SplitFailed`, and the retry
     // of that is the catch-up's, once `source.backoff` has passed. Only an attempt still standing is run live.
-    const last = splitLastOf(yield* Effect.tryPromise(() => deps.store.read(event.streamId)), data.waitId)
-    if (last._tag !== 'started' || last.instance !== ours) return
     const parsed = parseStream(event.streamId)
     if (parsed === null) return
     const held = yield* (deps.locked ?? notLocked)(parsed.project)
     // A held project is left to the catch-up, which runs when the hold lifts.
     if (held !== null) return
+    const last = splitLastOf(yield* Effect.tryPromise(() => deps.store.read(event.streamId)), data.waitId)
+    if (last._tag !== 'started' || last.instance !== ours) return
+    // A writer that ended while this delivery was awaiting (its `SplitFailed` may postdate the read above) is the
+    // catch-up's to retry after `source.backoff`; nothing asynchronous follows this check before the writer starts.
+    if ((ENDINGS.get(data.waitId) ?? 0) !== endedBefore) return
     yield* startSplit(deps, { ...parsed, ticketId: event.streamId, waitId: data.waitId, instance: ours })
   })
 

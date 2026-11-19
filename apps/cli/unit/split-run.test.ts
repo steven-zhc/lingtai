@@ -16,6 +16,7 @@ import {
   catchUpRegisteredSplits,
   catchUpSplits,
   onSplitStarted,
+  runSplit,
   splitStandingOf,
   type SplitPorts,
   type SplitRequest,
@@ -198,6 +199,25 @@ describe('onSplitStarted', () => {
       }).pipe(Effect.provide(TestClock.layer())),
     )
     expect(s.requests).toEqual([])
+  })
+
+  it('does not start a second writer when the first failed while the lock was being asked', async () => {
+    const s = await setup()
+    await s.append([s.started(INSTANCE)])
+    const mine = (await s.store.read(s.ticketId)).at(-1)!
+    s.failing(true)
+    const request = { project: PROJECT, issue: ISSUE, ticketId: s.ticketId, waitId: s.waitId, instance: INSTANCE }
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        // The resumed writer fails and leaves the running set while this delivery awaits `locked`.
+        yield* onSplitStarted(mine, {
+          ...s.ports,
+          locked: () => Effect.as(runSplit(s.ports, request), null),
+        })
+        yield* settle
+      }).pipe(Effect.provide(TestClock.layer())),
+    )
+    expect(s.requests).toHaveLength(1)
   })
 
   it('leaves a held project to the catch-up', async () => {

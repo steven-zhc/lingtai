@@ -14,7 +14,8 @@ import {
   type Node,
   type NodeProps,
 } from '@xyflow/react'
-import { useMemo, useState } from 'react'
+import { useRouter } from 'next/navigation'
+import { useEffect, useMemo, useState } from 'react'
 
 import { waves, type Link } from '../lib/split-waves.ts'
 
@@ -111,6 +112,14 @@ export function SplitPlan({ plan, controls }: { plan: SplitProposal; controls?: 
   const links: Link[] = (frozen === null ? plan.blockedBy : frozen.blockedBy).map((link) => ({ ...link }))
   const written = new Map(progress.state === 'idle' ? [] : progress.children.map((c) => [c.key, c.number] as const))
   const [selected, setSelected] = useState<string | null>(null)
+  // *Writing* is read off recent activity and expires with no append to say so: look again once it has.
+  const router = useRouter()
+  const writing = progress.state === 'writing'
+  useEffect(() => {
+    if (!writing) return
+    const timer = setTimeout(() => router.refresh(), 5 * 60_000 + 1_000)
+    return () => clearTimeout(timer)
+  }, [writing, router])
 
   const keys = children.map((child) => child.key)
   const wave = useMemo(() => waves(keys.slice(), links), [keys.join('\u0000'), links])
