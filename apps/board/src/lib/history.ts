@@ -39,8 +39,11 @@ import {
   resolveOffer,
   routeMove,
   routeNext,
+  systemLine,
+  systemLineText,
   waitWords,
 } from '@lingtai/domain'
+import type { SystemLine } from '@lingtai/domain'
 import type { ClaimShape } from '@lingtai/domain'
 import { adviceResolution } from '@lingtai/domain/wait'
 
@@ -121,6 +124,12 @@ export interface LineContext {
    * needs one then says the evidence was not found.
    */
   endedAt?: (version: number) => StepOutcome | undefined
+  /**
+   * The system's one line for a wait triage resolved, by `waitId` (#1259) — the bound is joined from the log and the
+   * recipe by the caller, which has both. Set by `groupHistory`'s caller; a caller with only the one event has none,
+   * and the row then says *bound unknown* rather than dropping it.
+   */
+  systemLine?: (waitId: string) => SystemLine | undefined
 }
 
 /** What a formatter reads besides its payload; `unknown` collects the ids it could not name. */
@@ -597,7 +606,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   },
 }
 
-type FactFormatter<Tag extends BoardFact['_tag']> = (fact: Extract<BoardFact, { _tag: Tag }>, event: Payload) => string
+type FactFormatter<Tag extends BoardFact['_tag']> = (
+  fact: Extract<BoardFact, { _tag: Tag }>,
+  event: Payload,
+  ctx: LineContext,
+) => string
 
 /**
  * The sentence for a `boardFactOf` fact — `summarise`'s first table, tried
@@ -724,8 +737,18 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
     if (f.recommendation?.action) said.push(`— recommends ${f.recommendation.action}`)
     return said.join(' ')
   },
-  WaitResolved: (f) => {
+  WaitResolved: (f, d, ctx) => {
     const note = clip(f.note)
+    if (f.by === 'triage') {
+      // The system's own resolution reads as one line (#1259). A triage that was not found gives no cause, only the note.
+      const waitId = (d as { waitId?: unknown }).waitId
+      const spent = (d as { spent?: { bound: 'refusalFixes' | 'conflictResolutions' | 'stepRedos'; n: number } }).spent
+      const line =
+        (typeof waitId === 'string' ? ctx.systemLine?.(waitId) : undefined) ??
+        systemLine({ resolution: f.resolution, by: f.by, spent }, null, null)
+      const said = line.because === null ? 'resolved by triage' : systemLineText(line)
+      return line.because === null && note ? `${said}: ${note}` : said
+    }
     return note ? `${f.by}: ${note}` : f.by
   },
   // **`attempt` is triage's try, not the ticket's** — see `FORMAT.TriageStarted`.
@@ -818,7 +841,9 @@ function read(event: Envelope, ctx: LineContext): { said: string; unknown: strin
     // this joins them in the order `boardFactOf` gave them.
     if (facts.length > 0) {
       const said = facts
-        .map((fact) => (FACT_FORMAT[fact._tag] as (f: typeof fact, d: Payload) => string)(fact, data).trim())
+        .map((fact) =>
+          (FACT_FORMAT[fact._tag] as (f: typeof fact, d: Payload, c: LineContext) => string)(fact, data, ctx).trim(),
+        )
         .filter((s) => s !== '')
         .join('; ')
       return done(said || recorded(event.type))

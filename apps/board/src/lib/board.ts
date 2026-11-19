@@ -22,8 +22,12 @@ import {
   isPending,
   isRegistered,
   attemptReducer,
+  ticketReducer,
   ticketStream,
+  standingSystemResolution,
+  systemLineOf,
   waitWords,
+  type SystemLine,
 } from '@lingtai/domain'
 import {
   acceptedTriageNote,
@@ -246,6 +250,12 @@ export interface BoardCard {
    * place it is drawn (`rail.tsx`).
    */
   held: string | null
+  /**
+   * What the system did for a wait it resolved itself, and why (#1259): the action, the cause's words and the bound
+   * used, drawn under the title until the ticket's next wait, its next attempt's claim or its ending. Null on every
+   * other card, and where the ticket stream could not be read.
+   */
+  system: SystemLine | null
   /**
    * Whether a person is holding a question at all. The waiting lane also holds
    * a run that asked something mid-flight, and that is not an item anybody can
@@ -855,6 +865,8 @@ export function toCard(
    * `spend` (#826). Null where the run has no progress, and `held` is null then.
    */
   rounds: { spent: number; granted: Granted } | null = null,
+  /** The system's line for a wait it resolved, from `standingSystemLines`; null for every other card. */
+  system: SystemLine | null = null,
 ): BoardCard {
   const words =
     t.wait === null ? null : waitWords(t.wait.reason, { branch: agentBranchOf(t.issue), base: '', findings: [] })
@@ -897,6 +909,7 @@ export function toCard(
     updatedAt: t.updatedAt.toISOString(),
     attempts: t.attempts,
     arm: describeArm(t, limits?.newAttempts ?? null),
+    system,
     held:
       rounds === null
         ? null
@@ -1447,6 +1460,7 @@ export async function githubQueue(
         arm: null,
         // Nothing has run, so there is no rail and nothing held on it.
         held: null,
+        system: null,
         waiting: false,
         // Never, and by construction rather than by luck: these cards are the
         // queue's own answer — what GitHub offers *minus* what the log says
@@ -1512,6 +1526,40 @@ export async function githubQueue(
  * A stream that will not read costs that card its detail and nothing else. The
  * card is still on the board with its counts, which is what it had before.
  */
+/**
+ * **The system's line for each card that still carries one** (#1259). `task_view` has no column for it and a new one is
+ * not this ticket's, so the ticket stream is read — only for the states the line can show in (a Waiting card is the
+ * wait itself, a Landed one is over), through the snapshot like `laneProgress`'s. A stream that will not read costs
+ * that card its line and nothing else.
+ */
+export async function standingSystemLines(
+  tasks: readonly TaskCard[],
+  limitsByProject: ReadonlyMap<string, AttemptLimitsView>,
+): Promise<Map<string, SystemLine>> {
+  const candidates = tasks.filter(
+    (t) =>
+      (t.state === 'queued' && t.attempts > 0) ||
+      t.state === 'running' ||
+      t.state === 'verifying' ||
+      t.state === 'approved',
+  )
+  if (candidates.length === 0) return new Map()
+  const read = { snapshots: log.snapshots, writer: await traced('snapshot.writer', () => boardWriterOrNone()) }
+  const lines = await Promise.all(
+    candidates.map(async (t) => {
+      try {
+        const state = await readState(eventStore, ticketReducer, t.taskId, 'all', read)
+        const wait = standingSystemResolution(state)
+        const line = wait === null ? null : systemLineOf(state, wait, limitsByProject.get(t.project) ?? null)
+        return line === null ? null : ([t.taskId, line] as const)
+      } catch {
+        return null
+      }
+    }),
+  )
+  return new Map(lines.flatMap((l) => (l === null ? [] : [l])))
+}
+
 async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
@@ -1694,6 +1742,7 @@ export async function loadBoard(project?: string): Promise<Board> {
   // ceiling of its own — this loop already resolved every recipe, and reading
   // one twice is how a render gets expensive (`queued.limits`'s own doc).
   const limitsByProject = new Map(queued.limits.map((l) => [l.project, l]))
+  const systemLines = await timed('board.system', () => standingSystemLines(tasks, limitsByProject))
   // Keyed by ticket, so every card's bill is a lookup rather than a scan of
   // the whole board's spend on every card.
   const spendByTicket = new Map<string, SpendRow[]>()
@@ -1728,6 +1777,7 @@ export async function loadBoard(project?: string): Promise<Board> {
       triageContextFor(triageDeclared, t.project, daemon),
       fixHeads.get(t.taskId) ?? null,
       opened === undefined ? null : { spent: spentOf(opened, granted), granted },
+      systemLines.get(t.taskId) ?? null,
     )
   })
   // A task released back to the queue has a row *and* is offered by GitHub, so
