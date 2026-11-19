@@ -44,7 +44,7 @@ is the projection that reduces them (`#137`).
 
 `PassRouted` is where `proposed` sent an attempt and why (`#271`). It carries
 **`chose` beside `to`**, and a `ceiling` naming which limit is the difference: a
-judge may choose `implement` and the attempt still go to `waiting` because `rounds`
+judge may choose `implement` and the attempt still go to `waiting` because `refusalFixes`
 is spent, and *the decision sent this to a person* and *the decision wanted
 another round and there was none* are the two sentences a person reads on the
 card. Written by the attempt and not by whatever routed, because the budget is the
@@ -323,25 +323,79 @@ reports. A megabyte produces a worse review, not a better one.
 
 ### what an attempt may spend — `runtime.limits`, the recipe's
 
-Two of these bound **one agent run**; `rounds` bounds **how many of them an attempt
-buys**; `restarts` bounds **how many attempts one ticket buys**. They sit in one
-block because the number anybody actually wants is the product,
-`(restarts + 1) × (rounds + 1) × wall`, and it is computed once — `attemptCeiling`
-— so `lingtai add`, the board's chip and `lingtai shutdown` cannot say different
-things about the same recipe ([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
-[0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §5).
+A failure is answered in three layers, and a person is the last of them
+(0108 §6, §16): **a rule** answers what is mechanical or transient, free;
+**a judge** (within the bounds) or **triage** (where a wait would open) **names
+a cause**, and the system chooses the action and carries it out; **a person** is
+asked only for a *limit* (a bound is spent), an *unclear* requirement or a broken
+*environment*. This section is the bounds. The keys are grouped by what each
+one counts, and each bounds exactly one action (0108 §8):
+
+- `run` bounds **one agent run**;
+- `attempt` bounds what **one attempt** may buy: how many times it sends the
+  agent back, and how many times it resolves a conflict;
+- `ticket` bounds what **one ticket** may buy: how many attempts.
+
+The number anybody actually wants is the product, and it is computed once —
+`attemptCeiling` — so `lingtai add`, the board's chip and `lingtai shutdown` cannot
+say different things about the same recipe
+([0039](decisions-archive/0039-the-worktree-is-the-whole-of-a-pass.md) §3,
+0108 §8).
 
 | Key | Default | What it decides |
 |---|---|---|
-| `runtime.limits.turns` | `300` | turns before the runtime stops the agent, **per run** |
-| `runtime.limits.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.rounds` | `2` | how many times an attempt sends the agent back **into the same worktree**, carrying what refused it — findings, a build's output, or the conflict left standing there. `0` means nothing patches a diff in place |
-| `runtime.limits.restarts` | `0` | how many times an attempt whose `rounds` are spent **starts the ticket over** from the base, carrying the findings, instead of asking a person. Only a refused *review* is answered this way; a red build and a conflict stay in the worktree, because for those the work is still there. `0` is what it did before the key existed |
-| `runtime.limits.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike the other three bounds above — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
+| `runtime.limits.run.turns` | `300` | turns before the runtime stops the agent, **per run** |
+| `runtime.limits.run.wall` | `2h` | wall clock before the same, **per run** |
+| `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
+| `runtime.limits.attempt.refusalFixes` | `6` | how many times an attempt sends the agent back **into the same worktree**, carrying what a build or review refused. `0` buys no fix, and a refusal then goes to a person |
+| `runtime.limits.attempt.conflictResolutions` | `6` | how many times an attempt sends the agent back to resolve a merge conflict. Two things that mean differently have two names even where their values agree. `0` buys no resolution |
+| `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build buys one only when triage names `WrongApproach` after its `refusalFixes` are spent (`StartNewAttempt` is permitted for `BuildRed`); a conflict with only mechanical hunks never does. Not a daemon restart. `0` means a spent attempt asks a person |
 | `gates.<point>[].timeout` | `15m` | per process action, not per point |
 | `source.backoff` | `1h`, flat | how long a failed attempt keeps its own ticket out of the queue — its own section, below |
 
-**And a step may narrow the first two, never widen them** (`#314`,
+`runtime.limits.rounds` and `runtime.limits.restarts`, and a `turns`, `wall` or
+`usd` written directly under `runtime.limits`, are **refused by name**, and the
+refusal says which key replaced each (`retiredLimits`,
+`packages/recipe/src/resolve.ts`). `rounds` became the two bounds `refusalFixes`
+and `conflictResolutions`; `restarts` became `newAttempts`.
+
+**The nine actions and their bounds** (0108 §8). Seven are chosen from a cause by
+`actionFor` (`packages/domain/src/failure/respond.ts`), and two are done by the
+conductor and not chosen from one. A recipe key is a number a person may set; the
+others are constants in `BOUNDS`, *"a constant and not a recipe knob: a knob is a
+value somebody can set to a loop"* — their rows are in *what Lingtai decides for
+itself*, below.
+
+| Action | What it does | Bound | Scope | Value | Where |
+|---|---|---|---|---|---|
+| `fixRefusal` | one more `implement` carrying what refused it, from the saved head | `refusalFixes` | the attempt | `6` | recipe: `runtime.limits.attempt.refusalFixes` |
+| `resolveConflict` | the same for a merge conflict | `conflictResolutions` | the attempt | `6` | recipe: `runtime.limits.attempt.conflictResolutions` |
+| `redoStep` | the step that did not finish runs again, whole, from the saved head | `stepRedos` | the attempt | `3`, after 1, 5, 15 minutes | constant: `BOUNDS.stepRedos`, `BOUNDS.stepRedoWaits` |
+| `writeSpentOnThenRedoStep` | writes where the turns went into the body, then redoes the step | `stepRedos` | the attempt | `3` | constant: `BOUNDS.stepRedos` |
+| `startNewAttempt` | the ticket is released and claimed again, from the base | `newAttempts` | the ticket, across attempts | `2` | recipe: `runtime.limits.ticket.newAttempts` |
+| `splitTicket` | triage's plan opens child tickets; the parent waits behind them | `ticketSplits` | the root ticket | `1` | constant: `BOUNDS.ticketSplits` |
+| `askPerson` | a wait for a limit, a question or the environment | `personAsks` | the ticket | `5` questions | constant: `BOUNDS.personAsks` |
+| *(the conductor)* a base that moved is merged in | `build` and `review` run again on the merged head | `baseBranchMerges` | the attempt | `10` | constant: `BOUNDS.baseBranchMerges` |
+| *(the conductor)* a landing origin refused is landed again | the same head, from the saved head, after the lane's own tries | `landingRetries` | the attempt | `3`, on the same waits as a redo | constant: `BOUNDS.landingRetries` |
+
+Each bound is counted where its scope says — the attempt's own stream, or the
+ticket's — so **a daemon restart, a release or a person's resolution resets none
+of them**. With `refusalFixes`, `conflictResolutions` or `newAttempts` at zero the
+action is not bought and the wait is a person's. A person's own `FixRefusal` and
+`RedoStep` spend none of these.
+
+**`attemptCeiling` counts `implement` runs alone** (0108 §8):
+`(newAttempts + 1) × (1 + refusalFixes + conflictResolutions + stepRedos) + personAsks`
+runs of `implement`, each within `run.wall` (and `run.usd` where declared). The
+other steps' runs are **listed by step and never summed**: `design`, `review`, a
+judge and triage each keep a bound of their own (`packages/conductor/src/ceiling.ts`).
+With the defaults it is `(2 + 1) × (1 + 6 + 6 + 3) + 5 = 53`, and `lingtai add`
+prints it. A test holds the opening, *up to 53 implement runs a ticket*
+(`packages/conductor/unit/filter.test.ts`); the line at the defaults is:
+
+> up to 53 implement runs a ticket — 3 attempt(s) of 16 runs (an attempt is the work, 6 refusal fix(es) back to the agent carrying what refused it, 6 conflict resolution(s), and up to 3 reruns of a run an API error cut off) and up to 5 answers to a person — 2h and 300 turns each, so at most 106h
+
+**And a step may narrow `turns` and `wall`, never widen them** (`#314`,
 [0070](decisions-archive/0070-a-dispatch-is-one-shape-and-the-ceiling-is-stated-once.md) §5).
 `turns` and `wall` bound one call, so a dispatch may write its own `limits:` —
 `agent:` and a runtime `judge:` both — and `limits: { turns: 50 }` narrows the
@@ -354,35 +408,26 @@ recipe resolves, by name:
 The ceiling is said **once**, here, and every other number is a reduction from
 it — otherwise what an attempt may spend would only be knowable after reading every
 action in every step, and `attemptCeiling`'s sentence would stop being an upper
-bound. `rounds` and `restarts` may not move at all: they count *how many*
-calls, which is not a thing one action can have an opinion about. `usd` bounds
-one run, the same as `turns` and `wall` — but a dispatch's `limits:` has no
-key for it either, so writing it there is refused the same way: `rounds` and
-`restarts` are refused by name, with the reason above; `usd` is refused as an
+bound. `refusalFixes`, `conflictResolutions` and `newAttempts` may not move at all: they
+count *how many* calls, which is not a thing one action can have an opinion about.
+`usd` bounds one run, the same as `turns` and `wall` — but a dispatch's `limits:`
+has no key for it either, so writing it there is refused the same way: the three
+counts are refused by name, with the reason above; `usd` is refused as an
 unrecognized key, the schema saying nothing else about it yet. Where a step
 does narrow,
 `attemptCeiling` names it on the same line — *1h and 150 turns each at implement
-(review 30m/50 turns), so at most 3h* — and a recipe that narrows nothing prints
-exactly what it always printed.
+(review 30m/50 turns)* — and a recipe that narrows nothing prints exactly what it
+always printed.
 
-**Why the default is two and not one.** 0025 §3's rule for a spending default is
-the smallest number that makes the feature exist. `rounds` replaces two ceilings
-that were one each, and [0038](decisions-archive/0038-a-finding-buys-an-agent-before-it-buys-your-attention.md)
-§4's reason for having two was real: a build going red and a review refusing are
-different failures, and one round shared between them means whichever happens
-first decides whether the other gets an attempt at all. An attempt that fixes a red
-build and then meets a finding needs two rounds to do what two purses of one did.
-
-**Why `restarts` defaults to zero, which is the opposite argument.** That rule
-about spending defaults is about not taking a feature away by defaulting it too
-low, and this default takes nothing away: until a recipe writes a number down
-there is no feature to take. The evidence for the second ceiling is
-[experiment 011](experiments/011-patching-versus-starting-over.md) — **one
-ticket**, on which starting over landed for half what patching cost and landed
-nothing — and the failure the ceiling itself exists for, two fresh starts both
-exhausting their rounds, has never been observed. So the mechanism is built and
-off, and what changes the default is more runs in `doc/experiments/`
-([0040](decisions-archive/0040-rounds-bound-depth-restarts-bound-breadth.md) §4).
+**Why the defaults are what they are.** 0025 §3's rule for a spending default is
+the smallest number that makes the feature exist. A build going red, a review
+refusing and a merge conflict are different failures with different bounds, and one
+count shared between them would let whichever happens first decide whether the
+others get an attempt at all — which is why the old `rounds` is two keys. `newAttempts`
+defaults to `2` because a ticket spent twice is the failure the ceiling exists
+for, and evidence for the number is what more runs in `doc/experiments/` change
+([experiment 011](experiments/011-patching-versus-starting-over.md),
+0108 §8).
 
 **`repair.maxAttempts`, `repair.fix` and `repair.on` are gone**, and a recipe
 still carrying a `repair` block is **refused by name** rather than ignored —
@@ -418,12 +463,21 @@ Not the recipe's, and each row says why.
 | `BUFFER_BYTES` (`packages/actions/src/command.ts`) | `2000000` bytes | above this, older output is dropped **while the command is still running** | a runaway process can print faster than anything reads it. This bounds memory, not meaning |
 | `RUN_LOG_MAX_BYTES` (`packages/agent/src/run-log.ts`) | `8000000` bytes | where a run's log file stops, saying so in itself on the line it stops at | it bounds a file on the operator's disk, not what a run is told or may spend. A trace line is about sixty bytes, so this is ~130,000 tool calls — the cap is not for the trace but for `#109`'s agent stream, which can be tens of megabytes for one run. Past this it stops being a file somebody opens to find out why a run failed ([0034](decisions-archive/0034-the-run-log.md) §7) |
 | `TRACE_LINE_CHARS` (`packages/agent/src/claude-code.ts`) | `4000` characters | where one line of the agent's own output stops, saying how much more there was | it bounds a line of a file, not what a run is told or may spend. `#109` put the agent's prose in the log and a single message has no bound; this is what keeps one runaway line from spending the whole of `RUN_LOG_MAX_BYTES` at once, and past a long paragraph more of it in the file is not more of it read. Nothing is lost: `sessionIdFor` makes the full transcript computable from a run id forever |
-
 | `RUN_LOG_POLL_MS` (`packages/agent/src/run-log.ts`) | `250` ms | how often `lingtai attach` and the board's run-log stream look for more of the file | it is the cost of *reading* a log, which nothing about a project decides. There is no notification to wait on — 0034 chose a file over a socket precisely so that reading one needs nothing from the process that wrote it, and `tail -f` polls for the same reason. Under the threshold at which a person watching a scrolling log perceives a delay, and a pass that finds nothing costs one `read` returning zero bytes |
 | `KEEP_LINES` (`apps/board/src/app/run-log.tsx`) | `2000` lines | how much of one run log the *browser* holds; the head is dropped, never the tail | it bounds a DOM node and nothing else. `RUN_LOG_MAX_BYTES` bounds the file, and eight megabytes in one `<pre>` is a tab that stops responding — a worse failure than showing less. `lingtai attach` has no such bound, because a terminal is a scrollback |
 | `AGAIN_MS` / `AGAIN_MAX_MS` (`apps/board/src/app/run-log.tsx`) | `1500` ms doubling to `15000` ms, **never stopping** | how often the discussion box asks again for a turn's trace that has not been opened yet | it is the cost of an open tab, not of a project. A question asked with no daemon running is queued and answered when one starts (`answerOutstanding`), so the asking backs off rather than ending: a first attempt at #132 stopped after thirty seconds and told the reader the turn was dead, and a reader told that asks again and buys a second agent |
 | `RUN_LOG_BEAT_MS` / `RUN_LOG_QUIET_MS` (`packages/agent/src/run-log.ts`) | `5000` ms, quiet past `15000` ms | how often the daemon answering a discussion touches the chat's trace, and how long untouched before the board says nothing is writing it | a trace a killed daemon left behind opens exactly like one being written, and the contents may not say which (0034 §8). The beacon cannot either: a `--no-conduct` daemon beats and answers nothing, and a page reads it once. Three missed beats, as `STALE_AFTER_MS` is for the beacon |
 | `AGAIN_PATIENCE` (`apps/board/src/app/run-log.tsx`) | `5` asks, about 22 s | when the box stops saying *waiting for the daemon* and says *no daemon has started on this yet* | it changes a sentence and nothing else — the asking goes on. Far past the time a running daemon takes to open the file, so what is left is the likelier reading |
+| `BOUNDS.stepRedos` (`packages/domain/src/failure/respond.ts`) | `3` per attempt | how many times a step that crashed, answered unreadably or got a registry 5xx is redone whole from the saved head (#1200, #1201, #1224); `writeSpentOnThenRedoStep` spends the same count | *"a constant and not a recipe knob: a knob is a value somebody can set to a loop."* A redo costs an agent, and the count is what stops a crash that repeats from being paid for forever |
+| `BOUNDS.stepRedoWaits` (same) | `1 minute`, `5 minutes`, `15 minutes` | the growing wait before the first, second and third redo of a step. A landing retry waits on the same schedule | the schedule is the cost of a redo that is not paid for in agents; a knob would be a way to make it a spin |
+| `BOUNDS.landingRetries` (same) | `3` per attempt | how many times the rule lands the same head again after origin refused a landing — `unreachable`, `remote-error` (#1221) | *a count of its own, never `stepRedos`*: a refused landing is not a step that did not finish, and sharing the count would let one starve the other |
+| `BOUNDS.baseBranchMerges` (same) | `10` per attempt | how many times a base that moved is merged in by the system before a person is asked (#593) | a base merge costs no agent, so this bounds a base that keeps moving, not money |
+| `BOUNDS.personAsks` (same; the number is `PERSON_ASKS`, `packages/domain/src/wait.ts`) | `5` per ticket | how many times a ticket stops to ask a person for an answer: counted when the question wait **opens**, answered or not. The sixth is an `AskLimit` wait and an agent never assumes (0108 §22, #1254). A wait for a limit or for the environment is not counted | a limit on how much a ticket may interrupt somebody is the project's *tolerance*, and a recipe key for it is a way to ask a person forever |
+| `BOUNDS.triageRetries` (same) | `1` | how many more times a triage whose answer failed or went stale is asked, before the wait is a person's (0118 §3, #1258) | each retry is a paid agent turn, and a knob is a value somebody can set to a loop |
+| `BOUNDS.ticketSplits` (same) | `1` per root ticket | how many times a ticket is split: spent by its first `SplitStarted` for any wait (#1261), so a parent that returns in a new attempt has no second split | a split opens tickets, which is a cost to a repository and not only to a run; unlimited it is an unbounded tree |
+| `TRIAGE_SPLIT_CHILDREN_MAX` (`packages/domain/src/triage.ts`) | `8` | how many children a triaged split proposal may suggest (0118 §12) | it bounds what one answer may open, as `TRIAGE_QUESTIONS_MAX` bounds what it may ask |
+| `CONFLICT_ROUND_HUNKS` (same file) | `5` | read only by `recommendedResolution` (`packages/domain/src/wait.ts`), for a recorded `TriageAdvised` row: a conflict of up to this many hunks recommends `FixRefusal` over the advice's own resolution (#652). It does not decide what the system does with a current `TriageAnswered` cause: `actionFor` reads the hunks' kinds — a `Divergent` hunk asks a person, a `Contradicting` one starts a new attempt, otherwise the conflict is resolved in place — within `conflictResolutions`, whatever the hunk count | the line between *the work is still there* and *the work is not worth keeping* is a judgement about the shape of a conflict, not a project's budget |
+| a red check's one rerun (`flakyVerdict`, `packages/domain/src/failure/flaky.ts`; `packages/conductor/src/base-check.ts`) | **one rerun, at once**, in the same tree; `prepared` is not rerun | whether a check that failed goes on (0108 §17). The rerun can only turn a red into a green. A red then green lets the attempt go on, filed as a minor `flaky:` finding, when **all three** hold: the failing tests can be named; no failing test's file is in this diff; and every failing test has failed on the base before, or the backlog already names it. A read that failed is red, saying which | a rerun is a second run of somebody's command, so it is the system's rule and not a number: the conditions say what a flake is, and a recipe that wrote *two* would be deciding that a project's red is allowed to repeat |
 
 **And these rows are why the section exists.** `RUN_LOG_MAX_BYTES` and
 `TRACE_LINE_CHARS` are the first constants of this kind added since `#96` was
@@ -1192,7 +1246,7 @@ decides what *refuses* — beside `acceptFinding` and `declineFinding` in
 `packages/conductor/src/backlog.ts`, which is where that bar now also exists as
 `decideBacklog`, a function a recipe will hand its own value to. **Both halves
 take that value or neither does**: replace the reducer's literal alone and a major
-still fails the step, is never filed, and buys the fix round the recipe said it
+still fails the step, is never filed, and buys the fix the recipe said it
 would not, which is why the refusal says so. So a recipe
 cannot yet say either of the two: each declares `at: {}`, so every step refuses
 it. They are declared
@@ -1290,9 +1344,9 @@ What `queue:` deliberately does **not** declare is the half worth reading:
   **null is not zero** — a GitHub that says nothing about dependencies degrades
   to the behaviour from before this existed rather than passing everything over,
   which is what `Offered.dependenciesUnread` says out loud.
-- **No `restarts`.** A universal key beside the plugin rather than a field of it
+- **No `newAttempts`.** A universal key beside the plugin rather than a field of it
   (0061 §2 and §3): *this item may be claimed twice* is the workflow's bound on
-  the step, and `runtime.limits.restarts` is where a person writes it today.
+  the step, and `runtime.limits.ticket.newAttempts` is where a person writes it today.
 - **No `env:`.** Nothing here spawns a process, so a recipe writing one is
   refused by name rather than having it accepted and ignored (0061 §9).
 
@@ -1336,8 +1390,8 @@ review    findings              231      the lines or the approach   ← the jud
 any       setup-refused           —      `prepared` lifts by a person; restart elsewhere (`#471`)
 proposed/merge check-refused      —      a declared check's own evidence (`#471`)
 design/review/proposed/merge answer-unreadable — the agent answered and the machine could not read it (`#471`)
-implement nothing-produced        —      round 0 cleared and committed nothing — only the ticket to argue with (`#471`)
-implement fixer-disagrees         —      a fix round cleared and committed nothing, disagreeing with the reviewer (`#471`)
+implement nothing-produced        —      the first run cleared and committed nothing — only the ticket to argue with (`#471`)
+implement fixer-disagrees         —      a fix of a refusal cleared and committed nothing, disagreeing with the reviewer (`#471`)
 merge     merge-refused           —      one of the seven integration reasons, neither conflict nor a red re-verify (`#471`)
 any       budget-exhausted        —      a turn or dollar ceiling, from any step (`#471`)
 ```
@@ -1392,13 +1446,16 @@ lines or the approach*, and a `switch` cannot tell those apart from a findings
 array.
 
 **What a runtime judge may spend is what the counting already left.** It is
-handed the offered set and no ceiling — there is no `rounds` in the prompt, and
-choosing `implement` spends one of the rounds `runtime.limits.rounds` had already
-paid for. On the arrival where none is left, `implement` is simply not on the set
-to ask for, and a judge that asks anyway is refused by name with the ceiling that
-refused it on the card. **Three answers are not a choice and each is a person**:
-a run that never started, one that did not finish, and an answer that does not
-read as one of the offered steps. None of them is retried.
+handed no offer and no ceiling — there is no `refusalFixes` in the prompt. A judge at
+`findings` **names a cause** from `JUDGE_CAUSES` (`FixableLines`, `WrongApproach`,
+`UndecidedQuestion`) and never a destination: the system chooses the action from it
+(`actionFor`), so `FixableLines` buys one of the fixes
+`runtime.limits.attempt.refusalFixes` had already paid for, and `WrongApproach` one
+`newAttempts`. Where that bound is spent the answer is still valid — the system
+opens a `limit` wait naming the bound, and nothing is wrong with the judge. **Three
+answers are not a cause and each is a person**: a run that never started, one that
+did not finish, and an answer that does not read as one of the causes it may give
+(it is refused by name). None of them is retried.
 
 ```yaml
 proposed:
@@ -1428,10 +1485,10 @@ a misconfiguration that loops    is not — it never errors, it only spends
 > **`judge:` decides which step is next. The workflow decides which steps it
 > may choose from.**
 
-A judge that could carry its own `rounds` could answer *back to `implement`*
-for ever, at ~31 turns and ~$3.40 a round
+A judge that could carry its own `refusalFixes` could answer *back to `implement`*
+for ever, at ~31 turns and ~$3.40 a fix
 ([012 §3](experiments/012-where-the-turns-go.md)), and nothing anywhere would
-report a fault. So the plugin declares **no `rounds:` and no `restarts:`** —
+report a fault. So the plugin declares **no `refusalFixes:` and no `newAttempts:`** —
 not beside `judge:` and not inside the `limits:` it gained in `#314`; they are
 universal keys on the steps they bound, written today as `runtime.limits`, and a
 recipe writing either under a judge is refused by name. What it *does* declare
@@ -1439,14 +1496,16 @@ since that ticket is `model:` and `limits:` — which model buys the judgement a
 what that one call may spend, the same two fields with the same meanings
 `agent:` carries (0070 §3) — because the cheapest call in an attempt by two orders
 of magnitude was the one with no way to ask for a cheap model. A built-in takes
-neither: it is a function the router applies and spends nothing. The workflow counts what is spent, works out the set of steps on offer
-(`stepsOnOffer` in `packages/conductor/src/judge.ts`) and hands the judge that
-set; **the set depends on how far the attempt got, not only on what is left to
-spend**, so `prepared`'s refusal offers no `implement` with every round unspent,
-because no agent has run and there is no diff to fix. A judge answers *which of
-these*, never *what is legal*, and one that returns a step it was not offered
-is refused by name and the attempt is held for a person — 0061 §8's rule once
-more, and the reason a wrong answer costs one attempt rather than running for ever.
+neither: it is a function the router applies and spends nothing. A judge at
+`findings` is handed no set of steps: it **names a cause** from `JUDGE_CAUSES`, and
+the workflow, not the judge, chooses the action (`actionFor` in
+`packages/domain/src/failure/respond.ts`) and counts what is spent against it.
+A judge answers *which cause*, never *what is legal*, and a cause it may not give
+is refused by name and the attempt is held for a person. A valid cause whose
+bound is spent — `FixableLines` with `refusalFixes` used up, say — is not a wrong
+answer: the system opens a `limit` wait naming the bound, and the judge's
+configuration is not at fault. That is the reason a wrong answer costs one
+attempt rather than running for ever.
 
 **`stepsOnOffer` is the whole of that bound, so every rule the workflow has to
 say *no agent for this one* is in it** — a rule left where it used to live is a
@@ -1457,12 +1516,12 @@ reviewer's findings with no `failureScenario` between them, or a command that
 refused and printed nothing, offer no `implement` and no `claim` however much is
 left to spend. The one rule deliberately **not** carried across is
 `decideRestart`'s `exhausted`: that module offers a second approach only once
-the rounds are spent, which makes *patch, patch, patch, then start over* the
+the fixes are spent, which makes *patch, patch, patch, then start over* the
 only order there is — and
-[#232](https://github.com/steven-zhc/lingtai/issues/232) spent four rounds on
+[#232](https://github.com/steven-zhc/lingtai/issues/232) spent four fixes on
 one scanner at $46.92 before a fifth found the fault was in the design. Which
 kind of refusal this is, is the judgement the split is for, so it moves to the
-judge; `restarts` still bounds how many times it can be made.
+judge; `newAttempts` still bounds how many times it can be made.
 
 `close:` and `labels:` carry `when:` (`landed` / `blocked` / `failed` / `closed` / `any`), because
 `end` fires on *every* terminal outcome. "Close it when it lands, label it when
@@ -1595,8 +1654,9 @@ each says the part an operator can act on:
   not implement `merge` — it serves `proposed`* — and that refusal carries the
   clause its `CALLED_DIRECTLY` row used to, because a judge written at the wrong
   step is exactly who needs it: at `proposed` the one entry whose `when:` matches
-  the reason the last step gave, with the workflow counting the rounds and
-  restarts and the judge only choosing from what it is offered (0061 §3).
+  the reason the last step gave, with the workflow counting the fixes and
+  new attempts and the judge only naming a cause from those it may give, the
+  system choosing the action (0061 §3, 0108 §6).
 
 Where each step's list comes from. **There is one call site, and it names its
 step with a variable** — `conduct.ts`'s `actionsAt`, handed to `runAttempt`, which
@@ -1773,12 +1833,15 @@ Why a merge did not happen. Source: `RefusalReason` in `packages/domain/src/voca
 `base-checked-out` · `unreachable` · `remote-error`
 
 `unreachable` is git failing to reach origin for the fetch or push after the
-lane's own tries: nothing about the branch was judged, and approve re-runs only
-the land (#1029).
+lane's own tries: nothing about the branch was judged (#1029). After those tries
+the rule lands the same head again from its saved head (`LandAgain`, offered as
+`land-again`), spending one `BOUNDS.landingRetries` of `3` on the waits a step
+redo uses, and the card says *landing again … retry N of 3*. A person is asked
+only when those are spent or the head cannot be continued.
 
 `remote-error` is GitHub answering a push with a server error (500, 502, 503 or
 504) on every one of the lane's three tries: nothing about the branch or the
-base was judged, and approve re-runs only the land (#1125).
+base was judged (#1125), and it is answered the same way as `unreachable`.
 
 **`verify-failed` was `gate-failed` until `#247`, and `conflict` was looked at
 in the same change and kept.** The old name was 0058 §3c's own complaint about
@@ -1791,6 +1854,12 @@ holds — and `conflict` was already saying what the lane found. It was the othe
 one that named a machine part. Over the log before the reset, `merge` refused 32
 times: **26 of them this reason, 6 `conflict`**
 ([012](experiments/012-where-the-turns-go.md)).
+
+`wip-commit` is **read and never written** since #1243: a branch that carried a
+`wip:` commit Lingtai made for a run it stopped was refused with it, and now the
+`wip:` commit rides on the continuation and nothing writes the refusal. The value
+stays in `RefusalReason` because rows on the log carry it, which is why this
+heading's count does not change.
 
 `lane-busy` is **read and never written** since #194: the merge lane took a lock
 and told the loser this, and git's rejected push — `push-rejected` — is what
@@ -1828,7 +1897,7 @@ asked:
 `claim` · `admit` · `prepared` · `design` · `implement` · `build` · `review` ·
 `proposed` · `merge` · `pass`
 
-And one beside them: `restart`, where the rounds were spent and a second
+And one beside them: `restart`, where the fixes were spent and a second
 approach was bought (0040) — the item is released and the next claim is an
 ordinary attempt from the base.
 
@@ -1996,7 +2065,7 @@ Source: `COMMANDS` in `apps/cli/src/commands.ts`; `apps/cli/src/cli.ts` has a su
 `add` · `run` · `approve` · `backlog` · `requeue` · `ask` · `answer` · `close` ·
 `ticket` · `attach` · `board` · `status` · `doctor` · `env` · `end` · `start` ·
 `daemon` · `service` · `restart` · `pause` · `resume` · `shutdown` · `now` ·
-`projection` · `version` · `init` · `grant-fix-round` · `upgrade` · `rollback` ·
+`projection` · `version` · `init` · `fix-refusal` · `redo-step` · `start-new-attempt` · `upgrade` · `rollback` ·
 `uninstall`
 
 `daemon` is `start`'s own definition (`startCommand('daemon')` in `cli.ts`),

@@ -162,33 +162,40 @@ EN = dict(
        "worktree, a merge. Swap it and the step does something else.",
        "each entry under a step"),
       ("refuse", "A step's verdict that <i>this change is not right</i>. It "
-       "costs: it sends the work back to the agent and spends one round — "
-       "except a base that moved under it and merges in cleanly, which the "
-       "system merges in itself (section 4).",
+       "costs: it sends the work back to the agent and spends one "
+       "<code>refusalFixes</code> — except a base that moved under it and merges "
+       "in cleanly, which the system merges in itself (section 4).",
        "the card says which step refused, and why"),
       ("did not finish", "The step stopped without judging, and there is nothing "
-       "to answer — a reviewer crashed, a turn budget went. <b>Not a refusal, and "
-       "it buys no round.</b> The attempt stops here.",
+       "to answer — a reviewer crashed, a reply could not be read. <b>Not a refusal, "
+       "and it buys no fix.</b> A rule redoes the step whole from the head after 1, "
+       "then 5, then 15 minutes, up to <code>stepRedos</code>; a run that met its "
+       "turns or time goes to triage.",
        "the same place, with a different reason"),
       ("asked", "The step stopped without judging and <i>there is a question</i> "
        "— the agent could not proceed without knowing something. It costs no "
-       "round either, and unlike the row above it has somewhere to go: "
-       "<code>proposed</code> answers it, or you do.",
+       "fix either. It is one question shape, answered into the ticket's body, "
+       "up to <code>personAsks</code> of them a ticket; "
+       "<code>proposed</code> or triage answers what it can, and you answer the rest.",
        "the card, in the held colour rather than the red one"),
       ("reason", "A short machine-readable word that travels with a refusal, so "
        "<code>proposed</code> can route on it and you can read it later.",
        "on the card, and on the log"),
-      ("round", "One more go at the same worktree, carrying what refused it. "
-       "<code>rounds</code> is how many you will pay for.",
-       "<code>runtime.limits.rounds</code> in your recipe"),
-      ("restart", "The ticket is released back to the queue and started over "
+      ("fix the refusal", "One more go at the same worktree, carrying what "
+       "refused it. <code>refusalFixes</code> is how many you will pay for; a "
+       "conflict has <code>conflictResolutions</code>.",
+       "<code>runtime.limits.attempt</code> in your recipe"),
+      ("new attempt", "The ticket is released back to the queue and started over "
        "from the base. Another ticket may be taken first.",
-       "<code>runtime.limits.restarts</code> in your recipe"),
+       "<code>runtime.limits.ticket.newAttempts</code> in your recipe"),
       ("worktree", "The branch and working copy this attempt owns. One per attempt; "
        "the agent cannot see outside it.",
        "cut at <code>admit</code>, named on the card"),
-      ("waiting on you", "The one place a ticket stops for a person. Only "
-       "<code>proposed</code> can put it there.",
+      ("waiting on you", "Where a ticket stops for a person, and only for one of "
+       "three kinds: a bound that is spent (<code>limit</code>), a requirement "
+       "only a person can settle (<code>unclear</code>), or an environment only a "
+       "person can repair (<code>environment</code>) — after a rule and a judge "
+       "or triage have answered what they could.",
        "the board's top row"),
     ],
 
@@ -205,53 +212,77 @@ EN = dict(
     s3p2="<b>Some keys are not the plugin's — they are the bounds Lingtai puts "
          "on it.</b> A <code>run:</code> plugin cannot ignore its "
          "<code>timeout</code>, because the runner enforces it rather than the "
-         "plugin honouring it. <code>rounds</code> and <code>restarts</code> work "
-         "the same way, and each sits on the step it bounds.",
+         "plugin honouring it. <code>refusalFixes</code> and "
+         "<code>newAttempts</code> work the same way: the system counts them, "
+         "under <code>runtime.limits</code>, and no plugin can raise them. "
+         "<code>implement</code>'s brief asks the agent to commit each piece that "
+         "works, so an interruption loses little, and a ticket too big for one "
+         "run is split by the system once — its <code>## Done when</code> is "
+         "what the parent is checked against when the children close.",
 
     s4h="What an attempt can cost you",
-    s4l="Four numbers, and the first three are multiplied by the fourth.",
+    s4l="Each automatic path has a bound of its own, and the arithmetic is "
+        "the implement runs they add up to.",
     c_turns="# inside one agent run",
     c_wall="# inside one agent run",
-    c_rounds="# how many times a refusal sends the agent back",
-    c_restarts="# how many times this ticket may be claimed",
-    s4p="Read it as arithmetic: one attempt is up to <code>rounds + 1</code> agent "
-        "runs, each bounded by <code>turns</code> and <code>wall</code> — and "
-        "<code>restarts</code> is how many attempts one ticket may buy. "
-        "<code>lingtai add</code> prints the whole sum before anything runs.",
-    s4p2="<b>Nothing here bounds what you are asked.</b> A step that did not "
-         "finish — an agent that stopped to ask, a reviewer that crashed — buys "
-         "no round, because it passed no judgement on your change. Nor does a "
+    c_rounds="# fix the refusal: how many times a refusal sends the agent back",
+    c_restarts="# new attempt: how many times this ticket may be started over",
+    s4p="Read it as arithmetic: an attempt is up to "
+        "<code>1 + refusalFixes + conflictResolutions + stepRedos</code> "
+        "<code>implement</code> runs, and a ticket buys "
+        "<code>(newAttempts + 1)</code> attempts and up to "
+        "<code>personAsks</code> answers to a person — each run bounded by "
+        "<code>turns</code> and <code>wall</code>. With the defaults that is "
+        "<code>(2 + 1) × 16 + 5 = 53</code> runs. <code>lingtai add</code> "
+        "prints the whole sum, and the other steps' bounds beside it rather "
+        "than added in.",
+    s4p2="<b>What you are asked is bounded too: <code>personAsks</code>.</b> "
+         "A step that did not finish buys no fix — a rule redoes it whole from "
+         "the head, up to <code>stepRedos</code>. Nor does a "
          "review finding on a line your diff never touched: it is recorded as a "
          "pre-existing minor, unless the reviewer says how the diff makes that "
-         "code reachable. A review after a fix round reviews what the fix "
+         "code reachable. A review after a fix reviews what the fix "
          "changed and rechecks the earlier findings: a new finding outside the "
-         "fix is recorded as a minor, and a recheck never is.",
-    s4p2b="<b>A base that moved on your branch's files buys no round "
+         "fix is recorded as a minor, and a recheck never is. "
+         "<code>implement</code> ends in one of five outcomes — "
+         "<code>Implemented</code>, <code>AgentFailed</code>, "
+         "<code>Disputed</code>, <code>AlreadyDone</code> or "
+         "<code>Unclear</code> — and an <code>AlreadyDone</code> that "
+         "<code>review</code> checks ends the ticket <code>satisfied</code>.",
+    s4p2b="<b>A base that moved on your branch's files buys no fix "
           "either — if it merges in cleanly.</b> Lingtai merges it in itself and runs <code>build</code> "
           "and <code>review</code> again, with the base's new changes in front "
-          "of the reviewer — at most twice an attempt, then it waits for you. A base "
+          "of the reviewer — up to <code>baseBranchMerges</code> an attempt, then it "
+          "waits for you. A base "
           "that changed the same lines incompatibly is a conflict instead, and "
           "is answered as one. A base that moved anywhere else lands after "
-          "<code>merge</code>'s verify.",
-    s4p3="A person's extra fix-round grant pays for <b>one more</b> agent run on "
-         "saved work. It does not raise the recipe's <code>rounds</code> limit; "
-         "another round needs another decision. That run still has its own "
+          "<code>merge</code>'s verify. A red base is not the ticket's: it is "
+          "passed over as <code>base-red</code> and continues from its saved head "
+          "when the base is green.",
+    s4p3="A person's <code>FixRefusal</code> and <code>RedoStep</code> spend "
+         "nothing automatic: one more agent run on saved work, with its own "
          "<code>turns</code> and <code>wall</code> limits (and a dollar limit "
-         "where declared).",
+         "where declared), and it raises none of the bounds above. A ticket "
+         "too big for one run is split by the system, once — it is not a move "
+         "offered to you.",
 
     s5h="When it stops and waits for you",
     s5l="One place to look, however it got there.",
     prop_h="What puts a ticket there",
-    prop1="Every ceiling is spent — the rounds, then the restarts — and the "
-          "change is still refused. Or a question came back that only you can "
-          "answer: an unclear requirement, a design decision, two changes that "
-          "edited the same intent differently.",
+    prop1="A failure is answered in three layers, and you are the last. "
+          "<b>A rule</b> answers what is mechanical or transient, free. "
+          "<b>A judge</b> (within the bounds) or <b>triage</b> (where a wait would "
+          "open) names a <b>cause</b>, and the system chooses the action and "
+          "carries it out. <b>A person</b> is asked only for a <code>limit</code> "
+          "(a bound is spent), an <code>unclear</code> requirement or a broken "
+          "<code>environment</code>.",
     prop2="<b>Mostly <code>proposed</code> decides to send a ticket to you.</b> "
           "A <code>prepared</code> refusal and a check before the merge lane are "
           "no exception — both visit it too, and it is only because no judge is "
           "declared for either that they rest with you just the same — which is "
           "still what makes <i>is this worth interrupting somebody over</i> one "
-          "decision rather than a habit scattered through the pipeline.",
+          "decision rather than a habit scattered through the pipeline. "
+          "A wait the system resolved itself is a line on the card, not a wait.",
     gap_h="What it carries with it",
     gap1="What refused it and why, in the words the step used — the findings, "
          "the build's output, the paths that conflicted. You should never have "
@@ -259,18 +290,22 @@ EN = dict(
     gap2="And <code>end</code> still runs. Closing the ticket yourself is an "
          "outcome like any other, and the step that tidies up runs on every "
          "outcome rather than only on the happy one.",
-    choice_h="Two ways forward",
-    choice_p="<b>Fix the refusal on the saved work</b> is offered when there is a "
-             "fixable refusal and the saved branch is still at its recorded "
-             "commit. Your grant buys one paid fix round there; it waives no "
-             "refusal, and the result runs through <code>build</code>, "
+    choice_h="The ways forward",
+    choice_p="<b>Fix the refusal</b> (<code>FixRefusal</code>) is offered when "
+             "there is a fixable refusal and the saved branch is still at its "
+             "recorded commit: one more <code>implement</code> on the saved work, "
+             "and the result runs through <code>build</code>, "
              "<code>review</code> and <code>proposed</code> again before merge. "
-             "A merge conflict is answered this way too: the round merges the new "
+             "It waives no refusal and spends no automatic bound. "
+             "A merge conflict is answered this way too: the run merges the new "
              "base in and resolves it, and the agent asks if the two sides "
-             "contradict. A missing or moved saved branch cannot continue this way. "
-             "<b>Start a new attempt from base</b> requeues the ticket for a new attempt "
-             "with the recipe's rounds. It leaves the saved work behind and "
-             "neither spends nor refunds an automatic restart. "
+             "contradict. <b>Redo the step</b> (<code>RedoStep</code>) runs the "
+             "step that stopped again, whole, on the saved head. "
+             "<b>Start a new attempt</b> requeues the ticket from the base; "
+             "<b>add to the ticket and start a new attempt</b> writes into the "
+             "body first. Both leave the saved work behind and "
+             "neither spends nor refunds an automatic <code>newAttempts</code>. "
+             "A missing or moved saved branch cannot continue the first two. "
              "Every move, by who makes it and what it spends, is in the "
              "<a href=\"glossary.md#what-happens-next\">glossary</a>.",
 
@@ -299,10 +334,10 @@ EN = dict(
     f1_ret1="and proposed answers",
     f1_ret_build="a conflict",
     f1_ret_build2="a moved base",
-    f1_ret_impl="× rounds",
-    f1_ret_claim="× restarts",
+    f1_ret_impl="× refusalFixes",
+    f1_ret_claim="× newAttempts",
     f1_wait="waiting on you",
-    f1_wait2="every ceiling spent · a question only you can answer",
+    f1_wait2="a limit spent · an unclear requirement · a broken environment",
     f1_spent="proposed's own way in",
     f1_closed="you close it",
 )
@@ -351,27 +386,31 @@ ZH = dict(
       ("plugin 插件", "在某一步上跑的那个东西 —— 一条命令、一个 agent、一棵工作树、"
        "一次合并。换掉它，这一步就做别的事。", "某一步下面的每一条"),
       ("refuse 拒绝", "某一步给出的裁决：<i>这次改动不对</i>。它要花钱："
-       "把活打回 agent，并花掉一轮 —— 但能干净并入的 base 变动例外，"
+       "把活打回 agent，并花掉一次 <code>refusalFixes</code> —— 但能干净并入的 base 变动例外，"
        "系统会自己把它并入（见第 4 节）。", "卡片上会写是哪一步拒的、为什么"),
       ("did not finish 没跑完", "这一步停了，没有做出裁决，而且没有什么可回答的 —— "
-       "reviewer 崩了、轮次预算用完了。<b>这不是拒绝，它不买任何一轮。</b>"
-       "这一次就停在这里。",
+       "reviewer 崩了、回复读不出来。<b>这不是拒绝，它不买任何一次修复。</b>"
+       "规则会从头把这一步整个重做，分别在 1、5、15 分钟之后，最多 <code>stepRedos</code> 次；"
+       "跑到轮次或时间上限的那次运行则交给 triage。",
        "同一个地方，只是 reason 不同"),
       ("asked 问了", "这一步停了，没有做出裁决，但<i>有一个问题</i> —— "
-       "agent 不知道某件事就没法往下做。它同样不买任何一轮；"
-       "跟上一行不同的是它有去处：<code>proposed</code> 回答它，或者你回答。",
+       "agent 不知道某件事就没法往下做。它同样不买任何一次修复；"
+       "它只有一种问法，答案写进票的正文，每张票最多 <code>personAsks</code> 个；"
+       "<code>proposed</code> 或 triage 能答的先答，其余由你回答。",
        "卡片上，用 held 的颜色而不是红色"),
       ("reason 理由", "跟着拒绝一起走的一个机器可读的短词，"
        "好让 <code>proposed</code> 据它路由，也好让你事后读得懂。",
        "卡片上，以及日志上"),
-      ("round 轮", "在同一棵工作树上再来一次，带着拒绝它的那些东西。"
-       "<code>rounds</code> 是你愿意为几轮付钱。", "recipe 里的 <code>runtime.limits.rounds</code>"),
-      ("restart 重来", "这张票被放回队列，从 base 重新开始。"
-       "队列可能会先拿走别的票。", "recipe 里的 <code>runtime.limits.restarts</code>"),
+      ("fix the refusal 修复拒绝", "在同一棵工作树上再来一次，带着拒绝它的那些东西。"
+       "<code>refusalFixes</code> 是你愿意为几次付钱；冲突另有 <code>conflictResolutions</code>。",
+       "recipe 里的 <code>runtime.limits.attempt</code>"),
+      ("new attempt 新尝试", "这张票被放回队列，从 base 重新开始。"
+       "队列可能会先拿走别的票。", "recipe 里的 <code>runtime.limits.ticket.newAttempts</code>"),
       ("worktree 工作树", "这次尝试 独占的分支和工作副本。一次一棵；"
        "agent 看不到它之外的任何东西。", "在 <code>admit</code> 切出，卡片上有它的名字"),
-      ("waiting on you", "一张票为了人而停下的唯一地方。"
-       "只有 <code>proposed</code> 能把它放到那里。", "看板最上面那一行"),
+      ("waiting on you", "一张票为了人而停下的地方，而且只为三种情况：上限花完了（<code>limit</code>）、"
+       "需求只有人能定（<code>unclear</code>）、环境只有人能修（<code>environment</code>）"
+       " —— 在规则和判定者或 triage 能答的都答过之后。", "看板最上面那一行"),
     ],
 
     s3h="你要写的东西",
@@ -383,59 +422,75 @@ ZH = dict(
         "好让<i>没配置</i>和<i>被悄悄跳过</i>永远不长得一样。",
     s3p2="<b>有些键不属于插件 —— 它们是灵台加在插件上的界限。</b>一个 "
          "<code>run:</code> 插件没法忽略自己的 <code>timeout</code>，"
-         "因为执行它的是 runner，不是插件在自觉遵守。<code>rounds</code> 和 "
-         "<code>restarts</code> 是同一类，而且各自写在被它约束的那一步上。",
+         "因为执行它的是 runner，不是插件在自觉遵守。<code>refusalFixes</code> 和 "
+         "<code>newAttempts</code> 是同一类：由系统计数，写在 <code>runtime.limits</code> 下，"
+         "没有插件能把它们调高。<code>implement</code> 的 brief 会让 agent 每做成一块就提交一次，"
+         "这样中断损失很小；一张对一次运行来说太大的票，系统会拆分一次 —— 子票都关闭之后，"
+         "父票就按它自己的 <code>## Done when</code> 来检查。",
 
     s4h="一次尝试 最多花你多少",
-    s4l="四个数，前三个会被第四个乘一遍。",
+    s4l="每一条自动的路径各有自己的上限，算术就是它们加起来的 implement 运行次数。",
     c_turns="# 一次 agent run 之内",
     c_wall="# 一次 agent run 之内",
-    c_rounds="# 一次拒绝把 agent 打回去几次",
-    c_restarts="# 这张票最多被认领几次",
-    s4p="把它当算术读：一次尝试 最多 <code>rounds + 1</code> 次 agent run，"
-        "每次由 <code>turns</code> 和 <code>wall</code> 封顶 —— 而 "
-        "<code>restarts</code> 是一张票最多买几次尝试。"
-        "<code>lingtai add</code> 会在任何东西跑起来之前把这笔总账打印给你。",
-    s4p2="<b>这里没有任何一个数在限制「你被问几次」。</b>一个没跑完的步 —— "
-         "agent 停下来问、reviewer 崩了 —— 不买任何一轮，"
-         "因为它对你的改动没有做出任何裁决。review 里落在你的 diff 从未碰过的行上的 "
+    c_rounds="# fix the refusal：一次拒绝把 agent 打回去几次",
+    c_restarts="# new attempt：这张票最多从头再来几次",
+    s4p="把它当算术读：一次尝试最多 "
+        "<code>1 + refusalFixes + conflictResolutions + stepRedos</code> 次 "
+        "<code>implement</code> 运行，一张票买 <code>(newAttempts + 1)</code> 次尝试，"
+        "外加最多 <code>personAsks</code> 次对人的提问 —— 每次运行由 <code>turns</code> 和 "
+        "<code>wall</code> 封顶。按默认值是 <code>(2 + 1) × 16 + 5 = 53</code> 次。"
+        "<code>lingtai add</code> 会把整笔总账打印给你，其他步骤的上限并列写在旁边，不加进去。",
+    s4p2="<b>「你被问几次」也有上限：<code>personAsks</code>。</b>"
+         "一个没跑完的步不买任何一次修复 —— 规则会从头把它整个重做，最多 <code>stepRedos</code> 次。"
+         "review 里落在你的 diff 从未碰过的行上的 "
          "finding 同样不买：它会被记为既有的 minor，除非 reviewer 说明这份 diff 如何让那段代码变得可达。"
-         "修复一轮之后的 review 只审查这次修复改动的部分，并复查之前的 finding："
-         "修复之外的新 finding 记为 minor，复查的 finding 则从不降级。",
-    s4p2b="<b>base 在你分支改过的文件上有了变动，同样不买任何一轮 —— 只要能干净并入。</b>"
+         "修复之后的 review 只审查这次修复改动的部分，并复查之前的 finding："
+         "修复之外的新 finding 记为 minor，复查的 finding 则从不降级。"
+         "<code>implement</code> 以五种结果之一收尾 —— <code>Implemented</code>、"
+         "<code>AgentFailed</code>、<code>Disputed</code>、<code>AlreadyDone</code>、"
+         "<code>Unclear</code> —— 而经 <code>review</code> 核对过的 <code>AlreadyDone</code> "
+         "会让这张票以 <code>satisfied</code> 结束。",
+    s4p2b="<b>base 在你分支改过的文件上有了变动，同样不买任何一次修复 —— 只要能干净并入。</b>"
           "Lingtai 自己把它并进来，再跑一遍 <code>build</code> 和 "
           "<code>review</code>，并把 base 带来的新改动摆在 reviewer 面前 —— "
-          "每次尝试 最多两次，之后停下来等你。base 改了相同的行而无法兼容时，则是冲突，按冲突处理。base 只在别处有变动时，"
-          "则在 <code>merge</code> 的 verify 之后落地。",
-    s4p3="人额外批准的一轮修复，是在保存的改动上再付费运行 <b>一次</b> agent。"
-         "这不会提高 recipe 的 <code>rounds</code> 上限；再来一轮还须再决定。"
-         "这次运行仍受自己的 <code>turns</code>、<code>wall</code> 以及已声明的"
-         "金额上限约束。",
+          "每次尝试最多 <code>baseBranchMerges</code> 次，之后停下来等你。base 改了相同的行而无法兼容时，则是冲突，按冲突处理。base 只在别处有变动时，"
+          "则在 <code>merge</code> 的 verify 之后落地。base 是红的，不算这张票的错："
+          "它会以 <code>base-red</code> 被跳过，等 base 变绿后从保存的 head 接着走。",
+    s4p3="人做的 <code>FixRefusal</code> 和 <code>RedoStep</code> 不花任何自动的额度："
+         "只是在保存的改动上再付费运行一次 agent，仍受自己的 <code>turns</code>、"
+         "<code>wall</code> 以及已声明的金额上限约束，也不会调高上面任何一个上限。"
+         "对一次运行来说太大的票由系统拆分，只拆一次 —— 这不是提供给你的操作。",
 
     s5h="它什么时候停下来等你",
     s5l="一个去处，不管它怎么到的。",
     prop_h="什么会把一张票放到那里",
-    prop1="所有上限都花完了 —— 先是 rounds，然后是 restarts —— 而这次改动仍然被拒。"
-          "或者回来了一个只有你能回答的问题：需求不清、一个设计决定、"
-          "两处改动把同一个意图改成了不同的样子。",
+    prop1="一次失败分三层作答，而你是最后一层。<b>规则</b>回答机械的或暂时的问题，不花钱。"
+          "<b>判定者</b>（在上限之内）或 <b>triage</b>（在会开始等待的地方）"
+          "说出一个<b>原因</b>，由系统选择动作并执行。<b>人</b>只在三种情况下被问："
+          "<code>limit</code>（上限花完了）、<code>unclear</code>（需求不清）、"
+          "<code>environment</code>（环境坏了）。",
     prop2="<b>大多数情况下是 <code>proposed</code> 决定把票送到你面前。</b>"
           "<code>prepared</code> 的拒绝和合并车道前的一次检查也不例外 —— "
           "两者都会走到这里，只是因为没有给任一方向声明判定者，它们才同样"
           "停在你这里 —— 这仍然让<i>这值不值得打扰一个人</i>成为一个地方的"
-          "一个决定，而不是散落在整条流水线里的习惯。",
+          "一个决定，而不是散落在整条流水线里的习惯。"
+          "系统自己解决了的等待，只是卡片上的一行，不算等待。",
     gap_h="它会带着什么过来",
     gap1="是什么拒的、为什么，用那一步自己的话 —— findings、build 的输出、"
          "冲突的那些路径。你不该为了搞清一张票为什么在等而去翻日志。",
     gap2="而且 <code>end</code> 照样会跑。你自己把票关掉，也是一种结局；"
          "那个负责收尾的步对每一种结局都跑，而不是只对顺利的那一种。",
-    choice_h="两种继续方式",
-    choice_p="<b>继续修复当前改动</b>只在拒绝有可修复的依据、保存的分支仍指向记录的"
-             "提交时提供。你的批准在这份改动上购买一轮付费修复；它不豁免任何拒绝，"
+    choice_h="往前走的几种方式",
+    choice_p="<b>修复拒绝</b>（<code>FixRefusal</code>）只在拒绝有可修复的依据、保存的分支仍指向记录的"
+             "提交时提供：在保存的改动上再跑一次 <code>implement</code>，"
              "结果还须重新经过 <code>build</code>、<code>review</code> 和 "
-             "<code>proposed</code> 才能合并。合并冲突也这样作答：这一轮把新的 base 合并进来并解决冲突，"
-             "若两边的行为互相矛盾，agent 会停下来提问。保存的分支丢失或移动后，不能这样继续。"
-             "<b>从 base 重新开始</b>则把票重新排队，从 base 开始一次新尝试，"
-             "重新获得 recipe 的轮数；保存的改动不再继续，也不消耗或返还自动重启次数。"
+             "<code>proposed</code> 才能合并。它不豁免任何拒绝，也不花自动的额度。"
+             "合并冲突也这样作答：这一次运行把新的 base 合并进来并解决冲突，"
+             "若两边的行为互相矛盾，agent 会停下来提问。<b>重做这一步</b>（<code>RedoStep</code>）"
+             "在保存的 head 上把停下的那一步整个再跑一遍。"
+             "<b>开始新尝试</b>把票从 base 重新排队；<b>补充票的内容并开始新尝试</b>则先写进正文。"
+             "两者都不再继续保存的改动，也不消耗或返还自动的 <code>newAttempts</code>。"
+             "保存的分支丢失或移动后，前两种不能继续。"
              "每一种做法由谁做、花什么，见<a href=\"glossary.md#what-happens-next\">术语表</a>。",
 
     foot="由 scripts/the-attempt.py 生成 · 灵台",
@@ -461,10 +516,10 @@ ZH = dict(
     f1_ret1="然后由 proposed 作答",
     f1_ret_build="解掉的冲突",
     f1_ret_build2="并进的 base",
-    f1_ret_impl="× rounds",
-    f1_ret_claim="× restarts",
+    f1_ret_impl="× refusalFixes",
+    f1_ret_claim="× newAttempts",
     f1_wait="waiting on you",
-    f1_wait2="上限花完 · 一个只有你能回答的问题",
+    f1_wait2="上限花完 · 需求不清 · 环境坏了",
     f1_spent="proposed 自己的入口",
     f1_closed="你把它关掉",
 )
@@ -639,7 +694,6 @@ def page(T, other):
 <pre class="code">steps:
   claim:
     - <b>queue</b>: {{ kinds: [bug, feature], backoff: 1h }}
-      <b>restarts</b>: 1        <span class="c">{T['c_restarts']}</span>
   admit:
     - <b>worktree</b>: {{ base: main }}
   prepared:
@@ -649,11 +703,14 @@ def page(T, other):
     - <b>agent</b>: claude-code
       turns: 150            <span class="c">{T['c_turns']}</span>
       wall:  1h             <span class="c">{T['c_wall']}</span>
-      <b>rounds</b>: 3            <span class="c">{T['c_rounds']}</span>
   build:
     - <b>run</b>: pnpm typecheck &amp;&amp; pnpm test
   review:
     - <b>agent</b>: claude-code
+runtime:
+  limits:
+    attempt: {{ <b>refusalFixes</b>: 3 }}  <span class="c">{T['c_rounds']}</span>
+    ticket:  {{ <b>newAttempts</b>: 1 }}   <span class="c">{T['c_restarts']}</span>
 </pre>
     <p>{T['s3p']}</p>
     <p>{T['s3p2']}</p>
