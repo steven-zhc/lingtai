@@ -1274,6 +1274,22 @@ export function closeTransition(
 /** What a satisfied ending is refused for: the ticket already ended, or it is not waiting on that confirmation. */
 export type SatisfyRefusal = { reason: 'terminal'; status: 'landed' | 'closed' | 'satisfied' } | ResolveRefusal
 
+/** The one place a `TicketSatisfied` is built. */
+function satisfiedEvent(
+  actor: string,
+  data: { baseSha: string; bodyVersion: number; items: PayloadOf<'TicketSatisfied'>['items'] },
+): ToAppend {
+  return {
+    type: 'TicketSatisfied',
+    actor,
+    data: parsePayload('TicketSatisfied', {
+      baseSha: data.baseSha,
+      bodyVersion: data.bodyVersion,
+      items: data.items,
+    }),
+  }
+}
+
 /**
  * **`TicketSatisfied` and the end plan, one append** (#1251, 0108 §21): a split parent whose check passed ends
  * here at once. A ticket already `landed`, `closed` or `satisfied` is refused, so a second one is the reducer's
@@ -1294,15 +1310,7 @@ export function satisfyTransition(
   return {
     ok: true,
     events: [
-      {
-        type: 'TicketSatisfied',
-        actor: 'conductor',
-        data: parsePayload('TicketSatisfied', {
-          baseSha: input.baseSha,
-          bodyVersion: input.bodyVersion,
-          items: input.items,
-        }),
-      },
+      satisfiedEvent('conductor', input),
       ...input.ended,
     ],
   }
@@ -1338,15 +1346,7 @@ export function confirmSatisfiedTransition(
     ok: true,
     events: [
       ...resolved.events,
-      {
-        type: 'TicketSatisfied',
-        actor: input.by,
-        data: parsePayload('TicketSatisfied', {
-          baseSha: reason.baseSha,
-          bodyVersion: reason.bodyVersion,
-          items: reason.items,
-        }),
-      },
+      satisfiedEvent(input.by, reason),
       ...input.ended,
     ],
   }
