@@ -564,6 +564,33 @@ describe('report().handled (#1284)', () => {
     expect(r.handled.latest).toEqual(all)
   })
 
+  it('counts NEEDED YOU by (kind, move) and the sums equal the you counts (#1288)', () => {
+    const m = (kind: string, move: string | null | undefined, d: Date) => {
+      const q = p(kind, 'you', d)
+      return move === undefined ? q : { ...q, yourMove: move }
+    }
+    const t = ticket({
+      problems: [
+        m('review-fixed', 'Approve', day(28)),
+        m('review-fixed', 'Approve', day(27)),
+        m('review-fixed', 'FixRefusal', day(27)),
+        m('review-fixed', null, day(26)),
+        m('review-fixed', undefined, day(26)),
+        p('review-fixed', 'system', day(26)),
+      ],
+    })
+    const h = run([t], { window: resolveWindow('7d', now) }).handled
+    expect(h.needed.filter((n) => n.kind === 'review-fixed')).toEqual([
+      { kind: 'review-fixed', move: 'Approve', count: 2 },
+      { kind: 'review-fixed', move: 'FixRefusal', count: 1 },
+      { kind: 'review-fixed', move: null, count: 1 },
+      { kind: 'review-fixed', move: 'unknown', count: 1 },
+    ])
+    for (const k of h.kinds) {
+      expect(h.needed.filter((n) => n.kind === k.kind).reduce((a, n) => a + n.count, 0)).toBe(k.you)
+    }
+  })
+
   it('respects the kind filter', () => {
     const t = ticket({ problems: [p('build', 'you', day(28))] })
     const r = run([t], { kinds: ['feature'], window: resolveWindow('7d', now) })
