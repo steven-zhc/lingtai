@@ -2847,6 +2847,15 @@ describe('a review after a base merge looks only at the resolution and the overl
     expect(result.findings.map((f) => f.severity)).toEqual(['blocker', 'blocker'])
   })
 
+  it('keeps an overlap finding blocking even outside the whole-diff hunks', async () => {
+    const outside = finding({ file: 'src/overlap.ts', line: 900, claim: 'a base-added line' })
+    const { action } = build(answer([outside]), async () => RESOLUTION)
+    const result = await action.run(MERGED)
+
+    expect(result.findings[0]?.severity).toBe('blocker')
+    expect(result.verdict).toBe('failed')
+  })
+
   it('treats an empty delta as an empty delta: only overlap and rechecks can block', async () => {
     const { action, runtime } = build(answer([finding(), OVERLAP_FINDING]), async () => '')
     const result = await action.run(MERGED)

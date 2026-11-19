@@ -1596,8 +1596,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     /**
      * What a conflict round's pre-merge changes in the walk (#1120): the review after
      * the round is shown the base's changes on the overlap and asked what the
-     * resolution lost, and is of the whole head (`reviewedSha` null: a delta since
-     * the last review would show the base's commits as the fix's).
+     * resolution lost. `reviewedSha` is null, because a delta since the last review
+     * would show the base's commits as the fix's; `mergedSinceReview` keeps that review's
+     * head so the next one is measured from the merge baseline instead (#1274).
      */
     const applyConflictMerge = (
       baseSha: string,
@@ -1991,17 +1992,26 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // falls back to the ordinary prompt. A second merge replaces the value.
             mergedOnto = next.toSha
             conflictMerge = null
-            // Only a person's approval of the head the merge started from keeps the
-            // earlier read; any other base move is a full review.
+            // A person's approval of the head the merge started from keeps the earlier read;
+            // any other base move on the branch's files is read against the merge baseline (#1274).
             // **A move on none of the branch's files carries the review** (#1210): `build`
             // runs on the merge commit and `review` is not visited. `null` paths are an
-            // unknown overlap, which is a full review. Never a delta: after a merge
-            // `reviewedSha...HEAD` is the base's commits.
+            // unknown overlap, which is a full review. Never a plain delta: after a merge
+            // `reviewedSha...HEAD` is the base's commits, so `mergedSinceReview` carries the baseline.
             reviewCarriedTo = null
             const disjoint =
               offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.paths.length === 0
             if (disjoint && (reviewedHeadStands || approvedHeadStands)) {
               reviewCarriedTo = merged.head
+              // Keep which head a review read, for a later overlapping move (#1274): a carried
+              // review is not a delta, but the baseline for the next merge is still that head.
+              if (reviewedHeadStands && reviewedSha !== null) {
+                mergedSinceReview = {
+                  reviewed: reviewedSha,
+                  base: next.toSha,
+                  overlap: mergedSinceReview?.overlap ?? [],
+                }
+              }
               reviewedSha = null
               landedOnBase = null
             } else {

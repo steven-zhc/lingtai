@@ -1303,7 +1303,7 @@ function reviewAnswer(
   const scenarios = new Set(recheck.map((f) => f.failureScenario))
   const isRecheck = (f: ActionFinding): boolean => scenarios.has(f.failureScenario)
   const fresh = findings.filter((f) => !isRecheck(f))
-  const demoted = [...(hunks === null ? fresh : demoteOutsideDiff(fresh, hunks))]
+  const demoted = [...(hunks === null ? fresh : demoteOutsideDiff(fresh, hunks, keepPaths))]
   const afterFix = deltaHunks === undefined ? demoted : demoteOutsideFix(demoted, deltaHunks, keepPaths)
   let at = 0
   const kept = findings.map((f) => (isRecheck(f) ? f : afterFix[at++]!))
