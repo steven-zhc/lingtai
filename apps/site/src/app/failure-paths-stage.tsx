@@ -36,9 +36,27 @@ type Op = {
 }
 type Path = { base: Op[]; keep?: number; ext?: Op[] }
 /** What the page hands the drawing for one path: a subset of the constant the FAQ table is mapped over. */
-export type PathItem = { key: string; say: string; what: string; bound: string; ext?: string }
+export type PathItem = {
+  key: string
+  say: string
+  /** The short label on the chip. */
+  chip: string
+  lane: 'rule' | 'look' | 'you'
+  what: string
+  bound: string
+  ext?: string
+}
 
-type Item = { key: string; say: string; what: string; bound: string; extText: string; ask: Element | null }
+type Item = {
+  key: string
+  say: string
+  chip: string
+  lane: 'rule' | 'look' | 'you'
+  what: string
+  bound: string
+  extText: string
+  ask: Element | null
+}
 
 const R = 0
 const L = 1
@@ -788,6 +806,8 @@ function mount(host: HTMLElement, paths: PathItem[]): () => void {
   const items: Item[] = paths.map((p) => ({
     key: p.key,
     say: p.say,
+    chip: p.chip,
+    lane: p.lane,
     what: p.what,
     bound: p.bound,
     extText: p.ext ?? '',
@@ -1435,14 +1455,23 @@ function mount(host: HTMLElement, paths: PathItem[]): () => void {
     void run(ops, animate ? keep : ops.length, tk)
   }
 
-  const chips = items.map((it) => {
-    const b = text(chipsBox, 'button', 'fp-chip', it.say, { type: 'button', 'aria-pressed': 'false' })
-    b.addEventListener('click', () => choose(it.key, true))
-    return b
-  })
+  // Chips are grouped rule, one look, you (a stable sort keeps the order within a lane); each button is paired
+  // with its own item's key, so a chip never selects another item's path.
+  const LANES = ['rule', 'look', 'you']
+  const chips = [...items]
+    .sort((a, b) => LANES.indexOf(a.lane) - LANES.indexOf(b.lane))
+    .map((it) => {
+      const b = text(chipsBox, 'button', 'fp-chip', it.chip, { type: 'button', 'aria-pressed': 'false' })
+      const dot = document.createElement('span')
+      dot.className = `fp-dot-key fp-${it.lane}`
+      dot.setAttribute('aria-hidden', 'true')
+      b.prepend(dot)
+      b.addEventListener('click', () => choose(it.key, true))
+      return { b, key: it.key }
+    })
   function choose(key: string, animate: boolean) {
     state = { key, ext: false }
-    chips.forEach((c, i) => c.setAttribute('aria-pressed', String(items[i]!.key === key)))
+    chips.forEach((c) => c.b.setAttribute('aria-pressed', String(c.key === key)))
     go(animate)
   }
 

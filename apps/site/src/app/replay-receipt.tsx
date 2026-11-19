@@ -12,7 +12,7 @@ import { Receipt, type ReceiptProps, type ReceiptStatus } from './receipt'
  * view, so the page stays static and the server render is state 0 — a reader
  * without script sees an empty receipt, never a landed one that script empties.
  *
- * Every value is an illustration and says so. The stamp is shown at step 6
+ * Every value is an illustration and says so. The stamp is shown at step 5
  * alone, the scene where the change merges.
  */
 
@@ -23,7 +23,8 @@ export interface ReceiptState {
   checks: string
   review: string
   main: string
-  approve: string
+  merged: string
+  handled: string
   /** Cents, so "never decreases" is a comparison of numbers. */
   cents: number
   stamped: boolean
@@ -31,13 +32,16 @@ export interface ReceiptState {
 }
 
 const DASH = '—'
-const COMBINED = '✓ combined, re-tested'
-const FIXED = '✗ → ✓ after 1 round'
+const COMBINED = '✓ auto-combined, re-tested'
+const FIXED = '✗ → ✓ auto-fixed'
+const IMPL = '3 files changed'
+const MERGED = '03:20, on its own'
+const HANDLED = '3 problems · 0 needed you'
 
-export const STEPS = 6
+export const STEPS = 5
 
 // Every step is `running` or later: `--signal` means a person is being waited on now (site.css),
-// and no step is that. The wait and the click both happen inside scene 6, and the receipt shows the result.
+// and no step is that. Nothing waits on a click: the change lands on its own in scene 5.
 const STATES: readonly ReceiptState[] = [
   {
     statusKind: 'queued',
@@ -46,7 +50,8 @@ const STATES: readonly ReceiptState[] = [
     checks: DASH,
     review: DASH,
     main: DASH,
-    approve: DASH,
+    merged: DASH,
+    handled: DASH,
     cents: 0,
     stamped: false,
     hint: 'Scroll down to fill in the receipt.',
@@ -54,59 +59,51 @@ const STATES: readonly ReceiptState[] = [
   {
     statusKind: 'running',
     status: 'Taken · 22:40',
-    impl: DASH,
+    impl: IMPL,
     checks: DASH,
     review: DASH,
     main: DASH,
-    approve: DASH,
-    cents: 0,
+    merged: DASH,
+    handled: DASH,
+    cents: 14,
     stamped: false,
     hint: 'The agent picked up the ticket.',
   },
   {
     statusKind: 'running',
-    status: 'Implementing',
-    impl: '3 files changed',
-    checks: DASH,
-    review: DASH,
-    main: DASH,
-    approve: DASH,
-    cents: 14,
-    stamped: false,
-    hint: 'The agent committed its change.',
-  },
-  {
-    statusKind: 'running',
     status: 'Fix round 1',
-    impl: '3 files changed',
+    impl: IMPL,
     checks: FIXED,
     review: DASH,
     main: DASH,
-    approve: DASH,
+    merged: DASH,
+    handled: DASH,
     cents: 23,
     stamped: false,
-    hint: 'Checks failed. Fix round 1.',
+    hint: 'Tests failed. Fixed on its own.',
   },
   {
     statusKind: 'running',
     status: 'Fix round 2',
-    impl: '3 files changed',
+    impl: IMPL,
     checks: FIXED,
     review: FIXED,
     main: DASH,
-    approve: DASH,
+    merged: DASH,
+    handled: DASH,
     cents: 38,
     stamped: false,
-    hint: 'The AI review found a bug. Fix round 2.',
+    hint: 'The AI review found a bug. Fixed on its own.',
   },
   {
     statusKind: 'running',
     status: 'Main moved',
-    impl: '3 files changed',
+    impl: IMPL,
     checks: FIXED,
     review: FIXED,
     main: COMBINED,
-    approve: DASH,
+    merged: DASH,
+    handled: DASH,
     cents: 39,
     stamped: false,
     hint: 'Main moved. Combined and re-tested.',
@@ -114,11 +111,12 @@ const STATES: readonly ReceiptState[] = [
   {
     statusKind: 'landed',
     status: '✓ Landed',
-    impl: '3 files changed',
+    impl: IMPL,
     checks: FIXED,
     review: FIXED,
     main: COMBINED,
-    approve: 'You, 07:31',
+    merged: MERGED,
+    handled: HANDLED,
     cents: 40,
     stamped: true,
     hint: 'Landed. Click a line to see that step.',
@@ -148,11 +146,12 @@ function propsAt(step: number): ReceiptProps {
     title: 'Add a reading-time badge',
     status: { kind: s.statusKind, text: s.status },
     rows: [
-      row('Implementation', s.impl, 2),
-      row('Checks', s.checks, 3),
-      row('AI review', s.review, 4),
-      row('Main moved', s.main, 5),
-      row('Approved by', s.approve, 6),
+      row('Implementation', s.impl, 1),
+      row('Tests', s.checks, 2),
+      row('AI review', s.review, 3),
+      row('Main moved', s.main, 4),
+      row('Merged', s.merged, 5),
+      row('Handled for you', s.handled, 5),
     ],
     costLabel: 'RECORDED COST',
     cost: dollars(s.cents),

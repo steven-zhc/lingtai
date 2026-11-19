@@ -133,10 +133,10 @@
 .tag { display: inline-block; font: 600 9.5px/1 var(--mono); letter-spacing: .06em; padding: 3px 6px; border-radius: 3px; vertical-align: 2px; white-space: nowrap; }
 .tag.ill { color: var(--muted); border: 1px dashed var(--rule-2); }
 
-.rp-scene { padding: 34px 0; border-top: 1px dashed var(--rule-2); scroll-margin-top: 24vh; }
+.rp-scene { padding: 18px 0; border-top: 1px dashed var(--rule-2); scroll-margin-top: 24vh; }
 .rp-scene:first-child { border-top: 0; padding-top: 6px; }
 .rp-scene .time { font: 600 13px var(--mono); color: var(--accent-ink); margin-bottom: 6px; }
-.rp-scene h3 { font-size: 22px; margin: 0 0 6px; }
+.rp-scene h3 { font-size: 19px; margin: 0 0 6px; }
 .rp-scene p { color: var(--ink-2); margin: 0 0 14px; }
 .term { background: var(--ink); color: var(--ground); border-radius: 9px; font: 12px/1.7 var(--mono); padding: 14px 16px; margin: 0; overflow-x: auto; white-space: pre; }
 .term .p { color: var(--accent); }
@@ -213,8 +213,9 @@ a.r-row:hover .r-v::after { content: " →"; color: var(--accent-ink); }
 .home .fp { container-type: inline-size; padding: 0 0 24px; }
 .fp-head { max-width: 860px; margin: 56px auto 18px; }
 .fp-head-box { width: fit-content; max-width: 100%; }
-.fp-head h2 { margin: 0 0 8px; font: 700 30px/1.2 var(--hand); color: var(--ink); }
+.fp-head h2 { max-width: none; margin: 0 0 8px; font: 700 30px/1.2 var(--hand); color: var(--ink); }
 .fp-legend { max-width: 760px; margin: 0; color: var(--ink-2); font-size: 15px; line-height: 1.6; }
+.fp-leg { display: inline-block; white-space: nowrap; }
 .fp-dot-key { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin: 0 6px 1px 0; vertical-align: middle; background: var(--muted); }
 .fp-dot-key.fp-look { background: var(--accent-ink); } .fp-dot-key.fp-you { background: var(--signal); }
 .fp-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; margin: 0 0 14px; }
