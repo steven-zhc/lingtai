@@ -7,7 +7,7 @@
 - [Order and release](#order-and-release): a kind label sets priority, a chain goes in *blocked by*, and nothing is released unread.
 - [Choose a model for each role](#choose-a-model-for-each-role): a recipe names a runtime and model per role, and a reviewer from another family has other blind spots.
 - [Gate what has failed](#gate-what-has-failed): keep the gates that refuse, delete the ones that never do, and watch each one fail once.
-- [Read a failure in this order](#read-a-failure-in-this-order): receipt, run log, triage, then events, narrowest view outward.
+- [Read a failure in this order](#read-a-failure-in-this-order): a rule answers first, a judge or triage names a cause, a person is asked for a limit, a question or the environment; read receipt, run log, triage, then events, narrowest view outward.
 - [Set the limits](#set-the-limits): treat each limit as an alarm with a reason, and read one that fires as news about the ticket.
 
 The habits that make Lingtai cheap and predictable. Every section is its rule,
@@ -17,7 +17,7 @@ are in [`reference.md`](reference.md#policy--every-number-that-decides-behaviour
 ## Write the ticket as the prompt
 
 **The rule.** The issue body *is* the agent's prompt, pasted whole:
-`prompts/ticket.md:5` is `{{body}}`. Since #643 the fix rounds and the cold
+`prompts/ticket.md:5` is `{{body}}`. Since #643 a fix of a refusal and the cold
 reviewer read it too (`packages/conductor/src/conduct.ts:3929` puts the body
 into the fix brief). What the body leaves undecided, the agent guesses and the
 reviewer refuses.
@@ -35,6 +35,11 @@ reviewer refuses.
 - **Related**, saying what the other ticket *decided*. Give every issue a kind
   label: `packages/conductor/src/discover.ts:205` skips one with none
   (`skip: "no-kind"`).
+
+`implement`'s brief asks the agent to **commit each piece that works as it
+finishes it**, so a run that is cut off is redone from its head and loses only the
+piece in progress (`packages/conductor/src/prompt.ts:400`). Write the ticket so that
+its pieces can be committed one at a time.
 
 On 2026-11-01 two passes of #811 failed because the reviewer chased a race with a
 projection rebuild; one line under *Out of scope* would have said it was not
@@ -55,6 +60,12 @@ a ticket's clothes, and a run is the most expensive way to do research.
 - If a ticket touches the same files as another, make it wait for the other.
 - If the ticket turns on a fact about a dependency, say how to check that fact.
   If you cannot say how, that uncertainty is the item: file it as one.
+
+A ticket still too big for one run is **split by the system, once** (`ticketSplits`):
+triage's plan opens up to 8 children, and the parent keeps its `## Done when`
+and waits behind them. When the last child closes it is taken once more, and that
+list is what it is checked against. So the parent's `## Done when` is the
+contract; write it as if nobody will read the children.
 
 On 2026-09-29 with the same configuration, `implement` cost $0.92 for a 27-turn
 ticket (#317) and $17.24 for a 239-turn one (#308); switching the model from Opus
@@ -114,7 +125,7 @@ as of 2026-11-01, not a recommendation; models change faster than it does.
   first attempt ([requirements](requirements.md)).
 
 Over tickets that landed in October 2026 (measured 2026-11-01), work was 56% of
-spend and answering refusals 35%: the fix rounds are a third of the spend, which
+spend and answering refusals 35%: answering refusals is a third of the spend, which
 is why the ticket and the review prompt matter more than the model.
 
 ## Gate what has failed
@@ -131,8 +142,17 @@ Keep the gates that refuse and delete the ones that never do.
 - Use `watch:` to stop for a person on a path, with no process and no agent.
   Declare a hold for a person at `proposed:`, never at `merge:`: `human:` and
   `watch:` are refused at `merge`, and the lane is the last action there.
-- Add a new gate only on a green base, or every ticket parks on drift that is not
-  its own.
+- Add a new gate only on a green base, still: a red base no longer parks
+  tickets, it passes them over as `base-red` and each continues from its saved
+  head when the base is green (`packages/conductor/src/base-red.ts:1-10`), but a
+  new gate that is red on the base means every ticket queues behind it.
+- A red check runs twice. A red that turns green on the rerun, and whose failing
+  tests are not in the diff and have failed on the base before, does not stop the
+  attempt: it is filed as a minor finding.
+- Every plugin is `replay: safe` or `external`, and an `external` one — one that
+  writes outside the worktree — is refused when the recipe resolves at `prepared`,
+  `design`, `implement` or `review`, because those steps are redone whole. Write
+  a `run:` there only if it is safe to run twice.
 - For every gate, check that it runs and that you have seen it fail.
 
 Ten steps, closed forever — `claim`, `admit`, `prepared`, `design`,
@@ -149,10 +169,25 @@ never runs look identical from outside.
 
 ## Read a failure in this order
 
-**The rule.** Read a failure from the narrowest view outward: the receipt, then
-the run log, then triage's recommendation, then the events. The instinctive order
-is wrong: on 2026-09-08 *"why is this not moving?"* was asked of `#80`, `#87`,
-`#89` and `#94` in a single day and **answered wrongly four times**
+**The rule.** A failure is answered in three layers, and a person is the last of
+them (0108 §6, §16):
+
+1. **A rule** answers what is mechanical or transient, free: no agent is paid.
+2. **A cause the system acts on.** A judge (within the bounds) or triage (where
+   a wait would open) **names a cause** and never an action; the system chooses
+   the action and carries it out.
+3. **A person**, asked only for a *limit* (a bound is spent), an *unclear*
+   requirement or a broken *environment*.
+
+So a wait on the board means a rule, and a judge or triage, have already
+answered what they could, and it is one of those three kinds. A wait the system
+resolved itself is **a line on the card**, not a wait: *Triage read only
+unfinished; the step is being redone — 2 of 3 redos used*.
+
+Then read a failure from the narrowest view outward: the receipt, then the run
+log, then triage's summary, then the events. The instinctive order is wrong: on
+2026-09-08 *"why is this not moving?"* was asked of `#80`, `#87`, `#89` and `#94`
+in a single day and **answered wrongly four times**
 ([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)).
 
 **Do this.**
@@ -164,9 +199,11 @@ is wrong: on 2026-09-08 *"why is this not moving?"* was asked of `#80`, `#87`,
 - Open the refusing gate's evidence through the pointer on the row.
 - If the item has not landed, tail the run log: `pnpm lingtai attach <runId>`. A
   run that landed has no log.
-- Read triage's recommendation for a waiting ticket as a recommendation, not a
-  verdict. When a card says `disagreement`, treat it as a judgement to make, not
-  a repair; a fixer that committed nothing may have declined.
+- Read triage's summary for a waiting ticket as the cause it named; what was
+  done with it is the system's, and the card says which bound it spent. When a
+  card says `disagreement`, a fixer's `Disputed` is waiting for a judge to rule
+  on it; it is a judgement to make, not a repair, and a fixer that committed
+  nothing may have declined.
 - When you must settle a behavioural claim, read `events` and cite the seq.
   Absence from documentation is not absence from the program (`#89`, $13.04).
 
@@ -180,16 +217,22 @@ information about the ticket before you raise it. The values and defaults are in
 
 **Do this.**
 
-- Set `runtime.limits` (`turns`, `wall`, `rounds`, `restarts`) so that together
-  they say what a ticket may spend in agent runs, not how long a drain waits,
-  which also includes review and gates.
+- Set `runtime.limits` — `run` (`turns`, `wall`), `attempt` (`refusalFixes`,
+  `conflictResolutions`) and `ticket` (`newAttempts`) — so that together they say
+  what a ticket may spend in `implement` runs, not how long a drain waits. The
+  old keys `rounds` and `restarts` are refused by name, and the refusal names
+  the key that replaced each.
 - Set the daily ceiling `limits.day_usd` in your installation config before you
   run unattended.
 - Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.
 - Size `runtime.budget.evidence` to the capture your gate produces; this
   repository sets `evidence: 10200` (`examples/lingtai-recipe.yml:245`).
-- Do not expect anything to cap the number of ordinary attempts; read the ledger
-  early and use `agent:hold`.
+- Each automatic path has its own bound, so something does cap the ordinary
+  attempts: `newAttempts` for a ticket started over, `ticketSplits` for a ticket
+  split, `personAsks` for how often it asks you. They are counted on the
+  attempt's or the ticket's own stream and no restart resets them
+  ([reference](reference.md#what-an-attempt-may-spend--runtimelimits-the-recipes)).
+  Read the ledger early and use `agent:hold`.
 
 `source.backoff` stops blind retries: the old harness re-ran #58 and #59 five
 times for roughly $29 exactly that way
