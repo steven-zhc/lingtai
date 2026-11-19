@@ -2776,3 +2776,101 @@ describe('the paragraph a step redone whole ends its brief with (#1245)', () => 
     expect(redone.seen[0]!.prompt).toBe(plain.seen[0]!.prompt)
   })
 })
+
+describe('a review after a base merge looks only at the resolution and the overlap (#1274)', () => {
+  const RESOLUTION = [
+    'diff --git a/src/z.ts b/src/z.ts',
+    '--- a/src/z.ts',
+    '+++ b/src/z.ts',
+    '@@ -1,2 +1,2 @@',
+    '-a',
+    '+b',
+    ' c',
+    '',
+  ].join('\n')
+  const FULL = `${HUNK_DIFF}${RESOLUTION}`
+  const answer = (findings: unknown[]) => outcome({ text: JSON.stringify({ findings }) })
+  const REVIEWED = 'b'.repeat(40)
+  const MERGED = {
+    ...context,
+    mergedSinceReview: { reviewed: REVIEWED, base: 'c'.repeat(40), overlap: ['src/overlap.ts'] },
+  }
+  const OVERLAP_FINDING = finding({ file: 'src/overlap.ts', line: 3, claim: 'the base meets the branch' })
+  const FULL_WITH_OVERLAP = `${FULL}diff --git a/src/overlap.ts b/src/overlap.ts\n--- a/src/overlap.ts\n+++ b/src/overlap.ts\n@@ -1,5 +1,5 @@\n a\n b\n-c\n+d\n e\n f\n`
+
+  const build = (reply: RunOutcome, since: (() => Promise<string>) | undefined) => {
+    const runtime = reviewer(reply)
+    const notes: string[] = []
+    const calls: Array<[string, string]> = []
+    const action = createAgentAction(
+      { name: 'review', prompt: '' },
+      {
+        runtime,
+        issue: async () => ISSUE,
+        diff: async () => FULL_WITH_OVERLAP,
+        ...(since === undefined
+          ? {}
+          : {
+              diffSinceMerge: async (reviewed: string, base: string) => {
+                calls.push([reviewed, base])
+                return since()
+              },
+            }),
+        restore: async () => ({ untouched: true as const }),
+        settingsPath: '/tmp/settings.json',
+        limits: { turns: 40, wallMs: 60_000, diffBytes: DIFF_BYTES },
+      },
+    )
+    return { action, runtime, notes, calls, log: { note: (_: string, t: string) => void notes.push(t) } as never }
+  }
+
+  it('demotes a new major outside the resolution to a minor and names the overlap in the prompt', async () => {
+    const { action, runtime, calls } = build(
+      answer([finding(), finding({ file: 'src/z.ts', line: 1 })]),
+      async () => RESOLUTION,
+    )
+    const result = await action.run(MERGED)
+
+    expect(calls).toEqual([[REVIEWED, 'c'.repeat(40)]])
+    expect(result.findings[0]?.severity).toBe('minor')
+    expect(result.findings[1]?.severity).toBe('blocker')
+    const prompt = runtime.seen[0]!.prompt
+    expect(prompt).toContain('## What the merge resolution changed')
+    expect(prompt).toContain('src/overlap.ts')
+  })
+
+  it('keeps a finding on an overlap path blocking, and a recheck', async () => {
+    const recheck = finding({ line: 900, failureScenario: 'the earlier scenario, quoted' }) as ActionFinding
+    const { action } = build(answer([OVERLAP_FINDING, recheck]), async () => RESOLUTION)
+    const result = await action.run({ ...MERGED, recheck: [recheck] })
+
+    expect(result.findings.map((f) => f.severity)).toEqual(['blocker', 'blocker'])
+  })
+
+  it('treats an empty delta as an empty delta: only overlap and rechecks can block', async () => {
+    const { action, runtime } = build(answer([finding(), OVERLAP_FINDING]), async () => '')
+    const result = await action.run(MERGED)
+
+    expect(result.findings.map((f) => f.severity)).toEqual(['minor', 'blocker'])
+    expect(runtime.seen[0]!.prompt).toContain('the merge needed no hand')
+  })
+
+  it('falls back to a full review, and says so, when the baseline cannot be built', async () => {
+    const { action, runtime, notes, log } = build(answer([finding()]), async () => {
+      throw new Error('merge-tree exploded')
+    })
+    const result = await action.run({ ...MERGED, log })
+
+    expect(result.findings[0]?.severity).toBe('blocker')
+    expect(runtime.seen[0]!.prompt).not.toContain('## What the merge resolution changed')
+    expect(notes.some((n) => n.includes('the merge baseline could not be built (merge-tree exploded)'))).toBe(true)
+  })
+
+  it('falls back to a full review when no baseline reader was supplied', async () => {
+    const { action, notes, log } = build(answer([finding()]), undefined)
+    const result = await action.run({ ...MERGED, log })
+
+    expect(result.findings[0]?.severity).toBe('blocker')
+    expect(notes.some((n) => n.includes('the merge baseline could not be built'))).toBe(true)
+  })
+})

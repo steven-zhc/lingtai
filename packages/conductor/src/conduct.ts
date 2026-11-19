@@ -2331,6 +2331,32 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       /**
+       * What the head changed against the merge the base would have made of
+       * `reviewed` alone (#1274): `git merge-tree --write-tree reviewed base` writes
+       * loose objects and moves no ref, so it needs no mirror lock. Two dots, since a
+       * tree has no merge base. Any failure is a defect the review reads as a full review.
+       */
+      const diffSinceMerge = (reviewed: string, base: string): Effect.Effect<DiffRead> =>
+        Effect.gen(function* () {
+          const version = yield* Effect.orDie(gitHere(['--version']))
+          const m = /git version (\d+)\.(\d+)/.exec(version)
+          if (!m || Number(m[1]) < 2 || (Number(m[1]) === 2 && Number(m[2]) < 38))
+            return yield* Effect.die(new Error(`git merge-tree --write-tree needs git 2.38; found ${version}`))
+          // Exit 1 is a conflict, and the tree with its markers is still written to stdout.
+          const out = yield* gitHere(['merge-tree', '--write-tree', reviewed, base]).pipe(
+            Effect.catchTag('RepoFailed', (err) =>
+              err.exitCode === 1 && typeof err.stdout === 'string' ? Effect.succeed(err.stdout) : Effect.fail(err),
+            ),
+            Effect.orDie,
+          )
+          const tree = out.split('\n')[0]?.trim() ?? ''
+          if (!/^[0-9a-f]{40,64}$/.test(tree)) return yield* Effect.die(new Error('git merge-tree returned no tree'))
+          const head = (yield* gitOrDieEffect(['rev-parse', '--verify', 'HEAD^{commit}'])).trim()
+          const text = yield* gitOrDieEffect(['diff', ...DIFF_FLAGS, tree, head])
+          return { text, from: reviewed, to: head }
+        })
+
+      /**
        * **Never `worktree.baseSha` on its own, once there is a continuation**
        * (#465) — `worktree.baseSha` is where this re-cut's tree was checked
        * out, the run's own prior head, and diffing against it is diffing a
@@ -4417,6 +4443,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),
             ),
+          diffSinceMerge: (reviewed: string, base: string) => diffSinceMerge(reviewed, base),
           // `landedOnBaseRead`: a read that cannot be made is text, not a dead review.
           landed: landedOnBaseRead,
           restore: restoreReview,

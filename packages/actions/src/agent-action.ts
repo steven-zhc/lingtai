@@ -157,6 +157,13 @@ export interface AgentActionDeps {
   /** The diff under review, `base...head`. Supplied by the caller: the actions
    *  package does not know about git, and should not learn. */
   diff: (from?: string) => Promise<string | DiffRead>
+  /**
+   * What the head under review changed against the merge the base would have
+   * made of `reviewed` alone (`git merge-tree --write-tree reviewed base`, #1274):
+   * the resolution and later edits, without the base's commits. Empty text is an
+   * empty delta — a clean merge nobody edited — not an unreadable one.
+   */
+  diffSinceMerge?: (reviewed: string, base: string) => Promise<string | DiffRead>
   /** What `fromSha..toSha` changed on each of `paths`, one entry per path (#594).
    *  Asked only of a review that follows a `base-moved` merge. A diff that could
    *  not be read is that path's `diff`, as text — it must not kill the review. */
@@ -215,6 +222,7 @@ export interface AgentPortDeps {
   issue(): Effect.Effect<ReviewIssue>
   personAsks?: number
   diff(from?: string): Effect.Effect<string | DiffRead>
+  diffSinceMerge?(reviewed: string, base: string): Effect.Effect<string | DiffRead>
   landed?(moved: {
     paths: readonly string[]
     fromSha: string
@@ -240,6 +248,11 @@ export const agentPortDepsFrom = (deps: AgentActionDeps): AgentPortDeps => {
     issue: () => liftPromise(() => deps.issue()),
     personAsks: deps.personAsks,
     diff: (from) => liftPromise(() => deps.diff(from)),
+    diffSinceMerge:
+      deps.diffSinceMerge === undefined
+        ? undefined
+        : (reviewed, base) =>
+            liftPromise(() => (deps.diffSinceMerge as NonNullable<AgentActionDeps['diffSinceMerge']>)(reviewed, base)),
     landed:
       deps.landed === undefined
         ? undefined
@@ -421,12 +434,32 @@ export interface ReviewDelta {
   readonly text: string
   /** The two shas are the ones the text was run between, so it may be referenced (#927). */
   readonly exact?: boolean
+  /** What the delta is measured from: the fix round's change (default), or a base merge's resolution (#1274). */
+  readonly since?: 'fix' | 'merge'
+  /** For `since: 'merge'`: the paths both sides changed, which stay open for new findings. */
+  readonly overlap?: readonly string[]
 }
 
 function deltaParts(delta: ReviewDelta, limitBytes: number): PromptPart[] {
   const clip = delta.text.length > limitBytes
   const clipped = clip ? `${delta.text.slice(0, limitBytes)}\n\n[diff truncated at ${limitBytes} bytes]` : delta.text
-  const head = `## What the fix changed
+  const head =
+    delta.since === 'merge'
+      ? `## What the merge resolution changed
+
+The base was merged into this branch after the last review read it. This section
+is what the head changed against that merge as the base would have made it on
+its own — the conflict resolution and later edits${delta.text.trim() === '' ? '; it is empty, so the merge needed no hand' : ''}.
+The rest of the diff above was already reviewed. Look for **new** problems only
+in what this section changed${
+          (delta.overlap ?? []).length === 0
+            ? ''
+            : ` and in the files both sides changed:\n${(delta.overlap ?? []).map((p) => `- \`${p}\``).join('\n')}\n`
+        }; a new finding anywhere else is demoted to a minor note.
+
+\`\`\`diff
+`
+      : `## What the fix changed
 
 \`${delta.fromSha.slice(0, 7)}..${delta.toSha.slice(0, 7)}\` is what changed since the last review read this diff. The
 rest of the diff above was already reviewed. Look for **new** problems only in
@@ -941,7 +974,40 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
         // earlier head. Anything unreadable falls back to a full review.
         let delta: ReviewDelta | undefined
         let deltaHunks: DiffHunks | undefined
-        if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
+        const merged = context.mergedSinceReview
+        if (merged !== undefined && context.reviewedSha === undefined) {
+          // After a base merge (#1274): the delta is against the merge the base would have made alone.
+          const baseline = deps.diffSinceMerge
+          const deltaRead = yield* Effect.exit(
+            Effect.gen(function* () {
+              if (baseline === undefined) {
+                context.log?.note('review', 'the merge baseline could not be built (no reader); this is a full review')
+                return
+              }
+              const got = readOf(yield* baseline(merged.reviewed, merged.base))
+              // Empty is an empty delta here — a clean merge nobody edited — not an unreadable one.
+              const hunks = hunksOf(got.text)
+              if (hunks === null) {
+                context.log?.note('review', 'the merge baseline could not be built (unreadable); this is a full review')
+                return
+              }
+              delta = {
+                fromSha: got.from ?? merged.reviewed,
+                toSha: got.to ?? context.onSha,
+                text: got.text,
+                since: 'merge',
+                overlap: merged.overlap,
+              }
+              deltaHunks = hunks
+            }),
+          )
+          if (Exit.isFailure(deltaRead)) {
+            context.log?.note(
+              'review',
+              `the merge baseline could not be built (${errorMessage(Cause.squash(deltaRead.cause))}); this is a full review`,
+            )
+          }
+        } else if (context.reviewedSha !== undefined && context.reviewedSha !== context.onSha) {
           const reviewedSha = context.reviewedSha
           // Soft, as it was under a `try`: a rejected read is a defect now, so it is an `Exit` to read.
           const deltaRead = yield* Effect.exit(
@@ -1075,6 +1141,7 @@ export function makeAgentAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
                 deltaHunks,
                 recheck,
                 approvedClipped ? { read: deps.limits.diffBytes, of: diff.length } : undefined,
+                merged !== undefined && context.reviewedSha === undefined ? new Set(merged.overlap) : undefined,
               ),
               spent: spentOf(outcome, deps.runtime),
             }
@@ -1105,6 +1172,7 @@ function reviewAnswer(
   deltaHunks?: DiffHunks,
   recheck: readonly ActionFinding[] = [],
   clipped?: { readonly read: number; readonly of: number },
+  keepPaths?: ReadonlySet<string>,
 ): ActionResult {
   if (outcome.failure) {
     /**
@@ -1236,7 +1304,7 @@ function reviewAnswer(
   const isRecheck = (f: ActionFinding): boolean => scenarios.has(f.failureScenario)
   const fresh = findings.filter((f) => !isRecheck(f))
   const demoted = [...(hunks === null ? fresh : demoteOutsideDiff(fresh, hunks))]
-  const afterFix = deltaHunks === undefined ? demoted : demoteOutsideFix(demoted, deltaHunks)
+  const afterFix = deltaHunks === undefined ? demoted : demoteOutsideFix(demoted, deltaHunks, keepPaths)
   let at = 0
   const kept = findings.map((f) => (isRecheck(f) ? f : afterFix[at++]!))
   const verdict = verdictFor(kept)

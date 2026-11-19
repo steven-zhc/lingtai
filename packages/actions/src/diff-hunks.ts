@@ -154,10 +154,16 @@ const FIX_PREFIX = 'outside the fix — was '
  * `demoteOutsideDiff` there is no `reachableBecause` escape: a new finding
  * outside the fix is always a backlog entry. The caller exempts rechecks.
  */
-export function demoteOutsideFix(findings: readonly ActionFinding[], delta: DiffHunks): ActionFinding[] {
+export function demoteOutsideFix(
+  findings: readonly ActionFinding[],
+  delta: DiffHunks,
+  keep: ReadonlySet<string> = new Set(),
+): ActionFinding[] {
   return findings.map((f) => {
     if (f.severity === 'minor') return f
     if (isInsideHunks(f, delta)) return f
+    // The files both sides changed after a base merge stay open (#1274).
+    if (keep.has(f.file)) return f
     return {
       ...f,
       severity: 'minor',

@@ -1528,6 +1528,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * since. Never shared between passes.
      */
     let reviewedSha: string | null = null
+    /** A review read `reviewed`; a base merge onto `base` came after it, and no review has read the merged head whole (#1274). */
+    let mergedSinceReview: { reviewed: string; base: string; overlap: readonly string[] } | null = null
     /**
      * The merge commit a disjoint base move (#1210) carried the last review to: a
      * review that read the head whole stands for a tree the base's unrelated
@@ -1571,6 +1573,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       ...(conflictMerge === null ? {} : { conflictMerge }),
       ...(mergedOnto === null ? {} : { mergedOnto }),
       ...(reviewedSha === null ? {} : { reviewedSha }),
+      ...(mergedSinceReview === null ? {} : { mergedSinceReview }),
     })
 
     /**
@@ -1609,6 +1612,15 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
       }
       mergedOnto = baseSha
+      const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
+      mergedSinceReview =
+        reviewedBefore === null
+          ? null
+          : {
+              reviewed: reviewedBefore,
+              base: baseSha,
+              overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...landedOnBase.paths])],
+            }
       reviewedSha = null
       reviewCarriedTo = null
       approvedAt = null
@@ -1993,6 +2005,21 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               reviewedSha = null
               landedOnBase = null
             } else {
+              // A review read an earlier head, so the next one reads what the head changed against
+              // the merge as the base alone would have made it, plus the overlap (#1274). An unknown
+              // overlap or an approval-only read is not that: a full review, as before.
+              const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
+              mergedSinceReview =
+                !approvedHeadStands &&
+                reviewedBefore !== null &&
+                offer.proposal._tag === 'BaseMoved' &&
+                offer.proposal.paths !== null
+                  ? {
+                      reviewed: reviewedBefore,
+                      base: next.toSha,
+                      overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...offer.proposal.paths])],
+                    }
+                  : null
               reviewedSha = approvedHeadStands ? approvedAt : null
               landedOnBase =
                 offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
@@ -2319,7 +2346,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // not one a later review may treat as read, or a defect in the unread tail
         // would be demoted as lying outside the fix delta.
         const clippedRead = reached.results.some((r) => r.clipped !== undefined)
-        if (read && !clippedRead) reviewedSha = visitContext.onSha
+        if (read && !clippedRead) {
+          reviewedSha = visitContext.onSha
+          mergedSinceReview = null
+        }
       }
       const ending = reached.ending
       if (ending.ending === 'routed') {
