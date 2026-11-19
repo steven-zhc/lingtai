@@ -1592,7 +1592,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           cutOff?.prompt == null || cutOffFor === null ? null : yield* recordedPromptOf(cutOff.prompt)
         return {
           step,
-          answered: answering ? { key: `${ticketId}/${approvedWaitId}`, accountReruns } : undefined,
+          answered: answering
+            ? {
+                key: `${ticketId}/${approvedWaitId}`,
+                accountReruns,
+                // Measured from where the asking step began, not from the saved head: commits it made before asking count (#1254).
+                startedAt: stepStartedAtOf(runEvents, step) ?? undefined,
+              }
+            : undefined,
           waive: waivedActionsAt(waitsFromState(reduced), stepOutcomesOf(runEvents), options.continuing.runId, step),
           grantRef: undefined,
           advice: undefined,

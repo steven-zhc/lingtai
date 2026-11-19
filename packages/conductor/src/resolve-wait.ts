@@ -459,17 +459,18 @@ function prepare(
       // nothing: the wait stays open and the page keeps the person's text.
       const wait = item.waits.findLast((w) => w.waitId === options.waitId)
       const reason = wait?.reason
-      const asked =
+      const own =
         reason === undefined
           ? []
           : reason._tag === 'AgentQuestion'
             ? reason.questions
             : reason._tag === 'ProposedEscalated' && reason.proposal._tag === 'InputNeeded'
               ? reason.proposal.questions
-              : (() => {
-                  const cause = triageCauseOf(wait?.triage.result)
-                  return cause !== null && cause._tag === 'UndecidedQuestion' ? cause.questions : []
-                })()
+              : []
+      // A prose-only wait has no questions of its own: triage's are the ones the person was shown (#1254).
+      const triaged = triageCauseOf(wait?.triage.result)
+      const asked =
+        own.length > 0 ? own : triaged !== null && triaged._tag === 'UndecidedQuestion' ? triaged.questions : []
       if (asked.length === 0)
         return refuse({
           ok: false,

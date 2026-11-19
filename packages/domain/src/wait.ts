@@ -588,11 +588,11 @@ export function allowedResolutions(reason: WaitReason, triage?: TriageResult | n
   const table = tableResolutions(reason)
   const unpushed = 'run' in reason && reason.run.unpushed !== undefined
   const fixable = grantCriterion(reason) !== null
+  // A wait triage answered `UndecidedQuestion` is a question for a person, whatever it began as (#1254, 0108 §22): its
+  // four resolutions replace the origin's table, so no `Approve`, `FixRefusal` or `RedoStep` goes round the answer.
+  if (triagedAsk(reason, triage) !== null)
+    return ['AnswerQuestions', 'EditBodyAndStartNewAttempt', 'StartNewAttempt', 'Close']
   return [
-    // A wait triage answered `UndecidedQuestion` offers the answering first (#1254), whatever it began as.
-    ...(triagedAsk(reason, triage) !== null && !table.includes('AnswerQuestions')
-      ? (['AnswerQuestions'] as const)
-      : []),
     ...(unpushed ? table.filter((tag) => tag !== 'Approve') : table),
     ...(fixable && !unpushed ? (['FixRefusal'] as const) : []),
     ...(rerunStepOf(reason) !== null && !unpushed ? (['RedoStep'] as const) : []),
@@ -1317,6 +1317,8 @@ export function triageStatus(
     case 'OwnQuestion':
     case 'SignoffRequired':
     case 'SatisfiedUnconfirmed':
+    // The limit wait is a person's alone: triage must never queue it, or its `RedoStep` would continue on its own (0108 §22, #1254).
+    case 'AskLimit':
       return { _tag: 'NotNeeded' }
     case 'AgentQuestion':
     case 'FixerDisagrees':
@@ -1328,7 +1330,6 @@ export function triageStatus(
     case 'AgentCrashed':
     case 'SetupRefused':
     case 'AnswerUnreadable':
-    case 'AskLimit':
       return statusOfFacts(facts, context)
   }
 }

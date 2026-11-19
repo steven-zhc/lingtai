@@ -84,7 +84,11 @@ async function blocked(cause: object | null) {
         ticketId,
         issue: ISSUE,
         waitId,
-        resolution: { _tag: 'FixRefusal', onSha: '', ref: '' },
+        // A triaged `UndecidedQuestion` offers no `FixRefusal` (#1254): the way on that still writes its answers is a new attempt.
+        resolution:
+          (cause as { _tag?: string } | null)?._tag === 'UndecidedQuestion'
+            ? { _tag: 'StartNewAttempt' }
+            : { _tag: 'FixRefusal', onSha: '', ref: '' },
         by: 'human:steven',
         client: { refSha: async () => SHA },
         store: s,
@@ -105,7 +109,7 @@ describe('FixRefusal writes the triage answers first (#921)', () => {
     expect(body).toContain('which helper? — use ora')
     const seen = await types(store, ticketId)
     expect(seen.lastIndexOf('IssueUpdated')).toBeLessThan(seen.indexOf('WaitResolved'))
-    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toMatchObject({ _tag: 'FixRefusal' })
+    expect(waitsOf(await store.read(ticketId)).at(-1)?.resolution).toMatchObject({ _tag: 'StartNewAttempt' })
     expect(waitId).toBeTruthy()
   })
 
@@ -162,7 +166,11 @@ describe('FixRefusal writes the triage answers first (#921)', () => {
   })
 
   it('does not write on the reschedule path, so the person’s answers are not overwritten', async () => {
-    const { tickets, grant } = await blocked(undecided)
+    const { tickets, grant } = await blocked({
+      _tag: 'ConflictingHunks',
+      total: 1,
+      hunks: [{ _tag: 'Divergent', path: 'd.ts', line: 7, question }],
+    })
     await grant({ github: tickets })
     const first = (await tickets.getIssue(ISSUE)).body
     await tickets.updateBody(ISSUE, first.replace('use ora', 'edited by the person'))

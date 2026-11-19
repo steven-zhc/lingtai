@@ -1067,7 +1067,7 @@ export interface AttemptOptions {
      * `accountReruns` is the number its dispatch suffix carries — but it replays no recorded prompt: the brief is built
      * fresh, from the body that now holds the answers.
      */
-    readonly answered?: { readonly key: string; readonly accountReruns: number }
+    readonly answered?: { readonly key: string; readonly accountReruns: number; readonly startedAt?: string }
     /** A base merge an earlier lap made that no review has seen yet (#594): the section it is owed. */
     readonly landedOnBase?: {
       readonly paths: readonly string[]
@@ -2402,7 +2402,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               ? {
                   ...contextFor(),
                   rerun: stepRedosSpent + landingRetriesSpent + options.from.answered.accountReruns,
-                  redo: { why: 'answered', startedAt: onSha, head: onSha, answered: options.from.answered.key },
+                  redo: {
+                    why: 'answered',
+                    startedAt: options.from.answered.startedAt ?? onSha,
+                    head: onSha,
+                    answered: options.from.answered.key,
+                  },
                 }
               : contextFor()
       const visitedBefore: readonly StepReached[] = rerun === null ? [...steps] : rerun.reached

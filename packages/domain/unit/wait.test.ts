@@ -626,7 +626,15 @@ describe('allowedResolutions', () => {
         want: null,
       }
       expect(allowedResolutions(crashed)).not.toContain('AnswerQuestions')
-      expect(allowedResolutions(crashed, triaged)[0]).toBe('AnswerQuestions')
+      expect(allowedResolutions(crashed, triaged)).toEqual([
+        'AnswerQuestions',
+        'EditBodyAndStartNewAttempt',
+        'StartNewAttempt',
+        'Close',
+      ])
+      const merge = parseReason({ _tag: 'MergeRefused', run, reason: 'dirty-base', raw: 'refused' })
+      expect(allowedResolutions(merge, triaged)).not.toContain('Approve')
+      expect(allowedResolutions(merge, triaged)).toContain('EditBodyAndStartNewAttempt')
       expect(recommendedResolution(crashed, { _tag: 'Done', result: triaged })).toBe('AnswerQuestions')
     })
 
@@ -1000,6 +1008,14 @@ describe('triageStatus', () => {
         items: [],
         reading: '',
       }),
+      parseReason({
+        _tag: 'AskLimit',
+        run,
+        bound: 'personAsks',
+        used: 5,
+        allowed: 5,
+        asked: { _tag: 'AgentQuestion', run, step: 'design', questions: [], said: 'rename to X or Y?' },
+      }),
       parseReason({ _tag: 'OwnQuestion', question: 'which design?', by: 'steven' }),
       parseReason({ _tag: 'SignoffRequired', run, step: 'proposed', action: 'human:ship', question: 'ship it?' }),
     ]
@@ -1029,14 +1045,6 @@ describe('triageStatus', () => {
 
     const reasons = [
       parseOther({ _tag: 'AgentQuestion', run, step: 'implement', questions: [], said: 'rename to X or Y?' }),
-      parseOther({
-        _tag: 'AskLimit',
-        run,
-        bound: 'personAsks',
-        used: 5,
-        allowed: 5,
-        asked: { _tag: 'AgentQuestion', run, step: 'design', questions: [], said: 'rename to X or Y?' },
-      }),
       parseOther({ _tag: 'FixerDisagrees', run, said: null }),
       parseOther({ _tag: 'NothingProduced', run, said: null }),
       parseOther({
@@ -1063,7 +1071,10 @@ describe('triageStatus', () => {
     it('every WaitReason tag but the two NotNeeded ones is covered above', () => {
       const allTags = WaitReasonSchema.options.map((option) => option.shape._tag.value)
       const expected = new Set(
-        allTags.filter((tag) => tag !== 'OwnQuestion' && tag !== 'SignoffRequired' && tag !== 'SatisfiedUnconfirmed'),
+        allTags.filter(
+          (tag) =>
+            tag !== 'OwnQuestion' && tag !== 'SignoffRequired' && tag !== 'SatisfiedUnconfirmed' && tag !== 'AskLimit',
+        ),
       )
       expect(otherTags).toEqual(expected)
     })
