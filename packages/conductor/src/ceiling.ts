@@ -76,7 +76,7 @@ export function attemptCeiling(limits: {
         `$${limits.triage.usd} a run — which is not runtime.limits.run and is not changed by it`
   const others =
     'other agent steps are not in this figure, each with a bound of its own: ' +
-    `design runs once an attempt and again each time a state-assumption route sends a question back to it, ${bound}; ` +
+    `design runs once an attempt and again each time a person's answer continues it, ${bound}; ` +
     `review runs once after each implement and once more after a base-branch merge that touched the branch's files, ${bound}; ` +
     `a judge is asked once per refusal it is declared for, ${bound}; ` +
     triage

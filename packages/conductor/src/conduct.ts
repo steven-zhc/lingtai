@@ -4464,8 +4464,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         agent: {
           runtime: options.runtime,
           issue,
-          // Counted from the stream read at claim, so a second pass sees the first's ask (`#649`).
-          personAsks: personAsksFromState(reduced),
           diff: (from?: string) =>
             (from === undefined ? changeStart() : Effect.succeed(from)).pipe(
               Effect.flatMap((start) => diffBetween(start)),

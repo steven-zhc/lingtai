@@ -699,7 +699,8 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
   // left without a cell here is a `tsc` error, not a silent fallthrough.
   switch (proposal._tag) {
     case 'InputNeeded':
-      round('state-assumption', proposal.from, true)
+      // Nothing is offered, as for `SandboxRefused`: an agent never decides in a person's place (0108 §22), so a
+      // question is answered by `askPerson` within `personAsks` and no judge is paid a round for it (#1254).
       break
     case 'BuildRed':
       round('fix-lines', 'implement', proposal.output.trim() !== '')

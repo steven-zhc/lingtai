@@ -1498,17 +1498,6 @@ describe('the design prompt', () => {
     expect(prompt).not.toContain('a second time')
   })
 
-  it('tells an agent sent back here what it asked and to assume instead', () => {
-    const prompt = buildDesignPrompt({ name: 'draft', prompt: '' }, ISSUE, {
-      why: 'assume the ticket means the first reading',
-      asked: 'which of the two readings is meant?',
-      printed: null,
-    })
-
-    expect(prompt).toContain('which of the two readings is meant?')
-    expect(prompt).toContain('assume the ticket means the first reading')
-    expect(prompt).toContain('**Do not ask again.**')
-  })
 })
 
 /**
@@ -1555,8 +1544,8 @@ describe('the design step asks about undecided edges', () => {
     expect(parseDraft('')).toEqual({ kind: 'document', document: '' })
   })
 
-  it.each([0, 1])('carries the checklist, the bar and the question form with %i earlier asks', (asks) => {
-    const prompt = buildDesignPrompt(SPEC, ISSUE, null, asks)
+  it('carries the checklist, the bar and the question form, and never tells the agent to assume', () => {
+    const prompt = buildDesignPrompt(SPEC, ISSUE)
 
     for (const edge of CHECKLIST) expect(prompt).toContain(edge)
     expect(prompt).toContain(
@@ -1571,22 +1560,6 @@ describe('the design step asks about undecided edges', () => {
     expect(prompt).not.toContain('## Assumptions')
   })
 
-  it('forbids the fence once the asks are spent and says where assumptions go', () => {
-    const prompt = buildDesignPrompt(SPEC, ISSUE, null, BOUNDS.personAsks)
-
-    expect(prompt).not.toContain('```question')
-    expect(prompt).not.toContain('`question` block')
-    expect(prompt).toContain('## Assumptions')
-    for (const edge of CHECKLIST) expect(prompt).toContain(edge)
-  })
-
-  it('forbids the fence for a judge send-back too', () => {
-    const prompt = buildDesignPrompt(SPEC, ISSUE, { why: 'assume', asked: 'which?', printed: null }, 0)
-
-    expect(prompt).not.toContain('```question')
-    expect(prompt).toContain('## Assumptions')
-    expect(prompt).toContain('**Do not ask again.**')
-  })
 })
 
 /**

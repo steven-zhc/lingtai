@@ -171,31 +171,3 @@ describe('a run: at implement needs the git port, and env: alone is not enough',
   })
 })
 
-describe('personAsks through actionsFromRecipe at design (#649)', () => {
-  const draftWith = async (personAsks: number) => {
-    const runtime = reviewer()
-    const [action] = actionsFromRecipe('design', [{ name: 'draft', agent: 'claude-code', prompt: '' }], {
-      agent: {
-        runtime,
-        issue: async () => ({ ref: '1', title: 't', body: '' }),
-        personAsks,
-        diff: async () => '',
-        restore: async () => ({ untouched: true as const }),
-        settingsPath: '/tmp/settings.json',
-        limits: { turns: 40, wallMs: 60_000, diffBytes: 400_000 },
-      },
-    })
-    await action!.run(context)
-    return runtime.seen[0]!.prompt
-  }
-
-  it('shows the form with no fence once the ticket has asked BOUNDS.personAsks times', async () => {
-    const prompt = await draftWith(BOUNDS.personAsks)
-    expect(prompt).not.toContain('```question')
-    expect(prompt).toContain('## Assumptions')
-  })
-
-  it('shows the question form for asks 0 to BOUNDS.personAsks - 1', async () => {
-    for (let asks = 0; asks < BOUNDS.personAsks; asks++) expect(await draftWith(asks)).toContain('```question')
-  })
-})

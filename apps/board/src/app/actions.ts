@@ -272,6 +272,58 @@ export async function rerunStepCard(input: {
 }
 
 /**
+ * Answer what a step (or triage) asked: the answers are written into the body, then the asking step continues on its
+ * saved head (#1254, 0118 §6). `answers` maps a question's index to the answer id picked; a missing index takes the
+ * recommended answer. No head is named, so the server reads the saved one and checks nothing the page showed.
+ */
+export async function answerQuestionsCard(input: {
+  project: string
+  issue: number
+  waitId: WaitId
+  answers: Readonly<Record<number, string>>
+}): Promise<ActionResult> {
+  try {
+    if (!input.waitId) return { ok: false, detail: 'stale: reload this page before answering' }
+    const state = await readProject(input.project)
+    if (!state) return { ok: false, detail: `no project named "${input.project}" — run lingtai add first` }
+    const client =
+      state.owner === null
+        ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+        : hasGitHubAuth()
+          ? (await projectClient(state)).client
+          : null
+    if (client === null) return { ok: false, detail: 'no GitHub App configured' }
+    const result = await resolveWait({
+      writer: await boardWriterOrNone(),
+      ticketId: ticketStream(input.project, input.issue),
+      issue: input.issue,
+      waitId: input.waitId,
+      resolution: {
+        _tag: 'AnswerQuestions',
+        onSha: '',
+        ref: null,
+        answers: Object.fromEntries(Object.entries(input.answers).map(([index, id]) => [index, id])),
+      },
+      by: actor(),
+      client,
+      github: client,
+    })
+    revalidatePath(`/task/${result.ticketId}`)
+    revalidatePath('/')
+    return result.ok
+      ? {
+          ok: true,
+          detail: result.unscheduled
+            ? `answered — the continuation was not scheduled (${result.unscheduled}); answer again to schedule it`
+            : 'answered; the step continues when the daemon picks it up',
+        }
+      : { ok: false, detail: result.detail }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
  * An answer to a question asked before any run (#147) — `lingtai answer`, from
  * the card.
  *

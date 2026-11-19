@@ -322,7 +322,6 @@ function dispatchDeps(
   const narrowed: { [K in keyof Required<AgentActionDeps>]: AgentPortDeps[K] } = {
     runtime: deps.runtimeFor === undefined ? base.runtime : deps.runtimeFor(action.agent),
     issue: base.issue,
-    personAsks: base.personAsks,
     diff: base.diff,
     diffSinceMerge: base.diffSinceMerge,
     restore: base.restore,

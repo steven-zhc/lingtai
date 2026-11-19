@@ -14,7 +14,7 @@
  * was read. That has to be visible, not swallowed.
  */
 import { askedText, type WaitId } from '@lingtai/domain'
-import type { Resolution, WaitReason } from '@lingtai/domain/wait'
+import { allowedResolutions, type Resolution, type WaitReason } from '@lingtai/domain/wait'
 import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
@@ -27,6 +27,7 @@ import {
   closeCard,
   continueFixingCard,
   rerunStepCard,
+  answerQuestionsCard,
   editBodyAndRequeueCard,
   requeueCard,
   runNow,
@@ -428,6 +429,29 @@ export function EditBodyAndRequeue({
           }}
         />
       </label>
+      {waitId !== null && asked.length > 0 && triage !== null && reason !== null && allowedResolutions(reason).includes('AnswerQuestions') ? (
+        <button
+          className="btn pri"
+          disabled={pending || doneWaitId === waitId}
+          onClick={() => {
+            setPending(true)
+            setDetail(null)
+            startTransition(async () => {
+              const result = await answerQuestionsCard({
+                project,
+                issue,
+                waitId,
+                answers: Object.fromEntries(asked.map((q, index) => [index, triage.selected(index, q, 'asked')])),
+              })
+              setPending(false)
+              setDoneWaitId(result.ok ? waitId : null)
+              setDetail(result.detail)
+            })
+          }}
+        >
+          {pending ? '…' : 'Answer and continue the step'}
+        </button>
+      ) : null}
       {waitId !== null ? (
         <button
           className="btn"

@@ -101,7 +101,7 @@ const MECHANICAL_WANTS: Record<BuiltInJudge, Destination> = {
  * **A candidate's own destination** — `FixRound{to}` → `to`, `Requeued` →
  * `claim`, `HandToPerson` → `waiting` — or, for one the offer excluded and so
  * carries no `next`, the same mapping read off its `id`: `fix-lines` →
- * `implement`, `merge-base` → `build`, `state-assumption` → `proposal.from`,
+ * `implement`, `merge-base` → `build`,
  * `restart` → `claim`, `hand-to-person` → `waiting` (though `hand-to-person` is
  * never excluded).
  */
@@ -141,11 +141,6 @@ export function destinationOf(candidate: Candidate | ExcludedCandidate, proposal
       return 'claim'
     case 'hand-to-person':
       return 'waiting'
-    case 'state-assumption':
-      if (proposal._tag !== 'InputNeeded') {
-        throw new Error(`"state-assumption" is only ever offered for an "InputNeeded" proposal, not "${proposal._tag}"`)
-      }
-      return proposal.from
     default:
       throw new Error(`"${candidate.id}" is not a candidate id this attempt knows how to place`)
   }
