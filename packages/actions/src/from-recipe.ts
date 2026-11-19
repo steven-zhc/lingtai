@@ -324,6 +324,7 @@ function dispatchDeps(
     issue: base.issue,
     personAsks: base.personAsks,
     diff: base.diff,
+    diffSinceMerge: base.diffSinceMerge,
     restore: base.restore,
     landed: base.landed,
     get settingsPath() {

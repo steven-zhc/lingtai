@@ -635,6 +635,13 @@ export interface ActionContext {
    */
   reviewedSha?: string
   /**
+   * A review read `reviewed`, then the base was merged in (`base`) and no review has
+   * read the merged head whole (#1274). Exclusive with `reviewedSha`. The review looks
+   * for new problems in what the head changed against `merge-tree reviewed base`, and in
+   * `overlap` — the files both sides changed.
+   */
+  mergedSinceReview?: { readonly reviewed: string; readonly base: string; readonly overlap: readonly string[] }
+  /**
    * Which fix round this pipeline is judging — 0 before any fix was bought.
    * Only said on the run log, so a slow re-review reads as *round 2*.
    */

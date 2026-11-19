@@ -1074,6 +1074,8 @@ export interface AttemptOptions {
      * continuation that resumes the review is still owed the conflict block and question.
      */
     readonly conflictResolved?: { readonly baseSha: string; readonly paths: readonly string[] }
+    /** The head the last review read before the base merge a continuation resumes after (#1274). */
+    readonly reviewedHead?: string
     /** A check of declared evidence the held run had started and not finished (#1251): the resumed review stays a check. */
     readonly alreadyDone?: {
       readonly baseSha: string
@@ -1553,6 +1555,15 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
      * since. Never shared between passes.
      */
     let reviewedSha: string | null = null
+    /** A review read `reviewed`; a base merge onto `base` came after it, and no review has read the merged head whole (#1274). */
+    let mergedSinceReview: { reviewed: string; base: string; overlap: readonly string[] } | null =
+      options.from?.reviewedHead !== undefined && options.from.landedOnBase !== undefined
+        ? {
+            reviewed: options.from.reviewedHead,
+            base: options.from.landedOnBase.toSha,
+            overlap: options.from.landedOnBase.paths,
+          }
+        : null
     /**
      * The merge commit a disjoint base move (#1210) carried the last review to: a
      * review that read the head whole stands for a tree the base's unrelated
@@ -1607,6 +1618,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       ...(conflictMerge === null ? {} : { conflictMerge }),
       ...(mergedOnto === null ? {} : { mergedOnto }),
       ...(reviewedSha === null ? {} : { reviewedSha }),
+      ...(mergedSinceReview === null ? {} : { mergedSinceReview }),
       ...(checking === null ? {} : { alreadyDone: { baseSha: checking.baseSha, items: checking.items } }),
     })
 
@@ -1630,8 +1642,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     /**
      * What a conflict round's pre-merge changes in the walk (#1120): the review after
      * the round is shown the base's changes on the overlap and asked what the
-     * resolution lost, and is of the whole head (`reviewedSha` null: a delta since
-     * the last review would show the base's commits as the fix's).
+     * resolution lost. `reviewedSha` is null, because a delta since the last review
+     * would show the base's commits as the fix's; `mergedSinceReview` keeps that review's
+     * head so the next one is measured from the merge baseline instead (#1274).
      */
     const applyConflictMerge = (
       baseSha: string,
@@ -1646,6 +1659,15 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         ...(got.branchSha === undefined ? {} : { branchSha: got.branchSha }),
       }
       mergedOnto = baseSha
+      const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
+      mergedSinceReview =
+        reviewedBefore === null
+          ? null
+          : {
+              reviewed: reviewedBefore,
+              base: baseSha,
+              overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...landedOnBase.paths])],
+            }
       reviewedSha = null
       reviewCarriedTo = null
       approvedAt = null
@@ -2047,20 +2069,44 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             // falls back to the ordinary prompt. A second merge replaces the value.
             mergedOnto = next.toSha
             conflictMerge = null
-            // Only a person's approval of the head the merge started from keeps the
-            // earlier read; any other base move is a full review.
+            // A person's approval of the head the merge started from keeps the earlier read;
+            // any other base move on the branch's files is read against the merge baseline (#1274).
             // **A move on none of the branch's files carries the review** (#1210): `build`
             // runs on the merge commit and `review` is not visited. `null` paths are an
-            // unknown overlap, which is a full review. Never a delta: after a merge
-            // `reviewedSha...HEAD` is the base's commits.
+            // unknown overlap, which is a full review. Never a plain delta: after a merge
+            // `reviewedSha...HEAD` is the base's commits, so `mergedSinceReview` carries the baseline.
             reviewCarriedTo = null
             const disjoint =
               offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.paths.length === 0
             if (disjoint && (reviewedHeadStands || approvedHeadStands)) {
               reviewCarriedTo = merged.head
+              // Keep which head a review read, for a later overlapping move (#1274): a carried
+              // review is not a delta, but the baseline for the next merge is still that head.
+              if (reviewedHeadStands && reviewedSha !== null) {
+                mergedSinceReview = {
+                  reviewed: reviewedSha,
+                  base: next.toSha,
+                  overlap: mergedSinceReview?.overlap ?? [],
+                }
+              }
               reviewedSha = null
               landedOnBase = null
             } else {
+              // A review read an earlier head, so the next one reads what the head changed against
+              // the merge as the base alone would have made it, plus the overlap (#1274). An unknown
+              // overlap or an approval-only read is not that: a full review, as before.
+              const reviewedBefore = reviewedSha ?? mergedSinceReview?.reviewed ?? null
+              mergedSinceReview =
+                !approvedHeadStands &&
+                reviewedBefore !== null &&
+                offer.proposal._tag === 'BaseMoved' &&
+                offer.proposal.paths !== null
+                  ? {
+                      reviewed: reviewedBefore,
+                      base: next.toSha,
+                      overlap: [...new Set([...(mergedSinceReview?.overlap ?? []), ...offer.proposal.paths])],
+                    }
+                  : null
               reviewedSha = approvedHeadStands ? approvedAt : null
               landedOnBase =
                 offer.proposal._tag === 'BaseMoved' && offer.proposal.paths !== null && offer.proposal.fromSha !== null
@@ -2237,6 +2283,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               ...(found.branchSha === undefined ? {} : { branchSha: found.branchSha }),
             }
             mergedOnto = asked.baseSha
+            // The review that passed before the round read `reviewedHead`; the resumed one is measured from it (#1274).
+            if (options.from.reviewedHead !== undefined)
+              mergedSinceReview = {
+                reviewed: options.from.reviewedHead,
+                base: asked.baseSha,
+                overlap: landedOnBase.paths,
+              }
           }
         }
       }
@@ -2297,6 +2350,9 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           )
           break
         }
+        // The review that passed before the round read `reviewedHead`; the merge is measured from it (#1274).
+        if (options.from.reviewedHead !== undefined && reviewedSha === null && mergedSinceReview === null)
+          mergedSinceReview = { reviewed: options.from.reviewedHead, base: asked.baseSha, overlap: [] }
         applyConflictMerge(asked.baseSha, got.conflicted)
       }
       // The first visit of `from.step` after an account limit: the cut-off call's round, its dispatch suffix and
@@ -2399,7 +2455,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         const clippedRead = reached.results.some((r) => r.clipped !== undefined)
         reviewRead = read
         // A check read no diff (#1251): it is no head a later review may treat as read.
-        if (read && !clippedRead && checking === null) reviewedSha = visitContext.onSha
+        if (read && !clippedRead && checking === null) {
+          reviewedSha = visitContext.onSha
+          mergedSinceReview = null
+        }
       }
       const ending = reached.ending
       if (ending.ending === 'routed') {

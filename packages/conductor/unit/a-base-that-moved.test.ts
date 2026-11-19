@@ -259,6 +259,13 @@ describe('what the next review is told it already read (#671)', () => {
     expect(reviewSaw).toHaveLength(2)
     expect('reviewedSha' in reviewSaw[0]!).toBe(false)
     expect('reviewedSha' in reviewSaw[1]!).toBe(false)
+    // The first review read a head; the second is scoped to what the merge left, with the overlap open (#1274).
+    expect('mergedSinceReview' in reviewSaw[0]!).toBe(false)
+    expect(reviewSaw[1]?.mergedSinceReview).toEqual({
+      reviewed: reviewSaw[0]?.onSha,
+      base: 'base-1',
+      overlap: ['src/recipe.ts'],
+    })
   })
 
   it('names the approved head to the review of the merge that came after the approval', async () => {
