@@ -69,6 +69,7 @@ import { createSubjectResolver, createSubscriberSet } from './subscribers.ts'
 import { flushTracing, startTracing } from './tracing.ts'
 import {
   catchUpChangedTriage,
+  catchUpTriageContinuations,
   catchUpRegisteredTriage,
   daemonTriagePorts,
   memoDaemonStartedAt,
@@ -794,6 +795,18 @@ export function daemonCommand(
             scanTriage,
             (line) => console.error(line),
           )
+          // A resolution triage made whose continuation a stopped conductor never asked for (#1258). Here only: a
+          // catch-up a resume or a recipe change causes can run beside a live continuation.
+          for (const registered of projects) {
+            if (registered.project === null) continue
+            const name = registered.project
+            yield* catchUpTriageContinuations(
+              name,
+              daemonTriagePorts(daemonStartedAt, (line) => console.log(line), writer ?? undefined, locked),
+            ).pipe(
+              recovering((err) => Effect.sync(() => console.error(`triage continuation catch-up ${name}: ${err.message}`))),
+            )
+          }
           // A question asked while nothing was listening is waiting in the stream,
           // exactly as a pause is (0013). After `start`, so the subscription is
           // already up and a question that arrives during this one is not missed.
