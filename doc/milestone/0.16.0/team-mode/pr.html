@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock 1 · the PR page — team mode (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p class="mocknote"><b>Mock 1 · <code>/pr/chapter-garden</code> — one page, whichever state the project's PR is in</b> (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §6). A project has one PR at a time; only the person moves it: <i>draft → preparing → submitted → merged</i>. Five frames: the draft; preparing, with the sync having resolved a conflict on the way; preparing when the sync could not; submitted, with review comments and an update; a solo project.</p>
+
+<!-- ============ A. DRAFT ============ -->
+<p class="frame-label">A · Draft — tickets gather as they are put in review</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Report</a></div>
+  <div class="page">
+    <div class="crumbs">chapter-garden · team · <code>steven/foundry</code> → <code>main</code></div>
+    <p class="h1">Pull request</p>
+    <p class="sub">Every ticket in review on your personal branch goes into the next PR. Nothing is sent until you prepare and submit it.</p>
+    <div class="steps"><span class="on">Draft</span><span>Preparing</span><span>Submitted</span><span>Merged</span></div>
+
+    <div class="panel">
+      <h2>In this draft · 3 tickets</h2>
+      <table>
+        <tr><th>Ticket</th><th>In review since</th><th>Merge commit</th><th class="r">Files</th><th class="r">Spend</th></tr>
+        <tr><td><a>#41</a> Add the next chapter to <i>The Sun's Ninth Minute</i></td><td class="muted">today 09:12</td><td><code>4c1e9a2</code></td><td class="r mono">3 · +118 −2</td><td class="r mono">$1.84</td></tr>
+        <tr><td><a>#43</a> The bookshelf sorts stories by last chapter</td><td class="muted">today 10:40</td><td><code>91b07d3</code></td><td class="r mono">2 · +34 −9</td><td class="r mono">$0.92</td></tr>
+        <tr><td><a>#44</a> Fix the chapter title on narrow screens <span class="pill off">blocked by #43 · cut from it</span></td><td class="muted">today 11:05</td><td><code>e27f550</code></td><td class="r mono">1 · +6 −3</td><td class="r mono">$0.41</td></tr>
+      </table>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">A change you want to one of these is a new ticket — it joins this draft when it is in review. Nothing is taken out of a draft.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Your personal branch</h2>
+      <dl class="kv">
+        <dt>Branch</dt><dd><code>steven/foundry</code> · 3 tickets ahead of <code>main</code></dd>
+        <dt>With <code>main</code></dt><dd><span class="pill ok"><span class="d"></span>current</span> <span class="muted">— synced before the last claim, 11:02 (main at <code>a90d2ce</code>)</span></dd>
+      </dl>
+    </div>
+    <div class="actions"><span class="muted" style="font-size:12.5px">Preparing runs the summary agent once (≤ 20 turns, 5 min) and a build on the frozen commit.</span><a class="btn solid">Prepare PR</a></div>
+  </div>
+  <div class="footer"><span>Today <b>$3.17</b> + ~<b>$0.00</b> of $200</span><span><b>12</b> landed</span><span class="mono">projections current</span></div>
+</div>
+
+<!-- ============ B. PREPARING ============ -->
+<p class="frame-label">B · Preparing — the summary is written, the checks have run, everything is editable</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Report</a></div>
+  <div class="page">
+    <div class="crumbs">chapter-garden · team · <code>steven/foundry</code> → <code>main</code></div>
+    <p class="h1">Pull request</p>
+    <div class="steps"><span class="done">Draft</span><span class="on">Preparing</span><span>Submitted</span><span>Merged</span></div>
+    <div class="grid2">
+      <div class="panel">
+        <label class="label">Title</label>
+        <input class="field" value="Chapter 9 of The Sun's Ninth Minute, and the bookshelf sorts by last chapter">
+        <div style="height:12px"></div>
+        <label class="label">Description <span class="muted" style="font-weight:400">— the summary is the agent's and yours to edit; the list under the rule is generated from the log</span></label>
+<textarea class="field">Adds chapter 9 of *The Sun's Ninth Minute*, continuing chapter 8's
+numbering and layout, and changes the bookshelf to sort stories by
+their latest chapter instead of their title. The chapter title no
+longer wraps under the number on narrow screens.
+
+While syncing with main, one conflict in src/lib/shelf.ts was resolved:
+main renamed `byTitle` to `sortByTitle`; the new sort keeps the rename.
+
+---
+| Ticket | Merge | Spend |
+|---|---|---|
+| Closes #41 — Add the next chapter … | 4c1e9a2 | $1.84 |
+| Closes #43 — The bookshelf sorts … | 91b07d3 | $0.92 |
+| Closes #44 — Fix the chapter title … | e27f550 | $0.41 |
+
+Made with Lingtai · 3 tickets · $3.17</textarea>
+      </div>
+      <div>
+        <div class="panel">
+          <h2>Before it opens</h2>
+          <div class="check"><span class="ic ok">✓</span><div><b>Synced with <code>main</code></b><br><span class="muted" style="font-size:12.5px">main had moved 2 commits. Merged into <code>steven/foundry</code>: <b>1 conflict</b> in <code>src/lib/shelf.ts</code>, resolved by an agent (round 1 of 6), then build ✓ and review ✓. <a>See the resolution</a></span></div></div>
+          <div class="check"><span class="ic ok">✓</span><div><b>Build on the frozen commit</b> <code>c55e01b</code><br><span class="muted" style="font-size:12.5px">pnpm test · 41 s</span></div></div>
+          <div class="check"><span class="ic ok">✓</span><div><b>No other PR open</b></div></div>
+        </div>
+        <div class="panel">
+          <h2>What submitting does</h2>
+          <p style="margin:0;font-size:13.5px">Pushes <code>steven/foundry</code> at <code>c55e01b</code> as <code>lingtai/pr/7</code> and opens a PR to <code>main</code> on GitHub. Lingtai never merges it. Tickets put in review after this wait for the next PR.</p>
+        </div>
+      </div>
+    </div>
+    <div class="actions"><a class="btn">Back to draft</a><a class="btn solid">Submit PR</a></div>
+  </div>
+</div>
+
+<!-- ============ C. PREPARING, SYNC FAILED ============ -->
+<p class="frame-label">C · Preparing — the sync's conflict could not be resolved, so nothing opens</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot" style="background:var(--fail)"></span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Report</a></div>
+  <div class="page">
+    <div class="crumbs">chapter-garden · team · <code>steven/foundry</code> → <code>main</code></div>
+    <p class="h1">Pull request</p>
+    <div class="steps"><span class="done">Draft</span><span class="on">Preparing</span><span>Submitted</span><span>Merged</span></div>
+    <div class="banner fail"><b>Your personal branch conflicts with <code>main</code>, and the agent could not resolve it.</b> Claiming is paused for this project until it is. <a>Open it on Waiting on you →</a></div>
+    <div class="panel" style="max-width:720px">
+      <h2>Before it opens</h2>
+      <div class="check"><span class="ic no">✕</span><div><b>Synced with <code>main</code></b><br><span class="muted" style="font-size:12.5px">main had moved 5 commits. 2 conflicts in <code>src/lib/shelf.ts</code> and <code>src/pages/[story].astro</code>. Resolved by an agent in 6 rounds; the build refused the last one: <code>shelf.test.ts › sorts by last chapter</code>.</span></div></div>
+      <div class="check"><span class="ic off">–</span><div class="muted"><b>Build on the frozen commit</b> — not run</div></div>
+      <div class="check"><span class="ic ok">✓</span><div><b>No other PR open</b></div></div>
+    </div>
+    <div class="actions"><a class="btn">Back to draft</a><a class="btn solid off">Submit PR</a></div>
+  </div>
+</div>
+
+<!-- ============ D. SUBMITTED ============ -->
+<p class="frame-label">D · Submitted — the team reviews; a change they ask for is a rework ticket, then Update</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Report</a></div>
+  <div class="page">
+    <div class="crumbs">chapter-garden · team · <code>lingtai/pr/7</code> → <code>main</code></div>
+    <p class="h1">Chapter 9 of The Sun's Ninth Minute, and the bookshelf sorts by last chapter <a style="font-size:15px;font-weight:400">GitHub #88 ↗</a></p>
+    <div class="steps"><span class="done">Draft</span><span class="done">Preparing</span><span class="on">Submitted</span><span>Merged</span></div>
+    <div class="grid2">
+      <div>
+        <div class="panel">
+          <h2>On GitHub</h2>
+          <dl class="kv">
+            <dt>State</dt><dd><span class="pill sig"><span class="d"></span>changes requested</span> <span class="muted">· 1 approval of 2 required</span></dd>
+            <dt>Checks</dt><dd><span class="pill ok"><span class="d"></span>2 passed</span></dd>
+            <dt>Submitted</dt><dd>today 11:31 · frozen at <code>c55e01b</code></dd>
+          </dl>
+        </div>
+        <div class="panel">
+          <h2>Review comments · 2</h2>
+          <div class="comment"><div class="who">li-wei · on src/lib/shelf.ts:22</div>Sorting by last chapter should break ties by title, or two stories updated the same day swap places on every build.</div>
+          <div class="comment"><div class="who">li-wei</div>Chapter 9 looks good.</div>
+          <a class="btn small">New ticket from a comment</a>
+        </div>
+      </div>
+      <div>
+        <div class="panel" style="border-color:#e3c48f">
+          <h2>Update this PR</h2>
+          <p style="margin:0 0 10px;font-size:13.5px">Pushes <code>steven/foundry</code>'s head to <code>lingtai/pr/7</code> — a fast-forward — and regenerates the description. These join the PR:</p>
+          <table>
+            <tr class="new"><td><a>#47</a> Shelf ties break by title <span class="pill rev">rework · from li-wei's comment</span></td><td class="r mono">$0.38</td></tr>
+            <tr class="new"><td><a>#45</a> RSS feed for each story</td><td class="r mono">$2.10</td></tr>
+          </table>
+          <p class="muted" style="font-size:12.5px;margin:10px 0 0">#45 was put in review after you submitted. It joins too: a PR is the branch, and the branch moves as one.</p>
+          <div class="actions"><a class="btn solid">Update PR</a></div>
+        </div>
+        <div class="panel">
+          <h2>Next draft</h2>
+          <p style="margin:0;font-size:13.5px" class="muted">Empty after an update. A new PR can be submitted once #88 is merged or closed.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ E. SOLO ============ -->
+<p class="frame-label">E · A solo project — no PR</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">lingtai ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Report</a></div>
+  <div class="page">
+    <p class="h1">Pull request</p>
+    <div class="banner info" style="max-width:760px"><b>lingtai is a solo project: each ticket lands on <code>main</code> itself, so there is no PR.</b> A team project collects its tickets on your personal branch and opens one PR when you submit it. <a>Solo and team →</a></div>
+    <p class="mono muted" style="font-size:12.5px">$ lingtai pr lingtai<br>refused: lingtai is a solo project — each ticket lands on main itself, so there is no PR (mode: solo in its recipe)</p>
+  </div>
+</div>
+
+</body>
+</html>

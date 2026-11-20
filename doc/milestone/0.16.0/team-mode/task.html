@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock 3 · task page, a ticket in review — team mode (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p class="mocknote"><b>Mock 3 · the task page of a ticket in review.</b> Only <i>Where it is</i> changes: the poster reads <b>IN REVIEW</b>, and under it the three facts a person asks — which PR holds it and in what state, where its merge commit is, and what makes it land (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5). The ticket's own table above is the board's as today.</p>
+
+<p class="frame-label">A · in a submitted PR</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">ticket-chapter-garden-43</span><span class="muted" style="font-size:13px">· since today 10:40</span><span class="sp"></span><a class="btn">Recipe</a><a class="btn">Pause</a><a class="btn">Report</a></div>
+  <div class="page">
+    <p style="font-size:17px;margin:0 0 14px"><a>#43 ↗</a> The bookshelf sorts stories by their latest chapter</p>
+    <div class="panel" style="color:var(--muted);font-size:13px">… Problem · Want · Fix · Watch out, as today …</div>
+
+    <p class="where">WHERE IT IS</p>
+    <p class="poster" style="color:var(--review)">IN REVIEW<small>51M</small></p>
+
+    <div class="panel" style="margin-top:16px">
+      <dl class="kv">
+        <dt>In</dt><dd><b>PR #88</b> <a>↗</a> · <span class="pill sig"><span class="d"></span>changes requested</span> · <a>PR page →</a></dd>
+        <dt>Merge commit</dt><dd><code>91b07d3</code> on <code>steven/foundry</code> · in <code>lingtai/pr/7</code></dd>
+        <dt>Lands when</dt><dd>PR #88 is merged into <code>main</code> — GitHub closes this ticket then (<code>Closes #43</code>)</dd>
+        <dt>Blocks</dt><dd><a>#44</a> — in review too, cut from this one on the same branch</dd>
+        <dt>A change to it</dt><dd>is a new ticket · <a class="btn small">New rework ticket</a></dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">B · in the draft, not yet submitted (a local ticket)</p>
+<div class="frame">
+  <div class="page">
+    <p class="where" style="margin-top:0">WHERE IT IS</p>
+    <p class="poster" style="color:var(--review)">IN REVIEW<small>12M</small></p>
+    <div class="panel" style="margin-top:16px">
+      <dl class="kv">
+        <dt>In</dt><dd>the draft · 3 tickets · <a>PR page →</a></dd>
+        <dt>Merge commit</dt><dd><code>e27f550</code> on <code>lingtai-base</code></dd>
+        <dt>Lands when</dt><dd>its merge commit reaches <code>main</code> — Lingtai closes this local ticket then</dd>
+      </dl>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

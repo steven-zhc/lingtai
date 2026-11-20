@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock 5 · /recipe, mode and branches — team mode (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p class="mocknote"><b>Mock 5 · the top of <code>/recipe</code>: the mode, its branches, and the PR agent</b> (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §1–2, §6). One block above the ten steps says what the mode decides, in a person's words, beside the recipe lines that say it. The steps below are unchanged.</p>
+
+<p class="frame-label">A · a team project</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Report</a></div>
+  <div class="page">
+    <div class="crumbs">chapter-garden · recipe <code>3f9c01a2b7e4</code></div>
+    <p class="h1">Recipe</p>
+    <div class="grid2">
+      <div class="panel">
+        <h2>Mode · <span class="pill acc" style="text-transform:none;letter-spacing:0">team</span></h2>
+        <dl class="kv">
+          <dt>Takes</dt><dd>tickets assigned to you <span class="muted">(every ticket — local tickets are yours)</span></dd>
+          <dt>Works on</dt><dd><code>steven/foundry</code>, kept current with <code>main</code> before each claim</dd>
+          <dt>A merged ticket</dt><dd>is <b>in review</b> on <code>steven/foundry</code>, and lands when your PR reaches <code>main</code></dd>
+          <dt>Reaches <code>main</code></dt><dd>only through a PR you submit · <a>PR page →</a></dd>
+          <dt>Never</dt><dd>pushes <code>main</code></dd>
+          <dt>PR summary</dt><dd>claude-code · 20 turns · 5 min</dd>
+        </dl>
+      </div>
+<pre class="yaml"><span class="k">version</span>: 2
+<span class="k">mode</span>: team
+<span class="k">branch</span>:
+  <span class="k">main</span>: main
+  <span class="k">personal</span>: steven/foundry
+<span class="k">pr</span>:                      <span class="c"># optional</span>
+  <span class="k">agent</span>: claude-code
+  <span class="k">limits</span>: { turns: 20, wall: 5m }
+<span class="k">steps</span>:
+  <span class="c"># … the ten steps, as today</span></pre>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">B · a solo project</p>
+<div class="frame">
+  <div class="page">
+    <div class="grid2">
+      <div class="panel">
+        <h2>Mode · <span class="pill off" style="text-transform:none;letter-spacing:0">solo</span></h2>
+        <dl class="kv">
+          <dt>Takes</dt><dd>every ticket with a kind label and no <code>lingtai:hold</code></dd>
+          <dt>Lands on</dt><dd><code>main</code>, unattended</dd>
+          <dt>PR</dt><dd>none — each ticket lands itself</dd>
+        </dl>
+        <p class="muted" style="font-size:12.5px;margin:12px 0 0">No <code>mode</code> in the recipe reads as solo, so a project made before 0.16 runs as it did.</p>
+      </div>
+<pre class="yaml"><span class="k">version</span>: 2
+<span class="k">mode</span>: solo           <span class="c"># or absent</span>
+<span class="k">branch</span>:
+  <span class="k">main</span>: main</pre>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">C · refused when it resolves</p>
+<div class="frame">
+  <div class="page">
+    <div class="banner fail" style="max-width:820px;margin:0"><b>recipe refused</b> — <code>branch.personal</code> "Steven's MacBook" is not a branch name git accepts (<code>git check-ref-format --branch</code>). Try <code>steven/steven-s-macbook</code>.</div>
+    <div class="banner fail" style="max-width:820px;margin:10px 0 0"><b>recipe refused</b> — <code>mode: team</code> takes your own tickets; <code>take: all</code> would take everyone's. Remove <code>take</code>, or use <code>mode: solo</code>.</div>
+  </div>
+</div>
+
+</body>
+</html>

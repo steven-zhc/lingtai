@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock 2 · home — team mode (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p class="mocknote"><b>Mock 2 · the home page in team mode — still four columns.</b> <i>Landed</i> is split: the landed tickets above, compact and folded as today; the tickets <b>in review</b> on the personal branch below, with the PR they belong to and its state (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5–6). A sync with <code>main</code> resolving a conflict shows in <i>Running</i> like any run (§4). Queued shows only what this machine would take.</p>
+
+<p class="frame-label">A · team project — a sync resolving a conflict; five tickets in review, three in the submitted PR and two in the next draft</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Report</a></div>
+  <div class="cols">
+    <div class="col">
+      <h3>Queued <span class="n">2</span></h3>
+      <div class="card"><div class="t"><a>#48</a> Story pages show the reading time</div><div class="meta">feature · assigned to you</div></div>
+      <div class="card"><div class="t"><a>#49</a> Dark mode follows the system</div><div class="meta">feature · assigned to you</div></div>
+      <p class="muted" style="font-size:12.5px;margin-top:14px">Waits for the sync to finish.</p>
+    </div>
+    <div class="col">
+      <h3>Running <span class="n">1</span></h3>
+      <div class="card sync">
+        <div class="t">Syncing <code>steven/foundry</code> with <code>main</code></div>
+        <div class="meta">main moved 2 commits · 1 conflict</div>
+        <div style="margin-top:8px" class="flow">
+          <span class="st good">merge</span><span class="ar">→</span><span class="st hot">resolve · round 1/6</span><span class="ar">→</span><span class="st">build</span><span class="ar">→</span><span class="st">review</span><span class="ar">→</span><span class="st">push</span>
+        </div>
+        <div class="meta" style="margin-top:8px">src/lib/shelf.ts · Claude Code · 4 min · $0.21 · <a>run log</a></div>
+      </div>
+    </div>
+    <div class="col">
+      <h3>Waiting on you <span class="n">0</span></h3>
+      <p class="muted">Nothing is waiting on you.</p>
+    </div>
+    <div class="col">
+      <h3>Landed <a class="btn small">12 all →</a></h3>
+      <div class="landed-row"><span class="ticks">ıııı ı ı</span>#38 · feature · 9 turns · $1.10</div>
+      <div class="landed-row"><span class="ticks">ıııı ı ı</span>#36 · bug · 4 turns · $0.44</div>
+      <div class="fold">▸ 10 older</div>
+
+      <div class="split">
+        <h4>In review <span class="n mono" style="color:var(--muted)">5</span></h4>
+        <div class="prline"><span><b>PR #88</b> <span class="muted">· lingtai/pr/7</span></span><span class="pill sig"><span class="d"></span>changes requested</span></div>
+        <div class="rev-card"><a>#41</a> Next chapter of <i>The Sun's Ninth Minute</i><div class="meta">4c1e9a2 · $1.84</div></div>
+        <div class="rev-card"><a>#43</a> Bookshelf sorts by last chapter<div class="meta">91b07d3 · $0.92</div></div>
+        <div class="rev-card"><a>#44</a> Chapter title on narrow screens<div class="meta">e27f550 · $0.41</div></div>
+        <div class="prline" style="margin-top:14px"><span><b>Next PR</b> <span class="muted">· draft</span></span><a class="btn small">PR page →</a></div>
+        <div class="rev-card"><a>#47</a> Shelf ties break by title<div class="meta">rework for #88 · $0.38</div></div>
+        <div class="rev-card"><a>#45</a> RSS feed for each story<div class="meta">0a3c6f1 · $2.10</div></div>
+      </div>
+    </div>
+  </div>
+  <div class="footer"><span>Today <b>$5.86</b> + ~<b>$0.21</b> of $200</span><span><b>12</b> landed · <b>5</b> in review</span><span class="mono">projections current</span></div>
+</div>
+
+<p class="frame-label">B · team project — nothing submitted yet: in review is the draft</p>
+<div class="frame" style="max-width:420px;margin-left:auto;margin-right:auto">
+  <div class="col" style="border:0">
+    <h3>Landed <a class="btn small">12 all →</a></h3>
+    <div class="fold">▸ 12 landed</div>
+    <div class="split" style="min-height:0;padding-bottom:12px">
+      <h4>In review <span class="n mono" style="color:var(--muted)">3</span></h4>
+      <div class="prline"><span><b>Draft</b> <span class="muted">· not submitted</span></span><a class="btn small solid">Prepare PR</a></div>
+      <div class="rev-card"><a>#41</a> Next chapter of <i>The Sun's Ninth Minute</i><div class="meta">4c1e9a2 · $1.84</div></div>
+      <div class="rev-card"><a>#43</a> Bookshelf sorts by last chapter<div class="meta">91b07d3 · $0.92</div></div>
+      <div class="rev-card"><a>#44</a> Chapter title on narrow screens<div class="meta">e27f550 · $0.41</div></div>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">C · solo project — unchanged: no split, no in review</p>
+<div class="frame" style="max-width:420px;margin-left:auto;margin-right:auto">
+  <div class="col" style="border:0">
+    <h3>Landed <a class="btn small">51 all →</a></h3>
+    <div class="landed-row"><span class="ticks">ıııı ı ı</span>#1295 · documentation · 3 turns · $0.61</div>
+    <div class="landed-row"><span class="ticks">ıııı ı ı</span>#1297 · documentation · 12 turns · $2.05</div>
+    <div class="landed-row"><span class="ticks">ıııı ı ı</span>#1296 · documentation · 5 turns · $0.80</div>
+    <div class="fold">▸ 48 older</div>
+  </div>
+</div>
+
+</body>
+</html>

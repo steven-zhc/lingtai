@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock 4 · syncing with main, and its conflict — team mode (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<p class="mocknote"><b>Mock 4 · keeping the personal branch current with <code>main</code>, and what a conflict does</b> (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §4). Before each claim, and again when a PR is prepared, Lingtai checks whether <code>main</code> has moved. A conflict is resolved by an agent as an attempt's is, and checked by build and review; a person sees it only when that fails — then claiming for the project is paused and a card waits on <i>Waiting on you</i>.</p>
+
+<p class="frame-label">A · the flow</p>
+<div class="frame">
+  <div class="page">
+    <div class="panel">
+      <h2>Before each claim · and when a PR is prepared</h2>
+      <div class="flow" style="font-size:13px;line-height:2.4">
+        <span class="st">main moved?</span><span class="ar">— no →</span><span class="st good">claim the next ticket</span>
+      </div>
+      <div class="flow" style="font-size:13px;line-height:2.4">
+        <span class="st">main moved?</span><span class="ar">— yes →</span><span class="st">merge origin/main into steven/foundry</span><span class="ar">— clean →</span><span class="st good">push · claim</span><span class="muted" style="font-size:12px">&nbsp;(the next attempt's own build checks it)</span>
+      </div>
+      <div class="flow" style="font-size:13px;line-height:2.4;padding-left:118px">
+        <span class="ar">— conflict →</span><span class="st hot">agent resolves (resolveConflict, ≤ conflictResolutions = 6)</span><span class="ar">→</span><span class="st">build</span><span class="ar">→</span><span class="st">review reads the resolution</span><span class="ar">→</span><span class="st good">push · claim</span>
+      </div>
+      <div class="flow" style="font-size:13px;line-height:2.4;padding-left:118px">
+        <span class="ar">— rounds spent, or build / review refuses →</span><span class="st bad">wait for a person · claiming paused</span>
+      </div>
+      <p class="muted" style="font-size:12.5px;margin:12px 0 0">The agent is handed what each side meant: the tickets in review whose code conflicts (ours), and the commits on <code>main</code> that brought the other side (theirs). Its resolution goes into the PR, where the team sees it again.</p>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">B · Running — while the agent resolves</p>
+<div class="frame" style="max-width:520px;margin-left:auto;margin-right:auto">
+  <div class="col" style="border:0">
+    <h3>Running <span class="n">1</span></h3>
+    <div class="card sync">
+      <div class="t">Syncing <code>steven/foundry</code> with <code>main</code></div>
+      <div class="meta">main moved 5 commits · 2 conflicts</div>
+      <div style="margin-top:8px" class="flow">
+        <span class="st good">merge</span><span class="ar">→</span><span class="st hot">resolve · round 3/6</span><span class="ar">→</span><span class="st">build</span><span class="ar">→</span><span class="st">review</span><span class="ar">→</span><span class="st">push</span>
+      </div>
+      <div class="meta" style="margin-top:8px">round 2: build refused · shelf.test.ts › sorts by last chapter</div>
+      <div class="meta">Claude Code · 11 min · $0.74 · <a>run log</a></div>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">C · Waiting on you — the agent could not</p>
+<div class="frame">
+  <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot" style="background:var(--fail)"></span><span class="sp"></span><a class="btn">Report</a></div>
+  <div class="banner fail" style="margin:12px 16px 0;border-radius:6px"><b>chapter-garden: claiming paused</b> — the personal branch conflicts with <code>main</code>.</div>
+  <div class="page" style="max-width:860px">
+    <h3 style="margin:0 0 12px;font:600 13.5px var(--sans);color:var(--ink-2)">WAITING ON YOU <span class="mono muted" style="float:right">1</span></h3>
+    <div class="card wait" style="padding:14px 16px">
+      <div class="t" style="font-size:15px"><code>steven/foundry</code> conflicts with <code>main</code></div>
+      <div class="meta">since 12:14 · 2 conflicts · 6 rounds spent · $1.35</div>
+      <dl class="kv" style="margin-top:12px">
+        <dt>Conflicting files</dt><dd><code>src/lib/shelf.ts</code> · <code>src/pages/[story].astro</code></dd>
+        <dt>Ours</dt><dd><a>#43</a> sorts by last chapter · <a>#44</a> chapter title</dd>
+        <dt>Theirs</dt><dd><code>a90d2ce</code> li-wei: shelf grouped by series · 4 more</dd>
+        <dt>Last refusal</dt><dd>build — <code>shelf.test.ts › sorts by last chapter</code>: expected <i>Ninth Minute</i> first, got <i>Paper Kites</i></dd>
+      </dl>
+      <p style="margin:14px 0 6px;font-size:13.5px"><b>Resolve it yourself</b>, then let Lingtai go on:</p>
+<pre class="yaml">git -C ~/code/chapter-garden switch steven/foundry
+git -C ~/code/chapter-garden merge origin/main      # resolve, commit
+git -C ~/code/chapter-garden push
+lingtai sync chapter-garden                          # checks it, builds it, resumes claiming</pre>
+      <div class="actions" style="justify-content:flex-start">
+        <a class="btn solid">I resolved it — check again</a>
+        <a class="btn">Give the agent 3 more rounds</a>
+        <a class="btn">Run log</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

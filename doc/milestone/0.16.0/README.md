@@ -8,6 +8,7 @@ is `0.16.0`.
 | [0.16.md](0.16.md) | The plan, as narrowed on 2026-11-20: an ACP runtime usable wherever its capabilities reach, and solo and team modes — a team takes the tickets assigned to the person, lands on their personal branch and submits a PR draft. The ticket sources and the GitLab acceptance run moved to [../later/ticket-sources.md](../later/ticket-sources.md) |
 | [acp-experiments.md](acp-experiments.md) | The experiments E1–E12 run before the ACP questions are discussed: setup, steps, what each one decides |
 | [acp-libraries.md](acp-libraries.md) | The ACP libraries a TypeScript client could be built on, surveyed 2026-11-19 |
+| [team-mode/](team-mode/index.html) | The board mocks for team mode, for the operator to agree before its board tickets are cut: the PR page, home's split *Landed* column, a ticket in review, syncing with `main` and its conflict, `/recipe` |
 | [vibe-kanban-demand-vs-lingtai.md](vibe-kanban-demand-vs-lingtai.md) | What Vibe Kanban's users ask for, against what Lingtai already does |
 
 ## Moved here from 0.15.0
