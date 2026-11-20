@@ -82,7 +82,7 @@ names both and adds what lies between that branch and `main`.
    dropped, lower-cased, every character outside `a-z`, `0-9` and `-` replaced
    by `-`, runs of `-` collapsed, trimmed of `-` at either end, cut to 24
    characters, and `machine` if nothing is left — `Steven's MacBook Pro.local`
-   becomes `steven/steven-s-macbook-pro`. `lingtai add` shows it and the person
+   becomes `steven-zhc/steven-s-macbook-pro` for the login `steven-zhc`. `lingtai add` shows it and the person
    may change it. Whatever its source, `branch.personal` is refused by name when
    the recipe resolves if it breaks `git check-ref-format --branch`'s rules —
    checked by a pure copy of those rules, held to real git by a test, so resolve
@@ -231,7 +231,7 @@ names both and adds what lies between that branch and `main`.
 
    **A PR has two ids.** Lingtai numbers a personal branch's PRs from 1 when one
    is first prepared — the id on the log, and the PR branch's name,
-   `<branch.personal>-pr-<n>` (`steven/foundry-pr-7`): the personal branch's
+   `<branch.personal>-pr-<n>` (`steven-zhc/foundry-pr-7`): the personal branch's
    name keeps two people's apart on the shared remote, and a `-` rather than a
    `/` because git cannot hold a branch and a directory of the same name. The
    code host's number (GitHub's `#88`) exists only once it is submitted, and is
