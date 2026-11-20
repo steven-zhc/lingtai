@@ -162,6 +162,34 @@ names both and adds what lies between that branch and `main`.
      `branch.main` itself.
    - **One page**: the board's PR page shows whichever state the PR is in.
 
+   **A PR has two ids.** Lingtai numbers a project's PRs from 1 when one is
+   *prepared* — the id on the log, and the frozen branch's name,
+   `lingtai/pr/<n>`, which must be pushed before the code host can open a PR
+   from it. The code host's number (GitHub's `#88`) exists only once it is
+   submitted, and is recorded beside it then. The page shows no number before
+   submitting, and the code host's after it; `lingtai/pr/<n>` is secondary.
+   *One open PR* is one per personal branch: a team has many open at once, one
+   per person and machine, and each Lingtai follows only its own.
+
+   **How Lingtai learns what the team did**, in three layers, none of them a
+   webhook:
+   - **merged** is read from git: the sync of §4 already fetches
+     `origin/<branch.main>`, and a PR whose head is reachable from it has
+     landed (§5). No API call, and a missed notification cannot leave tickets
+     *in review*;
+   - **review state, comments, and closed without merging** are read in the
+     daemon's existing sweep (`SWEEP_MS`, five minutes,
+     `packages/daemon/src/work-loop.ts:167`): one request for the one open PR,
+     stopped early when the PR has not changed since the last read;
+   - **the PR page asks the code host when it renders**, as the Queued column
+     does, so a person looking sees it current.
+
+   A webhook (`pull_request`, `pull_request_review`, `issue_comment`) is an
+   optional speed-up where the App has a public address; adding events to the
+   App asks every installation to approve the change, so nothing above may
+   depend on it. A comment is shown, never acted on: a person turns it into a
+   rework ticket.
+
    **`pr:` is the summary agent's block**, beside `discuss:` and for the same
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
    the agent defaulting to `runtime.agent`, `limits` to 20 turns and `5m`, and
