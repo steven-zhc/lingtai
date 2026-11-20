@@ -109,6 +109,7 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
       <g id="t2" class="node"><circle cx="640" cy="90" r="16" fill="#e5e9f3" stroke="#4a5d8a" stroke-width="2"/><text x="640" y="95" text-anchor="middle" font-size="12" font-weight="600" fill="#4a5d8a">AN</text><text class="sub" x="640" y="62" text-anchor="middle">ana: footer links</text></g>
       <g id="moved" class="node"><rect x="519" y="114" width="122" height="24" rx="12" fill="#4a5d8a"/><text x="580" y="130" text-anchor="middle" font-size="12" fill="#fff" font-weight="600">main moved · 2</text></g>
 
+      <g id="cluster" class="node hide" style="cursor:pointer"><rect x="252" y="336" width="150" height="28" rx="14" fill="#0b6a70"/><circle cx="270" cy="350" r="4" fill="#fff" opacity=".9"/><circle cx="282" cy="350" r="4" fill="#fff" opacity=".7"/><circle cx="294" cy="350" r="4" fill="#fff" opacity=".5"/><text x="306" y="355" font-size="12" font-weight="600" fill="#fff">13 earlier ▸</text><text class="sub" x="327" y="316" text-anchor="middle">#21 – #41</text></g>
       <g id="k1" class="node"><circle cx="330" cy="350" r="17" fill="#0b6a70"/><text x="330" y="355" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">#41</text><text class="sub" x="330" y="316" text-anchor="middle">chapter 9</text></g>
       <g id="k2" class="node"><circle cx="430" cy="350" r="17" fill="#0b6a70"/><text x="430" y="355" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">#43</text><text class="sub" x="430" y="316" text-anchor="middle">sort shelf</text></g>
       <g id="k3" class="node"><circle cx="530" cy="350" r="17" fill="#0b6a70"/><text x="530" y="355" text-anchor="middle" font-size="12" font-weight="600" fill="#fff">#44</text><text class="sub" x="530" y="316" text-anchor="middle">title wrap</text></g>
@@ -121,8 +122,8 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
 
       <path id="tieDown" d="M880 282 C880 312 538 300 538 333" fill="none" stroke="#0b6a70" stroke-width="2" stroke-dasharray="3 5"/>
       <path id="tieUp" class="hide" d="M880 160 C880 130 880 118 880 108" fill="none" stroke="#4a5d8a" stroke-width="3" marker-end="url(#ah)"/>
-      <path id="mergeline" class="hide" d="M880 333 C880 260 880 160 880 110" fill="none" stroke="#2c7a4c" stroke-width="5" stroke-linecap="round"/>
-      <g id="mergenode" class="node hide"><circle cx="880" cy="90" r="19" fill="#2c7a4c"/><text x="880" y="96" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">✓</text></g>
+      <path id="mergeline" class="hide" d="M880 333 C880 190 930 92 980 90" fill="none" stroke="#2c7a4c" stroke-width="5" stroke-linecap="round"/>
+      <g id="mergenode" class="node hide"><circle cx="1000" cy="90" r="19" fill="#2c7a4c"/><text x="1000" y="96" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">✓</text></g>
 
       <g id="team" class="node hide">
         <circle cx="1040" cy="150" r="14" fill="#e5e9f3" stroke="#4a5d8a"/><text x="1040" y="155" text-anchor="middle" font-size="11" font-weight="600" fill="#4a5d8a">LW</text>
@@ -146,6 +147,7 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
     </svg>
   </div>
 
+  <div class="card" id="list" style="display:none;margin-top:16px"></div>
   <div class="demo"><b>Demo · the team, on GitHub</b><span>Not part of the page: Lingtai only sees these when GitHub reports them.</span><button id="dComment" disabled>Team asks for a change</button><button id="dMerge" disabled>Team merges the PR</button></div>
 
   <div class="panel">
@@ -161,7 +163,8 @@ const NS='http://www.w3.org/2000/svg';
 const show=(id,on=true)=>{const e=$(id);e.classList.remove('pop');e.classList.toggle('hide',!on);if(on){void e.getBBox();e.classList.add('pop')}};
 const draw=id=>{const p=$(id);p.classList.remove('hide','draw');p.style.setProperty('--len',p.getTotalLength());void p.getBBox();p.classList.add('draw')};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-let step=0,conflict=false,busy=false,tickets=[];
+let step=0,conflict=false,busy=false,tickets=[],many=false;
+const EARLIER=['#21','#22','#24','#25','#27','#29','#30','#32','#33','#35','#36','#38','#41'];
 
 const C={draft:['#0b6a70','#dcedee','#075056','collecting',true],prep:['#0b6a70','#dcedee','#075056','ready to send',false],
   open:['#4a5d8a','#e5e9f3','#4a5d8a','open on GitHub',false],changes:['#9c5a08','#f7ead6','#7a4506','changes asked',false],
@@ -172,7 +175,8 @@ function card(state,title,meta){
   $('cpill').setAttribute('fill',pill);$('cpilltxt').setAttribute('fill',ink);$('cpilltxt').textContent=txt;
   $('ctitle').textContent=title;$('cmeta').textContent=meta;
   const g=$('chips');g.innerHTML='';let x=768;
-  for(const t of tickets){const w=t.length*8+18;
+  const shown=tickets.length>4?[`+${tickets.length-3}`,...tickets.slice(-3)]:tickets;
+  for(const t of shown){const w=t.length*8+18;
     const r=document.createElementNS(NS,'rect');for(const [k,v] of Object.entries({x,y:228,width:w,height:24,rx:12,fill:state==='merged'?'#2c7a4c':'#0b6a70'}))r.setAttribute(k,v);
     const s=document.createElementNS(NS,'text');for(const [k,v] of Object.entries({x:x+w/2,y:244,'text-anchor':'middle','font-size':12,'font-weight':600,fill:'#fff'}))s.setAttribute(k,v);
     s.textContent=t;g.append(r,s);x+=w+6}
@@ -190,23 +194,24 @@ const steps=[
  {t:'4 · The team asked for a change',p:'A change the team asks for is a <b>new ticket</b>. Lingtai does it on your branch like any other. <b>Update PR</b> moves the PR forward to include it — merging stays the team’s, on GitHub.',
   w:[['Comment','li-wei: “break ties by title”'],['Becomes','ticket #47, rework — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to lingtai/pr/7 — a fast-forward'},
  {t:'5 · Merged',p:'The team merged PR #88 into main on GitHub. Its tickets <b>land</b> and close. The next sync brings main into your branch, and a new draft begins.',
-  w:[['On the graph','your branch, up to #47, is now part of main'],['Landed','#41 · #43 · #44 · #47'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
+  w:[['On the graph','your branch, up to #47, is now part of main'],['Landed','LANDED'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
 
 const side=()=>{
-  if(step===0) return `<h2>Before you prepare</h2><label class="tog"><input type="checkbox" id="cf" ${conflict?'checked':''}> show a conflict with main</label><p class="cost" style="margin-top:10px">Tick it to watch the sync hit a conflict and an agent resolve it.</p>`;
+  if(step===0) return `<h2>Before you prepare</h2><label class="tog"><input type="checkbox" id="cf" ${conflict?'checked':''}> show a conflict with main</label><label class="tog" style="margin-top:8px"><input type="checkbox" id="mn" ${many?'checked':''}> show many tickets (15 in the draft)</label><p class="cost" style="margin-top:10px">Tick it to watch the sync hit a conflict and an agent resolve it.</p>`;
   if(step===1) return `<h2>Your PR</h2><label class="cost" for="tt">Title</label><input id="tt" class="field" value="Chapter 9, and the shelf sorts by last chapter"><div style="height:8px"></div><label class="cost" for="dd">Description — yours to edit</label><textarea id="dd" class="field" readonly></textarea>`;
   if(step===2) return `<h2>On GitHub</h2><p>PR <b>#88</b> · lingtai/pr/7 → main</p><p class="cost">checks 2 passed · 0 of 2 approvals</p>`;
   if(step===3) return `<h2>Review on GitHub</h2><p><b>li-wei</b> on shelf.ts: “Sorting by last chapter should break ties by title.”</p><p class="cost">→ ticket #47 opened from the comment · Lingtai is doing it</p>`;
-  return `<h2>Done</h2><p>4 tickets landed. Your next PR starts empty.</p>`;
+  return `<h2>Done</h2><p>${tickets.length} tickets landed. Your next PR starts empty.</p>`;
 };
 function render(){
   const s=steps[step];
   document.querySelectorAll('#steps span').forEach(e=>{const i=+e.dataset.s;e.classList.toggle('on',i===step);e.classList.toggle('done',i<step)});
-  $('explain').innerHTML=`<h2>${s.t}</h2><p>${s.p}</p><ul class="what">${s.w.map(([a,b])=>`<li><b>${a}</b><span>${b}</span></li>`).join('')}</ul>`+
+  $('explain').innerHTML=`<h2>${s.t}</h2><p>${s.p}</p><ul class="what">${s.w.map(([a,b])=>`<li><b>${a}</b><span>${b==='LANDED'?(tickets.length>4?`${tickets.length} tickets · #21 – #47`:tickets.join(' · ')):b}</span></li>`).join('')}</ul>`+
     (s.btn?`<div class="btns"><button class="go" id="act">${s.btn}</button></div>`:'')+(s.waiting?`<div class="wait"><span class="d pulse"></span>${s.waiting}</div>`:'')+(s.cost?`<p class="cost" style="margin-top:8px">${s.cost}</p>`:'');
   $('side').innerHTML=side();
   if($('act'))$('act').onclick=act;
   if($('cf'))$('cf').onchange=e=>conflict=e.target.checked;
+  if($('mn'))$('mn').onchange=e=>{many=e.target.checked;reset()};
   $('dComment').disabled=step!==2;$('dMerge').disabled=step!==2;
 }
 const type=async(el,text)=>{el.value='';for(const ch of text){el.value+=ch;await wait(7)}};
@@ -237,7 +242,7 @@ $('dComment').onclick=()=>{if(busy)return;step=3;render();show('bubble');card('c
 $('dMerge').onclick=()=>{if(busy)return;step=4;render();show('bubble',false);
   $('tieUp').classList.add('hide');$('tieDown').style.opacity=0;$('card').style.transition='opacity .6s';$('card').style.opacity=0;
   setTimeout(()=>{draw('mergeline');setTimeout(()=>show('mergenode'),900)},500);card('merged','PR #88','merged into main · tickets landed');
-  for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#2c7a4c');show('team',false);show('moved',false);
+  for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#2c7a4c');$('cluster').querySelector('rect').setAttribute('fill','#2c7a4c');show('team',false);show('moved',false);
   $('dComment').disabled=true;$('dMerge').disabled=true;};
 
 function reset(){
@@ -245,11 +250,15 @@ function reset(){
   ['syncpath','syncnote','syncnode','k4','tieUp','mergeline','mergenode','team','bubble'].forEach(i=>show(i,false));$('tieDown').style.opacity=1;$('card').style.opacity=1;
   $('syncnode').classList.remove('pulse');$('synctxt').textContent='sync';$('synctxt').setAttribute('fill','#9c5a08');$('synccirc').setAttribute('stroke','#9c5a08');
   $('syncn1').textContent='Bringing main into your branch';$('syncn2').textContent='';
-  for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#0b6a70');
+  for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#0b6a70');$('cluster').querySelector('rect').setAttribute('fill','#0b6a70');
   tie(538);card('draft','PR draft','grows as tickets land on your branch');render();
-  ['k1','k2','k3'].forEach((k,i)=>{$(k).classList.add('hide');setTimeout(()=>{show(k);tickets.push(['#41','#43','#44'][i]);card('draft','PR draft',`${tickets.length} ticket${tickets.length>1?'s':''} · in review on your branch`)},300+i*450)});
+  $('list').style.display='none';show('cluster',false);
+  if(many){show('k1',false);setTimeout(()=>{show('cluster');tickets.push(...EARLIER);card('draft','PR draft',`${tickets.length} tickets · in review on your branch`)},300);}
+  (many?['k2','k3']:['k1','k2','k3']).forEach((k,i)=>{show(k,false);setTimeout(()=>{show(k);tickets.push({k1:'#41',k2:'#43',k3:'#44'}[k]);card('draft','PR draft',`${tickets.length} ticket${tickets.length>1?'s':''} · in review on your branch`)},(many?750:300)+i*450)});
   ['t1','t2','moved'].forEach((k,i)=>{$(k).classList.add('hide');setTimeout(()=>show(k),1700+i*250)});
 }
+$('cluster').onclick=()=>{const l=$('list');if(l.style.display==='block'){l.style.display='none';return}
+  l.innerHTML=`<h2 style="font-size:16px">13 earlier tickets in this draft</h2><p class="cost">#21 – #41 · in review on steven/foundry since the last sync · all go into the next PR</p><ul class="what">${EARLIER.map((t,i)=>`<li><b>${t}</b><span>${['Story index paginates','RSS link in footer','Fix date on chapter 3','Shelf empty state','Alt text on covers','Chapter word count','Reading list','Dark code blocks','Search by author','Fix 404 copy','Series badge','Next/prev links','Chapter 9'][i]}</span></li>`).join('')}</ul>`;l.style.display='block'};
 $('replay').onclick=reset;
 reset();
 }
