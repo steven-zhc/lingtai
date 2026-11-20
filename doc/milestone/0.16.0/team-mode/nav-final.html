@@ -1,0 +1,112 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · the two finalists — the rail or the top bar, both with keys (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.shot{display:grid;background:#fff;min-height:400px;font-size:12.5px;position:relative}
+.mbar{display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--rule);background:#fff;white-space:nowrap}
+.mbar .sp{flex:1}.mbar .hl{color:#9c5a08;font-weight:600}.mbar .b{border:1px solid var(--rule-2);border-radius:3px;padding:2px 9px;font-size:12.5px}
+.mbar .crumb{color:var(--muted)}
+.search{border:1px solid var(--rule-2);border-radius:3px;padding:2px 8px;color:var(--muted);min-width:200px;display:flex;justify-content:space-between}
+kbd{font:600 10.5px var(--mono);border:1px solid var(--rule-2);border-bottom-width:2px;border-radius:3px;padding:0 4px;background:#fff;color:var(--ink-2)}
+.board{display:grid;grid-template-columns:repeat(5,1fr);background:#f2f4fa;min-height:340px}
+.shot[style*="540"] .board{min-height:490px}
+.board>div{border-right:1px solid var(--rule);padding:10px}.board>div:last-child{border:0}
+.board b{display:block;font:600 12px var(--sans);color:var(--ink-2);margin-bottom:8px}
+.pk{border:1px solid #c9d1e6;border-radius:3px;overflow:hidden;margin-bottom:8px;background:#fbfcff}
+.pk .h{background:#2f3d63;color:#fff;font:600 11.5px var(--mono);padding:4px 8px}
+.pk.w .h{background:var(--fail)}.pk.g .h{background:#2c7a4c}.pk.o .h{background:#9c5a08}.pk.d{border:1.5px dashed #6c7aa3}.pk.d .h{background:#e3e8f5;color:#2f3d63}
+.pk s{display:block;height:34px;margin-left:12px;border-left:2px solid #9aa8cc;text-decoration:none}
+.pk.sel{outline:2px solid var(--accent);outline-offset:1px}
+.rail{background:#1f2a44;display:flex;flex-direction:column;align-items:center;gap:5px;padding:9px 0}
+.rail a{width:36px;height:36px;display:grid;place-items:center;border-radius:3px;color:#aeb8d4;position:relative}
+.rail a svg{width:18px;height:18px}
+.rail a.on{background:#2f3d63;color:#fff;box-shadow:inset 2px 0 0 #fff}
+.rail .bd{position:absolute;top:2px;right:1px;min-width:13px;height:13px;border-radius:7px;background:var(--fail);color:#fff;font:700 9px/13px var(--mono);text-align:center}
+.rail .grow{flex:1}.rail hr{width:24px;border:0;border-top:1px solid #3a476a;margin:3px 0}
+.av{width:30px;height:30px;border-radius:3px;display:grid;place-items:center;font:700 12px var(--mono);color:#fff;background:#0b6a70;outline:2px solid #fff;outline-offset:2px}
+.tip{position:absolute;left:58px;background:#0f181c;color:#fff;font-size:12px;padding:4px 8px;border-radius:3px;white-space:nowrap;display:flex;gap:8px;align-items:center;z-index:3}
+.tip kbd{background:#2a3a40;color:#fff;border-color:#4a5a60}
+.views{display:flex;gap:2px}
+.views a{padding:3px 10px;border-radius:3px;color:var(--ink-2);display:flex;gap:6px;align-items:center}
+.views a.on{background:#eef1f8;color:#2f3d63;font-weight:600;box-shadow:inset 0 -2px 0 #2f3d63}
+.views .bd{background:var(--fail);color:#fff;border-radius:7px;padding:0 5px;font:700 9.5px var(--mono)}
+.help{position:absolute;right:16px;top:56px;width:380px;background:#fff;border:1px solid var(--rule-2);border-radius:3px;box-shadow:0 12px 30px rgba(15,24,28,.22);padding:12px 14px;z-index:4;font-size:12.5px}
+.help h4{margin:10px 0 4px;font:600 10.5px var(--mono);letter-spacing:.08em;color:var(--muted)}
+.help h4:first-child{margin-top:0}
+.help div{display:flex;justify-content:space-between;padding:2px 0}
+.verdict{max-width:1240px;margin:0 auto 40px;background:#fff;border:1px solid var(--rule);border-left:2px solid var(--accent);border-radius:3px;padding:14px 18px;font-size:13.5px}
+.verdict table{border-collapse:collapse;width:100%;font-size:12.5px}
+.verdict td,.verdict th{border-bottom:1px solid var(--rule);padding:6px 8px;text-align:left;vertical-align:top}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock · the two finalists, each with the same keyboard layer.</b> <b>1 · the rail</b> and <b>G · the top bar</b>, drawn at full size on the PR board. The keys are one set for both: <kbd>⌘K</kbd> searches everything (built, #908), <kbd>G</kbd> then a letter goes to a view — the same letters GitHub uses where it has them (<kbd>G</kbd><kbd>P</kbd> for pull requests) — and <kbd>?</kbd> shows the list. Every control that has a key shows it in its tooltip, so the keys are learnt by using the mouse.</p>
+
+<p class="frame-label">1 · the rail, with keys — hovering PRs shows its key</p>
+<div class="frame">
+  <div class="shot" style="grid-template-columns:52px 1fr">
+    <div class="rail">
+      <a title="chapter-garden — switch project (G S)"><span class="av">CG</span></a>
+      <hr>
+      <a title="Tickets"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="4" height="12"/><rect x="7" y="3" width="4" height="8"/><rect x="12" y="3" width="4" height="10"/></svg></a>
+      <a class="on"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="6" r="2"/><path d="M5 6v6M13 8c0 4-8 2-8 4"/></svg><span class="bd">1</span></a>
+      <a><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2h7l3 3v11H4z"/><path d="M7 8h5M7 11h5"/></svg></a>
+      <span class="grow"></span>
+      <a><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 15V9M8 15V4M13 15v-7"/></svg></a>
+    </div>
+    <span class="tip" style="top:104px">PRs · 1 waiting on you <kbd>G</kbd><kbd>P</kbd></span>
+    <div>
+      <div class="mbar"><b>chapter-garden</b><span class="crumb">/ PRs</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="search">Search <kbd>⌘K</kbd></span><span class="b">Pause</span></div>
+      <div class="board"><div><b>Draft</b><div class="pk d"><div class="h">Next PR · 2</div><s></s></div></div><div><b>In progress</b><div class="pk o"><div class="h">PR #88 · rework</div><s></s></div></div><div><b>Waiting on you</b><div class="pk w sel"><div class="h">PR #91 · CI failed</div><s></s></div></div><div><b>In review</b><div class="pk"><div class="h">PR #90</div><s></s></div></div><div><b>Merged</b><div class="pk g"><div class="h">PR #81</div><s></s></div><div class="pk g"><div class="h">PR #76</div><s></s></div></div></div>
+    </div>
+  </div>
+</div>
+
+<p class="frame-label">G · the top bar, with keys — the place and its views in one line; <kbd>?</kbd> open</p>
+<div class="frame">
+  <div class="shot" style="min-height:540px">
+    <div>
+      <div class="mbar"><b style="text-decoration:underline">Lingtai</b><span class="crumb">/</span><b>chapter-garden ▾</b><span class="crumb">/</span>
+        <span class="views"><a title="G T">Tickets</a><a class="on" title="G P">PRs <span class="bd">1</span></a><a title="G R">Recipe</a></span>
+        <span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="search">Search <kbd>⌘K</kbd></span><span class="b">Pause</span><span class="b">Report</span></div>
+      <div class="board"><div><b>Draft</b><div class="pk d"><div class="h">Next PR · 2</div><s></s></div></div><div><b>In progress</b><div class="pk o"><div class="h">PR #88 · rework</div><s></s></div></div><div><b>Waiting on you</b><div class="pk w sel"><div class="h">PR #91 · CI failed</div><s></s></div></div><div><b>In review</b><div class="pk"><div class="h">PR #90</div><s></s></div></div><div><b>Merged</b><div class="pk g"><div class="h">PR #81</div><s></s></div><div class="pk g"><div class="h">PR #76</div><s></s></div></div></div>
+    </div>
+    <div class="help">
+      <h4>GO TO</h4>
+      <div><span>Search everything</span><span><kbd>⌘K</kbd></span></div>
+      <div><span>Tickets</span><span><kbd>G</kbd> <kbd>T</kbd></span></div>
+      <div><span>PRs <span class="muted">(team projects)</span></span><span><kbd>G</kbd> <kbd>P</kbd></span></div>
+      <div><span>Recipe</span><span><kbd>G</kbd> <kbd>R</kbd></span></div>
+      <div><span>Report</span><span><kbd>G</kbd> <kbd>O</kbd></span></div>
+      <div><span>Switch project</span><span><kbd>G</kbd> <kbd>S</kbd></span></div>
+      <div><span>The first waiting thing</span><span><kbd>G</kbd> <kbd>W</kbd></span></div>
+      <h4>ON A BOARD</h4>
+      <div><span>Move between cards</span><span><kbd>J</kbd> <kbd>K</kbd> · <kbd>H</kbd> <kbd>L</kbd> columns</span></div>
+      <div><span>Open the card</span><span><kbd>Enter</kbd></span></div>
+      <div><span>Back to the board</span><span><kbd>Esc</kbd></span></div>
+      <h4>ON A PR</h4>
+      <div><span>The PR under / over in the stack</span><span><kbd>[</kbd> <kbd>]</kbd></span></div>
+      <div><span>Open on GitHub</span><span><kbd>O</kbd></span></div>
+      <div><span>This list</span><span><kbd>?</kbd></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="verdict"><h2 style="margin:0 0 8px;font:600 13px var(--sans)">Between the two</h2>
+<table>
+<tr><th></th><th>1 · rail</th><th>G · top bar</th></tr>
+<tr><td>Where you are</td><td>the lit icon, and <i>chapter-garden / PRs</i> on the bar</td><td>one sentence: <i>Lingtai / chapter-garden / PRs</i></td></tr>
+<tr><td>Switching project</td><td>the square at the rail's top · <kbd>G</kbd><kbd>S</kbd></td><td>the name in the breadcrumb · <kbd>G</kbd><kbd>S</kbd></td></tr>
+<tr><td>Width for the board</td><td>52px less</td><td>all of it</td></tr>
+<tr><td>Views it can hold</td><td>many — verify, discussions later are an icon each</td><td>three or four before the bar crowds</td></tr>
+<tr><td>Change to the bar's rules (<code>the-bar.md</code>)</td><td>Recipe and Report leave the bar; the row stays filter · health · headline</td><td>the views join the row: the three-object rule is rewritten</td></tr>
+<tr><td>Solo projects</td><td>a rail with no PRs icon</td><td>no <i>PRs</i> in the line</td></tr>
+<tr><td>Feels like</td><td>an IDE</td><td>GitHub</td></tr>
+</table></div>
+
+</body>
+</html>
