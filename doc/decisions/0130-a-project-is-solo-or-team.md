@@ -111,29 +111,52 @@ names both and adds what lies between that branch and `main`.
      draft. Taking one out would mean reverting it, finding what depends on it
      and reverting that too — more than anyone has asked for.
 
-6. **What is in review is a PR draft, and the person submits it.** Each ticket
-   in review on `branch.personal` joins the project's open draft — its ticket, merge
-   commit and spend — on the log, never on the tracker. `lingtai pr` shows it;
-   `lingtai pr submit`, or the board's draft page, submits it:
-   - the personal branch at that commit is pushed as `lingtai/pr/<n>`, and the
-     PR opens from it to `branch.main`, so a ticket put in review meanwhile joins
-     the next draft and never the PR under review;
-   - the description is generated from the log — the tickets, `Closes #…` for a
-     GitHub ticket, each merge commit and its spend; the sync merges of §4 are
-     never listed, and add nothing to the PR's diff — and opens with a summary
-     written by the recipe's `pr:` agent, which the person may edit first;
-   - the draft is every ticket in review, and no ticket is taken out of it (§5);
-   - the PR opens on the code host: GitHub in 0.16; on any other remote the
-     frozen branch is pushed and the description printed for the person;
-   - Lingtai never merges the PR;
-   - a project has one open draft;
-   - in solo mode there is no draft, and `lingtai pr` refuses, saying the project
-     lands on `branch.main` itself.
+6. **What is in review becomes one PR, at the person's word.** A project has
+   one PR at a time, and it moves through four states, each recorded on the
+   project's log:
+
+   | State | What is true | How it moves on |
+   |---|---|---|
+   | **draft** | every ticket in review on `branch.personal` that no open PR holds; it grows as tickets are put in review | the person *prepares* it |
+   | **preparing** | the `pr:` agent has written a summary; title and description are the person's to edit; the checks below have run | the person *submits* it, or goes back to the draft |
+   | **submitted** | `branch.personal` at one commit is pushed as `lingtai/pr/<n>` and the PR is open on the code host; review comments are shown | merged, closed, or *updated* |
+   | **merged** | its tickets land (§5) | a new draft begins |
+
+   - **Only the person moves it**: a button on the board's PR page or `lingtai
+     pr prepare` / `submit` / `update`. Lingtai never submits on its own.
+   - **Before a PR opens, it is checked**: `branch.personal` is current with
+     `origin/<branch.main>` (§4) and the frozen commit passes `build`; either
+     failing opens nothing and says why.
+   - **One open PR.** While one is submitted, tickets go on being put in review
+     and gather in the next draft, but nothing new is submitted until the open
+     PR is merged or closed — a second PR from the same branch would carry the
+     first one's commits.
+   - **Review changes are rework tickets, then *update*.** The team's comments
+     on the code host are shown on the PR page. A change they ask for is a new
+     ticket, put in review on `branch.personal` like any other; *update* pushes
+     `branch.personal`'s head to `lingtai/pr/<n>` — always a fast-forward — and
+     regenerates the description. Every ticket put in review since the submit
+     goes in with it, and the page lists them before the person confirms.
+   - **Closed without merging**: its tickets stay in review and return to the
+     draft; nothing is reverted.
+   - **The description** is generated from the log — the tickets, `Closes #…`
+     for a GitHub ticket, each merge commit and its spend; the sync merges of §4
+     are never listed and add nothing to the diff — under the summary, which the
+     person may edit before submitting and before each update.
+   - **No ticket is taken out** of a draft or a PR (§5).
+   - **The code host**: GitHub in 0.16, read and written through the GitHub App
+     (`pull_requests: write`). On any other remote the frozen branch is pushed
+     and the description printed for the person to open by hand.
+   - **Lingtai never merges the PR.**
+   - **Solo mode has no PR**: `lingtai pr` refuses, saying the project lands on
+     `branch.main` itself.
+   - **One page**: the board's PR page shows whichever state the PR is in.
 
    **`pr:` is the summary agent's block**, beside `discuss:` and for the same
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
    the agent defaulting to `runtime.agent`, `limits` to 20 turns and `5m`, and
-   carrying no `usd` (0104 §6). One run per submitted PR.
+   carrying no `usd` (0104 §6). One run when a PR is prepared, and one when it is
+   updated.
 
 7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or
