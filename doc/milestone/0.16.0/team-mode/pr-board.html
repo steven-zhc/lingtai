@@ -39,6 +39,7 @@
 .pcols{background:#f2f4fa}
 .pr{padding:0;border-radius:3px;border:1px solid #c9d1e6;background:#fbfcff;overflow:hidden;box-shadow:0 1px 0 #dde3f1}
 .pr .top{padding:8px 12px;background:#2f3d63;color:#fff}
+.pr .top a.t{text-decoration:none}
 .pr .top .t{font:600 13.5px var(--mono);color:#fff}
 .pr .top .t::before{content:"";display:inline-block;width:12px;height:14px;margin-right:7px;vertical-align:-2px;background:currentColor;
  -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14'%3E%3Ccircle cx='3' cy='2.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Ccircle cx='3' cy='11.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Ccircle cx='9.5' cy='4.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M3 4.5v5M9.5 6.5c0 3-6.5 1.5-6.5 3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat center/contain}
@@ -67,7 +68,7 @@
 </style>
 </head>
 <body>
-<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). <b>A PR card is drawn as a branch, never as a ticket</b>: a ticket card is a flat white sheet with a title; a PR card has a coloured header (the state's colour, a branch mark, its number) and its tickets as slips strung on a rail, one commit dot each — so which board you are on is seen before anything is read. The board itself is tinted. A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens the PR's detail (<a href="pr-flow.html">pr-flow.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>Several PRs at once, stacked</b>: work goes on while the team reviews, and the next PR's base is the one under it, so the team reads only what is new. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
+<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). <b>A PR card is drawn as a branch, never as a ticket</b>: a ticket card is a flat white sheet with a title; a PR card has a coloured header (the state's colour, a branch mark, its number) and its tickets as slips strung on a rail, one commit dot each — so which board you are on is seen before anything is read. The board itself is tinted. A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens that PR's own page (<a href="pr-detail.html">pr-detail.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>Several PRs at once, stacked</b>: work goes on while the team reviews, and the next PR's base is the one under it, so the team reads only what is new. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
 
 <p class="frame-label">A · two PRs open, stacked: #88 back in progress for a rework on its own branch, #90 on top of it in review; the next draft growing</p>
 <div class="frame">
@@ -77,7 +78,7 @@
     <div class="pcol">
       <h3>Draft <span class="n">1</span></h3>
       <div class="pr draft">
-        <div class="top"><span class="t">Next PR</span><span class="m" style="margin:0">2 tickets</span></div>
+        <div class="top"><a class="t" href="pr-detail.html">Next PR</a><span class="m" style="margin:0">2 tickets</span></div>
         <div class="sub2">landed on steven-zhc/foundry since PR #90</div>
         <div class="chips"><span class="chip">#50</span><span class="chip">#51</span></div>
         <div class="act"><a class="btn small solid">Submit PR</a></div>
@@ -88,7 +89,7 @@
     <div class="pcol hot">
       <h3>In progress <span class="n">1</span></h3>
       <div class="pr prog">
-        <div class="top"><span class="t">PR #88 · rework</span><span class="pill sig"><span class="d pulse"></span>CI</span></div>
+        <div class="top"><a class="t" href="pr-detail.html">PR #88 · rework</a><span class="pill sig"><span class="d pulse"></span>CI</span></div>
         <div class="sub2">li-wei asked for a change; #47 landed on PR #88's own branch</div>
         <div class="chips"><span class="chip">#47 rework</span></div>
         <div class="ci"><span>sync ✓</span><span>build ✓</span><span class="run">CI 3/5 running</span><span style="background:#eef1f1;color:var(--muted)">→ #90, your branch</span></div>
@@ -103,7 +104,7 @@
     <div class="pcol gh">
       <h3>In review <span class="n">1</span></h3>
       <div class="pr rev">
-        <div class="top"><span class="t">PR #90</span><span class="pill rev"><span class="d"></span>open on GitHub</span></div>
+        <div class="top"><a class="t" href="pr-detail.html">PR #90</a><span class="pill rev"><span class="d"></span>open on GitHub</span></div>
         <div class="sub2">Reading time and dark mode</div>
         <div class="chips"><span class="chip">#48</span><span class="chip">#49</span></div>
         <span class="stack">stacked on #88 · base steven-zhc/foundry-pr-7</span>
@@ -114,8 +115,8 @@
     </div>
     <div class="pcol">
       <h3>Merged <span class="n">2</span></h3>
-      <div class="pr done"><div class="top"><span class="t">PR #81</span><span class="pill ok"><span class="d"></span>merged</span></div><div class="chips"><span class="chip g">#33</span><span class="chip g">#35</span><span class="chip g">#36</span></div><div class="m">11-18 · 3 tickets closed</div></div>
-      <div class="pr done"><div class="top"><span class="t">PR #76</span><span class="pill ok"><span class="d"></span>merged</span></div><div class="chips"><span class="chip g">#29</span><span class="chip g">#30</span></div><div class="m">11-17 · 2 tickets closed</div></div>
+      <div class="pr done"><div class="top"><a class="t" href="pr-detail.html">PR #81</a><span class="pill ok"><span class="d"></span>merged</span></div><div class="chips"><span class="chip g">#33</span><span class="chip g">#35</span><span class="chip g">#36</span></div><div class="m">11-18 · 3 tickets closed</div></div>
+      <div class="pr done"><div class="top"><a class="t" href="pr-detail.html">PR #76</a><span class="pill ok"><span class="d"></span>merged</span></div><div class="chips"><span class="chip g">#29</span><span class="chip g">#30</span></div><div class="m">11-17 · 2 tickets closed</div></div>
       <div class="fold">▸ older</div>
     </div>
   </div>
@@ -126,7 +127,7 @@
   <div class="pcol" style="border:0">
     <h3>Draft <span class="n">1</span></h3>
     <div class="pr draft">
-      <div class="top"><span class="t">Next PR</span><span class="m" style="margin:0">3 tickets</span></div>
+      <div class="top"><a class="t" href="pr-detail.html">Next PR</a><span class="m" style="margin:0">3 tickets</span></div>
       <div class="sub2">landed on steven-zhc/foundry, not yet on main</div>
       <div class="chips"><span class="chip">#41</span><span class="chip">#43</span><span class="chip">#44</span></div>
       <div class="act"><a class="btn small solid">Submit PR</a><a class="btn small">Detail</a></div>
@@ -140,7 +141,7 @@
   <div class="pcol fail" style="border:0">
     <h3>Waiting on you <span class="n">2</span></h3>
     <div class="pr wait">
-      <div class="top"><span class="t">PR #91 · CI failed</span></div>
+      <div class="top"><a class="t" href="pr-detail.html">PR #91 · CI failed</a></div>
       <div class="sub2">still a GitHub draft — nobody was asked to review it</div>
       <div class="chips"><span class="chip">#52</span><span class="chip">#53</span></div>
       <div class="ci"><span>sync ✓</span><span>build ✓</span><span class="red">CI ✕ e2e / chromium</span></div>
@@ -166,7 +167,7 @@
       <div class="card"><div class="t"><a>#50</a> Footer shows the story count</div><div class="meta">implement · Claude Code · 6 min</div></div>
     </div><p class="muted" style="font-size:12px">a flat sheet: a number, a title, one line of facts</p></div>
     <div><h4>PR board · a PR</h4><div class="pb">
-      <div class="pr rev"><div class="top"><span class="t">PR #88</span><span class="pill rev"><span class="d"></span>in review</span></div>
+      <div class="pr rev"><div class="top"><a class="t" href="pr-detail.html">PR #88</a><span class="pill rev"><span class="d"></span>in review</span></div>
         <div class="sub2" style="margin-top:8px">steven-zhc/foundry-pr-7 → main</div>
         <div class="chips"><span class="chip">#41</span><span class="chip">#43</span><span class="chip">#44</span></div>
         <div class="ci"><span>CI ✓ 5/5</span></div></div>
@@ -178,13 +179,13 @@
 <div class="frame" style="max-width:760px;margin-left:auto;margin-right:auto">
   <div class="cmp">
     <div><h4>14 tickets · folded (the default)</h4><div class="pb">
-      <div class="pr rev"><div class="top"><span class="t">PR #95</span><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
+      <div class="pr rev"><div class="top"><a class="t" href="pr-detail.html">PR #95</a><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
         <div class="sub2" style="margin-top:8px">Milestone 3 — reading, shelves, search</div>
         <div class="chips"><span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="more">+ 11 more</span></div>
         <div class="ci"><span>CI ✓ 5/5</span></div></div>
     </div><p class="muted" style="font-size:12px">at most three slips, then one fold; the dotted rail says there is more of the branch. The header carries the count.</p></div>
     <div><h4>opened — on the PR's detail, not the card</h4><div class="pb">
-      <div class="pr rev"><div class="top"><span class="t">PR #95</span><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
+      <div class="pr rev"><div class="top"><a class="t" href="pr-detail.html">PR #95</a><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
         <div class="chips" style="margin-top:10px;margin-left:12px;padding:3px 4px 3px 18px;flex-wrap:nowrap;max-height:236px;overflow-y:auto;overflow-x:hidden">
           <span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="chip">#64 Empty search says so</span><span class="chip">#65 Shelf groups by series</span><span class="chip">#66 Series page</span><span class="chip">#67 Reading time</span><span class="chip">#68 Dark mode</span><span class="chip">#69 Chapter list paginates</span><span class="chip">#70 Last read chapter</span><span class="chip">#71 Bookmark a page</span><span class="chip">#72 Bookmarks page</span><span class="chip">#73 Footer count</span><span class="chip">#74 rework: ties by title</span>
         </div></div>
