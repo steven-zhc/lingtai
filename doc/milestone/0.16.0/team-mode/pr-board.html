@@ -61,6 +61,9 @@
 .cmp h4{margin:0 0 8px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .cmp .tb{background:var(--surface-2,#eef1f1);padding:12px;border-radius:3px}
 .cmp .pb{background:#f2f4fa;padding:12px;border-radius:3px}
+.pr .more{position:relative;font:500 12px var(--mono);color:#4a5d8a;padding:3px 8px;border:1px dashed #b9c2dd;border-radius:3px;background:#f6f8fd;cursor:pointer}
+.pr .more::before{content:"";position:absolute;left:-19px;top:-3px;bottom:-3px;width:11px;background:radial-gradient(circle,#2f3d63 1.6px,transparent 2px) center/11px 6px repeat-y}
+.pr .top .cnt{font:600 11.5px var(--mono);color:#dfe5f5;margin-left:auto;margin-right:8px}
 </style>
 </head>
 <body>
@@ -168,6 +171,24 @@
         <div class="chips"><span class="chip">#41</span><span class="chip">#43</span><span class="chip">#44</span></div>
         <div class="ci"><span>CI ✓ 5/5</span></div></div>
     </div><p class="muted" style="font-size:12px">a branch: a header in the state's colour, the tickets strung on its rail</p></div>
+  </div>
+</div>
+
+<p class="frame-label">E · a PR with many tickets — the card stays the same height</p>
+<div class="frame" style="max-width:760px;margin-left:auto;margin-right:auto">
+  <div class="cmp">
+    <div><h4>14 tickets · folded (the default)</h4><div class="pb">
+      <div class="pr rev"><div class="top"><span class="t">PR #95</span><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
+        <div class="sub2" style="margin-top:8px">Milestone 3 — reading, shelves, search</div>
+        <div class="chips"><span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="more">+ 11 more</span></div>
+        <div class="ci"><span>CI ✓ 5/5</span></div></div>
+    </div><p class="muted" style="font-size:12px">at most three slips, then one fold; the dotted rail says there is more of the branch. The header carries the count.</p></div>
+    <div><h4>opened — on the PR's detail, not the card</h4><div class="pb">
+      <div class="pr rev"><div class="top"><span class="t">PR #95</span><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
+        <div class="chips" style="margin-top:10px;margin-left:12px;padding:3px 4px 3px 18px;flex-wrap:nowrap;max-height:236px;overflow-y:auto;overflow-x:hidden">
+          <span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="chip">#64 Empty search says so</span><span class="chip">#65 Shelf groups by series</span><span class="chip">#66 Series page</span><span class="chip">#67 Reading time</span><span class="chip">#68 Dark mode</span><span class="chip">#69 Chapter list paginates</span><span class="chip">#70 Last read chapter</span><span class="chip">#71 Bookmark a page</span><span class="chip">#72 Bookmarks page</span><span class="chip">#73 Footer count</span><span class="chip">#74 rework: ties by title</span>
+        </div></div>
+    </div><p class="muted" style="font-size:12px">"+ 11 more" opens the PR's detail, where every ticket is listed and scrolls; the board's card never grows.</p></div>
   </div>
 </div>
 
