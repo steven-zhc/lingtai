@@ -6,8 +6,8 @@ is rewritten (a fixed point after one write), label names collide
 case-insensitively with Linear's defaults, the API's `createdAt` order cannot be
 trusted, and *replace if unchanged* can only be best-effort. Raw GraphQL, not
 the SDK's object API. The assignee is a user id, and *me* is the key's own user. The procedure is
-[tracker-experiments.md](../milestone/0.16.0/tracker-experiments.md); the plan
-it serves is [0.16.md](../milestone/0.16.0/0.16.md)'s ticket-source part.
+[tracker-experiments.md](../milestone/later/tracker-experiments.md); the plan
+it serves is [ticket-sources.md](../milestone/later/ticket-sources.md), moved out of 0.16.0 on 2026-11-20.
 
 ## Where and what
 
@@ -115,7 +115,7 @@ Not measured: no public HTTPS address. The five-minute sweep stands without them
 
 ### L11 — assignee: who is *me*
 
-Added on 2026-11-20 for *take only my tickets* (0.16.md). An issue has **one**
+Added on 2026-11-20 for *take only my tickets* (0.16.0's team mode). An issue has **one**
 assignee, a user's UUID — never a login. `viewer` is the user the API key
 belongs to, and the listing filters on it server-side:
 `assignee:{isMe:{eq:true}}` returned only the issue assigned to the key's user,
@@ -124,7 +124,7 @@ belongs to, and the listing filters on it server-side:
 left the `isMe` listing at once. An id that is not a UUID is refused by name
 (*Received non-uuid id*).
 
-## What it means for 0.16.md
+## What it means for the ticket-source plan
 
 1. **The body**: Lingtai keeps Markdown; after any write the adapter keeps
    Linear's returned form as *the body as last read*, and compares against that,

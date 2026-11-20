@@ -1,6 +1,6 @@
-# 0.16 — the Linear experiments: what to run, and how
+# The Linear experiments: what to run, and how
 
-**Status** planned · 2026-11-20 · the measurements [0.16.md](0.16.md)'s
+**Status** run 2026-11-20 ([020](../../experiments/020-linear-measured.md)) · the measurements [ticket-sources.md](ticket-sources.md)'s
 ticket-source part asks for before its tickets are cut. The results go to a
 `doc/experiments/` write-up; this file is the procedure.
 
@@ -164,5 +164,5 @@ after.
 ## The write-up
 
 A `doc/experiments/` entry with the date, the API version (`@linear/sdk` and the
-schema's commit), a table per experiment, and what each decision in 0.16.md's
+schema's commit), a table per experiment, and what each decision in ticket-sources.md's
 ticket-source part rests on. Then the tickets.
