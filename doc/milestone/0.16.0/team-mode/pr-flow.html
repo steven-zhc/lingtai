@@ -121,6 +121,7 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
 
       <path id="tieDown" d="M880 282 C880 312 538 300 538 333" fill="none" stroke="#0b6a70" stroke-width="2" stroke-dasharray="3 5"/>
       <path id="tieUp" class="hide" d="M880 160 C880 130 880 118 880 108" fill="none" stroke="#4a5d8a" stroke-width="3" marker-end="url(#ah)"/>
+      <path id="mergeline" class="hide" d="M880 333 C880 260 880 160 880 110" fill="none" stroke="#2c7a4c" stroke-width="5" stroke-linecap="round"/>
       <g id="mergenode" class="node hide"><circle cx="880" cy="90" r="19" fill="#2c7a4c"/><text x="880" y="96" text-anchor="middle" font-size="14" font-weight="700" fill="#fff">✓</text></g>
 
       <g id="team" class="node hide">
@@ -189,7 +190,7 @@ const steps=[
  {t:'4 · The team asked for a change',p:'A change the team asks for is a <b>new ticket</b>. Lingtai does it on your branch like any other. <b>Update PR</b> moves the PR forward to include it — merging stays the team’s, on GitHub.',
   w:[['Comment','li-wei: “break ties by title”'],['Becomes','ticket #47, rework — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to lingtai/pr/7 — a fast-forward'},
  {t:'5 · Merged',p:'The team merged PR #88 into main on GitHub. Its tickets <b>land</b> and close. The next sync brings main into your branch, and a new draft begins.',
-  w:[['Landed','#41 · #43 · #44 · #47'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
+  w:[['On the graph','your branch, up to #47, is now part of main'],['Landed','#41 · #43 · #44 · #47'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
 
 const side=()=>{
   if(step===0) return `<h2>Before you prepare</h2><label class="tog"><input type="checkbox" id="cf" ${conflict?'checked':''}> show a conflict with main</label><p class="cost" style="margin-top:10px">Tick it to watch the sync hit a conflict and an agent resolve it.</p>`;
@@ -217,7 +218,7 @@ async function act(){
     draw('syncpath');show('syncnote');await wait(1000);show('syncnode');tie(700);
     if(conflict){$('syncn1').textContent='Conflict in shelf.ts';$('syncn2').textContent='an agent is resolving it · round 1/6';$('synctxt').textContent='!';$('syncnode').classList.add('pulse');await wait(1800);
       $('syncnode').classList.remove('pulse');$('syncn1').textContent='Resolved by an agent';$('syncn2').textContent='build ✓ · review ✓ — kept main’s rename';}
-    else $('syncn2').textContent='clean merge';
+    else{$('syncn1').textContent='Brought main into your branch';$('syncn2').textContent='clean merge';}
     $('synctxt').textContent='✓';$('synccirc').setAttribute('stroke','#2c7a4c');$('synctxt').setAttribute('fill','#2c7a4c');
     card('prep','PR · ready','summary written · build ✓ · frozen at c55e01b');
     await type($('dd'),"Adds chapter 9 of The Sun's Ninth Minute and sorts\nthe bookshelf by latest chapter.\n"+(conflict?"\nWhile syncing with main, a conflict in shelf.ts\nwas resolved: main renamed byTitle; kept it.\n":"")+"\n---\nCloses #41 · Closes #43 · Closes #44\nMade with Lingtai · $3.17");
@@ -234,13 +235,14 @@ async function act(){
 }
 $('dComment').onclick=()=>{if(busy)return;step=3;render();show('bubble');card('changes','PR #88','li-wei asked for a change');};
 $('dMerge').onclick=()=>{if(busy)return;step=4;render();show('bubble',false);
-  $('tieUp').classList.add('hide');show('mergenode');card('merged','PR #88','merged into main · tickets landed');
+  $('tieUp').classList.add('hide');$('tieDown').style.opacity=0;$('card').style.transition='opacity .6s';$('card').style.opacity=0;
+  setTimeout(()=>{draw('mergeline');setTimeout(()=>show('mergenode'),900)},500);card('merged','PR #88','merged into main · tickets landed');
   for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#2c7a4c');show('team',false);show('moved',false);
   $('dComment').disabled=true;$('dMerge').disabled=true;};
 
 function reset(){
   step=0;busy=false;tickets=[];
-  ['syncpath','syncnote','syncnode','k4','tieUp','mergenode','team','bubble'].forEach(i=>show(i,false));
+  ['syncpath','syncnote','syncnode','k4','tieUp','mergeline','mergenode','team','bubble'].forEach(i=>show(i,false));$('tieDown').style.opacity=1;$('card').style.opacity=1;
   $('syncnode').classList.remove('pulse');$('synctxt').textContent='sync';$('synctxt').setAttribute('fill','#9c5a08');$('synccirc').setAttribute('stroke','#9c5a08');
   $('syncn1').textContent='Bringing main into your branch';$('syncn2').textContent='';
   for(const k of ['k1','k2','k3','k4'])$(k).querySelector('circle').setAttribute('fill','#0b6a70');
