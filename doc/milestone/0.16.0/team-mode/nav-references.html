@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · how other tools lay out navigation — references for the rail (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.gal{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:1240px;margin:0 auto 40px}
+.ref{background:#fff;border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.ref h3{margin:0;padding:10px 14px 2px;font:600 14px var(--sans)}
+.ref .src{padding:0 14px 8px;font:11.5px var(--mono);color:var(--muted)}
+.wf{margin:0 14px;border:1px solid var(--rule);border-radius:3px;height:190px;display:grid;font-size:11px;overflow:hidden;background:#fafbfb}
+.side{background:#1f2a44;color:#c7cfe4;padding:8px;display:flex;flex-direction:column;gap:2px}
+.side .h{font:600 9px var(--mono);letter-spacing:.08em;color:#7d89aa;margin:6px 0 2px}
+.side span{padding:2px 6px;border-radius:2px}.side .on{background:#2f3d63;color:#fff}
+.side .in{padding-left:16px}
+.side .bd{background:var(--fail);color:#fff;border-radius:6px;padding:0 4px;font:700 9px var(--mono);margin-left:4px}
+.top{display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--rule);background:#fff;white-space:nowrap}
+.top .sp{flex:1}.top .k{border:1px solid var(--rule-2);border-radius:3px;padding:0 6px}
+.tabs{display:flex;gap:12px;padding:0 8px;border-bottom:1px solid var(--rule);background:#fff}
+.tabs span{padding:4px 0;color:var(--muted)}.tabs .on{color:var(--ink);font-weight:600;border-bottom:2px solid #c96a2a}
+.body{padding:8px;color:var(--muted)}
+.blk{height:14px;background:#e8ecef;border-radius:2px;margin-bottom:6px}
+.sec{font:600 10px var(--sans);color:var(--ink-2);margin:6px 0 4px}
+.row{height:16px;border:1px solid var(--rule);background:#fff;border-radius:2px;margin-bottom:4px;display:flex;align-items:center;gap:6px;padding:0 6px}
+.row i{width:6px;height:6px;border-radius:50%;background:#2c7a4c}.row i.r{background:var(--fail)}.row i.a{background:#9c5a08}
+.ic{display:flex;flex-direction:column;gap:6px;align-items:center;padding:8px 0;background:#eef1f1;border-right:1px solid var(--rule)}
+.ic b{width:16px;height:16px;border-radius:3px;background:#b7c0c6}.ic b.on{background:#2f3d63}
+.take{padding:10px 14px 12px;font-size:12.5px}
+.take>b{display:block;font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);margin-bottom:3px}
+.take ul{margin:0;padding-left:16px}
+.verdict{max-width:1240px;margin:0 auto 40px;background:#fff;border:1px solid var(--rule);border-left:2px solid var(--accent);border-radius:3px;padding:14px 18px;font-size:13.5px}
+.verdict h2{margin:0 0 8px;font:600 13px var(--sans)}
+.verdict ol{margin:0;padding-left:18px}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock · how six other tools lay out the same problem</b> — one place, several views, several projects. Each is drawn as a plain wireframe holding Lingtai's own content, not the tool's look; under it, what that design does and what Lingtai could borrow. Design 1 (the rail) stays the working choice; this page is for picking what to add to it. Sources are the vendors' own changelogs and docs, linked under each.</p>
+
+<div class="gal">
+
+  <div class="ref"><h3>1 · Linear — a sidebar of you, then the workspace, then each team</h3>
+    <div class="src"><a href="https://linear.app/enablement/guide/navigating-linear">navigating Linear</a> · <a href="https://linear.app/changelog/2024-12-18-personalized-sidebar">personalized sidebar</a></div>
+    <div class="wf" style="grid-template-columns:150px 1fr">
+      <div class="side"><span class="on">Waiting on you <span class="bd">3</span></span><span>My tickets</span><span class="h">PROJECTS</span><span>chapter-garden</span><span class="in">Tickets</span><span class="in">PRs</span><span class="in">Recipe</span><span>lingtai</span><span>foundry</span></div>
+      <div class="body"><div class="sec">Waiting on you · all projects</div><div class="row"><i class="r"></i>#47 chapter-garden · review refused</div><div class="row"><i class="r"></i>PR #91 chapter-garden · CI failed</div><div class="row"><i class="r"></i>#1302 lingtai · decide</div></div>
+    </div>
+    <div class="take"><b>What it does</b>Personal items first (Inbox, My Issues), then shared ones, then one entry per team holding that team's views. The sidebar can be reordered and pinned; <code>G I</code> jumps to the inbox.<b style="margin-top:6px">Borrow</b><ul><li>A <b>Waiting on you</b> page across every project — tickets and PRs together — at the top of the rail. It answers the bar's first question in one place.</li></ul></div></div>
+
+  <div class="ref"><h3>2 · GitHub — the place in a breadcrumb, its views as tabs</h3>
+    <div class="src"><a href="https://github.blog/changelog/2023-10-17-redesigned-navigation-now-available-to-all-users/">redesigned navigation, 2023</a> · <a href="https://github.blog/changelog/2026-09-21-refreshed-repository-pull-requests-page-generally-available">refreshed PRs page, 2026</a></div>
+    <div class="wf" style="grid-template-rows:auto auto 1fr">
+      <div class="top"><span>☰</span><b>steven-zhc / chapter-garden</b><span class="sp"></span><span class="k">⌘K</span><span>⑂ PRs</span></div>
+      <div class="tabs"><span>Tickets 6</span><span class="on">PRs 3</span><span>Recipe</span><span>Report</span></div>
+      <div class="body" style="display:grid;grid-template-columns:90px 1fr;gap:8px;padding:0"><div style="border-right:1px solid var(--rule);padding:6px;font-size:10.5px">Mine<br>Waiting<br>In review<br>Merged</div><div style="padding:6px"><div class="row"><i class="a"></i>PR #88</div><div class="row"><i></i>PR #90</div></div></div>
+    </div>
+    <div class="take"><b>What it does</b>Where you are is a breadcrumb (owner / repo); the repo's views are tabs under it; a ☰ opens a global menu. The 2026 PRs page adds a collapsible filter sidebar.<b style="margin-top:6px">Borrow</b><ul><li>The <b>breadcrumb as the project switcher</b>: the project's name at the top of the page, a click opens the list.</li><li>A count on each view's name.</li></ul></div></div>
+
+  <div class="ref"><h3>3 · Vercel — one sidebar, the project is a filter on it</h3>
+    <div class="src"><a href="https://vercel.com/changelog/new-dashboard-navigation-available">new dashboard navigation</a></div>
+    <div class="wf" style="grid-template-columns:140px 1fr">
+      <div class="side"><span style="background:#2f3d63;color:#fff">chapter-garden ▾ ✕</span><span class="h">VIEWS</span><span>Tickets</span><span class="on">PRs</span><span>Recipe</span><span>Report</span></div>
+      <div class="body"><div class="sec">PRs · filtered to chapter-garden</div><div class="blk"></div><div class="blk" style="width:70%"></div><div class="sec" style="margin-top:12px">✕ the filter → PRs of every team project</div></div>
+    </div>
+    <div class="take"><b>What it does</b>Tabs became a resizable, hideable sidebar whose links are the same at team and project level; "projects as filters" moves between a page's team version and its project version in one click.<b style="margin-top:6px">Borrow</b><ul><li>The <b>same rail for All projects and one project</b>: PRs with no project is every team project's PRs, grouped — rather than having no PRs view at All projects.</li></ul></div></div>
+
+  <div class="ref"><h3>4 · Atlassian (Jira, 2025) — narrow sidebar you choose, search on top</h3>
+    <div class="src"><a href="https://www.atlassian.com/blog/announcements/introducing-new-navigation">introducing new navigation</a></div>
+    <div class="wf" style="grid-template-rows:auto 1fr">
+      <div class="top"><b>Lingtai</b><span class="sp"></span><span class="k" style="width:180px">Search tickets, PRs, projects  ⌘K</span><span class="k">+ Ticket</span></div>
+      <div style="display:grid;grid-template-columns:120px 1fr"><div class="side"><span>Tickets</span><span class="on">PRs</span><span>Recipe</span><span style="color:#7d89aa">+ customise</span></div><div class="body"><div class="blk"></div><div class="blk" style="width:60%"></div></div></div>
+    </div>
+    <div class="take"><b>What it does</b>The top bar holds search and create, and nothing else of weight; the sidebar is narrow, shows only what the person chose, and resizes or collapses.<b style="margin-top:6px">Borrow</b><ul><li><b>⌘K as a visible field</b> on the bar, not only a key — it is already built (#908).</li><li>A <b>+ Ticket</b> on the bar: writing a ticket is the most common thing a person starts.</li></ul></div></div>
+
+  <div class="ref"><h3>5 · Graphite — PRs as an inbox of sections, a stack you can walk</h3>
+    <div class="src"><a href="https://graphite.com/docs/use-pr-inbox">PR inbox</a> · <a href="https://graphite.com/docs/pr-page-overview">PR page</a></div>
+    <div class="wf" style="grid-template-columns:120px 1fr">
+      <div class="side"><span class="on">Waiting on you <span class="bd">1</span></span><span>In progress</span><span>In review</span><span>Merged</span><span>Draft</span></div>
+      <div class="body"><div class="sec">Waiting on you</div><div class="row"><i class="r"></i>PR #91 · CI failed · stacked on #90</div><div class="sec">In review</div><div class="row"><i></i>PR #90 · CI ✓ · stack 2/3</div><div class="row"><i></i>PR #88 · CI ✓ · stack 1/3</div></div>
+    </div>
+    <div class="take"><b>What it does</b>The PR list is sections — needs your review, approved, merging — that can be reordered and customised; each row carries CI and stack; on a PR page, <kbd>S</kbd> shows the whole stack and moves along it.<b style="margin-top:6px">Borrow</b><ul><li><b>Stack navigation on the PR page</b>: <i>stack 2/3</i>, ↑ ↓ to the PR under or over this one.</li><li>A <b>list view</b> of PRs by section, as the alternative to five columns when the window is narrow.</li></ul></div></div>
+
+  <div class="ref"><h3>6 · JetBrains (new UI) — the project is a widget on the toolbar, tools on rails</h3>
+    <div class="src"><a href="https://www.jetbrains.com/help/rider/2025.2/New_UI.html">the new UI</a></div>
+    <div class="wf" style="grid-template-rows:auto 1fr">
+      <div class="top"><b>CG chapter-garden ▾</b><span>⑂ steven-zhc/foundry ▾</span><span class="sp"></span><span>▶</span><span class="k">⌘K</span></div>
+      <div style="display:grid;grid-template-columns:30px 1fr 30px"><div class="ic"><b class="on"></b><b></b><b></b></div><div class="body"><div class="blk"></div><div class="blk" style="width:80%"></div></div><div class="ic" style="border-left:1px solid var(--rule);border-right:0"><b></b><b></b></div></div>
+    </div>
+    <div class="take"><b>What it does</b>The main toolbar's left end is a project widget (name, colour, a menu of recent projects) and beside it the VCS branch widget; tool windows open from icon rails on both edges.<b style="margin-top:6px">Borrow</b><ul><li>The <b>branch beside the project</b>: a team project shows <code>steven-zhc/foundry</code> next to its name, and the menu says how far it is from <code>main</code>.</li><li>A <b>right-hand rail</b> for panels that sit beside a board (the run log, a ticket's discussion) instead of a new page.</li></ul></div></div>
+
+</div>
+
+<div class="verdict"><h2>If design 1 takes from these — a suggestion, not a decision</h2>
+<ol>
+<li><b>Keep:</b> the rail with one icon per view, the project square at its top (frame A of <a href="nav-rail.html">nav-rail.html</a>), expandable to words.</li>
+<li><b>Add from Linear:</b> a <i>Waiting on you</i> icon at the very top of the rail, above the project — every project's waiting tickets and PRs on one page.</li>
+<li><b>Add from Vercel:</b> PRs at All projects too, grouped by project, so the rail never changes shape when the project does.</li>
+<li><b>Add from Graphite:</b> on a PR's page, the stack — <i>stack 2/3</i> and a step to the PR under or over.</li>
+<li><b>Leave for later:</b> a customisable rail (Atlassian), a right-hand rail of panels (JetBrains), a list view of PRs (Graphite).</li>
+</ol></div>
+
+</body>
+</html>
