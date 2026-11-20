@@ -7,7 +7,7 @@
 </head>
 <body>
 
-<p class="mocknote"><b>Mock 3 · the task page of a ticket in review.</b> Only <i>Where it is</i> changes: the poster reads <b>IN REVIEW</b>, and under it the three facts a person asks — which PR holds it and in what state, where its merge commit is, and what makes it land (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5). The ticket's own table above is the board's as today.</p>
+<p class="mocknote"><b>Mock 3 · the task page of a ticket in review.</b> Only <i>Where it is</i> changes: the poster reads <b>IN REVIEW</b>, a small graph marks this ticket on your branch and the box of the PR (or draft) that holds it, and under it the three facts a person asks — which PR holds it and in what state, where its merge commit is, and what makes it land (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5). The ticket's own table above is the board's as today.</p>
 
 <p class="frame-label">A · in a submitted PR</p>
 <div class="frame">
@@ -18,6 +18,14 @@
 
     <p class="where">WHERE IT IS</p>
     <p class="poster" style="color:var(--review)">IN REVIEW<small>51M</small></p>
+    <svg viewBox="0 0 640 170" style="display:block;width:100%;max-width:640px;height:auto;background:#fff;border:1px solid var(--rule);border-radius:10px;margin-top:14px" aria-label="where this ticket sits on your branch">
+      <defs><marker id="tah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4a5d8a"/></marker></defs>
+      <path d="M20 30 H620" stroke="#4a5d8a" stroke-width="5" stroke-linecap="round"/><text x="22" y="21" font-size="12" font-family="IBM Plex Mono" font-weight="600" fill="#4a5d8a">main</text>
+      <path d="M40 30 C70 30 60 116 100 116 H620" fill="none" stroke="#0b6a70" stroke-width="5" stroke-linecap="round"/>
+      <text x="470" y="140" font-size="12" font-family="IBM Plex Mono" font-weight="600" fill="#075056">steven/foundry</text>
+      <rect x="150" y="96" width="210" height="40" rx="12" fill="none" stroke="#4a5d8a" stroke-width="2"/><path d="M345 96 C360 72 380 52 400 38" fill="none" stroke="#4a5d8a" stroke-width="2.5" marker-end="url(#tah)"/><rect x="384" y="56" width="86" height="22" rx="11" fill="#fff" stroke="#4a5d8a"/><text x="427" y="71" text-anchor="middle" font-size="12" font-weight="700" fill="#4a5d8a">PR #88</text><text x="255" y="156" text-anchor="middle" font-size="11.5" fill="#4a5d8a">in PR #88 · changes asked</text><circle cx="180" cy="116" r="11" fill="#0b6a70" stroke="none" stroke-width="0"/><text x="180" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">41</text><circle cx="255" cy="116" r="15" fill="#0b6a70" stroke="#f2c14e" stroke-width="4"/><text x="255" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">43</text><circle cx="330" cy="116" r="11" fill="#0b6a70" stroke="none" stroke-width="0"/><text x="330" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">44</text>
+      <text x="255" y="86" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a6100">this ticket</text>
+    </svg>
 
     <div class="panel" style="margin-top:16px">
       <dl class="kv">
@@ -36,6 +44,14 @@
   <div class="page">
     <p class="where" style="margin-top:0">WHERE IT IS</p>
     <p class="poster" style="color:var(--review)">IN REVIEW<small>12M</small></p>
+    <svg viewBox="0 0 640 170" style="display:block;width:100%;max-width:640px;height:auto;background:#fff;border:1px solid var(--rule);border-radius:10px;margin-top:14px" aria-label="where this ticket sits on your branch">
+      <defs><marker id="tah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4a5d8a"/></marker></defs>
+      <path d="M20 30 H620" stroke="#4a5d8a" stroke-width="5" stroke-linecap="round"/><text x="22" y="21" font-size="12" font-family="IBM Plex Mono" font-weight="600" fill="#4a5d8a">main</text>
+      <path d="M40 30 C70 30 60 116 100 116 H620" fill="none" stroke="#0b6a70" stroke-width="5" stroke-linecap="round"/>
+      <text x="470" y="140" font-size="12" font-family="IBM Plex Mono" font-weight="600" fill="#075056">lingtai-base</text>
+      <rect x="150" y="96" width="210" height="40" rx="12" fill="none" stroke="#0b6a70" stroke-width="2" stroke-dasharray="5 4"/><text x="255" y="156" text-anchor="middle" font-size="11.5" fill="#075056">in the draft · not submitted</text><circle cx="180" cy="116" r="11" fill="#0b6a70" stroke="none" stroke-width="0"/><text x="180" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">41</text><circle cx="255" cy="116" r="11" fill="#0b6a70" stroke="none" stroke-width="0"/><text x="255" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">43</text><circle cx="330" cy="116" r="15" fill="#0b6a70" stroke="#f2c14e" stroke-width="4"/><text x="330" y="120" text-anchor="middle" font-size="10" font-weight="700" fill="#fff">44</text>
+      <text x="330" y="86" text-anchor="middle" font-size="11.5" font-weight="700" fill="#8a6100">this ticket</text>
+    </svg>
     <div class="panel" style="margin-top:16px">
       <dl class="kv">
         <dt>In</dt><dd>the draft · 3 tickets · <a>PR page →</a></dd>

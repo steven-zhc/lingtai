@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock 6 · lingtai add asks solo or team</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.term{background:#0f181c;color:#dde6e8;border-radius:12px;padding:18px 22px;font:13.5px/1.7 var(--mono);white-space:pre;overflow-x:auto;margin:0}
+.term .g{color:#7fdade}.term .d{color:#87999f}.term .y{color:#f2c14e}.term .ok{color:#61be86}.term .no{color:#e2776e}.term .b{font-weight:600;color:#fff}
+.term .sel{color:#7fdade;font-weight:600}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock 6 · the mode question in the terminal</b> — the board's setup hands choosing a repository to <code>lingtai add</code> (its page says <i>choose it in the terminal</i>), so a first run meets the two modes here. Drawn in the CLI's own prompt style (@clack/prompts, which stays). Same rules as the board's step 2: team the default, the branch name made safe, checked, refused by name.</p>
+
+<p class="frame-label">A · lingtai add, a GitHub repository</p>
+<div class="frame" style="background:#0f181c;border-color:#22333a">
+<pre class="term"><span class="d">$</span> lingtai add steven-zhc/chapter-garden
+
+<span class="g">◇</span>  Repository <span class="d">·</span> steven-zhc/chapter-garden <span class="d">· GitHub issues</span>
+<span class="d">│</span>
+<span class="g">◆</span>  <span class="b">Does anyone else work on this repository?</span>
+<span class="d">│</span>  <span class="sel">● Team</span>  <span class="d">— Lingtai stays on your branch; the team sees your work as a PR you send   (recommended)</span>
+<span class="d">│</span>
+<span class="d">│</span>      main ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<span class="d">│</span>              ╲                        <span class="g">↗ your PR</span>
+<span class="d">│</span>               ╰── <span class="g">●──●──●</span> your branch ─────────────────
+<span class="d">│</span>
+<span class="d">│</span>  ○ Solo  <span class="d">— just me: each ticket lands on main by itself</span>
+<span class="d">└</span>
+
+<span class="g">◇</span>  Team
+<span class="d">│</span>
+<span class="g">◆</span>  <span class="b">Your personal branch</span> <span class="d">(one per machine — Lingtai lands your tickets here)</span>
+<span class="d">│</span>  steven/Steven's MacBook Pro<span class="d">_</span>
+<span class="d">│</span>  <span class="no">▲ git refuses a branch name with a space — use steven/steven-s-macbook-pro?</span>
+<span class="d">└</span>
+
+<span class="g">◇</span>  Your personal branch <span class="d">·</span> steven/steven-s-macbook-pro
+<span class="d">│</span>
+<span class="g">◆</span>  <span class="b">steven/steven-s-macbook-pro does not exist. Make it from origin/main and push it?</span>
+<span class="d">│</span>  <span class="sel">● Yes</span> <span class="d">/ ○ No</span>
+<span class="d">└</span>
+
+<span class="ok">✔</span> chapter-garden added <span class="d">—</span> team
+   takes   issues assigned to <span class="b">steven-zhc</span>
+   works   on steven/steven-s-macbook-pro, kept current with main
+   main    only through a PR you submit  <span class="d">· lingtai pr</span>
+   never   pushes main
+
+<span class="d">Next: assign yourself an issue, then</span> lingtai start</pre>
+</div>
+
+<p class="frame-label">B · lingtai init --local — the tutorial's path</p>
+<div class="frame" style="background:#0f181c;border-color:#22333a">
+<pre class="term"><span class="d">$</span> lingtai init --local chapter-garden
+
+<span class="g">◇</span>  Local tickets <span class="d">— every ticket is yours</span>
+<span class="g">◇</span>  Team <span class="d">(the default: nothing reaches main until you send it)</span>
+<span class="g">◇</span>  Your personal branch <span class="d">·</span> lingtai-base <span class="d">— made from main</span>
+
+<span class="ok">✔</span> chapter-garden added <span class="d">—</span> team, local tickets
+   works   on lingtai-base; main is never touched
+   main    when you submit a PR <span class="d">· lingtai pr</span></pre>
+</div>
+
+</body>
+</html>

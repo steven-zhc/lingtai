@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock 7 · the sandbox panel, with the ACP agents</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.agents{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(0,1fr);gap:18px;align-items:start}
+.legend{font-size:13.5px}
+.legend .row{display:grid;grid-template-columns:130px 1fr;gap:10px;padding:9px 0;border-bottom:1px solid var(--surface-2)}
+.legend .row:last-child{border:0}
+.legend b{font-weight:600}
+.warn{color:var(--fail)}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock 7 · /recipe's Sandbox panel, once Copilot and Antigravity can be named</b> (0.16 ACP tickets #1301, #1302; experiment 019). Today the panel explains how Claude Code and Codex sign in (<code>apps/board/src/lib/sandbox-view.ts:96-113</code>). A new block above the reachable/writable lists draws which of the recipe's agents run inside the sandbox, and says by name the one that cannot.</p>
+
+<p class="frame-label">A · sandbox on, the recipe names claude-code, codex, copilot and antigravity</p>
+<div class="frame">
+  <div class="page">
+    <div class="panel">
+      <h2>Sandbox · which agents run inside it</h2>
+      <div class="agents">
+        <svg viewBox="0 0 560 300" style="display:block;width:100%;height:auto" aria-label="three agents inside the sandbox, Antigravity outside">
+          <rect x="0" y="0" width="560" height="300" fill="#f6f9f9" rx="12"/>
+          <rect x="24" y="30" width="330" height="246" rx="18" fill="#dcedee" stroke="#0b6a70" stroke-width="2.5"/>
+          <text x="44" y="56" font-size="13" font-weight="700" fill="#075056">SANDBOX</text>
+          <text x="44" y="74" font-size="11.5" fill="#3a4a50">the worktree, the allowlisted hosts — no keys</text>
+          <g font-family="IBM Plex Sans">
+            <rect x="48" y="92" width="282" height="46" rx="10" fill="#fff" stroke="#b9dadb"/><circle cx="70" cy="115" r="8" fill="#2c7a4c"/><text x="86" y="112" font-size="14" font-weight="600" fill="#0f181c">Claude Code</text><text x="86" y="129" font-size="11.5" fill="#5e6e74">its own token · lingtai token claude</text>
+            <rect x="48" y="146" width="282" height="46" rx="10" fill="#fff" stroke="#b9dadb"/><circle cx="70" cy="169" r="8" fill="#2c7a4c"/><text x="86" y="166" font-size="14" font-weight="600" fill="#0f181c">Codex</text><text x="86" y="183" font-size="11.5" fill="#5e6e74">its login, readable inside</text>
+            <rect x="48" y="200" width="282" height="56" rx="10" fill="#fff" stroke="#b9dadb"/><circle cx="70" cy="223" r="8" fill="#2c7a4c"/><text x="86" y="220" font-size="14" font-weight="600" fill="#0f181c">GitHub Copilot <tspan font-size="10.5" fill="#075056" font-weight="600">NEW</tspan></text><text x="86" y="237" font-size="11.5" fill="#5e6e74">its own token · lingtai token copilot</text><text x="86" y="251" font-size="11.5" fill="#5e6e74">+ *.githubcopilot.com · writes ~/.copilot</text>
+          </g>
+          <rect x="376" y="118" width="164" height="92" rx="12" fill="#fff" stroke="#a33029" stroke-width="2" stroke-dasharray="6 4"/>
+          <circle cx="398" cy="140" r="8" fill="#a33029"/><text x="414" y="137" font-size="14" font-weight="600" fill="#0f181c">Antigravity</text><text x="414" y="152" font-size="10.5" fill="#a33029" font-weight="600">NEW · UNSANDBOXED</text>
+          <text x="390" y="175" font-size="11.5" fill="#3a4a50">needs the keychain and</text><text x="390" y="190" font-size="11.5" fill="#3a4a50">a local port to sign in</text>
+          <path d="M376 164 H356" stroke="#a33029" stroke-width="2" stroke-dasharray="3 3"/><path d="M350 158 l8 6 -8 6" fill="none" stroke="#a33029" stroke-width="2"/>
+          <text x="458" y="236" text-anchor="middle" font-size="11" fill="#a33029">runs outside, with your keys</text>
+        </svg>
+        <div class="legend">
+          <div class="row"><b>Claude Code</b><span>inside · signs in with its own long-lived token, never your login</span></div>
+          <div class="row"><b>Codex</b><span>inside · its login stays readable to a Codex run</span></div>
+          <div class="row"><b>GitHub Copilot</b><span>inside · its own fine-grained token (<i>Copilot Requests</i>), set with <code>lingtai token copilot</code>; reaches <code>*.githubcopilot.com</code>, writes <code>~/.copilot</code>, its telemetry refused</span></div>
+          <div class="row"><b class="warn">Antigravity</b><span class="warn"><b>outside the sandbox in 0.16.</b> It reads its login from the keychain and binds a local port, which the sandbox denies. Its runs see your files and keys like any program you start. A recipe with <code>sandbox.required: true</code> cannot name it.</span></div>
+        </div>
+      </div>
+    </div>
+    <div class="panel" style="color:var(--muted);font-size:13px">… State · Reachable · Writable · Cannot be read · Cannot be written, as today, with Copilot's host and folder in their rows …</div>
+  </div>
+</div>
+
+<p class="frame-label">B · sandbox required, the recipe names antigravity — refused when it resolves</p>
+<div class="frame">
+  <div class="page">
+    <div class="banner fail" style="max-width:900px;margin:0"><b>recipe refused</b> — <code>implement</code> names <code>antigravity</code>, which cannot run sandboxed in this release, and this recipe says <code>sandbox.required: true</code>. Name another agent, or set <code>required: false</code> to let Antigravity run unsandboxed.</div>
+  </div>
+</div>
+
+</body>
+</html>
