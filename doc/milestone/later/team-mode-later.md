@@ -24,3 +24,16 @@ branch the next ticket is cut from* — needs to know *which* blockers are open:
 the GitHub listing carries only a count (`packages/conductor/src/discover.ts:57`,
 `:263`), so it costs a request per blocked ticket, and the log answers which of
 them are in review.
+
+## CI beyond GitHub Actions, and after it
+
+0.16 runs a PR's CI on GitHub Actions only (ADR 0130 §5): the PR is opened as a
+draft, the project's own `pull_request` workflows run, and green asks for review.
+Later, on the same step of the PR's life:
+
+- **Jenkins**: trigger the project's job with the PR branch, poll its result,
+  keep its credentials in `~/.lingtai/config.yml` as every other key.
+- **An agent fixing a red CI run**, as the conflict agent fixes a sync — rounds,
+  build and review — before the PR waits on the person.
+- **Verify**: a step after CI that checks the code against what its tickets
+  wanted (0.17's verifiable landing).

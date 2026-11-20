@@ -137,21 +137,40 @@ PR is a person deciding a body of work is ready for the team.
 
    | Draft | In progress | Waiting on you | In review | Merged |
    |---|---|---|---|---|
-   | what has landed on `branch.personal` and no PR holds yet; it grows as tickets land | Lingtai is working on it: bringing `main` in, building, an agent resolving a conflict, the summary being written | Lingtai could not go on alone: a conflict the agent could not resolve, a red build, a branch rewritten by hand | open on the code host; the team reviews it there | the team merged it into `main`; its tickets are closed |
+   | what has landed on `branch.personal` and no PR holds yet; it grows as tickets land | Lingtai is working on it, in order: bringing `main` in, building, an agent resolving a conflict, **the project's CI**, the summary | Lingtai could not go on alone: a conflict the agent could not resolve, a red build, **a red CI run**, a branch rewritten by hand | open for review on the code host; the team reviews it there | the team merged it into `main`; its tickets are closed |
+
+   **A PR is a release of a body of work**: what reaches *In review* has passed
+   the unit build on `main`'s latest, has no conflict with it, and has passed the
+   project's own CI. Later steps (an agent fixing a red CI run; a *verify* step
+   that checks the code against the tickets' wants — 0.17) join the same
+   sequence.
 
    - **Only the person submits.** *Submit* (a button on the draft card, or
      `lingtai pr submit`) freezes `branch.personal` at one commit and moves the PR
      to *In progress*: Lingtai brings `main` in, builds the result, resolves a
-     conflict with an agent, writes the summary, pushes the PR branch and opens
-     the PR — then it is *In review*. Anything it cannot finish moves it to
-     *Waiting on you*, saying why, and nothing is opened. Lingtai never submits on
-     its own and never merges.
-   - **A change the review asks for is a rework ticket, then *update***: the
-     person opens the ticket; it lands on `branch.personal` like any other and
-     shows in *Draft* as joining the open PR; *update* takes the PR through *In
-     progress* again and pushes the new head, listing first every ticket that
-     joins. Update refuses, saying so, when the PR branch is no longer an
-     ancestor of `branch.personal` — somebody pushed to it on the code host.
+     conflict with an agent, pushes the PR branch, **runs the project's CI**,
+     writes the summary — then it is *In review*. Anything it cannot finish moves
+     it to *Waiting on you*, saying why, and nothing is offered for review.
+     Lingtai never submits on its own and never merges.
+   - **CI** (0.16: GitHub Actions; Jenkins next). The PR is opened on GitHub as a
+     **draft pull request**, so the project's own `pull_request` workflows run
+     on it unchanged; when every check on its head has finished, green moves it
+     to *In review* by marking it *ready for review*, and red moves it to
+     *Waiting on you* with the failing checks named. Reading the checks needs the
+     App's `checks: read` and `statuses: read`, added to its permissions — every
+     installation is asked to approve them once. A project with no workflow on
+     pull requests has no CI step, and the PR page says so. A red run is the
+     person's in 0.16; an agent fixing it is later.
+   - **A change the review asks for is a rework ticket for that PR.** A ticket
+     may name the PR it is for — opened from the PR's card, or labelled
+     `lingtai:pr-<n>` on the tracker — and then **it is cut from that PR's branch
+     and lands on it**, not on `branch.personal`; this is the one change to a
+     ticket's life: the branch it is cut from and lands on is the ticket's,
+     defaulting to the project's. Its landing takes the PR through *In progress*
+     again (build, CI) and back to *In review*, and Lingtai then merges the PR
+     branch forward into every PR stacked on it and into `branch.personal`.
+     Landing on a PR branch refuses, saying so, when somebody else pushed to it
+     on the code host and it is no longer what Lingtai last pushed.
    - **The description** is generated from the log — the tickets, `Closes #…` for
      each GitHub ticket still open, each merge commit and its spend; the syncs of
      §6 are never listed — under a summary the `pr:` agent writes. Only the
@@ -160,9 +179,14 @@ PR is a person deciding a body of work is ready for the team.
    - **Closed without merging**: the PR moves back to *Draft*; its tickets stay
      on `branch.personal`; nothing is reverted. A closed PR reopened on the code
      host is not followed.
-   - **One open PR per personal branch on GitHub**: while one is in review, what
-     lands gathers in *Draft* as joining it or waiting for the next; a second PR
-     from the same branch would carry the first one's commits.
+   - **Several PRs at once, stacked.** Work goes on while the team reviews: what
+     lands after a submit gathers in a new *Draft*, and submitting it opens a PR
+     whose base is the previous open PR's branch, so the team sees only what is
+     new. When the PR under it merges, Lingtai retargets it to `main` (GitHub
+     does so itself only when the merged branch is deleted) and brings `main` in,
+     which also clears what a squash merge below left behind. A PR closed without
+     merging under another: the one above is retargeted to what was under the
+     closed one, and taken through *In progress* again.
    - **The code host**: GitHub in 0.16, through the GitHub App
      (`pull_requests: write`, `packages/github/src/app.ts:269`; no new
      permission). On any other remote — GitLab, or a local checkout — submitting
@@ -190,7 +214,8 @@ PR is a person deciding a body of work is ready for the team.
      same;
    - **closed without merging**: read on the daemon's sweep (`SWEEP_MS`, five
      minutes, `packages/daemon/src/work-loop.ts:167`), one request for the one
-     open PR, stopped early when it has not changed since the last read;
+     open PR, stopped early when it has not changed since the last read; the
+     same read gives a draft PR's checks;
    - **the PR page asks the code host when it renders**, as the Queued column
      does, and links to the review there. Review state and comments are not read
      in 0.16 (`doc/milestone/later/`).
@@ -203,17 +228,19 @@ PR is a person deciding a body of work is ready for the team.
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
    the agent one that can run with no tools, as `discuss:`'s is, defaulting to
    `runtime.agent` where that one can, `limits` to 20 turns and `5m`, and
-   carrying no `usd` (0104 §6). One run at submit and one at each update,
+   carrying no `usd` (0104 §6). One run at submit and one at each rework landing,
    extending the current summary; both count against the day's ceiling. Where
    the project is locked (paused, the day's ceiling, an account limit) the PR
    opens without a summary and says why.
 
 6. **The personal branch is kept current with `main`, as PR work.** Lingtai
-   brings `main` in at every submit and update, and also whenever `main` has
+   brings `main` in at every submit, and also whenever `main` has
    moved — checked before each claim and on every sweep — so tickets are written
    on today's code and conflicts are met while they are small. Either way the
    sync is shown on the PR page: a card in *In progress* while it runs, in
-   *Waiting on you* when it cannot finish.
+   *Waiting on you* when it cannot finish. It is `branch.personal` that is kept
+   current; a PR branch already in review is frozen at what the team is reading,
+   and gets `main` only when the PR under it merges or a rework lands on it.
    - When `origin/<branch.main>` is already an ancestor of `branch.personal`
      (`git merge-base --is-ancestor`) nothing is done. Otherwise it is merged in
      the merge lane's own turn ([0122](0122-several-passes-share-one-conductor.md)
@@ -261,13 +288,15 @@ PR is a person deciding a body of work is ready for the team.
   source (`doc/milestone/later/ticket-sources.md`).
 - `lingtai:landed` is a label Lingtai writes, under 0116 §5's prefix.
 - New events: the PR's, on `pr-{project}-{n}` (its request events served by the
-  conductor, as a discussion's are: submit, update, back; and its states: in
+  conductor, as a discussion's are: submit, back; and its states: in
   progress, waiting, opened, merged, closed); the sync's
   (`BranchSynced { mainCommit, how: clean | resolved }`, its rounds' stream, and
-  the 0126 lock on `prj-`). No ticket event is added; `TicketLanded` gains no new
+  the 0126 lock on `prj-`). No ticket event is added — a rework ticket's claim
+  records the PR branch it is cut from, as a field of the claim; `TicketLanded` gains no new
   position.
 - This repository runs solo: it is Lingtai's own repository and merges its own
   work unattended (CLAUDE.md, *Running Lingtai on Lingtai*).
-- Left for later (`doc/milestone/later/`): review state and comments on the PR
-  page; a blocker that has landed on the branch no longer blocking (stacked
-  PRs); a revert ticket.
+- Left for later (`doc/milestone/later/`): Jenkins as a CI; an agent fixing a
+  red CI run; a *verify* step against the tickets' wants (0.17); review state and
+  comments on the PR page; a blocker that has landed on the branch no longer
+  blocking; a revert ticket.
