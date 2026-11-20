@@ -7,7 +7,7 @@
 </head>
 <body>
 
-<p class="mocknote"><b>Mock 2 · the home page in team mode — still four columns.</b> <i>Landed</i> is split: the landed tickets above, compact and folded as today; the tickets <b>in review</b> on the personal branch below, with the PR they belong to and its state (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5–6). A sync with <code>main</code> resolving a conflict shows in <i>Running</i> like any run (§4). Queued shows only what this machine would take.</p>
+<p class="mocknote"><b>Mock 2 · the home page in team mode — still four columns.</b> <i>Landed</i> is split: the landed tickets above, compact and folded as today; the tickets <b>in review</b> on the personal branch below — a small picture of your branch, which of them the open PR holds and which wait in the next draft, then the list; the picture opens the PR page (<a href="../../../decisions/0130-a-project-is-solo-or-team.md">0130</a> §5–6). A sync with <code>main</code> resolving a conflict shows in <i>Running</i> like any run (§4). Queued shows only what this machine would take.</p>
 
 <p class="frame-label">A · team project — a sync resolving a conflict; five tickets in review, three in the submitted PR and two in the next draft</p>
 <div class="frame">
@@ -24,9 +24,15 @@
       <div class="card sync">
         <div class="t">Syncing <code>steven/foundry</code> with <code>main</code></div>
         <div class="meta">main moved 2 commits · 1 conflict</div>
-        <div style="margin-top:8px" class="flow">
-          <span class="st good">merge</span><span class="ar">→</span><span class="st hot">resolve · round 1/6</span><span class="ar">→</span><span class="st">build</span><span class="ar">→</span><span class="st">review</span><span class="ar">→</span><span class="st">push</span>
-        </div>
+        <svg viewBox="0 0 300 92" style="display:block;width:100%;height:auto;margin:8px 0 4px;background:#f6f9f9;border-radius:8px">
+          <path d="M10 18 H290" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text x="12" y="12" font-size="9.5" font-family="IBM Plex Mono" font-weight="600" fill="#4a5d8a">main</text>
+          <path d="M16 18 C28 18 24 70 38 70 H290" fill="none" stroke="#0b6a70" stroke-width="4"/>
+          <circle cx="80" cy="70" r="7" fill="#0b6a70"/><circle cx="112" cy="70" r="7" fill="#0b6a70"/>
+          <circle cx="170" cy="18" r="7" fill="#e5e9f3" stroke="#4a5d8a"/><circle cx="200" cy="18" r="7" fill="#e5e9f3" stroke="#4a5d8a"/>
+          <path d="M200 25 C206 48 204 58 216 66" fill="none" stroke="#9c5a08" stroke-width="2" stroke-dasharray="4 3"/>
+          <circle cx="222" cy="70" r="9" fill="#fff" stroke="#9c5a08" stroke-width="2.5"/><text x="222" y="74" text-anchor="middle" font-size="10" font-weight="700" fill="#9c5a08">!</text>
+          <text x="240" y="88" font-size="9.5" fill="#5c3605">resolving 1/6</text>
+        </svg>
         <div class="meta" style="margin-top:8px">src/lib/shelf.ts · Claude Code · 4 min · $0.21 · <a>run log</a></div>
       </div>
     </div>
@@ -42,6 +48,17 @@
 
       <div class="split">
         <h4>In review <span class="n mono" style="color:var(--muted)">5</span></h4>
+        <svg viewBox="0 0 300 116" style="display:block;width:100%;height:auto;margin:2px 0 10px;background:#fff;border:1px solid #cfd9ec;border-radius:8px" aria-label="your branch, its tickets in review, and the PR">
+      <defs><marker id="mah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4a5d8a"/></marker></defs>
+      <path d="M10 20 H290" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text x="12" y="14" font-size="10" font-family="IBM Plex Mono" font-weight="600" fill="#4a5d8a">main</text>
+      <path d="M18 20 C30 20 26 78 40 78 H290" fill="none" stroke="#0b6a70" stroke-width="4" stroke-linecap="round"/>
+      <rect x="38" y="62" width="128" height="32" rx="10" fill="none" stroke="#4a5d8a" stroke-width="1.6"/>
+      <path d="M102 62 C102 46 116 36 128 25" fill="none" stroke="#4a5d8a" stroke-width="2" marker-end="url(#mah)"/>
+      <rect x="112" y="36" width="72" height="18" rx="9" fill="#fff" stroke="#4a5d8a"/><text x="148" y="49" text-anchor="middle" font-size="10.5" font-weight="700" fill="#4a5d8a">PR #88</text>
+      <rect x="186" y="62" width="96" height="32" rx="10" fill="none" stroke="#0b6a70" stroke-width="1.6" stroke-dasharray="4 3"/>
+      <text x="234" y="108" text-anchor="middle" font-size="10" fill="#075056">next draft</text>
+      <text x="102" y="108" text-anchor="middle" font-size="10" fill="#4a5d8a">changes asked</text><circle cx="58" cy="78" r="10" fill="#0b6a70"/><text x="58" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">41</text><circle cx="102" cy="78" r="10" fill="#0b6a70"/><text x="102" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">43</text><circle cx="146" cy="78" r="10" fill="#0b6a70"/><text x="146" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">44</text><circle cx="206" cy="78" r="10" fill="#0b6a70"/><text x="206" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">47</text><circle cx="250" cy="78" r="10" fill="#0b6a70"/><text x="250" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">45</text>
+    </svg>
         <div class="prline"><span><b>PR #88</b> <span class="muted">· lingtai/pr/7</span></span><span class="pill sig"><span class="d"></span>changes requested</span></div>
         <div class="rev-card"><a>#41</a> Next chapter of <i>The Sun's Ninth Minute</i><div class="meta">4c1e9a2 · $1.84</div></div>
         <div class="rev-card"><a>#43</a> Bookshelf sorts by last chapter<div class="meta">91b07d3 · $0.92</div></div>
@@ -62,6 +79,13 @@
     <div class="fold">▸ 12 landed</div>
     <div class="split" style="min-height:0;padding-bottom:12px">
       <h4>In review <span class="n mono" style="color:var(--muted)">3</span></h4>
+      <svg viewBox="0 0 300 116" style="display:block;width:100%;height:auto;margin:2px 0 10px;background:#fff;border:1px solid #cfd9ec;border-radius:8px" aria-label="your branch, its tickets in review, and the PR">
+      <defs><marker id="mah" viewBox="0 0 10 10" refX="7" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#4a5d8a"/></marker></defs>
+      <path d="M10 20 H290" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text x="12" y="14" font-size="10" font-family="IBM Plex Mono" font-weight="600" fill="#4a5d8a">main</text>
+      <path d="M18 20 C30 20 26 78 40 78 H290" fill="none" stroke="#0b6a70" stroke-width="4" stroke-linecap="round"/>
+      <rect x="38" y="62" width="128" height="32" rx="10" fill="none" stroke="#0b6a70" stroke-width="1.6" stroke-dasharray="4 3"/>
+      <text x="102" y="108" text-anchor="middle" font-size="10" fill="#075056">draft · not submitted</text><circle cx="58" cy="78" r="10" fill="#0b6a70"/><text x="58" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">41</text><circle cx="102" cy="78" r="10" fill="#0b6a70"/><text x="102" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">43</text><circle cx="146" cy="78" r="10" fill="#0b6a70"/><text x="146" y="81.5" text-anchor="middle" font-size="8.5" font-weight="700" fill="#fff">44</text>
+    </svg>
       <div class="prline"><span><b>Draft</b> <span class="muted">· not submitted</span></span><a class="btn small solid">Prepare PR</a></div>
       <div class="rev-card"><a>#41</a> Next chapter of <i>The Sun's Ninth Minute</i><div class="meta">4c1e9a2 · $1.84</div></div>
       <div class="rev-card"><a>#43</a> Bookshelf sorts by last chapter<div class="meta">91b07d3 · $0.92</div></div>
