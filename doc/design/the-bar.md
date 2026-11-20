@@ -1,6 +1,6 @@
 # The board's bar, weighted
 
-**Status** built · 2026-09-10 · `#134` · revised 2026-11-06 · `#953` · a picture at
+**Status** built · 2026-09-10 · `#134` · revised 2026-11-06 · `#953` · the place line and keys 2026-11-20 (0.16) · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
 ## The bar is a frame and a row; the reading is in a footer
@@ -172,6 +172,39 @@ at filter, health and headline.
 says; `Recipe` and `Pause` act on the selected project, so they appear with it
 and belong to it, as `recipe` on each row of the filter's menu does. Each menu
 row carries its own `recipe`.
+
+### 0.16: the filter becomes the place line, and the keys go everywhere (decided 2026-11-20)
+
+A team project has two boards, tickets and PRs ([0130](../decisions/0130-a-project-is-solo-or-team.md)
+§5), so the bar has to say which one you are on and get you to the other. Chosen
+over a left rail of icons, a dock, a drawer, stacked boards and a project home
+(mocks: `doc/milestone/0.16.0/team-mode/nav-styles.html`, `nav-final.html`):
+
+- **The filter becomes a breadcrumb, `Lingtai / <project ▾> / <views>`.** It is
+  still one object — *the place* — and reads as one sentence. The project's name
+  opens the same menu the filter opens today (every project, each row's
+  `recipe`, *add a repository* last). The views after it are part of the place,
+  not objects of their own, by the rule above: *an affordance inside an object is
+  not a new object*.
+- **The views are `Tickets · PRs · Recipe`.** `PRs` appears for a team project
+  only; `Recipe` moves here from the right, beside the views it configures. With
+  *All projects* there is only `Tickets`: a PR is one project's branch.
+- **The headline still counts tickets only.** What waits on you on the PR board
+  is a count on `PRs` itself, in the fail colour and never amber — amber stays
+  the headline's alone.
+- **Search is a visible field on the right, `Search ⌘K`**, beside `Pause` and
+  `Report`; ⌘K (#908) was a key nobody could see.
+- **Keys, `G` then a letter**, as GitHub and Linear: `G T` tickets, `G P` PRs,
+  `G R` recipe, `G O` report, `G S` switch project, `G W` the first thing
+  waiting on you. On a board `J`/`K` move between cards, `H`/`L` between
+  columns, `Enter` opens, `Esc` goes back; on a PR `[`/`]` go to the PR under
+  or over it in its stack, `O` opens it on GitHub. `?` lists them. **Every
+  control that has a key shows it in its tooltip**, so the keys are learnt by
+  using the mouse. A key is never bound while focus is in a field.
+
+```
+Lingtai / chapter-garden ▾ / Tickets  PRs ❶  Recipe   ●  2 waiting on you     [Search ⌘K]  Pause  Report
+```
 
 ## What it looks like now
 
