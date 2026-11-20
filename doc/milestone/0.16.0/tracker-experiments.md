@@ -147,6 +147,14 @@ Only if a public HTTPS address is to hand (a tunnel to Foundry): create one,
 change an issue, check `Linear-Signature` and the delivery delay. Otherwise
 written down as *not measured*; the five-minute sweep stands without it.
 
+### L11 — assignee (added 2026-11-20)
+
+1. Read `viewer`; create one issue assigned to it and one to nobody.
+2. List with `assignee:{isMe:{eq:true}}`, `assignee:{null:true}` and by id.
+3. Unassign the first; list `isMe` again. Assign a malformed id.
+
+*Decides:* how *take only my tickets* reads *me* on Linear.
+
 ## What it costs
 
 Nothing but time: the free plan, no agent, no model. The 250-issue cap is the

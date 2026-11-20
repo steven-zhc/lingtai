@@ -5,7 +5,7 @@ Lingtai needs works; four behaviours the adapter must handle by name — Markdow
 is rewritten (a fixed point after one write), label names collide
 case-insensitively with Linear's defaults, the API's `createdAt` order cannot be
 trusted, and *replace if unchanged* can only be best-effort. Raw GraphQL, not
-the SDK's object API. The procedure is
+the SDK's object API. The assignee is a user id, and *me* is the key's own user. The procedure is
 [tracker-experiments.md](../milestone/0.16.0/tracker-experiments.md); the plan
 it serves is [0.16.md](../milestone/0.16.0/0.16.md)'s ticket-source part.
 
@@ -113,6 +113,17 @@ OAuth client credentials: not measured (no app created).
 
 Not measured: no public HTTPS address. The five-minute sweep stands without them.
 
+### L11 — assignee: who is *me*
+
+Added on 2026-11-20 for *take only my tickets* (0.16.md). An issue has **one**
+assignee, a user's UUID — never a login. `viewer` is the user the API key
+belongs to, and the listing filters on it server-side:
+`assignee:{isMe:{eq:true}}` returned only the issue assigned to the key's user,
+`assignee:{null:true}` only the unassigned one, `assignee:{id:{eq}}` the same as
+`isMe`; each 3 complexity points. Unassigned (`assigneeId: null`), the issue
+left the `isMe` listing at once. An id that is not a UUID is refused by name
+(*Received non-uuid id*).
+
 ## What it means for 0.16.md
 
 1. **The body**: Lingtai keeps Markdown; after any write the adapter keeps
@@ -131,3 +142,6 @@ Not measured: no public HTTPS address. The five-minute sweep stands without them
    old one a person types still resolves.
 8. **Raw GraphQL** with zod-checked responses and sized nested connections; not
    the SDK's object API.
+9. **The assignee** is a user's UUID, one per issue, and *me* is the key's own
+   user (`viewer`): `take: mine` needs no login written for Linear, and filters
+   on `isMe` in the query itself.
