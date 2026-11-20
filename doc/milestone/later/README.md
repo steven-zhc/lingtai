@@ -7,3 +7,4 @@ it, kept here with its findings until a milestone takes it.
 |---|---|---|
 | [ticket-sources.md](ticket-sources.md) | Ticket sources beyond GitHub and the local store — the groundwork, a Linear adapter, Jira after — and the GitLab acceptance run. Linear measured (experiment 020); epic #340 | 0.16.0, 2026-11-20 |
 | [tracker-experiments.md](tracker-experiments.md) | The Linear experiments L1–L11: the survey and the steps | 0.16.0, 2026-11-20 |
+| [revert-ticket.md](revert-ticket.md) | Taking a ticket out of a team's review as a ticket of its own: `lingtai ticket revert #n` opens a mechanical revert that the build and review judge | 0.16.0 discussion, 2026-11-20 |
