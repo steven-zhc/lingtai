@@ -288,7 +288,10 @@ the rule.
 
 1. Record what `initialize` and `session/new` return about models and modes
    (`models`, `modes`, available commands).
-2. Try `--model` (the session model call); record whether it is accepted.
+2. Set the model with `session/set_config_option` on the option of category
+   `"model"` (`--config <id>=<value>`), the stable route; then try the removed
+   unstable `session/set_model` (`--model`) only to see whether an agent still
+   answers it ([acp-libraries.md](acp-libraries.md)).
 3. For Copilot, whose options are fixed at start: whether a start-up flag
    chooses the model instead.
 4. Check which model actually ran from the vendor's record (console, usage
@@ -296,6 +299,29 @@ the rule.
 
 *Decides:* what a recipe's `model:` means for an ACP agent — passed per
 session, per process, or not at all.
+
+### E11 — the agents' own headless modes, for comparison
+
+Added 2026-11-19, to answer *would the agents' own CLIs be better than ACP*.
+The same task through `copilot -p … --output-format json` and
+`agy -p … --output-format stream-json`, once without any approval flag and once
+with everything approved (`--allow-all-tools`, `--dangerously-skip-permissions`).
+
+*Record:* exit code, what was done, what the output says about spend and about
+each tool call, whether one call can be refused.
+
+*Decides:* whether an agent's own headless mode should replace ACP for it.
+
+### E12 — through a library
+
+Added 2026-11-19. The task approved, the task refused, the `sleep` prompt
+cancelled at 15 s and a model chosen, on both agents, through a client on the
+official `@agentclientprotocol/sdk` and through acpx (OpenClaw's headless client).
+
+*Record:* whether the library parses every message, what it adds (exit codes,
+process cleanup, raw messages) and what it refuses.
+
+*Decides:* whether the runtime is built on the SDK, on acpx, or on neither.
 
 ## What it costs
 
