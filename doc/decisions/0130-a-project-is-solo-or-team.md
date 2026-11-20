@@ -65,9 +65,19 @@ names both and adds what lies between that branch and `main`.
    Before each claim, when `origin/<branch.main>` is not already an ancestor of
    `branch.personal` (`git merge-base --is-ancestor`), the conductor merges it
    into `branch.personal` and pushes; when it is, nothing is merged and no commit
-   is made. A conflict appends a wait for a person, is
-   never given to an agent, and nothing is claimed for the project until it is
-   resolved. `lingtai add` creates `branch.personal` from `origin/<branch.main>`
+   is made. The prepare of §6 checks it once more.
+
+   **A conflict is resolved by an agent, as an attempt's is.** It is
+   [0108](0108-a-refusal-buys-a-round.md) §8's `resolveConflict`, run on a
+   worktree of `branch.personal` merging `origin/<branch.main>`, bounded by
+   `attempt.conflictResolutions`, and handed what each side meant: the tickets
+   in review whose code conflicts, and the commits on `branch.main` that brought
+   the other side. The resolution then passes `build`, and `review` reads the
+   resolution's own diff, before `branch.personal` is pushed; it reaches the PR,
+   where the team sees it too. Only when the bound is spent or a check refuses
+   does it become a wait for a person — *the personal branch conflicts with
+   `main`; claiming is paused* — and nothing is claimed for the project until it
+   is resolved. `lingtai add` creates `branch.personal` from `origin/<branch.main>`
    and pushes it, after asking, when it does not exist.
 
    **One personal branch is one machine's.** The conductor lock is a file on
