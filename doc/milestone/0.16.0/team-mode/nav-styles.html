@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · ways other than a left rail — seven styles (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.gal{display:grid;grid-template-columns:1fr 1fr;gap:18px;max-width:1240px;margin:0 auto 40px}
+.ref{background:#fff;border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.ref.wide{grid-column:1/-1}
+.ref h3{margin:0;padding:10px 14px 2px;font:600 14px var(--sans)}
+.ref .src{padding:0 14px 8px;font:11.5px var(--mono);color:var(--muted)}
+.wf{margin:0 14px;border:1px solid var(--rule);border-radius:3px;height:210px;position:relative;font-size:11px;overflow:hidden;background:#fafbfb}
+.top{display:flex;gap:8px;align-items:center;padding:6px 8px;border-bottom:1px solid var(--rule);background:#fff;white-space:nowrap}
+.top .sp{flex:1}.top .k{border:1px solid var(--rule-2);border-radius:3px;padding:0 6px}.hl{color:#9c5a08;font-weight:600}
+.cols{display:grid;gap:0;height:100%}
+.cols>div{border-right:1px solid var(--rule);padding:5px}.cols>div:last-child{border:0}
+.cols b{display:block;font:600 9.5px var(--sans);color:var(--ink-2);margin-bottom:4px;white-space:nowrap}
+.tk{background:#fff;border:1px solid var(--rule);border-left:2px solid var(--rule-2);border-radius:2px;height:16px;margin-bottom:4px}
+.pk{border:1px solid #c9d1e6;border-radius:2px;overflow:hidden;margin-bottom:4px;background:#fbfcff}
+.pk i{display:block;height:6px;background:#2f3d63}.pk.w i{background:var(--fail)}.pk.g i{background:#2c7a4c}.pk.o i{background:#9c5a08}
+.pk s{display:block;height:12px;margin-left:8px;border-left:2px solid #9aa8cc}
+.pboard{background:#f2f4fa}
+.dock{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);display:flex;gap:4px;background:#1f2a44;border-radius:3px;padding:4px;box-shadow:0 6px 18px rgba(15,24,28,.25)}
+.dock span{color:#c7cfe4;padding:4px 9px;border-radius:2px;font-size:11px;white-space:nowrap}.dock .on{background:#2f3d63;color:#fff}
+.dock .bd{background:var(--fail);color:#fff;border-radius:6px;padding:0 4px;font:700 9px var(--mono);margin-left:3px}
+.pal{position:absolute;left:50%;top:26px;transform:translateX(-50%);width:62%;background:#fff;border:1px solid var(--rule-2);border-radius:3px;box-shadow:0 10px 26px rgba(15,24,28,.22)}
+.pal input{width:100%;border:0;border-bottom:1px solid var(--rule);padding:7px 9px;font:12px var(--sans)}
+.pal div{padding:5px 9px;display:flex;justify-content:space-between}.pal .on{background:#eef4f4}
+.pal small{font:10px var(--mono);color:var(--muted)}
+.drawer{position:absolute;left:0;right:0;bottom:0;height:46%;background:#f2f4fa;border-top:2px solid #2f3d63;box-shadow:0 -6px 16px rgba(15,24,28,.12)}
+.drawer .hd{background:#2f3d63;color:#fff;font:600 10.5px var(--mono);padding:3px 8px;display:flex;justify-content:space-between}
+.ref .wf .cols{min-height:0}
+.lanehd{font:600 9.5px var(--mono);letter-spacing:.06em;color:#fff;padding:2px 6px}
+.hub{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;padding:10px}
+.tile{background:#fff;border:1px solid var(--rule);border-radius:3px;padding:8px;height:70px}
+.tile b{display:block;font:600 11px var(--sans);margin-bottom:4px}.tile .n{font:600 20px var(--mono)}
+.take{padding:10px 14px 12px;font-size:12.5px;display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.take>div>b{display:block;font:600 10.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;margin-bottom:3px}
+.take .y>b{color:var(--pass)}.take .n>b{color:var(--fail)}
+.take ul{margin:0;padding-left:16px}
+.verdict{max-width:1240px;margin:0 auto 40px;background:#fff;border:1px solid var(--rule);border-left:2px solid var(--accent);border-radius:3px;padding:14px 18px;font-size:13.5px}
+.verdict h2{margin:0 0 8px;font:600 13px var(--sans)}
+.verdict table{border-collapse:collapse;width:100%;font-size:12.5px}
+.verdict td,.verdict th{border-bottom:1px solid var(--rule);padding:5px 8px;text-align:left;vertical-align:top}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock · seven styles that are not a left rail.</b> Two navigate (a dock, a palette), two stay on one board and put the other one beside it (a drawer, stacked boards), one joins them (one long pipeline), one starts from an overview (a hub), and one is the plain top bar. Each is drawn with Lingtai's content; the table at the end sets them against the rail.</p>
+
+<div class="gal">
+
+  <div class="ref"><h3>A · a floating dock at the bottom</h3><div class="src">as Figma's toolbar, Vercel's mobile bar, the macOS Dock</div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span></div>
+      <div class="cols pboard" style="grid-template-columns:repeat(5,1fr);height:178px"><div><b>Draft</b><div class="pk"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div>
+      <div class="dock"><span>▦ Tickets</span><span class="on">⑂ PRs <span class="bd">1</span></span><span>☰ Recipe</span><span>▮ Report</span></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>The board keeps its full width; the switch floats over the empty bottom of the columns</li><li>Same in a narrow window and on a phone</li></ul></div><div class="n"><b>Against</b><ul><li>Covers the bottom cards of a long column</li><li>A dock reads as a tool palette, not as where you are</li></ul></div></div></div>
+
+  <div class="ref"><h3>B · the keyboard first — no visible switch</h3><div class="src">as Raycast, Superhuman, Linear's <code>G I</code></div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>chapter-garden</span><span class="muted">/ Tickets</span><span class="sp"></span><span class="k">⌘K</span></div>
+      <div class="cols" style="grid-template-columns:repeat(4,1fr);height:178px;opacity:.45"><div><b>Queued</b><div class="tk"></div></div><div><b>Running</b><div class="tk"></div></div><div><b>Waiting</b><div class="tk"></div></div><div><b>Landed</b><div class="tk"></div></div></div>
+      <div class="pal"><input value="pr" readonly><div class="on"><span>⑂ PRs — chapter-garden</span><small>G P</small></div><div><span>⑂ PR #88 Chapter 9…</span><small>in review</small></div><div><span>▦ Tickets</span><small>G T</small></div><div><span>⇄ Switch project…</span><small>G S</small></div></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>Nothing on the screen but the work; the fastest for someone who knows the keys</li><li>⌘K is built already (#908); <code>G T</code> / <code>G P</code> is a small addition</li></ul></div><div class="n"><b>Against</b><ul><li>Invisible to a new person — the breadcrumb is the only hint where you are</li><li>Not enough on its own; it is a layer over any other style</li></ul></div></div></div>
+
+  <div class="ref"><h3>C · PRs as a drawer pulled up over the ticket board</h3><div class="src">as a browser's devtools, VS Code's panel, a mail client's reading pane</div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>chapter-garden ▾</span><span class="hl">2 waiting on you</span></div>
+      <div class="cols" style="grid-template-columns:repeat(4,1fr);height:178px"><div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk"></div></div><div><b>Waiting</b><div class="tk"></div></div><div><b>Landed</b><div class="tk"></div></div></div>
+      <div class="drawer"><div class="hd"><span>⑂ PRs · 1 waiting on you</span><span>▾ ↕</span></div><div class="cols pboard" style="grid-template-columns:repeat(5,1fr);height:80px"><div><b>Draft</b><div class="pk"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>Tickets stay in view while you look at PRs — see a ticket land and its PR change</li><li>Closed, it is a strip at the bottom carrying the PRs' waiting count</li></ul></div><div class="n"><b>Against</b><ul><li>Two boards share one screen; both are short</li><li>The ticket board is primary by layout — PRs are always the second thing</li></ul></div></div></div>
+
+  <div class="ref"><h3>D · both boards, stacked, always</h3><div class="src">as swimlanes in Jira, GitHub Projects' grouped boards</div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>chapter-garden ▾</span><span class="hl">2 waiting on you</span></div>
+      <div class="lanehd" style="background:var(--accent)">TICKETS</div>
+      <div class="cols" style="grid-template-columns:repeat(4,1fr);height:64px"><div><b>Queued</b><div class="tk"></div></div><div><b>Running</b><div class="tk"></div></div><div><b>Waiting</b><div class="tk"></div></div><div><b>Landed</b><div class="tk"></div></div></div>
+      <div class="lanehd" style="background:#2f3d63">PRS</div>
+      <div class="cols pboard" style="grid-template-columns:repeat(5,1fr);height:68px"><div><b>Draft</b><div class="pk"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>No navigation at all: everything on the project is on one page</li><li>A solo project simply has no lower lane</li></ul></div><div class="n"><b>Against</b><ul><li>Each board gets half the height, on the page looked at most</li><li>Nine columns of two kinds on one screen is a lot to read</li></ul></div></div></div>
+
+  <div class="ref wide"><h3>E · one long pipeline — a ticket's life flows into its PR's</h3><div class="src">as a CI pipeline view, a value-stream map</div>
+    <div class="wf" style="height:180px"><div class="top"><b>Lingtai</b><span>chapter-garden ▾</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="muted">← scroll →</span></div>
+      <div class="cols" style="grid-template-columns:repeat(4,1fr) 26px repeat(4,1fr);height:150px">
+        <div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk" style="border-left-color:var(--accent)"></div></div><div><b>Waiting on you</b><div class="tk" style="border-left-color:var(--fail)"></div></div><div><b>On your branch</b><div class="tk" style="border-left-color:var(--pass)"></div><div class="tk" style="border-left-color:var(--pass)"></div></div>
+        <div style="background:#2f3d63;color:#fff;display:flex;align-items:center;justify-content:center;padding:0"><span style="writing-mode:vertical-rl;font:600 9px var(--mono);letter-spacing:.1em;color:#fff">SUBMIT ▸</span></div>
+        <div class="pboard"><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div class="pboard"><b>Waiting on you</b><div class="pk w"><i></i><s></s></div></div><div class="pboard"><b>In review</b><div class="pk"><i></i><s></s></div></div><div class="pboard"><b>Merged</b><div class="pk g"><i></i><s></s></div></div>
+      </div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>The whole story left to right: a ticket's last column <i>is</i> the PR's draft, so nothing needs a switch</li><li>The submit is drawn as a gate between the two halves — where a person decides</li></ul></div><div class="n"><b>Against</b><ul><li>Eight columns do not fit; it scrolls sideways</li><li>It joins the two lifecycles back together, which is what splitting them undid — two kinds of card in one row of columns</li></ul></div></div></div>
+
+  <div class="ref"><h3>F · a project home that leads to each board</h3><div class="src">as GitLab's project overview, Vercel's project page</div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>chapter-garden ▾</span><span class="hl">2 waiting on you</span></div>
+      <div class="hub"><div class="tile"><b>▦ Tickets</b><span class="n">6</span> <span class="muted">· 2 waiting on you</span></div><div class="tile" style="border-color:#c9d1e6;background:#fbfcff"><b>⑂ PRs</b><span class="n">3</span> <span class="muted">· 1 waiting · 1 in review</span></div><div class="tile"><b>☰ Recipe</b><span class="muted">claude-code · team · CI on</span></div><div class="tile" style="grid-column:span 3;height:56px"><b>Your branch</b><span class="muted">steven-zhc/foundry · 5 not on main · main moved 2</span></div></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>One page answers "how is this project": counts, the branch, the recipe</li><li>Each board is one click from it, and back is the project's name</li></ul></div><div class="n"><b>Against</b><ul><li>An extra page between you and the board you open every time</li><li>Its counts repeat the columns' — the bar's rule against counting twice</li></ul></div></div></div>
+
+  <div class="ref"><h3>G · the plain top bar — the place and its views in one line</h3><div class="src">as GitHub, most web apps</div>
+    <div class="wf"><div class="top"><b>Lingtai</b><span>/</span><b>chapter-garden ▾</b><span>/</span><span style="border-bottom:2px solid var(--accent);font-weight:600">Tickets</span><span>PRs <span style="background:var(--fail);color:#fff;border-radius:6px;padding:0 4px;font:700 9px var(--mono)">1</span></span><span>Recipe</span><span class="sp"></span><span class="hl">2 waiting</span><span>●</span><span class="k">Report</span></div>
+      <div class="cols" style="grid-template-columns:repeat(4,1fr);height:182px"><div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk"></div></div><div><b>Waiting</b><div class="tk"></div></div><div><b>Landed</b><div class="tk"></div></div></div></div>
+    <div class="take"><div class="y"><b>For</b><ul><li>Familiar to anyone who has used GitHub; no width lost</li><li>Where you are reads as one sentence: Lingtai / chapter-garden / Tickets</li></ul></div><div class="n"><b>Against</b><ul><li>The bar has to take the views, and the bar's three-object rule has to be rewritten for it</li><li>Room for three or four views, not ten</li></ul></div></div></div>
+
+</div>
+
+<div class="verdict"><h2>Set against the rail (design 1)</h2>
+<table>
+<tr><th>Style</th><th>Width lost</th><th>See both at once</th><th>Clear where you are</th><th>Room to grow</th><th>Read</th></tr>
+<tr><td><b>1 · left rail</b> (working choice)</td><td>44px</td><td>no</td><td>yes — lit icon</td><td>many views</td><td>—</td></tr>
+<tr><td>A · dock</td><td>none</td><td>no</td><td>weak</td><td>5–6</td><td>good for narrow windows</td></tr>
+<tr><td>B · keyboard first</td><td>none</td><td>no</td><td>breadcrumb only</td><td>unlimited</td><td>a layer to add to any style, not a style alone</td></tr>
+<tr><td>C · drawer</td><td>none</td><td><b>yes</b></td><td>yes</td><td>one extra board</td><td>worth it if watching a ticket become a PR matters</td></tr>
+<tr><td>D · stacked</td><td>half the height</td><td><b>yes</b></td><td>yes</td><td>two boards</td><td>too dense for the home page</td></tr>
+<tr><td>E · one pipeline</td><td>scrolls</td><td><b>yes</b></td><td>yes</td><td>long</td><td>undoes the split; good as an overview, not the board</td></tr>
+<tr><td>F · project home</td><td>none</td><td>counts only</td><td>yes</td><td>many</td><td>an extra click every time</td></tr>
+<tr><td>G · top bar</td><td>none</td><td>no</td><td>yes — breadcrumb</td><td>3–4</td><td>the familiar one; rewrites the bar's rules</td></tr>
+</table></div>
+
+</body>
+</html>
