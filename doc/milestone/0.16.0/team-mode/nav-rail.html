@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · the rail, and where the project is switched — three designs (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.shot{display:grid;border:1px solid var(--rule);background:#fff;border-radius:3px;overflow:hidden;font-size:12.5px;min-height:330px;margin:16px}
+.mbar{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--rule);white-space:nowrap}
+.mbar .sp{flex:1}.mbar .hl{color:#9c5a08;font-weight:600}.mbar .b{border:1px solid var(--rule-2);border-radius:3px;padding:1px 8px;font-size:12px}
+.board{display:grid;grid-template-columns:repeat(5,1fr);background:#f2f4fa;flex:1}
+.board>div{border-right:1px solid var(--rule);padding:8px}.board>div:last-child{border:0}
+.board b{display:block;font:600 11px var(--sans);color:var(--ink-2);margin-bottom:6px}
+.pk{border:1px solid #c9d1e6;border-radius:3px;overflow:hidden;margin-bottom:6px;background:#fbfcff}
+.pk i{display:block;height:10px;background:#2f3d63}.pk.w i{background:var(--fail)}.pk.g i{background:#2c7a4c}.pk.o i{background:#9c5a08}
+.pk s{display:block;height:26px;margin-left:12px;border-left:2px solid #9aa8cc}
+.main{display:flex;flex-direction:column;min-width:0}
+.rail{background:#1f2a44;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0;color:#aeb8d4}
+.rail a{width:36px;height:36px;display:grid;place-items:center;border-radius:3px;position:relative;color:#aeb8d4}
+.rail a svg{width:18px;height:18px}
+.rail a.on{background:#2f3d63;color:#fff;box-shadow:inset 2px 0 0 #fff}
+.rail .bd{position:absolute;top:2px;right:1px;min-width:13px;height:13px;border-radius:7px;background:var(--fail);color:#fff;font:700 9px/13px var(--mono);text-align:center}
+.rail .grow{flex:1}.rail hr{width:24px;border:0;border-top:1px solid #3a476a;margin:4px 0}
+.av{width:30px;height:30px;border-radius:3px;display:grid;place-items:center;font:700 12px var(--mono);color:#fff}
+.av.cg{background:#0b6a70}.av.lt{background:#6b4c9a}.av.fd{background:#8a6100}.av.all{background:#3a476a;color:#cfd6ea}
+.av.on{outline:2px solid #fff;outline-offset:2px}
+.pop{position:absolute;left:52px;top:8px;width:250px;background:#fff;border:1px solid var(--rule-2);border-radius:3px;box-shadow:0 8px 24px rgba(15,24,28,.18);font-size:12.5px;z-index:2}
+.pop div{display:grid;grid-template-columns:22px 1fr auto;gap:8px;align-items:center;padding:7px 10px;border-bottom:1px solid var(--surface-2,#eef1f1)}
+.pop div:last-child{border:0}.pop .on{background:#eef4f4}
+.pop small{font:11px var(--mono);color:var(--muted)}
+.mode{font:600 9.5px var(--mono);border-radius:2px;padding:0 4px;background:#e5e9f3;color:#2f3d63}.mode.solo{background:#eef1f1;color:var(--muted)}
+.tree{background:#1f2a44;color:#c7cfe4;padding:10px 8px;font-size:12.5px;display:flex;flex-direction:column;gap:1px}
+.tree .h{font:600 10.5px var(--mono);letter-spacing:.08em;color:#7d89aa;padding:8px 8px 4px}
+.tree a{display:flex;align-items:center;gap:8px;padding:5px 8px;border-radius:3px;color:#c7cfe4}
+.tree a.p{color:#fff;font-weight:600}
+.tree a.v{padding-left:30px}
+.tree a.on{background:#2f3d63;color:#fff;box-shadow:inset 2px 0 0 #fff}
+.tree .bd{margin-left:auto;background:var(--fail);color:#fff;font:700 9.5px var(--mono);border-radius:7px;padding:0 5px}
+.tree .grow{flex:1}
+.notes{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 16px 16px;font-size:12.5px}
+.notes div{background:#fff;border:1px solid var(--rule);border-radius:3px;padding:8px 10px}
+.notes b{display:block;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+.notes .y b{color:var(--pass)}.notes .n b{color:var(--fail)}
+.notes ul{margin:0;padding-left:16px}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock · design 1 chosen — the rail. Where is the project switched?</b> Three ways, each also a different overall style. Today the project is switched by the filter on the bar (<code>doc/design/the-bar.md</code>: <i>the filter is one control: the project in view, with a row per repository in its menu</i>), and <b>All projects</b> is a choice in it. In all three, ⌘K (#908) still jumps to any project or page, and a solo project's rail has no PRs icon. With All projects selected there is no PRs view: a PR is one project's branch.</p>
+
+<p class="frame-label">A · the rail, the project switcher at its top — a VS Code workspace / a Figma file menu</p>
+<div class="frame" style="position:relative">
+  <div class="shot" style="grid-template-columns:52px 1fr;position:relative">
+    <div class="rail">
+      <a title="chapter-garden — switch project"><span class="av cg on">CG</span></a>
+      <hr>
+      <a title="Tickets"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="4" height="12"/><rect x="7" y="3" width="4" height="8"/><rect x="12" y="3" width="4" height="10"/></svg></a>
+      <a class="on" title="PRs"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="6" r="2"/><path d="M5 6v6M13 8c0 4-8 2-8 4"/></svg></a>
+      <a title="Recipe"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2h7l3 3v11H4z"/><path d="M7 8h5M7 11h5"/></svg></a>
+      <span class="grow"></span>
+      <a title="Report"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 15V9M8 15V4M13 15v-7"/></svg></a>
+    </div>
+    <div class="pop">
+      <div><span class="av all" style="width:20px;height:20px;font-size:9px">∗</span><span>All projects</span><small>4 waiting</small></div>
+      <div class="on"><span class="av cg" style="width:20px;height:20px;font-size:9px">CG</span><span>chapter-garden <span class="mode">team</span></span><small>2</small></div>
+      <div><span class="av lt" style="width:20px;height:20px;font-size:9px">LT</span><span>lingtai <span class="mode solo">solo</span></span><small>2</small></div>
+      <div><span class="av fd" style="width:20px;height:20px;font-size:9px">FD</span><span>foundry <span class="mode">team</span></span><small>—</small></div>
+      <div><span></span><span style="color:var(--accent)">+ Add a project</span><span></span></div>
+    </div>
+    <div class="main"><div class="mbar"><b>chapter-garden</b><span class="muted">/ PRs</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Pause</span></div>
+      <div class="board"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div>
+  </div>
+  <div class="notes"><div class="y"><b>For</b><ul><li>The project and its views sit together: the square at the top says which project the icons under it belong to</li><li>The bar keeps only what is read: where you are, health, the headline, Pause</li><li>One rail, one place to look — the closest to design 1 as drawn</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>Switching is two clicks (open, choose), as today</li><li>Each project needs a mark — a two-letter square, coloured from its name</li></ul></div></div>
+</div>
+
+<p class="frame-label">B · two rails — projects on the far left, the project's views beside them (Slack / Discord)</p>
+<div class="frame">
+  <div class="shot" style="grid-template-columns:48px 48px 1fr">
+    <div class="rail" style="background:#141c30">
+      <a title="All projects"><span class="av all">∗</span></a>
+      <hr>
+      <a title="chapter-garden · team"><span class="av cg on">CG</span><span class="bd">2</span></a>
+      <a title="lingtai · solo"><span class="av lt">LT</span><span class="bd">2</span></a>
+      <a title="foundry · team"><span class="av fd">FD</span></a>
+      <a title="Add a project" style="font-size:20px">+</a>
+      <span class="grow"></span>
+      <a title="Report"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 15V9M8 15V4M13 15v-7"/></svg></a>
+    </div>
+    <div class="rail">
+      <a title="Tickets"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="4" height="12"/><rect x="7" y="3" width="4" height="8"/><rect x="12" y="3" width="4" height="10"/></svg></a>
+      <a class="on" title="PRs"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="6" r="2"/><path d="M5 6v6M13 8c0 4-8 2-8 4"/></svg></a>
+      <a title="Recipe"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2h7l3 3v11H4z"/><path d="M7 8h5M7 11h5"/></svg></a>
+    </div>
+    <div class="main"><div class="mbar"><b>chapter-garden</b><span class="muted">/ PRs</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Pause</span></div>
+      <div class="board"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div>
+  </div>
+  <div class="notes"><div class="y"><b>For</b><ul><li>One click to another project, and every project's waiting count is visible at once — the outer rail is a glance across all of them</li><li>Report, which is the window's, sits on the outer rail with the projects, not among one project's views</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>96px of rails before the board starts</li><li>Ten projects make a long column of squares</li><li>A waiting count on every square is the headline again, per project — the bar's rule against counting twice has to be argued</li></ul></div></div>
+</div>
+
+<p class="frame-label">C · a sidebar tree — projects with their views nested under them, collapsing to the rail (Linear / Notion)</p>
+<div class="frame">
+  <div class="shot" style="grid-template-columns:210px 1fr">
+    <div class="tree">
+      <a><span class="av all" style="width:20px;height:20px;font-size:9px">∗</span>All projects</a>
+      <span class="h">PROJECTS</span>
+      <a class="p"><span class="av cg" style="width:20px;height:20px;font-size:9px">CG</span>chapter-garden <span class="mode" style="margin-left:auto">team</span></a>
+      <a class="v">Tickets</a>
+      <a class="v on">PRs <span class="bd">1</span></a>
+      <a class="v">Recipe</a>
+      <a class="p"><span class="av lt" style="width:20px;height:20px;font-size:9px">LT</span>lingtai <span class="mode solo" style="margin-left:auto">solo</span></a>
+      <a class="p"><span class="av fd" style="width:20px;height:20px;font-size:9px">FD</span>foundry <span class="mode" style="margin-left:auto">team</span></a>
+      <a style="color:#7fc4c8">+ Add a project</a>
+      <span class="grow"></span>
+      <a>Report</a>
+      <a style="color:#7d89aa">« collapse to the rail</a>
+    </div>
+    <div class="main"><div class="mbar"><b>chapter-garden</b><span class="muted">/ PRs</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Pause</span></div>
+      <div class="board" style="grid-template-columns:repeat(5,1fr)"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div>
+  </div>
+  <div class="notes"><div class="y"><b>For</b><ul><li>Everything is words: no icon to learn, and the tree says plainly that PRs belong to chapter-garden and lingtai has none</li><li>Collapsed, it is design 1's rail with the project square on top — the two are one design at two widths</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>210px wide when open — the five PR columns are the ones that feel it</li><li>Only the selected project opens; switching moves the tree under your pointer</li></ul></div></div>
+</div>
+
+</body>
+</html>
