@@ -196,13 +196,15 @@ in the source.
 
 15. **A local project lands in its own checkout.** `add --local <dir>` writes
     `repo.remote` as the checkout itself, so nothing an attempt makes leaves the
-    machine, `mode: team`, and `branch.personal` as `lingtai-base`, made from the
-    branch checked out there when it does not exist (0130 §2). The mirror is fetched from the checkout,
-    each attempt works on `agent/<n>` in its own worktree, and the land pushes
-    `lingtai-base` and `agent/<n>` back to the checkout; the person's own branch
-    and working tree are never touched, and `lingtai-base` does not follow them:
-    nothing merges into it but an attempt, and a person merges it onward when they
-    choose. Git refuses a push to the branch checked out in a non-bare
+    machine, `mode: team`, `branch.main` as the branch checked out there, and
+    `branch.personal` as `lingtai-base`, made from it when it does not exist
+    (0130 §2). The mirror is fetched from the checkout, each attempt works on
+    `agent/<n>` in its own worktree, and the land pushes `lingtai-base` and
+    `agent/<n>` back to the checkout; the person's own branch and working tree
+    are never touched. Into `lingtai-base` go only an attempt's merges and the
+    sync that brings `branch.main` in (0130 §4); it reaches `branch.main` through
+    the PR the person submits, which on a local remote is a pushed branch and a
+    printed description (0130 §6). Git refuses a push to the branch checked out in a non-bare
     repository, so the land first checks that `lingtai-base` is not the one
     checked out, and holds for a person if it is. Landing on the checkout's
     `origin` instead is a recipe edit.

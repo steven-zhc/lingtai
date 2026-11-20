@@ -188,19 +188,19 @@ const steps=[
  {t:'1 · Collect',p:'Each ticket Lingtai finishes is merged into <b>your branch</b>, not main, and joins the draft above. Nothing has left your machine.',
   w:[['Where','steven/foundry, on this machine'],['Who sees it','only you'],['Main','moved 2 commits since — your teammates’ work']],btn:'Prepare PR',cost:'next: bring main down, one summary run (≤ 20 turns, 5 min), one build'},
  {t:'2 · Prepare',p:'The team’s new work comes <b>down</b> into your branch, so the PR is built on today’s main. Then the PR is written — a summary by an agent, the ticket list from the log — and all of it is yours to edit.',
-  w:[['Sync','main → your branch'],['If it conflicts','an agent resolves it; build and review check it'],['Then','a build on the exact commit you will send']],btn:'Submit PR',cost:'pushes lingtai/pr/7 and opens the PR on GitHub — Lingtai never merges it'},
- {t:'3 · Submitted',p:'Your branch at this commit went <b>up</b> to GitHub as <code>lingtai/pr/7</code>, and the PR to main is open. The team reviews and merges it there. Lingtai keeps working on your branch; new tickets go to the next draft.',
+  w:[['Sync','main → your branch'],['If main moved','merged, then built — a conflict is resolved by an agent and checked by build and review'],['Then','your branch frozen at one commit, and a build on it']],btn:'Submit PR',cost:'pushes steven/foundry-pr-7 and opens the PR on GitHub — Lingtai never merges it'},
+ {t:'3 · Submitted',p:'Your branch at this commit went <b>up</b> to GitHub as <code>steven/foundry-pr-7</code>, and the PR to main is open. The team reviews and merges it there. Lingtai keeps working on your branch; new tickets go to the next draft.',
   w:[['On GitHub','PR #88 → main'],['Now','the team reviews — on GitHub'],['You','wait, or keep writing tickets']],waiting:'Waiting for the team on GitHub'},
  {t:'4 · The team asked for a change',p:'A change the team asks for is a <b>new ticket</b>. Lingtai does it on your branch like any other. <b>Update PR</b> moves the PR forward to include it — merging stays the team’s, on GitHub.',
-  w:[['Comment','li-wei: “break ties by title”'],['Becomes','ticket #47, rework — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to lingtai/pr/7 — a fast-forward'},
+  w:[['On GitHub','li-wei asks to break ties by title'],['You','open ticket #47 for it — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to steven/foundry-pr-7 — a fast-forward'},
  {t:'5 · Merged',p:'The team merged PR #88 into main on GitHub. Its tickets <b>land</b> and close. The next sync brings main into your branch, and a new draft begins.',
   w:[['On the graph','your branch, up to #47, is now part of main'],['Landed','LANDED'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
 
 const side=()=>{
   if(step===0) return `<h2>Before you prepare</h2><label class="tog"><input type="checkbox" id="cf" ${conflict?'checked':''}> show a conflict with main</label><label class="tog" style="margin-top:8px"><input type="checkbox" id="mn" ${many?'checked':''}> show many tickets (15 in the draft)</label><p class="cost" style="margin-top:10px">Tick it to watch the sync hit a conflict and an agent resolve it.</p>`;
   if(step===1) return `<h2>Your PR</h2><label class="cost" for="tt">Title</label><input id="tt" class="field" value="Chapter 9, and the shelf sorts by last chapter"><div style="height:8px"></div><label class="cost" for="dd">Description — yours to edit</label><textarea id="dd" class="field" readonly></textarea>`;
-  if(step===2) return `<h2>On GitHub</h2><p>PR <b>#88</b> · lingtai/pr/7 → main</p><p class="cost">checks 2 passed · 0 of 2 approvals</p>`;
-  if(step===3) return `<h2>Review on GitHub</h2><p><b>li-wei</b> on shelf.ts: “Sorting by last chapter should break ties by title.”</p><p class="cost">→ ticket #47 opened from the comment · Lingtai is doing it</p>`;
+  if(step===2) return `<h2>On GitHub</h2><p>PR <b>#88</b> · steven/foundry-pr-7 → main</p><p><a href="#" style="color:var(--accent)">Read the review on GitHub ↗</a></p><p class="cost">Lingtai checks every five minutes whether it was merged or closed.</p>`;
+  if(step===3) return `<h2>Your rework ticket</h2><p>You read li-wei’s comment on GitHub and opened <b>#47 Shelf ties break by title</b>.</p><p class="cost">Lingtai does it on your branch like any ticket; then Update.</p>`;
   return `<h2>Done</h2><p>${tickets.length} tickets landed. Your next PR starts empty.</p>`;
 };
 function render(){
@@ -230,7 +230,7 @@ async function act(){
   } else if(step===1){
     step=2;render();
     draw('tieUp');$('ghglow').classList.remove('glow');void $('ghglow').getBBox();$('ghglow').classList.add('glow');
-    card('open','PR #88','lingtai/pr/7 · the team is reviewing');show('team');
+    card('open','PR #88','steven/foundry-pr-7 · the team is reviewing');show('team');
   } else if(step===3){
     show('k4');await wait(600);tie(880);tickets=[...tickets,'#47'];card('open','PR #88','updated · now ends at #47');show('bubble',false);
     $('act').remove();$('explain').insertAdjacentHTML('beforeend','<div class="wait"><span class="d pulse"></span>Updated · waiting for the team on GitHub</div>');
@@ -238,7 +238,7 @@ async function act(){
   }
   busy=false;if($('act'))$('act').disabled=false;
 }
-$('dComment').onclick=()=>{if(busy)return;step=3;render();show('bubble');card('changes','PR #88','li-wei asked for a change');};
+$('dComment').onclick=()=>{if(busy)return;step=3;render();show('bubble');};
 $('dMerge').onclick=()=>{if(busy)return;step=4;render();show('bubble',false);
   $('tieUp').classList.add('hide');$('tieDown').style.opacity=0;$('card').style.transition='opacity .6s';$('card').style.opacity=0;
   setTimeout(()=>{draw('mergeline');setTimeout(()=>show('mergenode'),900)},500);card('merged','PR #88','merged into main · tickets landed');

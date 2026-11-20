@@ -169,8 +169,8 @@ async function play(o){
   if(!moved){show('same');steps(['ok','skip','skip','skip','ok'],['no','','','','#48 starts']);show('nxt');$('nxtl').textContent='next ticket starts here';
     $('out').innerHTML='main is already in your branch. Nothing is merged, no commit is made, and the next ticket is claimed at once.';return}
   steps(['ok','run'],['yes · 2 commits','bringing it down']);draw('arc');await wait(900);if(me!==run)return;show('snode');node('#9c5a08','sync');
-  if(o==='clean'){await wait(600);node('#2c7a4c','✓');steps(['ok','ok','skip','skip','ok'],['yes · 2 commits','clean','not needed','the next ticket’s own build checks it','pushed · #48 starts']);show('nxt');
-    $('out').innerHTML='No file changed on both sides, so git merged it by itself. Your branch now has li-wei’s and ana’s work under yours.';return}
+  if(o==='clean'){await wait(600);node('#2c7a4c','✓');steps(['ok','ok','skip','ok','ok'],['yes · 2 commits','clean','not needed','build ✓ before the push','pushed · #48 starts']);show('nxt');
+    $('out').innerHTML='No file changed on both sides, so git merged it by itself; the result was built before it was pushed, so a red main never becomes the base your tickets are cut from.';return}
   show('hit');node('#9c5a08','!');$('snode').classList.add('pulse');
   steps(['ok','no','run'],['yes · 2 commits','conflict in shelf.ts','an agent · round 1 of 6']);
   $('out').innerHTML='li-wei and #43 both changed <code>shelf.ts</code>. An agent is handed both sides — what #43 meant, and what li-wei’s commit meant — and resolves it.';
