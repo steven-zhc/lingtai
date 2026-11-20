@@ -35,6 +35,7 @@ see *A required sandbox the host cannot provide*.
    | --- | --- | --- | --- | --- |
    | A person's pause | `prj-{project}` | `ProjectPaused {project, by}` | `ProjectResumed {project, by}` | A person: `lingtai resume [project]`, the board's banner, or the bar with that project selected |
    | The day's ceiling | `ctl-conductor` | `DayCeilingReached {day, reportedUsd, estimatedUsd, ceilingUsd}` | `DayCeilingLifted {day, why: new-day \| config-raised \| config-removed}`, or `{day, why: person, by, toUsd}` | The guard; or a person raising today's ceiling (§7) |
+   | A team project's personal branch that cannot be synced ([0130](0130-a-project-is-solo-or-team.md) §4) | `prj-{project}` | `BranchSyncHeld {project, why: conflict \| red-build \| branch-gone, mainCommit}` | `BranchSyncResumed {project, how: synced \| main-moved \| person, by?}` | The sync, when a later sync pushes green (the red build lifts itself once `main` moves); or a person, by `lingtai sync` or the board |
    | A platform account's limit | `acct-{platform}` | `AccountLimitReached {account, until, untilFrom, said, limit?}` | `AccountLimitLifted {account}`, or `{account, by}` | The guard, once `until` has passed; or a person who knows it is over (§7) |
 
    A project's own state is the Project aggregate's. The ceiling is the
@@ -81,7 +82,10 @@ see *A required sandbox the host cannot provide*.
    once.
 
    The two system locks are written by one module, the guard, in the
-   conductor-lock holder only. It has one entry point, and every gate calls it
+   conductor-lock holder only. The sync's hold (§2's table, 0130 §4) is the one
+   other system writer: it is appended by the sync, in the conductor-lock holder,
+   at the moment the sync fails, since only the sync knows it failed; every gate
+   reads it through §5's function like any lock. It has one entry point, and every gate calls it
    at the moment it would start work: each claim, each start, a discussion, a
    triage. Its answer is a fact about the moment it is asked, and a queue read
    can take long enough to change it (#861). The call brings the system locks

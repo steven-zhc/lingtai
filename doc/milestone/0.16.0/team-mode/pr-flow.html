@@ -101,7 +101,7 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
       <path class="rail" d="M60 90 H1060" stroke="#4a5d8a"/>
       <text class="lbl" x="60" y="72" fill="#4a5d8a">main</text>
       <path class="rail" d="M130 90 C190 90 170 350 240 350 H1060" stroke="#0b6a70"/>
-      <text class="lbl" x="250" y="392" fill="#075056">steven/foundry</text>
+      <text class="lbl" x="250" y="392" fill="#075056">steven-zhc/foundry</text>
       <text class="sub" x="250" y="410">your personal branch — Lingtai lands each ticket here</text>
 
       <circle cx="130" cy="90" r="9" fill="#fff" stroke="#4a5d8a" stroke-width="3"/>
@@ -140,7 +140,7 @@ textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
         <text id="ctitle" x="792" y="190" font-size="15" font-weight="700" fill="#0f181c">PR draft</text>
         <rect id="cpill" x="906" y="176" width="92" height="20" rx="10" fill="#dcedee"/>
         <text id="cpilltxt" x="952" y="190" text-anchor="middle" font-size="11" font-weight="600" fill="#075056">collecting</text>
-        <text x="768" y="214" font-size="11.5" font-family="IBM Plex Mono" fill="#5e6e74">steven/foundry → main</text>
+        <text x="768" y="214" font-size="11.5" font-family="IBM Plex Mono" fill="#5e6e74">steven-zhc/foundry → main</text>
         <g id="chips"></g>
         <text id="cmeta" x="768" y="270" font-size="11.5" fill="#5e6e74"></text>
       </g>
@@ -186,20 +186,20 @@ const tie=tipX=>$('tieDown').setAttribute('d',`M880 282 C880 312 ${tipX} 300 ${t
 
 const steps=[
  {t:'1 · Collect',p:'Each ticket Lingtai finishes is merged into <b>your branch</b>, not main, and joins the draft above. Nothing has left your machine.',
-  w:[['Where','steven/foundry, on this machine'],['Who sees it','only you'],['Main','moved 2 commits since — your teammates’ work']],btn:'Prepare PR',cost:'next: bring main down, one summary run (≤ 20 turns, 5 min), one build'},
+  w:[['Where','steven-zhc/foundry, on this machine'],['Who sees it','only you'],['Main','moved 2 commits since — your teammates’ work']],btn:'Prepare PR',cost:'next: bring main down, one summary run (≤ 20 turns, 5 min), one build'},
  {t:'2 · Prepare',p:'The team’s new work comes <b>down</b> into your branch, so the PR is built on today’s main. Then the PR is written — a summary by an agent, the ticket list from the log — and all of it is yours to edit.',
-  w:[['Sync','main → your branch'],['If main moved','merged, then built — a conflict is resolved by an agent and checked by build and review'],['Then','your branch frozen at one commit, and a build on it']],btn:'Submit PR',cost:'pushes steven/foundry-pr-7 and opens the PR on GitHub — Lingtai never merges it'},
- {t:'3 · Submitted',p:'Your branch at this commit went <b>up</b> to GitHub as <code>steven/foundry-pr-7</code>, and the PR to main is open. The team reviews and merges it there. Lingtai keeps working on your branch; new tickets go to the next draft.',
+  w:[['Sync','main → your branch'],['If main moved','merged, then built — a conflict is resolved by an agent and checked by build and review'],['Then','your branch frozen at one commit, and a build on it']],btn:'Submit PR',cost:'pushes steven-zhc/foundry-pr-7 and opens the PR on GitHub — Lingtai never merges it'},
+ {t:'3 · Submitted',p:'Your branch at this commit went <b>up</b> to GitHub as <code>steven-zhc/foundry-pr-7</code>, and the PR to main is open. The team reviews and merges it there. Lingtai keeps working on your branch; new tickets go to the next draft.',
   w:[['On GitHub','PR #88 → main'],['Now','the team reviews — on GitHub'],['You','wait, or keep writing tickets']],waiting:'Waiting for the team on GitHub'},
  {t:'4 · The team asked for a change',p:'A change the team asks for is a <b>new ticket</b>. Lingtai does it on your branch like any other. <b>Update PR</b> moves the PR forward to include it — merging stays the team’s, on GitHub.',
-  w:[['On GitHub','li-wei asks to break ties by title'],['You','open ticket #47 for it — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to steven/foundry-pr-7 — a fast-forward'},
+  w:[['On GitHub','li-wei asks to break ties by title'],['You','open ticket #47 for it — Lingtai does it'],['Update','PR #88 then ends at #47']],btn:'Update PR',cost:'pushes your branch’s head to steven-zhc/foundry-pr-7 — a fast-forward'},
  {t:'5 · Merged',p:'The team merged PR #88 into main on GitHub. Its tickets <b>land</b> and close. The next sync brings main into your branch, and a new draft begins.',
   w:[['On the graph','your branch, up to #47, is now part of main'],['Landed','LANDED'],['Closed by','GitHub, from “Closes #…”'],['Next','a fresh draft']]}];
 
 const side=()=>{
   if(step===0) return `<h2>Before you prepare</h2><label class="tog"><input type="checkbox" id="cf" ${conflict?'checked':''}> show a conflict with main</label><label class="tog" style="margin-top:8px"><input type="checkbox" id="mn" ${many?'checked':''}> show many tickets (15 in the draft)</label><p class="cost" style="margin-top:10px">Tick it to watch the sync hit a conflict and an agent resolve it.</p>`;
   if(step===1) return `<h2>Your PR</h2><label class="cost" for="tt">Title</label><input id="tt" class="field" value="Chapter 9, and the shelf sorts by last chapter"><div style="height:8px"></div><label class="cost" for="dd">Description — yours to edit</label><textarea id="dd" class="field" readonly></textarea>`;
-  if(step===2) return `<h2>On GitHub</h2><p>PR <b>#88</b> · steven/foundry-pr-7 → main</p><p><a href="#" style="color:var(--accent)">Read the review on GitHub ↗</a></p><p class="cost">Lingtai checks every five minutes whether it was merged or closed.</p>`;
+  if(step===2) return `<h2>On GitHub</h2><p>PR <b>#88</b> · steven-zhc/foundry-pr-7 → main</p><p><a href="#" style="color:var(--accent)">Read the review on GitHub ↗</a></p><p class="cost">Lingtai checks every five minutes whether it was merged or closed.</p>`;
   if(step===3) return `<h2>Your rework ticket</h2><p>You read li-wei’s comment on GitHub and opened <b>#47 Shelf ties break by title</b>.</p><p class="cost">Lingtai does it on your branch like any ticket; then Update.</p>`;
   return `<h2>Done</h2><p>${tickets.length} tickets landed. Your next PR starts empty.</p>`;
 };
@@ -230,7 +230,7 @@ async function act(){
   } else if(step===1){
     step=2;render();
     draw('tieUp');$('ghglow').classList.remove('glow');void $('ghglow').getBBox();$('ghglow').classList.add('glow');
-    card('open','PR #88','steven/foundry-pr-7 · the team is reviewing');show('team');
+    card('open','PR #88','steven-zhc/foundry-pr-7 · the team is reviewing');show('team');
   } else if(step===3){
     show('k4');await wait(600);tie(880);tickets=[...tickets,'#47'];card('open','PR #88','updated · now ends at #47');show('bubble',false);
     $('act').remove();$('explain').insertAdjacentHTML('beforeend','<div class="wait"><span class="d pulse"></span>Updated · waiting for the team on GitHub</div>');
@@ -258,7 +258,7 @@ function reset(){
   ['t1','t2','moved'].forEach((k,i)=>{$(k).classList.add('hide');setTimeout(()=>show(k),1700+i*250)});
 }
 $('cluster').onclick=()=>{const l=$('list');if(l.style.display==='block'){l.style.display='none';return}
-  l.innerHTML=`<h2 style="font-size:16px">13 earlier tickets in this draft</h2><p class="cost">#21 – #41 · in review on steven/foundry since the last sync · all go into the next PR</p><ul class="what">${EARLIER.map((t,i)=>`<li><b>${t}</b><span>${['Story index paginates','RSS link in footer','Fix date on chapter 3','Shelf empty state','Alt text on covers','Chapter word count','Reading list','Dark code blocks','Search by author','Fix 404 copy','Series badge','Next/prev links','Chapter 9'][i]}</span></li>`).join('')}</ul>`;l.style.display='block'};
+  l.innerHTML=`<h2 style="font-size:16px">13 earlier tickets in this draft</h2><p class="cost">#21 – #41 · in review on steven-zhc/foundry since the last sync · all go into the next PR</p><ul class="what">${EARLIER.map((t,i)=>`<li><b>${t}</b><span>${['Story index paginates','RSS link in footer','Fix date on chapter 3','Shelf empty state','Alt text on covers','Chapter word count','Reading list','Dark code blocks','Search by author','Fix 404 copy','Series badge','Next/prev links','Chapter 9'][i]}</span></li>`).join('')}</ul>`;l.style.display='block'};
 $('replay').onclick=reset;
 reset();
 }

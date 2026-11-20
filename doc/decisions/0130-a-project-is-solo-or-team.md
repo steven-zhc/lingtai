@@ -63,9 +63,10 @@ names both and adds what lies between that branch and `main`.
    **Where the personal branch comes from.** It is made from
    `origin/<branch.main>`, after asking, by `lingtai add` or `init` when it does
    not exist; an existing one is used as it is, and the first sync (§4) brings
-   `main` into it. For a local project (`add --local`, `init --local`)
+   `main` into it. For a local team project (`add --local`, `init --local`)
    `branch.main` is the branch checked out when the project is added, and
-   `branch.personal` defaults to `lingtai-base`.
+   `branch.personal` defaults to `lingtai-base`; a local solo project lands on
+   `lingtai-base` as before (0104 §15).
 
    **One personal branch is one machine's.** The conductor lock is a file on one
    machine ([0102](0102-one-conductor-holds-the-lock.md)), and a conductor that
@@ -76,13 +77,16 @@ names both and adds what lies between that branch and `main`.
    branches and submits each draft from its own.
 
    **The default name is made safe, and every name is checked.** The default is
-   `<login>/<machine>`, the machine part made from the host name: `.local`
+   `<login>/<machine>` — the GitHub login, or the local user's name on a local
+   project — the machine part made from the host name as the system reports it: `.local`
    dropped, lower-cased, every character outside `a-z`, `0-9` and `-` replaced
    by `-`, runs of `-` collapsed, trimmed of `-` at either end, cut to 24
    characters, and `machine` if nothing is left — `Steven's MacBook Pro.local`
    becomes `steven/steven-s-macbook-pro`. `lingtai add` shows it and the person
    may change it. Whatever its source, `branch.personal` is refused by name when
-   the recipe resolves if `git check-ref-format --branch` refuses it, or if it
+   the recipe resolves if it breaks `git check-ref-format --branch`'s rules —
+   checked by a pure copy of those rules, held to real git by a test, so resolve
+   stays free of IO — or if it
    equals `branch.main` ignoring case — a case-insensitive filesystem holds the
    two as one ref.
 
@@ -119,7 +123,12 @@ names both and adds what lies between that branch and `main`.
    bounded by `attempt.conflictResolutions`, and the agent's spend counts against
    the day's ceiling as any run's does. When the rounds are spent the sync is a
    wait for a person — *the personal branch conflicts with `main`; claiming is
-   paused* — and nothing is claimed for the project until it ends. The person
+   paused* — and nothing is claimed for the project until it ends. The wait is a
+   lock ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2, `BranchSyncHeld`),
+   as a red build or a vanished branch is, so every gate, the banner, `status` and
+   `doctor` read it as they read a pause; a red build's hold lifts itself when
+   `main` moves and the next sync pushes green. A sync's rounds are recorded on a
+   stream of their own per `main` commit. The person
    ends it one of two ways: *give the agent more rounds* (three, from the board
    or `lingtai sync --rounds 3`), or resolve it by hand and run `lingtai sync`,
    which checks that `main` is now an ancestor, builds, and resumes.
@@ -144,7 +153,7 @@ names both and adds what lies between that branch and `main`.
      whose PR the code host reports merged — a squash or rebase merge leaves
      nothing reachable, and it lands all the same. `mergeCommit` is the
      ticket's own merge into `branch.personal`. `TicketLanded` is written at the
-     sync, outside a pass, beside `merge` and `end`. `end` then runs on
+     sync, outside a pass (`EVENT_AT`'s `outside`), beside `merge` and `end`. `end` then runs on
      `landed` as it does in solo — its `close` closes the ticket on every
      source, whether or not the PR's `Closes #…` already did (it does only when
      the PR targets the repository's default branch). `landed` keeps 0109 §11's
@@ -166,7 +175,11 @@ names both and adds what lies between that branch and `main`.
 
 6. **What is in review becomes one PR, at the person's word.** The PR moves
    through these states, each an event on the project's stream — `PrPrepared`,
-   `PrReturnedToDraft`, `PrSubmitted`, `PrUpdated`, `PrMerged`, `PrClosed`:
+   `PrReturnedToDraft`, `PrSubmitted`, `PrUpdated`, `PrMerged`, `PrClosed`.
+   A person's *prepare*, *submit* and *update* are requests on that stream
+   (`PrPrepareRequested`, `PrSubmitRequested`, `PrUpdateRequested`) that the
+   conductor serves, as a discussion is, since preparing syncs and builds in the
+   lane's turn; one it cannot serve is answered `PrRequestRefused` with why:
 
    | State | What is true | How it moves on |
    |---|---|---|
@@ -176,7 +189,7 @@ names both and adds what lies between that branch and `main`.
    | **merged** | its tickets land (§5) | a new draft begins |
 
    - **Only the person moves it**: a button on the board's PR page, or `lingtai
-     pr prepare` / `submit` / `update`. Lingtai never submits on its own.
+     pr prepare` / `back` / `submit` / `update`. Lingtai never submits on its own.
    - **Prepare freezes it**: the PR holds the tickets in review at that commit;
      one put in review after it joins the next draft. *Back to the draft* drops
      the frozen commit and keeps the PR's number for the next prepare.
@@ -194,7 +207,8 @@ names both and adds what lies between that branch and `main`.
      so, when the PR branch is no longer an ancestor of `branch.personal` —
      somebody pushed to it on the code host — and the person decides.
    - **Closed without merging**: its tickets stay in review and return to the
-     draft; nothing is reverted.
+     draft; nothing is reverted. A closed PR reopened on the code host is not
+     followed.
    - **The description** is generated from the log — the tickets, `Closes #…`
      for each GitHub ticket still open, each merge commit and its spend; the
      syncs of §4 are never listed and add nothing to the diff — under the
@@ -203,8 +217,9 @@ names both and adds what lies between that branch and `main`.
      (`pull_requests: write`, `packages/github/src/app.ts:269`; no new
      permission). On any other remote — GitLab, or a local checkout — the frozen
      branch is pushed and the description printed for the person to open by
-     hand; Lingtai does not follow that PR, *one open PR* does not apply, and its
-     tickets land by git alone (§5), so a squash merge there leaves them in
+     hand; Lingtai does not follow that PR — the draft begins again at the next
+     number at once — *one open PR* does not apply, and its tickets land by git
+     alone (§5), so a squash merge there leaves them in
      review and the documentation says to merge with a merge commit.
    - **A restart mid-submit** looks for the PR branch and an open PR from it
      before pushing or opening anything, and records what it finds, so a retry
@@ -238,9 +253,13 @@ names both and adds what lies between that branch and `main`.
 
    **`pr:` is the summary agent's block**, beside `discuss:` and for the same
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
-   the agent defaulting to `runtime.agent`, `limits` to 20 turns and `5m`, and
+   the agent one that can run with no tools, as `discuss:`'s is, defaulting to
+   `runtime.agent` where that one can, `limits` to 20 turns and `5m`, and
    carrying no `usd` (0104 §6). One run when a PR is prepared, and one when it is
-   updated; both count against the day's ceiling.
+   updated, extending the person's current summary; both count against the day's
+   ceiling. Where the project is locked (paused, the day's ceiling, an account
+   limit) a prepare goes on without a summary and says why. Only the summary is
+   the person's to edit; the generated list under it is not.
 
 7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or a PR

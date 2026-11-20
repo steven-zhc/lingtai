@@ -142,9 +142,9 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
       <h4>Your personal branch</h4>
       <p>Lingtai lands your tickets here, on this machine. One branch per machine: a second laptop gets its own.</p>
       <label for="bn" class="later">Branch name</label>
-      <input id="bn" class="field" value="steven/foundry" spellcheck="false" autocomplete="off">
+      <input id="bn" class="field" value="steven-zhc/foundry" spellcheck="false" autocomplete="off">
       <div class="msg ok" id="msg">✓ a new branch, made from <code>main</code> and pushed when you finish</div>
-      <div class="try"><span class="later">try:</span><button data-v="Steven's MacBook Pro">Steven's MacBook Pro</button><button data-v="steven/foundry..old">steven/foundry..old</button><button data-v="Main">Main</button><button data-v="steven/lingtai-base">steven/lingtai-base</button></div>
+      <div class="try"><span class="later">try:</span><button data-v="Steven's MacBook Pro">Steven's MacBook Pro</button><button data-v="steven-zhc/foundry..old">steven-zhc/foundry..old</button><button data-v="Main">Main</button><button data-v="steven/lingtai-base">steven/lingtai-base</button></div>
     </div>
     <ul class="facts">
       <li><b>Made from</b><span><code>origin/main</code>, now</span></li>
@@ -161,7 +161,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
   <div class="sumcard" id="sum">
     <div>
       <p style="margin:0;font:600 18px var(--sans)">chapter-garden is added — <span id="summode">team</span></p>
-      <p style="margin:6px 0 0;color:var(--ink-2)" id="sumtext">Lingtai takes the issues assigned to you, works on <code>steven/foundry</code>, and sends nothing to <code>main</code> until you submit a PR.</p>
+      <p style="margin:6px 0 0;color:var(--ink-2)" id="sumtext">Lingtai takes the issues assigned to you, works on <code>steven-zhc/foundry</code>, and sends nothing to <code>main</code> until you submit a PR.</p>
       <p class="later" style="margin-top:10px">Next: assign yourself an issue and press Start.</p>
     </div>
     <svg viewBox="0 0 460 120" id="sumsvg" aria-label="summary drawing"></svg>
@@ -172,7 +172,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
 {
 const $=id=>document.getElementById(id);
 let mode='team';
-const TEAM_SVG=`<rect width="460" height="120" fill="#f6f9f9" rx="10"/><path d="M20 30 H440" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text class="lbl" x="20" y="20" fill="#4a5d8a">main</text><path d="M50 30 C80 30 74 90 104 90 H440" fill="none" stroke="#0b6a70" stroke-width="4"/><text class="lbl" x="110" y="112" fill="#075056" id="sumbr">steven/foundry</text><rect x="300" y="46" width="80" height="22" rx="11" fill="#fff" stroke="#4a5d8a"/><text x="340" y="61" text-anchor="middle" font-size="11" font-weight="700" fill="#4a5d8a">PR → main</text>`;
+const TEAM_SVG=`<rect width="460" height="120" fill="#f6f9f9" rx="10"/><path d="M20 30 H440" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text class="lbl" x="20" y="20" fill="#4a5d8a">main</text><path d="M50 30 C80 30 74 90 104 90 H440" fill="none" stroke="#0b6a70" stroke-width="4"/><text class="lbl" x="110" y="112" fill="#075056" id="sumbr">steven-zhc/foundry</text><rect x="300" y="46" width="80" height="22" rx="11" fill="#fff" stroke="#4a5d8a"/><text x="340" y="61" text-anchor="middle" font-size="11" font-weight="700" fill="#4a5d8a">PR → main</text>`;
 const SOLO_SVG=`<rect width="460" height="120" fill="#f6f9f9" rx="10"/><path d="M20 60 H440" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text class="lbl" x="20" y="48" fill="#4a5d8a">main</text><circle cx="200" cy="60" r="9" fill="#2c7a4c"/><circle cx="250" cy="60" r="9" fill="#2c7a4c"/><circle cx="300" cy="60" r="9" fill="#2c7a4c"/><text class="sub" x="250" y="92" text-anchor="middle">tickets land here</text>`;
 
 // 0130 §4: the default name made safe, and every name checked as git would.
@@ -180,7 +180,7 @@ const slug=s=>s.replace(/\.local$/i,'').toLowerCase().replace(/[^a-z0-9-]+/g,'-'
 function check(v){
   const t=v.trim();
   if(!t) return {bad:'a name is needed'};
-  if(t.toLowerCase()==='main') return {bad:'that is main itself (ignoring case) — your branch must be a different one',fix:'steven/foundry'};
+  if(t.toLowerCase()==='main') return {bad:'that is main itself (ignoring case) — your branch must be a different one',fix:'steven-zhc/foundry'};
   const why=[];
   if(/\s/.test(t)) why.push('a space');
   if(/[~^:?*\[\\]/.test(t)) why.push('one of ~ ^ : ? * [ \\');
