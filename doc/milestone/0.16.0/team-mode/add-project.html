@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock 5 · adding a project — solo or team</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE  the board's setup voice: one question per step, answered by a picture
+   IDEA   two small git graphs side by side, each one playing what its mode does
+   PICTURE solo: tickets drop straight onto main; team: onto your branch, then up as one PR
+   COLOUR teal for yours, slate for the team's, green when it lands
+   TYPE   IBM Plex as the board, the poster heading the setup pages already use */
+:root{--ground:#f1f4f4;--surface:#fff;--ink:#0f181c;--ink-2:#3a4a50;--muted:#5e6e74;--rule:#d8e0e1;--rule-2:#c3cfd1;
+  --accent:#0b6a70;--accent-soft:#dcedee;--accent-ink:#075056;--team:#4a5d8a;--team-soft:#e5e9f3;--pass:#2c7a4c;--fail:#a33029;--fail-soft:#f6e1de;
+  --sans:"IBM Plex Sans",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--sans)}
+.note{max-width:1240px;margin:0 auto;padding:14px 24px 0;font-size:13px;color:var(--muted)}
+.bar{display:flex;align-items:center;gap:12px;height:50px;padding:0 18px;background:var(--surface);border-bottom:1px solid var(--rule)}
+.bar b{text-decoration:underline;font-weight:600}.bar .p{font:13px var(--mono);color:var(--ink-2)}.bar .sp{flex:1}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 24px 40px}
+.head{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--rule-2);padding-bottom:6px;margin-bottom:18px}
+.poster{font:500 clamp(28px,4vw,40px)/1 var(--mono);letter-spacing:.18em;margin:0}
+.stepno{font:13px var(--mono);color:var(--muted)}
+.picked{font:14px var(--mono);color:var(--ink-2);margin:0 0 18px}
+.picked b{color:var(--ink)}
+.q{font-size:22px;font-weight:600;margin:0 0 4px}
+.qs{color:var(--ink-2);margin:0 0 18px}
+.modes{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.mode{position:relative;text-align:left;background:var(--surface);border:2px solid var(--rule);border-radius:16px;padding:16px 18px 18px;cursor:pointer;font:inherit;color:inherit;transition:border-color .2s, box-shadow .2s}
+.mode:hover{border-color:var(--rule-2)}
+.mode[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 4px #dcedee}
+.mode:focus-visible{outline:3px solid #8fd0d3;outline-offset:2px}
+.mode .top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.mode h3{font-size:20px;margin:0}
+.mode .tag{font:600 11.5px var(--sans);padding:2px 9px;border-radius:10px;background:var(--accent-soft);color:var(--accent-ink)}
+.mode .tag.alt{background:#eef1f1;color:var(--muted)}
+.mode .for{color:var(--ink-2);margin:4px 0 10px;font-size:14.5px}
+.mode svg{display:block;width:100%;height:auto;border-radius:10px;background:#f6f9f9}
+.mode ul{list-style:none;padding:0;margin:12px 0 0;font-size:14px}
+.mode li{display:flex;gap:10px;padding:5px 0;border-top:1px solid #eef2f2}
+.mode li b{min-width:92px;color:var(--muted);font-weight:500}
+.radio{width:22px;height:22px;border-radius:50%;border:2px solid var(--rule-2);display:grid;place-items:center;flex:none}
+.mode[aria-pressed=true] .radio{border-color:var(--accent)}
+.mode[aria-pressed=true] .radio::after{content:"";width:12px;height:12px;border-radius:50%;background:var(--accent)}
+.lbl{font:600 13px var(--mono)}.sub{font:11.5px var(--sans);fill:var(--muted)}
+.drop{animation:drop 3.6s ease-in-out infinite}
+@keyframes drop{0%,8%{opacity:0;transform:translateY(-26px)}20%,78%{opacity:1;transform:translateY(0)}92%,100%{opacity:0;transform:translateY(0)}}
+.d2{animation-delay:.5s}.d3{animation-delay:1s}
+.rise{animation:rise 3.6s ease-in-out infinite}
+@keyframes rise{0%,40%{opacity:0}55%,82%{opacity:1}96%,100%{opacity:0}}
+.drawup{stroke-dasharray:140;animation:drawup 3.6s ease-in-out infinite}
+@keyframes drawup{0%,45%{stroke-dashoffset:140}62%,85%{stroke-dashoffset:0}100%{stroke-dashoffset:0;opacity:0}}
+.drop,.rise{transform-box:fill-box}
+.branch{margin-top:18px;background:var(--surface);border:1px solid var(--rule);border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:22px}
+.branch h4{font-size:16px;margin:0 0 4px}
+.branch p{margin:0 0 10px;color:var(--ink-2);font-size:14px}
+.field{width:100%;border:1.5px solid var(--rule-2);border-radius:9px;padding:11px 12px;font:16px var(--mono)}
+.field.bad{border-color:var(--fail);background:#fffafa}
+.msg{font-size:13.5px;margin-top:8px;min-height:40px}
+.msg.ok{color:var(--pass)}.msg.bad{color:var(--fail)}
+.msg button{font:600 13px var(--mono);border:1px solid var(--rule-2);background:#fff;border-radius:6px;padding:2px 8px;cursor:pointer;margin-left:6px;color:var(--accent-ink)}
+.try{display:flex;gap:6px;flex-wrap:wrap;margin-top:6px}
+.try button{font:12px var(--mono);border:1px dashed var(--rule-2);background:#f8fafa;border-radius:6px;padding:3px 8px;cursor:pointer;color:var(--ink-2)}
+.facts{font-size:13.5px;margin:0;padding:0;list-style:none}
+.facts li{padding:6px 0;border-bottom:1px solid #eef2f2;display:flex;gap:10px}
+.facts li:last-child{border:0}.facts b{min-width:120px;color:var(--muted);font-weight:500}
+.foot{display:flex;justify-content:space-between;align-items:center;margin-top:20px;gap:12px;flex-wrap:wrap}
+.btn{font:600 15px var(--sans);border-radius:9px;padding:11px 20px;border:1px solid var(--rule-2);background:#fff;cursor:pointer;min-height:44px}
+.btn.go{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn[disabled]{opacity:.4;cursor:default}
+.later{font-size:13px;color:var(--muted)}
+.sum{margin-top:28px}
+.sumcard{background:var(--surface);border:1px solid var(--rule);border-radius:14px;padding:18px 20px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:22px;align-items:center}
+.flab{font:600 12px var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent-ink);margin:30px 0 8px}
+@media(max-width:820px){.modes,.branch,.sumcard{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:reduce){*{animation:none!important}.drop,.rise{opacity:1}}
+</style>
+</head>
+<body>
+<p class="note">Mock 5 · adding a project on the board, step 2 — solo or team (0130 §1–4). Sample repository and machine. Click a card; with team, type in the branch field — the try-chips show the checks.</p>
+<div class="bar"><b>Lingtai</b><span class="p">repository</span><span class="sp"></span></div>
+
+<div class="wrap">
+  <div class="head"><p class="poster">HOW YOU WORK</p><span class="stepno">step 2 — solo or team</span></div>
+  <p class="picked">Adding <b>steven-zhc/chapter-garden</b> · GitHub issues · <a href="#" style="color:var(--accent)">change</a></p>
+
+  <p class="q">Does anyone else work on this repository?</p>
+  <p class="qs">It decides which tickets Lingtai takes, and where its work goes. You can change it later in the recipe.</p>
+
+  <div class="modes">
+    <button class="mode" id="m-team" aria-pressed="true" type="button">
+      <div class="top"><h3>Team</h3><span class="tag">recommended</span><span class="radio"></span></div>
+      <p class="for">Other people work here too. Lingtai stays on <b>your branch</b>; the team sees your work only as a PR you send.</p>
+      <svg viewBox="0 0 460 190" aria-label="team: tickets land on your branch, then go up to main as one PR">
+        <rect x="0" y="0" width="460" height="82" fill="#eef1f8"/>
+        <line x1="0" y1="82" x2="460" y2="82" stroke="#c9d3dd" stroke-dasharray="4 5"/>
+        <text class="sub" x="12" y="18" style="fill:#4a5d8a;font-weight:600">TEAM · GITHUB</text>
+        <text class="sub" x="12" y="182" style="fill:#075056;font-weight:600">YOU · THIS MACHINE</text>
+        <path d="M24 46 H440" stroke="#4a5d8a" stroke-width="5" stroke-linecap="round"/>
+        <text class="lbl" x="24" y="34" fill="#4a5d8a">main</text>
+        <path d="M60 46 C100 46 90 140 130 140 H440" fill="none" stroke="#0b6a70" stroke-width="5" stroke-linecap="round"/>
+        <text class="lbl" x="140" y="168" fill="#075056">your branch</text>
+        <g class="drop"><circle cx="190" cy="140" r="11" fill="#0b6a70"/></g>
+        <g class="drop d2"><circle cx="240" cy="140" r="11" fill="#0b6a70"/></g>
+        <g class="drop d3"><circle cx="290" cy="140" r="11" fill="#0b6a70"/></g>
+        <path class="drawup" d="M300 128 C330 100 350 70 370 52" fill="none" stroke="#4a5d8a" stroke-width="3"/>
+        <g class="rise"><rect x="318" y="88" width="66" height="22" rx="11" fill="#fff" stroke="#4a5d8a" stroke-width="1.5"/><text x="351" y="103" text-anchor="middle" font-size="11" font-weight="700" fill="#4a5d8a">your PR</text></g>
+      </svg>
+      <ul>
+        <li><b>Takes</b><span>tickets assigned to you</span></li>
+        <li><b>Works on</b><span>your branch, kept up to date with main</span></li>
+        <li><b>Reaches main</b><span>only through a PR you submit</span></li>
+      </ul>
+    </button>
+
+    <button class="mode" id="m-solo" aria-pressed="false" type="button">
+      <div class="top"><h3>Solo</h3><span class="tag alt">just me</span><span class="radio"></span></div>
+      <p class="for">The repository is yours alone. Each finished ticket goes straight onto <b>main</b>, unattended.</p>
+      <svg viewBox="0 0 460 190" aria-label="solo: tickets land straight on main">
+        <rect x="0" y="0" width="460" height="190" fill="#f3f8f8"/>
+        <text class="sub" x="12" y="18" style="fill:#075056;font-weight:600">YOU</text>
+        <path d="M24 110 H440" stroke="#4a5d8a" stroke-width="5" stroke-linecap="round"/>
+        <text class="lbl" x="24" y="96" fill="#4a5d8a">main</text>
+        <g class="drop"><circle cx="190" cy="110" r="11" fill="#2c7a4c"/></g>
+        <g class="drop d2"><circle cx="240" cy="110" r="11" fill="#2c7a4c"/></g>
+        <g class="drop d3"><circle cx="290" cy="110" r="11" fill="#2c7a4c"/></g>
+        <text class="sub" x="240" y="150" text-anchor="middle">each ticket lands on its own</text>
+      </svg>
+      <ul>
+        <li><b>Takes</b><span>every ticket with a kind label, unless held</span></li>
+        <li><b>Works on</b><span>main</span></li>
+        <li><b>Reaches main</b><span>each ticket, as it passes its checks</span></li>
+      </ul>
+    </button>
+  </div>
+
+  <div class="branch" id="branchbox">
+    <div>
+      <h4>Your personal branch</h4>
+      <p>Lingtai lands your tickets here, on this machine. One branch per machine: a second laptop gets its own.</p>
+      <label for="bn" class="later">Branch name</label>
+      <input id="bn" class="field" value="steven/foundry" spellcheck="false" autocomplete="off">
+      <div class="msg ok" id="msg">✓ a new branch, made from <code>main</code> and pushed when you finish</div>
+      <div class="try"><span class="later">try:</span><button data-v="Steven's MacBook Pro">Steven's MacBook Pro</button><button data-v="steven/foundry..old">steven/foundry..old</button><button data-v="Main">Main</button><button data-v="steven/lingtai-base">steven/lingtai-base</button></div>
+    </div>
+    <ul class="facts">
+      <li><b>Made from</b><span><code>origin/main</code>, now</span></li>
+      <li><b>Default name</b><span>your GitHub login and this machine (<code>foundry</code>)</span></li>
+      <li><b>Kept current</b><span>Lingtai brings <code>main</code> in before each ticket</span></li>
+      <li><b>Never</b><span>pushes <code>main</code></span></li>
+      <li><b>Takes</b><span>issues assigned to <b>steven-zhc</b> on GitHub</span></li>
+    </ul>
+  </div>
+
+  <div class="foot"><span class="later" id="hint">You can switch modes later in the recipe; a switch applies from the next ticket.</span><span><button class="btn">Back</button> <button class="btn go" id="next">Next</button></span></div>
+
+  <p class="flab">Then · the project's page after adding (the <i>added</i> step)</p>
+  <div class="sumcard" id="sum">
+    <div>
+      <p style="margin:0;font:600 18px var(--sans)">chapter-garden is added — <span id="summode">team</span></p>
+      <p style="margin:6px 0 0;color:var(--ink-2)" id="sumtext">Lingtai takes the issues assigned to you, works on <code>steven/foundry</code>, and sends nothing to <code>main</code> until you submit a PR.</p>
+      <p class="later" style="margin-top:10px">Next: assign yourself an issue and press Start.</p>
+    </div>
+    <svg viewBox="0 0 460 120" id="sumsvg" aria-label="summary drawing"></svg>
+  </div>
+</div>
+
+<script>
+{
+const $=id=>document.getElementById(id);
+let mode='team';
+const TEAM_SVG=`<rect width="460" height="120" fill="#f6f9f9" rx="10"/><path d="M20 30 H440" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text class="lbl" x="20" y="20" fill="#4a5d8a">main</text><path d="M50 30 C80 30 74 90 104 90 H440" fill="none" stroke="#0b6a70" stroke-width="4"/><text class="lbl" x="110" y="112" fill="#075056" id="sumbr">steven/foundry</text><rect x="300" y="46" width="80" height="22" rx="11" fill="#fff" stroke="#4a5d8a"/><text x="340" y="61" text-anchor="middle" font-size="11" font-weight="700" fill="#4a5d8a">PR → main</text>`;
+const SOLO_SVG=`<rect width="460" height="120" fill="#f6f9f9" rx="10"/><path d="M20 60 H440" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><text class="lbl" x="20" y="48" fill="#4a5d8a">main</text><circle cx="200" cy="60" r="9" fill="#2c7a4c"/><circle cx="250" cy="60" r="9" fill="#2c7a4c"/><circle cx="300" cy="60" r="9" fill="#2c7a4c"/><text class="sub" x="250" y="92" text-anchor="middle">tickets land here</text>`;
+
+// 0130 §4: the default name made safe, and every name checked as git would.
+const slug=s=>s.replace(/\.local$/i,'').toLowerCase().replace(/[^a-z0-9-]+/g,'-').replace(/-+/g,'-').replace(/^-|-$/g,'').slice(0,24)||'machine';
+function check(v){
+  const t=v.trim();
+  if(!t) return {bad:'a name is needed'};
+  if(t.toLowerCase()==='main') return {bad:'that is main itself (ignoring case) — your branch must be a different one',fix:'steven/foundry'};
+  const why=[];
+  if(/\s/.test(t)) why.push('a space');
+  if(/[~^:?*\[\\]/.test(t)) why.push('one of ~ ^ : ? * [ \\');
+  if(/\.\./.test(t)) why.push('“..”');
+  if(/@\{/.test(t)) why.push('“@{”');
+  if(/^-/.test(t)||/(^|\/)\./.test(t)) why.push('a part starting with - or .');
+  if(/[\/.]$/.test(t)||/\.lock(\/|$)/.test(t)) why.push('an ending git refuses');
+  if(/[^\x20-\x7e]/.test(t)) why.push('a character outside plain ASCII');
+  if(why.length){const parts=t.split('/');const fix=(parts.length>1?slug(parts[0])+'/':'steven/')+slug(parts.slice(-1)[0]);return {bad:`git refuses a branch name with ${why.join(', ')}`,fix}}
+  if(t==='steven/lingtai-base') return {ok:'exists already — Lingtai will use it as it is, and bring main into it first'};
+  return {ok:'a new branch, made from <code>main</code> and pushed when you finish'};
+}
+function validate(){
+  const r=check($('bn').value);
+  $('bn').classList.toggle('bad',!!r.bad);$('msg').className='msg '+(r.bad?'bad':'ok');
+  $('msg').innerHTML=r.bad?`✕ ${r.bad}${r.fix?` — use <button id="usefix">${r.fix}</button>`:''}`:`✓ ${r.ok}`;
+  if($('usefix'))$('usefix').onclick=()=>{$('bn').value=r.fix;validate()};
+  $('next').disabled=mode==='team'&&!!r.bad;
+  if(r.bad)return;
+  if($('sumbr'))$('sumbr').textContent=$('bn').value.trim();
+  if(mode==='team')$('sumtext').innerHTML=`Lingtai takes the issues assigned to you, works on <code>${$('bn').value.trim()||'…'}</code>, and sends nothing to <code>main</code> until you submit a PR.`;
+}
+function pick(m){
+  mode=m;$('m-team').setAttribute('aria-pressed',m==='team');$('m-solo').setAttribute('aria-pressed',m==='solo');
+  $('branchbox').style.display=m==='team'?'grid':'none';
+  $('summode').textContent=m;$('sumsvg').innerHTML=m==='team'?TEAM_SVG:SOLO_SVG;
+  $('sumtext').innerHTML=m==='team'?'':'Lingtai takes every issue with a kind label that is not held, and lands each one on <code>main</code> as it passes its checks.';
+  if(m==='team')validate();else $('next').disabled=false;
+}
+$('m-team').onclick=()=>pick('team');$('m-solo').onclick=()=>pick('solo');
+$('bn').oninput=validate;
+document.querySelectorAll('.try button').forEach(b=>b.onclick=()=>{$('bn').value=b.dataset.v;validate()});
+pick('team');
+}
+</script>
+</body>
+</html>
