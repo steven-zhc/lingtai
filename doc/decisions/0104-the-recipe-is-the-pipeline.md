@@ -202,9 +202,9 @@ in the source.
     `agent/<n>` in its own worktree, and the land pushes `lingtai-base` and
     `agent/<n>` back to the checkout; the person's own branch and working tree
     are never touched. Into `lingtai-base` go only an attempt's merges and the
-    sync that brings `branch.main` in (0130 §4); it reaches `branch.main` through
+    sync that brings `branch.main` in (0130 §6); it reaches `branch.main` through
     the PR the person submits, which on a local remote is a pushed branch and a
-    printed description (0130 §6). Git refuses a push to the branch checked out in a non-bare
+    printed description (0130 §5). Git refuses a push to the branch checked out in a non-bare
     repository, so the land first checks that `lingtai-base` is not the one
     checked out, and holds for a person if it is. Landing on the checkout's
     `origin` instead is a recipe edit.

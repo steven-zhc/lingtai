@@ -1,15 +1,17 @@
-# 0130 — A project is solo or team: a team takes the person's own tickets, puts them in review on their personal branch, and lands them on `main` only through a PR the person submits
+# 0130 — A project is solo or team: a team's tickets land on the person's own branch, and that branch reaches `main` as a PR with a life of its own
 
-**Status** proposed · 2026-11-20, revised the same day after a cold review · not yet built (0.16.0)
+**Status** proposed · 2026-11-20, revised twice the same day (a cold review; then the PR given its own lifecycle and board) · not yet built (0.16.0)
 
 A project's recipe says `mode: solo` or `mode: team`. **Solo** is how Lingtai
 has always run: every ticket with a kind label and no hold is taken, and the
 work lands on `branch.main`. **Team** takes only the tickets assigned to the
-person, merges each into the person's own branch, `branch.personal`, where it
-is **in review**, keeps that branch current with `branch.main`, collects what is
-in review into a PR draft, and opens a PR to `branch.main` only when the person
-submits it. **Landed means on `branch.main` in both modes**: in team mode a
-ticket lands when the PR does. In team mode Lingtai never pushes `branch.main`.
+person and lands each on the person's own branch, `branch.personal` — **a
+ticket's life is the same in both modes; only the branch it lands on differs.**
+What happens between that branch and `main` is not a ticket's: it is a **PR**,
+with a lifecycle and a board of its own — a draft of what has landed, Lingtai
+bringing `main` in and building, a wait for a person when it cannot, the PR in
+review on the code host, and merged. In team mode Lingtai never pushes
+`branch.main`.
 
 ## Context
 
@@ -24,7 +26,9 @@ Two facts made the shape cheap. `queue.assignee` already filters by assignee
 (`assigneeSkip`, `packages/conductor/src/discover.ts:284`), and a local project
 already lands on a branch of its own, `lingtai-base`, never the person's
 checked-out branch ([0104](0104-the-recipe-is-the-pipeline.md) §15). Team mode
-names both and adds what lies between that branch and `main`.
+names both, and gives what lies between that branch and `main` its own
+lifecycle rather than a state of every ticket: a ticket is one piece of work, a
+PR is a person deciding a body of work is ready for the team.
 
 ## Decision
 
@@ -37,12 +41,12 @@ names both and adds what lies between that branch and `main`.
    |---|---|---|
    | `take` | `all` (or as written) | `mine`, and only `mine` (§3) |
    | The cut and the landing | `branch.main` | `branch.personal` |
-   | The merge lane ends in | `landed` | `TicketInReview` — not an ending (§5) |
-   | Reaching `branch.main` | the landing itself | a PR the person submits (§6) |
+   | A ticket ends | `landed`, on `branch.main`, closed | `landed`, on `branch.personal`, left open on the tracker until its PR merges (§4) |
+   | Reaching `branch.main` | the landing itself | a PR, on its own board (§5) |
 
-   **The mode cannot change while it would strand work**: switching between
-   solo and team is refused by name while any ticket is in review or a PR is
-   open, since solo has no `branch.personal` for them to land from.
+   **The mode cannot change while it would strand work**: switching from team to
+   solo is refused by name while any ticket has landed on `branch.personal` and
+   not yet reached `main`, or a PR is open, since solo has no PR board for them.
 
 2. **`branch` names the branches, and it replaces `base`.** `branch.main` is the
    trunk; `branch.personal` is the person's branch, required in team mode and
@@ -62,7 +66,7 @@ names both and adds what lies between that branch and `main`.
 
    **Where the personal branch comes from.** It is made from
    `origin/<branch.main>`, after asking, by `lingtai add` or `init` when it does
-   not exist; an existing one is used as it is, and the first sync (§4) brings
+   not exist; an existing one is used as it is, and the first sync (§6) brings
    `main` into it. For a local team project (`add --local`, `init --local`)
    `branch.main` is the branch checked out when the project is added, and
    `branch.personal` defaults to `lingtai-base`; a local solo project lands on
@@ -98,154 +102,98 @@ names both and adds what lies between that branch and `main`.
    acts as a GitHub App and knows no person's login; on the local store, **every
    ticket** — local tickets are one person's — so team mode works there whole
    and is the way to try it with nothing shared. A solo machine passes over an
-   issue labelled `lingtai:in-review`: it is somebody's work waiting on a PR.
+   issue labelled `lingtai:landed`: it is somebody's work waiting on a PR.
    The board's Queued column shows what this machine would take, by the same
    rule.
 
-4. **The personal branch is kept current with `main`.** Lingtai checks before
-   each claim, on every sweep (`SWEEP_MS`, five minutes,
-   `packages/daemon/src/work-loop.ts:167`) so that a merged PR lands even when
-   nothing is being claimed, and once more when a PR is prepared. When
-   `origin/<branch.main>` is already an ancestor of `branch.personal`
-   (`git merge-base --is-ancestor`) nothing is done. Otherwise it is merged into
-   `branch.personal` in the merge lane's own turn, so a sync and a landing never
-   push the branch at once, and **the result passes `build` before it is
-   pushed**: a red build is a wait for a person and nothing is pushed, so a red
-   `main` never becomes the base every ticket is cut from.
+4. **A team's ticket lands on the personal branch, as any ticket lands.** The
+   merge lane merges it into `branch.personal` and appends `TicketLanded { base:
+   <branch.personal> }`; `landed` is terminal as 0109 §11 says, so the queue never
+   takes it again, and every reducer, column and page reads it as they read any
+   landing. What differs is the tracker:
+   - **The ticket stays open on its tracker** until its code reaches `main`: in
+     team mode `end`'s `close` does not run on `landed`, and the ticket carries
+     `lingtai:landed`, computed from its state as `lingtai:working` is
+     (`labelsFor`, 0109 §5). A solo machine passes such an issue over (§3).
+   - **It is closed when its PR merges** (§5): Lingtai closes every ticket the
+     merged PR held, on every source, whether or not the PR's `Closes #…` already
+     did (it does only when the PR targets the repository's default branch).
+   - **A blocker stays a blocker until it is closed**: a ticket blocked by one
+     that has landed on `branch.personal` waits until that one's PR merges, as a
+     team's ticket waits for its blocker's PR.
+   - **The board and the task page** show a team's landed ticket as landed *on
+     your branch*, with the PR that holds it or *not in a PR yet*, and *merged*
+     once its PR is.
+   - **Closed by a person before its PR merges**: it stays closed; its code is on
+     `branch.personal` and goes into the PR with the rest, listed without
+     `Closes #…`.
+   - **Satisfied** (0108 §21) keeps its meaning against the cut: a ticket whose
+     want is already true on `branch.personal` ends satisfied.
 
-   **A conflict is resolved by an agent, as an attempt's is.** It is
-   [0108](0108-a-refusal-buys-a-round.md) §8's `resolveConflict`, run on a
-   worktree of `branch.personal` merging `origin/<branch.main>`, handed what each
-   side meant: the tickets in review whose code conflicts, and the commits on
-   `branch.main` that brought the other side. The resolution passes `build`, and
-   `review` reads the resolution's own diff; a refusal of either goes back to the
-   agent as the next round. Rounds are counted per `main` commit being merged,
-   bounded by `attempt.conflictResolutions`, and the agent's spend counts against
-   the day's ceiling as any run's does. When the rounds are spent the sync is a
-   wait for a person — *the personal branch conflicts with `main`; claiming is
-   paused* — and nothing is claimed for the project until it ends. The wait is a
-   lock ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2, `BranchSyncHeld`),
-   as a red build or a vanished branch is, so every gate, the banner, `status` and
-   `doctor` read it as they read a pause; a red build's hold lifts itself when
-   `main` moves and the next sync pushes green. A sync's rounds are recorded on a
-   stream of their own per `main` commit. The person
-   ends it one of two ways: *give the agent more rounds* (three, from the board
-   or `lingtai sync --rounds 3`), or resolve it by hand and run `lingtai sync`,
-   which checks that `main` is now an ancestor, builds, and resumes.
+5. **A PR has its own lifecycle, on its own board.** A PR is the person saying a
+   body of work on their branch is ready for the team. Its events are on a
+   stream of its own, `pr-{project}-{n}`, and the board's **PR page** draws one
+   column per state, as the home page draws tickets:
 
-   **A personal branch rewritten or deleted by hand** is found by the next sync:
-   a ticket in review whose merge commit is no longer on `branch.personal` is a
-   wait for a person, and nothing is claimed until it ends.
+   | Draft | In progress | Waiting on you | In review | Merged |
+   |---|---|---|---|---|
+   | what has landed on `branch.personal` and no PR holds yet; it grows as tickets land | Lingtai is working on it: bringing `main` in, building, an agent resolving a conflict, the summary being written | Lingtai could not go on alone: a conflict the agent could not resolve, a red build, a branch rewritten by hand | open on the code host; the team reviews it there | the team merged it into `main`; its tickets are closed |
 
-5. **In review is a state, not an ending.** This is how a team already runs a
-   ticket: open while its PR waits, *done* only when the code is on the trunk.
-   In team mode the merge lane's merge into `branch.personal` appends
-   `TicketInReview { mergeCommit, branch }`. It is not one of `end`'s outcomes
-   (`TerminalOutcome`, `packages/conductor/src/end-step.ts:63`, is unchanged) and
-   `end` does not run on it; the ticket's `lingtai:in-review` label is computed
-   from its state, as `lingtai:working` is (`labelsFor`, 0109 §5).
-   - **The queue passes it over** as `in-review`, by its state on the log and
-     not by the label, so a label a person removes changes nothing on this
-     machine.
-   - **It lands when its code is on `branch.main`**: the sync of §4 appends
-     `TicketLanded { mergeCommit, base: <branch.main> }` for each ticket in
-     review whose merge commit is reachable from `origin/<branch.main>`, **or**
-     whose PR the code host reports merged — a squash or rebase merge leaves
-     nothing reachable, and it lands all the same. `mergeCommit` is the
-     ticket's own merge into `branch.personal`. `TicketLanded` is written at the
-     sync, outside a pass (`EVENT_AT`'s `outside`), beside `merge` and `end`. `end` then runs on
-     `landed` as it does in solo — its `close` closes the ticket on every
-     source, whether or not the PR's `Closes #…` already did (it does only when
-     the PR targets the repository's default branch). `landed` keeps 0109 §11's
-     meaning: terminal, and on the trunk.
-   - **A blocker in review still blocks.** A ticket blocked by one in review
-     waits until that one lands, as a team's ticket waits for its blocker's PR.
-   - **Closed while in review** (`lingtai close`, or by hand on the tracker): it
-     stays closed; its code is already on `branch.personal` and goes into the PR
-     with the rest, listed without `Closes #…`.
-   - **Nothing takes a ticket out of review.** What is in review goes into the
-     PR whole. A change the person wants is a new ticket, put in review like any
-     other, so it joins the same draft.
-   - **Satisfied** (0108 §21) keeps its meaning against the cut: in team mode, a
-     ticket whose want is already true on `branch.personal` ends satisfied and
-     closes without code of its own.
-   - **What each reader shows**: `task_view` shows *in review* and the PR or
-     draft that holds the ticket; `ticket_report` counts it open until it lands;
-     `spend` is unchanged, being per run.
-
-6. **What is in review becomes one PR, at the person's word.** The PR moves
-   through these states, each an event on the project's stream — `PrPrepared`,
-   `PrReturnedToDraft`, `PrSubmitted`, `PrUpdated`, `PrMerged`, `PrClosed`.
-   A person's *prepare*, *submit* and *update* are requests on that stream
-   (`PrPrepareRequested`, `PrSubmitRequested`, `PrUpdateRequested`) that the
-   conductor serves, as a discussion is, since preparing syncs and builds in the
-   lane's turn; one it cannot serve is answered `PrRequestRefused` with why:
-
-   | State | What is true | How it moves on |
-   |---|---|---|
-   | **draft** | every ticket in review that no open PR holds; it grows as tickets are put in review | the person *prepares* it |
-   | **preparing** | `branch.personal` is frozen at one commit; the `pr:` agent has written a summary; title and description are the person's to edit; the checks have run | the person *submits* it, or goes back to the draft |
-   | **submitted** | the frozen commit is pushed as the PR branch and the PR is open on the code host | merged, closed, or *updated* |
-   | **merged** | its tickets land (§5) | a new draft begins |
-
-   - **Only the person moves it**: a button on the board's PR page, or `lingtai
-     pr prepare` / `back` / `submit` / `update`. Lingtai never submits on its own.
-   - **Prepare freezes it**: the PR holds the tickets in review at that commit;
-     one put in review after it joins the next draft. *Back to the draft* drops
-     the frozen commit and keeps the PR's number for the next prepare.
-   - **Before a PR opens, it is checked**: `branch.personal` is current with
-     `origin/<branch.main>` (§4) and the frozen commit passes `build`; either
-     failing opens nothing and says why.
-   - **One open PR per personal branch on GitHub.** While one is submitted,
-     tickets go on being put in review and gather in the next draft, but nothing
-     new is submitted until the open PR is merged or closed — a second PR from
-     the same branch would carry the first one's commits.
+   - **Only the person submits.** *Submit* (a button on the draft card, or
+     `lingtai pr submit`) freezes `branch.personal` at one commit and moves the PR
+     to *In progress*: Lingtai brings `main` in, builds the result, resolves a
+     conflict with an agent, writes the summary, pushes the PR branch and opens
+     the PR — then it is *In review*. Anything it cannot finish moves it to
+     *Waiting on you*, saying why, and nothing is opened. Lingtai never submits on
+     its own and never merges.
    - **A change the review asks for is a rework ticket, then *update***: the
-     person opens the ticket; it is put in review like any other; *update*
-     pushes `branch.personal`'s head to the PR branch and regenerates the
-     description, listing first every ticket that joins. Update refuses, saying
-     so, when the PR branch is no longer an ancestor of `branch.personal` —
-     somebody pushed to it on the code host — and the person decides.
-   - **Closed without merging**: its tickets stay in review and return to the
-     draft; nothing is reverted. A closed PR reopened on the code host is not
-     followed.
-   - **The description** is generated from the log — the tickets, `Closes #…`
-     for each GitHub ticket still open, each merge commit and its spend; the
-     syncs of §4 are never listed and add nothing to the diff — under the
-     summary, which the person may edit before submitting and before each update.
+     person opens the ticket; it lands on `branch.personal` like any other and
+     shows in *Draft* as joining the open PR; *update* takes the PR through *In
+     progress* again and pushes the new head, listing first every ticket that
+     joins. Update refuses, saying so, when the PR branch is no longer an
+     ancestor of `branch.personal` — somebody pushed to it on the code host.
+   - **The description** is generated from the log — the tickets, `Closes #…` for
+     each GitHub ticket still open, each merge commit and its spend; the syncs of
+     §6 are never listed — under a summary the `pr:` agent writes. Only the
+     summary is the person's to edit, on the PR page, at any time; an edit is
+     pushed to the code host.
+   - **Closed without merging**: the PR moves back to *Draft*; its tickets stay
+     on `branch.personal`; nothing is reverted. A closed PR reopened on the code
+     host is not followed.
+   - **One open PR per personal branch on GitHub**: while one is in review, what
+     lands gathers in *Draft* as joining it or waiting for the next; a second PR
+     from the same branch would carry the first one's commits.
    - **The code host**: GitHub in 0.16, through the GitHub App
      (`pull_requests: write`, `packages/github/src/app.ts:269`; no new
-     permission). On any other remote — GitLab, or a local checkout — the frozen
-     branch is pushed and the description printed for the person to open by
-     hand; Lingtai does not follow that PR — the draft begins again at the next
-     number at once — *one open PR* does not apply, and its tickets land by git
-     alone (§5), so a squash merge there leaves them in
-     review and the documentation says to merge with a merge commit.
+     permission). On any other remote — GitLab, or a local checkout — submitting
+     pushes the frozen branch and prints the description for the person to open
+     by hand; the PR goes to *In review* unfollowed, and is *Merged* when git
+     finds its head on `main`.
    - **A restart mid-submit** looks for the PR branch and an open PR from it
      before pushing or opening anything, and records what it finds, so a retry
      never opens a second PR.
-   - **Lingtai never merges the PR.**
-   - **Solo mode has no PR**: `lingtai pr` refuses, saying the project lands on
-     `branch.main` itself.
-   - **One page**: the board's PR page shows whichever state the PR is in.
+   - **Solo mode has no PR page**: `lingtai pr` refuses, saying the project lands
+     on `branch.main` itself.
 
-   **A PR has two ids.** Lingtai numbers a personal branch's PRs from 1 when one
-   is first prepared — the id on the log, and the PR branch's name,
-   `<branch.personal>-pr-<n>` (`steven-zhc/foundry-pr-7`): the personal branch's
-   name keeps two people's apart on the shared remote, and a `-` rather than a
-   `/` because git cannot hold a branch and a directory of the same name. The
-   code host's number (GitHub's `#88`) exists only once it is submitted, and is
-   recorded beside it then. The page shows no number before submitting, and the
-   code host's after it; the branch name is secondary.
+   **A PR has two ids.** Lingtai numbers a personal branch's PRs from 1 — the id
+   on the log and the PR branch's name, `<branch.personal>-pr-<n>`
+   (`steven-zhc/foundry-pr-7`): the personal branch's name keeps two people's
+   apart on the shared remote, and a `-` rather than a `/` because git cannot hold
+   a branch and a directory of the same name. The code host's number (GitHub's
+   `#88`) exists once it is opened, and is recorded beside it. Cards show the
+   code host's number once there is one.
 
    **How Lingtai learns what the team did** — no webhook needed:
-   - **merged**: from git, by the sync of §4, or from the code host reporting the
-     PR merged (§5);
-   - **closed without merging**: read in the same sweep, one request for the one
+   - **merged**: from git, when the PR's head is reachable from
+     `origin/<branch.main>`, **or** from the code host reporting it merged — a
+     squash or rebase merge leaves nothing reachable, and it is merged all the
+     same;
+   - **closed without merging**: read on the daemon's sweep (`SWEEP_MS`, five
+     minutes, `packages/daemon/src/work-loop.ts:167`), one request for the one
      open PR, stopped early when it has not changed since the last read;
    - **the PR page asks the code host when it renders**, as the Queued column
-     does, and shows a link to the review there. Review state and comments are
-     not read in 0.16 (`doc/milestone/later/`).
+     does, and links to the review there. Review state and comments are not read
+     in 0.16 (`doc/milestone/later/`).
 
    A webhook (`pull_request`) is an optional speed-up where the App has a public
    address; adding events to the App asks every installation to approve the
@@ -255,11 +203,43 @@ names both and adds what lies between that branch and `main`.
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
    the agent one that can run with no tools, as `discuss:`'s is, defaulting to
    `runtime.agent` where that one can, `limits` to 20 turns and `5m`, and
-   carrying no `usd` (0104 §6). One run when a PR is prepared, and one when it is
-   updated, extending the person's current summary; both count against the day's
-   ceiling. Where the project is locked (paused, the day's ceiling, an account
-   limit) a prepare goes on without a summary and says why. Only the summary is
-   the person's to edit; the generated list under it is not.
+   carrying no `usd` (0104 §6). One run at submit and one at each update,
+   extending the current summary; both count against the day's ceiling. Where
+   the project is locked (paused, the day's ceiling, an account limit) the PR
+   opens without a summary and says why.
+
+6. **The personal branch is kept current with `main`, as PR work.** Lingtai
+   brings `main` in at every submit and update, and also whenever `main` has
+   moved — checked before each claim and on every sweep — so tickets are written
+   on today's code and conflicts are met while they are small. Either way the
+   sync is shown on the PR page: a card in *In progress* while it runs, in
+   *Waiting on you* when it cannot finish.
+   - When `origin/<branch.main>` is already an ancestor of `branch.personal`
+     (`git merge-base --is-ancestor`) nothing is done. Otherwise it is merged in
+     the merge lane's own turn ([0122](0122-several-passes-share-one-conductor.md)
+     §3), so a sync and a landing never push the branch at once, and **the result
+     passes `build` before it is pushed**.
+   - **A conflict is resolved by an agent, as an attempt's is**:
+     [0108](0108-a-refusal-buys-a-round.md) §8's `resolveConflict`, on a worktree
+     of `branch.personal`, handed what each side meant — the tickets on the
+     branch whose code conflicts, and the commits on `main` that brought the
+     other side. The resolution passes `build`, and `review` reads its own diff; a
+     refusal of either is the next round. Rounds are counted per `main` commit
+     merged, on a stream of their own, bounded by `attempt.conflictResolutions`;
+     the agent's spend counts against the day's ceiling.
+   - **When it cannot finish** — rounds spent, a red build, a branch rewritten
+     or deleted by hand (a landed ticket's merge commit no longer on it) — it
+     waits for a person and **nothing is claimed for the project** until it ends,
+     since every ticket is cut from that branch. The hold is a lock
+     ([0126](0126-a-stop-is-a-lock-and-an-unlock.md) §2, `BranchSyncHeld`), so
+     every gate, the banner, `status` and `doctor` read it as they read a pause. A
+     red build's hold lifts itself when `main` moves and the next sync builds
+     green. The person ends the rest one of two ways: *give the agent more rounds*
+     (three, from the PR page or `lingtai sync --rounds 3`), or resolve it by hand
+     and run `lingtai sync`, which checks that `main` is now an ancestor, builds,
+     and resumes.
+   - Findings the sync's review raises go to the backlog under the sync, not
+     under a ticket.
 
 7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or a PR
@@ -267,6 +247,8 @@ names both and adds what lies between that branch and `main`.
 
 ## Consequences
 
+- A ticket's lifecycle, its reducers, the home page's four columns and the task
+  page are the same in both modes; team mode adds a branch, a label and a page.
 - A new user's first project is a team project on local tickets: nothing on a
   shared tracker, nothing on `main`, and the whole team flow to read. The first
   tutorial's `lingtai-base` is the personal branch by its default name.
@@ -274,19 +256,18 @@ names both and adds what lies between that branch and `main`.
   one PR per ticket. Merged with a merge commit — the lane's own merges are
   `--no-ff` (`packages/repo/src/integrate.ts:539`) — one ticket the team refuses
   is one `git revert`; a squash merge loses that, and the documentation says so.
+- The PR page's *Merged* column is the PR history.
 - Team mode on a tracker other than GitHub or the local store waits for that
   source (`doc/milestone/later/ticket-sources.md`).
-- `lingtai:in-review` is a label Lingtai writes, under 0116 §5's prefix. The
-  board keeps its four columns: in team mode the *Landed* column is split, its
-  landed tickets above, compact and folded, and the tickets *in review* below.
-- New events: `TicketInReview`; the PR's six; the sync's
-  (`BranchSynced { mainCommit, how: clean | resolved }`, and its wait on the
-  project's stream). Every reducer of the ticket reads `TicketInReview`
-  (0101 §4); `TicketLanded`'s event positions gain the sync; 0109 §11's
-  terminal outcomes and §12's audit are unchanged. Findings the sync's review
-  raises go to the backlog under the sync, not under a ticket.
+- `lingtai:landed` is a label Lingtai writes, under 0116 §5's prefix.
+- New events: the PR's, on `pr-{project}-{n}` (its request events served by the
+  conductor, as a discussion's are: submit, update, back; and its states: in
+  progress, waiting, opened, merged, closed); the sync's
+  (`BranchSynced { mainCommit, how: clean | resolved }`, its rounds' stream, and
+  the 0126 lock on `prj-`). No ticket event is added; `TicketLanded` gains no new
+  position.
 - This repository runs solo: it is Lingtai's own repository and merges its own
   work unattended (CLAUDE.md, *Running Lingtai on Lingtai*).
 - Left for later (`doc/milestone/later/`): review state and comments on the PR
-  page; a blocker in review that no longer blocks (a stacked PR); the PR
-  history; a revert ticket.
+  page; a blocker that has landed on the branch no longer blocking (stacked
+  PRs); a revert ticket.
