@@ -194,13 +194,18 @@ over a left rail of icons, a dock, a drawer, stacked boards and a project home
   the headline's alone.
 - **Search is a visible field on the right, `Search ⌘K`**, beside `Pause` and
   `Report`; ⌘K (#908) was a key nobody could see.
-- **Keys, `G` then a letter**, as GitHub and Linear: `G T` tickets, `G P` PRs,
-  `G R` recipe, `G O` report, `G S` switch project, `G W` the first thing
-  waiting on you. On a board `J`/`K` move between cards, `H`/`L` between
-  columns, `Enter` opens, `Esc` goes back; on a PR `[`/`]` go to the PR under
-  or over it in its stack, `O` opens it on GitHub. `?` lists them. **Every
-  control that has a key shows it in its tooltip**, so the keys are learnt by
-  using the mouse. A key is never bound while focus is in a field.
+- **At most four views on the line.** A fifth goes into a `More ▾` at its end,
+  and a new view starts there until it has shown it is used — the line's
+  limit is the point, the same restraint as *a chip is not free*. A rail of
+  icons was the other finalist and was turned down for exactly this: it takes
+  a new view for free, and a tool that grows that way ends up overwhelming.
+- **Keys are few and never announced.** `⌘K` searches (#908); `#` anywhere
+  outside a field opens it with `#` typed, for a ticket or PR number; `G T`
+  tickets, `G P` PRs, `G S` switch project. Nothing pops up to teach them:
+  each control's tooltip shows its key, so they are learnt by using the
+  mouse. A key is never bound while focus is in a field. More keys (moving
+  between cards, a PR's stack, a list of them all) are in
+  `doc/milestone/later/keys.md`.
 
 ```
 Lingtai / chapter-garden ▾ / Tickets  PRs ❶  Recipe   ●  2 waiting on you     [Search ⌘K]  Pause  Report
