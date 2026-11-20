@@ -14,21 +14,42 @@ the experiment as the thing to confirm or refute, never as the answer.
 | Agent | Start it as | Logs in with | Known before the run |
 |---|---|---|---|
 | GitHub Copilot CLI | `copilot --acp` (stdio) | its own GitHub login, or a BYOK provider through `COPILOT_PROVIDER_*` | Server-wide options (`--available-tools`, `--excluded-tools`, `--effort`, `--sandbox`) are fixed at start and `session/new` cannot change them ([ACP server reference](https://docs.github.com/en/copilot/reference/copilot-cli-reference/acp-server)). A user reports that in `--acp` mode it approves tools itself and never sends `session/request_permission` ([copilot-cli#845](https://github.com/github/copilot-cli/issues/845)); open or fixed is not known |
-| Gemini CLI | `gemini --acp` (older clients pass `--experimental-acp`) | its own Google login | Advertises `authenticate`, `setSessionMode` (the approval level, e.g. auto-approve) and `unstable_setSessionModel`; `GEMINI_TELEMETRY_*` writes every ACP message to a file ([ACP mode](https://geminicli.com/docs/cli/acp-mode/)). **For unpaid and Google One users Gemini CLI was replaced by Antigravity CLI on 2026-06-18** — which plan the operator's login is on decides whether Gemini can be the acceptance agent at all |
+| Antigravity CLI | `agy acp` (stdio) | its own Google login, made with `agy acp --login` (ACP terminal auth) | In place of Gemini CLI (2026-11-19): Google replaced Gemini CLI with it for unpaid and Google One users on 2026-06-18, and Homebrew disables `gemini-cli` on 2026-12-18. ACP since 1.5.0 ([docs](https://antigravity.google/docs/cli/acp/)). `agy acp --help` on 1.5.9 lists `--dangerously-skip-permissions` (auto-approve every tool permission request — so by default it asks), `--sandbox` (its own), `--gemini-dir` and `--app-data-dir` (where its state lives), `--disable-telemetry`, `--process-per-session`. A Google forum reply warns that reaching the service through third-party software with Antigravity OAuth can suspend the account ([thread](https://discuss.ai.google.dev/t/is-using-the-official-agy-cli-through-a-local-mcp-server-with-third-party-ai-agents-permitted/184829)); Lingtai drives the official `agy acp` as an editor does, not a third-party bridge, and whether that reading holds is the operator's to weigh |
 | DeepSeek Harness | `dsh --profile acp` | `DEEPSEEK_API_KEY` (prepaid balance) | npm package `@deepseek-ai/dsh`; config under `~/.dsh/` (`cordis.patch.yml`, `profiles/<name>`); `dsh --profile acp --dump-config` prints what it will run with ([CLI README](https://github.com/deepseek-ai/deepseek-harness/blob/master/apps/cli/README.md)). Developer preview: record the version |
 
 Record `--version` of each agent, and the date, at the top of the write-up: all
 three are moving, and a result is about a version.
 
+## Where it runs: Foundry
+
+The round runs on **Foundry**, the operator's second Mac (reached over
+Tailscale as `foundry`), not on the machine that conducts Lingtai: the agents
+start there never logged in, so E6 sees a clean state, and nothing they write
+to their config directories touches the conducting machine.
+
+Foundry is an **Intel Mac on macOS 15.7**, so every sandbox result is about
+Seatbelt on x86_64 and says so. Installed for the round on 2026-11-19:
+
+| What | Version | How |
+|---|---|---|
+| GitHub Copilot CLI | 1.0.112 | `brew install --cask copilot-cli` |
+| Antigravity CLI | 1.5.9 | `brew install --cask antigravity-cli` (Homebrew manages its updates) |
+| DeepSeek Harness | 0.2.2-rc.5 | `npm i -g @deepseek-ai/dsh` — not Homebrew: brew's `dsh` is an unrelated *distributed shell*, and the `deepseek-harness` cask is the desktop app, arm64 only |
+| Lingtai | `2219e83a` (0.15.0) | cloned to `~/workspace/lingtai`, for `packages/sandbox`'s own policy and srt 0.0.83 |
+| `acp-lab` | `@agentclientprotocol/sdk` 2.8.0, `@anthropic-ai/sandbox-runtime` 0.0.83 | `~/workspace/acp-lab` |
+
+Gemini CLI 0.27.3 was already on Foundry, never logged in; it is left as it is
+and not part of the round.
+
 ## Setup, once
 
-**Everything lives outside this repository**, in `~/workspace/acp-lab/` — the
+**Everything lives outside this repository**, in `~/workspace/acp-lab/` on Foundry — the
 client, the fixture project, the transcripts. Nothing is committed here except
 the write-up.
 
 1. **Install and log in.** `npm i -g @deepseek-ai/dsh` and a DeepSeek key with a
    small balance (¥20 is far more than the round needs); Copilot CLI logged in;
-   Gemini CLI logged in, and its plan written down (see the table). E6 is run
+   Antigravity CLI logged in (`agy acp --login`). E6 is run
    **before** each login, so do that agent's E6 first.
 2. **The fixture project** `acp-lab/fixture/`: a git repository with a tiny
    package, one failing unit test, and a `README`. Its task is *make the test
@@ -77,7 +98,7 @@ with the vendor's bill?
 3. Repeat three times per agent.
 4. For one run, set the numbers beside the vendor's own record, taken just
    before and just after the run: DeepSeek's console usage page, Copilot's
-   `/usage` (premium requests), Gemini's telemetry file.
+   `/usage` (premium requests), Antigravity's own usage page.
 
 *Record:* per agent, one of **cost** / **tokens only** / **context size only** /
 **nothing**, and how far the reported figure sits from the bill.
@@ -166,8 +187,7 @@ two shapes or bring a third.
    does, with the policy `packages/sandbox/src/policy.ts` builds.
 2. **The agent's own sandbox off.** Copilot: `--no-sandbox` (its docs say an
    enterprise policy that enforces sandboxing overrides it — record whether the
-   operator's account has one). Gemini: no `-s`/`--sandbox`, `GEMINI_SANDBOX`
-   unset. DeepSeek Harness: find whether it has one and how it is turned off.
+   operator's account has one). Antigravity: no `--sandbox`. DeepSeek Harness: find whether it has one and how it is turned off.
 3. **Start and `initialize`.** Does the process start under srt, and does ACP
    over the wrapped stdio answer `initialize`? Record srt's violation lines
    from the start alone.
@@ -180,7 +200,7 @@ two shapes or bring a third.
 5. **The task.** With login working: does it read, edit, run the test and
    `git commit` in the fixture? Every violation line, every refused write.
 6. **Nested, on purpose.** The agent's own sandbox on, inside srt (Copilot
-   `--sandbox`, Gemini `-s`): does it fail, and with what sentence? This is
+   `--sandbox`, Antigravity `--sandbox`): does it fail, and with what sentence? This is
    the message a person sees when the agent's own setting is left on, and the
    adapter must turn it off or refuse by name.
 7. **Linux, if a machine is to hand.** The same on Linux, where srt is
@@ -208,7 +228,7 @@ to unsandboxed projects, which 0127 §4 makes the exception for a new project.
    host, and telemetry (as 017 did for Claude Code: `sentry.io` was left out of
    `BUILT_IN_DOMAINS`, `packages/sandbox/src/policy.ts:59`).
 4. List the config and cache directories each agent wrote outside the fixture
-   (`~/.copilot`, `~/.gemini`, `~/.dsh`, …).
+   (`~/.copilot`, `~/.gemini` and Antigravity's app data, `~/.dsh`, …).
 
 *Record:* per agent, hosts (model / login / telemetry) and directories.
 
@@ -280,7 +300,7 @@ session, per process, or not at all.
 ## What it costs
 
 About thirty runs per agent, most of them the small fixture task or a single
-answer. Copilot and Gemini run on the operator's plans (premium requests and
+answer. Copilot and Antigravity run on the operator's plans (premium requests and
 quota, not money per run); DeepSeek on a prepaid key, where the whole round
 should cost a few yuan. Stop and write down what was found if any agent's
 first E1 run costs more than expected — the task is meant to be small.
