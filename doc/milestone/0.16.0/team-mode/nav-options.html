@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · getting between Tickets and PRs — three designs (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:16px}
+.pair h4{margin:0 0 6px;font:600 11.5px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.mini{border:1px solid var(--rule);background:#fff;border-radius:3px;overflow:hidden;font-size:12px}
+.mbar{display:flex;align-items:center;gap:8px;padding:7px 10px;border-bottom:1px solid var(--rule);background:#fff;white-space:nowrap}
+.mbar .brand{font-weight:700;text-decoration:underline}
+.mbar .sp{flex:1}
+.mbar .hl{color:#9c5a08;font-weight:600}
+.mbar .b{border:1px solid var(--rule-2);border-radius:3px;padding:1px 7px;font-size:11.5px}
+.mcols{display:grid;grid-template-columns:repeat(4,1fr);min-height:150px}
+.mcols.p{grid-template-columns:repeat(5,1fr);background:#f2f4fa}
+.mcols>div{border-right:1px solid var(--rule);padding:6px}
+.mcols>div:last-child{border:0}
+.mcols b{display:block;font:600 10.5px var(--sans);color:var(--ink-2);margin-bottom:5px}
+.tk{background:#fff;border:1px solid var(--rule);border-left:2px solid var(--rule-2);border-radius:3px;height:26px;margin-bottom:5px}
+.pk{border:1px solid #c9d1e6;border-radius:3px;overflow:hidden;margin-bottom:5px;background:#fbfcff}
+.pk i{display:block;height:9px;background:#2f3d63}.pk.w i{background:var(--fail)}.pk.g i{background:#2c7a4c}.pk.o i{background:#9c5a08}
+.pk s{display:block;height:20px;margin-left:12px;border-left:2px solid #9aa8cc}
+/* the PRs count: never amber, which is the headline's alone */
+.cnt{font:600 10px var(--mono);background:#2f3d63;color:#fff;border-radius:2px;padding:0 4px;margin-left:4px}
+.cnt.r{background:var(--fail)}
+/* 1 · activity bar */
+.withrail{display:grid;grid-template-columns:44px 1fr}
+.rail{background:#1f2a44;display:flex;flex-direction:column;align-items:center;gap:4px;padding:8px 0}
+.rail a{width:34px;height:34px;display:grid;place-items:center;border-radius:3px;color:#aeb8d4;position:relative;font:600 9px var(--mono)}
+.rail a svg{width:18px;height:18px}
+.rail a.on{background:#2f3d63;color:#fff;box-shadow:inset 2px 0 0 #fff}
+.rail a .bd{position:absolute;top:2px;right:1px;min-width:13px;height:13px;border-radius:7px;background:var(--fail);color:#fff;font:700 9px/13px var(--mono);text-align:center}
+.rail .grow{flex:1}
+.railx{display:grid;grid-template-columns:150px 1fr}
+.railx .rail{align-items:stretch;padding:8px 6px}
+.railx .rail a{width:auto;justify-content:start;grid-auto-flow:column;gap:8px;padding:0 8px;font:500 12px var(--sans)}
+/* 2 · segmented switch */
+.seg{display:inline-flex;border:1px solid var(--rule-2);border-radius:3px;overflow:hidden}
+.seg>span{padding:1px 9px;font-size:11.5px}
+.seg>span.on{background:var(--accent);color:#fff}
+.seg>span.on.p{background:#2f3d63}
+/* 3 · tabs */
+.tabs{display:flex;gap:0;border-bottom:1px solid var(--rule);background:#fafbfb;padding:0 8px}
+.tabs>span{padding:6px 12px 5px;font-size:12px;color:var(--muted);border-bottom:2px solid transparent}
+.tabs>span.on{color:var(--ink);font-weight:600;border-color:var(--accent)}
+.tabs>span.on.p{border-color:#2f3d63}
+.pros{display:grid;grid-template-columns:1fr 1fr;gap:16px;padding:0 16px 16px;font-size:12.5px}
+.pros div{background:#fff;border:1px solid var(--rule);border-radius:3px;padding:8px 10px}
+.pros b{display:block;font:600 11px var(--mono);letter-spacing:.05em;text-transform:uppercase;margin-bottom:4px}
+.pros .y b{color:var(--pass)}.pros .n b{color:var(--fail)}
+.pros ul{margin:0;padding-left:16px}
+</style>
+</head>
+<body>
+<p class="mocknote"><b>Mock · getting between the ticket board and the PR board — three designs to choose from.</b> All three share: the board is called <b>PRs</b> (at <code>/prs</code>); it exists only for a <i>team</i> project, so a solo project shows none of this; the bar's headline counts <b>tickets only</b>, and what waits on you on the PR board is counted on the way to it, in its own mark — never amber, which stays the headline's alone (<code>doc/design/the-bar.md</code>). A landed row's <i>in PR #88</i> tag and the claiming-paused banner also lead to it, in every design.</p>
+
+<p class="frame-label">1 · an activity bar, as an IDE has — a rail on the left, one icon per view</p>
+<div class="frame">
+  <div class="pair">
+    <div><h4>on Tickets</h4><div class="mini withrail">
+      <div class="rail">
+        <a class="on" title="Tickets"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="4" height="12"/><rect x="7" y="3" width="4" height="8"/><rect x="12" y="3" width="4" height="10"/></svg></a>
+        <a title="PRs · 1 waiting on you"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="6" r="2"/><path d="M5 6v6M13 8c0 4-8 2-8 4"/></svg><span class="bd">1</span></a>
+        <a title="Recipe"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2h7l3 3v11H4z"/><path d="M7 8h5M7 11h5"/></svg></a>
+        <span class="grow"></span>
+        <a title="Report"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 15V9M8 15V4M13 15v-7"/></svg></a>
+      </div>
+      <div><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Pause</span></div>
+        <div class="mcols"><div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk" style="border-left-color:var(--accent)"></div></div><div><b>Waiting</b><div class="tk" style="border-left-color:var(--fail)"></div><div class="tk" style="border-left-color:var(--fail)"></div></div><div><b>Landed</b><div class="tk" style="border-left-color:var(--pass)"></div></div></div></div>
+    </div></div>
+    <div><h4>on PRs — back: the top icon</h4><div class="mini withrail">
+      <div class="rail">
+        <a title="Tickets"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="2" y="3" width="4" height="12"/><rect x="7" y="3" width="4" height="8"/><rect x="12" y="3" width="4" height="10"/></svg></a>
+        <a class="on" title="PRs"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="5" cy="4" r="2"/><circle cx="5" cy="14" r="2"/><circle cx="13" cy="6" r="2"/><path d="M5 6v6M13 8c0 4-8 2-8 4"/></svg></a>
+        <a title="Recipe"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 2h7l3 3v11H4z"/><path d="M7 8h5M7 11h5"/></svg></a>
+        <span class="grow"></span>
+        <a title="Report"><svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M3 15V9M8 15V4M13 15v-7"/></svg></a>
+      </div>
+      <div><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Pause</span></div>
+        <div class="mcols p"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div>
+    </div></div>
+  </div>
+  <div class="pair" style="padding-top:0"><div><h4>expanded — hover or a pin opens labels</h4><div class="mini railx">
+      <div class="rail"><a class="on">▦ Tickets</a><a>⑂ PRs <span class="cnt r">1</span></a><a>☰ Recipe</a><span class="grow"></span><a>▮ Report</a></div>
+      <div style="padding:10px;color:var(--muted)">… the board, narrower by the rail's width …</div></div></div><div></div></div>
+  <div class="pros"><div class="y"><b>For</b><ul><li>The IDE feel: every view of a project is one icon on one rail, always in the same place</li><li>Room to grow — verify, discussions, a release view later — without touching the bar</li><li>Back is the same move as there; the lit icon says where you are</li><li>Recipe and Report move off the bar, which leaves it filter · health · headline and Pause</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>The largest change: every page gains a rail, solo projects too (with only Tickets, Recipe, Report on it)</li><li>Report is the window's, not the project's; on a project rail it reads as the project's</li><li>Icons need hovering until learnt; 44px less width for the columns</li></ul></div></div>
+</div>
+
+<p class="frame-label">2 · a two-way switch among the project's actions, beside Recipe and Pause</p>
+<div class="frame">
+  <div class="pair">
+    <div><h4>on Tickets</h4><div class="mini"><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="seg"><span class="on">Tickets</span><span>PRs <span class="cnt r">1</span></span></span><span class="b">Recipe</span><span class="b">Pause</span><span class="b">Report</span></div>
+      <div class="mcols"><div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk" style="border-left-color:var(--accent)"></div></div><div><b>Waiting</b><div class="tk" style="border-left-color:var(--fail)"></div><div class="tk" style="border-left-color:var(--fail)"></div></div><div><b>Landed</b><div class="tk" style="border-left-color:var(--pass)"></div></div></div></div></div>
+    <div><h4>on PRs — back: the other half</h4><div class="mini"><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="seg"><span>Tickets</span><span class="on p">PRs</span></span><span class="b">Recipe</span><span class="b">Pause</span><span class="b">Report</span></div>
+      <div class="mcols p"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div></div>
+  </div>
+  <div class="pros"><div class="y"><b>For</b><ul><li>The smallest change: it sits with Recipe and Pause, which already appear only when a project is selected (the-bar.md, <i>After the locks</i>)</li><li>Coming and going are one control; the lit half says where you are, in the board's own colour</li><li>Solo projects look exactly as today</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>The right of the bar grows to four controls</li><li>A third view later (verify) means a three-way switch, and a fourth would not fit</li></ul></div></div>
+</div>
+
+<p class="frame-label">3 · tabs under the bar, as an editor's tabs</p>
+<div class="frame">
+  <div class="pair">
+    <div><h4>on Tickets</h4><div class="mini"><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Recipe</span><span class="b">Pause</span><span class="b">Report</span></div>
+      <div class="tabs"><span class="on">Tickets</span><span>PRs <span class="cnt r">1</span></span></div>
+      <div class="mcols"><div><b>Queued</b><div class="tk"></div><div class="tk"></div></div><div><b>Running</b><div class="tk" style="border-left-color:var(--accent)"></div></div><div><b>Waiting</b><div class="tk" style="border-left-color:var(--fail)"></div><div class="tk" style="border-left-color:var(--fail)"></div></div><div><b>Landed</b><div class="tk" style="border-left-color:var(--pass)"></div></div></div></div></div>
+    <div><h4>on PRs — back: the Tickets tab</h4><div class="mini"><div class="mbar"><span class="brand">Lingtai</span><span>chapter-garden ▾</span><span style="color:var(--pass)">●</span><span class="hl">2 waiting on you</span><span class="sp"></span><span class="b">Recipe</span><span class="b">Pause</span><span class="b">Report</span></div>
+      <div class="tabs"><span>Tickets</span><span class="on p">PRs</span></div>
+      <div class="mcols p"><div><b>Draft</b><div class="pk" style="border-style:dashed"><i style="background:#e3e8f5"></i><s></s></div></div><div><b>In progress</b><div class="pk o"><i></i><s></s></div></div><div><b>Waiting</b><div class="pk w"><i></i><s></s></div></div><div><b>In review</b><div class="pk"><i></i><s></s></div></div><div><b>Merged</b><div class="pk g"><i></i><s></s></div></div></div></div></div>
+  </div>
+  <div class="pros"><div class="y"><b>For</b><ul><li>The most obvious: two words in the open, the way the task page already has tabs</li><li>Room for a third and fourth tab later</li><li>The bar is untouched</li></ul></div>
+  <div class="n"><b>Against</b><ul><li>A whole row of height on the home page, the page looked at most</li><li>Tabs say "two parts of one page", when the two boards are two lifecycles — the reason they were split</li></ul></div></div>
+</div>
+
+</body>
+</html>
