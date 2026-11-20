@@ -105,10 +105,11 @@ names both and adds what lies between that branch and `main`.
    - **a ticket blocked only by tickets in review on the same personal branch is
      not blocked**: their code is already on the branch it is cut from, and they
      reach `main` in the same PR, as a stacked PR does;
-   - **taking a ticket out of review** (§6) appends `TicketReviewReturned`; the
-     ticket goes back to the queue under its own number, as a review sends work
-     back. A ticket in review that depends on it is taken out with it, the
-     person shown both before anything is reverted.
+   - **nothing takes a ticket out of review.** What is in review goes into the
+     PR whole. Work the person wants changed is a new ticket, taken, merged into
+     `branch.personal` and put in review like any other, so it joins the same
+     draft. Taking one out would mean reverting it, finding what depends on it
+     and reverting that too — more than anyone has asked for.
 
 6. **What is in review is a PR draft, and the person submits it.** Each ticket
    in review on `branch.personal` joins the project's open draft — its ticket, merge
@@ -121,8 +122,7 @@ names both and adds what lies between that branch and `main`.
      GitHub ticket, each merge commit and its spend; the sync merges of §4 are
      never listed, and add nothing to the PR's diff — and opens with a summary
      written by the recipe's `pr:` agent, which the person may edit first;
-   - taking a ticket out of the draft reverts its merge commit on
-     `branch.personal` and returns it to the queue (§5);
+   - the draft is every ticket in review, and no ticket is taken out of it (§5);
    - the PR opens on the code host: GitHub in 0.16; on any other remote the
      frozen branch is pushed and the description printed for the person;
    - Lingtai never merges the PR;
@@ -152,8 +152,9 @@ names both and adds what lies between that branch and `main`.
 - Team mode on a tracker other than GitHub or the local store waits for that
   source (`doc/milestone/later/ticket-sources.md`).
 - `lingtai:in-review` is a label Lingtai writes, under 0116 §5's prefix. The
-  board shows *In review* as a column of its own in team mode.
-- `TicketInReview`, `TicketReviewReturned` and the `in-review` outcome are new;
+  board keeps its four columns: in team mode the *Landed* column is split, its
+  landed tickets above, compact and folded, and the tickets *in review* below.
+- `TicketInReview` and the `in-review` outcome are new;
   every reducer of the ticket reads them (0101 §4), and 0109 §11's terminal
   outcomes are unchanged.
 - This repository runs solo: it is Lingtai's own repository and merges its own
