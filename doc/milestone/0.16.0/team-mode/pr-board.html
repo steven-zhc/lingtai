@@ -32,10 +32,39 @@
 .ci{display:flex;flex-wrap:wrap;gap:4px 6px;font:11.5px var(--mono);margin-top:6px}.ci span{white-space:nowrap;border-radius:6px;padding:1px 6px;background:var(--pass-soft);color:var(--pass)}.ci span.run{background:#fdf0dc;color:#9c5a08}.ci span.red{background:#f6e1de;color:var(--fail)}
 .sub2{font-size:11.5px;color:var(--muted);margin:2px 0 8px}
 .pulse{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.35}}
+
+/* A PR card is not a ticket card: a ticket is a flat sheet; a PR is a branch —
+   a coloured header with its number and head → base, and its tickets as slips
+   strung on a rail, one commit dot each. */
+.pcols{background:#f2f4fa}
+.pr{padding:0;border-radius:14px;border:1px solid #c9d1e6;background:#fbfcff;overflow:hidden;box-shadow:0 1px 0 #dde3f1}
+.pr .top{padding:8px 12px;background:#2f3d63;color:#fff}
+.pr .top .t{font:600 13.5px var(--mono);color:#fff}
+.pr .top .t::before{content:"";display:inline-block;width:12px;height:14px;margin-right:7px;vertical-align:-2px;background:currentColor;
+ -webkit-mask:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 14'%3E%3Ccircle cx='3' cy='2.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Ccircle cx='3' cy='11.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Ccircle cx='9.5' cy='4.5' r='2' fill='none' stroke='black' stroke-width='1.6'/%3E%3Cpath d='M3 4.5v5M9.5 6.5c0 3-6.5 1.5-6.5 3' fill='none' stroke='black' stroke-width='1.6'/%3E%3C/svg%3E") no-repeat center/contain}
+.pr .top .m{color:#dfe5f5!important}
+.pr .top .pill{background:rgba(255,255,255,.18)!important;color:#fff!important}
+.pr>*:not(.top){margin-left:30px;margin-right:12px}
+.pr>*:last-child{margin-bottom:12px}
+.pr::before{content:"";position:absolute;left:17px;top:44px;bottom:16px;width:3px;border-radius:2px;background:#9aa8cc}
+.pr .chips{flex-direction:column;align-items:stretch;gap:5px}
+.pr .chip{position:relative;background:#fff!important;color:var(--ink)!important;border:1px solid var(--rule);border-radius:5px;padding:3px 8px;font:500 12px var(--mono)}
+.pr .chip::before{content:"";position:absolute;left:-18px;top:50%;width:9px;height:9px;margin-top:-5.5px;border-radius:50%;background:#fff;border:2.5px solid #2f3d63}
+.pr.draft{border:1.5px dashed #6c7aa3}.pr.draft .top{background:#e3e8f5;color:#2f3d63}.pr.draft .top .t,.pr.draft .top .m{color:#2f3d63!important}
+.pr.prog .top{background:#9c5a08}.pr.prog::before{background:#e2b878}.pr.prog .chip::before{border-color:#9c5a08}
+.pr.wait .top{background:#a33029}.pr.wait::before{background:#e3a6a1}.pr.wait .chip::before{border-color:#a33029}
+.pr.done .top{background:#2c7a4c}.pr.done::before{background:#9fcdb1}.pr.done .chip::before{border-color:#2c7a4c;background:#2c7a4c}
+.pr.prog,.pr.wait,.pr.rev{border-left:1px solid #c9d1e6}
+.pr .stack{background:#e5e9f3}
+.pr>svg{width:calc(100% - 42px)}
+.cmp{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:18px 20px}
+.cmp h4{margin:0 0 8px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.cmp .tb{background:var(--surface-2,#eef1f1);padding:12px;border-radius:8px}
+.cmp .pb{background:#f2f4fa;padding:12px;border-radius:8px}
 </style>
 </head>
 <body>
-<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens the PR's detail (<a href="pr-flow.html">pr-flow.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>Several PRs at once, stacked</b>: work goes on while the team reviews, and the next PR's base is the one under it, so the team reads only what is new. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
+<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). <b>A PR card is drawn as a branch, never as a ticket</b>: a ticket card is a flat white sheet with a title; a PR card has a coloured header (the state's colour, a branch mark, its number) and its tickets as slips strung on a rail, one commit dot each — so which board you are on is seen before anything is read. The board itself is tinted. A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens the PR's detail (<a href="pr-flow.html">pr-flow.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>Several PRs at once, stacked</b>: work goes on while the team reviews, and the next PR's base is the one under it, so the team reads only what is new. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
 
 <p class="frame-label">A · two PRs open, stacked: #88 back in progress for a rework on its own branch, #90 on top of it in review; the next draft growing</p>
 <div class="frame">
@@ -123,6 +152,22 @@
       <div class="act"><a class="btn small">Give the agent 3 more rounds</a><a class="btn small solid">I resolved it — check again</a></div>
       <div class="m">by hand: merge origin/main into steven-zhc/foundry, push, then <code>lingtai sync</code> — <a href="sync-conflict.html">the steps</a></div>
     </div>
+  </div>
+</div>
+
+<p class="frame-label">D · side by side — a ticket card on the ticket board, a PR card on the PR board</p>
+<div class="frame" style="max-width:760px;margin-left:auto;margin-right:auto">
+  <div class="cmp">
+    <div><h4>Ticket board · a ticket</h4><div class="tb">
+      <div class="card"><div class="t"><a>#43</a> The shelf sorts by last chapter</div><div class="meta">feature · landed · $0.92</div></div>
+      <div class="card"><div class="t"><a>#50</a> Footer shows the story count</div><div class="meta">implement · Claude Code · 6 min</div></div>
+    </div><p class="muted" style="font-size:12px">a flat sheet: a number, a title, one line of facts</p></div>
+    <div><h4>PR board · a PR</h4><div class="pb">
+      <div class="pr rev"><div class="top"><span class="t">PR #88</span><span class="pill rev"><span class="d"></span>in review</span></div>
+        <div class="sub2" style="margin-top:8px">steven-zhc/foundry-pr-7 → main</div>
+        <div class="chips"><span class="chip">#41</span><span class="chip">#43</span><span class="chip">#44</span></div>
+        <div class="ci"><span>CI ✓ 5/5</span></div></div>
+    </div><p class="muted" style="font-size:12px">a branch: a header in the state's colour, the tickets strung on its rail</p></div>
   </div>
 </div>
 
