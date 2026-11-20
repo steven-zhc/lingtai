@@ -251,7 +251,7 @@ lingtai  base=main
   from GitHub: 3 eligible
   dependencies unread: none
   #612  bug      runnable
-  #615  feature  passed over: agent:hold
+  #615  feature  passed over: lingtai:hold
 ```
 
 After this decision:
@@ -268,7 +268,7 @@ Queue  3 eligible, from GitHub
   ID    KIND      STATE
   #612  bug       runnable
   #613  feature   runnable
-  #615  feature   passed over — agent:hold
+  #615  feature   passed over — lingtai:hold
 
 Waiting on you
   ● #609  asks which of two approaches to take
@@ -291,7 +291,7 @@ are `accent`. Redirected, it is the same text with no escape codes. With
       "filter": { "ok": true, "recipe": "3f2a91c", "kinds": ["bug", "tech-debt", "feature", "documentation"] },
       "source": "GitHub",
       "eligible": 3,
-      "passedOver": [{ "ref": "#615", "reason": "agent:hold" }],
+      "passedOver": [{ "ref": "#615", "reason": "lingtai:hold" }],
       "dependenciesUnread": false,
       "runnable": [
         { "taskId": "t1", "ref": "#612", "kind": "bug", "newAttempts": 0 },

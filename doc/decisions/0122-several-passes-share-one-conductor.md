@@ -196,7 +196,7 @@ and the dollar ceiling lands before any N > 1.
    | A red base | `base-red` while the base's head is the red commit (§2, 0108 §13) | Per project | A commit on the base, checked by the next attempt claimed |
 
 8. **When a project has work queued and nothing running, it says why.** A
-   project whose queue holds a ticket that is not on hold (`agent:hold` and the
+   project whose queue holds a ticket that is not on hold (`lingtai:hold` and the
    other excluded labels do not count) and that has had no attempt in flight
    for longer than one look shows one sentence: why nothing runs, traced to the
    root of what holds it. *Seven tickets wait on #1111, which waits on you*;

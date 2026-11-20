@@ -151,7 +151,7 @@ which kind a wait was got inferred again in each place that needed it, from
      `waiting`, so the card is `Waiting`, the union is `WaitReason`, and the
      events are `WaitStarted`, `WaitResolved` and `WaitTriaged`. _You_ stays on
      the page: a log or a CLI has no fixed reader. **_Hold_ means one thing,
-     `agent:hold`**: a person keeping a queued ticket from being claimed, the
+     `lingtai:hold`**: a person keeping a queued ticket from being claimed, the
      opposite direction.
    - **A wait is classified where the attempt decides it**, never by which
      internal value happened to be set on the way. Two pure functions build a
@@ -841,7 +841,7 @@ which kind a wait was got inferred again in each place that needed it, from
        child is created carrying the system's own `lingtai:publishing` label,
        which the queue passes over. Only after every child, every link and the
        parent's blocked-by have been read back is the label removed from each
-       child. It is the system's own label rather than `agent:hold`, so a hold
+       child. It is the system's own label rather than `lingtai:hold`, so a hold
        a person put on a child is never lifted by it. A split interrupted
        midway leaves its children labelled, and the next run reconciles and
        finishes it.

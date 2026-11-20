@@ -77,7 +77,7 @@ as a combination of other fields:
 5. **The page's word is the column id is the type name.** The board's lane is
    _Waiting on you_ and its id is `waiting`, so the types are `WaitReason` and
    `WaitOnPerson` and the event is `WaitStarted`. _Hold_ means only
-   `agent:hold`. The step `proposed` is called `proposed`, never the router:
+   `lingtai:hold`. The step `proposed` is called `proposed`, never the router:
    what arrives there is a `Proposal`, what it does is route (a verb), and what
    it chooses is an `AttemptNext`, the same type every other step's next move is.
 6. **Decisions are pure functions; effects are in the shell.** A pure function

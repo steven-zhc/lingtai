@@ -81,7 +81,7 @@ run.
 3. **The store translates; the core decides.** A store renders a declarative
    filter in its backend's terms (labels on GitHub) and writes what it is told
    (a label, a close). Kind, priority, blockers, holds and backoff are the
-   core's. `agent:hold` is the core's idea, written in the source's vocabulary.
+   core's. `lingtai:hold` is the core's idea, written in the source's vocabulary.
 
 4. **Lingtai proposes; a person decides a ticket exists.** The only ticket
    Lingtai writes is one a person accepted from the findings backlog.
@@ -178,8 +178,9 @@ run.
    stays on its arm alone. The lane's `wip-commit` refusal (§6) stays, as the
    backstop it always was.
 
-9. **The cut does not move.** Every attempt starts from the base as the mirror
-   has it, never from an earlier attempt's branch. A refused approach does not
+9. **The cut does not move.** Every attempt starts from the landing branch —
+   `branch.main` in solo mode, `branch.personal` in team mode
+   ([0130](0130-a-project-is-solo-or-team.md) §2) — as the mirror has it, never from an earlier attempt's branch. A refused approach does not
    carry into the next attempt unless the agent chooses to read it, which keeps
    *start over* meaning something.
 

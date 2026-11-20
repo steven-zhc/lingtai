@@ -39,8 +39,9 @@ in the source.
    read and written only through `@lingtai/project` (0128 §6–§7).
 
 2. **The file shape is `version: 2` and `steps:`.** The top-level keys are
-   `version`, `extends`, `repo`, `source`, `env`, `steps`, `discuss`,
-   `subscribers` and `runtime`. Any other key is refused by name, and so is any
+   `version`, `mode`, `branch`, `extends`, `repo`, `source`, `env`, `steps`,
+   `discuss`, `subscribers` and `runtime`. `mode` and `branch` are
+   [0130](0130-a-project-is-solo-or-team.md)'s. Any other key is refused by name, and so is any
    `version` other than 2. `extends:` names a preset (`presets.ts`) that fills
    whatever the file omits. The ten steps are
    `claim · admit · prepared · design · implement · build · review · proposed · merge · end`,
@@ -61,18 +62,22 @@ in the source.
 
 5. **Each setting has one home, on the step it bounds or uses.** Values flow from
    that home to whatever else needs them; they are never declared twice.
-   - `admit`'s `worktree:` carries `base` and `submodules`. The merge lane is
-     handed the same `base` and has no key of its own.
+   - The landing branch is `branch.main` in solo mode and `branch.personal` in
+     team mode ([0130](0130-a-project-is-solo-or-team.md) §2), read through
+     `branchOf`. `admit`'s `worktree:` carries `submodules`; the worktree is cut
+     from the landing branch, and the merge lane is handed the same branch and
+     has no key of its own.
    - `claim`'s `queue:` carries `kinds` (priority order), `exclude`, `backoff`
-     and `assignee` (`{ login?, take: mine | unassigned | both }`, where `mine`
-     requires a `login`).
+     and `assignee` (`{ login?, take: all | mine | unassigned }`, where `mine`
+     requires a `login` on GitHub; its default is the mode's, 0130 §1).
    - `agent:` carries the runtime as an enum (`RuntimeId`), with `model:`,
      `prompt:` and an optional `limits: { turns, wall }` beside it.
    - `review`'s agent reads its diff bound from `runtime.budget.diff`.
 
-   `repo.{base, submodules}` and `source.{kinds, exclude, backoff}` are still
-   accepted as a second spelling of the same settings. The accessors in
-   `packages/recipe/src/settings.ts` (`baseOf`, `submodulesOf`, `kindsOf`,
+   `repo.submodules` and `source.{kinds, exclude, backoff}` are still
+   accepted as a second spelling of the same settings; `base` and `repo.base`
+   are not, `branch` having replaced them (0130 §2). The accessors in
+   `packages/recipe/src/settings.ts` (`branchOf`, `submodulesOf`, `kindsOf`,
    `excludeOf`, `backoffOf`, `assigneeOf`, `queueOf`, `limitsFor`, `ceilingOf`)
    read the step first and the old key second. They are the only code that
    knows which spelling a file used, and every reader goes through them.
@@ -191,8 +196,8 @@ in the source.
 
 15. **A local project lands in its own checkout.** `add --local <dir>` writes
     `repo.remote` as the checkout itself, so nothing an attempt makes leaves the
-    machine, and `repo.base` as `lingtai-base`, made from the branch checked
-    out there when it does not exist. The mirror is fetched from the checkout,
+    machine, `mode: team`, and `branch.personal` as `lingtai-base`, made from the
+    branch checked out there when it does not exist (0130 §2). The mirror is fetched from the checkout,
     each attempt works on `agent/<n>` in its own worktree, and the land pushes
     `lingtai-base` and `agent/<n>` back to the checkout; the person's own branch
     and working tree are never touched, and `lingtai-base` does not follow them:

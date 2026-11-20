@@ -34,9 +34,13 @@ and the places that must agree are listed.
    holds `config.yml`, each project's `recipe.yml`, the SQLite log, locks, run
    logs and worktrees.
 
-5. **GitHub labels Lingtai writes use the `lingtai:` prefix** — for example
-   `lingtai:queued`, `lingtai:working`, `lingtai:waiting`. Labels a person sets
-   to steer the queue (`agent:hold`, the kind labels) are the person's.
+5. **Every label Lingtai writes or reads by its own name uses the `lingtai:`
+   prefix**, on any tracker — the ones it writes (`lingtai:queued`,
+   `lingtai:working`, `lingtai:waiting`, `lingtai:publishing`,
+   `lingtai:landed`) and the ones a person sets to steer it (`lingtai:hold`,
+   `lingtai:followup`), so a shared tracker can tell them from its own labels and
+   from other tools'. The kind labels (`bug`, `feature`, …) are the person's own,
+   named in the recipe.
 
 6. **Database objects on Postgres are `lingtai_*`, and the channel is
    `lingtai`.** The trigger `lingtai_events_notify` (function
