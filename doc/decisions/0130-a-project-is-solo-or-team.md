@@ -1,14 +1,15 @@
-# 0130 — A project is solo or team: a team takes the person's own tickets, lands on their personal branch, and reaches `main` only through a PR the person submits
+# 0130 — A project is solo or team: a team takes the person's own tickets, puts them in review on their personal branch, and lands them on `main` only through a PR the person submits
 
 **Status** proposed · 2026-11-20 · not yet built (0.16.0)
 
 A project's recipe says `mode: solo` or `mode: team`. **Solo** is how Lingtai
 has always run: every ticket with a kind label and no hold is taken, and the
 work lands on `branch.main`. **Team** takes only the tickets assigned to the
-person, lands each on the person's own branch, `branch.personal`, keeps that
-branch current with `branch.main`, collects what landed into a PR draft, and
-opens a PR to `branch.main` only when the person submits it. In team mode
-Lingtai never pushes `branch.main`.
+person, merges each into the person's own branch, `branch.personal`, where it
+is **in review**, keeps that branch current with `branch.main`, collects what is
+in review into a PR draft, and opens a PR to `branch.main` only when the person
+submits it. **Landed means on `branch.main` in both modes**: in team mode a
+ticket lands when the PR does. In team mode Lingtai never pushes `branch.main`.
 
 ## Context
 
@@ -28,8 +29,8 @@ names both and adds what lies between that branch and `main`.
 ## Decision
 
 1. **`mode` is a recipe key, `solo` or `team`, and it sets defaults.** It decides
-   `queue.assignee.take`, where the merge lane lands, and what `end` does on
-   `landed`. A value written explicitly is kept, except where §6 refuses it.
+   `queue.assignee.take`, where the merge lane merges, and what that merge
+   means. A value written explicitly is kept, except where §6 refuses it.
    `lingtai add` asks for the mode and defaults to `team`; `add --local` writes
    `team` as well. **A recipe that names no mode is `solo`**, so a project made
    before this decision keeps doing what it did; only `add` writes `team`.
@@ -38,8 +39,9 @@ names both and adds what lies between that branch and `main`.
    |---|---|---|
    | `take` | `all` | `mine` |
    | The cut and the landing | `branch.main` | `branch.personal` |
-   | `end` on `landed` | `close: true` | `labels: [lingtai:landed]`, the ticket left open |
-   | Reaching `branch.main` | the landing itself | a PR the person submits (§5) |
+   | The merge lane ends in | `landed` | `in-review` — not terminal (§5) |
+   | Reaching `branch.main` | the landing itself | a PR the person submits (§6) |
+   | The ticket, until then | — | open, labelled `lingtai:in-review` |
 
 2. **`branch` names the branches, and it replaces `base`.** `branch.main` is the
    trunk; `branch.personal` is the person's branch, required in team mode and
@@ -87,19 +89,40 @@ names both and adds what lies between that branch and `main`.
    equals `branch.main` ignoring case — a case-insensitive filesystem holds the
    two as one ref.
 
-5. **What landed is a PR draft, and the person submits it.** Each ticket landed
-   on `branch.personal` joins the project's open draft — its ticket, merge
+5. **In review is a state, not an ending.** This is how a team already runs a
+   ticket: open while its PR waits, *done* only when the code is on the trunk,
+   and back to work if the review sends it back. In team mode the merge lane's
+   merge into `branch.personal` appends `TicketInReview { mergeCommit, branch }`
+   and the attempt ends with the outcome `in-review`, on which `end` runs (its
+   default: `labels: [lingtai:in-review]`). The ticket is not terminal:
+   - **the queue passes it over** as `in-review`, by its state on the log and
+     not by the label, so a label a person removes changes nothing;
+   - **it lands when its merge commit is reachable from `origin/<branch.main>`**:
+     the sync of §4 appends `TicketLanded` for each such ticket, and `end` runs on
+     `landed` — a GitHub ticket is closed by the PR's `Closes #…`, a local ticket
+     by `end`'s `close`. `landed` keeps 0109 §11's meaning: terminal, and on the
+     trunk;
+   - **a ticket blocked only by tickets in review on the same personal branch is
+     not blocked**: their code is already on the branch it is cut from, and they
+     reach `main` in the same PR, as a stacked PR does;
+   - **taking a ticket out of review** (§6) appends `TicketReviewReturned`; the
+     ticket goes back to the queue under its own number, as a review sends work
+     back. A ticket in review that depends on it is taken out with it, the
+     person shown both before anything is reverted.
+
+6. **What is in review is a PR draft, and the person submits it.** Each ticket
+   in review on `branch.personal` joins the project's open draft — its ticket, merge
    commit and spend — on the log, never on the tracker. `lingtai pr` shows it;
    `lingtai pr submit`, or the board's draft page, submits it:
    - the personal branch at that commit is pushed as `lingtai/pr/<n>`, and the
-     PR opens from it to `branch.main`, so a ticket landed during review joins
+     PR opens from it to `branch.main`, so a ticket put in review meanwhile joins
      the next draft and never the PR under review;
    - the description is generated from the log — the tickets, `Closes #…` for a
      GitHub ticket, each merge commit and its spend; the sync merges of §4 are
-     never listed, and add nothing to the PR's diff — and opens with a summary an
-     agent writes, which the person may edit first (one paid run per PR);
+     never listed, and add nothing to the PR's diff — and opens with a summary
+     written by the recipe's `pr:` agent, which the person may edit first;
    - taking a ticket out of the draft reverts its merge commit on
-     `branch.personal` and reopens the ticket;
+     `branch.personal` and returns it to the queue (§5);
    - the PR opens on the code host: GitHub in 0.16; on any other remote the
      frozen branch is pushed and the description printed for the person;
    - Lingtai never merges the PR;
@@ -107,16 +130,16 @@ names both and adds what lies between that branch and `main`.
    - in solo mode there is no draft, and `lingtai pr` refuses, saying the project
      lands on `branch.main` itself.
 
-   A ticket labelled `lingtai:landed` is closed by its tracker when the PR
-   reaches `branch.main` (`Closes #…` on GitHub). A local ticket, which has no
-   such word, is closed by the sync of §4 once its merge commit is reachable from
-   `origin/<branch.main>`.
+   **`pr:` is the summary agent's block**, beside `discuss:` and for the same
+   reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
+   the agent defaulting to `runtime.agent`, `limits` to 20 turns and `5m`, and
+   carrying no `usd` (0104 §6). One run per submitted PR.
 
-6. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
+7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or
    `lingtai/pr/<n>` and nothing else, and a test holds that. A team recipe
-   whose merge lane, `close` at `landed`, or `take: all` would undo §1 is
-   refused by name when it resolves.
+   whose merge lane targets `branch.main`, or that writes `take: all`, would undo
+   §1 and is refused by name when it resolves.
 
 ## Consequences
 
@@ -128,6 +151,10 @@ names both and adds what lies between that branch and `main`.
   one `git revert`; a squash merge loses that, and the documentation says so.
 - Team mode on a tracker other than GitHub or the local store waits for that
   source (`doc/milestone/later/ticket-sources.md`).
-- `lingtai:landed` is a fourth label Lingtai writes, under 0116 §5's prefix.
+- `lingtai:in-review` is a label Lingtai writes, under 0116 §5's prefix. The
+  board shows *In review* as a column of its own in team mode.
+- `TicketInReview`, `TicketReviewReturned` and the `in-review` outcome are new;
+  every reducer of the ticket reads them (0101 §4), and 0109 §11's terminal
+  outcomes are unchanged.
 - This repository runs solo: it is Lingtai's own repository and merges its own
   work unattended (CLAUDE.md, *Running Lingtai on Lingtai*).

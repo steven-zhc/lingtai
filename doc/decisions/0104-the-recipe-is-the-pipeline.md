@@ -40,7 +40,7 @@ in the source.
 
 2. **The file shape is `version: 2` and `steps:`.** The top-level keys are
    `version`, `mode`, `branch`, `extends`, `repo`, `source`, `env`, `steps`,
-   `discuss`, `subscribers` and `runtime`. `mode` and `branch` are
+   `discuss`, `pr`, `subscribers` and `runtime`. `mode`, `branch` and `pr` are
    [0130](0130-a-project-is-solo-or-team.md)'s. Any other key is refused by name, and so is any
    `version` other than 2. `extends:` names a preset (`presets.ts`) that fills
    whatever the file omits. The ten steps are
