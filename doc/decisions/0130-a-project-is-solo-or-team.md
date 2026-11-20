@@ -76,6 +76,17 @@ names both and adds what lies between that branch and `main`.
    name carrying the person and the machine; a person with two machines has two
    personal branches, and submits each draft from its own.
 
+   **The default name is made safe, and every name is checked.** The default is
+   `<login>/<machine>`, the machine part made from the host name: `.local`
+   dropped, lower-cased, every character outside `a-z`, `0-9` and `-` replaced
+   by `-`, runs of `-` collapsed, trimmed of `-` at either end, cut to 24
+   characters, and `machine` if nothing is left — `Steven's MacBook Pro.local`
+   becomes `steven/steven-s-macbook-pro`. `lingtai add` shows it and the person
+   may change it. Whatever its source, `branch.personal` is refused by name when
+   the recipe resolves if `git check-ref-format --branch` refuses it, or if it
+   equals `branch.main` ignoring case — a case-insensitive filesystem holds the
+   two as one ref.
+
 5. **What landed is a PR draft, and the person submits it.** Each ticket landed
    on `branch.personal` joins the project's open draft — its ticket, merge
    commit and spend — on the log, never on the tracker. `lingtai pr` shows it;
