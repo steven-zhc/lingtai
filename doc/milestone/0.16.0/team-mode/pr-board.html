@@ -12,12 +12,12 @@
 .pcol h3{display:flex;justify-content:space-between;margin:0 0 12px;font:600 13.5px var(--sans);color:var(--ink-2)}
 .pcol h3 .n{font:13px var(--mono);color:var(--muted)}
 .pcol.hot h3{color:#7a4506}.pcol.fail h3{color:var(--fail)}.pcol.gh h3{color:var(--team)}
-.pr{background:#fff;border:1px solid var(--rule);border-radius:10px;padding:11px 12px;margin-bottom:10px;position:relative}
+.pr{background:#fff;border:1px solid var(--rule);border-radius:3px;padding:11px 12px;margin-bottom:10px;position:relative}
 .pr .top{display:flex;justify-content:space-between;align-items:center;gap:8px}
 .pr .t{font-weight:600;font-size:14px}
 .pr .m{font:11.5px var(--mono);color:var(--muted);margin-top:4px}
 .pr .chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:8px}
-.pr .chip{font:600 11px var(--mono);background:#0b6a70;color:#fff;border-radius:9px;padding:1px 7px}
+.pr .chip{font:600 11px var(--mono);background:#0b6a70;color:#fff;border-radius:3px;padding:1px 7px}
 .pr .chip.g{background:#2c7a4c}
 .pr.draft{border:1.5px dashed #0b6a70}
 .pr.prog{border-left:3px solid var(--signal)}
@@ -25,11 +25,11 @@
 .pr.rev{border-left:3px solid var(--team)}
 .pr.done{opacity:.85}
 .pr .act{margin-top:10px;display:flex;gap:6px;flex-wrap:wrap}
-.pr svg{display:block;width:100%;height:auto;margin-top:8px;background:#f6f9f9;border-radius:6px}
+.pr svg{display:block;width:100%;height:auto;margin-top:8px;background:#f6f9f9;border-radius:3px}
 .strip{display:flex;gap:18px;align-items:center;padding:10px 16px;background:#fff;border-bottom:1px solid var(--rule);font-size:13px;color:var(--ink-2)}
 .strip b{font-family:var(--mono);font-weight:600}
-.stack{font:600 11px var(--mono);color:#4a5d8a;background:#e5e9f3;border-radius:8px;padding:1px 7px;display:inline-block;margin-top:6px}
-.ci{display:flex;flex-wrap:wrap;gap:4px 6px;font:11.5px var(--mono);margin-top:6px}.ci span{white-space:nowrap;border-radius:6px;padding:1px 6px;background:var(--pass-soft);color:var(--pass)}.ci span.run{background:#fdf0dc;color:#9c5a08}.ci span.red{background:#f6e1de;color:var(--fail)}
+.stack{font:600 11px var(--mono);color:#4a5d8a;background:#e5e9f3;border-radius:3px;padding:1px 7px;display:inline-block;margin-top:6px}
+.ci{display:flex;flex-wrap:wrap;gap:4px 6px;font:11.5px var(--mono);margin-top:6px}.ci span{white-space:nowrap;border-radius:3px;padding:1px 6px;background:var(--pass-soft);color:var(--pass)}.ci span.run{background:#fdf0dc;color:#9c5a08}.ci span.red{background:#f6e1de;color:var(--fail)}
 .sub2{font-size:11.5px;color:var(--muted);margin:2px 0 8px}
 .pulse{animation:pulse 1.2s ease-in-out infinite}@keyframes pulse{50%{opacity:.35}}
 
@@ -37,7 +37,7 @@
    a coloured header with its number and head → base, and its tickets as slips
    strung on a rail, one commit dot each. */
 .pcols{background:#f2f4fa}
-.pr{padding:0;border-radius:14px;border:1px solid #c9d1e6;background:#fbfcff;overflow:hidden;box-shadow:0 1px 0 #dde3f1}
+.pr{padding:0;border-radius:3px;border:1px solid #c9d1e6;background:#fbfcff;overflow:hidden;box-shadow:0 1px 0 #dde3f1}
 .pr .top{padding:8px 12px;background:#2f3d63;color:#fff}
 .pr .top .t{font:600 13.5px var(--mono);color:#fff}
 .pr .top .t::before{content:"";display:inline-block;width:12px;height:14px;margin-right:7px;vertical-align:-2px;background:currentColor;
@@ -48,7 +48,7 @@
 .pr>*:last-child{margin-bottom:12px}
 .pr::before{content:"";position:absolute;left:17px;top:44px;bottom:16px;width:3px;border-radius:2px;background:#9aa8cc}
 .pr .chips{flex-direction:column;align-items:stretch;gap:5px}
-.pr .chip{position:relative;background:#fff!important;color:var(--ink)!important;border:1px solid var(--rule);border-radius:5px;padding:3px 8px;font:500 12px var(--mono)}
+.pr .chip{position:relative;background:#fff!important;color:var(--ink)!important;border:1px solid var(--rule);border-radius:3px;padding:3px 8px;font:500 12px var(--mono)}
 .pr .chip::before{content:"";position:absolute;left:-18px;top:50%;width:9px;height:9px;margin-top:-5.5px;border-radius:50%;background:#fff;border:2.5px solid #2f3d63}
 .pr.draft{border:1.5px dashed #6c7aa3}.pr.draft .top{background:#e3e8f5;color:#2f3d63}.pr.draft .top .t,.pr.draft .top .m{color:#2f3d63!important}
 .pr.prog .top{background:#9c5a08}.pr.prog::before{background:#e2b878}.pr.prog .chip::before{border-color:#9c5a08}
@@ -59,8 +59,8 @@
 .pr>svg{width:calc(100% - 42px)}
 .cmp{display:grid;grid-template-columns:1fr 1fr;gap:28px;padding:18px 20px}
 .cmp h4{margin:0 0 8px;font:600 12px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
-.cmp .tb{background:var(--surface-2,#eef1f1);padding:12px;border-radius:8px}
-.cmp .pb{background:#f2f4fa;padding:12px;border-radius:8px}
+.cmp .tb{background:var(--surface-2,#eef1f1);padding:12px;border-radius:3px}
+.cmp .pb{background:#f2f4fa;padding:12px;border-radius:3px}
 </style>
 </head>
 <body>

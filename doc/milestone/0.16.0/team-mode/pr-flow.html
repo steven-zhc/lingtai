@@ -26,13 +26,13 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
 h1{font-size:26px;line-height:1.1;margin:0 0 4px}
 .lede{color:var(--ink-2);margin:0 0 16px}
 .steps{display:flex;gap:6px;margin:0 0 14px;flex-wrap:wrap}
-.steps span{flex:1 1 140px;display:flex;gap:8px;align-items:center;font:500 13px var(--sans);color:var(--muted);padding:8px 10px;border-radius:8px;background:#e6ecec}
+.steps span{flex:1 1 140px;display:flex;gap:8px;align-items:center;font:500 13px var(--sans);color:var(--muted);padding:8px 10px;border-radius:3px;background:#e6ecec}
 .steps span i{font-style:normal;width:22px;height:22px;border-radius:50%;display:grid;place-items:center;background:#fff;font:600 12px var(--mono)}
 .steps span em{font-style:normal;font-size:11px;opacity:.75;margin-left:auto}
 .steps span.on{background:var(--accent);color:#fff}.steps span.on i{color:var(--accent)}
 .steps span.done{background:var(--accent-soft);color:var(--accent-ink)}
 .steps span.gh.on{background:var(--team)}.steps span.gh.on i{color:var(--team)}
-.stage{position:relative;background:var(--surface);border:1px solid var(--rule);border-radius:14px;overflow:hidden}
+.stage{position:relative;background:var(--surface);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
 svg{display:block;width:100%;height:auto}
 .zone-t{font:600 12px var(--sans);letter-spacing:.04em}
 .rail{stroke-width:6;stroke-linecap:round;fill:none}
@@ -47,24 +47,24 @@ svg{display:block;width:100%;height:auto}
 #card.bump{animation:bump .6s ease-out}@keyframes bump{40%{transform:translateY(-6px)}}
 .glow{animation:glow 1.4s ease-out}@keyframes glow{from{opacity:.9}to{opacity:0}}
 .panel{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);gap:18px;margin-top:16px}
-.card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:18px 20px}
+.card{background:var(--surface);border:1px solid var(--rule);border-radius:3px;padding:18px 20px}
 .card h2{font-size:20px;margin:0 0 6px}
 .card p{margin:0 0 10px;color:var(--ink-2)}
 .what{list-style:none;margin:0 0 12px;padding:0}
 .what li{display:flex;gap:10px;padding:6px 0;border-bottom:1px solid #eef2f2;font-size:14px}
 .what li:last-child{border:0}.what b{min-width:96px;color:var(--muted);font-weight:500}
 .btns{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-button{font:600 15px var(--sans);border-radius:9px;padding:11px 18px;border:1px solid var(--rule-2);background:#fff;color:var(--ink);cursor:pointer;min-height:44px}
+button{font:600 15px var(--sans);border-radius:3px;padding:11px 18px;border:1px solid var(--rule-2);background:#fff;color:var(--ink);cursor:pointer;min-height:44px}
 button.go{background:var(--accent);border-color:var(--accent);color:#fff}
 button:focus-visible{outline:3px solid #8fd0d3;outline-offset:2px}
 button[disabled]{opacity:.4;cursor:default}
-.wait{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--team);background:var(--team-soft);border-radius:9px;padding:10px 14px}
+.wait{display:flex;gap:10px;align-items:center;font-size:14px;color:var(--team);background:var(--team-soft);border-radius:3px;padding:10px 14px}
 .wait .d{width:8px;height:8px;border-radius:50%;background:var(--team)}
 label.tog{display:flex;gap:8px;align-items:center;font-size:14px;color:var(--ink-2)}
-.field{width:100%;border:1px solid var(--rule-2);border-radius:8px;padding:9px 11px;font:15px var(--sans)}
+.field{width:100%;border:1px solid var(--rule-2);border-radius:3px;padding:9px 11px;font:15px var(--sans)}
 textarea.field{min-height:150px;font:13px/1.55 var(--mono)}
 .cost{font:12.5px var(--mono);color:var(--muted)}
-.demo{margin-top:16px;border:1.5px dashed #b9c2cc;border-radius:12px;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:repeating-linear-gradient(135deg,#f6f7f9 0 10px,#f1f3f6 10px 20px)}
+.demo{margin-top:16px;border:1.5px dashed #b9c2cc;border-radius:3px;padding:12px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap;background:repeating-linear-gradient(135deg,#f6f7f9 0 10px,#f1f3f6 10px 20px)}
 .demo b{font-size:13px;color:#56606c}.demo span{font-size:12.5px;color:#6b7580;flex:1 1 280px}
 .demo button{font-size:13px;min-height:36px;padding:6px 12px;background:#fff;color:#4a5d8a;border-color:#b9c2cc}
 .note{max-width:1240px;margin:0 auto;padding:14px 24px 0;font-size:13px;color:var(--muted)}
