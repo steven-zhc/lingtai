@@ -8,6 +8,7 @@ is `0.16.0`.
 | [0.16.md](0.16.md) | The plan, as narrowed on 2026-11-18: an ACP runtime usable wherever its capabilities reach, a GitLab remote with local tickets as an acceptance run, Linear if there is time |
 | [acp-experiments.md](acp-experiments.md) | The experiments E1–E12 run before the ACP questions are discussed: setup, steps, what each one decides |
 | [acp-libraries.md](acp-libraries.md) | The ACP libraries a TypeScript client could be built on, surveyed 2026-11-19 |
+| [tracker-experiments.md](tracker-experiments.md) | The Linear experiments L1–L10 run before the ticket-source part is cut: what the survey found, and the steps |
 | [vibe-kanban-demand-vs-lingtai.md](vibe-kanban-demand-vs-lingtai.md) | What Vibe Kanban's users ask for, against what Lingtai already does |
 
 ## Moved here from 0.15.0
