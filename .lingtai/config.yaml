@@ -17,8 +17,10 @@
 # edits it changes nothing about any run.
 version: 2
 
+branch:
+  main: main
+
 repo:
-  base: main
   submodules: false
 
 source:

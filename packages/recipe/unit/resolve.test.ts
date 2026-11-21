@@ -337,9 +337,10 @@ version: 2
 source:
   exclude: [blocked]
   kinds: [bug, feature]
+branch:
+  main: develop
 repo:
   submodules: true
-  base: develop
 runtime:
   agent: claude-code
 steps:

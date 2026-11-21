@@ -12,10 +12,8 @@ import { describe, expect, it } from 'vitest'
 import { parse, parseDocument, isMap, isScalar, type Node, type YAMLMap } from 'yaml'
 
 import { Recipe, editRecipe, emitRecipe, type RecipeChange } from '../src/index.ts'
-import { readOldSpellings } from '../src/resolve.ts'
 
-/** `Recipe.parse` over a file that may still be in the old spelling, as every resolver reads it. */
-const parseRecipe = (raw: unknown) => Recipe.parse(readOldSpellings(raw).recipe)
+const parseRecipe = (raw: unknown) => Recipe.parse(raw)
 
 const OWN = readFileSync(new URL('../../../.lingtai/config.yaml', import.meta.url), 'utf8')
 type Step = Record<string, unknown>

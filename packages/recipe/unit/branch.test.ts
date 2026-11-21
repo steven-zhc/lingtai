@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest'
+import { parse as parseYaml } from 'yaml'
 
 import { editRecipe } from '../src/emit.ts'
-import { RecipeInvalidError, RecipeRefusedError, oldSpellingFixes, resolveSource } from '../src/resolve.ts'
+import {
+  OldSpellingRefusedError,
+  RecipeInvalidError,
+  RecipeRefusedError,
+  oldSpellingsIn,
+  resolveSource,
+} from '../src/resolve.ts'
 import { branchOf, modeOf } from '../src/settings.ts'
 
 const TAIL = `
@@ -83,51 +90,71 @@ describe('mode, branch and pr', () => {
   })
 })
 
-describe('the old spellings', () => {
-  const NEW = resolve('branch: { main: develop }\nrepo: { submodules: true }\n')
+const refusedOld = (head: string): OldSpellingRefusedError => {
+  try {
+    resolve(head)
+  } catch (err) {
+    expect(err).toBeInstanceOf(OldSpellingRefusedError)
+    expect(err).toBeInstanceOf(RecipeRefusedError)
+    expect((err as OldSpellingRefusedError)._tag).toBe('RecipeRefused')
+    return err as OldSpellingRefusedError
+  }
+  throw new Error('resolved')
+}
 
-  it('reads repo.base as branch.main, to the same recipe and hash as its rewritten twin', () => {
-    const old = resolve('repo: { base: develop, submodules: true }\n')
-    expect(old.recipe).toEqual(NEW.recipe)
-    expect(old.configHash).toBe(NEW.configHash)
-    expect(old.oldSpellings).toEqual(['repo.base'])
-    expect(NEW.oldSpellings).toEqual([])
+describe('the old spellings are refused by name', () => {
+  it('refuses repo.base, naming branch.main and lingtai doctor --fix', () => {
+    const err = refusedOld('repo: { base: develop, submodules: true }\n')
+    expect(err.problems).toEqual([
+      'repo.base: write `branch: { main: <value> }` (0130 §2), or run `lingtai doctor --fix`',
+    ])
+    expect(err.spellings.map((s) => s.at)).toEqual(['repo.base'])
   })
 
-  it('reads a repo whose base was its only key as no repo at all', () => {
-    const old = resolve('repo: { base: develop }\n')
-    const twin = resolve('branch: { main: develop }\n')
-    expect(old.configHash).toBe(twin.configHash)
-    expect(old.recipe.repo).toBeUndefined()
-  })
-
-  it("reads admit's worktree.base, which wins over repo.base", () => {
-    const old = resolve(
+  it("refuses admit's worktree.base, which wins over repo.base in the fix", () => {
+    const err = refusedOld(
       'repo: { base: other, submodules: true }\nsteps:\n  admit:\n    - name: cut\n      worktree: { base: develop, submodules: true }\n',
     )
-    const twin = resolve(
-      'branch: { main: develop }\nrepo: { submodules: true }\nsteps:\n  admit:\n    - name: cut\n      worktree: { submodules: true }\n',
+    expect(err.spellings.map((s) => s.at)).toEqual(['steps.admit[0].worktree.base', 'repo.base'])
+    expect(err.problems[0]).toBe(
+      'steps.admit[0].worktree.base: move the branch to `branch.main`; `worktree:` carries `submodules` only (0104 §5), or run `lingtai doctor --fix`',
     )
-    expect(old.recipe).toEqual(twin.recipe)
-    expect(old.configHash).toBe(twin.configHash)
-    expect(old.oldSpellings).toEqual(['steps.admit[0].worktree.base', 'repo.base'])
+    for (const s of err.spellings) expect(s.changes).toEqual([{ path: ['branch', 'main'], value: 'develop' }])
   })
 
-  it('reads take: both as take: all, at runtime and at claim', () => {
-    const old = resolveSource(
+  it('refuses take: both at runtime and at claim', () => {
+    const text =
       'version: 2\nbranch: { main: develop }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\n' +
-        'runtime:\n  agent: claude-code\n  assignee: { take: both }\n' +
-        'steps:\n  claim:\n    - name: take\n      queue: { kinds: [bug], exclude: [], backoff: 1h, assignee: { take: both } }\n',
-      'main',
-      'recipe.yml',
+      'runtime:\n  agent: claude-code\n  assignee: { take: both }\n' +
+      'steps:\n  claim:\n    - name: take\n      queue: { kinds: [bug], exclude: [], backoff: 1h, assignee: { take: both } }\n'
+    const err = (() => {
+      try {
+        resolveSource(text, 'main', 'recipe.yml')
+      } catch (e) {
+        return e as OldSpellingRefusedError
+      }
+      throw new Error('resolved')
+    })()
+    expect(err).toBeInstanceOf(OldSpellingRefusedError)
+    expect(err.spellings.map((s) => s.at)).toEqual([
+      'runtime.assignee.take: both',
+      'steps.claim[0].queue.assignee.take: both',
+    ])
+    expect(err.problems[0]).toBe(
+      'runtime.assignee.take: both: write `take: all` (0130 §3), or run `lingtai doctor --fix`',
     )
-    expect(old.recipe.runtime.assignee?.take).toBe('all')
-    expect(old.oldSpellings).toEqual(['runtime.assignee.take: both', 'steps.claim[0].queue.assignee.take: both'])
   })
 
-  it('refuses a file that writes branch and an old base', () => {
-    const err = refusal('branch: { main: develop }\nrepo: { base: develop }\n')
-    expect(err.message).toContain('two homes')
+  it("refuses a file that writes branch and an old base, and its fix keeps the file's own branch.main", () => {
+    const err = refusedOld('branch: { main: develop }\nrepo: { base: other }\n')
+    expect(err.spellings.map((s) => s.at)).toEqual(['repo.base'])
+    expect(err.spellings[0]!.changes).toEqual([{ path: ['branch', 'main'], value: 'develop' }])
+  })
+
+  it('is no refusal for a recipe with no repo block, or a repo block without a base', () => {
+    expect(oldSpellingsIn(null)).toEqual([])
+    expect(oldSpellingsIn({ branch: { main: 'x' }, repo: { submodules: true } })).toEqual([])
+    expect(() => resolve('branch: { main: develop }\nrepo: { submodules: true }\n')).not.toThrow()
   })
 })
 
@@ -147,48 +174,52 @@ runtime:
     const after = editRecipe(before, [{ path: ['branch', 'main'], value: 'develop' }])
     expect(after).not.toContain('base:')
     const resolved = resolveSource(after, 'develop', 'recipe.yml')
-    expect(resolved.oldSpellings).toEqual([])
     expect(branchOf(resolved.recipe)).toBe('develop')
     expect(resolved.recipe.repo?.submodules).toBe(true)
   })
 })
 
-describe('oldSpellingFixes', () => {
+describe('the changes an old spelling carries', () => {
   const FILES = [
     '# the base\nrepo:\n  base: develop # where it lands\n  submodules: true\n',
     '# comment\nrepo:\n  base: other\n  submodules: true\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        base: develop\n        submodules: true\n',
     '# runtime\nbranch:\n  main: develop\nruntime:\n  agent: claude-code\n  assignee:\n    take: both\nsteps:\n  claim:\n    - name: take\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: both\n',
   ]
   for (const [i, head] of FILES.entries()) {
-    it(`rewrites fixture ${i} to a file that resolves clean, to the same configHash`, () => {
+    it(`rewrite fixture ${i} to a file that resolves`, () => {
       const source = head.includes('agent: claude-code')
         ? `version: 2\n${head}source: { kinds: [bug] }\nenv: { plantAt: .env.local }\n`
         : `version: 2\n${head}${TAIL}`
-      const before = resolveSource(source, 'main', 'recipe.yml')
-      const { lines, changes } = oldSpellingFixes(before.oldSpellings, before.recipe.branch.main)
-      expect(lines.length).toBe(before.oldSpellings.length)
-      const after = resolveSource(editRecipe(source, changes), 'main', 'recipe.yml')
-      expect(after.oldSpellings).toEqual([])
-      expect(after.configHash).toBe(before.configHash)
+      const found = oldSpellingsIn(parseYaml(source))
+      expect(found.length).toBeGreaterThan(0)
+      const after = resolveSource(
+        editRecipe(
+          source,
+          found.flatMap((s) => s.changes),
+        ),
+        'main',
+        'recipe.yml',
+      )
+      expect(
+        oldSpellingsIn(
+          parseYaml(
+            editRecipe(
+              source,
+              found.flatMap((s) => s.changes),
+            ),
+          ),
+        ),
+      ).toEqual([])
+      expect(after.recipe.branch.main).toBe('develop')
     })
   }
 
-  it('says what each old key becomes, and writes the base once', () => {
-    const { lines, changes } = oldSpellingFixes(['steps.admit[0].worktree.base', 'repo.base'], 'develop')
-    expect(lines).toEqual([
-      'steps.admit[0].worktree.base: develop → branch.main: develop',
-      'repo.base: develop → branch.main: develop',
-    ])
-    expect(changes).toEqual([{ path: ['branch', 'main'], value: 'develop' }])
-    expect(oldSpellingFixes(['runtime.assignee.take: both'], 'main').lines).toEqual([
-      'runtime.assignee.take: both → take: all',
-    ])
-  })
-
   it('keeps a comment that was not on a removed key', () => {
     const source = `version: 2\n# keep me\nrepo:\n  base: develop # goes\n  submodules: true # stays\n${TAIL}`
-    const r = resolveSource(source, 'main', 'recipe.yml')
-    const out = editRecipe(source, oldSpellingFixes(r.oldSpellings, 'develop').changes)
+    const out = editRecipe(
+      source,
+      oldSpellingsIn(parseYaml(source)).flatMap((s) => s.changes),
+    )
     expect(out).toContain('# keep me')
     expect(out).toContain('# stays')
     expect(out).not.toContain('# goes')
