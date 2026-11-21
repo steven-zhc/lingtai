@@ -2641,7 +2641,7 @@ export const PrMergedBack = z.object({
  * The merge of a PR's branch back into `branch.personal` did not complete; with `unknown` it is not known whether the push landed, and the head stays owed. **The PR's own state
  * does not change**: it is in review either way, and what conflicts is met at the next submit's sync.
  *
- * @summary Merging a PR's branch back into the personal branch did not complete; whether the push landed is not known when why is unknown, and the PR is still in review.
+ * @summary Merging a PR's branch back into the personal branch did not complete; with why unknown, whether the push landed is not known.
  */
 export const PrMergeBackFailed = z.object({
   prHead: z.string().min(1),
