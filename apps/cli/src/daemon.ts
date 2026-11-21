@@ -676,7 +676,7 @@ export function daemonCommand(
           // a run, and it takes no claim and provisions nothing that would need to.
           discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), lockedEffect(guard)),
           // A person's Submit is served here, and its walk is held by the loop so a restart's drain waits for it.
-          pr: makePrHandlers(livePrPorts(eventStore, (line) => console.log(line))),
+          pr: makePrHandlers(livePrPorts(eventStore, (line) => console.log(line), locked)),
           // A failure is a defect here, which `deliver` reports as it reports a rejection.
           triage: (event) =>
             onWaitStarted(

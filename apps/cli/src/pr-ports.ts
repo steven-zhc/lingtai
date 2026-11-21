@@ -4,10 +4,13 @@
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
-import { type PrPorts, buildAt } from '@lingtai/conductor'
+import { NO_RUN_LOG, createRuntime, runtimeVersionOfEffect, writeUnhookedSettingsEffect } from '@lingtai/agent'
+import { runnableEnv } from '@lingtai/agent-env'
+import { type ConflictResolver, type PrPorts, buildAt } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
+import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
 import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
@@ -24,6 +27,7 @@ import {
   isLocalRemote,
   mergeInWorktree,
   mirrorPathFor,
+  standMergeUp,
   sweepPrWorktrees,
 } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -36,7 +40,16 @@ const TOKEN_MS = 60_000
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
-export function livePrPorts(store: EventStore, log: (line: string) => void): PrPorts {
+/**
+ * `locked` is the daemon's guard as a function (`lockedEffect`): the sentence for a lock that stops new work on a project,
+ * or null. **Without it no agent is given a PR's conflict** — a round that could not be stopped by a pause, the day's
+ * ceiling or an account limit would be new work outside every lock (0126 §6), so the person is asked as before.
+ */
+export function livePrPorts(
+  store: EventStore,
+  log: (line: string) => void,
+  locked?: (project: string) => Effect.Effect<string | null>,
+): PrPorts {
   const recipeOf = (project: string) =>
     readProjectStateEffect(project, store).pipe(
       Effect.flatMap((state) => currentRecipeEffect(state)),
@@ -86,9 +99,57 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
           : Effect.fail(asError(err)),
       ),
     )
+  const resolver: ConflictResolver | undefined =
+    locked === undefined
+      ? undefined
+      : {
+          standMerge: (project, options) => standMergeUp({ project, ...options }),
+          gitIn: (cwd, args) => answered(gitEffect([...args], { cwd })),
+          // Unhooked, as the cold reviewer is: the hook's events belong to a pass's stream and a PR's has none. The run is
+          // bounded by the runtime's own flags — turns, wall and dollars — and by nothing of the hook's.
+          dispatch: (project, request) =>
+            Effect.gen(function* () {
+              const runtime = createRuntime(request.runtime)
+              const settingsPath = yield* writeUnhookedSettingsEffect(request.runId, 'pr', stateDir(), false).pipe(
+                Effect.mapError(asError),
+              )
+              const outcome = yield* runtime.run({
+                runId: request.runId,
+                cwd: request.cwd,
+                prompt: request.prompt,
+                ...(request.model === undefined ? {} : { model: request.model }),
+                settingsPath,
+                env: runnableEnv({}),
+                limits: request.limits,
+                log: NO_RUN_LOG,
+                traceTools: true,
+              })
+              void project
+              return {
+                turns: outcome.turns,
+                durationMs: outcome.durationMs,
+                costUsd: outcome.costUsd,
+                ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+                text: outcome.text ?? null,
+                failure: outcome.failure ?? null,
+              }
+            }),
+          runtimeVersion: (_project, runtime) =>
+            runtimeVersionOfEffect(createRuntime(runtime), runnableEnv({})).pipe(Effect.orElseSucceed(() => null)),
+          ticketBody: (project, ticket) =>
+            Effect.gen(function* () {
+              if (!/^\d+$/.test(ticket)) return yield* Effect.fail(new Error(`${ticket} is not an issue number`))
+              const state = yield* readProjectStateEffect(project, store).pipe(Effect.mapError(asError))
+              const answer = yield* readProjectTicketEffect(state, Number(ticket))
+              if (!answer.ok) return yield* Effect.fail(asError(answer.error))
+              return answer.ticket.body
+            }),
+          locked,
+        }
   return {
     store,
     log,
+    ...(resolver === undefined ? {} : { resolver }),
     recipe: recipeOf,
     candidates: (project) =>
       readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
