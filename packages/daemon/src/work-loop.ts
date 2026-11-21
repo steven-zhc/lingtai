@@ -474,7 +474,8 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
    * one still running starts none.
    */
   function sweepPrs(withWalks: boolean): void {
-    // The owed walks are tracked, which bounds nothing about a fetch: only startup waits on them, never a timer tick.
+    // The owed walks are tracked, so the drain waits for a push in flight; their reads are bounded by the handlers,
+    // so a read that stalls cannot hold it. A tick resumes them too: a step that answered `again` is retried here.
     if (withWalks) resumePrs()
     const handlers = options.pr
     if (handlers?.sweep === undefined || sweepingPrs || stopped) return
@@ -723,7 +724,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
                 Effect.andThen(
                   Effect.sync(() => {
                     void kick('sweep')
-                    sweepPrs(false)
+                    sweepPrs(true)
                   }),
                 ),
               ),

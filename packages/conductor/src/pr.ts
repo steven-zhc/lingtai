@@ -512,6 +512,47 @@ export const servePendingPrs = (
     }
   })
 
+/** How long a read (a fetch, a request to the host) may take before it is a failed read: the drain waits on the walk. */
+const READ_MS = 60_000
+
+/**
+ * The ports with every **read** bounded, so a walk the loop tracks for the drain (0030) can never be held by a fetch or
+ * a request that does not answer. A read that times out fails like any failed read — a step answers `again` and the
+ * next sweep asks again. A push is not bounded: it is a write, and the drain waits for it on purpose.
+ */
+const bounded = (ports: PrPorts, ms: number): PrPorts => {
+  const within = <A, E>(what: string, e: Effect.Effect<A, E>, fail: () => E): Effect.Effect<A, E> =>
+    e.pipe(
+      Effect.timeoutOrElse({
+        duration: ms,
+        orElse: () => Effect.fail(fail()),
+      }),
+      Effect.tapError(() => Effect.sync(() => void ports.log?.(`pr: ${what} did not answer in ${ms}ms`))),
+    )
+  return {
+    ...ports,
+    fetch: (project) => within('fetch', ports.fetch(project), () => new Error('the fetch timed out')),
+    // `facts` cannot fail: null is *unknown*, which is what a read that never answered is.
+    facts: (project, tickets) =>
+      ports.facts(project, tickets).pipe(
+        Effect.timeoutOrElse({
+          duration: ms,
+          orElse: () => Effect.succeed(tickets.map((ticket) => ({ ticket, open: null, spend: null }))),
+        }),
+      ),
+    github: (project) =>
+      ports.github(project).pipe(
+        Effect.map((github): GitHub => ({
+          ...github,
+          findOpenPull: (head) =>
+            within('findOpenPull', github.findOpenPull(head), () => new GitHubFailed(0, 'pulls', 'timed out')),
+          getPull: (number) =>
+            within('getPull', github.getPull(number), () => new GitHubFailed(0, `pulls/${number}`, 'timed out')),
+        })),
+      ),
+  }
+}
+
 /** What the sweep last saw of each open PR on the host (`updated_at` and head), so a read that changed nothing ends early. */
 type SweepMemory = Map<string, string>
 
@@ -672,7 +713,12 @@ export const learnPrEnds = (
  * landing is served again by what ends it. `resume` serves every PR of every project that is `requested` or
  * `in-progress`.
  */
-export const makePrHandlers = (ports: PrPorts, steps: readonly PrStep[] = IN_PROGRESS_STEPS) => {
+export const makePrHandlers = (
+  raw: PrPorts,
+  steps: readonly PrStep[] = IN_PROGRESS_STEPS,
+  readMs: number = READ_MS,
+) => {
+  const ports = bounded(raw, readMs)
   const memory: SweepMemory = new Map()
   const projectsOf = (label: string) =>
     ports.projects().pipe(

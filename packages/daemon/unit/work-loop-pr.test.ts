@@ -75,7 +75,7 @@ describe('the PR sweep runs on its own timer (#1317)', () => {
 })
 
 describe('a stalled read does not hold the drain (#1317)', () => {
-  it('stop() returns while a sweep is hung, and a timer tick never starts a walk', async () => {
+  it('stop() returns while a sweep is hung, and a timer tick resumes the owed walks', async () => {
     let resumes = 0
     const port = makeWorkLoop({
       sweepMs: 10,
@@ -91,6 +91,6 @@ describe('a stalled read does not hold the drain (#1317)', () => {
     await Effect.runPromise(port.start())
     await new Promise((r) => setTimeout(r, 60))
     await Effect.runPromise(port.stop())
-    expect(resumes).toBe(1)
+    expect(resumes).toBeGreaterThan(1)
   })
 })

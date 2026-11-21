@@ -248,3 +248,12 @@ describe('the handlers’ sweep', () => {
     expect(w.closed.sort()).toEqual([1, 2])
   })
 })
+
+describe('a read that never answers is bounded', () => {
+  it('a hung fetch fails the read, so the handlers’ resume returns', async () => {
+    const { store, w } = await inReview(elsewhere)
+    const p: PrPorts = { ...ports(store, w, elsewhere), fetch: () => Effect.never }
+    await Effect.runPromise(makePrHandlers(p, undefined, 20).sweep())
+    expect((await pr(store)).status).toBe('in-review')
+  })
+})
