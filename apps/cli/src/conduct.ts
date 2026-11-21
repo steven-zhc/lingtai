@@ -357,7 +357,7 @@ export function conductWork(
       // **A declined claim must fall through to this project's own queue in
       // the same pass**, not end the pass pretending nothing is runnable: a row
       // whose ticket is still `approved` on the log but that GitHub stops
-      // offering (closed, `agent:hold` added, a new open blocker, a reassigned
+      // offering (closed, `lingtai:hold` added, a new open blocker, a reassigned
       // `take: mine`) matches on every pass for ever otherwise, since declining
       // at claim appends nothing and releases nothing (`stage: 'claim'`, above)
       // — the lifecycle stays `approved` and the row stays live. So this walks

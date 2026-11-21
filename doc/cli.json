@@ -188,7 +188,7 @@
         "  Open one as an issue through the ticket store. One key: there is",
         "  no accept-all. Without --kind, opens the issue of an entry",
         "  already accepted — safe to repeat, never a second.",
-        "  --unheld   without agent:hold, so the next turn may take it",
+        "  --unheld   without lingtai:hold, so the next turn may take it",
         "lingtai backlog decline <project> <key> --reason <why>",
         "  Recorded, so the next attempt does not ask again."
       ],

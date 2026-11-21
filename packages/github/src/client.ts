@@ -125,7 +125,7 @@ export interface Label {
  * with the rest of the issue and never mirrored into a field of Lingtai's own.
  * That is the same argument #76 used to take `WorkKind` out of the core and
  * [0036](../../../doc/decisions-archive/0036-the-core-takes-a-ticket.md) §4 uses to
- * keep `agent:hold` a label the store never interprets.
+ * keep `lingtai:hold` a label the store never interprets.
  *
  * **Both counts, because they answer different questions.** A chain whose
  * groundwork has landed is finished with — every blocker closed — and a chain
@@ -297,14 +297,14 @@ export interface GitHub {
    * Adds labels to what the issue already has, leaving the rest alone.
    *
    * For a caller that has not just read the set: `setLabels` from a snapshot
-   * would drop a label somebody added since (an `agent:hold`, say).
+   * would drop a label somebody added since (a `lingtai:hold`, say).
    */
   addLabels(issue: number, labels: readonly string[]): E<void>
 
   /**
    * Removes one label and nothing else (`DELETE …/labels/{name}`). A label the issue
    * does not carry is success: removal is idempotent. Never `setLabels` from a snapshot,
-   * which would drop an `agent:hold` a person added meanwhile (#1261).
+   * which would drop a `lingtai:hold` a person added meanwhile (#1261).
    */
   removeLabel(issue: number, name: string): E<void>
 

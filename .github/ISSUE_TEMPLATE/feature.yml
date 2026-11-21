@@ -1,6 +1,6 @@
 name: Feature request
 description: Propose a change.
-labels: [feature, agent:hold]
+labels: [feature, lingtai:hold]
 body:
   - type: markdown
     attributes:

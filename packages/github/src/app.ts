@@ -264,7 +264,7 @@ export function installationForRepo(
  * which is exactly how the PAT failure went unexplained for a day.
  */
 export const REQUIRED_PERMISSIONS: { name: string; level: 'read' | 'write'; why: string }[] = [
-  { name: 'issues', level: 'write', why: 'reading work items, writing agent:* labels and comments' },
+  { name: 'issues', level: 'write', why: 'reading work items, writing lingtai:* labels and comments' },
   { name: 'contents', level: 'write', why: 'cloning, pushing agent/*, merging into base' },
   { name: 'pull_requests', level: 'write', why: 'opening and reading pull requests' },
   { name: 'workflows', level: 'write', why: 'pushing changes to .github/workflows' },

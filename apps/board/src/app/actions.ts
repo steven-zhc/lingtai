@@ -41,6 +41,7 @@ import { approve, requeue } from '@lingtai/conductor/decide'
 import { concludeDiscussion, type IssueChannel } from '@lingtai/conductor/discuss'
 import { editBodyAndRequeue } from '@lingtai/conductor/edit-body'
 import { projectClient } from '@lingtai/conductor/filter'
+import { HOLD_LABEL } from '@lingtai/conductor/labels'
 import { recheck } from '@lingtai/conductor/onboard'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe, signedInHere } from '@lingtai/conductor/projects'
@@ -558,7 +559,7 @@ export async function acceptBacklogFinding(input: {
       by: actor(),
       kind: input.kind,
       kinds: kindsOf(resolved.recipe),
-      labels: input.hold === false ? [] : ['agent:hold'],
+      labels: input.hold === false ? [] : [HOLD_LABEL],
       tickets: githubTicketStore(client),
     })
     revalidatePath('/backlog')

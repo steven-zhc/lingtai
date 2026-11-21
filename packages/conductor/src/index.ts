@@ -105,7 +105,7 @@ export {
   type TerminalOutcome,
   type UnresolvedEnd,
 } from './end-step.ts'
-export { LINGTAI_LABEL_PREFIX, OWN_LABELS, foreignLabels, labelsFor } from './labels.ts'
+export { FOLLOWUP_LABEL, HOLD_LABEL, LINGTAI_LABEL_PREFIX, OWN_LABELS, foreignLabels, labelsFor } from './labels.ts'
 export {
   tellGitHubEffect,
   tellGitHubAboutEffect,

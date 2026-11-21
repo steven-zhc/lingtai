@@ -33,6 +33,7 @@ import { Deferred, Effect } from 'effect'
  * accepted and not stored: nothing here reads it back.
  */
 import type { TicketListing } from './discover.ts'
+import { FOLLOWUP_LABEL, HOLD_LABEL } from './labels.ts'
 import { runPort } from './port-face.ts'
 import type { Ticket, Tickets } from './ticket-store.ts'
 
@@ -113,7 +114,66 @@ export function ensureTicketTablesEffect(sql: TicketSql): Effect.Effect<void> {
     yield* execIdempotentlyEffect(port, tickets)
     yield* execIdempotentlyEffect(port, comments)
     yield* execIdempotentlyEffect(port, LINKS_TABLE)
+    yield* migrateHoldLabelsEffect(port)
   })
+}
+
+/** Old label → the one beside which it is carried since 0116 §5. */
+const LABEL_RENAMES: readonly (readonly [string, string])[] = [
+  [`agent:${'hold'}`, HOLD_LABEL],
+  [`agent:${'followup'}`, FOLLOWUP_LABEL],
+]
+
+/**
+ * Adds `lingtai:hold` beside the old `agent:` hold label (likewise the follow-up) on every row,
+ * and never removes the old label: a machine whose recipe still excludes only
+ * the old name must not see its local tickets unheld the moment this starts.
+ *
+ * Read-modify-write rather than a JSON function in SQL, so that one row whose
+ * `labels` is not JSON is skipped instead of failing the statement and with it
+ * every verb on the store. Each `UPDATE` is guarded by the text it read, so a
+ * second process, or a `setLabels` in between, changes nothing and the next
+ * start tries again. Matching is exact by name.
+ */
+function migrateHoldLabelsEffect(port: ReturnType<typeof fromPromiseLogSql>): Effect.Effect<void> {
+  return Effect.gen(function* () {
+    const rows = yield* port.query<{ project: string; number: number; labels: string }>(
+      // No text filter on the names: JSON may spell them with escapes (`agent\u003ahold`), so
+      // only the decoded array can say. `[]` is the one spelling cheap to leave out.
+      `SELECT project, number, labels FROM tickets WHERE labels <> $1`,
+      ['[]'],
+    )
+    for (const row of rows) {
+      const next = withRenamedLabels(row.labels)
+      if (next === null) continue
+      yield* port.query(`UPDATE tickets SET labels = $1 WHERE project = $2 AND number = $3 AND labels = $4`, [
+        next,
+        row.project,
+        row.number,
+        row.labels,
+      ])
+    }
+  })
+}
+
+/** The row's labels with each new name appended where only the old one is present; `null` if nothing changes or it is not a JSON array of strings. */
+function withRenamedLabels(text: string): string | null {
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!Array.isArray(parsed) || !parsed.every((l) => typeof l === 'string')) return null
+  const labels: string[] = [...parsed]
+  let changed = false
+  for (const [old, now] of LABEL_RENAMES) {
+    if (labels.includes(old) && !labels.includes(now)) {
+      labels.push(now)
+      changed = true
+    }
+  }
+  return changed ? JSON.stringify(labels) : null
 }
 
 /**

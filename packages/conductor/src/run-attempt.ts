@@ -624,7 +624,7 @@ export interface StepWork<S extends Step = Step> {
    * `end` is the one step whose declared effects are filtered by `when:`, and
    * `resolveEndActions(events, end, outcome)` takes that outcome as its third
    * argument (`end-step.ts`). A body handed no value for it could only run
-   * every declared cell on every ending — `agent:hold` on an item that landed
+   * every declared cell on every ending — `lingtai:hold` on an item that landed
    * — or run none of them, which is the declared-drawn-never-fired failure
    * (`#61`) this file opens by naming.
    *
