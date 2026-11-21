@@ -25,7 +25,14 @@ export function ciLines(pr: PrState): string[] {
   if (read === null) return []
   const passing = new Set(['success', 'neutral', 'skipped'])
   // The recorded verdict decides, never today's recipe: the same event reads the same however `pr.ci.required` is edited.
-  const failing = read.verdict === 'green' ? [] : read.checks.filter((c) => !passing.has(c.state))
+  // Only what the verdict counted and found failing: a queued or running check the recipe excludes is observed, not failed.
+  const flagged = read.checks.some((c) => c.failing === true)
+  const failing =
+    read.verdict === 'green'
+      ? []
+      : read.checks.filter((c) =>
+          flagged ? c.failing === true : !passing.has(c.state) && !['queued', 'running'].includes(c.state),
+        )
   const skipped = read.checks.filter((c) => c.state === 'skipped')
   const total = read.checks.length
   const head =

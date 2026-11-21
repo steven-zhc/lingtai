@@ -374,6 +374,9 @@ export interface GitHub {
    */
   markReadyForReview(nodeId: string): E<void>
 
+  /** Puts a pull request back to a draft, by its GraphQL node id: undoes a `markReadyForReview` that raced a push. */
+  convertToDraft(nodeId: string): E<void>
+
   /**
    * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
    * answers 422 and that is the caller's to read: this never opens a ready one instead.
@@ -1175,6 +1178,35 @@ export const makeGitHub = (
           }
           if (raw.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
             return yield* new GitHubFailed(0, path, `${nodeId} is still a draft after markPullRequestReadyForReview`)
+          }
+        }),
+
+        convertToDraft: Effect.fn('github.markReadyForReview')(function* (nodeId: string) {
+          const path = '/graphql'
+          const raw = yield* asPullCall(
+            'write',
+            send<{
+              data?: { convertPullRequestToDraft?: { pullRequest?: { isDraft?: unknown } | null } | null } | null
+              errors?: { type?: string; message?: string }[]
+            }>('POST', path, {
+              query:
+                'mutation($id: ID!) { convertPullRequestToDraft(input: { pullRequestId: $id }) { pullRequest { isDraft } } }',
+              variables: { id: nodeId },
+            }),
+          )
+          if (Array.isArray(raw.errors) && raw.errors.length > 0) {
+            const forbidden = raw.errors.some((e) => e.type === 'FORBIDDEN')
+            const failed = new GitHubFailed(
+              forbidden ? 403 : 0,
+              path,
+              `converting ${nodeId} to a draft: ${raw.errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`,
+            )
+            return yield* forbidden
+              ? Effect.fail(new PermissionDenied(failed, 'pull_requests', 'write', isGh(auth) ? 'gh' : 'app'))
+              : Effect.fail(failed)
+          }
+          if (raw.data?.convertPullRequestToDraft?.pullRequest?.isDraft !== true) {
+            return yield* new GitHubFailed(0, path, `${nodeId} is still ready after convertPullRequestToDraft`)
           }
         }),
 

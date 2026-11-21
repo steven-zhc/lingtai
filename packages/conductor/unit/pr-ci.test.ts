@@ -39,6 +39,7 @@ interface World {
   pullHead: string
   pushOnMark?: string
   marked: string[]
+  reverted: string[]
   readFails: boolean
   markFails: boolean
   observed: number
@@ -103,6 +104,7 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         updatedAt: 'x',
         draft: w.draft,
       } satisfies PullState),
+    convertToDraft: (id: string) => Effect.sync(() => void w.reverted.push(id)),
     markReadyForReview: (id: string) =>
       w.markFails
         ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom'))
@@ -132,6 +134,7 @@ const aWorld = (checks: CiCheck[]): World => ({
   draft: true,
   pullHead: FROZEN,
   marked: [],
+  reverted: [],
   readFails: false,
   markFails: false,
   observed: 0,
@@ -286,6 +289,7 @@ describe('the ci and ready steps', () => {
     const w = aWorld([check('a', 'success')])
     w.pushOnMark = 'b'.repeat(40)
     await serve(ports(store, w, recipeWith()))
+    expect(w.reverted).toEqual(['PR_7'])
     expect(await types(store)).not.toContain('PrOpened')
     expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
   })

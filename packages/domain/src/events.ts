@@ -2630,6 +2630,8 @@ export const PrChecked = z.object({
         'unknown',
       ]),
       url: z.string(),
+      /** On a red verdict: this check is one the verdict counted and found failing (an observed-only check is not). */
+      failing: z.boolean().optional(),
       artifacts: z
         .array(z.object({ kind: z.enum(['log', 'screenshot', 'video', 'other']), name: z.string(), url: z.string() }))
         .optional(),

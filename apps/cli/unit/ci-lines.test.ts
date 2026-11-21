@@ -14,4 +14,14 @@ describe('ciLines', () => {
     expect(lines[0]).toContain('✕ preview')
     expect(lines.join('\n')).not.toContain('green despite')
   })
+
+  it('does not name an excluded running check beside the failing one', () => {
+    const checks = [
+      { name: 'test', state: 'failure' as const, url: 'u1', failing: true },
+      { name: 'preview', state: 'running' as const, url: 'u2' },
+    ]
+    const lines = ciLines({ ...emptyPr, checks: { headSha: 'a', verdict: 'red' as const, checks } })
+    expect(lines[0]).toContain('✕ test ·')
+    expect(lines.join('\n')).not.toContain('preview')
+  })
 })

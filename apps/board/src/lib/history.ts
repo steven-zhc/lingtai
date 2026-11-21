@@ -222,12 +222,15 @@ function need(d: Payload, key: string): string {
 /** The names of the checks that did not pass, off a `PrChecked`'s `checks`. */
 function failingChecks(checks: unknown): string {
   if (!Array.isArray(checks)) return ''
-  const passing = ['success', 'neutral', 'skipped']
-  return checks
-    .flatMap((c: unknown) => {
-      const row = c as { name?: unknown; state?: unknown } | null
-      return typeof row?.name === 'string' && !passing.includes(String(row.state)) ? [row.name] : []
-    })
+  const passing = ['success', 'neutral', 'skipped', 'queued', 'running']
+  const rows = checks.map((c: unknown) => c as { name?: unknown; state?: unknown; failing?: unknown } | null)
+  const flagged = rows.some((r) => r?.failing === true)
+  return rows
+    .flatMap((row) =>
+      typeof row?.name === 'string' && (flagged ? row.failing === true : !passing.includes(String(row.state)))
+        ? [row.name]
+        : [],
+    )
     .join(', ')
 }
 

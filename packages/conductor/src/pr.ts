@@ -359,11 +359,12 @@ const cwdSha = (state: PrState): string | null => state.target ?? state.frozenSh
 const failingLine = (f: { name: string; state: string; url: string }): string =>
   `${f.name} (${f.state})${f.url === '' ? '' : ` ${f.url}`}`
 
-const checkRows = (checks: readonly CiCheck[]) =>
+const checkRows = (checks: readonly CiCheck[], failing?: readonly string[]) =>
   checks.map((c) => ({
     name: c.name,
     state: c.state,
     url: c.url,
+    ...(failing?.includes(c.name) ? { failing: true } : {}),
     ...(c.artifacts !== undefined && c.artifacts.length > 0 ? { artifacts: [...c.artifacts] } : {}),
   }))
 
@@ -430,7 +431,14 @@ const ciStep: PrStep = {
             yield* recordPrChecked(
               project,
               n,
-              { headSha: target, verdict: 'red', checks: checkRows(checks) },
+              {
+                headSha: target,
+                verdict: 'red',
+                checks: checkRows(
+                  checks,
+                  verdict.failing.map((f) => f.name),
+                ),
+              },
               ports.store,
             )
             return {
@@ -499,12 +507,15 @@ const readyStep: PrStep = {
           headSha: target,
         } as StepAnswer
       }
+      let marked = false
       if (pull.draft) {
         yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
-        // The mutation takes no expected head, so the head is read again after it: a push between the look and the write
-        // is caught here and `PrOpened` is never appended for a commit CI did not read.
+        marked = true
+        // The mutation takes no expected head, so the head is read again after it. A push that landed in between has
+        // been promoted unread: it is put back to a draft, and `PrOpened` is never appended for a commit CI did not read.
         const after = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
         if (after.headSha !== target) {
+          yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
           return {
             kind: 'wait',
             reason: 'branch-moved',
@@ -517,7 +528,17 @@ const readyStep: PrStep = {
         kind: 'done',
         headSha: target,
         record: (project, n, store) =>
-          recordPrOpened(project, n, { host: 'github', number: host.number, url: host.url }, store),
+          Effect.gen(function* () {
+            // The last look is the one next to the append: the walk's own store reads sit between the step and here.
+            const last = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
+            if (last.headSha !== target) {
+              if (marked) yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
+              return yield* Effect.fail(
+                new Error(`the pull request moved to ${last.headSha.slice(0, 7)} before In review was recorded`),
+              )
+            }
+            return yield* recordPrOpened(project, n, { host: 'github', number: host.number, url: host.url }, store)
+          }),
       } as StepAnswer
     }),
 }
