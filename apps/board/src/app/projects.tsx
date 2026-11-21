@@ -6,10 +6,10 @@
  * among them, left of the separator. The `<summary>` names the project
  * in view, and the menu under it is *all projects* and a row per repository,
  * each one link. A registered project's row hints, on hover, at what choosing
- * it gives: its `recipe`, now on the bar's right (#993), and the action the bar
+ * it gives: its `recipe`, now a view on the place line (0.16), and the action the bar
  * offers — `pause` or `resume`. A paused project also wears a `paused` tag; that
- * is a mark only, and the action itself is the bar's button (0126 §8, #995). The `+` beside the
- * menu adds a repository (#216: the filter's affordance, not a fourth object).
+ * is a mark only, and the action itself is the bar's button (0126 §8, #995). The menu's last row
+ * adds a repository (#216: the place's affordance, not a fourth object).
  *
  * With no project configured there is no menu: the slot is the link to setup
  * (#169), the same object saying *there is nothing here yet*.

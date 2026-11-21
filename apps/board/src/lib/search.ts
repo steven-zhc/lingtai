@@ -180,7 +180,7 @@ export interface TargetLike {
 const FIELDS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
 
 /** A key is never bound while focus is in a field. */
-const inField = (t: TargetLike): boolean => t.editable || FIELDS.has(t.tag.toUpperCase())
+export const inField = (t: TargetLike): boolean => t.editable || FIELDS.has(t.tag.toUpperCase())
 
 const modified = (k: KeyLike): boolean => k.metaKey === true || k.ctrlKey === true || k.altKey === true
 

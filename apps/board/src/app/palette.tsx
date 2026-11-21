@@ -21,6 +21,7 @@ import {
   type GoState,
   type Index,
   goKey,
+  inField,
   isHashKey,
   isOpenKey,
   paletteKey,
@@ -167,17 +168,29 @@ export function Palette() {
     }
     const onKey = (e: KeyboardEvent) => {
       const d = dialog.current
-      if (isOpenKey(e, isMacNow())) {
-        e.preventDefault()
-        if (d === null) return
-        if (d.open) d.close()
-        else open()
-        return
-      }
-      if (d === null || d.open) return
       const el = e.target instanceof HTMLElement ? e.target : null
       const target = { tag: el?.tagName ?? '', editable: el?.isContentEditable === true }
+      // Any key that is not a second `G` key leaves nothing armed.
+      const disarm = () => {
+        go = { armedAt: null }
+      }
+      if (isOpenKey(e, isMacNow())) {
+        disarm()
+        if (d === null) return
+        if (d.open) {
+          e.preventDefault()
+          d.close()
+          return
+        }
+        // A key is never bound while focus is in a field: ⌘K there is the field's own.
+        if (inField(target)) return
+        e.preventDefault()
+        open()
+        return
+      }
+      if (d === null || d.open) return disarm()
       if (isHashKey(e, target)) {
+        disarm()
         e.preventDefault()
         open('#')
         return
