@@ -78,7 +78,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -1026,7 +1026,13 @@ export async function askProject(
         const offered = look === null ? found : passOverBaseRed(look, found).offered
         const select_ = (refs: typeof found.runnable) =>
           Effect.tryPromise(() =>
-            select({ project: filter.project, offered: refs, kinds: filter.kinds, backoffMs: filter.backoffMs }),
+            select({
+              project: filter.project,
+              offered: refs,
+              kinds: filter.kinds,
+              mode: modeOf(filter.recipe),
+              backoffMs: filter.backoffMs,
+            }),
           )
         const runnable = yield* select_(offered.runnable)
         const kept = new Set(offered.runnable.map((r) => String(r.ref)))

@@ -34,7 +34,7 @@ import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotSto
  * starts fresh, which is what you want after a fix.
  */
 import { parseDuration, type Recipe } from '@lingtai/recipe'
-import { backoffOf, branchOf, kindsOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { backoffOf, branchOf, kindsOf, modeOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -276,6 +276,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           project: name,
           offered: offered.runnable,
           kinds: kindsOf(options.recipe),
+          mode: modeOf(options.recipe),
           // The recipe's, not a constant's (0028). Read here rather than held
           // on `ScheduleOptions`, beside the `kinds` it belongs with — both are
           // the same recipe answering the same question about the same pass.

@@ -48,7 +48,7 @@ import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import { loadProjectsEffect, recordTurn } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
-import { branchOf, concurrencyOf, kindsOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { branchOf, concurrencyOf, kindsOf, modeOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -554,6 +554,7 @@ export function conductWork(
           project: name,
           offered: seen.runnable,
           kinds: kindsOf(resolved.recipe),
+          mode: modeOf(resolved.recipe),
           backoffMs: 0,
         }),
       )
