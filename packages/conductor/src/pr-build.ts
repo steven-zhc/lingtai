@@ -7,8 +7,8 @@
  * A recipe with no `run:` at `build` passes on the merge alone, as a pass does when `build` declares nothing.
  */
 import { productionPatterns } from '@lingtai/agent-env'
-import type { Recipe } from '@lingtai/recipe'
 import type { EventStore } from '@lingtai/event-store/store'
+import type { Recipe } from '@lingtai/recipe'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect, Result } from 'effect'
 

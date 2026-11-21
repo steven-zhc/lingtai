@@ -501,7 +501,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     d['how'] === 'already'
       ? `Main (${sha(d, 'mainCommit')}) was already in the PR branch`
       : `Main (${sha(d, 'mainCommit')}) was merged into the PR branch as ${sha(d, 'head')} and built`,
-  PrMergedBack: (d) => `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
+  PrMergedBack: (d) =>
+    `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,

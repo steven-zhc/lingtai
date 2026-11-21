@@ -42,7 +42,8 @@ const resolve = (ports: PrPorts, project: string, ref: string): Effect.Effect<st
   Effect.gen(function* () {
     const args = ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] as const
     const answer = yield* ports.git(project, args)
-    if (answer.code !== 0) return yield* Effect.fail(new Error(`${ref} is not in the mirror (${gitSaid(args, answer)})`))
+    if (answer.code !== 0)
+      return yield* Effect.fail(new Error(`${ref} is not in the mirror (${gitSaid(args, answer)})`))
     return answer.stdout.trim()
   })
 
@@ -126,15 +127,24 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
         message: `Merge ${main} at ${short(mainSha)} into ${prBranch}`,
       })
       if (merged.kind === 'conflict') {
-        return wait('sync-conflict', `${main} (${short(mainSha)}) conflicts with ${prBranch} in:\n${merged.paths.join('\n')}`)
+        return wait(
+          'sync-conflict',
+          `${main} (${short(mainSha)}) conflicts with ${prBranch} in:\n${merged.paths.join('\n')}`,
+        )
       }
-      if (merged.kind === 'failed') return wait('sync-unknown', `merging ${main} into ${prBranch} failed: ${merged.text}`)
+      if (merged.kind === 'failed')
+        return wait('sync-unknown', `merging ${main} into ${prBranch} failed: ${merged.text}`)
       const kept = ['update-ref', targetRef(n), merged.sha] as const
       const made = yield* ports.git(project, kept)
       if (made.code !== 0) return wait('sync-unknown', gitSaid(kept, made))
       return { kind: 'done', headSha: merged.sha } as StepAnswer
     }),
-    (message) => ({ kind: 'wait', reason: 'sync-unknown', detail: message, headSha: state.target ?? state.frozenSha ?? '' }),
+    (message) => ({
+      kind: 'wait',
+      reason: 'sync-unknown',
+      detail: message,
+      headSha: state.target ?? state.frozenSha ?? '',
+    }),
   )
 
 /** Brings main into the PR's commit, in a throwaway worktree, and pushes nothing. */
@@ -169,9 +179,13 @@ export const buildStep: PrStep = {
 
         const built = yield* ports.build(project, { sha: merge, base: prBranch, checkId: `pr-${n}-sync` })
         if (built.kind === 'red') {
-          return wait('sync-red', `\`${built.command}\` fails on ${short(merge)}, main merged into ${prBranch}:\n${built.evidence}`)
+          return wait(
+            'sync-red',
+            `\`${built.command}\` fails on ${short(merge)}, main merged into ${prBranch}:\n${built.evidence}`,
+          )
         }
-        if (built.kind === 'unknown') return wait('sync-unknown', `the build of ${short(merge)} could not be told: ${built.why}`)
+        if (built.kind === 'unknown')
+          return wait('sync-unknown', `the build of ${short(merge)} could not be told: ${built.why}`)
         return {
           kind: 'done',
           headSha: merge,
@@ -179,7 +193,12 @@ export const buildStep: PrStep = {
             recordBranchSynced(project, n, { mainCommit, head: merge, how: 'clean' }, store),
         } as StepAnswer
       }),
-      (message) => ({ kind: 'wait', reason: 'sync-unknown', detail: message, headSha: state.target ?? state.frozenSha ?? '' }),
+      (message) => ({
+        kind: 'wait',
+        reason: 'sync-unknown',
+        detail: message,
+        headSha: state.target ?? state.frozenSha ?? '',
+      }),
     ),
 }
 
@@ -250,7 +269,11 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         // `BaseChecked` is read as the state of that branch, and a commit that was never on it must not stand there.
         const built = yield* ports.build(project, { sha: merged.sha, base: prBranch, checkId: `pr-${n}-back` })
         if (built.kind === 'red') {
-          return { kind: 'failed', why: 'red', detail: `\`${built.command}\` fails on ${short(merged.sha)}:\n${built.evidence}` } as Back
+          return {
+            kind: 'failed',
+            why: 'red',
+            detail: `\`${built.command}\` fails on ${short(merged.sha)}:\n${built.evidence}`,
+          } as Back
         }
         if (built.kind === 'unknown') return { kind: 'failed', why: 'unknown', detail: built.why } as Back
 
@@ -260,7 +283,8 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         const answer = yield* ports.remote(project, push)
         if (answer.code === 0) return { kind: 'merged', mergeCommit: merged.sha } as Back
         // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
-        if ((yield* remoteSha(ports, project, ref)) === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
+        if ((yield* remoteSha(ports, project, ref)) === merged.sha)
+          return { kind: 'merged', mergeCommit: merged.sha } as Back
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
       }).pipe(

@@ -18,7 +18,6 @@ import {
   prDescription,
   prStream,
 } from '@lingtai/domain'
-import type { MergeInWorktreeResult } from '@lingtai/repo'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, PermissionDenied } from '@lingtai/github'
 import {
@@ -36,6 +35,7 @@ import {
   recordPrWaiting,
 } from '@lingtai/project'
 import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
+import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Effect, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'

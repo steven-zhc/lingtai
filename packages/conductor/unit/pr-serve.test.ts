@@ -54,6 +54,10 @@ function ports(
     candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.sync(() => void calls.push('fetch')),
     projects: () => Effect.succeed(['lingtai']),
+    merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),
+    sweep: () => Effect.void,
+    build: () => Effect.succeed({ kind: 'unknown', why: 'this test never builds' }),
+    checkedOut: () => Effect.succeed(null),
     remote: () => Effect.fail(new Error('the freeze never reaches the remote')),
     github: () => Effect.fail(new Error('the freeze never reaches GitHub')),
     facts: () => Effect.succeed([]),
@@ -249,7 +253,7 @@ describe('resuming', () => {
       projects: () => Effect.succeed(['a', 'lingtai']),
       fetch: (project) => (project === 'a' ? Effect.fail(new Error('offline')) : p.fetch(project)),
     }
-    await Effect.runPromise(makePrHandlers(flaky).resume())
+    await Effect.runPromise(makePrHandlers(flaky, []).resume())
     expect((await state(store)).status).toBe('in-progress')
     expect(reducePr(await store.read(prStream('a', 1))).status).toBe('requested')
   })
@@ -261,8 +265,8 @@ describe('the walk', () => {
     run: ({ state }) => Effect.succeed({ kind: 'done', headSha: state.target ?? 'x' }),
   })
 
-  it('is empty in this ticket: a PR stays in progress', () => {
-    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['push', 'open'])
+  it('lists In progress’s steps in 0130 §5’s order, sync and build first', () => {
+    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['sync', 'build', 'push', 'open'])
   })
 
   it('records each step with the head sha it ran on, and a second serve runs none of them again', async () => {
@@ -326,7 +330,7 @@ describe('a ticket that ends a landing serves the PR again', () => {
     const store = createMemoryEventStore()
     await landed(store, '1')
     await request(store)
-    const handlers = makePrHandlers(ports(store, { reachable: ['m1'] }))
+    const handlers = makePrHandlers(ports(store, { reachable: ['m1'] }), [])
     const event = (await store.read(ticketStream('lingtai', '1')))[1]!
     await Effect.runPromise(handlers.serve(event))
     expect((await state(store)).status).toBe('in-progress')

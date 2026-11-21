@@ -70,7 +70,9 @@ export const mergeInWorktree = (options: MergeInWorktreeOptions): Effect.Effect<
           ),
       )
 
-      const merged = yield* Effect.result(at(['merge', '--no-ff', '--no-edit', '-m', options.message, options.theirs], cwd))
+      const merged = yield* Effect.result(
+        at(['merge', '--no-ff', '--no-edit', '-m', options.message, options.theirs], cwd),
+      )
       if (Result.isFailure(merged)) {
         // `-z`: a path with a non-ASCII or control character is C-quoted by the newline form.
         const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U', '-z'], cwd).pipe(
