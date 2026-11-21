@@ -11,7 +11,10 @@ import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type PrPorts, learnPrEnds, makePrHandlers, servePr } from '../src/pr.ts'
+import { IN_PROGRESS_STEPS, type PrPorts, learnPrEnds, makePrHandlers, servePr } from '../src/pr.ts'
+
+/** `push` and `open`: this file is about the sweep; `sync` and `build` are `pr-sync.test.ts`'s. */
+const PUSH_OPEN = IN_PROGRESS_STEPS.filter((s) => s.name === 'push' || s.name === 'open')
 import type { IssueChannel } from '../src/tell.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -112,7 +115,7 @@ async function inReview(recipe: Recipe = team): Promise<{ store: EventStore; w: 
   await landed(store, '2')
   await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
   const w = aWorld()
-  await Effect.runPromise(servePr(ports(store, w, recipe), 'lingtai', 1))
+  await Effect.runPromise(servePr(ports(store, w, recipe), 'lingtai', 1, PUSH_OPEN))
   w.pullCalls.length = 0
   w.gitCalls.length = 0
   w.fetches = 0
@@ -160,7 +163,7 @@ describe('the sweep learns what became of the open PR', () => {
     await sweep(ports(store, w))
     const asked = await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
     expect(asked).toEqual({ kind: 'requested', n: 2 })
-    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 2))
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 2, PUSH_OPEN))
     expect((await pr(store, 2)).tickets.map((t) => t.ticket)).toEqual(['1', '2'])
   })
 
@@ -233,7 +236,7 @@ describe('an unfinished close is retried after a later PR merges', () => {
     expect(w.closed).toEqual([])
     await landed(store, '3')
     await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
-    await Effect.runPromise(servePr(p, 'lingtai', 2))
+    await Effect.runPromise(servePr(p, 'lingtai', 2, PUSH_OPEN))
     w.pull = { ...open, merged: true, state: 'closed' }
     await sweep(p)
     broken = false
@@ -280,7 +283,7 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
       ...ports(store, w),
       remote: () => Effect.sync(() => void asked++).pipe(Effect.andThen(Effect.never)),
     }
-    await Effect.runPromise(makePrHandlers(p, undefined, 20).resume())
+    await Effect.runPromise(makePrHandlers(p, PUSH_OPEN, 20).resume())
     expect(asked).toBeGreaterThan(0)
     expect((await pr(store)).status).toBe('in-progress')
   })
