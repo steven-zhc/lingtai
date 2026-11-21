@@ -4,6 +4,7 @@ import {
   assigneeOf,
   branchOf,
   ceilingOf,
+  ciOf,
   discloseSteps,
   excludeOf,
   kindOfAction,
@@ -13,6 +14,7 @@ import {
   type Recipe,
   type StepAction,
 } from '@lingtai/recipe'
+import { formatDuration } from '@lingtai/recipe/duration'
 
 import { readRecipe } from './recipe.ts'
 import { STEP_SAYS } from './step-says.ts'
@@ -167,7 +169,20 @@ export interface ModeReading {
   personal: string | null
   lines: readonly ModeLine[]
   /** The summary agent's row; null in solo, where there is no PR. */
-  pr: { agent: string; agentFromDefault: boolean; turns: number; wall: string; fromDefault: boolean } | null
+  pr: {
+    agent: string
+    agentFromDefault: boolean
+    turns: number
+    wall: string
+    fromDefault: boolean
+    /** `pr.ci` through `ciOf`, each value with whether the recipe wrote it (#1338). */
+    ci: {
+      provider: 'github-actions' | 'none' | 'detect'
+      required: readonly string[] | 'all'
+      timeout: string
+      from: { provider: 'recipe' | 'default'; required: 'recipe' | 'default'; timeout: 'recipe' | 'default' }
+    }
+  } | null
 }
 
 /**
@@ -210,6 +225,7 @@ export function modeLines(recipe: Recipe): ModeReading {
         turns: pr?.limits.turns ?? 20,
         wall: pr?.limits.wall ?? '5m',
         fromDefault: pr === undefined,
+        ci: (({ timeoutMs, ...rest }) => ({ ...rest, timeout: formatDuration(timeoutMs) }))(ciOf(recipe)),
       },
     }
   }

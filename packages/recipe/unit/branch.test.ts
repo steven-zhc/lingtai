@@ -101,6 +101,39 @@ describe('mode, branch and pr', () => {
     )
   })
 
+  it('refuses pr.ci meanings by key as a RecipeRefusedError, and resolves a written one (#1338)', () => {
+    const team = 'mode: team\nbranch: { main: main, personal: me/box }\n'
+    const ok = resolve(
+      `${team}pr: { ci: { provider: github-actions, required: [test, lint], timeout: 30m } }\n`,
+      TAIL_ME,
+    )
+    expect(ok.recipe.pr?.ci?.required).toEqual(['test', 'lint'])
+    const J = 'jenkins: { url: "https://ci.example.com", job: build }'
+    const cases: [string, string][] = [
+      [`pr: { ci: { provider: jenkins } }`, 'next release'],
+      [`pr: { ci: { provider: jenkins, ${J} } }`, 'next release'],
+      [`pr: { ci: { provider: none, ${J} } }`, 'read only with `provider: jenkins`'],
+      [`pr: { ci: { required: [] } }`, 'leave `required` out'],
+      [
+        `pr: { ci: { provider: jenkins, jenkins: { url: "https://x.io", job: j, token: x } } }`,
+        '~/.lingtai/config.yml',
+      ],
+    ]
+    for (const [pr, sentence] of cases) {
+      let thrown: unknown
+      try {
+        resolve(`${team}${pr}\n`, TAIL_ME)
+      } catch (err) {
+        thrown = err
+      }
+      expect(thrown, pr).toBeInstanceOf(RecipeRefusedError)
+      expect((thrown as Error).message).toContain(sentence)
+    }
+    expect(() =>
+      resolve(`${team}pr: { ci: { jenkins: { url: "https://x.io", job: j, extra: 1 } } }\n`, TAIL_ME),
+    ).toThrow(RecipeInvalidError)
+  })
+
   it('leaves YAML that does not parse a plain RecipeInvalidError', () => {
     try {
       resolveSource('version: [', 'main', 'recipe.yml')
