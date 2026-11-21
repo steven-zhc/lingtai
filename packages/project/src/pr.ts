@@ -225,7 +225,7 @@ export const recordPrMergedBack = (project: string, n: number, merged: PayloadOf
     (_state, appended) => appended,
   )
 
-/** The merge back failed and nothing was pushed. Once per head. */
+/** The merge back did not complete; with `unknown` it is not known whether the push landed, and the head stays owed. Once per head. */
 export const recordPrMergeBackFailed = (
   project: string,
   n: number,

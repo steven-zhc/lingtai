@@ -81,12 +81,15 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     git: (_p, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n` }
-        if (args[0] === 'cat-file') return { code: 0, stdout: '' }
-        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '' }
-        return { code: w.reach, stdout: '' }
+        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+        if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
+        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
+        return { code: w.reach, stdout: '', stderr: '' }
       }),
-    remote: (_p, args) => Effect.succeed(args[0] === 'ls-remote' ? { code: 0, stdout: '' } : { code: 0, stdout: '' }),
+    remote: (_p, args) =>
+      Effect.succeed(
+        args[0] === 'ls-remote' ? { code: 0, stdout: '', stderr: '' } : { code: 0, stdout: '', stderr: '' },
+      ),
   }
 }
 
