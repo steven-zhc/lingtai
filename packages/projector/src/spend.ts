@@ -69,7 +69,14 @@
  * in reaction to its own `DiscussionRequested`.
  */
 import type { PayloadOf, Usage } from '@lingtai/domain'
-import { chatStream, encodeTicket, isAttemptStream, isTicketStream, parseTicketStream } from '@lingtai/domain'
+import {
+  chatStream,
+  encodeTicket,
+  isAttemptStream,
+  isTicketStream,
+  parsePrStream,
+  parseTicketStream,
+} from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
 import { Effect } from 'effect'
@@ -237,7 +244,13 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
               snapshot ??= ports.snapshot()
               estimate = estimateRow({ at: event.at, usage: d.usage }, snapshot)
             }
-            const project = ticket === null ? null : (parseTicketStream(ticket)?.project ?? null)
+            // A PR's run has no ticket: its project is the one its stream names (#1313).
+            const project =
+              ticket === null
+                ? d.for._tag === 'Pr'
+                  ? (parsePrStream(event.streamId)?.project ?? null)
+                  : null
+                : (parseTicketStream(ticket)?.project ?? null)
             const pass = isAttemptStream(event.streamId) ? event.streamId : null
             const step = d.for._tag === 'Action' ? d.for.step : null
             const action = d.for._tag === 'Action' ? d.for.name : null

@@ -145,7 +145,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunAppliedKeptWork](events.json#RunAppliedKeptWork) *(retired)*, [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [SandboxBoundaryRecorded](events.json#SandboxBoundaryRecorded), [SandboxConnectionsRefused](events.json#SandboxConnectionsRefused), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) *(retired)*, [ProposalRouted](events.json#ProposalRouted), [StepRerunInPlace](events.json#StepRerunInPlace) *(retired)*, [StepRedone](events.json#StepRedone) |
 | `int-` | base branch, `int-{project}-{base}` | [IntegrationState](glossary.md#the-log-and-its-states) | [IntegrationAttempted](events.json#IntegrationAttempted), [IntegrationRefused](events.json#IntegrationRefused), [IntegrationSucceeded](events.json#IntegrationSucceeded), [BaseChecked](events.json#BaseChecked), [BaseFixProposed](events.json#BaseFixProposed) |
 | `prj-` | repository, `prj-{project}` | [ProjectState](glossary.md#the-log-and-its-states) | [ProjectOnboardingStarted](events.json#ProjectOnboardingStarted) *(retired)*, [ProjectConfigured](events.json#ProjectConfigured), [ProjectRecipeChanged](events.json#ProjectRecipeChanged), [ProjectSandboxObserved](events.json#ProjectSandboxObserved), [ProjectRefused](events.json#ProjectRefused), [ProjectRecovered](events.json#ProjectRecovered), [ProjectPaused](events.json#ProjectPaused), [ProjectResumed](events.json#ProjectResumed) |
-| `pr-` | PR, `pr-{project}-{n}` | [PrState](glossary.md#the-log-and-its-states) | [PrSubmitRequested](events.json#PrSubmitRequested), [PrSubmitRefused](events.json#PrSubmitRefused), [PrInProgress](events.json#PrInProgress), [PrStepDone](events.json#PrStepDone), [PrWaiting](events.json#PrWaiting), [PrPushed](events.json#PrPushed), [PrDraftOpened](events.json#PrDraftOpened), [PrOpened](events.json#PrOpened), [BranchSynced](events.json#BranchSynced), [PrMergedBack](events.json#PrMergedBack), [PrMergeBackFailed](events.json#PrMergeBackFailed), [PrMerged](events.json#PrMerged), [PrClosed](events.json#PrClosed) |
+| `pr-` | PR, `pr-{project}-{n}` | [PrState](glossary.md#the-log-and-its-states) | [RunPrompted](events.json#RunPrompted), [RunSpent](events.json#RunSpent), [StepEnded](events.json#StepEnded), [PrSubmitRequested](events.json#PrSubmitRequested), [PrSubmitRefused](events.json#PrSubmitRefused), [PrInProgress](events.json#PrInProgress), [PrStepDone](events.json#PrStepDone), [PrWaiting](events.json#PrWaiting), [PrPushed](events.json#PrPushed), [PrDraftOpened](events.json#PrDraftOpened), [PrOpened](events.json#PrOpened), [BranchSynced](events.json#BranchSynced), [PrMergedBack](events.json#PrMergedBack), [PrMergeBackFailed](events.json#PrMergeBackFailed), [SyncRoundStarted](events.json#SyncRoundStarted), [SyncRoundRefused](events.json#SyncRoundRefused), [PrMerged](events.json#PrMerged), [PrClosed](events.json#PrClosed), [PrRoundsGranted](events.json#PrRoundsGranted), [PrRetryRequested](events.json#PrRetryRequested), [PrHeadAdopted](events.json#PrHeadAdopted), [PrBackRequested](events.json#PrBackRequested) |
 | `ctl-` | control stream: `ctl-conductor` (one per machine) and `ctl-github-app` | [ControlState](glossary.md#the-log-and-its-states) (`ctl-conductor`); none for `ctl-github-app` | [ConductorPaused](events.json#ConductorPaused), [ConductorResumed](events.json#ConductorResumed), [DayCeilingReached](events.json#DayCeilingReached), [DayCeilingLifted](events.json#DayCeilingLifted), [ConductorShutdownRequested](events.json#ConductorShutdownRequested), [ConductorStarted](events.json#ConductorStarted), [ConductorShutdownWithdrawn](events.json#ConductorShutdownWithdrawn) *(retired)*, [QueueChanged](events.json#QueueChanged), [RunRequested](events.json#RunRequested), [ContinueRequested](events.json#ContinueRequested), [DiscussionRequested](events.json#DiscussionRequested), [Reconciled](events.json#Reconciled), [GitHubAppCreated](events.json#GitHubAppCreated) |
 | `chat-` | discussion, `chat-…` | [ChatState](glossary.md#the-log-and-its-states) | [RunSpent](events.json#RunSpent), [DiscussionAsked](events.json#DiscussionAsked), [DiscussionAnswered](events.json#DiscussionAnswered) |
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
@@ -153,7 +153,9 @@ are not — one per work item, attempt, lane and project, forever.
 | `rcp-` | recipe, `rcp-{configHash}` | none | [RecipeRecorded](events.json#RecipeRecorded) *(retired)* |
 | `acct-` | platform account on this machine (a runtime, or `github`), `acct-{account}` | [AccountState](glossary.md#the-log-and-its-states) | [AccountLimitReached](events.json#AccountLimitReached), [AccountLimitLifted](events.json#AccountLimitLifted) |
 
-- [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`).
+- [RunPrompted](events.json#RunPrompted) is on `pass-`, `pr-` — the prompt is recorded beside the `RunSpent` it belongs to: on an attempt (`pass-`) or on a PR whose conflict agent ran (`pr-`).
+- [RunSpent](events.json#RunSpent) is on `pass-`, `chat-`, `ticket-`, `pr-` — spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`), a ticket-level agent such as triage (`ticket-`) or a PR (`pr-`).
+- [StepEnded](events.json#StepEnded) is on `pass-`, `pr-` — a step's outcome is recorded on an attempt (`pass-`), or on a PR for the review of a conflict agent's resolution (`pr-`), so its minors are read the same way.
 
 On no stream: [OutboxDelivered](events.json#OutboxDelivered) *(retired)*, [OutboxFailed](events.json#OutboxFailed) *(retired)*.
 <!-- streams:end -->
@@ -347,7 +349,7 @@ say different things about the same recipe
 |---|---|---|
 | `runtime.limits.run.turns` | `300` | turns before the runtime stops the agent, **per run** |
 | `runtime.limits.run.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would |
+| `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would. **A `copilot` or `antigravity` run is unpriced** (`costUsd: null`, `packages/agent/src/acp.ts:323`): `run.usd` never stops a run on it, and `turns` and `wall` are what bound it. The day's ceiling does not see a Copilot run, which names no model; an Antigravity run names its model, so where a rate for that model has been fetched the day's ceiling counts an *estimate* of it (`packages/projector/src/spend.ts`) |
 | `runtime.limits.attempt.refusalFixes` | `6` | how many times an attempt sends the agent back **into the same worktree**, carrying what a build or review refused. `0` buys no fix, and a refusal then goes to a person |
 | `runtime.limits.attempt.conflictResolutions` | `6` | how many times an attempt sends the agent back to resolve a merge conflict. Two things that mean differently have two names even where their values agree. `0` buys no resolution |
 | `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build buys one only when triage names `WrongApproach` after its `refusalFixes` are spent (`StartNewAttempt` is permitted for `BuildRed`); a conflict with only mechanical hunks never does. Not a daemon restart. `0` means a spent attempt asks a person |
@@ -1154,7 +1156,7 @@ written as a stand-in.
 | Key | Verdict comes from | Needs |
 |---|---|---|
 | `run:` | a command's exit code | the names its `env:` declares |
-| `agent:` | an AI review reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex` — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
+| `agent:` | an AI review reading the diff — **or, at `design` alone, the agent that writes the document** (`#265`): the same four fields, and what it builds there is `createDraftAction`, which dispatches on the ticket and answers one of three things: the document, `""` — *this change needs no design*, and the common one — or a question, written in a ` ```question ` block, which ends the step `asked` and reaches `proposed` as the `needs-input` direction (`#294`, `#296`). An answer that opened that block and asked nothing is `unreadable` and never a silently empty document (`#279`). Four fields: `agent:` is **the runtime** and is an enum of the ones Lingtai can start — `claude-code`, `codex`, `copilot`, `antigravity` (the last two only at `implement`; see [where each agent may be named](#where-each-agent-may-be-named)) — `model:` is optional, `prompt:` is what it is given, and `limits:` — `turns`, `wall` — is what that one call may spend, which may only narrow `runtime.limits` (`#314`, 0070 §5) | **the runtime it names, dispatched** since `#314`: a `review` written `agent: codex` beside a `runtime.agent: claude-code` runs on Codex, over the `RUNTIMES` table. What is refused before the claim is a runtime **nothing on this machine is signed in to** — the same refusal, with the machine as its subject rather than the conductor |
 | `file:` | — it judges nothing: it is the first **destination**, and at `design` alone it keeps the document an earlier action in the same list made (0066 §5, `#300`). One field beside `name`: `file:` is where the document goes, relative to the worktree — no `..`, not absolute, not under a home directory, and a path that escapes is refused when the recipe resolves (`whyThePathEscapes`), before a worktree and before any money (0066 §6). **`{{issue}}` in the path becomes the ticket's number when the attempt runs** (`#310`), so each attempt's note lands at its own path and the locator on an old `StepPassed` still opens the document it named; `{{issue}}` is the only placeholder — any other `{{…}}` is refused at resolve, and the expansion is asked `whyThePathEscapes` again before anything is written. **The note is committed, and there is no field for the other answer**: the worktree is removed when the attempt ends and only what was pushed survives it, so an uncommitted note — and everything its locator points at — is gone by the time anybody reads the card, which is 0066 §1 again rather than a second product. It answers with the path as the **locator**, which is what *this* action's `evidence` carries instead of the document — the drafter's own `StepPassed` still carries the document, clipped (0066 §8), so §1's third row is bounded rather than gone. A `file:` written **first** in a step's list is refused, because it keeps what an earlier action made; two destinations are a legal list | the keep — a filesystem and a `git` binary, which the conductor hands it as `ActionDeps.file`, and a `file:` built without one is refused by name |
 | `file-brief:` | — it judges nothing either: it is the **other end of the same destination** (0066 §4, [0069](decisions-archive/0069-both-the-document-and-the-locator-cross-the-step-boundary.md) §4, [#301](https://github.com/steven-zhc/lingtai/issues/301)), and at `implement` alone it takes the locator the `design` step produced, reads the document back and hands it to the actions written after it — so the agent is briefed with what is on the branch rather than with the copy the attempt was carrying, and where the two differ this plugin owns the difference (0069 §4). One field beside `name`, and it is `true`: **where** it reads is the locator's to say and never the recipe's, because a path written here would be a second answer that could disagree with it in silence. It understands a path inside the worktree and nothing else — a locator that is not one ends the step `did-not-finish`, with a sentence naming the destination it expected, which is the second of the three rows a destination fails by. A `file-brief:` written **last** in a step's list is refused, because it briefs what comes after it | the read — a filesystem, which the conductor hands it as `ActionDeps.fileBrief`, and a `file-brief:` built without one is refused by name |
 | `watch:` | globs against the diff's file list, then `request-approval` or `fail`. **`proposed` only, since `#270`** — a watch reaches a person, and only `proposed` may | the diff's file list |
@@ -1818,11 +1820,44 @@ no upcaster was needed.
 An issue with no label the recipe names has no kind and is **not runnable** —
 which is why admin #156 sat invisible until it was labelled.
 
-## runtime — 2
+## runtime — 4
 
-Source: `RuntimeId` in `packages/domain/src/events.ts:78`.
+Source: `RuntimeId` in `packages/domain/src/events.ts:144`.
 
-`claude-code` · `codex`
+`claude-code` · `codex` · `copilot` · `antigravity`
+
+### Where each agent may be named
+
+`copilot` and `antigravity` are ACP agents (Copilot CLI 1.0.112 and Antigravity
+CLI 1.5.9, measured 2026-11-19 in
+[experiment 019](experiments/019-acp-agents-measured.md)). They are **not equals
+of `claude-code` and `codex`**: today they run as the `agent:` of an action at
+`implement` and nowhere else (`IMPLEMENT_ONLY_AGENTS`,
+`packages/recipe/src/recipe.ts:1384`; the follow-up that would wire review and
+judges is #1300). Anywhere else the recipe is refused by name when it resolves.
+
+| Where it is named | `claude-code`, `codex` | `copilot`, `antigravity` |
+|---|---|---|
+| `runtime.agent` | yes | refused — *runs only at `implement`* |
+| `agent:` at `implement` | yes | yes |
+| `agent:` at `design` or `review` | yes | refused |
+| `judge:` at any step | yes | refused |
+| `discuss.agent` and triage | yes | refused — an ACP agent cannot be given no tools |
+
+Three more limits, which a person choosing one should read before the rest:
+
+- **Unpriced.** Neither reports a cost (`costUsd: null`), so `runtime.limits.run.usd`
+  never stops a run on it; `turns` and `wall` do. The day's ceiling cannot see a
+  Copilot run (it names no model). An Antigravity run names its model, so where a
+  rate for it has been fetched the day's ceiling counts an estimate and can stop
+  scheduling.
+- **Antigravity is never sandboxed in this release**, on any host. A recipe with
+  `sandbox.required: true` that names it is refused; see
+  [safety](safety.md#without-the-sandbox).
+- **`model:`** for `antigravity` is one of the models it offers (a `model`
+  config option). `copilot` advertises none, so it is an id your account may use
+  and is set with `session/set_model`; a wrong id comes back as the reply's text,
+  *Model "…" is not available* (019 E9), not as a refusal.
 
 ## integration refusal reason — 14
 

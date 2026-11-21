@@ -66,10 +66,12 @@ function ports(
       Effect.sync(() => {
         calls.push(args.join(' '))
         if (args[0] === 'rev-parse') {
-          return options.personal === false ? { code: 1, stdout: '' } : { code: 0, stdout: `${FROZEN}\n` }
+          return options.personal === false
+            ? { code: 1, stdout: '', stderr: '' }
+            : { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
         }
-        if (options.mergeBase !== undefined) return { code: options.mergeBase, stdout: '' }
-        return { code: (options.reachable ?? []).includes(args[2]!) ? 0 : 1, stdout: '' }
+        if (options.mergeBase !== undefined) return { code: options.mergeBase, stdout: '', stderr: '' }
+        return { code: (options.reachable ?? []).includes(args[2]!) ? 0 : 1, stdout: '', stderr: '' }
       }),
   }
 }

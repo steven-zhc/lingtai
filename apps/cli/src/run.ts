@@ -337,7 +337,7 @@ export function run(
   world: RunWorld = liveRunWorld(options, log),
 ): Effect.Effect<number> {
   const locked = lockedFor(options.store, options.dayCeiling)
-  const servePrs = servePendingPrs(livePrPorts(options.store ?? eventStore, log), [options.project])
+  const servePrs = servePendingPrs(livePrPorts(options.store ?? eventStore, log, locked), [options.project])
   /** Whether a PR of this project is waiting to be served; a failed read says no, and the next conductor serves it. */
   const prOwed = listPrs(options.project, options.store ?? eventStore).pipe(
     Effect.map((prs) => prs.some((pr) => pr.status === 'requested' || pr.status === 'in-progress')),

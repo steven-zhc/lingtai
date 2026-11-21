@@ -65,6 +65,7 @@ const PURPOSES: Record<string, { label: string; rest: string; color: string }> =
   Triage: { label: 'Triage', rest: 'telling you why it stopped', color: '#7a8fa0' },
   Judge: { label: 'Judging', rest: '', color: 'var(--pass)' },
   Discussion: { label: 'Discussion', rest: '', color: 'var(--held)' },
+  Pr: { label: 'Pull requests', rest: 'resolving a conflict with main, and reviewing it', color: 'var(--held)' },
 }
 
 function Figure({ big, label, sub }: { big: ReactNode; label: string; sub: string }) {

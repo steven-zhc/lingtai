@@ -12,13 +12,14 @@
  * Every answer a step cannot give is a wait the person reads; a step never fails (0130 §6: *the PR waits on you,
  * saying why, and nothing else stops*). This file imports `pr.ts`'s types and nothing of its values.
  */
-import { type PrState, integrationStream, prStream } from '@lingtai/domain'
+import { type ConflictEnd, type PrState, integrationStream, prStream } from '@lingtai/domain'
 import { PermissionDenied } from '@lingtai/github'
 import { readPr, recordBranchSynced, recordPrMergeBackFailed, recordPrMergedBack } from '@lingtai/project'
 import { Effect, Result } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
-import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
+import { asError, backRef, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
+import { type ResolveEnd, resolveRounds } from './pr-resolve.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
 
 const short = (sha: string): string => sha.slice(0, 7)
@@ -80,11 +81,16 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       const { prBranch, main, frozenSha } = state
       const target = state.target ?? frozenSha
       if (prBranch === null || main === null || target === null) return { kind: 'again' } as StepAnswer
-      const wait = (reason: 'sync-conflict' | 'sync-unknown' | 'sync-rewritten', detail: string): StepAnswer => ({
+      const wait = (
+        reason: 'sync-conflict' | 'sync-unknown' | 'sync-rewritten' | 'sync-locked',
+        detail: string,
+        conflict?: ConflictEnd,
+      ): StepAnswer => ({
         kind: 'wait',
         reason,
         detail,
         headSha: target,
+        ...(conflict === undefined ? {} : { conflict }),
       })
       yield* ports.sweep(project)
       yield* fetchInto(ports, project, [[`refs/heads/${main}`, fetchedRef(n, 'main')]])
@@ -124,10 +130,41 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
         message: `Merge ${main} at ${short(mainSha)} into ${prBranch}`,
       })
       if (merged.kind === 'conflict') {
-        return wait(
-          'sync-conflict',
-          `${main} (${short(mainSha)}) conflicts with ${prBranch} in:\n${merged.paths.join('\n')}`,
-        )
+        const conflicts = `${main} (${short(mainSha)}) conflicts with ${prBranch} in:\n${merged.paths.join('\n')}`
+        const resolver = ports.resolver
+        // No agent to ask: the person is, as before.
+        if (resolver === undefined) return wait('sync-conflict', conflicts)
+        // **Outside the merge lane, and nothing is pushed**: a resolution that passed becomes the PR's `target`, and `push`
+        // takes the PR branch's lane turn. A pr-fix landing that moved the target meanwhile is `walkPr`'s to notice.
+        const resolved = yield* resolveRounds(ports, resolver, {
+          project,
+          n,
+          merging: 'main',
+          commit: mainSha,
+          start,
+          paths: merged.paths,
+          into: prBranch,
+          from: main,
+          subject: `Merge ${main} at ${short(mainSha)} into ${prBranch}`,
+          buildBase: prBranch,
+          checkId: `pr-${n}-sync`,
+        })
+        if (resolved.kind === 'resolved') {
+          const keep = ['update-ref', targetRef(n), resolved.sha] as const
+          const kept = yield* ports.git(project, keep)
+          if (kept.code !== 0) return wait('sync-unknown', gitSaid(keep, kept))
+          return {
+            kind: 'done',
+            headSha: resolved.sha,
+            record: (project, n, store) =>
+              recordBranchSynced(project, n, { mainCommit: mainSha, head: resolved.sha, how: 'resolved' }, store),
+          } as StepAnswer
+        }
+        if (resolved.kind === 'unknown') return wait('sync-unknown', resolved.why)
+        if (resolved.kind === 'locked') {
+          return wait('sync-locked', `${resolved.sentence}\n${spentSentence(resolved.end)}`, resolved.end)
+        }
+        return wait('sync-conflict', `${conflicts}\n${spentSentence(resolved.end)}`, resolved.end)
       }
       if (merged.kind === 'failed')
         return wait('sync-unknown', `merging ${main} into ${prBranch} failed: ${merged.text}`)
@@ -144,6 +181,11 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
     }),
   )
 
+/** What a person reads when the rounds are spent: how many, and what refused the last. */
+const spentSentence = (end: ConflictEnd): string =>
+  `the conflict agent spent ${end.roundsUsed} round${end.roundsUsed === 1 ? '' : 's'}` +
+  (end.last === null ? '' : `; the last was refused at ${end.last.step}:\n${end.last.said}`)
+
 /** Brings main into the PR's commit, in a throwaway worktree, and pushes nothing. */
 export const syncStep: PrStep = { name: 'sync', run: syncStepRun }
 
@@ -157,8 +199,11 @@ export const buildStep: PrStep = {
         const prBranch = state.prBranch
         const synced = state.steps.find((s) => s.step === 'sync')
         if (target === null || prBranch === null || synced === undefined) return { kind: 'again' } as StepAnswer
-        // Nothing was merged: the sync's commit is the target, and it was built when it was made.
-        if (synced.headSha === target) return { kind: 'done', headSha: target } as StepAnswer
+        // Nothing was merged: the sync's commit is the target, and it was built when it was made — **by Lingtai**. A head a
+        // person pushed and a retry adopted (#1314) was not, so it is built here, and recorded as the build step's own.
+        if (synced.headSha === target && target !== state.adopted)
+          return { kind: 'done', headSha: target } as StepAnswer
+        const adopted = synced.headSha === target
         const merge = synced.headSha
         const wait = (reason: 'sync-red' | 'sync-unknown', detail: string): StepAnswer => ({
           kind: 'wait',
@@ -171,8 +216,8 @@ export const buildStep: PrStep = {
         const have = yield* ports.git(project, ['cat-file', '-e', `${merge}^{commit}`])
         if (have.code === 1 || have.code === 128) return { kind: 'restart' } as StepAnswer
         if (have.code !== 0) return wait('sync-unknown', gitSaid(['cat-file', '-e', merge], have))
-        // `main`'s commit is the merge's second parent: what was merged, whatever `main` is now.
-        const mainCommit = yield* resolve(ports, project, `${merge}^2`)
+        // `main`'s commit is the merge's second parent: what was merged, whatever `main` is now. An adopted head is not a merge.
+        const mainCommit = adopted ? merge : yield* resolve(ports, project, `${merge}^2`)
 
         // A build a killed process left at this fixed worktree path would fail the cut: it is removed first.
         yield* ports.sweep(project)
@@ -185,6 +230,7 @@ export const buildStep: PrStep = {
         }
         if (built.kind === 'unknown')
           return wait('sync-unknown', `the build of ${short(merge)} could not be told: ${built.why}`)
+        if (adopted) return { kind: 'done', headSha: merge } as StepAnswer
         return {
           kind: 'done',
           headSha: merge,
@@ -205,8 +251,11 @@ export const buildStep: PrStep = {
 export const mergeBackOwed = (state: PrState): boolean => {
   if (state.status !== 'in-review' || state.lastPushed === null) return false
   const was = state.mergeBack
-  // A failure of `unknown` could not tell whether a push landed, so it is looked at again; any other is the head's answer.
-  return was?.prHead !== state.lastPushed || (was.outcome === 'failed' && was.why === 'unknown')
+  // A failure of `unknown` could not tell whether a push landed, and one `locked` never started: both are looked at again;
+  // any other is the head's answer.
+  return (
+    was?.prHead !== state.lastPushed || (was.outcome === 'failed' && (was.why === 'unknown' || was.why === 'locked'))
+  )
 }
 
 type Back =
@@ -214,6 +263,8 @@ type Back =
   | { readonly kind: 'nothing' }
   | { readonly kind: 'failed'; readonly why: 'conflict' | 'red' | 'unknown' | 'lost-push'; readonly detail: string }
   | { readonly kind: 'lost' }
+  /** Conflicted in the lane's turn, with an agent to ask: the rounds run outside it, and the push is a second turn. */
+  | { readonly kind: 'conflict'; readonly personalSha: string; readonly paths: readonly string[] }
 
 /**
  * Merges a PR's last pushed commit into `branch.personal`, builds it, and pushes it — once per head, and only once the
@@ -229,14 +280,59 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
     const prHead = first.lastPushed
     if (branch === null || main === null || prBranch === null || prHead === null) return
     const backSubject = `Merge ${prBranch} into ${branch}`
-    const failed = (why: 'conflict' | 'red' | 'unknown' | 'lost-push', detail: string) =>
-      recordPrMergeBackFailed(project, n, { prHead, why, detail }, ports.store)
+    const failed = (
+      why: 'conflict' | 'red' | 'unknown' | 'lost-push' | 'locked',
+      detail: string,
+      conflict?: ConflictEnd,
+    ) =>
+      recordPrMergeBackFailed(
+        project,
+        n,
+        { prHead, why, detail, ...(conflict === undefined ? {} : { conflict }) },
+        ports.store,
+      )
 
     // `freezePr` falls back to `main` where the recipe names no personal branch; that must never become a push to it.
     if (branch === main) {
       yield* failed('unknown', `the PR was frozen on ${main}, which is not a personal branch: nothing is pushed there`)
       return
     }
+
+    /** The one push of `branch.personal`: never forced, never naming `branch.main`, and looked at once if it was lost. */
+    const pushIt = (sha: string, tries: number): Effect.Effect<Back, Error> =>
+      Effect.gen(function* () {
+        // The refspec is built from the personal branch alone: nothing here can name `branch.main` (0130 §7).
+        const ref = `refs/heads/${branch}`
+        const push = ['push', 'origin', `${sha}:${ref}`] as const
+        const pushed = yield* Effect.result(ports.remote(project, push))
+        // A push that threw is as unknown as one that answered non-zero: the look below decides.
+        const answer = Result.isSuccess(pushed)
+          ? pushed.success
+          : { code: null, stdout: '', stderr: asError(pushed.failure).message }
+        if (answer.code === 0) return { kind: 'merged', mergeCommit: sha } as Back
+        // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
+        // A look that itself fails proves nothing either way: it is said as unknown, which stays owed and is looked at again.
+        const looked = yield* Effect.result(remoteSha(ports, project, ref))
+        if (Result.isFailure(looked)) {
+          const detail = `the push of ${short(sha)} to ${branch} failed (${gitSaid(push, answer)}) and the look at the remote failed too (${asError(looked.failure).message}): the push may have landed`
+          return { kind: 'failed', why: 'unknown', detail } as Back
+        }
+        if (looked.success === sha) return { kind: 'merged', mergeCommit: sha } as Back
+        // A person pushing on top of a push that landed leaves the tip a descendant of the merge: it is on the branch.
+        const onBranch = yield* Effect.result(
+          Effect.gen(function* () {
+            yield* fetchInto(ports, project, [[ref, fetchedRef(n, 'personal')]])
+            return yield* isAncestor(ports, project, sha, fetchedRef(n, 'personal'))
+          }),
+        )
+        if (Result.isFailure(onBranch)) {
+          const detail = `the push of ${short(sha)} to ${branch} failed (${gitSaid(push, answer)}) and whether it is on the remote could not be read (${asError(onBranch.failure).message}): the push may have landed`
+          return { kind: 'failed', why: 'unknown', detail } as Back
+        }
+        if (onBranch.success) return { kind: 'merged', mergeCommit: sha } as Back
+        if (tries === 0) return { kind: 'lost' } as Back
+        return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
+      })
 
     const attempt = (tries: number): Effect.Effect<Back, Error> =>
       Effect.gen(function* () {
@@ -270,7 +366,11 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         }
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
-          return { kind: 'failed', why: 'unknown', detail: `${short(prHead)} is not in the mirror` } as Back
+          const absent = (have.code === 1 || have.code === 128) && have.stderr.trim() === ''
+          const detail = absent
+            ? `${short(prHead)} is not in the mirror`
+            : `${short(prHead)} could not be read in the mirror (${gitSaid(['cat-file', '-e', `${prHead}^{commit}`], have)})`
+          return { kind: 'failed', why: 'unknown', detail } as Back
         }
         // Already in `branch.personal` with no merge of ours to show for it: nothing is owed and nothing is claimed.
         if (yield* isAncestor(ports, project, prHead, personalSha)) return { kind: 'nothing' } as Back
@@ -287,6 +387,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           message: backSubject,
         })
         if (merged.kind === 'conflict') {
+          if (ports.resolver !== undefined) return { kind: 'conflict', personalSha, paths: merged.paths } as Back
           return {
             kind: 'failed',
             why: 'conflict',
@@ -307,25 +408,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         }
         if (built.kind === 'unknown') return { kind: 'failed', why: 'unknown', detail: built.why } as Back
 
-        // The refspec is built from the personal branch alone: nothing here can name `branch.main` (0130 §7).
-        const ref = `refs/heads/${branch}`
-        const push = ['push', 'origin', `${merged.sha}:${ref}`] as const
-        const pushed = yield* Effect.result(ports.remote(project, push))
-        // A push that threw is as unknown as one that answered non-zero: the look below decides.
-        const answer = Result.isSuccess(pushed)
-          ? pushed.success
-          : { code: null, stdout: asError(pushed.failure).message }
-        if (answer.code === 0) return { kind: 'merged', mergeCommit: merged.sha } as Back
-        // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
-        // A look that itself fails proves nothing either way: it is said as unknown, which stays owed and is looked at again.
-        const looked = yield* Effect.result(remoteSha(ports, project, ref))
-        if (Result.isFailure(looked)) {
-          const detail = `the push of ${short(merged.sha)} to ${branch} failed (${gitSaid(push, answer)}) and the look at the remote failed too (${asError(looked.failure).message}): the push may have landed`
-          return { kind: 'failed', why: 'unknown', detail } as Back
-        }
-        if (looked.success === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
-        if (tries === 0) return { kind: 'lost' } as Back
-        return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
+        return yield* pushIt(merged.sha, tries)
       }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
 
     const turn = Effect.gen(function* () {
@@ -362,6 +445,8 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           ),
         ),
       )
+      // A conflict with an agent to ask leaves the lane's turn: the rounds are not run in it, and the push is a second turn.
+      if (decided.kind === 'conflict') return decided
       if (decided.kind === 'lost' || decided.kind === 'nothing') return
       if (decided.kind === 'failed') {
         yield* failed(decided.why, decided.detail).pipe(
@@ -372,7 +457,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         return
       }
       // The merge is pushed. A record that fails here leaves it unrecorded: the next serve finds the merge in
-      // `branch.personal`'s history, builds it, and records it.
+      // `branch.personal`'s history and records it, without a rebuild.
       const recorded = yield* Effect.result(
         recordPrMergedBack(project, n, { prHead, mergeCommit: decided.mergeCommit, how: 'clean' }, ports.store),
       )
@@ -384,10 +469,141 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       }
     })
 
-    yield* (ports.lane ?? landingLane).through(
-      integrationStream(project, branch),
-      { pr: prStream(project, n) },
-      { onWait: () => Effect.void },
-      turn,
-    )
+    const lane = ports.lane ?? landingLane
+    const inLane = <A>(effect: Effect.Effect<A>) =>
+      lane.through(
+        integrationStream(project, branch),
+        { pr: prStream(project, n) },
+        { onWait: () => Effect.void },
+        effect,
+      )
+
+    /**
+     * **The second turn of a resolved merge back** (#1313): the push of a resolution made outside the lane. Everything it
+     * reads is read again here. A `branch.personal` that moved while the agent worked (a ticket landed) is merged into the
+     * resolution by the system with no agent, as `mergeBase` does, and built; a conflict there is the next round.
+     */
+    const pushResolution = (
+      sha: string,
+      tries: number,
+    ): Effect.Effect<
+      { readonly kind: 'done' } | { readonly kind: 'again'; readonly start: string; readonly paths: readonly string[] },
+      Error
+    > =>
+      Effect.gen(function* () {
+        const state = yield* readPr(project, n, ports.store)
+        if (state === null || !mergeBackOwed(state) || state.lastPushed !== prHead) return { kind: 'done' } as const
+        yield* ports.sweep(project)
+        yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
+        const personalNow = yield* resolve(ports, project, fetchedRef(n, 'personal'))
+        const where = yield* ports.checkedOut(project, branch)
+        if (where !== null) {
+          yield* failed('unknown', `${branch} is checked out in ${where}`)
+          return { kind: 'done' } as const
+        }
+        let pushing = sha
+        if (!(yield* isAncestor(ports, project, personalNow, sha))) {
+          const moved = yield* ports.merge(project, {
+            name: `pr-back-${n}-${Date.now()}`,
+            at: sha,
+            theirs: personalNow,
+            message: `Merge ${branch} into the resolution of ${prBranch}`,
+          })
+          if (moved.kind === 'conflict') return { kind: 'again', start: personalNow, paths: moved.paths } as const
+          if (moved.kind === 'failed') {
+            yield* failed('unknown', moved.text)
+            return { kind: 'done' } as const
+          }
+          const built = yield* ports.build(project, { sha: moved.sha, base: prBranch, checkId: `pr-${n}-back` })
+          if (built.kind !== 'green') {
+            yield* failed(
+              built.kind === 'red' ? 'red' : 'unknown',
+              built.kind === 'red'
+                ? `\`${built.command}\` fails on ${short(moved.sha)}:\n${built.evidence}`
+                : built.why,
+            )
+            return { kind: 'done' } as const
+          }
+          pushing = moved.sha
+        }
+        const pushed = yield* pushIt(pushing, tries)
+        if (pushed.kind === 'lost') return yield* pushResolution(sha, 1)
+        if (pushed.kind === 'failed') yield* failed(pushed.why, pushed.detail)
+        if (pushed.kind === 'merged') {
+          const recorded = yield* Effect.result(
+            recordPrMergedBack(project, n, { prHead, mergeCommit: pushed.mergeCommit, how: 'resolved' }, ports.store),
+          )
+          if (Result.isFailure(recorded)) {
+            ports.log?.(
+              `pr ${n} merge back pushed ${short(pushed.mergeCommit)}; recording it: ${asError(recorded.failure).message}`,
+            )
+          }
+        }
+        return { kind: 'done' } as const
+      }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
+
+    const resolveBack = (
+      found: { readonly personalSha: string; readonly paths: readonly string[] },
+      resolver: NonNullable<PrPorts['resolver']>,
+    ) =>
+      Effect.gen(function* () {
+        let start = found.personalSha
+        let paths = found.paths
+        for (;;) {
+          const ended: ResolveEnd = yield* resolveRounds(ports, resolver, {
+            project,
+            n,
+            merging: 'back',
+            commit: prHead,
+            start,
+            paths,
+            into: branch,
+            from: prBranch,
+            subject: backSubject,
+            buildBase: prBranch,
+            checkId: `pr-${n}-back`,
+          })
+          if (ended.kind === 'spent') {
+            yield* failed(
+              'conflict',
+              `${prBranch} (${short(prHead)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
+              ended.end,
+            )
+            return
+          }
+          if (ended.kind === 'locked') {
+            yield* failed('locked', `${ended.sentence}\n${spentSentence(ended.end)}`, ended.end)
+            return
+          }
+          if (ended.kind === 'unknown') {
+            yield* failed('unknown', ended.why)
+            return
+          }
+          // Kept in the mirror until pushed: the round's worktree is the sweep's.
+          const keep = ['update-ref', backRef(n), ended.sha] as const
+          const kept = yield* ports.git(project, keep)
+          if (kept.code !== 0) {
+            yield* failed('unknown', gitSaid(keep, kept))
+            return
+          }
+          const turned = yield* inLane(Effect.result(pushResolution(ended.sha, 0)))
+          if (Result.isFailure(turned)) return yield* Effect.fail(turned.failure)
+          const next = turned.success
+          if (next.kind === 'done') return
+          start = next.start
+          paths = next.paths
+        }
+      }).pipe(
+        Effect.catch((err: Error) =>
+          failed('unknown', `a read failed, so whether anything was pushed is not known: ${err.message}`).pipe(
+            Effect.catch((again: Error) =>
+              Effect.sync(() => void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
+            ),
+          ),
+        ),
+        Effect.ensuring(dropRef(ports, project, backRef(n))),
+      )
+
+    const conflicted = yield* inLane(turn)
+    if (conflicted !== undefined && ports.resolver !== undefined) yield* resolveBack(conflicted, ports.resolver)
   })

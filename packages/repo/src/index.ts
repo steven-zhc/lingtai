@@ -40,8 +40,10 @@ export {
 export {
   PR_WORKTREE_PREFIXES,
   mergeInWorktree,
+  standMergeUp,
   sweepPrWorktrees,
   type GitPort,
+  type StandMergeResult,
   type MergeInWorktreeOptions,
   type MergeInWorktreeResult,
 } from './pr-sync.ts'

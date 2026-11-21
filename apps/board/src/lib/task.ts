@@ -1432,6 +1432,7 @@ const PURPOSE_LABEL: Record<Purpose, string> = {
   Judge: 'judge',
   Triage: 'triage',
   Discussion: 'asking',
+  PR: 'pull request',
 }
 
 /**

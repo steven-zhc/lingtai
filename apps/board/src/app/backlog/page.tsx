@@ -34,8 +34,15 @@ function Entry({ entry }: { entry: BacklogEntry }) {
       </p>
       <p className="why">fails when: {entry.failureScenario}</p>
       <p className="why">
-        <Link href={`/task/${encodeURIComponent(entry.taskId)}`}>#{entry.issue}</Link> · {entry.step}:{entry.action} ·{' '}
-        <span className="mono">{entry.runId}</span> · seq {entry.raisedSeq} · <span className="mono">{entry.key}</span>
+        {entry.pr ? (
+          <>PR {entry.pr.n}</>
+        ) : entry.taskId !== null ? (
+          <Link href={`/task/${encodeURIComponent(entry.taskId)}`}>#{entry.issue}</Link>
+        ) : (
+          <>unknown subject</>
+        )}{' '}
+        · {entry.step}:{entry.action} · <span className="mono">{entry.runId}</span> · seq {entry.raisedSeq} ·{' '}
+        <span className="mono">{entry.key}</span>
       </p>
       {entry.status === 'open' ? (
         <DecideFinding project={entry.project} entryKey={entry.key} />

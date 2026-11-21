@@ -366,8 +366,9 @@ function toEntry(row: ProjectionRow): BacklogEntry {
   return {
     key: row.key as string,
     project: row.project as string,
-    issue: row.issue as string,
-    taskId: row.task_id as string,
+    issue: (row.issue as string | null) ?? null,
+    taskId: (row.task_id as string | null) ?? null,
+    pr: row.pr_stream ? { stream: row.pr_stream as string, n: Number(row.pr_n) } : null,
     runId: row.run_id as string,
     step: row.step as string,
     action: row.action as string,

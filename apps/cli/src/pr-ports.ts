@@ -1,20 +1,34 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 /**
  * The daemon's ports for serving a PR (0130 §5): the log, the project's recipe, the tickets that may be in the draft,
  * and the project's mirror — fetched, and asked about by exit code.
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
-import { type PrPorts, buildAt } from '@lingtai/conductor'
+import type { RunSandbox } from '@lingtai/agent'
+import { NO_RUN_LOG, createRuntime, runtimeVersionOfEffect, writeUnhookedSettingsEffect } from '@lingtai/agent'
+import { runnableEnv } from '@lingtai/agent-env'
+import {
+  type ConflictResolver,
+  type PrPorts,
+  buildAt,
+  claudeConfigDirFor,
+  decidePassSandbox,
+  runtimesOf,
+} from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
+import { ticketStream } from '@lingtai/domain'
 import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS } from '@lingtai/projector/task-view'
-import { remoteOf } from '@lingtai/recipe'
+import { invocationDecision, remoteOf } from '@lingtai/recipe'
 import {
   RepoFailed,
   retryUnreachable,
@@ -24,8 +38,10 @@ import {
   isLocalRemote,
   mergeInWorktree,
   mirrorPathFor,
+  standMergeUp,
   sweepPrWorktrees,
 } from '@lingtai/repo'
+import { standInExcludes } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 
 import { processSandbox } from './sandbox.ts'
@@ -36,7 +52,16 @@ const TOKEN_MS = 60_000
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
-export function livePrPorts(store: EventStore, log: (line: string) => void): PrPorts {
+/**
+ * `locked` is the daemon's guard as a function (`lockedEffect`): the sentence for a lock that stops new work on a project,
+ * or null. **Without it no agent is given a PR's conflict** — a round that could not be stopped by a pause, the day's
+ * ceiling or an account limit would be new work outside every lock (0126 §6), so the person is asked as before.
+ */
+export function livePrPorts(
+  store: EventStore,
+  log: (line: string) => void,
+  locked?: (project: string) => Effect.Effect<string | null>,
+): PrPorts {
   const recipeOf = (project: string) =>
     readProjectStateEffect(project, store).pipe(
       Effect.flatMap((state) => currentRecipeEffect(state)),
@@ -79,16 +104,100 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     })
   const answered = (run: Effect.Effect<string, RepoFailed>) =>
     run.pipe(
-      Effect.map((stdout) => ({ code: 0, stdout })),
+      Effect.map((stdout) => ({ code: 0, stdout, stderr: '' })),
       Effect.catch((err: RepoFailed) =>
         typeof err.exitCode === 'number'
-          ? Effect.succeed({ code: err.exitCode, stdout: err.stdout ?? '' })
+          ? Effect.succeed({ code: err.exitCode, stdout: err.stdout ?? '', stderr: err.stderr ?? '' })
           : Effect.fail(asError(err)),
       ),
     )
+  const resolver: ConflictResolver | undefined =
+    locked === undefined
+      ? undefined
+      : {
+          standMerge: (project, options) => standMergeUp({ project, ...options }),
+          gitIn: (cwd, args) => answered(gitEffect([...args], { cwd })),
+          // Unhooked, as the cold reviewer is: the hook's events belong to a pass's stream and a PR's has none. The run is
+          // bounded by the runtime's own flags — turns, wall and dollars — and by nothing of the hook's.
+          dispatch: (project, request) =>
+            Effect.gen(function* () {
+              const runtime = createRuntime(request.runtime)
+              const settingsPath = yield* writeUnhookedSettingsEffect(request.runId, 'pr', stateDir(), false).pipe(
+                Effect.mapError(asError),
+              )
+              // **The recipe's own sandbox decision, as a pass makes it** (0127): sandboxed where the host can, refused by name
+              // where it must and cannot, and unwrapped where the recipe turned it off or the runtime cannot be wrapped.
+              const recipe = yield* recipeOf(project)
+              const pass = yield* decidePassSandbox(recipe.sandbox, processSandbox)
+              const decision = invocationDecision(pass.decision, request.runtime)
+              const home = stateDir()
+              const service = pass.service
+              const sandbox: RunSandbox | undefined =
+                decision.kind === 'unsandboxed'
+                  ? undefined
+                  : {
+                      decision:
+                        decision.kind === 'sandboxed'
+                          ? { kind: 'sandboxed', project_additions: decision.project_additions }
+                          : { kind: 'refused', why: decision.why },
+                      project,
+                      mirror: mirrorPathFor(project, home),
+                      cache: join(home, 'cache', project),
+                      worktree: request.cwd,
+                      runDir: claudeConfigDirFor(home, request.runId),
+                      operatorClaudeDir: join(homedir(), '.claude'),
+                      hostHome: homedir(),
+                      codexNamed: runtimesOf(recipe).includes('codex'),
+                      read: [],
+                      wrap: (input) =>
+                        service === undefined
+                          ? Effect.fail({ message: 'no sandbox service in this process' })
+                          : service.wrap(input).pipe(Effect.mapError((e) => ({ message: String(e) }))),
+                    }
+              const outcome = yield* runtime.run({
+                ...(sandbox === undefined ? {} : { sandbox }),
+                runId: request.runId,
+                cwd: request.cwd,
+                prompt: request.prompt,
+                ...(request.model === undefined ? {} : { model: request.model }),
+                settingsPath,
+                env: runnableEnv({}),
+                limits: request.limits,
+                log: NO_RUN_LOG,
+                traceTools: true,
+              })
+              return {
+                turns: outcome.turns,
+                durationMs: outcome.durationMs,
+                costUsd: outcome.costUsd,
+                ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+                text: outcome.text ?? null,
+                failure: outcome.failure ?? null,
+              }
+            }),
+          runtimeVersion: (_project, runtime) =>
+            runtimeVersionOfEffect(createRuntime(runtime), runnableEnv({})).pipe(Effect.orElseSucceed(() => null)),
+          // The body **as claimed**, off the ticket's own stream: the issue on GitHub may have been edited since the work landed,
+          // and the agents are told what the code that conflicts was written to mean.
+          ticketBody: (project, ticket) =>
+            Effect.tryPromise({ try: () => store.read(ticketStream(project, ticket)), catch: asError }).pipe(
+              Effect.flatMap((events) => {
+                const claimed = events
+                  .filter((e) => e.type === 'TicketClaimed' || e.type === 'TicketContinued')
+                  .map((e) => (e.data as { body?: string }).body)
+                  .filter((body): body is string => body !== undefined)
+                const body = claimed.at(-1)
+                return body === undefined
+                  ? Effect.fail(new Error(`no body was recorded when #${ticket} was claimed`))
+                  : Effect.succeed(body)
+              }),
+            ),
+          locked,
+        }
   return {
     store,
     log,
+    ...(resolver === undefined ? {} : { resolver }),
     recipe: recipeOf,
     candidates: (project) =>
       readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
@@ -104,12 +213,17 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
           return yield* Effect.fail(new Error(`${project} has no GitHub owner on record: the mirror cannot be fetched`))
         }
         const token = yield* tokenOf(project)
+        // srt's stand-in names, so `git add -A` works in a sandboxed conflict round (#1152): the exclude lives in the mirror's
+        // `info/exclude`, which every worktree of it shares, and is written on each fetch — so a sandbox enabled later is covered.
+        const decided = yield* decidePassSandbox(recipe.sandbox, processSandbox).pipe(Effect.orElseSucceed(() => null))
+        const sandboxed = decided !== null && invocationDecision(decided.decision, 'claude-code').kind === 'sandboxed'
         yield* ensureMirrorEffect({
           project,
           owner: slug?.owner ?? '',
           repo: slug?.repo ?? project,
           remote,
           token,
+          ...(sandboxed ? { exclude: standInExcludes } : {}),
         }).pipe(Effect.mapError(asError), Effect.asVoid)
       }),
     git: (project, args) => answered(gitEffect([...args], { cwd: mirrorPathFor(project) })),
