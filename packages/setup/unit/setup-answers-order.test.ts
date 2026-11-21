@@ -94,6 +94,8 @@ describe('the team form (#1325)', () => {
       value: undefined,
     })
     expect(solo.find((c) => c.path.join('.') === 'mode')?.value).toBe('solo')
+    // and Team's assignee filter goes with it: Solo takes every ticket
+    expect(solo.find((c) => c.path.join('.') === 'runtime.assignee')?.value).toEqual({ take: 'all' })
   })
 
   it('suggests a fix for a name git refuses', () => {

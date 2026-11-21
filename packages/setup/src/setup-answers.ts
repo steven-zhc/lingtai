@@ -213,7 +213,12 @@ export function setupChanges(
     if (github && form.login !== null) changes.push(...assigneeChanges({ login: form.login, take: 'mine' }, rawClaim))
   } else if (rewrite) {
     // A retry from team to solo: `branch.personal` is refused in solo, so a failed team attempt's value is removed.
-    changes.push({ path: ['mode'], value: 'solo' }, { path: ['branch', 'personal'], value: undefined })
+    // And Team's `take: mine` goes with it: Solo takes every ticket.
+    changes.push(
+      { path: ['mode'], value: 'solo' },
+      { path: ['branch', 'personal'], value: undefined },
+      ...assigneeChanges({ take: 'all' }, rawClaim),
+    )
   }
 
   changes.push({ path: ['runtime', 'agent'], value: form.writer })

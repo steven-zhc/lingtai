@@ -361,13 +361,13 @@ export const ghLoginHere: Effect.Effect<string | null> = Effect.try({
  */
 const localBranchState = (dir: string, name: string) =>
   Effect.gen(function* () {
-    const listed = yield* gitIn(dir, ['for-each-ref', '--format=%(refname)', `refs/heads/${name}`])
-    if (!listed.ok) return { state: 'unreadable' as const, why: listed.out }
-    if (!listed.out.split('\n').includes(`refs/heads/${name}`)) return { state: 'absent' as const }
     const tip = yield* gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}^{commit}`])
-    return tip.ok
-      ? { state: 'exists' as const }
-      : { state: 'unreadable' as const, why: tip.out || 'its commit is missing' }
+    if (tip.ok) return { state: 'exists' as const }
+    // The ref resolving without its commit is a ref that is there and cannot be read — `for-each-ref` skips such a ref with a warning, which reads as absence.
+    const ref = yield* gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}`])
+    return ref.ok
+      ? { state: 'unreadable' as const, why: tip.out || 'its commit is missing or unreadable' }
+      : { state: 'absent' as const }
   })
 
 /**
