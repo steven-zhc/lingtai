@@ -14,14 +14,30 @@ import { homedir, tmpdir } from 'node:os'
 import { delimiter, join } from 'node:path'
 
 import { Host, isTelemetryHost, Sandbox, type HostFacts, type WrapInput } from '@lingtai/sandbox'
-import { SandboxFsLive, SrtLive } from '@lingtai/sandbox/live'
-import { Effect, Layer, ManagedRuntime } from 'effect'
+import { hostCanSandboxHere, SandboxFsLive, SrtLive } from '@lingtai/sandbox/live'
+import { Cause, Effect, Exit, Layer, ManagedRuntime } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import { SandboxLayer } from '../src/sandbox.ts'
 
 const SECRET = 'lingtai-acceptance-secret'
-const supported = process.platform === 'darwin' || process.platform === 'linux'
+
+/**
+ * Asked once, when the file is collected, of the same check `wrap` makes (`hostCanSandboxHere` does not build
+ * `SandboxLayer`, so it cannot reset srt's instance). An unsupported platform fails it with its own reason. The skip
+ * carries the host's own sentences in the title — and one warning, so the CI log says why beside vitest's count (#1334).
+ */
+const hostExit = await Effect.runPromise(Effect.exit(hostCanSandboxHere))
+const supported = Exit.isSuccess(hostExit)
+const skipSuffix = (): string => {
+  if (Exit.isSuccess(hostExit)) return ''
+  const e = Cause.squash(hostExit.cause) as { readonly reason?: string; readonly sentences?: readonly string[] }
+  const why = [e.reason ?? String(e), ...(e.sentences ?? [])].join(' — ')
+  const text = `host cannot sandbox: ${why}`
+  console.warn(`acceptance skipped: ${text}`)
+  return ` [skipped: ${text}]`
+}
+const suffix = skipSuffix()
 
 interface Ran {
   readonly code: number | null
@@ -41,7 +57,7 @@ const run = (argv: readonly string[], env: Readonly<Record<string, string>>): Pr
     child.on('close', (code) => resolve({ code, out, err }))
   })
 
-describe.skipIf(!supported)('0.14.0 acceptance: a wrapped run', { timeout: 60_000 }, () => {
+describe.skipIf(!supported)('0.14.0 acceptance: a wrapped run' + suffix, { timeout: 60_000 }, () => {
   let root: string
   let host: HostFacts
   let worktree: string
@@ -262,7 +278,7 @@ const MARKER = 'lingtai-socket-marker'
 const CLIENT =
   "const s=require('net').connect(process.argv[1]);let d='';s.on('data',(c)=>d+=c);s.on('end',()=>console.log(d));s.on('error',(e)=>{console.log(e.code);process.exit(1)})"
 
-describe.skipIf(!supported)('a wrapped run and a Unix socket', { timeout: 60_000 }, () => {
+describe.skipIf(!supported)('a wrapped run and a Unix socket' + suffix, { timeout: 60_000 }, () => {
   let root: string
   let host: HostFacts
   let worktree: string
