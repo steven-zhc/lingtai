@@ -28,7 +28,8 @@ import {
   openedTransition,
   waitTransition,
   syncedTransition,
-  mergeBackTransition,
+  mergedBackTransition,
+  mergeBackFailedTransition,
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
@@ -212,18 +213,28 @@ export const recordBranchSynced = (project: string, n: number, synced: PayloadOf
     (_state, appended) => appended,
   )
 
-/** The merge back came to an end for a head: pushed, or failed. Once per head. */
-export const recordPrMergeBack = (
+/** The merge back pushed `branch.personal`. Once per head. */
+export const recordPrMergedBack = (project: string, n: number, merged: PayloadOf<'PrMergedBack'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergedBackTransition(state, merged),
+    (_state, appended) => appended,
+  )
+
+/** The merge back failed and nothing was pushed. Once per head. */
+export const recordPrMergeBackFailed = (
   project: string,
   n: number,
-  outcome: Parameters<typeof mergeBackTransition>[1],
+  failed: PayloadOf<'PrMergeBackFailed'>,
   store: EventStore,
 ) =>
   transitionPr(
     store,
     project,
     n,
-    (state) => mergeBackTransition(state, outcome),
+    (state) => mergeBackFailedTransition(state, failed),
     (_state, appended) => appended,
   )
 

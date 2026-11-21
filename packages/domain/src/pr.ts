@@ -299,16 +299,22 @@ export function syncedTransition(
   return { type: 'BranchSynced', actor: 'conductor', data: synced }
 }
 
-/** The merge back was done or failed for `prHead`; only a PR in review, once per head. */
-export function mergeBackTransition(
+/** The PR branch was merged back into `branch.personal` and pushed; only a PR in review, once per head. */
+export function mergedBackTransition(
   state: PrState,
-  outcome:
-    | { type: 'PrMergedBack'; data: PayloadOf<'PrMergedBack'> }
-    | { type: 'PrMergeBackFailed'; data: PayloadOf<'PrMergeBackFailed'> },
-): ToAppend<PayloadOf<'PrMergedBack'>> | ToAppend<PayloadOf<'PrMergeBackFailed'>> | null {
-  if (state.status !== 'in-review') return null
-  if (state.mergeBack?.prHead === outcome.data.prHead) return null
-  return { type: outcome.type, actor: 'conductor', data: outcome.data } as never
+  merged: PayloadOf<'PrMergedBack'>,
+): ToAppend<PayloadOf<'PrMergedBack'>> | null {
+  if (state.status !== 'in-review' || state.mergeBack?.prHead === merged.prHead) return null
+  return { type: 'PrMergedBack', actor: 'conductor', data: merged }
+}
+
+/** The merge back did not happen; the PR's own state does not change. Once per head, like the success. */
+export function mergeBackFailedTransition(
+  state: PrState,
+  failed: PayloadOf<'PrMergeBackFailed'>,
+): ToAppend<PayloadOf<'PrMergeBackFailed'>> | null {
+  if (state.status !== 'in-review' || state.mergeBack?.prHead === failed.prHead) return null
+  return { type: 'PrMergeBackFailed', actor: 'conductor', data: failed }
 }
 
 /** The draft pull request is open; a step already recorded since the latest `PrInProgress` appends nothing. */

@@ -14,7 +14,7 @@
  */
 import { type PrState, integrationStream, prStream } from '@lingtai/domain'
 import { PermissionDenied } from '@lingtai/github'
-import { readPr, recordBranchSynced, recordPrMergeBack } from '@lingtai/project'
+import { readPr, recordBranchSynced, recordPrMergeBackFailed, recordPrMergedBack } from '@lingtai/project'
 import { Effect } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
@@ -226,7 +226,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
     const prHead = first.lastPushed
     if (branch === null || main === null || prBranch === null || prHead === null) return
     const failed = (why: 'conflict' | 'red' | 'unknown' | 'lost-push', detail: string) =>
-      recordPrMergeBack(project, n, { type: 'PrMergeBackFailed', data: { prHead, why, detail } }, ports.store)
+      recordPrMergeBackFailed(project, n, { prHead, why, detail }, ports.store)
 
     // `freezePr` falls back to `main` where the recipe names no personal branch; that must never become a push to it.
     if (branch === main) {
@@ -305,12 +305,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         yield* failed(outcome.why, outcome.detail)
         return
       }
-      yield* recordPrMergeBack(
-        project,
-        n,
-        { type: 'PrMergedBack', data: { prHead, mergeCommit: outcome.mergeCommit, how: 'clean' } },
-        ports.store,
-      )
+      yield* recordPrMergedBack(project, n, { prHead, mergeCommit: outcome.mergeCommit, how: 'clean' }, ports.store)
       // The merge is on `branch.personal` now; the ref that kept an unpushed sync alive has nothing left to keep.
       yield* ports.git(project, ['update-ref', '-d', targetRef(n)]).pipe(Effect.ignore)
     }).pipe(Effect.catch((err: Error) => Effect.succeed(void ports.log?.(`pr ${n} merge back: ${err.message}`))))
