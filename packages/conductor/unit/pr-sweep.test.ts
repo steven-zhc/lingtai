@@ -257,3 +257,28 @@ describe('a read that never answers is bounded', () => {
     expect((await pr(store)).status).toBe('in-review')
   })
 })
+
+describe('every read the sweep makes is bounded, and only a timeout is called one', () => {
+  it('a hung client construction fails the read, so the sweep returns', async () => {
+    const { store, w } = await inReview()
+    const p: PrPorts = { ...ports(store, w), github: () => Effect.never }
+    await Effect.runPromise(makePrHandlers(p, undefined, 20).sweep())
+    expect((await pr(store)).status).not.toBe('merged')
+  })
+
+  it('a hung ls-remote is bounded', async () => {
+    const { store, w } = await inReview()
+    const p: PrPorts = { ...ports(store, w), remote: () => Effect.never }
+    const handlers = makePrHandlers(p, undefined, 20)
+    await Effect.runPromise(handlers.resume())
+  })
+
+  it('an answered failure is not logged as a timeout', async () => {
+    const { store, w } = await inReview()
+    const lines: string[] = []
+    w.pull = new GitHubFailed(403, '/pulls/7', 'denied')
+    const p: PrPorts = { ...ports(store, w), log: (l) => void lines.push(l) }
+    await Effect.runPromise(makePrHandlers(p, undefined, 20).sweep())
+    expect(lines.some((l) => l.includes('did not answer'))).toBe(false)
+  })
+})

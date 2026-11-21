@@ -525,9 +525,12 @@ const bounded = (ports: PrPorts, ms: number): PrPorts => {
     e.pipe(
       Effect.timeoutOrElse({
         duration: ms,
-        orElse: () => Effect.fail(fail()),
+        // Only the timeout is logged as one: an answer that failed is its own error, said by whoever reads it.
+        orElse: () =>
+          Effect.sync(() => void ports.log?.(`pr: ${what} did not answer in ${ms}ms`)).pipe(
+            Effect.andThen(Effect.fail(fail())),
+          ),
       }),
-      Effect.tapError(() => Effect.sync(() => void ports.log?.(`pr: ${what} did not answer in ${ms}ms`))),
     )
   return {
     ...ports,
@@ -540,8 +543,15 @@ const bounded = (ports: PrPorts, ms: number): PrPorts => {
           orElse: () => Effect.succeed(tickets.map((ticket) => ({ ticket, open: null, spend: null }))),
         }),
       ),
+    // A push is a write and is waited for; every other `git` against the remote is a read (`ls-remote`).
+    remote: (project, args) =>
+      args[0] === 'push'
+        ? ports.remote(project, args)
+        : within('remote', ports.remote(project, args), () => new Error('the remote read timed out')),
+    tickets: (project) => within('tickets', ports.tickets(project), () => new Error('the ticket channel timed out')),
+    // Building the client is itself a request (the installation read), so it is bounded as well as the calls on it.
     github: (project) =>
-      ports.github(project).pipe(
+      within('github', ports.github(project), () => new Error('the GitHub client timed out')).pipe(
         Effect.map((github): GitHub => ({
           ...github,
           findOpenPull: (head) =>
