@@ -529,6 +529,11 @@ export interface AttemptPorts {
    */
   readEnd(ticketId: string): Effect.Effect<readonly Envelope[]>
   /**
+   * `end` — the recipe's `mode`. In team mode a `close` does not resolve on `landed` (0130 §4).
+   * Absent is solo, as a recipe with no `mode` is.
+   */
+  mode?: 'solo' | 'team'
+  /**
    * `end` — **what the step resolved, on the item's own stream, at the version
    * the read gave.**
    *
@@ -954,7 +959,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
           Effect.gen(function* () {
             const events = yield* ports.readEnd(ticketId)
             act = 'resolve'
-            const plan = resolveEndActions(events, actions, outcome)
+            const plan = resolveEndActions(events, actions, outcome, ports.mode ?? 'solo')
             if (plan.length === 0) return passed
             act = 'record'
             yield* ports.recordEnd(ticketId, events.length, plan)

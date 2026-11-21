@@ -1169,17 +1169,13 @@ export type AssigneeTake = z.infer<typeof AssigneeTake>
  * hands this machine somebody else's tickets on the next pass, which is a
  * mistake that shows itself (0046 §2).
  */
-export const AssigneeRule = z
-  .strictObject({
-    login: z.string().min(1).optional(),
-    take: AssigneeTake.default('all'),
-  })
-  // `mine` with nobody named would match no issue at all, and an empty queue
-  // reads exactly like a repository with nothing to do.
-  .refine((rule) => rule.take !== 'mine' || rule.login !== undefined, {
-    message: "take: mine needs a login — the GitHub login this machine's issues are assigned to",
-    path: ['login'],
-  })
+export const AssigneeRule = z.strictObject({
+  login: z.string().min(1).optional(),
+  take: AssigneeTake.default('all'),
+})
+// `mine` with nobody named would match no issue at all on GitHub, and an empty queue reads exactly
+// like a repository with nothing to do. The local store needs no login, so the schema cannot know:
+// the refusal is `refuseOnMeaning`'s (#1310), where the ticket source is known.
 export type AssigneeRule = z.infer<typeof AssigneeRule>
 
 /**
@@ -1197,8 +1193,9 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>
  * **`AssigneeRule` itself, and not a copy of it**, so its one refinement stays
  * one refusal: `take: mine` without a `login` matches no issue at all, and an
  * empty queue reads exactly like a repository with nothing to do. That is why
- * the rule is a `strictObject` with a `.refine` rather than two loose fields,
- * and it goes on firing from in here.
+ * the rule is a `strictObject` rather than two loose fields; the `mine`
+ * needs a login refusal is made when the recipe resolves (`refuseOnMeaning`), for each of the two places
+ * it can be written.
  *
  * **All four are required, and none of them defaults** — which is the one way
  * this differs from the `source:` shape it shares its fields with, and it is

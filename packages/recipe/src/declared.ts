@@ -75,7 +75,7 @@ export function checkDeclared(text: string, where: string): void {
     )
   }
   // The probe agent is not the file's, so a refusal about the agent is asked only of a file that wrote one.
-  const refused = refuseOnMeaning(parsed.data, runtime !== null && 'agent' in runtime)
+  const refused = refuseOnMeaning(parsed.data, runtime !== null && 'agent' in runtime, applied)
   if (refused.length > 0) throw new RecipeRefusedError(ref, refused, where)
 }
 

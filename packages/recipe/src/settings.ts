@@ -435,6 +435,23 @@ export function queueOf(recipe: Recipe): QueueSettings {
 }
 
 /**
+ * What a pass selects *on*, beyond `queue:`'s four values (#1310): the mode and where tickets
+ * live. Filled by `selectionOf` at every caller of `runnableNow`, so the conductor, `lingtai run`,
+ * `lingtai status` and the board answer one question one way.
+ *
+ * **Not part of `queue:`**: a declared `queue:` action hands its own block, and a field there would
+ * be a recipe key a person could write.
+ */
+export interface Selection {
+  readonly mode: 'solo' | 'team'
+  readonly tickets: TicketSource
+}
+
+export function selectionOf(recipe: Recipe): Selection {
+  return { mode: modeOf(recipe), tickets: ticketSourceOf(recipe) }
+}
+
+/**
  * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
  * assigned to**, which is how the queue behaved before it read an assignee at
  * all (`assigneeSkip`).

@@ -48,7 +48,7 @@ import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import { loadProjectsEffect, recordTurn } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
-import { branchOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { branchOf, concurrencyOf, kindsOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -524,9 +524,11 @@ export function conductWork(
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
       // `orDie`: a listing that failed ends the look as it always did (a rejection, now a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({ client: discovery, queue: queueOf(resolved.recipe) }).pipe(
-        Effect.orDie,
-      )
+      const offered = yield* runnableNowEffect({
+        client: discovery,
+        queue: queueOf(resolved.recipe),
+        selection: selectionOf(resolved.recipe),
+      }).pipe(Effect.orDie)
       // **A red base passes a requested ticket over too** (#1208): the same look the queue makes, so a `now`
       // cannot claim a ticket the base would only release again. The request stays pending, and is said.
       const { offered: seen, line: baseRedLine } = yield* passOverForRedBase({

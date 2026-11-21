@@ -78,7 +78,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -995,7 +995,12 @@ export async function askProject(
     return await Effect.runPromise(
       Effect.gen(function* () {
         const listing = yield* Effect.tryPromise({
-          try: () => runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) }),
+          try: () =>
+            runnableNow({
+              client: filter.tickets,
+              queue: queueOf(filter.recipe),
+              selection: selectionOf(filter.recipe),
+            }),
           catch: (err) => err,
         }).pipe(
           Effect.map((found) => ({ ok: true as const, found })),

@@ -27,7 +27,7 @@ import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
 import { DiscussAgent, PLUGINS, Recipe, discloseSteps } from './recipe.ts'
-import { branchKeyOf, branchOf, modeOf } from './settings.ts'
+import { assigneeOf, branchKeyOf, branchOf, modeOf, ticketSourceOf } from './settings.ts'
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = '.lingtai/config.yaml'
@@ -307,7 +307,7 @@ export function resolveSource(
     )
   }
 
-  const refusedOnMeaning = refuseOnMeaning(parsed.data, true)
+  const refusedOnMeaning = refuseOnMeaning(parsed.data, true, applied.recipe)
   if (refusedOnMeaning.length > 0) throw new RecipeRefusedError(ref, refusedOnMeaning, where)
 
   // The resolved form is what gets hashed, so the preset is inside the hash and
@@ -409,6 +409,82 @@ export function oldSpellingsIn(raw: unknown): OldSpelling[] {
 }
 
 /**
+ * The two places a recipe can write `assignee`, as the file wrote them — `runtime.assignee` and each
+ * `steps.claim[i].queue.assignee` — with the parsed rule beside it.
+ */
+function assigneeHolders(raw: unknown): { at: string; assignee: Record<string, unknown> }[] {
+  const out: { at: string; assignee: Record<string, unknown> }[] = []
+  if (!isRecord(raw)) return out
+  const runtime = raw['runtime']
+  if (isRecord(runtime) && isRecord(runtime['assignee'])) {
+    out.push({ at: 'runtime.assignee', assignee: runtime['assignee'] })
+  }
+  const steps = raw['steps']
+  if (isRecord(steps) && Array.isArray(steps['claim'])) {
+    steps['claim'].forEach((action: unknown, i: number) => {
+      if (isRecord(action) && isRecord(action['queue']) && isRecord(action['queue']['assignee'])) {
+        out.push({ at: `steps.claim[${i}].queue.assignee`, assignee: action['queue']['assignee'] })
+      }
+    })
+  }
+  return out
+}
+
+/**
+ * Whose tickets a recipe may take, refused on its meaning (0130 §3, #1310).
+ *
+ * **Read from the raw mapping, not the parse**: `take` defaults to `all`, so afterwards a written
+ * `take: all` and an absent one are the same value, and only the first is refused in team mode. A
+ * `mine` needs no raw reading — it is never a default, so a parsed one was written.
+ */
+function assigneeRefusals(recipe: Recipe, raw: unknown): string[] {
+  const out: string[] = []
+  const team = modeOf(recipe) === 'team'
+  const github = ticketSourceOf(recipe) === 'github'
+  if (team) {
+    for (const { at, assignee } of assigneeHolders(raw)) {
+      const take = assignee['take']
+      if (take === 'all' || take === 'unassigned') {
+        out.push(
+          `${at}.take: ${take} — mode: team takes your own tickets; take: ${take} would take ${
+            take === 'all' ? "everyone's" : "nobody's"
+          }. Remove take, or use mode: solo.`,
+        )
+      }
+    }
+    if (github && assigneeOf(recipe)?.login === undefined) {
+      // The key that governs is the declared `queue:`'s when there is one (`assigneeOf`), and writing
+      // `runtime.assignee.login` beside it would change nothing.
+      const at = recipe.steps.claim.findIndex((action) => 'queue' in action)
+      const key = at === -1 ? 'runtime.assignee.login' : `steps.claim[${at}].queue.assignee.login`
+      out.push(`${key}: mode: team on GitHub takes the issues assigned to this machine's login; write \`${key}\``)
+    }
+    return out
+  }
+  if (github) {
+    const { runtime } = recipe
+    const rules: { at: string; login: string | undefined; take: string }[] = [
+      { at: 'runtime.assignee', login: runtime.assignee?.login, take: runtime.assignee?.take ?? 'all' },
+    ]
+    recipe.steps.claim.forEach((action, i) => {
+      if ('queue' in action) {
+        rules.push({
+          at: `steps.claim[${i}].queue.assignee`,
+          login: action.queue.assignee.login,
+          take: action.queue.assignee.take,
+        })
+      }
+    })
+    for (const r of rules) {
+      if (r.take === 'mine' && r.login === undefined) {
+        out.push(`${r.at}.login: take: mine needs a login — the GitHub login this machine's issues are assigned to`)
+      }
+    }
+  }
+  return out
+}
+
+/**
  * The refusals a recipe earns **on its meaning** once it has parsed (0130 §2,
  * §3), each naming the key and the fix. Pure and synchronous: the branch-name
  * check is `branchNameRefusal`, a copy of git's rules, never a process.
@@ -416,9 +492,10 @@ export function oldSpellingsIn(raw: unknown): OldSpelling[] {
  * `wroteAgent` is whether `runtime.agent` is the file's own: `checkDeclared`
  * fills an absent one with a probe, and a probe must not decide a refusal.
  */
-export function refuseOnMeaning(recipe: Recipe, wroteAgent: boolean): string[] {
+export function refuseOnMeaning(recipe: Recipe, wroteAgent: boolean, raw: unknown): string[] {
   const out: string[] = []
   const team = modeOf(recipe) === 'team'
+  out.push(...assigneeRefusals(recipe, raw))
   const personal = recipe.branch.personal
   if (team && personal === undefined) {
     out.push('branch.personal: `mode: team` lands on a personal branch; write `branch.personal`, or use `mode: solo`')

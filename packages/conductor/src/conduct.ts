@@ -236,6 +236,7 @@ import {
   numericTurns,
   parseDuration,
   queueOf,
+  selectionOf,
   submodulesOf,
   type QueueSettings,
   type ResolvedRecipe,
@@ -1106,24 +1107,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ),
         },
       })
-    }
-    // **Team mode resolves, and a pass does not run it yet** (#1306, 0130 §4). It would take every
-    // teammate's ticket, land it on `branch.personal`, and let `end` close the issue as though its code
-    // were on `main`. Refused here and not at resolve, so the board, `doctor` and the recipe's own
-    // readers can still read a team recipe. #1310 deletes this refusal, once a team pass leaves a landed
-    // ticket open (#1309) and takes only the person's own tickets (#1310). Before the divergence check:
-    // a team recipe's landing branch is one a registration made on `main` never recorded.
-    if (modeOf(recipe) === 'team') {
-      return {
-        ok: false,
-        ticketId: null,
-        runId: null,
-        stage: 'recipe',
-        detail:
-          '`mode: team` resolves, but a pass cannot yet land a team ticket as 0130 §4 says (left open on its ' +
-          'tracker, labelled `lingtai:landed`) or take only your own tickets (0130 §3). ' +
-          'Use `mode: solo` until it can.',
-      }
     }
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
@@ -3274,7 +3257,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const tickets: TicketSource = options.client
           // A read that rejects is a defect here, which the pipeline turns into
           // `queue:`'s `failed` verdict as a rejection did.
-          const found = yield* runnableNowEffect({ client: tickets, queue, only: [options.issue] }).pipe(Effect.orDie)
+          const found = yield* runnableNowEffect({
+            client: tickets,
+            queue,
+            selection: selectionOf(recipe),
+            only: [options.issue],
+          }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {
             return {
@@ -3876,7 +3864,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * judged. Every other ending publishes from the finalizer.
        *
        * **`strategy` is carried and not branched on, because there is one value.**
-       * `integrate` offers `git merge --no-edit` and a fast-forward push, which is
+       * `integrate` offers `git merge --no-ff` and a fast-forward push, which is
        * `merge-commit`. What keeps a second value from resolving is `mergePlugin`'s
        * own `z.enum` in `packages/recipe/src/recipe.ts` — not a check here, and
        * this signature has none: it carries the field so the lane is told what it
@@ -5706,6 +5694,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const ports: AttemptPorts = {
         onStream: () => onStream,
         readEnd,
+        mode: modeOf(recipe),
         recordEnd,
       }
 
@@ -6201,7 +6190,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           ...ticketSnapshots,
-          labels: labelsFor('landed'),
+          labels: labelsFor('landed', { base, main: recipe.branch.main }),
           editEnded: true,
           appended: endResolved,
           landed: { mergeCommit: merged, base, attempt, summary },

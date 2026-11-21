@@ -1107,11 +1107,12 @@ export function recordEndPlanEffect(
   ticketId: string,
   actions: readonly StepAction[],
   outcome: TerminalOutcome,
+  mode: 'solo' | 'team',
 ): Effect.Effect<ToAppend[], unknown> {
   return Effect.gen(function* () {
     if (actions.length === 0) return []
     const events = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (error) => error })
-    const toAppend = resolveEndActions(events, actions, outcome)
+    const toAppend = resolveEndActions(events, actions, outcome, mode)
     if (toAppend.length === 0) return []
     yield* Effect.tryPromise({ try: () => store.append(ticketId, events.length, toAppend), catch: (error) => error })
     return toAppend
