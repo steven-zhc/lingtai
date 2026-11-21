@@ -354,6 +354,7 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const state = await pr(store)
     expect(state.status).toBe('merged')
     expect(state.tickets.map((t) => t.ticket)).toContain('93')
+    expect(w.closed.sort()).toEqual([1, 2])
   })
 
   it('a fix just told is judged by its own head, not the head the PR had before it', async () => {

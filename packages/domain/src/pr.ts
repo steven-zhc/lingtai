@@ -119,9 +119,10 @@ function withStep(state: PrState, record: PrStepRecord): PrState {
 
 /** How many tickets a commit holds: what was recorded for it, else all if it is the PR's head, else those it was frozen with. */
 function heldAt(state: PrState, sha: string): number {
-  return (
-    state.covers[sha] ?? (sha === state.lastPushed ? state.tickets.length : (state.covers[state.frozenSha ?? ''] ?? 0))
-  )
+  // A head never recorded is held to the fewest tickets any recorded head held: never a ticket the log cannot show it has.
+  const known = Object.values(state.covers)
+  const fewest = known.length === 0 ? 0 : Math.min(...known)
+  return state.covers[sha] ?? (sha === state.lastPushed ? state.tickets.length : fewest)
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
