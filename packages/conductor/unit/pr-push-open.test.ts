@@ -109,13 +109,14 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
       Effect.succeed(
         args[0] === 'rev-parse'
           ? args[3]?.startsWith('refs/lingtai/pr/1/back')
-            ? { code: 1, stdout: '' }
-            : { code: 0, stdout: `${FROZEN}\n` }
+            ? { code: 1, stdout: '', stderr: '' }
+            : { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
           : args[0] === 'cat-file'
-            ? { code: w.object, stdout: '' }
+            ? { code: w.object, stdout: '', stderr: '' }
             : {
                 code: args[1] === '--is-ancestor' && args[3] === FROZEN && args[2]?.startsWith('m') ? 0 : w.ancestor,
                 stdout: '',
+                stderr: '',
               },
       ),
     remote: (_project, args) =>
@@ -124,16 +125,16 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
         if (args[0] === 'ls-remote') {
           // git matches by pattern, so a prefix-looking ref answers its longer neighbours too.
           const lines = [...w.refs].filter(([ref]) => ref.startsWith(args[3]!)).map(([ref, sha]) => `${sha}\t${ref}`)
-          return { code: 0, stdout: lines.join('\n') }
+          return { code: 0, stdout: lines.join('\n'), stderr: '' }
         }
         const [sha, ref] = args[2]!.split(':')
         if (w.lostPush) {
           w.refs.set(ref!, sha!)
           w.lostPush = false
-          return { code: 1, stdout: '' }
+          return { code: 1, stdout: '', stderr: '' }
         }
         w.refs.set(ref!, sha!)
-        return { code: 0, stdout: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
   }
 }

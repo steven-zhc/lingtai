@@ -24,6 +24,7 @@ const PERSONAL = 'b'.repeat(40)
 const MERGE = 'c'.repeat(40)
 const BACK = 'd'.repeat(40)
 const OTHER = 'e'.repeat(40)
+const PR_BRANCH_REF = 'refs/heads/lingtai-team'
 const PR_REF = 'refs/heads/lingtai-team-pr-1'
 
 type Merge = { name: string; at: string; theirs: string; message: string }
@@ -81,30 +82,30 @@ function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPor
     git: (_project, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse' && args[1] === '--git-dir') return { code: 0, stdout: '.' }
+        if (args[0] === 'rev-parse' && args[1] === '--git-dir') return { code: 0, stdout: '.', stderr: '' }
         if (args[0] === 'rev-parse') {
           const sha = resolved[args[3]!.replace(/\^\{commit\}$/, '')]
-          return sha === undefined ? { code: 1, stdout: '' } : { code: 0, stdout: `${sha}\n` }
+          return sha === undefined ? { code: 1, stdout: '', stderr: '' } : { code: 0, stdout: `${sha}\n`, stderr: '' }
         }
-        if (args[0] === 'merge-base') return { code: w.ancestor(args[2]!, args[3]!) ? 0 : 1, stdout: '' }
-        return { code: 0, stdout: '' }
+        if (args[0] === 'merge-base') return { code: w.ancestor(args[2]!, args[3]!) ? 0 : 1, stdout: '', stderr: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
     remote: (_project, args) =>
       Effect.sync(() => {
         w.remoteCalls.push([...args])
-        if (args[0] === 'fetch') return { code: 0, stdout: '' }
+        if (args[0] === 'fetch') return { code: 0, stdout: '', stderr: '' }
         if (args[0] === 'ls-remote') {
           const lines = [...w.remote].filter(([ref]) => ref === args[3]).map(([ref, sha]) => `${sha}\t${ref}`)
-          return { code: 0, stdout: lines.join('\n') }
+          return { code: 0, stdout: lines.join('\n'), stderr: '' }
         }
         const [sha, ref] = args[2]!.split(':')
         if (w.lostPush) {
           w.lostPush = false
           w.remote.set(ref!, sha!)
-          return { code: 1, stdout: '' }
+          return { code: 1, stdout: '', stderr: '' }
         }
         w.remote.set(ref!, sha!)
-        return { code: 0, stdout: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
     ...extra,
   }
@@ -130,7 +131,9 @@ async function frozen(): Promise<EventStore> {
       {
         ...p,
         git: (project, args) =>
-          args[0] === 'rev-parse' ? Effect.succeed({ code: 0, stdout: `${FROZEN}\n` }) : p.git(project, args),
+          args[0] === 'rev-parse'
+            ? Effect.succeed({ code: 0, stdout: `${FROZEN}\n`, stderr: '' })
+            : p.git(project, args),
       },
       'lingtai',
       1,
@@ -268,7 +271,7 @@ describe('sync and build', () => {
       {
         ...p,
         git: (project, args) =>
-          args[0] === 'merge-base' ? Effect.succeed({ code: 128, stdout: '' }) : p.git(project, args),
+          args[0] === 'merge-base' ? Effect.succeed({ code: 128, stdout: '', stderr: '' }) : p.git(project, args),
       },
       named('sync', 'build'),
     )
@@ -438,7 +441,7 @@ describe('the merge back', () => {
           ...p,
           git: (project, args) =>
             args[0] === 'log'
-              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n`, stderr: '' })
               : p.git(project, args),
         },
         'lingtai',
@@ -474,7 +477,7 @@ describe('the merge back', () => {
           ...p,
           git: (project, args) =>
             args[0] === 'log'
-              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n`, stderr: '' })
               : p.git(project, args),
         },
         'lingtai',
@@ -503,7 +506,7 @@ describe('the merge back', () => {
           ...p,
           git: (project, args) =>
             args[0] === 'log'
-              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n`, stderr: '' })
               : p.git(project, args),
         },
         'lingtai',
@@ -556,7 +559,7 @@ describe('the merge back', () => {
           ...p,
           remote: (project, args) =>
             args[0] === 'push'
-              ? Effect.sync(() => (w.remoteCalls.push([...args]), { code: 1, stdout: '' }))
+              ? Effect.sync(() => (w.remoteCalls.push([...args]), { code: 1, stdout: '', stderr: '' }))
               : p.remote(project, args),
         },
         'lingtai',
@@ -568,6 +571,104 @@ describe('the merge back', () => {
       type: 'PrMergeBackFailed',
       data: { why: 'lost-push' },
     })
+  })
+
+  const lostThenBuiltOn = async (
+    overrideGit: (p: PrPorts, w: World) => Partial<PrPorts> = () => ({}),
+  ): Promise<{ store: EventStore; w: World }> => {
+    const store = await inReview()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b || (a === BACK && b === 'refs/lingtai/pr/1/personal')
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'push'
+              ? Effect.sync(() => {
+                  w.remoteCalls.push([...args])
+                  w.remote.set(PR_BRANCH_REF, OTHER)
+                  return { code: 1, stdout: '', stderr: 'fatal: connection reset' }
+                })
+              : p.remote(project, args),
+          ...overrideGit(p, w),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    return { store, w }
+  }
+
+  it('a push that landed and was built on is on the branch: recorded as merged on the first try, never lost-push', async () => {
+    const { store, w } = await lostThenBuiltOn()
+    expect(w.merges).toHaveLength(1)
+    expect(w.builds).toHaveLength(1)
+    expect(pushesOf(w)).toHaveLength(1)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrMergedBack',
+      data: { mergeCommit: BACK },
+    })
+  })
+
+  it('an ancestry check that fails is unknown, saying the push may have landed', async () => {
+    const { store } = await lostThenBuiltOn((p) => ({
+      git: (project, args) =>
+        args[0] === 'merge-base' && args[2] === BACK
+          ? Effect.succeed({ code: 128, stdout: '', stderr: 'fatal: bad object' })
+          : p.git(project, args),
+    }))
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last).toMatchObject({ type: 'PrMergeBackFailed', data: { why: 'unknown' } })
+    expect((last.data as { detail: string }).detail).toContain('may have landed')
+  })
+
+  it('git’s own line is in the sentence a failed fetch records', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'fetch'
+              ? Effect.succeed({ code: 128, stdout: '', stderr: "\nfatal: couldn't find remote ref main\nmore\n" })
+              : p.remote(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect((last.data as { detail: string }).detail).toContain(
+      "answered exit 128: fatal: couldn't find remote ref main",
+    )
+    expect((last.data as { detail: string }).detail).not.toContain('more')
+  })
+
+  it.each([
+    [1, '', 'is not in the mirror'],
+    [128, 'fatal: Not a valid object name', 'fatal: Not a valid object name'],
+  ])('cat-file exit %i with stderr %j says %j', async (code, stderr, said) => {
+    const store = await inReview()
+    const w = aWorld()
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'cat-file' ? Effect.succeed({ code, stdout: '', stderr }) : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last).toMatchObject({ type: 'PrMergeBackFailed', data: { why: 'unknown' } })
+    expect((last.data as { detail: string }).detail).toContain(said)
   })
 
   it('takes branch.personal’s lane turn: a landing that arrives meanwhile waits behind { pr } and lands after it', async () => {

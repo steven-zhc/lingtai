@@ -270,7 +270,11 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         }
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
-          return { kind: 'failed', why: 'unknown', detail: `${short(prHead)} is not in the mirror` } as Back
+          const absent = (have.code === 1 || have.code === 128) && have.stderr.trim() === ''
+          const detail = absent
+            ? `${short(prHead)} is not in the mirror`
+            : `${short(prHead)} could not be read in the mirror (${gitSaid(['cat-file', '-e', `${prHead}^{commit}`], have)})`
+          return { kind: 'failed', why: 'unknown', detail } as Back
         }
         // Already in `branch.personal` with no merge of ours to show for it: nothing is owed and nothing is claimed.
         if (yield* isAncestor(ports, project, prHead, personalSha)) return { kind: 'nothing' } as Back
@@ -314,7 +318,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         // A push that threw is as unknown as one that answered non-zero: the look below decides.
         const answer = Result.isSuccess(pushed)
           ? pushed.success
-          : { code: null, stdout: asError(pushed.failure).message }
+          : { code: null, stdout: '', stderr: asError(pushed.failure).message }
         if (answer.code === 0) return { kind: 'merged', mergeCommit: merged.sha } as Back
         // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
         // A look that itself fails proves nothing either way: it is said as unknown, which stays owed and is looked at again.
@@ -324,6 +328,18 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           return { kind: 'failed', why: 'unknown', detail } as Back
         }
         if (looked.success === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
+        // A person pushing on top of a push that landed leaves the tip a descendant of the merge: it is on the branch.
+        const onBranch = yield* Effect.result(
+          Effect.gen(function* () {
+            yield* fetchInto(ports, project, [[ref, fetchedRef(n, 'personal')]])
+            return yield* isAncestor(ports, project, merged.sha, fetchedRef(n, 'personal'))
+          }),
+        )
+        if (Result.isFailure(onBranch)) {
+          const detail = `the push of ${short(merged.sha)} to ${branch} failed (${gitSaid(push, answer)}) and whether it is on the remote could not be read (${asError(onBranch.failure).message}): the push may have landed`
+          return { kind: 'failed', why: 'unknown', detail } as Back
+        }
+        if (onBranch.success) return { kind: 'merged', mergeCommit: merged.sha } as Back
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
       }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
@@ -372,7 +388,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         return
       }
       // The merge is pushed. A record that fails here leaves it unrecorded: the next serve finds the merge in
-      // `branch.personal`'s history, builds it, and records it.
+      // `branch.personal`'s history and records it, without a rebuild.
       const recorded = yield* Effect.result(
         recordPrMergedBack(project, n, { prHead, mergeCommit: decided.mergeCommit, how: 'clean' }, ports.store),
       )
