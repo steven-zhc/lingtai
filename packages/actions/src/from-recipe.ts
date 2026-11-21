@@ -205,6 +205,8 @@ export interface ActionPortDeps {
   work?: WorkPortDeps
   watch?: WatchPortDeps
   worktree?: WorktreePortDeps
+  /** The branch a `worktree:` action cuts from: `branchOf`'s answer, never the block's own. */
+  base?: string
   merge?: MergePortDeps
   queue?: QueuePortDeps
   file?: FilePortDeps
@@ -504,13 +506,17 @@ export function actionPortsFromRecipe(
       if (!deps.worktree) {
         throw new ActionUnavailableError(action.name, kind, 'no cut was supplied to actionsFromRecipe')
       }
-      // `base` and `submodules` are both read, and `submodules` is required by
-      // `worktreePlugin`'s schema rather than defaulted there: a block that
-      // named only the base would otherwise cut a tree with empty submodule
-      // directories and read as the agent breaking the tests (`#268`).
+      // `submodules` is required by `worktreePlugin`'s schema rather than
+      // defaulted there: a block that named nothing would otherwise cut a tree
+      // with empty submodule directories and read as the agent breaking the
+      // tests (`#268`). The base is not the block's: it is `branchOf`'s, handed
+      // in as `deps.base` — one value that flows (0104 §5).
+      if (deps.base === undefined) {
+        throw new ActionUnavailableError(action.name, kind, 'no base branch was supplied to actionsFromRecipe')
+      }
       return [
         makeWorktreeAction(
-          { name: action.name, base: action.worktree.base, submodules: action.worktree.submodules },
+          { name: action.name, base: deps.base, submodules: action.worktree.submodules },
           deps.worktree,
         ),
       ]

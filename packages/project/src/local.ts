@@ -16,7 +16,7 @@ import {
   asRecord,
   assigneeOf,
   backoffOf,
-  baseOf,
+  branchOf,
   ceilingOf,
   checkMachineConfig,
   checkSandboxBlock,
@@ -198,7 +198,7 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
 
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
-    'repo.base': baseOf(recipe),
+    'repo.base': branchOf(recipe),
     'source.kinds': kindsOf(recipe).join(' > '),
     'source.exclude': list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
@@ -241,13 +241,13 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   // fact `originIn` only has an answer for afterwards. A `claim` `queue:`
   // that names it is the source for both halves, whichever one it wrote;
   // otherwise each half asks `runtime.assignee.<key>` on its own, so a file
-  // that wrote only `login` still reads `take: both ← default`.
+  // that wrote only `login` still reads `take: all ← default`.
   const rule = assigneeOf(recipe)
   const atStep = recipe.steps.claim.some((action) => 'queue' in action) ? from('steps.claim') : null
   provenance['runtime.assignee.take'] =
-    `${rule?.take ?? 'both'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
+    `${rule?.take ?? 'all'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
   provenance['runtime.assignee.login'] =
     `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
 
-  return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
+  return { ...resolved, ref: options.base ?? branchOf(resolved.recipe), provenance }
 })

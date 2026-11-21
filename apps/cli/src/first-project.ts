@@ -67,7 +67,7 @@ import {
   resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
-import { baseOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
+import { branchOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -314,16 +314,17 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   if (github !== undefined && flags['project'] === 'local') {
     return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. ${kept}`
   }
-  const base = flags['base']
+  if (flags['base'] !== undefined) return `--base is now --main: pass --main ${flags['base']}. ${kept}`
+  const base = flags['main']
   const land = flags['land']
-  // `--land <branch>` and `--base` are different questions — where to read the
+  // `--land <branch>` and `--main` are different questions — where to read the
   // recipe from, and what it should land on — and a person who named both must
   // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--base` against the recipe's own `repo.base`). Checked here, before
+  // `--main` against the recipe's own `repo.base`). Checked here, before
   // anything is written, rather than inside `askRecipe`, where `askLanding`
   // would otherwise overwrite the base question's own answer silently.
   if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
-    return `--land ${land} and --base ${base} name two different branches, and this command will not pick one silently. ${kept}`
+    return `--land ${land} and --main ${base} name two different branches, and this command will not pick one silently. ${kept}`
   }
   return null
 }
@@ -616,20 +617,21 @@ function runLocalBranch(
     let fromSha = ''
     const proposedNow = onDisk.get(['steps', 'proposed'])
     const currentProposed = Array.isArray(proposedNow) ? (proposedNow as unknown[]) : []
-    // The base the recipe resolves: a `worktree:` at `admit` says it ahead of `repo.base` (`baseOf`), so that
-    // is the one compared, moved and seeded below.
-    const admitNow = onDisk.get(['steps', 'admit'])
-    const declaredAtAdmit = Array.isArray(admitNow)
-      ? (admitNow as unknown[]).find(
-          (entry): entry is { worktree: { base?: unknown } } =>
-            typeof entry === 'object' && entry !== null && 'worktree' in entry,
-        )
-      : undefined
-    const currentBase = declaredAtAdmit !== undefined ? declaredAtAdmit.worktree.base : onDisk.get(['repo', 'base'])
-    // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--base`
+    // The base the recipe resolves (`branchOf`), which is the one compared, moved and seeded below. Null where
+    // there is no file yet or it does not resolve: the answer is then the detected one, never a raw path.
+    const currentBase = ((): string | null => {
+      const text = onDisk.text()
+      if (text === null) return null
+      try {
+        return branchOf(resolveSource(text, name, name).recipe)
+      } catch {
+        return null
+      }
+    })()
+    // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--main`
     // names the branch the person means to land on, and `askLanding` would move the base there anyway.
     const given = flags['land']
-    const detected = flags['base'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
+    const detected = flags['main'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
     // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
     let source: string | null = null
 
@@ -653,7 +655,7 @@ function runLocalBranch(
           project: 'local' as const,
           name,
           remote,
-          base: baseOf(recipe),
+          base: branchOf(recipe),
           trial: { trial: 'not-run' as const, because: 'no checks' },
           card: cardRecipe(recipe, toplevel),
           updated: true,
@@ -668,8 +670,8 @@ function runLocalBranch(
       flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world,
       {
         name: 'the base branch',
-        flag: '--base <branch>',
-        given: flags['base'] ?? null,
+        flag: '--main <branch>',
+        given: flags['main'] ?? null,
         prompt: "the branch this project's recipe governs and merges into",
         // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
         current: typeof currentBase === 'string' && ports === null ? currentBase : null,
@@ -698,7 +700,7 @@ function runLocalBranch(
             if (tip === null || !tip.ok) {
               return (
                 `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
-                'Check out a branch, or pass --base <branch>'
+                'Check out a branch, or pass --main <branch>'
               )
             }
             source = branch
@@ -756,7 +758,7 @@ function runLocalBranch(
             {
               project: name,
               changes: [
-                { path: ['repo', 'base'], value: base },
+                { path: ['branch', 'main'], value: base },
                 { path: ['repo', 'remote'], value: remote },
               ],
             },
@@ -859,7 +861,6 @@ function runLocalBranch(
       ...landOnBranchChanges(
         base,
         found !== undefined && flags['land'] !== undefined && flags['land'] !== 'hold' ? currentProposed : [],
-        Array.isArray(admitNow) ? admitNow : null,
       ),
       { path: ['repo', 'remote'], value: remote },
       ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
@@ -952,7 +953,7 @@ function runLocalBranch(
     if ('refused' in previewedOrRefused) return previewedOrRefused
     const previewed = previewedOrRefused.previewed
     const finalRecipe = resolveSource(previewed, path, path).recipe
-    const final = baseOf(finalRecipe)
+    const final = branchOf(finalRecipe)
     if (world.claudeToken !== undefined && !repairOnly) {
       yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
     }
@@ -1115,7 +1116,7 @@ function runGithubBranch(
         return { refused: taken({ slug: givenSlug, repo: givenRepo, takenBy: holder.owner }) }
       }
       const said: string[] = []
-      const baseFlag = flags['base']
+      const baseFlag = flags['main']
       const added = yield* spunEffect(
         world,
         `registering ${givenSlug}`,
@@ -1227,7 +1228,7 @@ function runGithubBranch(
     // `console.error`), and logging each line here too printed the whole
     // failure twice (#394 finding 7). On success only the warnings are printed, ahead of the card.
     const said: string[] = []
-    const baseFlag = flags['base']
+    const baseFlag = flags['main']
     const added = yield* spunEffect(
       world,
       `registering ${givenSlug}`,

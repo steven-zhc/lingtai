@@ -167,7 +167,7 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
   const github = form.target.kind === 'github'
   const changes: RecipeChange[] = github
     ? [
-        { path: ['repo', 'base'], value: form.base },
+        { path: ['branch', 'main'], value: form.base },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
         ...(form.closeOnEnd
           ? [{ path: ['steps', 'end'], value: END_ACTIONS } as RecipeChange]
@@ -176,7 +176,7 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
             : []),
       ]
     : [
-        ...landOnBranchChanges(form.base, [], null),
+        ...landOnBranchChanges(form.base, []),
         { path: ['repo', 'remote'], value: form.remote },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       ]
@@ -208,7 +208,7 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
   if (form.heldBy.trim() !== '') changes.push({ path: ['source', 'exclude'], value: [form.heldBy.trim()] })
   else if (rewrite) changes.push({ path: ['source', 'exclude'], value: [] })
 
-  if (form.personApprovesMerge) changes.push(...landingChanges({ land: 'hold' }, [], null))
+  if (form.personApprovesMerge) changes.push(...landingChanges({ land: 'hold' }, []))
   else if (rewrite) changes.push({ path: ['steps', 'proposed'], value: [] })
 
   const limits = form.limits

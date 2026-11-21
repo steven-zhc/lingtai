@@ -150,8 +150,8 @@ import type { HostAnswer, HostFactsEffect, HostVerdict, ResolvedRecipe, SignedIn
 import {
   UNBOUNDED,
   baseDivergence,
-  baseOf,
-  baseWrittenAt,
+  branchOf,
+  branchKeyOf,
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
@@ -3369,7 +3369,7 @@ export function recipeGovernsItsBase(
                   // The refusal `runOnce` and `add` share, its command on a line of its own.
                   detail: divergence.replace('. Re-register:', '.\nRe-register:'),
                   // A `--local` or owner-less slug is a placeholder; a command with one would not run.
-                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
+                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --main ${branchOf(resolved.recipe)}` } : {}),
                 }
               : {
                   name: label,
@@ -3379,7 +3379,7 @@ export function recipeGovernsItsBase(
                   // row that sends a reader to something nothing reads.
                   detail:
                     `read from ${resolved.ref}, and ` +
-                    `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
+                    `${branchKeyOf(resolved.recipe)} says ${branchOf(resolved.recipe)}`,
                 },
           )
         }),

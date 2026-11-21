@@ -64,7 +64,7 @@ import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { loadProjectsEffect } from '@lingtai/project'
 import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { baseOf, queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -506,8 +506,8 @@ export const readStatus = (
           // mirror as it stands and never a fetch of its own. A mirror it cannot read passes the tickets over,
           // as the look does — unknown is not green.
           const looked = yield* lookAtBase(
-            { store: eventStore, project: name, base: baseOf(recipe), recipe },
-            mirrorBranchShaEffect({ project: name, ref: `refs/heads/${baseOf(recipe)}` }).pipe(
+            { store: eventStore, project: name, base: branchOf(recipe), recipe },
+            mirrorBranchShaEffect({ project: name, ref: `refs/heads/${branchOf(recipe)}` }).pipe(
               Effect.map((head): BaseHead => ('at' in head ? head : { unreadable: 'the mirror has no such branch' })),
             ),
           )

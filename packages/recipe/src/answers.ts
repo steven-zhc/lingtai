@@ -17,10 +17,6 @@ function isHumanEntry(entry: unknown): boolean {
   return typeof entry === 'object' && entry !== null && 'human' in entry
 }
 
-function isWorktreeEntry(entry: unknown): entry is Record<string, unknown> & { worktree: Record<string, unknown> } {
-  return typeof entry === 'object' && entry !== null && 'worktree' in entry
-}
-
 function isQueueEntry(entry: unknown): entry is Record<string, unknown> & { queue: Record<string, unknown> } {
   return typeof entry === 'object' && entry !== null && 'queue' in entry
 }
@@ -55,17 +51,14 @@ export type LandingAnswer = { land: 'hold' } | { land: string }
  * is still a hold every pass meets. `judge:` and `watch:` entries at the same
  * step are untouched.
  *
- * **`<branch>` writes the base where `baseWrittenAt` says it is read, not
- * always `repo.base`.** When one of `currentAdmit`'s actions carries a
- * `worktree:`, that is the entry `baseOf`/`baseWrittenAt`
- * (`settings.ts:222-245`) read the base from, and writing `repo.base`
- * instead would land on a key the conductor does not read. Absent that, the
- * base is `repo.base` as always.
+ * **`<branch>` writes `branch.main`, and only there** (0104 §5): `branchOf` is
+ * the one reader. An old spelling of the base the file still carries
+ * (`repo.base`, `worktree.base`) is removed by `editRecipe` in the same write,
+ * so the file never holds two homes for the setting.
  */
 export function landingChanges(
   answer: LandingAnswer,
   currentProposed: readonly unknown[] | null,
-  currentAdmit?: readonly unknown[] | null,
 ): RecipeChange[] {
   const proposed = currentProposed ?? []
   if (answer.land === 'hold') {
@@ -74,7 +67,7 @@ export function landingChanges(
       { path: ['steps', 'proposed'], value: [...proposed, { name: 'hold every attempt', human: SETUP_HOLD_TEXT }] },
     ]
   }
-  return landOnBranchChanges(answer.land, proposed, currentAdmit)
+  return landOnBranchChanges(answer.land, proposed)
 }
 
 /**
@@ -87,26 +80,9 @@ export function landingChanges(
 export function landOnBranchChanges(
   branch: string,
   currentProposed: readonly unknown[] | null,
-  currentAdmit?: readonly unknown[] | null,
 ): RecipeChange[] {
-  const proposed = currentProposed ?? []
-  const removal = holdRemovalChanges(proposed)
-  const admit = currentAdmit ?? []
-  const worktreeIndex = admit.findIndex(isWorktreeEntry)
-  const changes: RecipeChange[] =
-    worktreeIndex === -1
-      ? [{ path: ['repo', 'base'], value: branch }]
-      : [
-          {
-            path: ['steps', 'admit'],
-            value: admit.map((entry, i) =>
-              i === worktreeIndex && isWorktreeEntry(entry)
-                ? { ...entry, worktree: { ...entry.worktree, base: branch } }
-                : entry,
-            ),
-          },
-        ]
-  return [...changes, ...removal]
+  const removal = holdRemovalChanges(currentProposed ?? [])
+  return [{ path: ['branch', 'main'], value: branch }, ...removal]
 }
 
 /** Removes every `human:` at `steps.proposed` and writes nothing else; empty where there is none. */

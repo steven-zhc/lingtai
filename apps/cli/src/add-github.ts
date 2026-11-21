@@ -4,7 +4,7 @@
  * `lingtai.ts`'s last lines call `main()` on import, so a unit test cannot
  * import this out of it.
  *
- * In order: `--land` against `--base`; then — before a single question is
+ * In order: `--land` against `--main`; then — before a single question is
  * asked or a single answer written: on a `gh` machine, whether the saved
  * login has `repo` and `workflow` and can push to the repository (#708); on an
  * App machine, whether the App is installed here and grants what Lingtai
@@ -216,18 +216,22 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
 ): Effect.fn.Return<number | AskedBeforeAdd, unknown> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
-  // `named`, because a person typed it here: a recipe that contradicts `--base`
+  // `named`, because a person typed it here: a recipe that contradicts `--main`
   // is refused rather than adopted (#75), which is a refusal only a typed flag
   // may earn.
-  const base = flags['base']
+  if (flags['base'] !== undefined) {
+    console.error(`--base is now --main: pass --main ${flags['base']}. Nothing was written`)
+    return 2
+  }
+  const base = flags['main']
   const land = flags['land']
-  // `--land <branch>` and `--base` are different questions — where to read the
+  // `--land <branch>` and `--main` are different questions — where to read the
   // recipe from, and what it should land on — and a person who named both must
   // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--base` against the recipe's own `repo.base`).
+  // `--main` against the recipe's own `repo.base`).
   if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
     console.error(
-      `--land ${land} and --base ${base} name two different branches, and this command will not pick one ` +
+      `--land ${land} and --main ${base} name two different branches, and this command will not pick one ` +
         'silently. Nothing was written',
     )
     return 2
@@ -360,12 +364,12 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     const seedBase = base ?? (yield* defaultBranch)
     if (seedBase === null) {
       console.error(
-        `${path} does not exist and there is no base branch to write into it: pass --base <branch>. Nothing was written`,
+        `${path} does not exist and there is no base branch to write into it: pass --main <branch>. Nothing was written`,
       )
       return 1
     }
     seeds = [
-      { path: ['repo', 'base'], value: seedBase },
+      { path: ['branch', 'main'], value: seedBase },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       {
         path: ['steps', 'end'],

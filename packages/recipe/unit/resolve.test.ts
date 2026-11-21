@@ -43,13 +43,13 @@ describe('resolveRecipe', () => {
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
 
     expect(resolved.ref).toBe('develop')
-    expect(resolved.recipe.repo.base).toBe('develop')
+    expect(resolved.recipe.branch.main).toBe('develop')
     expect(resolved.recipe.steps.proposed).toHaveLength(1)
     // The four a recipe did not mention are present and empty — which is what
     // makes "nothing is configured here" visible rather than absent.
     expect(resolved.recipe.steps.admit).toEqual([])
     expect(resolved.recipe.steps.end).toEqual([])
-    expect(resolved.recipe.repo.submodules).toBe(true)
+    expect(resolved.recipe.repo?.submodules).toBe(true)
   })
 
   /**

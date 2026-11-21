@@ -20,8 +20,8 @@ import { registerProject, recipePath, HOST_FOR_SAVING, loadProject } from '@ling
 import {
   RECIPE_PATH,
   baseDivergence,
-  baseOf,
-  baseWrittenAt,
+  branchOf,
+  branchKeyOf,
   resolveRecipe,
   type ReadAtRef,
   type ResolvedRecipe,
@@ -208,7 +208,7 @@ export type Governing =
  * Find the recipe from a branch; take the base from the recipe.
  *
  * `from.ref` is only where to look. What comes back is resolved at
- * `baseOf(recipe)` and nowhere else, so the base recorded by `lingtai add` is
+ * `branchOf(recipe)` and nowhere else, so the base recorded by `lingtai add` is
  * a copy of the file's and never a second decision beside it (#75). Three
  * outcomes, one per row of the ticket's table:
  *
@@ -231,20 +231,20 @@ export const governingEffect = Effect.fn('onboard.governing')(function* (
   slug: string,
 ) {
   const resolved = yield* lift(() => resolveRecipe(read, from.ref))
-  const declared = baseOf(resolved.recipe)
-  // The key as this recipe writes it: `repo.base`, or `worktree:`'s at `admit`
-  // where the setting has moved onto the step that owns it (`#268`).
-  const wrote = baseWrittenAt(resolved.recipe)
+  const declared = branchOf(resolved.recipe)
+  // The key as this recipe writes it: `branch.main` or `branch.personal`
+  // by mode (0130 §2).
+  const wrote = branchKeyOf(resolved.recipe)
   if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null } as Governing
 
   if (from.named) {
     return {
       ok: false,
       refusal:
-        `--base ${from.ref}, but ${RECIPE_PATH} there declares ${wrote}: ${declared}. ` +
-        `--base says which branch to read the recipe from; ${wrote} says which branch ` +
+        `--main ${from.ref}, but ${RECIPE_PATH} there declares ${wrote}: ${declared}. ` +
+        `--main says which branch to read the recipe from; ${wrote} says which branch ` +
         'it governs, and this command will not overrule either. ' +
-        `Re-run without --base to take ${declared} from the recipe, ` +
+        `Re-run without --main to take ${declared} from the recipe, ` +
         `or fix ${wrote} on ${from.ref}.`,
     } as Governing
   }
@@ -542,17 +542,17 @@ export const addEffect = Effect.fn('onboard.add')(function* (
     return { ok: false } as Added
   }
   const resolved: ResolvedRecipe = local.recipe
-  if (options.base?.named && options.base.ref !== baseOf(resolved.recipe)) {
-    const wrote = baseWrittenAt(resolved.recipe)
+  if (options.base?.named && options.base.ref !== branchOf(resolved.recipe)) {
+    const wrote = branchKeyOf(resolved.recipe)
     log(
-      `--base ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${baseOf(resolved.recipe)}. ` +
-        "This command will not overrule either — re-run without --base to take the recipe's, " +
+      `--main ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${branchOf(resolved.recipe)}. ` +
+        "This command will not overrule either — re-run without --main to take the recipe's, " +
         `or fix ${wrote} in the file.`,
     )
     return { ok: false } as Added
   }
   // Past this point these are one branch, and this one is the file's.
-  const base = baseOf(resolved.recipe)
+  const base = branchOf(resolved.recipe)
   const fromSha = yield* lift(() => client.refSha(base))
   yield* warnIfProtectedEffect(
     (m, path) => client.request(m, path),

@@ -46,6 +46,7 @@ import {
 } from 'yaml'
 
 import { Recipe } from './recipe.ts'
+import { readOldSpellings } from './resolve.ts'
 
 /**
  * The sentences the wizard showed, by the dotted path of the block each one is
@@ -144,6 +145,23 @@ export function orderSteps(text: string): string {
   return doc.toString(RENDER)
 }
 
+/** Removes the old spellings of the base (`repo.base`, `worktree.base`) from the document, and a `repo:` that holds nothing else. */
+function dropOldBase(doc: ReturnType<typeof read>): void {
+  const repo = doc.get('repo')
+  if (isMap(repo) && repo.has('base')) {
+    doc.deleteIn(['repo', 'base'])
+    if (repo.items.length === 0) doc.delete('repo')
+  }
+  const admit = doc.getIn(['steps', 'admit'])
+  if (isSeq(admit)) {
+    for (const entry of admit.items) {
+      if (isMap(entry) && entry.has('worktree') && isMap(entry.get('worktree'))) {
+        ;(entry.get('worktree') as YAMLMap).delete('base')
+      }
+    }
+  }
+}
+
 /**
  * The same file with `changes` made, and every other byte as it was.
  *
@@ -163,6 +181,9 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
     else if (doc.hasIn(path)) replace(doc, path, value)
     else doc.setIn(path, value)
   }
+  // `branch.main` is the base's one home: an old spelling the file still carries is the same setting
+  // written twice, so a write of the new one takes the old one out in the same edit.
+  if (changes.some((c) => c.path[0] === 'branch')) dropOldBase(doc)
   // A blank line above an item is space between items, and a new first item has nothing above it.
   for (const [collection, first] of firstLines(doc)) {
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false
@@ -170,7 +191,7 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
   // A recipe need not write `runtime` at all — its agent may be on each step or
   // detected (#372), and `limits` is optional and schema-defaulted (#375) — so
   // an absent one is the schema's.
-  Recipe.parse({ runtime: {}, ...doc.toJS() })
+  Recipe.parse({ runtime: {}, ...(readOldSpellings(doc.toJS()).recipe as object) })
   const after = doc.toString(RENDER)
   if (after === before) return existing
 

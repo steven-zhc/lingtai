@@ -230,8 +230,9 @@ import { readBacklogEffect } from '@lingtai/projector'
 import {
   backoffOf,
   baseDivergence,
-  baseOf,
+  branchOf,
   ceilingOf,
+  modeOf,
   numericTurns,
   parseDuration,
   queueOf,
@@ -1104,6 +1105,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         },
       })
     }
+    // **Team mode resolves, and a pass does not run it yet** (#1306, 0130 §4). It would take every
+    // teammate's ticket, land it on `branch.personal`, and let `end` close the issue as though its code
+    // were on `main`. Refused here and not at resolve, so the board, `doctor` and the recipe's own
+    // readers can still read a team recipe. #1310 deletes this refusal, once a team pass leaves a landed
+    // ticket open (#1309) and takes only the person's own tickets (#1310). Before the divergence check:
+    // a team recipe's landing branch is one a registration made on `main` never recorded.
+    if (modeOf(recipe) === 'team') {
+      return {
+        ok: false,
+        ticketId: null,
+        runId: null,
+        stage: 'recipe',
+        detail:
+          '`mode: team` resolves, but a pass cannot yet land a team ticket as 0130 §4 says (left open on its ' +
+          'tracker, labelled `lingtai:landed`) or take only your own tickets (0130 §3). ' +
+          'Use `mode: solo` until it can.',
+      }
+    }
     // The ref the rules came from and the branch they say they govern have to be
     // one branch. It refuses rather than picking a winner: both are recorded
     // decisions, and nothing here repairs a recorded decision silently (0024 §3).
@@ -1191,7 +1210,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       log(`sandbox: running unsandboxed — ${sandboxDecision.why}`)
     }
     // Safe now, and only now: past the refusal these two are the same branch.
-    const base = baseOf(recipe)
+    const base = branchOf(recipe)
     /**
      * **`runtime.limits` — the ceiling, and the default under every dispatch**
      * (`#314`, 0070 §5).
@@ -4512,6 +4531,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * §2b it is the caller's and not the pass's.
        */
       const stepDeps: ActionPortDeps = {
+        base,
         env: envForExtension,
         // 0108 §17 (#1222): a refusing `run:` that goes red then green asks these reads. The base is worked out when
         // the check asks, not here: `worktree` is assigned after this object is built.
@@ -4685,7 +4705,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `repo.submodules`, where no recipe could see, name or replace it. Now the
        * body is empty and this is what an unconfigured `admit` runs — the same
        * action a declared `worktree:` builds, over the same values, because
-       * `baseOf` and `submodulesOf` are the one place that knows which spelling a
+       * `branchOf` and `submodulesOf` are the one place that knows which spelling a
        * file used. So *the default cut* and *a pasted block that says what the
        * default did* are the same pass, which is what makes the block safe to
        * paste.

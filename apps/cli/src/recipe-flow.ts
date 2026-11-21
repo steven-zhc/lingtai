@@ -28,7 +28,7 @@ import { delimiter, join } from 'node:path'
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { baseOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { branchOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -169,7 +169,7 @@ export function summariseRecipe(
       checks,
       review: reviewer === undefined ? null : String(reviewer['agent']),
       landsUnattended: !(steps['proposed'] ?? []).some((a) => 'human' in a),
-      base: baseOf(recipe),
+      base: branchOf(recipe),
     }
   } catch (err) {
     return { refused: (err as Error).message }
