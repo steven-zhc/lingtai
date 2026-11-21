@@ -411,7 +411,12 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       answers: [''],
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
-    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
+    expect(
+      await initCommand(
+        flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo']),
+        world,
+      ),
+    ).toBe(0)
     const text = logged.join('\n')
     expect(text).not.toContain('GitHub App')
     expect(text).not.toContain('it answered')
@@ -522,7 +527,19 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     const { world, files, machineFiles, logged } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--mode', 'solo', '--install', 'none']),
+      flagsFromArgv([
+        '--local',
+        '/repo',
+        '--store',
+        'sqlite',
+        '--main',
+        'main',
+        '--defaults',
+        '--mode',
+        'solo',
+        '--install',
+        'none',
+      ]),
       world,
     )
 
@@ -537,7 +554,19 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     const { world, asked } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--mode', 'solo', '--install', 'none']),
+      flagsFromArgv([
+        '--local',
+        '/repo',
+        '--store',
+        'sqlite',
+        '--main',
+        'main',
+        '--defaults',
+        '--mode',
+        'solo',
+        '--install',
+        'none',
+      ]),
       world,
     )
 

@@ -381,7 +381,12 @@ describe('askBeforeGithubAdd (#402)', () => {
     }
     const path = recipePath('nextloom-ai-admin')
 
-    await askBeforeGithubAdd('steven-zhc/nextloom-ai-admin', { main: 'main', mode: 'solo', install: 'none' }, counted.deps, ['none'])
+    await askBeforeGithubAdd(
+      'steven-zhc/nextloom-ai-admin',
+      { main: 'main', mode: 'solo', install: 'none' },
+      counted.deps,
+      ['none'],
+    )
     expect(hostReads).toBe(1)
     const created = counted.written[path]!
     expect(resolveSource(created, path, path).recipe.sandbox).toMatchObject({ enabled: true, required: false })
@@ -406,14 +411,24 @@ describe('askBeforeGithubAdd (#402)', () => {
     counted.deps.ask = async () => ''
     const path = recipePath('nextloom-ai-admin')
     // First run creates it; replace its end: with an empty one and re-run.
-    await askBeforeGithubAdd('steven-zhc/nextloom-ai-admin', { main: 'main', mode: 'solo', install: 'none' }, counted.deps, ['none'])
+    await askBeforeGithubAdd(
+      'steven-zhc/nextloom-ai-admin',
+      { main: 'main', mode: 'solo', install: 'none' },
+      counted.deps,
+      ['none'],
+    )
     const created = counted.written[path]!
     expect(created).toContain('close the ticket')
     const emptied = created.replace(/end:[\s\S]*?(?=\n\S|$)/, 'end: []')
     expect(emptied).not.toBe(created)
     counted.written[path] = emptied
 
-    await askBeforeGithubAdd('steven-zhc/nextloom-ai-admin', { main: 'main', mode: 'solo', install: 'none' }, counted.deps, ['none'])
+    await askBeforeGithubAdd(
+      'steven-zhc/nextloom-ai-admin',
+      { main: 'main', mode: 'solo', install: 'none' },
+      counted.deps,
+      ['none'],
+    )
 
     // The re-run may still write its own answers; the person's `end: []` is not touched.
     const rerun = counted.written[path]!

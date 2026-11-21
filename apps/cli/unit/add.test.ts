@@ -303,7 +303,16 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
           repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
         })),
     }
-    const parsed = flagsFromArgv(['--mode', 'solo', '--project', 'github', '--github-auth', 'gh', '--agent', 'claude-code'])
+    const parsed = flagsFromArgv([
+      '--mode',
+      'solo',
+      '--project',
+      'github',
+      '--github-auth',
+      'gh',
+      '--agent',
+      'claude-code',
+    ])
 
     const code = await addFlow(parsed, world)
     expect(errors).toEqual([])
@@ -323,7 +332,10 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
           repositories: [{ owner: 'acme', repo: 'widgets', private: false, slug: 'acme/widgets', onboarded: null }],
         })),
     }
-    const code = await addFlow(flagsFromArgv(['--mode', 'solo', '--github-auth', 'gh', '--agent', 'claude-code']), world)
+    const code = await addFlow(
+      flagsFromArgv(['--mode', 'solo', '--github-auth', 'gh', '--agent', 'claude-code']),
+      world,
+    )
     expect(errors).toEqual([])
     expect(code).toBe(0)
   })
