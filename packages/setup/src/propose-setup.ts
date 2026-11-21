@@ -12,7 +12,7 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
-import { SETUP_KINDS, verdictOf, type HostAnswer } from '@lingtai/recipe'
+import { isImplementOnlyAgent, SETUP_KINDS, verdictOf, type HostAnswer } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
@@ -101,9 +101,11 @@ function turnsFor(writer: string | null): number | 'unbounded' {
  * written twice.
  */
 export function defaultAgents(signedIn: readonly string[]): { writer: string | null; reviewer: string | null } {
-  const writer = RuntimeId.options.find((id) => signedIn.includes(id)) ?? null
+  // An agent that runs only at `implement` (#1298) is never proposed: a recipe a person writes names it by hand.
+  const offered = signedIn.filter((id) => !isImplementOnlyAgent(id))
+  const writer = RuntimeId.options.find((id) => offered.includes(id)) ?? null
   if (writer === null) return { writer: null, reviewer: null }
-  return { writer, reviewer: signedIn.find((id) => id !== writer) ?? writer }
+  return { writer, reviewer: offered.find((id) => id !== writer) ?? writer }
 }
 
 const reasonOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))

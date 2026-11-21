@@ -16,6 +16,8 @@
 import type { RuntimeId } from '@lingtai/domain'
 import { codexTextConfig } from '@lingtai/env'
 
+import { COPILOT_PROFILE } from './acp-session.ts'
+import { createAcpRuntime } from './acp.ts'
 import { createClaudeCodeRuntime } from './claude-code.ts'
 import { createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
 import { createCodexRuntime } from './codex.ts'
@@ -78,15 +80,25 @@ export class ToolsCannotBeDenied extends Error {
   readonly id: RuntimeId
   constructor(id: RuntimeId) {
     super(
-      `${id} cannot be given no tools with the current configuration: ` +
-        'Codex CLI read-only retains shell and host-file reads. The separate model-only API route ' +
-        'requires explicit approval, API credentials, model and conservative pricing in codex_text.',
+      id === 'codex'
+        ? `${id} cannot be given no tools with the current configuration: ` +
+            'Codex CLI read-only retains shell and host-file reads. The separate model-only API route ' +
+            'requires explicit approval, API credentials, model and conservative pricing in codex_text.'
+        : `${id} cannot be given no tools: its ACP agent has no tool-free mode (experiment 019 E2).`,
     )
     this.id = id
   }
 }
 
 export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> = {
+  copilot: (options = {}) => {
+    // 019 E2: neither ACP agent can be given no tools, so a discussion is refused by `DiscussAgent`.
+    if (options.tools === 'none') throw new ToolsCannotBeDenied('copilot')
+    return createAcpRuntime({
+      profile: COPILOT_PROFILE,
+      ...(options.binary === undefined ? {} : { binary: options.binary }),
+    })
+  },
   'claude-code': (options = {}) =>
     createClaudeCodeRuntime({
       ...(options.binary === undefined ? {} : { binary: options.binary }),

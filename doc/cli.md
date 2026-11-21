@@ -635,7 +635,7 @@ Changes state.
 lingtai account lift <account> [--no-color]
   Says an account — a runtime, or github — is no longer at its limit. Projects
   that use it take work again at the next look. Appends nothing when no limit
-  stands. Accounts: claude-code, codex, github
+  stands. Accounts: claude-code, codex, copilot, github
 ```
 
 ```sh

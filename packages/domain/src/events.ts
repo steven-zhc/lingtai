@@ -141,7 +141,7 @@ export type Tier = z.infer<typeof Tier>
  * walks it is still load-bearing.
  */
 
-export const RuntimeId = z.enum(['claude-code', 'codex'])
+export const RuntimeId = z.enum(['claude-code', 'codex', 'copilot'])
 export type RuntimeId = z.infer<typeof RuntimeId>
 
 /**
