@@ -22,7 +22,7 @@ describe('lingtai account lift', () => {
       const store = createMemoryEventStore()
       const { out, log } = lines()
       expect(await Effect.runPromise(liftAccount(given, 'human:a', { store, log }))).toBe(2)
-      expect(out.join('\n')).toContain('claude-code, codex, copilot, github')
+      expect(out.join('\n')).toContain('claude-code, codex, copilot, antigravity, github')
     }
   })
 

@@ -22,7 +22,7 @@ export type SandboxInput = Pick<AttemptState, 'lifecycle' | 'resolved' | 'steps'
 /** `fail` is the fail colour, `signal` the warning one, `muted` is what a person chose, `ok` is sandboxed. */
 export type Tone = 'ok' | 'muted' | 'signal' | 'fail'
 
-export type MarkState = 'sandboxed' | 'off by choice' | 'degraded' | 'stopped' | 'not recorded'
+export type MarkState = 'sandboxed' | 'off by choice' | 'runtime cannot' | 'degraded' | 'stopped' | 'not recorded'
 
 /** The small state mark. It says *sandboxed*, never *safe*. */
 export interface Mark {
@@ -134,6 +134,13 @@ export function markOf(boundary: SandboxInvocation['boundary']): Mark {
     case 'refused':
       return { state: 'stopped', tone: 'fail', why: boundary.why }
     case 'unsandboxed':
+      if (boundary.reason === 'runtime cannot') {
+        return {
+          state: 'runtime cannot',
+          tone: 'muted',
+          why: 'this agent cannot run inside the sandbox in this release',
+        }
+      }
       return boundary.reason === 'off by choice'
         ? { state: 'off by choice', tone: 'muted', why: null }
         : { state: 'degraded', tone: 'signal', why: boundary.why ?? null }

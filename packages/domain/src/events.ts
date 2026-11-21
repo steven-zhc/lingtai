@@ -141,8 +141,16 @@ export type Tier = z.infer<typeof Tier>
  * walks it is still load-bearing.
  */
 
-export const RuntimeId = z.enum(['claude-code', 'codex', 'copilot'])
+export const RuntimeId = z.enum(['claude-code', 'codex', 'copilot', 'antigravity'])
 export type RuntimeId = z.infer<typeof RuntimeId>
+
+/**
+ * The runtimes that cannot run inside the sandbox in this release (0127): Antigravity binds a local port and reads
+ * the keychain, both of which the policy refuses. A fact about the agent, so it sits beside the id it is about.
+ */
+export const UNSANDBOXABLE_RUNTIMES: readonly RuntimeId[] = ['antigravity']
+export const isUnsandboxableRuntime = (id: string): boolean =>
+  (UNSANDBOXABLE_RUNTIMES as readonly string[]).includes(id)
 
 /**
  * A platform whose account a limit can stand on (0126 §2): a runtime, or a code
@@ -1029,7 +1037,7 @@ export const SandboxBoundary = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('sandboxed'), srtVersion: z.string(), policy: SandboxPolicyValue }),
   z.object({
     kind: z.literal('unsandboxed'),
-    reason: z.enum(['off by choice', 'degraded']),
+    reason: z.enum(['off by choice', 'degraded', 'runtime cannot']),
     why: z.string().optional(),
   }),
   z.object({ kind: z.literal('refused'), why: z.string() }),

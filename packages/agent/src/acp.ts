@@ -23,7 +23,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import { connect } from 'node:net'
 
 import type { ClientContext } from '@agentclientprotocol/sdk'
-import type { Usage } from '@lingtai/domain'
+import type { RuntimeId, Usage } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import {
@@ -38,10 +38,13 @@ import {
   type AcpProfile,
   type SpawnAgent,
 } from './acp-session.ts'
-import { copilotAuth, runtimeVersionEffect } from './auth.ts'
+import { acpAuth, runtimeVersionEffect } from './auth.ts'
 import type { SandboxedLaunch } from './claude-sandbox.ts'
 import { copilotSandboxedLaunch, type CopilotSandboxPorts } from './copilot-sandbox.ts'
 import type { Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
+
+/** An ACP agent's capabilities: every one the same but for which runtime it is. */
+export const acpCapabilities = (id: RuntimeId): RuntimeCapabilities => ({ ...COPILOT_CAPABILITIES, id })
 
 export const COPILOT_CAPABILITIES: RuntimeCapabilities = {
   id: 'copilot',
@@ -282,9 +285,9 @@ export function createAcpRuntime(options: AcpOptions = {}): Runtime {
   const profile = options.profile ?? COPILOT_PROFILE
   const binary = options.binary ?? profile.command
   return {
-    capabilities: COPILOT_CAPABILITIES,
+    capabilities: profile.id === 'copilot' ? COPILOT_CAPABILITIES : acpCapabilities(profile.id),
     version: (env, cwd) => runtimeVersionEffect(binary, env, options.spawn, cwd),
-    checkAuth: (env) => copilotAuth(binary, env),
+    checkAuth: (env) => acpAuth(profile, binary, env),
     // The prompt goes over the protocol, so there is nothing on argv to elide.
     invocation: (_request: Invocable): Spawned => ({ command: binary, args: profile.args }),
     run: (request) => acpRun(options, request),
@@ -292,12 +295,17 @@ export function createAcpRuntime(options: AcpOptions = {}): Runtime {
 }
 
 /** The `usage` of a `session/prompt` result, as one entry — or none when it carried no figure. */
-function usageOf(profile: AcpProfile, response: unknown, note: (label: string, detail?: string) => void): Usage {
+function usageOf(
+  profile: AcpProfile,
+  response: unknown,
+  note: (label: string, detail?: string) => void,
+  model?: string,
+): Usage {
   const raw = (response as { usage?: unknown } | null)?.usage
   if (raw === null || typeof raw !== 'object') return []
   const { tokens, note: said } = profile.tokens(raw as Record<string, unknown>)
   if (said !== undefined) note('usage', said)
-  return Object.keys(tokens).length === 0 ? [] : [{ tokens }]
+  return Object.keys(tokens).length === 0 ? [] : [model === undefined ? { tokens } : { tokens, model }]
 }
 
 const outcomeOf = (
@@ -317,6 +325,66 @@ const outcomeOf = (
   text: parts.text,
   sessionId: parts.sessionId,
 })
+
+/** The parts of a `session/new` answer the run reads. */
+interface SessionNew {
+  modes?: { currentModeId?: string; availableModes?: { id: string }[] } | null
+  configOptions?: ConfigOption[] | null
+}
+interface ConfigOption {
+  id: string
+  currentValue?: unknown
+  options?: unknown
+}
+
+/** The `model` option's current value, when one is offered. */
+const modelOf = (options: readonly ConfigOption[] | null | undefined): string | undefined => {
+  const value = options?.find((o) => o.id === 'model')?.currentValue
+  return typeof value === 'string' ? value : undefined
+}
+
+/** Never an auto mode: read the session's mode and switch to the profile's when it is not current. */
+function selectMode(ctx: ClientContext, profile: AcpProfile, sessionId: string, session: SessionNew): Promise<void> {
+  if (!profile.selectMode || session.modes?.currentModeId === profile.mode) return Promise.resolve()
+  const offered = (session.modes?.availableModes ?? []).map((m) => m.id)
+  if (!offered.includes(profile.mode)) {
+    return Promise.reject(
+      new Error(`${profile.name} offers no \`${profile.mode}\` mode (offered: ${offered.join(', ') || 'none'})`),
+    )
+  }
+  return ctx.request('session/set_mode', { sessionId, modeId: profile.mode }).then(() => undefined)
+}
+
+/**
+ * `RunRequest.model` to the agent, and the model the session ends up on (absent when it names none).
+ * Copilot advertises no model option; the removed unstable method still works (019 E9). Antigravity's `model` is a
+ * config option; a refusal rejects and the run ends `crash`, naming the model.
+ */
+function selectModel(
+  ctx: ClientContext,
+  profile: AcpProfile,
+  sessionId: string,
+  session: SessionNew,
+  requested: string | undefined,
+): Promise<string | undefined> {
+  if (profile.modelBy === 'set_model') {
+    return requested === undefined
+      ? Promise.resolve(undefined)
+      : ctx.request('session/set_model', { sessionId, modelId: requested }).then(() => undefined)
+  }
+  if (requested === undefined) return Promise.resolve(modelOf(session.configOptions))
+  if (!session.configOptions?.some((o) => o.id === 'model')) {
+    return Promise.reject(new Error(`${profile.name} offers no model option, so model ${requested} cannot be chosen`))
+  }
+  return ctx.request('session/set_config_option', { sessionId, configId: 'model', value: requested }).then(
+    (reply) => modelOf((reply as { configOptions?: ConfigOption[] }).configOptions),
+    (error: unknown) => {
+      throw new Error(
+        `${profile.name} refused model ${requested}: ${error instanceof Error ? error.message : String(error)}`,
+      )
+    },
+  )
+}
 
 export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, request: RunRequest) {
   const profile = options.profile ?? COPILOT_PROFILE
@@ -356,6 +424,8 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       let seen = 0
       let delivered = 0
       let sessionId = ''
+      let session: SessionNew = {}
+      let model: string | undefined
       let phase: 'opening' | 'prompting' = 'opening'
       let ctxRef: ClientContext | undefined
       let stderrTail = ''
@@ -510,15 +580,15 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
             })
           }
           return openSession(ctx, request.cwd)
-            .then((id) => {
-              sessionId = id
+            .then((opened) => {
+              sessionId = opened.id
+              session = opened.response as unknown as SessionNew
               return unlessWall()
             })
-            .then(() => {
-              return request.model === undefined
-                ? undefined
-                : // Copilot advertises no model option; the removed unstable method still works (019 E9).
-                  ctx.request('session/set_model', { sessionId, modelId: request.model })
+            .then(() => selectMode(ctx, profile, sessionId, session))
+            .then(() => selectModel(ctx, profile, sessionId, session, request.model))
+            .then((chosen) => {
+              model = chosen
             })
             .then(() => unlessWall())
             .then(() =>
@@ -546,7 +616,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
         })
         .then(
           (response) => {
-            const read = usageOf(profile, response, note)
+            const read = usageOf(profile, response, note, model)
             usage = read
             return settled(() => delivered >= seen)
               .then(() => Promise.allSettled(pending))
@@ -578,7 +648,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
                 kind: 'never-started',
                 detail: sandboxed
                   ? `${profile.name} refused its token (code ${AUTH_REQUIRED}): set a fine-grained token with Copilot Requests in \`copilot.github_token\` (a classic \`ghp_\` token is ignored)`
-                  : `${profile.name} wants a sign-in (code ${AUTH_REQUIRED}): run \`${profile.loginCommand}\``,
+                  : `${profile.signedOut} (code ${AUTH_REQUIRED})`,
               })
             }
             finish({ kind: 'crash', detail: withStderr(exited ? `${binary} exited: ${message}` : message) })

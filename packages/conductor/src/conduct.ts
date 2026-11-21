@@ -241,7 +241,7 @@ import {
   type ResolvedRecipe,
   type StepAction,
 } from '@lingtai/recipe'
-import { DEFAULT_ACTION, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
+import { DEFAULT_ACTION, invocationDecision, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
 import {
   mirrorPathFor,
   mirrorWrite,
@@ -1056,12 +1056,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const recipe = resolved.recipe
     /** The request's `sandbox` for a decision: absent unless it is *sandboxed* or *refused*. */
     const sandboxOf = (
-      decision: SandboxDecision | undefined,
+      passDecision: SandboxDecision | undefined,
       run: { runId: string; worktree: string | undefined },
       /** The pass's stream, and what names this invocation on it (#1164). `runId` above is the dispatch's own. */
       record: { stream: string; step: Step; action: string; runtime: string },
     ): Effect.Effect<{ sandbox: RunSandbox } | Record<string, never>> => {
-      if (decision === undefined) return Effect.succeed({})
+      if (passDecision === undefined) return Effect.succeed({})
+      // The pass decided once; a runtime that cannot be sandboxed narrows it for its own invocation.
+      const decision = invocationDecision(passDecision, record.runtime)
       const keys = { step: record.step, action: record.action, runtime: record.runtime, runId: run.runId }
       const appends = invocationAppends(record.stream)
       // Not wrapped, so nothing else will say which boundary this one ran under: record it before the child starts.
