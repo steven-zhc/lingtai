@@ -20,8 +20,8 @@ import { parseFindings, verdictFor } from '@lingtai/actions'
  */
 import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, prStream } from '@lingtai/domain'
 import { parsePayload } from '@lingtai/domain'
-import { conflictRoundsLeft } from '@lingtai/domain'
-import { readPr, readPrDraft, recordSyncRoundStarted } from '@lingtai/project'
+import { conflictOpen, conflictRoundsLeft, lastRefusalOf } from '@lingtai/domain'
+import { readPr, readPrDraft, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
 import { type Recipe, ceilingOf, numericTurns, parseDuration } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
@@ -84,7 +84,11 @@ const agentsAt = (recipe: Recipe, step: 'implement' | 'review'): AgentEntry[] =>
       : [],
   )
 
-/** One event appended to the PR's stream at the head it is at now; once more if another writer got there first. */
+/**
+ * One event appended to the PR's stream at the head it is at now. **Retried only on a `ConcurrencyError`**, which says the
+ * append did not commit; any other failure may be a write that committed and whose acknowledgement was lost, and a second
+ * append would record one paid call twice (`RunSpent`). It is failed instead, and the caller says so.
+ */
 const appendOnPr = (
   ports: PrPorts,
   project: string,
@@ -102,7 +106,10 @@ const appendOnPr = (
         ),
     catch: asError,
   })
-  return once.pipe(Effect.catch(() => once))
+  const notCommitted = (err: Error): boolean => err.name === 'ConcurrencyError'
+  const attempt = (left: number): Effect.Effect<void, Error> =>
+    once.pipe(Effect.catch((err: Error) => (left > 0 && notCommitted(err) ? attempt(left - 1) : Effect.fail(err))))
+  return attempt(2).pipe(Effect.asVoid)
 }
 
 /** What a failed read is told to the agent as: *could not be read*, with the cause. */
@@ -189,6 +196,10 @@ const endOf = (
   paths: [...paths],
   ours: failedRead(ours) ? [] : ours.map((t) => ({ number: t.number, title: t.title, mergeCommit: t.mergeCommit })),
   theirs: failedRead(theirs) ? [] : theirs.map((c) => ({ sha: c.sha, author: c.author, subject: c.subject })),
+  // A read that failed is recorded as unreadable with its cause, never as *none*: an empty list beside it is unknown.
+  ...(failedRead(ours) || failedRead(theirs)
+    ? { unread: { ours: failedRead(ours) ? ours.failed : null, theirs: failedRead(theirs) ? theirs.failed : null } }
+    : {}),
   roundsUsed,
   last,
 })
@@ -212,6 +223,16 @@ export const resolveRounds = (
     const bound = ceiling.attempt.conflictResolutions
     const limits = ceiling.run
     const diffBytes = recipe.runtime.budget.diff
+
+    // **The recipe's sandbox is not carried to a PR's agent**: the wrap is built per pass (`makeRunSandbox`) and a round has no
+    // pass. An agent started without it would reach what the recipe forbids, so a recipe that sandboxes its runs gets no
+    // conflict agent — the person is asked, as before, and nothing is paid.
+    if (recipe.sandbox?.enabled === true) {
+      return {
+        kind: 'unknown',
+        why: 'the recipe sandboxes its runs, and a PR’s conflict agent is not run under that sandbox — none was started',
+      } as const
+    }
 
     let last: Refusal | null = null
     let paths: readonly string[] = ask.paths
@@ -347,19 +368,19 @@ export const resolveRounds = (
           return { kind: 'unknown', why: `the build of ${short(sha)} could not be told: ${built.why}` } as const
         }
 
-        // A pause in the middle of a round must not buy the review: the round is spent, the next is not started.
-        const stopped = yield* resolver.locked(project)
-        if (stopped !== null) {
+        /** A lock that came up in the middle of a round: the round is spent, the review (and the next round) is not bought. */
+        const stoppedNow = Effect.gen(function* () {
+          const stopped = yield* resolver.locked(project)
+          if (stopped === null) return null
           const s = yield* sidesNow
-          const used = (yield* readPr(project, n, ports.store))?.rounds.filter(
-            (r) => r.merging === ask.merging && r.commit === ask.commit,
-          ).length
+          const now = yield* readPr(project, n, ports.store)
+          const used = now?.rounds.filter((r) => r.merging === ask.merging && r.commit === ask.commit).length
           return {
             kind: 'locked',
             sentence: stopped,
             end: endOf(ask, paths, s.ours, s.theirs, used ?? round, last),
           } as const
-        }
+        })
 
         const shown = yield* resolver.gitIn(cwd, ['show', '--remerge-diff', ...DIFF_FLAGS, '--format=', sha])
         if (reviewers.length > 0 && shown.code !== 0) {
@@ -370,6 +391,9 @@ export const resolveRounds = (
         const actions: PayloadOf<'StepEnded'>['outcome']['actions'] = []
         const blocking: string[] = []
         for (const reviewer of reviewers) {
+          // Checked before **each** paid review: an admission is not good for the next call (0126 §6).
+          const stopped = yield* stoppedNow
+          if (stopped !== null) return stopped
           const reviewed = yield* paid('review', reviewer, prReviewBrief(brief, diff, clipped))
           const parsed = reviewed.failure === null ? parseFindings(reviewed.text) : null
           const base = { plugin: 'agent', name: reviewer.name, onSha: sha, evidence: '', yields: 'verdict' } as const
@@ -418,6 +442,12 @@ export const resolveRounds = (
     for (;;) {
       const state = yield* readPr(project, n, ports.store)
       if (state === null) return yield* Effect.fail(new Error(`${stream} has no events`))
+      // A PR merged or closed meanwhile refuses every round for good: stop here, holding nothing, rather than read it again.
+      if (!conflictOpen(state)) {
+        return { kind: 'unknown', why: `the PR is ${state.status} now: no more rounds are counted on it` } as const
+      }
+      // The refusal that bought this round is the log's, so a restarted conductor briefs round 2 with round 1's.
+      last = lastRefusalOf(state, ask.merging, ask.commit)
       const { used, left, next } = conflictRoundsLeft(state, ask.merging, ask.commit, bound)
       if (implement === null || left === 0) return yield* spent(used)
 
@@ -439,7 +469,12 @@ export const resolveRounds = (
       const done = yield* oneRound(next)
       if (done.kind === 'passed') return { kind: 'resolved', sha: done.sha }
       if (done.kind === 'refused') {
-        last = done.refusal
+        yield* recordSyncRoundRefused(
+          project,
+          n,
+          { merging: ask.merging, commit: ask.commit, round: next, step: done.refusal.step, said: done.refusal.said },
+          ports.store,
+        )
         continue
       }
       return done

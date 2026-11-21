@@ -507,6 +507,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
   SyncRoundStarted: (d) =>
     `Round ${need(d, 'round')} of the conflict agent: ${String(d['merging']) === 'back' ? 'the PR branch' : 'main'} at ${String(d['commit']).slice(0, 7)} into ${String(d['start']).slice(0, 7)}`,
+  SyncRoundRefused: (d) =>
+    `Round ${need(d, 'round')} of the conflict agent was refused at ${need(d, 'step')}: ${clip(d['said'])}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
   PrMerged: (d) =>
     d['how'] === 'host'

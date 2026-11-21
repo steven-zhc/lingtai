@@ -10,7 +10,7 @@ import { type ConflictResolver, type PrPorts, buildAt } from '@lingtai/conductor
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
-import { readProjectTicketEffect } from '@lingtai/conductor/read-ticket'
+import { ticketStream } from '@lingtai/domain'
 import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
@@ -136,14 +136,21 @@ export function livePrPorts(
             }),
           runtimeVersion: (_project, runtime) =>
             runtimeVersionOfEffect(createRuntime(runtime), runnableEnv({})).pipe(Effect.orElseSucceed(() => null)),
+          // The body **as claimed**, off the ticket's own stream: the issue on GitHub may have been edited since the work landed,
+          // and the agents are told what the code that conflicts was written to mean.
           ticketBody: (project, ticket) =>
-            Effect.gen(function* () {
-              if (!/^\d+$/.test(ticket)) return yield* Effect.fail(new Error(`${ticket} is not an issue number`))
-              const state = yield* readProjectStateEffect(project, store).pipe(Effect.mapError(asError))
-              const answer = yield* readProjectTicketEffect(state, Number(ticket))
-              if (!answer.ok) return yield* Effect.fail(asError(answer.error))
-              return answer.ticket.body
-            }),
+            Effect.tryPromise({ try: () => store.read(ticketStream(project, ticket)), catch: asError }).pipe(
+              Effect.flatMap((events) => {
+                const claimed = events
+                  .filter((e) => e.type === 'TicketClaimed' || e.type === 'TicketContinued')
+                  .map((e) => (e.data as { body?: string }).body)
+                  .filter((body): body is string => body !== undefined)
+                const body = claimed.at(-1)
+                return body === undefined
+                  ? Effect.fail(new Error(`no body was recorded when #${ticket} was claimed`))
+                  : Effect.succeed(body)
+              }),
+            ),
           locked,
         }
   return {

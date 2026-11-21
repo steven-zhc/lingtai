@@ -31,6 +31,7 @@ import {
   waitTransition,
   syncedTransition,
   syncRoundTransition,
+  syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
   ticketStream,
@@ -393,5 +394,20 @@ export const recordSyncRoundStarted = (
     project,
     n,
     (state) => syncRoundTransition(state, round),
+    (_state, appended) => appended,
+  )
+
+/** A started round was refused (#1313): on the log, so a restart and the end of the rounds read it and not memory. */
+export const recordSyncRoundRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'SyncRoundRefused'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRefusalTransition(state, refusal),
     (_state, appended) => appended,
   )

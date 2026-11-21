@@ -2589,6 +2589,11 @@ export const ConflictEnd = z.object({
   paths: z.array(z.string()),
   ours: z.array(z.object({ number: z.string(), title: z.string(), mergeCommit: z.string() })),
   theirs: z.array(z.object({ sha: z.string(), author: z.string(), subject: z.string() })),
+  /**
+   * Which side could not be read, and why. **An empty `ours` or `theirs` with this set is unknown, not none**: a failed read
+   * of the tickets or the commits is never recorded as there being nothing.
+   */
+  unread: z.object({ ours: z.string().nullable(), theirs: z.string().nullable() }).nullable().optional(),
   roundsUsed: z.number().int().nonnegative(),
   last: z.object({ step: z.enum(['build', 'review', 'answer']), said: z.string() }).nullable(),
 })
@@ -2694,6 +2699,21 @@ export const SyncRoundStarted = z.object({
   commit: z.string().min(1),
   start: z.string().min(1),
   round: z.number().int().positive(),
+})
+
+/**
+ * A round of the conflict agent was refused (#1313): by its answer, its build or its review. **Appended when the round ends**,
+ * so the refusal that bought the next round — and the last one, when the rounds are spent — is on the log beside the
+ * count, and a restarted conductor reads it from there and never from memory.
+ *
+ * @summary A round of the conflict agent was refused, and what refused it.
+ */
+export const SyncRoundRefused = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  round: z.number().int().positive(),
+  step: z.enum(['build', 'review', 'answer']),
+  said: z.string(),
 })
 
 /**
@@ -3037,6 +3057,7 @@ export const EVENTS = {
   PrMergedBack,
   PrMergeBackFailed,
   SyncRoundStarted,
+  SyncRoundRefused,
   PrMerged,
   PrClosed,
   AccountLimitReached,
@@ -3162,6 +3183,7 @@ export const EVENT_AT = {
   PrMergedBack: ['outside'],
   PrMergeBackFailed: ['outside'],
   SyncRoundStarted: ['outside'],
+  SyncRoundRefused: ['outside'],
   PrMerged: ['outside'],
   PrClosed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
