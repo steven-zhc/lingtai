@@ -767,7 +767,17 @@ export function run(
       // A person's Submit is still served under a pause (0130 §5): it spends nothing, and the lock is taken for it —
       // only when one is owed, so a pause with nothing to serve still never reaches the lock.
       prOwed.pipe(
-        Effect.flatMap((owed) => (owed ? Effect.scoped(servePrs.pipe(Effect.provide(world.lock))) : Effect.void)),
+        Effect.flatMap((owed) =>
+          owed
+            ? Effect.scoped(
+                // The draft reads `task_view`, so the projector catches it up first, as on the unpaused path.
+                Effect.gen(function* () {
+                  yield* Projector
+                  yield* servePrs
+                }).pipe(Effect.provide(world.projector), Effect.provide(world.ports), Effect.provide(world.lock)),
+              )
+            : Effect.void,
+        ),
         Effect.map(() => {
           log(saidPaused(p))
           log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)

@@ -230,4 +230,20 @@ describe('landings in flight', () => {
       { ticketId: ticketStream('lingtai', '3'), headSha: 'h' },
     ])
   })
+
+  it('an earlier push whose terminals were lost stays owed after the retry is refused no-commits', async () => {
+    const store = createMemoryEventStore()
+    await discovered(store, '4')
+    const ticketId = ticketStream('lingtai', '4')
+    await attempted(store, '4', 0)
+    await store.append(lane, 1, [
+      { type: 'IntegrationAttempted', actor: 'conductor', data: { ticketId, branch: 'b', headSha: 'h' } },
+      {
+        type: 'IntegrationRefused',
+        actor: 'conductor',
+        data: { ticketId, branch: 'b', reason: 'no-commits', detail: 'x' },
+      },
+    ])
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([{ ticketId, headSha: 'h' }])
+  })
 })

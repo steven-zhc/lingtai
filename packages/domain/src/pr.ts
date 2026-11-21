@@ -266,11 +266,30 @@ export function landingsStarted(
 ): { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] {
   const last = new Map<string, Envelope>()
   const heads = new Map<string, string>()
+  /** An earlier attempt whose push may have happened and that no terminal answered; a later attempt does not erase it. */
+  const uncertain = new Map<string, string>()
+  const open = new Map<string, string>()
   for (const e of laneEvents) {
-    if (e.type === 'IntegrationAttempted' || e.type === 'IntegrationRefused' || e.type === 'IntegrationSucceeded') {
-      const ticketId = (e.data as { ticketId: string }).ticketId
-      last.set(ticketId, e)
-      if (e.type === 'IntegrationAttempted') heads.set(ticketId, (e.data as PayloadOf<'IntegrationAttempted'>).headSha)
+    if (e.type !== 'IntegrationAttempted' && e.type !== 'IntegrationRefused' && e.type !== 'IntegrationSucceeded') {
+      continue
+    }
+    const ticketId = (e.data as { ticketId: string }).ticketId
+    last.set(ticketId, e)
+    if (e.type === 'IntegrationAttempted') {
+      const head = (e.data as PayloadOf<'IntegrationAttempted'>).headSha
+      const before = open.get(ticketId)
+      if (before !== undefined) uncertain.set(ticketId, before)
+      open.set(ticketId, head)
+      heads.set(ticketId, head)
+    } else if (e.type === 'IntegrationSucceeded') {
+      open.delete(ticketId)
+      uncertain.delete(ticketId)
+    } else {
+      if ((e.data as { reason?: string }).reason === 'unexpected') {
+        const head = open.get(ticketId)
+        if (head !== undefined) uncertain.set(ticketId, head)
+      }
+      open.delete(ticketId)
     }
   }
   const started: { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] = []
@@ -287,6 +306,12 @@ export function landingsStarted(
     }
     if (e.type === 'IntegrationRefused' && (e.data as { reason?: string }).reason === 'unexpected') {
       started.push({ ticketId, mergeCommit: null, unexpected: true, headSha })
+    }
+    // An earlier attempt left uncertain stays owed beside whatever the last event says: a retry's refusal
+    // (`no-commits`, because the first push is already on the base) is no proof the first pushed nothing.
+    const earlier = uncertain.get(ticketId)
+    if (earlier !== undefined && !started.some((x) => x.ticketId === ticketId && x.headSha === earlier)) {
+      started.push({ ticketId, mergeCommit: null, unexpected: true, headSha: earlier })
     }
   }
   return started
