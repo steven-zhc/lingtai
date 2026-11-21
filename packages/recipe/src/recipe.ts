@@ -1385,13 +1385,12 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
  * list has always had: nothing implements it.
  */
 /**
- * The agents a recipe may name at `implement` and nowhere else yet (#1298): an ACP agent takes no output
- * schema, so the cold reviewer, a judge and triage cannot be built on it, and it is not sandboxed yet.
- * The recipe refuses each by name when it resolves, and the setup wizard never proposes one.
+ * The agents a recipe may not name while the sandbox is enabled (#1298, #1300): the ACP runtime reads nothing of
+ * `RunRequest.sandbox`, so a run on one would go unwrapped without saying so. The recipe refuses each by name when
+ * it resolves, and the setup wizard never proposes one, since it proposes a sandbox.
  */
-export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot']
-export const isImplementOnlyAgent = (agent: string): boolean =>
-  (IMPLEMENT_ONLY_AGENTS as readonly string[]).includes(agent)
+export const UNSANDBOXED_AGENTS: readonly RuntimeId[] = ['copilot']
+export const isUnsandboxedAgent = (agent: string): boolean => (UNSANDBOXED_AGENTS as readonly string[]).includes(agent)
 
 export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options])
 export type JudgeName = z.infer<typeof JudgeName>
@@ -3516,13 +3515,13 @@ export const Recipe = z
      */
     const msOf = (text: string): number | null => (positiveDuration(text) ? parseDuration(text) : null)
     const ceilingWallMs = msOf(ceiling.wall)
-    if (isImplementOnlyAgent(recipe.runtime.agent)) {
+    if (isUnsandboxedAgent(recipe.runtime.agent) && recipe.sandbox?.enabled) {
       ctx.addIssue({
         code: 'custom',
         path: ['runtime', 'agent'],
         message:
-          `runtime.agent names \`${recipe.runtime.agent}\`, which runs only at \`implement\` until review, judges and ` +
-          'triage on an ACP agent are built — name it as `agent:` at `implement`',
+          `runtime.agent names \`${recipe.runtime.agent}\`, but ${recipe.runtime.agent} cannot run sandboxed yet — ` +
+          'set `sandbox.enabled: false` or name another agent',
       })
     }
     for (const [step, actions] of Object.entries(recipe.steps)) {
@@ -3535,18 +3534,11 @@ export const Recipe = z
           'judge' in action && typeof action.judge === 'string' ? ['judge', action.judge] : null,
         ]
         for (const [key, value] of named.flatMap((n) => (n ? [n] : []))) {
-          if (!isImplementOnlyAgent(value!)) continue
-          if (key === 'judge' || step !== 'implement') {
-            refuse(
-              `steps.${step}'s "${action.name}" names \`${key}: ${value}\`, which runs only as the \`agent:\` at ` +
-                '`implement` until review, judges and triage on an ACP agent are built',
-            )
-          } else if (recipe.sandbox?.enabled) {
-            refuse(
-              `steps.${step}'s "${action.name}" names \`agent: ${value}\`, but ${value} cannot run sandboxed yet — ` +
-                'set `sandbox.enabled: false` or name another agent',
-            )
-          }
+          if (!isUnsandboxedAgent(value!) || !recipe.sandbox?.enabled) continue
+          refuse(
+            `steps.${step}'s "${action.name}" names \`${key}: ${value}\`, but ${value} cannot run sandboxed yet — ` +
+              'set `sandbox.enabled: false` or name another agent',
+          )
         }
         if ('judge' in action && action.when === 'sandbox-refused') {
           // Allowing a host or installing the sandbox is the operator's, and

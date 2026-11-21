@@ -1073,6 +1073,23 @@ describe('the action', () => {
     expect(reply.seen[0]?.outputSchema).toBe(REVIEW_ANSWER_JSON_SCHEMA)
   })
 
+  /** A runtime that cannot force the shape (#1300) answers in text: valid JSON in it is read, and prose is `unreadable`. */
+  it('reads the findings from the text of a runtime that sent no structured answer', async () => {
+    const result = await actionWith(outcome({ text: JSON.stringify({ findings: [finding()] }) })).run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.findings).toHaveLength(1)
+    expect(result.unreadable).toBeUndefined()
+  })
+
+  it('is unreadable when the text of such a runtime holds no JSON answer', async () => {
+    const result = await actionWith(outcome({ text: 'Looks fine to me, nothing to flag.' })).run(context)
+
+    expect(result.verdict).toBe('failed')
+    expect(result.unreadable).toBe(true)
+    expect(result.findings).toEqual([])
+  })
+
   /**
    * **`outcome.structured` is read directly, and `outcome.text` is not a
    * second opinion on the same answer** (`#369`). A runtime that honoured the
