@@ -224,6 +224,20 @@ export interface GitHub {
   refSha(ref: string): E<string>
 
   /**
+   * Whether `refs/heads/<name>` exists — **that exact ref**. `matchingRefs` is a
+   * prefix match, so it would call `steven-zhc/foundry` present because
+   * `steven-zhc/foundry-pr-7` is. 200 is true, 404 is false, anything else
+   * fails: an unreadable remote is never *absent*.
+   */
+  branchExists(name: string): E<boolean>
+
+  /**
+   * Makes `refs/heads/<name>` at `sha`. A 422 *Reference already exists* is
+   * success — the branch is there, which is what was asked for.
+   */
+  createBranch(name: string, sha: string): E<void>
+
+  /**
    * Every ref beginning `refs/<prefix>`, named without that `refs/` —
    * `heads/agent/240-attempt-1`.
    *
@@ -424,6 +438,8 @@ export interface GitHubClient {
   defaultBranch(): Promise<string>
   fileAt(path: string, ref: string): Promise<string | null>
   refSha(ref: string): Promise<string>
+  branchExists(name: string): Promise<boolean>
+  createBranch(name: string, sha: string): Promise<void>
   matchingRefs(prefix: string): Promise<readonly string[]>
   deleteRef(ref: string): Promise<void>
   listOpenIssues(): Promise<Issue[]>
@@ -790,6 +806,25 @@ export const makeGitHub = (
           return raw.sha
         }),
 
+        branchExists: Effect.fn('github.branchExists')(function* (name: string) {
+          return yield* send<unknown>('GET', `${repoPath}/git/ref/heads/${name}`).pipe(
+            Effect.map(() => true),
+            Effect.catchIf(
+              (err) => err.status === 404,
+              () => Effect.succeed(false),
+            ),
+          )
+        }),
+
+        createBranch: Effect.fn('github.createBranch')(function* (name: string, sha: string) {
+          yield* send<unknown>('POST', `${repoPath}/git/refs`, { ref: `refs/heads/${name}`, sha }).pipe(
+            Effect.catchIf(
+              (err) => err.status === 422 && /already exists/i.test(err.detail),
+              () => Effect.void,
+            ),
+          )
+        }),
+
         matchingRefs: Effect.fn('github.matchingRefs')(function* (prefix: string) {
           // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
           // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
@@ -915,6 +950,8 @@ const toClient = (github: GitHub): GitHubClient => ({
   defaultBranch: () => runGitHub(github.defaultBranch()),
   fileAt: (path, ref) => runGitHub(github.fileAt(path, ref)),
   refSha: (ref) => runGitHub(github.refSha(ref)),
+  branchExists: (name) => runGitHub(github.branchExists(name)),
+  createBranch: (name, sha) => runGitHub(github.createBranch(name, sha)),
   matchingRefs: (prefix) => runGitHub(github.matchingRefs(prefix)),
   deleteRef: (ref) => runGitHub(github.deleteRef(ref)),
   listOpenIssues: () => runGitHub(github.listOpenIssues()),

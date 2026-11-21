@@ -7,7 +7,7 @@ import { basename } from 'node:path'
 
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
-import { type Recipe, branchOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import { type Recipe, assigneeOf, branchOf, kindsOf, modeOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
@@ -31,6 +31,8 @@ export interface CardRecipe {
   reviewer: CardAgent | null
   checks: readonly string[]
   approves: boolean
+  /** Set only for a team project, read from the recipe as written: who it takes issues for, and the branch it works on. */
+  team?: { login: string | null; personal: string }
 }
 
 export interface SetupCardFacts {
@@ -87,6 +89,9 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
     reviewer: agentOf(steps['review']),
     checks: (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run'])),
     approves: (steps['proposed'] ?? []).some((a) => 'human' in a),
+    ...(modeOf(recipe) === 'team'
+      ? { team: { login: assigneeOf(recipe)?.login ?? null, personal: branchOf(recipe) } }
+      : {}),
   }
 }
 
@@ -182,7 +187,18 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         title: 'this project',
         rows: [
           ['code', where === 'github' ? `${recipe.code}  github` : `${tilde(recipe.code, userHome)}  local`],
-          ['lands on', landsOnRow(recipe, userHome, where)],
+          ...(recipe.team === undefined
+            ? [['lands on', landsOnRow(recipe, userHome, where)] as const]
+            : [
+                [
+                  'takes',
+                  recipe.team.login === null
+                    ? 'every ticket — local tickets are yours'
+                    : `issues assigned to ${recipe.team.login}`,
+                ] as const,
+                ['works on', `${recipe.team.personal}; main is brought in when you submit a PR`] as const,
+                ['main', 'only through a PR you submit, one at a time · lingtai pr — never pushes main'] as const,
+              ]),
           ['tickets', `${recipe.tickets === 'db' ? 'Lingtai’s table' : 'GitHub issues'} · ${recipe.kinds.join(' › ')}`],
         ],
       },
@@ -196,16 +212,24 @@ export function renderSetupCard(facts: SetupCardFacts): string {
             recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
           ],
           ['trial', trialRow(trial)],
-          [
-            'approve',
-            recipe.approves ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking',
-          ],
+          ...(recipe.team !== undefined && !recipe.approves
+            ? []
+            : [
+                [
+                  'approve',
+                  recipe.approves ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking',
+                ] as const,
+              ]),
+          ...(recipe.team === undefined ? [] : [['next', 'assign yourself an issue, then lingtai start'] as const]),
         ],
       },
     )
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
-  const top = `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
+  const top =
+    recipe?.team !== undefined && facts.project !== undefined && !facts.updated
+      ? `${symbol.pass()} ${facts.project} added — team`
+      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),

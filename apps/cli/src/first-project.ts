@@ -100,6 +100,7 @@ import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } fro
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe } from './setup-card.ts'
+import { askMode, askPersonal, type Mode } from './team.ts'
 import { ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
@@ -665,49 +666,102 @@ function runLocalBranch(
       }
     }
 
+    // Solo or team (0130 §1), asked here and not inside `askRecipe`, because the branch below is made before it
+    // runs — a file that already exists keeps the mode it names. `--defaults` takes team.
+    const fileText = onDisk.text()
+    const lingtaiWorld = flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world
+    let mode: Mode = onDisk.get(['mode']) === 'team' ? 'team' : 'solo'
+    if (fileText === null) {
+      const asked = yield* askMode(lingtaiWorld, { given: flags['mode'] ?? null, kept: world.kept })
+      if ('refused' in asked) return { refused: asked.refused }
+      mode = asked.mode
+    }
+    // A team project's `branch.main` is the branch checked out, or `--main` (0130 §2); never `lingtai-base`.
+    let mainBranch: string | null = null
+    if (mode === 'team') {
+      const landFlag = flags['land']
+      if (landFlag !== undefined && landFlag !== 'hold') {
+        return {
+          refused: `a team project lands on branch.personal, not on ${landFlag} — pass --personal <branch> to name it. ${world.kept}`,
+        }
+      }
+      const fileMain = onDisk.get(['branch', 'main'])
+      const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+      const checkedOut = head.ok ? head.stdout.trim() : ''
+      mainBranch = flags['main'] ?? (typeof fileMain === 'string' ? fileMain : checkedOut)
+      if (mainBranch === '') {
+        return {
+          refused: `${toplevel} has no branch checked out, and a team project's main is the one that is. Check out a branch, or pass --main <branch>. ${world.kept}`,
+        }
+      }
+      const mainTip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${mainBranch}^{commit}`])
+      if (!mainTip.ok) {
+        return {
+          refused: `${mainBranch} is not a branch in ${toplevel} — ${(mainTip.stderr || mainTip.stdout).trim()}. ${world.kept}`,
+        }
+      }
+    }
+
     // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
-    const baseAnswer = yield* questionEffect(
-      flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world,
-      {
-        name: 'the base branch',
-        flag: '--main <branch>',
-        given: flags['main'] ?? null,
-        prompt: "the branch this project's recipe governs and merges into",
-        // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
-        current: typeof currentBase === 'string' && ports === null ? currentBase : null,
-        detected,
-        kept: world.kept,
-        ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
-        ...(world.command === undefined ? {} : { command: world.command }),
-        validate: (answer) =>
-          Effect.gen(function* () {
-            source = null
-            const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
-            if (check.ok) {
-              fromSha = check.stdout.trim()
-              return null
-            }
-            if (answer !== LINGTAI_BASE) {
-              return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
-            }
-            // Decides only: `validate` can run again on a refusal, so nothing is created here.
-            const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
-            const branch = head.ok ? head.stdout.trim() : ''
-            const tip =
-              branch === ''
-                ? null
-                : yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
-            if (tip === null || !tip.ok) {
-              return (
-                `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
-                'Check out a branch, or pass --main <branch>'
-              )
-            }
-            source = branch
-            return null
-          }),
-      },
-    )
+    const baseAnswer =
+      mode === 'team' && mainBranch !== null
+        ? yield* askPersonal(lingtaiWorld, {
+            given: flags['personal'] ?? null,
+            fallback: typeof currentBase === 'string' && ports === null ? currentBase : LINGTAI_BASE,
+            main: mainBranch,
+            kept: world.kept,
+            validate: (answer) =>
+              Effect.gen(function* () {
+                source = null
+                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
+                if (check.ok) {
+                  fromSha = check.stdout.trim()
+                  return null
+                }
+                // Decides only: `validate` can run again on a refusal, so nothing is created here.
+                source = mainBranch
+                return null
+              }),
+          }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
+        : yield* questionEffect(flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world, {
+            name: 'the base branch',
+            flag: '--main <branch>',
+            given: flags['main'] ?? null,
+            prompt: "the branch this project's recipe governs and merges into",
+            // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
+            current: typeof currentBase === 'string' && ports === null ? currentBase : null,
+            detected,
+            kept: world.kept,
+            ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+            ...(world.command === undefined ? {} : { command: world.command }),
+            validate: (answer) =>
+              Effect.gen(function* () {
+                source = null
+                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
+                if (check.ok) {
+                  fromSha = check.stdout.trim()
+                  return null
+                }
+                if (answer !== LINGTAI_BASE) {
+                  return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
+                }
+                // Decides only: `validate` can run again on a refusal, so nothing is created here.
+                const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+                const branch = head.ok ? head.stdout.trim() : ''
+                const tip =
+                  branch === ''
+                    ? null
+                    : yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+                if (tip === null || !tip.ok) {
+                  return (
+                    `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
+                    'Check out a branch, or pass --main <branch>'
+                  )
+                }
+                source = branch
+                return null
+              }),
+          })
     if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
     const base = baseAnswer.answer
 
@@ -859,9 +913,16 @@ function runLocalBranch(
     const seeds = [
       // `--land <branch>` is the unattended landing, so it takes a `human:` hold off `steps.proposed` as it does elsewhere.
       ...landOnBranchChanges(
-        base,
+        // A team project's `branch.main` is the checked-out branch; the branch made above is `branch.personal`.
+        mode === 'team' && mainBranch !== null ? mainBranch : base,
         found !== undefined && flags['land'] !== undefined && flags['land'] !== 'hold' ? currentProposed : [],
       ),
+      ...(mode === 'team'
+        ? [
+            { path: ['mode'], value: 'team' },
+            { path: ['branch', 'personal'], value: base },
+          ]
+        : []),
       { path: ['repo', 'remote'], value: remote },
       ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
     ]
@@ -915,6 +976,8 @@ function runLocalBranch(
       : yield* askRecipeEffect(world, {
           project: name,
           local: true,
+          // Decided above, before the branch was made; `askRecipe` asks no mode of a local project.
+          mode,
           proposal,
           runtimes,
           reader: world.setupReader(toplevel),

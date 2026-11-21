@@ -50,6 +50,8 @@ it('keeps lingtai:hold in the target and drops the stale lingtai:waiting', async
     }),
     setLabels: async () => {},
     closeIssue: async () => {},
+    branchExists: async () => false,
+    createBranch: async () => {},
     matchingRefs: async () => [],
     deleteRef: async () => {},
   }

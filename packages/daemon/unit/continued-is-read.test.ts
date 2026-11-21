@@ -89,6 +89,8 @@ function fakeClient(labels: readonly string[]) {
     }),
     setLabels: async () => {},
     closeIssue: async () => {},
+    branchExists: async () => false,
+    createBranch: async () => {},
     matchingRefs: async () => [],
     deleteRef: async () => {},
   }
