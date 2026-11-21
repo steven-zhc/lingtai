@@ -97,6 +97,7 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }]),
     fetch: () => Effect.void,
     projects: () => Effect.succeed(['lingtai']),
+    tickets: () => Effect.fail(new Error('no ticket channel in this test')),
     github: () => Effect.succeed(github),
     facts: (_project, tickets) =>
       Effect.succeed(tickets.map((ticket) => ({ ticket, open: w.open[ticket] ?? null, spend: 0.5 }))),

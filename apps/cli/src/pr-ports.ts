@@ -5,6 +5,8 @@
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
 import type { PrPorts } from '@lingtai/conductor'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { githubClientAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -94,6 +96,16 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
         return yield* answered(gitEffect([...args], { cwd: mirrorPathFor(project), token }))
       }),
     github: githubOf,
+    // The project's own channel, never the raw GitHub client: a `db` project's ticket numbers are not issues there.
+    tickets: (project) =>
+      Effect.gen(function* () {
+        const state = yield* readProjectStateEffect(project, store).pipe(Effect.mapError(asError))
+        if (state.owner === null) {
+          const recipe = (yield* currentRecipeEffect(state)).recipe
+          return (yield* ownerlessClientEffect(state, recipe)).client
+        }
+        return (yield* projectClientEffect(state)).client
+      }).pipe(Effect.mapError(asError)),
     facts: (project, tickets) =>
       Effect.gen(function* () {
         const github = yield* githubOf(project).pipe(Effect.orElseSucceed(() => null))

@@ -26,6 +26,8 @@ import {
   restartTransition,
   draftOpenedTransition,
   openedTransition,
+  mergedTransition,
+  closedTransition,
   waitTransition,
   ticketStream,
   integrationStream,
@@ -200,6 +202,26 @@ export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'Pr
     (_state, appended) => appended,
   )
 
+/** The PR was found merged. A PR already merged or closed appends nothing. */
+export const recordPrMerged = (project: string, n: number, merged: PayloadOf<'PrMerged'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergedTransition(state, merged),
+    (_state, appended) => appended,
+  )
+
+/** The PR was found closed without merging; it holds no tickets from here on. */
+export const recordPrClosed = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => closedTransition(state, closed),
+    (_state, appended) => appended,
+  )
+
 /** A step needs a person. The same wait twice appends nothing. */
 export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrWaiting'>, store: EventStore) =>
   transitionPr(
@@ -283,7 +305,7 @@ export function readPrDraft(
 
     const held = new Set<string>()
     for (const pr of yield* listPrs(project, store)) {
-      if (pr.status === 'refused') continue
+      if (pr.status === 'refused' || pr.status === 'closed') continue
       for (const t of pr.tickets) held.add(t.ticket)
     }
 

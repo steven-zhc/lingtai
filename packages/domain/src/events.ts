@@ -2603,6 +2603,25 @@ export const PrOpened = z.object({
 })
 
 /**
+ * The PR was merged: `how` says whether git found its head on `branch.main` or the code host said so (a squash or
+ * rebase merge leaves nothing reachable). `mergeSha` is the host's merge commit, null when git answered. Terminal.
+ *
+ * @summary A PR was merged, found by git reachability or reported by the code host.
+ */
+export const PrMerged = z.object({
+  how: z.enum(['host', 'git']),
+  headSha: z.string().min(1),
+  mergeSha: z.string().nullable(),
+})
+
+/**
+ * The PR was closed on the code host without being merged. Its tickets are back in the draft. Terminal.
+ *
+ * @summary A PR was closed on the code host without merging; its tickets return to Draft.
+ */
+export const PrClosed = z.object({ headSha: z.string().min(1) })
+
+/**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
@@ -2920,6 +2939,8 @@ export const EVENTS = {
   PrPushed,
   PrDraftOpened,
   PrOpened,
+  PrMerged,
+  PrClosed,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -3039,6 +3060,8 @@ export const EVENT_AT = {
   PrPushed: ['outside'],
   PrDraftOpened: ['outside'],
   PrOpened: ['outside'],
+  PrMerged: ['outside'],
+  PrClosed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

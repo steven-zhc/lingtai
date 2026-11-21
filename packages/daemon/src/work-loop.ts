@@ -303,7 +303,17 @@ export interface WorkLoopOptions {
    * `SUBSCRIBER_TIMEOUT_MS` is never recorded as a failed plugin. `resume` serves every PR a request or a restart
    * left unfinished, once, at the end of `start()`.
    */
-  pr?: { serve: (event: Envelope) => Effect.Effect<void>; resume: () => Effect.Effect<void> }
+  pr?: {
+    serve: (event: Envelope) => Effect.Effect<void>
+    resume: () => Effect.Effect<void>
+    /**
+     * What a PR came to, and every PR still owed a serve (#1317): run at the end of `start()` in place of `resume`,
+     * and on the sweep timer, **whether or not the conductor is paused** — it records a fact and takes no work, so
+     * it never goes through `drain` and never asks `paused` or `shutdown`. Tracked, so `stop()` waits for it; a tick
+     * that finds the last one still running starts nothing.
+     */
+    sweep?: () => Effect.Effect<void>
+  }
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
@@ -438,6 +448,23 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       tell(`pr failed on ${event.type}: ${reason}`)
       void Effect.runPromiseWith(services)(recorder.record('pr', event, reason, undefined))
     })
+  }
+
+  let sweepingPrs = false
+  /** One PR sweep (or the resume, for a handler with no sweep), tracked; a tick that finds one running starts none. */
+  function sweepPrs(): Promise<void> {
+    const handlers = options.pr
+    if (handlers === undefined || sweepingPrs || stopped) return Promise.resolve()
+    sweepingPrs = true
+    const run = Effect.runPromiseWith(services)((handlers.sweep ?? handlers.resume)())
+    passesInFlight.track(run)
+    return run.then(
+      () => void (sweepingPrs = false),
+      (err: unknown) => {
+        sweepingPrs = false
+        tell(`pr sweep failed: ${String(err instanceof Error ? err.message : err)}`)
+      },
+    )
   }
 
   // ------------------------------------------------ the subscriber boundary --
@@ -661,12 +688,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // A request made while the daemon was down is waiting in the stream rather than lost, and a walk a restart
         // cut off is resumed at its first unrecorded step. Tracked, so the drain that follows waits for it.
         if (options.pr) {
-          const resume = options.pr.resume()
-          const run = Effect.runPromiseWith(services)(resume)
-          passesInFlight.track(run)
-          void run.catch((err: unknown) =>
-            tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`),
-          )
+          void sweepPrs()
         }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
@@ -674,7 +696,16 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         const every = options.sweepMs ?? SWEEP_MS
         if (every > 0) {
           yield* Effect.forkIn(
-            Effect.forever(Effect.sleep(every).pipe(Effect.andThen(Effect.sync(() => void kick('sweep'))))),
+            Effect.forever(
+              Effect.sleep(every).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    void kick('sweep')
+                    void sweepPrs()
+                  }),
+                ),
+              ),
+            ),
             scope,
           )
         }

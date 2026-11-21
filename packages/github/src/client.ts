@@ -154,6 +154,15 @@ export interface OpenPull {
   readonly draft: boolean
 }
 
+/** What the sweep reads of one pull request (0130 §5): only these fields of GitHub's answer. */
+export interface PullState {
+  readonly state: 'open' | 'closed'
+  readonly merged: boolean
+  readonly mergeCommitSha: string | null
+  readonly headSha: string
+  readonly updatedAt: string
+}
+
 interface RawPull {
   number: number
   node_id: string
@@ -319,6 +328,12 @@ export interface GitHub {
    * Fails on anything but an answer: an unreadable list is never *no pull request* (0130 §5).
    */
   findOpenPull(head: string): E<readonly OpenPull[]>
+
+  /**
+   * One pull request's state, read strictly: an answer whose `state` is not `open` or `closed`, or whose `merged` is
+   * not a boolean, **fails** — an absent field is never *false*. A 404 is a failure too, never *closed*.
+   */
+  getPull(number: number): E<PullState>
 
   /**
    * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
@@ -996,6 +1011,29 @@ export const makeGitHub = (
             ),
           )
           return raw.map(toPull).filter((p) => p.headRef === head)
+        }),
+
+        getPull: Effect.fn('github.getPull')(function* (number: number) {
+          const path = `${repoPath}/pulls/${number}`
+          const raw = yield* asPullCall('read', send<Record<string, unknown>>('GET', path))
+          const head = raw['head'] as { sha?: unknown } | null | undefined
+          const sha = raw['merge_commit_sha']
+          if (
+            (raw['state'] !== 'open' && raw['state'] !== 'closed') ||
+            typeof raw['merged'] !== 'boolean' ||
+            typeof head?.sha !== 'string' ||
+            typeof raw['updated_at'] !== 'string' ||
+            !(sha === null || sha === undefined || typeof sha === 'string')
+          ) {
+            return yield* new GitHubFailed(0, path, `the answer for pull request ${number} is not the five fields read`)
+          }
+          return {
+            state: raw['state'],
+            merged: raw['merged'],
+            mergeCommitSha: sha ?? null,
+            headSha: head.sha,
+            updatedAt: raw['updated_at'],
+          } satisfies PullState
         }),
 
         openDraftPull: Effect.fn('github.openDraftPull')(function* (input: {
