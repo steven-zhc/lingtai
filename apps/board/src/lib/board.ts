@@ -1126,6 +1126,15 @@ export async function queueFilters(
     for (const kind of rankedKinds(filter.kinds, modeOf(filter.recipe)))
       if (!kindOrder.includes(kind)) kindOrder.push(kind)
   }
+  // A team project ranks `lingtai:pr-fix` ahead of its own kinds, and a solo project has no such
+  // ticket on the board, so the merged order puts it first whichever project was read first.
+  for (const filter of filters) {
+    if (!filter.ok || modeOf(filter.recipe) !== 'team') continue
+    const [prFix] = rankedKinds([], 'team')
+    kindOrder.splice(kindOrder.indexOf(prFix!), 1)
+    kindOrder.unshift(prFix!)
+    break
+  }
   return { askable, problems, limits, backoffMs, plans, ticketSources, kindOrder }
 }
 
