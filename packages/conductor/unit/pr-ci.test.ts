@@ -36,6 +36,7 @@ interface World {
   checks: CiCheck[]
   detect: 'configured' | 'none'
   draft: boolean
+  pullHead: string
   marked: string[]
   readFails: boolean
   markFails: boolean
@@ -97,7 +98,7 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         state: 'open',
         merged: false,
         mergeCommitSha: null,
-        headSha: FROZEN,
+        headSha: w.pullHead,
         updatedAt: 'x',
         draft: w.draft,
       } satisfies PullState),
@@ -123,6 +124,7 @@ const aWorld = (checks: CiCheck[]): World => ({
   checks,
   detect: 'configured',
   draft: true,
+  pullHead: FROZEN,
   marked: [],
   readFails: false,
   markFails: false,
@@ -261,6 +263,16 @@ describe('the ci and ready steps', () => {
     f.markFails = true
     await serve(ports(failing, f, recipeWith())).catch(() => undefined)
     expect(await types(failing)).not.toContain('PrOpened')
+  })
+
+  it('a head pushed after CI was read is not marked ready and appends no PrOpened', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    w.pullHead = 'b'.repeat(40)
+    await serve(ports(store, w, recipeWith()))
+    expect(w.marked).toEqual([])
+    expect(await types(store)).not.toContain('PrOpened')
+    expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
   })
 
   it('the step code imports nothing from the one adapter', () => {

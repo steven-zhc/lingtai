@@ -108,10 +108,9 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
       }),
     github: githubOf,
     // The CI provider the recipe names, over this project's GitHub and mirror (#1339).
-    ci: (project) =>
+    ci: (project, github) =>
       Effect.gen(function* () {
         const recipe = yield* recipeOf(project)
-        const github = yield* githubOf(project)
         return ciProviderFor(recipe, {
           github,
           git: (args) => answered(gitEffect([...args], { cwd: mirrorPathFor(project) })),

@@ -96,6 +96,23 @@ describe('the checks reads and the ready mutation', () => {
     expect(combined).toEqual({ total: 0, statuses: [] })
   })
 
+  it('reads every page of statuses and fails on a short count', async () => {
+    const page = (n: number, count: number) =>
+      Array.from({ length: count }, (_, i) => ({ context: `c${n}-${i}`, state: 'success', target_url: null }))
+    const g = github((url) => json({ total_count: 31, statuses: url.endsWith('&page=1') ? page(1, 30) : page(2, 1) }))
+    const combined = await Effect.runPromise(Effect.flatMap(g, (x) => x.combinedStatusAt('abc')))
+    expect(combined.statuses).toHaveLength(31)
+    const short = await Effect.runPromise(
+      Effect.flip(
+        Effect.flatMap(
+          github((url) => json({ total_count: 31, statuses: url.endsWith('&page=1') ? page(1, 30) : [] })),
+          (x) => x.combinedStatusAt('abc'),
+        ),
+      ),
+    )
+    expect(short.message).toContain('30 of 31')
+  })
+
   it('marks ready through GraphQL with the node id', async () => {
     let sent: { method?: string; body?: string; url: string } | null = null
     await Effect.runPromise(

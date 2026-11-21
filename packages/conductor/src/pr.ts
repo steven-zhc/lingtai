@@ -83,7 +83,7 @@ export interface PrPorts {
    * The project's CI provider, built over its GitHub and its mirror (#1339). Null is *none declared* (`pr.ci.provider:
    * none`). **Absent, the `ci` step answers `again`**: a host that has not wired one reads nothing and decides nothing.
    */
-  readonly ci?: (project: string) => Effect.Effect<CiProviderShape | null, Error>
+  readonly ci?: (project: string, github: GitHub) => Effect.Effect<CiProviderShape | null, Error>
   /** What the description reads of each ticket: whether it is still open on GitHub, and what it cost. Null is unknown. */
   facts(
     project: string,
@@ -389,7 +389,9 @@ const ciStep: PrStep = {
       })
       if (settings.provider === 'none') return skipped('the recipe says pr.ci.provider: none')
       if (ports.ci === undefined) return { kind: 'again' } as StepAnswer
-      const provider = yield* ports.ci(project)
+      // Built over the step's own (bounded) GitHub, so no read the adapter makes outlives the walk's limit.
+      const github = yield* ports.github(project)
+      const provider = yield* ports.ci(project, github)
       if (provider === null) return skipped('the recipe says pr.ci.provider: none')
 
       const head = {
@@ -488,6 +490,15 @@ const readyStep: PrStep = {
           ),
         )
       if (pull === null) return { kind: 'again' } as StepAnswer
+      // CI's verdict is about `target`; a head pushed since is a different commit and was never read.
+      if (pull.headSha !== target) {
+        return {
+          kind: 'wait',
+          reason: 'branch-moved',
+          detail: `the pull request is at ${pull.headSha.slice(0, 7)}, but CI was read on ${target.slice(0, 7)}`,
+          headSha: target,
+        } as StepAnswer
+      }
       if (pull.draft) yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
       return {
         kind: 'done',
@@ -704,6 +715,23 @@ const bounded = (ports: PrPorts, ms: number): PrPorts => {
         ? ports.remote(project, args)
         : within('remote', ports.remote(project, args), () => new Error('the remote read timed out')),
     tickets: (project) => within('tickets', ports.tickets(project), () => new Error('the ticket channel timed out')),
+    ci:
+      ports.ci === undefined
+        ? undefined
+        : (project, github) =>
+            ports.ci!(project, github).pipe(
+              Effect.map((provider): CiProviderShape | null =>
+                provider === null
+                  ? null
+                  : {
+                      ...provider,
+                      detect: (head) =>
+                        within('ci detect', provider.detect(head), () => new Error('the CI detect timed out')),
+                      observe: (sha) =>
+                        within('ci observe', provider.observe(sha), () => new Error('the CI read timed out')),
+                    },
+              ),
+            ),
     // Building the client is itself a request (the installation read), so it is bounded as well as the calls on it.
     github: (project) =>
       within('github', ports.github(project), () => new Error('the GitHub client timed out')).pipe(

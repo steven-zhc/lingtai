@@ -42,8 +42,14 @@ describe('ciVerdict', () => {
   it('only the required names count: a failing preview beside a green test is green', () => {
     expect(verdict([check('test', 'success'), check('preview', 'failure')], at(5), ['test'])).toEqual({ kind: 'green' })
   })
+  it('required names listed but none on the head: none-started after 30 minutes', () => {
+    expect(verdict([], at(31), ['test']).kind).toBe('none-started')
+    expect(verdict([check('preview', 'success')], at(31), ['test']).kind).toBe('none-started')
+  })
   it('a required name absent from the head is running, and ends in timed-out', () => {
     expect(verdict([check('preview', 'success')], at(5), ['test']).kind).toBe('running')
-    expect(verdict([check('preview', 'success')], at(90), ['test'], 60 * 60_000).kind).toBe('timed-out')
+    expect(verdict([check('a', 'success'), check('b', 'success')], at(90), ['a', 'b', 'test'], 60 * 60_000).kind).toBe(
+      'timed-out',
+    )
   })
 })

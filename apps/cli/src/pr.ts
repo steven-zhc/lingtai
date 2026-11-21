@@ -12,27 +12,31 @@ import { type PrState, isOpen, prStepRows } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type PrDraftTicket, latestPr, readPr, readPrDraft, requestPrSubmit } from '@lingtai/project'
-import { type Recipe, modeOf } from '@lingtai/recipe'
+import { type Recipe, ciOf, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { livePrPorts } from './pr-ports.ts'
 import { type Answered, refusal } from './verdict.ts'
 
 /** The CI line (`CI 5/5 green`, `CI ✕ e2e / chromium`, `CI none: …`), the failing checks' links, and any artifacts. */
-export function ciLines(pr: PrState): string[] {
+export function ciLines(pr: PrState, required: readonly string[] | 'all' = 'all'): string[] {
   if (pr.ciSkipped !== null && pr.checks === null) return [`  CI none: ${pr.ciSkipped.why}`]
   const read = pr.checks
   if (read === null) return []
   const passing = new Set(['success', 'neutral', 'skipped'])
-  const failing = read.checks.filter((c) => !passing.has(c.state))
+  // The same checks the verdict counted: `pr.ci.required` filters here as it did there.
+  const counted = required === 'all' ? read.checks : read.checks.filter((c) => required.includes(c.name))
+  const failing = read.verdict === 'green' ? [] : counted.filter((c) => !passing.has(c.state))
+  const skipped = counted.filter((c) => c.state === 'skipped')
   const head =
     failing.length === 0
-      ? `  CI ${read.checks.length}/${read.checks.length} green`
-      : `  CI ✕ ${failing.map((c) => c.name).join(', ')} · ${read.checks.length - failing.length} of ${read.checks.length} green`
+      ? `  CI ${counted.length}/${counted.length} green`
+      : `  CI ✕ ${failing.map((c) => c.name).join(', ')} · ${counted.length - failing.length} of ${counted.length} green`
   return [
     head,
+    ...(skipped.length === 0 ? [] : [`    skipped: ${skipped.map((c) => c.name).join(', ')}`]),
     ...failing.map((c) => `    ${c.name}: ${c.url}`),
-    ...read.checks.flatMap((c) => (c.artifacts ?? []).map((a) => `    ${c.name} ${a.kind}: ${a.url}`)),
+    ...counted.flatMap((c) => (c.artifacts ?? []).map((a) => `    ${c.name} ${a.kind}: ${a.url}`)),
   ]
 }
 
@@ -119,7 +123,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
         ...stepLines(open),
       )
       if (open.host !== null) lines.push(`  pull request #${open.host.number}: ${open.host.url}`)
-      lines.push(...ciLines(open))
+      lines.push(...ciLines(open, ciOf(recipe).required))
       // On a remote Lingtai does not follow, the person opens the PR by hand: the description is theirs to paste.
       if (open.status === 'in-review' && prHostOf(recipe) === 'none') {
         const described = yield* world.describe(project, open.n)

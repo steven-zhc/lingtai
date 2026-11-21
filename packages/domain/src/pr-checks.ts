@@ -68,7 +68,7 @@ export function ciVerdict(input: {
   const counted = required === 'all' ? input.checks : input.checks.filter((c) => required.includes(c.name))
   const missing = required === 'all' ? [] : required.filter((name) => !counted.some((c) => c.name === name))
 
-  if (counted.length === 0 && missing.length === 0) {
+  if (counted.length === 0) {
     return now.getTime() - pushedAt.getTime() >= NONE_STARTED_MS ? { kind: 'none-started' } : { kind: 'running' }
   }
 

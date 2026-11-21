@@ -171,6 +171,8 @@ export interface CheckRun {
   readonly status: string
   readonly conclusion: string | null
   readonly url: string
+  /** `details_url`: where the check's own evidence lives (an external log), which may differ from `url`. */
+  readonly detailsUrl: string
   readonly startedAt: string | null
   readonly completedAt: string | null
 }
@@ -1099,6 +1101,7 @@ export const makeGitHub = (
                 status: r['status'],
                 conclusion: typeof r['conclusion'] === 'string' ? r['conclusion'] : null,
                 url: typeof r['html_url'] === 'string' ? r['html_url'] : '',
+                detailsUrl: typeof r['details_url'] === 'string' ? r['details_url'] : '',
                 startedAt: typeof r['started_at'] === 'string' ? r['started_at'] : null,
                 completedAt: typeof r['completed_at'] === 'string' ? r['completed_at'] : null,
               })
@@ -1111,25 +1114,39 @@ export const makeGitHub = (
         }),
 
         combinedStatusAt: Effect.fn('github.combinedStatusAt')(function* (sha: string) {
-          const path = `${repoPath}/commits/${sha}/status`
-          const raw = yield* asChecksCall('statuses', send<{ total_count?: unknown; statuses?: unknown }>('GET', path))
-          if (typeof raw.total_count !== 'number' || !Array.isArray(raw.statuses)) {
-            return yield* new GitHubFailed(0, path, `the answer for the status at ${sha} is not the fields read`)
+          const statuses: CombinedStatus['statuses'][number][] = []
+          let total = 0
+          // `total_count` is the whole; `statuses` is one page of it. Every page is read, and a short count is a failure.
+          for (let page = 1; ; page++) {
+            const path = `${repoPath}/commits/${sha}/status?per_page=100&page=${page}`
+            const raw = yield* asChecksCall(
+              'statuses',
+              send<{ total_count?: unknown; statuses?: unknown }>('GET', path),
+            )
+            if (typeof raw.total_count !== 'number' || !Array.isArray(raw.statuses)) {
+              return yield* new GitHubFailed(0, path, `the answer for the status at ${sha} is not the fields read`)
+            }
+            total = raw.total_count
+            for (const s of raw.statuses as Record<string, unknown>[]) {
+              if (typeof s['context'] === 'string' && typeof s['state'] === 'string') {
+                statuses.push({
+                  context: s['context'],
+                  state: s['state'],
+                  url: typeof s['target_url'] === 'string' ? s['target_url'] : null,
+                })
+              }
+            }
+            if (statuses.length >= total || raw.statuses.length === 0) break
+            if (page >= LINK_PAGES) break
           }
-          return {
-            total: raw.total_count,
-            statuses: (raw.statuses as Record<string, unknown>[]).flatMap((s) =>
-              typeof s['context'] === 'string' && typeof s['state'] === 'string'
-                ? [
-                    {
-                      context: s['context'],
-                      state: s['state'],
-                      url: typeof s['target_url'] === 'string' ? s['target_url'] : null,
-                    },
-                  ]
-                : [],
-            ),
-          } satisfies CombinedStatus
+          if (statuses.length < total) {
+            return yield* new GitHubFailed(
+              0,
+              `${repoPath}/commits/${sha}/status`,
+              `read ${statuses.length} of ${total} statuses at ${sha} — the listing is incomplete`,
+            )
+          }
+          return { total, statuses } satisfies CombinedStatus
         }),
 
         markReadyForReview: Effect.fn('github.markReadyForReview')(function* (nodeId: string) {

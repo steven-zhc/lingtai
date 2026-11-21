@@ -96,8 +96,8 @@ export function githubActionsProvider(deps: GithubActionsDeps): CiProviderShape 
           url: r.url,
           startedAt: asDate(r.startedAt),
           endedAt: asDate(r.completedAt),
-          // Listing a run's uploaded artifacts needs `actions: read`, which 0.16 does not ask for: the log link only.
-          artifacts: r.url === '' ? [] : [{ kind: 'log' as const, name: 'log', url: r.url }],
+          // Listing a run's uploaded artifacts needs `actions: read`, which 0.16 does not ask for: the check's `details_url` as its log link only.
+          artifacts: r.detailsUrl === '' ? [] : [{ kind: 'log' as const, name: 'log', url: r.detailsUrl }],
         }))
         // `total_count: 0` is *no statuses*: the combined state reads `pending` then, and that is not a check.
         if (combined.total > 0) {
