@@ -5529,7 +5529,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       }),
                     ),
                   )
-                yield* Effect.promise(() => server.flush(runId).catch(() => {}))
+                // A flush that fails loses the round's `RunTouchedFile` rows: stop the pass, never record a clean round.
+                yield* Effect.tryPromise({
+                  try: () => server.flush(runId),
+                  catch: (err) => ({ detail: `flushing the round's hook events failed: ${(err as Error).message}` }),
+                })
                 return result
               }),
             ),
