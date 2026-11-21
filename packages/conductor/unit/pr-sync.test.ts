@@ -80,6 +80,7 @@ function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPor
     git: (_project, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
+        if (args[0] === 'rev-parse' && args[1] === '--git-dir') return { code: 0, stdout: '.' }
         if (args[0] === 'rev-parse') {
           const sha = resolved[args[3]!.replace(/\^\{commit\}$/, '')]
           return sha === undefined ? { code: 1, stdout: '' } : { code: 0, stdout: `${sha}\n` }
@@ -382,20 +383,11 @@ describe('the merge back', () => {
     const store = await inReview()
     const w = aWorld()
     w.ancestor = (a, b) => a === b
-    const refs = new Map<string, string>()
+    let logged = ''
     const p = ports(store, w)
     const withRefs = (flaky: boolean): PrPorts => ({
       ...p,
-      git: (project, args) => {
-        if (args[0] === 'update-ref' && args[1] !== '-d') refs.set(args[1]!, args[2]!)
-        if (args[0] === 'rev-parse' && args[3]!.startsWith('refs/lingtai/pr/1/back')) {
-          const sha = refs.get('refs/lingtai/pr/1/back')
-          return Effect.succeed(sha === undefined ? { code: 1, stdout: '' } : { code: 0, stdout: `${sha}\n` })
-        }
-        if (args[0] === 'rev-parse' && args[3] === `${BACK}^2^{commit}`)
-          return Effect.succeed({ code: 0, stdout: `${FROZEN}\n` })
-        return p.git(project, args)
-      },
+      git: (project, args) => (args[0] === 'log' ? Effect.succeed({ code: 0, stdout: logged }) : p.git(project, args)),
       remote: (project, args) =>
         flaky && (args[0] === 'push' || args[0] === 'ls-remote')
           ? Effect.fail(new Error('connection reset'))
@@ -418,8 +410,8 @@ describe('the merge back', () => {
       ),
     )
     expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
-    // The fetch works and the merge we made is on the branch.
-    w.ancestor = (a, b) => a === b || (a === BACK && b === PERSONAL)
+    // The fetch works and the merge we made is on the branch: found in its history, with no ref of the mirror kept.
+    logged = `${BACK} ${PERSONAL} ${FROZEN}\n`
     await Effect.runPromise(mergePrBack(withRefs(false), 'lingtai', 1))
     expect((await store.read(prStream('lingtai', 1))).at(-1)!.data).toEqual({
       prHead: FROZEN,

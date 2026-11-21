@@ -32,8 +32,10 @@ export const fetchInto = (
   pairs: readonly (readonly [from: string, to: string])[],
 ): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
-    // The mirror is made if it is not there (a daemon restarted onto a PR whose disposable mirror was removed).
-    yield* ports.fetch(project)
+    // The mirror is made if it is not there (a daemon restarted onto a PR whose disposable mirror was removed). One
+    // that is there is left alone: `ports.fetch` fetches `refs/heads/*`, which a checked-out branch would refuse.
+    const there = yield* Effect.result(ports.git(project, ['rev-parse', '--git-dir']))
+    if (there._tag === 'Failure' || there.success.code !== 0) yield* ports.fetch(project)
     const args = ['fetch', '--no-tags', 'origin', ...pairs.map(([from, to]) => `+${from}:${to}`)] as const
     const answer = yield* ports.remote(project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))

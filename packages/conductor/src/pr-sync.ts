@@ -27,8 +27,6 @@ const short = (sha: string): string => sha.slice(0, 7)
 const targetRef = (n: number): string => `refs/lingtai/pr/${n}/target`
 /** Where a step fetches a branch of the remote to: a ref of its own, never `refs/heads/*`. */
 const fetchedRef = (n: number, name: 'main' | 'personal'): string => `refs/lingtai/pr/${n}/${name}`
-/** The merge back's own evidence: written before its push, so a push whose record was lost can be told from a stranger's. */
-const backRef = (n: number): string => `refs/lingtai/pr/${n}/back`
 
 /** A failed read or write is the person's to hear of; a denied permission is the walk's own `denied` wait. */
 const orUnknown = <A>(
@@ -230,6 +228,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
     const { branch, main, prBranch } = first
     const prHead = first.lastPushed
     if (branch === null || main === null || prBranch === null || prHead === null) return
+    const backSubject = `Merge ${prBranch} into ${branch}`
     const failed = (why: 'conflict' | 'red' | 'unknown' | 'lost-push', detail: string) =>
       recordPrMergeBackFailed(project, n, { prHead, why, detail }, ports.store)
 
@@ -239,28 +238,32 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       return
     }
 
-    // True while a push of ours may have landed and nothing yet says whether it did: an error then is not a failure.
-    let mayHavePushed = false
     const attempt = (tries: number): Effect.Effect<Back, Error> =>
       Effect.gen(function* () {
         yield* ports.sweep(project)
-        const kept = yield* resolve(ports, project, backRef(n)).pipe(Effect.option)
-        mayHavePushed = kept._tag === 'Some'
         yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
         const personalSha = yield* resolve(ports, project, fetchedRef(n, 'personal'))
-        // A merge of ours that is on `branch.personal` is the push having landed, whose record was lost. It is told
-        // from a stranger's commit by being the merge made of this head, not by the head being an ancestor.
-        if (kept._tag === 'Some') {
-          const sure = yield* Effect.result(
-            Effect.gen(function* () {
-              const second = yield* resolve(ports, project, `${kept.value}^2`)
-              return second === prHead && (yield* isAncestor(ports, project, kept.value, personalSha))
-            }),
-          )
-          if (Result.isFailure(sure)) return { kind: 'unsure' } as Back
-          if (sure.success) return { kind: 'merged', mergeCommit: kept.value } as Back
+        // A merge of ours that is on `branch.personal` is a push that landed whose record was lost. It is found in
+        // `branch.personal`'s own history — a merge of this head under our subject — and not in a ref of the mirror,
+        // which is disposable and gone after a re-clone. A read that fails is unsure, never absence.
+        const found = [
+          'log',
+          '--merges',
+          '--parents',
+          '--format=%H %P',
+          '--fixed-strings',
+          '--grep',
+          backSubject,
+          '-n',
+          '200',
+          personalSha,
+        ] as const
+        const logged = yield* ports.git(project, found)
+        if (logged.code !== 0) return yield* Effect.fail(new Error(gitSaid(found, logged)))
+        for (const line of logged.stdout.split('\n')) {
+          const [sha, , second] = line.trim().split(' ')
+          if (sha !== undefined && sha !== '' && second === prHead) return { kind: 'merged', mergeCommit: sha } as Back
         }
-        mayHavePushed = false
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
           return { kind: 'failed', why: 'unknown', detail: `${short(prHead)} is not in the mirror` } as Back
@@ -277,7 +280,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           name: `pr-back-${n}-${Date.now()}`,
           at: personalSha,
           theirs: prHead,
-          message: `Merge ${prBranch} into ${branch}`,
+          message: backSubject,
         })
         if (merged.kind === 'conflict') {
           return {
@@ -303,10 +306,6 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         // The refspec is built from the personal branch alone: nothing here can name `branch.main` (0130 §7).
         const ref = `refs/heads/${branch}`
         const push = ['push', 'origin', `${merged.sha}:${ref}`] as const
-        const kept2 = ['update-ref', backRef(n), merged.sha] as const
-        const wrote = yield* ports.git(project, kept2)
-        if (wrote.code !== 0) return { kind: 'failed', why: 'unknown', detail: gitSaid(kept2, wrote) } as Back
-        mayHavePushed = true
         const pushed = yield* Effect.result(ports.remote(project, push))
         // A push that threw is as unknown as one that answered non-zero: the look below decides.
         const answer = Result.isSuccess(pushed)
@@ -321,10 +320,13 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
       }).pipe(
+        // A read or write that failed proves nothing about a push of an earlier serve: nothing is recorded, and the
+        // merge back stays owed, so the next serve looks again.
         Effect.catch((err: unknown) =>
-          Effect.succeed<Back>(
-            mayHavePushed ? { kind: 'unsure' } : { kind: 'failed', why: 'unknown', detail: asError(err).message },
-          ),
+          Effect.sync(() => {
+            ports.log?.(`pr ${n} merge back: ${asError(err).message}`)
+            return { kind: 'unsure' } as Back
+          }),
         ),
       )
 
@@ -343,7 +345,6 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       yield* recordPrMergedBack(project, n, { prHead, mergeCommit: outcome.mergeCommit, how: 'clean' }, ports.store)
       // The merge is on `branch.personal` now; the ref that kept an unpushed sync alive has nothing left to keep.
       yield* ports.git(project, ['update-ref', '-d', targetRef(n)]).pipe(Effect.ignore)
-      yield* ports.git(project, ['update-ref', '-d', backRef(n)]).pipe(Effect.ignore)
     }).pipe(Effect.catch((err: Error) => Effect.succeed(void ports.log?.(`pr ${n} merge back: ${err.message}`))))
 
     yield* (ports.lane ?? landingLane).through(
