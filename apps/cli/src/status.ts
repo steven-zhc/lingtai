@@ -17,6 +17,7 @@ import {
   passOverBaseRed,
   type BaseHead,
   projectFilter,
+  rankedKinds,
   runnableNowEffect,
   type ClientFor,
   type RecipeFor,
@@ -540,7 +541,7 @@ export const readStatus = (
       // a restarted ticket is queued, so it is listed from here and nowhere else.
       const newAttemptsByTask = new Map(tasks.map((t) => [t.taskId, t.newAttempts ?? 0]))
       const now = Date.now()
-      const offeredKinds = kinds.length > 0 ? kinds : ['bug']
+      const offeredKinds = rankedKinds(kinds.length > 0 ? kinds : ['bug'], filter.ok ? modeOf(filter.recipe) : 'solo')
       const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
 
       const rowOf = (

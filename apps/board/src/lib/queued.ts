@@ -1,4 +1,4 @@
-import { runnableNow, type SkipReason } from '@lingtai/conductor/discover'
+import { rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { held as heldBy } from '@lingtai/daemon/control'
@@ -369,7 +369,7 @@ export async function queuedFor(input: {
       plan,
       kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
       // `selectRunnable`'s own fallback (`queue.ts`), so this describes the order it used.
-      kinds: filter.kinds.length > 0 ? [...filter.kinds] : ['bug'],
+      kinds: [...rankedKinds(filter.kinds.length > 0 ? filter.kinds : ['bug'], selectionOf(filter.recipe).mode)],
       behind: at >= 0 && runnable[at + 1] ? pickBehind(runnable[at + 1]!) : null,
       problem: null,
     }

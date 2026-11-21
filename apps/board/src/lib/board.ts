@@ -1,6 +1,6 @@
 import { passOverBaseRed } from '@lingtai/conductor'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
-import { passedOver, runnableNow } from '@lingtai/conductor/discover'
+import { passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -1123,7 +1123,8 @@ export async function queueFilters(
     backoffMs.set(filter.project, filter.backoffMs)
     plans.set(filter.project, filter.plan)
     ticketSources.set(filter.project, ticketSourceOf(filter.recipe))
-    for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
+    for (const kind of rankedKinds(filter.kinds, modeOf(filter.recipe)))
+      if (!kindOrder.includes(kind)) kindOrder.push(kind)
   }
   return { askable, problems, limits, backoffMs, plans, ticketSources, kindOrder }
 }
