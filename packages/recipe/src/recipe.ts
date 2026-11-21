@@ -2567,7 +2567,7 @@ function actionsAt(step: Step) {
        * (`#268`).
        *
        * Every declared action at a step runs (0065 §2), so two of these would
-       * cut the same path twice — and `branchOf` would have to pick one, leaving
+       * cut the same path twice — and the accessors would have to pick one, leaving
        * the other displayed on the board, hashed into `configHash` and recorded
        * in `StepsResolved` while something else is what ran. That is `#61`'s
        * shape reached through a duplicate rather than through a missing call

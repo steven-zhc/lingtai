@@ -9,6 +9,7 @@ export const BRANCH_NAMES: readonly { readonly name: string; readonly valid: boo
   { name: 'feature/a.b', valid: true },
   { name: 'a-b_c', valid: true },
   { name: 'v1.0', valid: true },
+  { name: '@', valid: true },
   { name: "Steven's MacBook", valid: false },
   { name: 'has space', valid: false },
   { name: '', valid: false },

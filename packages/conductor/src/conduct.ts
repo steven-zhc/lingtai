@@ -4705,8 +4705,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `repo.submodules`, where no recipe could see, name or replace it. Now the
        * body is empty and this is what an unconfigured `admit` runs — the same
        * action a declared `worktree:` builds, over the same values, because
-       * `branchOf` and `submodulesOf` are the one place that knows which spelling a
-       * file used. So *the default cut* and *a pasted block that says what the
+       * `branchOf` and `submodulesOf` are the one place that knows where each is
+       * written. So *the default cut* and *a pasted block that says what the
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *

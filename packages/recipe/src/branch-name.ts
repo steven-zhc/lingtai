@@ -9,7 +9,6 @@
  */
 export function branchNameRefusal(name: string): string | null {
   if (name === '') return 'is empty'
-  if (name === '@') return 'cannot be the single character @'
   if (name === 'HEAD') return 'cannot be HEAD'
   if (name.startsWith('-')) return 'cannot begin with a dash'
   // eslint-disable-next-line no-control-regex

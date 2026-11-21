@@ -24,9 +24,9 @@
  * it buys no fix round and stands the pass down, which is exactly what `admit`'s
  * own body said before this existed: *it cannot refuse*.
  *
- * `base` and `submodules` are read off the action rather than off `repo:`, and
- * `branchOf`/`submodulesOf` in `@lingtai/recipe` are the one place that knows
- * which of the two spellings a recipe wrote them in.
+ * `submodules` is read off the action rather than off `repo:`, and the base is
+ * handed in (`branchOf`'s answer); `branchOf`/`submodulesOf` in
+ * `@lingtai/recipe` are the one place that knows where each is written.
  */
 import { Effect } from 'effect'
 

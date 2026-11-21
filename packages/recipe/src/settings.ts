@@ -26,14 +26,13 @@
  * the schema rather than something to paper over here.
  *
  * **`branchOf` and `submodulesOf` are the first two to have actually moved, and
- * they are still one question each** (`#268`, 0065). A recipe may write them at
- * `admit` as `worktree:`'s fields or under `repo:`, which is the same setting's
- * v1 spelling — so these two read the step first and `repo:` second, and that is
- * a **spelling** rather than a fallback: both are present on a resolved recipe,
- * and which of them a file wrote is exactly the knowledge this file exists to
- * hold alone. Every reader asks the accessor, so the merge lane lands on what
- * the tree was cut from whichever spelling was used, and there is no place for
- * the two to disagree.
+ * they are still one question each** (`#268`, 0065). `branchOf` reads
+ * `branch.personal` in team mode and `branch.main` in solo; the v1 spellings
+ * of the base (`repo.base`, `worktree.base`) are rewritten into `branch.main`
+ * before the parse (`readOldSpellings`) and never reach it. `submodulesOf`
+ * reads `worktree:` at `admit` first and `repo:` second, a **spelling** rather
+ * than a fallback. Every reader asks the accessor, so the merge lane lands on
+ * what the tree was cut from, and there is no place for the two to disagree.
  *
  * **There is one accessor per setting 0061 §4 moves, and the set is closed by
  * that list rather than by what a caller happened to need.** It was three for a
@@ -275,8 +274,7 @@ export function branchKeyOf(recipe: Recipe): 'branch.main' | 'branch.personal' {
 /**
  * Whether the worktree a pass is cut into gets the submodules.
  *
- * `branchOf`'s sibling and it moved with it: both are `worktree:`'s fields under
- * 0061 §4, and a caller that asks for one usually asks for the other in the
+ * `branchOf`'s sibling: a caller that asks for one usually asks for the other in the
  * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
  *
  * **A declared `worktree:` must name it** — `worktreePlugin`'s schema has no
@@ -374,8 +372,8 @@ export function ticketSourceOf(recipe: Recipe): TicketSource {
  *
  * **Not one of `queue:`'s four, and `takeAt` plays no part here**, for
  * `ticketSourceOf`'s reason: this is a property of the repository, not of one
- * cut, so nothing moves it onto `admit` the way `branchOf` and `submodulesOf`
- * move. `cutAt` is not asked.
+ * cut, so nothing moves it onto `admit` the way `submodulesOf`
+ * moves. `cutAt` is not asked.
  */
 export function remoteOf(recipe: Recipe): string | null {
   return recipe.repo?.remote ?? null

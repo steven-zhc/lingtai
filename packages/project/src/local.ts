@@ -199,7 +199,8 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
 
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
-    'branch.main': branchOf(recipe),
+    'branch.main': recipe.branch.main,
+    ...(recipe.branch.personal === undefined ? {} : { 'branch.personal': recipe.branch.personal }),
     'source.kinds': kindsOf(recipe).join(' > '),
     'source.exclude': list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
