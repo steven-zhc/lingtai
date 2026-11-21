@@ -5385,17 +5385,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           runLog.note('fix', `round ${counted} for ${from}`)
 
           const fixDecision = yield* decideSandbox
-          const settings = yield* Effect.result(
-            host.unhookedSettings({
+          // **Wired per round, as the first dispatch is** (#1346): a fix round is the run's own next round,
+          // not an agent beside it, so it reports under the attempt's run (`runId`, never `fixId`) and serves
+          // its own socket — the first dispatch's scope closed when it returned. A conflict round shares this.
+          const fixWired = yield* Effect.result(
+            host.wire({
               runId,
-              label: `fix-${round}`,
+              hookBinary: options.hookBinary,
               home,
               ...(fixDecision.kind === 'sandboxed' ? { sandboxed: true } : {}),
             }),
           )
-          if (Result.isFailure(settings)) {
-            return { stopped: `the fixing agent had no settings: ${settings.failure.detail}` }
+          if (Result.isFailure(fixWired)) return { stopped: `the hook was not wired: ${fixWired.failure.detail}` }
+          const wiring = fixWired.success
+          const fixSmoke = yield* Effect.result(host.smokeTest(options.hookBinary, runBinary))
+          if (Result.isFailure(fixSmoke)) {
+            return { stopped: `the hook's smoke test did not run: ${fixSmoke.failure.detail}` }
           }
+          if (!fixSmoke.success.ok) return { stopped: `the hook did not fail closed: ${fixSmoke.success.detail}` }
 
           // The merge-base with the base, so a base merge anybody made is not the
           // ticket's change (#937). The fallback is never `tree.baseSha` alone once
@@ -5461,7 +5468,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               ? { grant: continuation.resumedWaitId }
               : {}),
           }
-          const fixEnv = runnableEnv(env.values)
+          const fixEnv = runnableEnv({ ...env.values, ...wiring.env })
           const fixVersion = yield* runtimeVersionOfEffect(dispatched, fixEnv, tree.path)
           yield* Effect.promise(() =>
             recordPrompt(
@@ -5478,34 +5485,59 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             { runId: fixId, worktree: tree.path },
             { stream: runId, step: 'implement', action: spec.name, runtime: dispatched.capabilities.id },
           )
-          const fixed = yield* dispatched
-            .run({
-              ...(brief.context.signal === undefined ? {} : { signal: brief.context.signal }),
-              runId: fixId,
-              cwd: tree.path,
-              prompt: fixPrompt,
-              ...(spec.model === undefined ? {} : { model: spec.model }),
-              settingsPath: settings.success,
-              log: taggedTrace(runLog, `fix:${round}`),
-              traceTools: true,
-              env: fixEnv,
-              limits: spendFor(spec.limits),
-              ...fixSandbox,
-            })
-            .pipe(
-              Effect.catchDefect((err) =>
-                Effect.succeed({
-                  exitCode: null,
-                  turns: 0,
-                  durationMs: 0,
-                  costUsd: null,
-                  failure: { kind: 'crash' as const, detail: (err as Error).message },
-                  text: null,
-                  sessionId: '',
-                  usage: undefined,
-                }),
-              ),
-            )
+          const fixRan = yield* Effect.result(
+            Effect.scoped(
+              Effect.gen(function* () {
+                const server = yield* host.serve({
+                  socketPath: wiring.socketPath,
+                  store,
+                  onDecision: (_r, hook, verdict, call) =>
+                    runLog.note(call.tool === '' ? hook : call.tool, `fix:${round} ${verdict.padEnd(6)}${call.target}`),
+                  onLifecycle: (_r, hook) => runLog.note('hook', `fix:${round} ${hook}`),
+                })
+                hookRuns = server
+                // After `recordPrompt`: `register` reads the stream's length (#928).
+                yield* Effect.acquireRelease(
+                  Effect.promise(() => store.read(runId).then((events) => server.register(runId, events.length))),
+                  () => Effect.sync(() => void server.unregister(runId)),
+                )
+                const result = yield* dispatched
+                  .run({
+                    ...(brief.context.signal === undefined ? {} : { signal: brief.context.signal }),
+                    runId: fixId,
+                    cwd: tree.path,
+                    prompt: fixPrompt,
+                    ...(spec.model === undefined ? {} : { model: spec.model }),
+                    settingsPath: wiring.settingsPath,
+                    log: taggedTrace(runLog, `fix:${round}`),
+                    traceTools: true,
+                    env: fixEnv,
+                    limits: spendFor(spec.limits),
+                    ...fixSandbox,
+                  })
+                  .pipe(
+                    Effect.catchDefect((err) =>
+                      Effect.succeed({
+                        exitCode: null,
+                        turns: 0,
+                        durationMs: 0,
+                        costUsd: null,
+                        failure: { kind: 'crash' as const, detail: (err as Error).message },
+                        text: null,
+                        sessionId: '',
+                        usage: undefined,
+                      }),
+                    ),
+                  )
+                yield* Effect.promise(() => server.flush(runId).catch(() => {}))
+                return result
+              }),
+            ),
+          )
+          if (Result.isFailure(fixRan)) {
+            return { stopped: `the hook socket was not served: ${fixRan.failure.detail}` }
+          }
+          const fixed = fixRan.success
 
           const after = yield* gitOrDieEffect(['rev-parse', 'HEAD'])
           // A redone round is measured from where it first began, never the re-cut head (#1246).

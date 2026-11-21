@@ -123,6 +123,8 @@ export function renderSettings(options: RenderOptions): unknown {
 /**
  * Settings for an agent that is a *step inside* a run rather than a run.
  *
+ * A fix round is not one of those: it is the run's own next round, and is wired like the first dispatch (#1346).
+ *
  * **The settings and the environment `writeHookWiring` returns are one thing,
  * and using half of them fails closed.** The settings say "run the hook on every
  * prompt"; the environment is where the hook learns which socket to reach and
