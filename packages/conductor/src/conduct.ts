@@ -300,7 +300,7 @@ import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
-import { signedInHere } from './projects.ts'
+import { copilotTokenSignedIn, signedInHere } from './projects.ts'
 import { resolvePromptRefs } from './prompt-refs.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -1162,7 +1162,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       secondRuntimes.size === 0 || recipe.runtime.agent !== ownRuntime
         ? []
         : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)())
-    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable)
+    // A sandboxed run is handed the machine's Copilot token, so for such a recipe the token signs Copilot in too;
+    // an unsandboxed one never receives it, and the token-free probe above is the whole answer.
+    const dispatchableNow: readonly string[] =
+      recipe.sandbox?.enabled === true &&
+      secondRuntimes.has('copilot') &&
+      recipe.runtime.agent === ownRuntime &&
+      !dispatchable.includes('copilot') &&
+      (yield* Effect.promise(() => copilotTokenSignedIn()))
+        ? [...dispatchable, 'copilot']
+        : dispatchable
+    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchableNow)
     if (wrongAgent !== null) {
       return {
         ok: false,

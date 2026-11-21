@@ -13,6 +13,8 @@ import {
   type RuntimeCapabilities,
   createRuntime,
   everyRuntime,
+  CLASSIC_COPILOT_TOKEN_SENTENCE,
+  NO_COPILOT_TOKEN_SENTENCE,
 } from '@lingtai/agent'
 /**
  * `lingtai doctor` — the old `preflight()`, generalised.
@@ -46,6 +48,7 @@ import {
   agentRefusal,
   endedWithoutEndActionsEffect,
   attemptCeiling,
+  copilotTokenSignedIn,
   readAccount,
   runtimesOf,
   signedInHere,
@@ -102,6 +105,7 @@ import {
   hasGitHubAuth,
   machineDatabaseUrl,
   claudeOauthToken,
+  copilotGithubToken,
   codexTextConfig,
   type CodexTextConfig,
   postgresUrlIfSet,
@@ -165,7 +169,7 @@ import {
 import { gitEffect } from '@lingtai/repo'
 import { installFor } from '@lingtai/sandbox'
 import { remedyFor } from '@lingtai/setup'
-import { Cause, Effect } from 'effect'
+import { Cause, Effect, Redacted } from 'effect'
 import pg from 'pg'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
@@ -1260,6 +1264,8 @@ export interface DoctorReach {
   gh?: GhRun
   /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
   signedIn?: SignedIn
+  /** Whether the machine's Copilot token signs Copilot in, for a sandboxed project's `recipe:` row (#1301). */
+  copilotSignedIn?: () => Promise<boolean>
   /**
    * Whether this host can provide the sandbox (#1147, #1159): **required**, the one answer the `sandbox: host`
    * row, the canary's gate and every recipe row share, so they cannot disagree about *can*. `runDoctor` takes it
@@ -1280,6 +1286,8 @@ export interface DoctorReach {
    * Injectable so a test reads no machine file.
    */
   claudeToken?: () => Effect.Effect<boolean, unknown>
+  /** `copilot: token`'s reader: a classification, never the value (#1301). */
+  copilotToken?: () => Effect.Effect<CopilotTokenKind, unknown>
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -2456,6 +2464,7 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 function projectRecipes(
   filters: readonly ProjectFilter[] | null,
   probe: SignedIn = signedInHere,
+  copilotProbe: () => Promise<boolean> = () => copilotTokenSignedIn(),
 ): Effect.Effect<CheckResult[], unknown> {
   return Effect.gen(function* () {
     const name = 'recipe: resolves for every project'
@@ -2479,9 +2488,21 @@ function projectRecipes(
     // cached probe for the whole report rather than one per project: the answer is
     // about the machine, and `signedInProbe` remembers it for a minute anyway.
     const signedIn = yield* lift(() => probe())
+    // A sandboxed run is handed the machine's Copilot token, so for such a recipe the token signs Copilot in too —
+    // as `runOnce` admits it (#1301). Asked once, and only if some project needs it.
+    const needsToken = filters.some(
+      (f) =>
+        f.ok &&
+        f.recipe.sandbox?.enabled === true &&
+        runtimesOf(f.recipe).includes('copilot') &&
+        !signedIn.includes('copilot'),
+    )
+    const tokenSigns = needsToken ? yield* lift(() => copilotProbe()) : false
     return filters.flatMap((f) => {
       const hold = holdLabelRow(f)
-      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn)
+      const viaToken =
+        tokenSigns && f.ok && f.recipe.sandbox?.enabled === true && runtimesOf(f.recipe).includes('copilot')
+      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', viaToken ? [...signedIn, 'copilot'] : signedIn)
       return hold === null ? [recipe] : [recipe, hold]
     })
   })
@@ -3009,13 +3030,32 @@ function dispatchedAuthRow(
   // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
   // triage checkout is given, which the caller adds and keeps its own cache for.
   env: Record<string, string> = runnableEnv({}),
+  // The project is sandboxed, so a Copilot run is handed the machine's token and that token signs it in.
+  viaToken: boolean = false,
 ): Effect.Effect<CheckResult, unknown> {
   return Effect.gen(function* () {
     if (!asked.has(agent)) {
       const runtime = runtimes.find((r) => r.capabilities.id === agent)
       asked.set(agent, runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null)
     }
-    return authRow(project, agent, asked.get(agent) ?? null, label, keys)
+    let status = asked.get(agent) ?? null
+    // Copilot is signed in by its own login, or — for a sandboxed project only, the one launch that is handed the
+    // token (#1301) — by the token. The shared `asked` stays token-free, since another project may be unsandboxed.
+    if (viaToken && agent === 'copilot' && status?.loggedIn !== true) {
+      const runtime = runtimes.find((r) => r.capabilities.id === agent)
+      let token: string | undefined
+      try {
+        const read = copilotGithubToken()
+        token = read === undefined ? undefined : Redacted.value(read)
+      } catch {
+        token = undefined
+      }
+      if (token !== undefined && runtime?.checkAuth) {
+        const withToken = yield* lift(() => runtime.checkAuth!({ ...env, COPILOT_GITHUB_TOKEN: token }))
+        if (withToken.loggedIn) status = withToken
+      }
+    }
+    return authRow(project, agent, status, label, keys)
   })
 }
 
@@ -3140,6 +3180,60 @@ export function claudeTokenRow(
   )
 }
 
+/** What a sandboxed Copilot run would be handed, classified inside the reader so the value never leaves it. */
+export type CopilotTokenKind = 'set' | 'classic' | 'unset'
+
+/** `copilotGithubToken` as its classification, keeping the reader's own sentence. */
+export const readCopilotToken = (env?: NodeJS.ProcessEnv): Effect.Effect<CopilotTokenKind, Error> =>
+  Effect.try({
+    try: (): CopilotTokenKind => {
+      const token = copilotGithubToken(env)
+      if (token === undefined) return 'unset'
+      return Redacted.value(token).startsWith('ghp_') ? 'classic' : 'set'
+    },
+    catch: (err) => (err instanceof Error ? err : new Error('could not be read')),
+  })
+
+/**
+ * `copilot: token` (#1301, 0127 §8): the fine-grained token a sandboxed Copilot run is handed. A classic `ghp_` one
+ * fails, since Copilot ignores it without a word; unset fails only when a sandboxed project names `copilot`.
+ * The value is never read here — `read` answers a classification.
+ */
+export function copilotTokenRow(
+  read: () => Effect.Effect<CopilotTokenKind, unknown> = () => readCopilotToken(),
+  sandboxedNamed: () => Effect.Effect<boolean> = () => Effect.succeed(false),
+): Effect.Effect<CheckResult> {
+  const name = 'copilot: token'
+  return read().pipe(
+    Effect.flatMap((kind): Effect.Effect<CheckResult> => {
+      if (kind === 'set') return Effect.succeed({ name, status: 'ok', detail: 'set' })
+      if (kind === 'classic') {
+        return Effect.succeed({
+          name,
+          status: 'fail',
+          detail: `${CLASSIC_COPILOT_TOKEN_SENTENCE.replace(/^the Copilot token is /, 'the value is ')}`,
+        })
+      }
+      return sandboxedNamed().pipe(
+        Effect.map((named): CheckResult =>
+          named
+            ? { name, status: 'fail', detail: `not set — ${NO_COPILOT_TOKEN_SENTENCE}` }
+            : {
+                name,
+                status: 'ok',
+                detail:
+                  'not set — make a fine-grained token with Copilot Requests, then `copilot.github_token` in ~/.lingtai/config.yml',
+              },
+        ),
+      )
+    }),
+    // The reader's sentence names the path and quotes nothing; it is safe to show.
+    Effect.catch((err) =>
+      Effect.succeed<CheckResult>({ name, status: 'fail', detail: (err as Error).message ?? 'could not be read' }),
+    ),
+  )
+}
+
 /** `codexRoleRow`'s own marker for a role with no `codex_text` to run on, so the two throws get two titles. */
 class NoCodexText extends Error {
   override readonly cause: Error
@@ -3256,7 +3350,16 @@ export function declaredEnvironment(
             }
           }
           for (const [agent, keys] of needed) {
-            const row = yield* dispatchedAuthRow(project.project!, agent, asked, runtimes, 'runtime', keys)
+            const row = yield* dispatchedAuthRow(
+              project.project!,
+              agent,
+              asked,
+              runtimes,
+              'runtime',
+              keys,
+              runnableEnv({}),
+              resolved.recipe.sandbox?.enabled === true,
+            )
             const onRuntime = agent === resolved.recipe.runtime.agent
             results.push({
               ...row,
@@ -3992,7 +4095,10 @@ export function runDoctor(
     )
     yield* step(
       'project recipes',
-      projectRecipes(filters, reach.signedIn ?? signedInHere).pipe(Effect.orDie, Effect.map(pushAll)),
+      projectRecipes(filters, reach.signedIn ?? signedInHere, reach.copilotSignedIn).pipe(
+        Effect.orDie,
+        Effect.map(pushAll),
+      ),
     )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
@@ -4001,6 +4107,31 @@ export function runDoctor(
     yield* step(
       'claude token',
       claudeTokenRow(reach.claudeToken ?? (() => readClaudeToken(env))).pipe(Effect.map(push)),
+    )
+    yield* step(
+      'copilot token',
+      copilotTokenRow(reach.copilotToken ?? (() => readCopilotToken(env)), () => {
+        const recipeFor = recipeLookup({ ...reach, sandboxHost: 'skip' })
+        return recovering(
+          loadE().pipe(
+            Effect.flatMap((projects) =>
+              Effect.forEach(projects, (p) =>
+                recovering(
+                  recipeFor(p, undefined).pipe(
+                    Effect.map(
+                      (resolved) =>
+                        resolved.recipe.sandbox?.enabled === true && runtimesOf(resolved.recipe).includes('copilot'),
+                    ),
+                  ),
+                  () => false,
+                ),
+              ),
+            ),
+            Effect.map((named) => named.some(Boolean)),
+          ),
+          () => false,
+        )
+      }).pipe(Effect.map(push)),
     )
     yield* step(
       'deferred',
@@ -4099,7 +4230,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['Sandbox', ['sandbox']],
   ['GitHub', ['github']],
-  ['Runtimes', ['runtime', 'claude']],
+  ['Runtimes', ['runtime', 'claude', 'copilot']],
 ]
 
 /** The section of one check. A deferred row is *not implemented here* whatever its prefix; an unknown prefix is `Other`, never dropped. */

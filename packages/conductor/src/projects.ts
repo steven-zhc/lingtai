@@ -1,11 +1,12 @@
 import { type Runtime, everyRuntime } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import type { ProjectState, RuntimeId } from '@lingtai/domain'
+import { copilotGithubToken } from '@lingtai/env'
 import { type LoadProjectOptions, loadProject } from '@lingtai/project'
 import { type HostAnswer, type HostFactsEffect, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { BUILT_IN_DOMAINS, hostProgramsPresent, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
-import { Effect } from 'effect'
+import { Effect, Redacted } from 'effect'
 
 export function signedInIdsEffect(
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
@@ -36,6 +37,28 @@ export function signedInIdsEffect(
  * append. A minute is short enough that signing in, or out, is seen on a
  * later pass without anybody restarting anything.
  */
+/**
+ * Whether the machine's Copilot token signs Copilot in (#1301). Asked only for a sandboxed project, the one launch
+ * that is handed the token; the shared probe above stays token-free, since an unsandboxed launch never receives it.
+ * An unreadable file or no token answers false.
+ */
+export function copilotTokenSignedIn(
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
+): Promise<boolean> {
+  const runtime = runtimes.find((r) => r.capabilities.id === 'copilot')
+  let token: string | undefined
+  try {
+    const read = copilotGithubToken()
+    token = read === undefined ? undefined : Redacted.value(read)
+  } catch {
+    token = undefined
+  }
+  if (token === undefined || runtime?.checkAuth === undefined) return Promise.resolve(false)
+  return Promise.resolve(runtime.checkAuth({ ...runnableEnv({}), COPILOT_GITHUB_TOKEN: token })).then(
+    (auth) => auth.loggedIn,
+  )
+}
+
 export function signedInProbe(
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
   ttlMs = 60_000,

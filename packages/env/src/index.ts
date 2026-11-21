@@ -288,6 +288,39 @@ export function claudeTokenState(from: NodeJS.ProcessEnv, path: string, text: st
 }
 
 /**
+ * The token a sandboxed Copilot run is handed (#1301), read as `claudeOauthToken` is: `LINGTAI_COPILOT_GITHUB_TOKEN`
+ * first, then `copilot.github_token` in the machine file. A fine-grained token with *Copilot Requests* — never
+ * `gh auth token`'s, and a classic `ghp_` token is ignored by Copilot without a word. Absent is `undefined`.
+ * An unreadable file fails with a sentence that names the path and nothing the parser quoted.
+ */
+export function copilotGithubToken(
+  from: NodeJS.ProcessEnv = process.env,
+  file: MachineFile = machineFile(from),
+): Redacted.Redacted<string> | undefined {
+  if (file.unreadable !== undefined) {
+    throw new Error(`${file.path} could not be read or parsed, so copilot.github_token is unknown`)
+  }
+  const raw =
+    stringAt(environmentProvider(from), 'copilot', 'github_token') ?? stringAt(file.provider, 'copilot', 'github_token')
+  const token = raw?.trim()
+  if (token === undefined || token === '' || /\s/.test(token)) return undefined
+  return Redacted.make(token)
+}
+
+/** `ClaudeTokenState`'s twin for `copilot.github_token`: where it is set, never the value. */
+export type CopilotTokenState = { environment: boolean; file: boolean; usable: boolean } | { unreadable: string }
+
+export function copilotTokenState(from: NodeJS.ProcessEnv, path: string, text: string | null): CopilotTokenState {
+  const machine = machineFileFrom(path, text)
+  if (machine.unreadable !== undefined) return { unreadable: machine.unreadable }
+  return {
+    environment: stringAt(environmentProvider(from), 'copilot', 'github_token') !== undefined,
+    file: copilotGithubToken({} as NodeJS.ProcessEnv, machine) !== undefined,
+    usable: copilotGithubToken(from, machine) !== undefined,
+  }
+}
+
+/**
  * The Postgres connection a caller that must have Postgres may use, which is
  * never the operator's.
  *
