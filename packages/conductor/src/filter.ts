@@ -513,7 +513,7 @@ const NAME_WIDTH = 14
  *
  *     lingtai        recipe 3f8a1c2b9d04 from main
  *       picks up     bug > tech-debt > feature   (in priority order)
- *       excludes     blocked, in-progress, agent:hold
+ *       excludes     blocked, in-progress, lingtai:hold
  *
  * and, for one that will not resolve, the same slot rather than a gap:
  *

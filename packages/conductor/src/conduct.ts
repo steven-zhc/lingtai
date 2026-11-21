@@ -5729,7 +5729,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * `lingtai:waiting` — for an item this pass never claimed.
        *
        * Both declines are worse than noise. `passedOver` is `runnableNow` saying
-       * GitHub is not offering it — `agent:hold`, a blocker, an assignee — and a
+       * GitHub is not offering it — `lingtai:hold`, a blocker, an assignee — and a
        * block there takes the ticket out of `queued`, which is the state
        * `selectRunnable` requires (`queue.ts`), so removing the label no longer
        * makes it runnable. `notClaimed: held` is **another conductor's live

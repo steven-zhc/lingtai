@@ -14,7 +14,7 @@ import { userInfo } from 'node:os'
  * accepts what it matches: a batch accept that means *all of them* is the rule
  * 0038 refused to write, typed at a terminal instead.
  */
-import { acceptFindingEffect, declineFindingEffect, githubTicketStore } from '@lingtai/conductor'
+import { HOLD_LABEL, acceptFindingEffect, declineFindingEffect, githubTicketStore } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { hasGitHubAuth } from '@lingtai/env'
 import { readProjectEffect } from '@lingtai/project'
@@ -31,7 +31,6 @@ lingtai backlog accept <project> <key>     open the issue of one already accepte
 lingtai backlog decline <project> <key> --reason <why>`
 
 /** The hold an accepted ticket carries unless the person says otherwise. */
-const HOLD = 'agent:hold'
 
 /**
  * Flags whose value is prose. `--reason style only` is one reason, not a reason
@@ -310,7 +309,7 @@ export const decideFinding = (decision: BacklogDecision, log = console.log): Eff
       by,
       kind,
       kinds: kindsOf(resolved.recipe),
-      labels: decision.unheld ? [] : [HOLD],
+      labels: decision.unheld ? [] : [HOLD_LABEL],
       tickets: githubTicketStore(client),
     })
     return yield* finish(r, log)

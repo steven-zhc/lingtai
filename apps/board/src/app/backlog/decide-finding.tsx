@@ -41,7 +41,7 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
         <>
           <input aria-label="kind" value={kind} onChange={(e) => setKind(e.target.value)} />
           <label>
-            <input type="checkbox" checked={hold} onChange={(e) => setHold(e.target.checked)} /> agent:hold
+            <input type="checkbox" checked={hold} onChange={(e) => setHold(e.target.checked)} /> lingtai:hold
           </label>
           <button
             className="btn pri"

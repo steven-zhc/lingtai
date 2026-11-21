@@ -1,6 +1,6 @@
 name: Private contact (security or conduct)
 description: Ask to be reached privately about a vulnerability or a conduct concern. Write no details here.
-labels: [agent:hold]
+labels: [lingtai:hold]
 body:
   - type: markdown
     attributes:

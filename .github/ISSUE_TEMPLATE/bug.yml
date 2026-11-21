@@ -1,6 +1,6 @@
 name: Bug report
 description: Report something that fails.
-labels: [bug, agent:hold]
+labels: [bug, lingtai:hold]
 body:
   - type: markdown
     attributes:

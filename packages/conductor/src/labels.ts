@@ -23,6 +23,12 @@ import { LABEL_STATES, type LabelState } from '@lingtai/domain'
 /** The prefix of Lingtai's own label names — and of the ones a person sets to steer it, which are not Lingtai's to drop. */
 export const LINGTAI_LABEL_PREFIX = 'lingtai:'
 
+/** The label a person sets to keep agents off a ticket — also what Lingtai writes on an accepted finding. Not in `OWN_LABELS`: it is never computed. */
+export const HOLD_LABEL = `${LINGTAI_LABEL_PREFIX}hold`
+
+/** The label an agent opens out-of-scope work under. Not in `OWN_LABELS`. */
+export const FOLLOWUP_LABEL = `${LINGTAI_LABEL_PREFIX}followup`
+
 /**
  * The label set a task's state implies.
  *

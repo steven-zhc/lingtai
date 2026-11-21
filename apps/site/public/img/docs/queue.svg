@@ -20,7 +20,7 @@ text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:
 <text class="s" x="220.0" y="73.0" text-anchor="middle">e.g. bug, feature</text>
 <rect class="box" x="320" y="30" width="140" height="60" rx="6"/>
 <text class="h" x="390.0" y="57.0" text-anchor="middle">No hold label?</text>
-<text class="s" x="390.0" y="73.0" text-anchor="middle">e.g. agent:hold</text>
+<text class="s" x="390.0" y="73.0" text-anchor="middle">e.g. lingtai:hold</text>
 <rect class="box" x="490" y="30" width="140" height="60" rx="6"/>
 <text class="h" x="560.0" y="57.0" text-anchor="middle">No open blocker?</text>
 <text class="s" x="560.0" y="73.0" text-anchor="middle">GitHub blocked-by</text>

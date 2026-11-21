@@ -144,7 +144,7 @@ export interface QueuedView {
    * Why GitHub is not offering this issue at all, and null when it is.
    *
    * A different fact from `runnableAt`: an item GitHub is offering and the
-   * backoff is holding comes back on its own, and one carrying `agent:hold`
+   * backoff is holding comes back on its own, and one carrying `lingtai:hold`
    * does not. Both were a card that read as *simply next* (`#100`).
    */
   notOffered: string | null
