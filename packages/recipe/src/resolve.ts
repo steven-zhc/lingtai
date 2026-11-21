@@ -453,9 +453,11 @@ function assigneeRefusals(recipe: Recipe, raw: unknown): string[] {
       }
     }
     if (github && assigneeOf(recipe)?.login === undefined) {
-      out.push(
-        "queue.assignee.login: mode: team on GitHub takes the issues assigned to this machine's login; write `runtime.assignee.login`",
-      )
+      // The key that governs is the declared `queue:`'s when there is one (`assigneeOf`), and writing
+      // `runtime.assignee.login` beside it would change nothing.
+      const at = recipe.steps.claim.findIndex((action) => 'queue' in action)
+      const key = at === -1 ? 'runtime.assignee.login' : `steps.claim[${at}].queue.assignee.login`
+      out.push(`${key}: mode: team on GitHub takes the issues assigned to this machine's login; write \`${key}\``)
     }
     return out
   }

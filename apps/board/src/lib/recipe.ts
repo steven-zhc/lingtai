@@ -43,6 +43,7 @@ import {
   provenanceSource,
   resolveRecipe,
   selectionOf,
+  type Selection,
   type StepAction,
   type PluginSecrets,
   type Recipe,
@@ -583,6 +584,8 @@ export function describeAction(
    * call an implementer a cold reviewer on the task page.
    */
   step?: Step,
+  /** The mode and ticket source the queue selects on (#1310): `queue:` alone does not say whose tickets it takes. */
+  selection?: Selection,
 ): { does: string; bound: string } {
   // Every `no_log` value gone before a word of this is written (0061 §9). It
   // reads named fields, so today it could not print one by accident — the point
@@ -729,12 +732,17 @@ export function describeAction(
       >
       const exclude = a.queue.exclude.length === 0 ? '' : `, never ${a.queue.exclude.join(', ')}`
       const me = a.queue.assignee?.login ?? "this machine's login"
+      const take = selection?.mode === 'team' ? 'mine' : a.queue.assignee?.take
       const whose =
-        a.queue.assignee?.take === 'mine'
-          ? `, only where assigned to ${me}`
-          : a.queue.assignee?.take === 'unassigned'
-            ? ', only where assigned to nobody'
+        selection?.tickets === 'db'
+          ? selection.mode === 'team'
+            ? ', every ticket — local tickets are yours'
             : ''
+          : take === 'mine'
+            ? `, only where assigned to ${me}`
+            : take === 'unassigned'
+              ? ', only where assigned to nobody'
+              : ''
       return {
         does: `takes ${a.queue.kinds.join(' before ')}${exclude}${whose}`,
         bound: `a failed attempt waits ${a.queue.backoff} before its own ticket is offered again`,

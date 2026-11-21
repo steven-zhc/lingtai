@@ -1,6 +1,7 @@
 import { inWords } from '@lingtai/conductor/queue'
 import type { SandboxInvocation } from '@lingtai/domain'
 import { describeWaitLines } from '@lingtai/projector/task-view'
+import { selectionOf } from '@lingtai/recipe/settings'
 
 import { leadOf } from '@/lib/markdown'
 import { elapsed } from '@/lib/progress'
@@ -340,7 +341,7 @@ export function RecipeGiven({
                         </span>
                       )
                     }
-                    const { does, bound } = describeAction(action, undefined, p.step)
+                    const { does, bound } = describeAction(action, undefined, p.step, selectionOf(recipe.recipe))
                     // A judge records as `judge:<when>` at `proposed`, whatever the recipe called it (conduct.ts).
                     const recorded = 'judge' in action ? `judge:${(action as { when: string }).when}` : name
                     const mark = markOfAction(sandbox, p.step, recorded)

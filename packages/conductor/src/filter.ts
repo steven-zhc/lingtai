@@ -591,11 +591,11 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
 /** `queue:`'s `assignee` as a person reads it. Absent is `all`, and says so. */
 export function describeAssignee(rule: AssigneeRule | undefined, selection?: Selection): string {
   // Team mode takes `mine` and nothing else (0130 §3); on the local store *mine* is every ticket.
-  if (selection?.mode === 'team') {
-    return selection.tickets === 'db'
-      ? 'every ticket — local tickets are yours'
-      : `only issues assigned to ${rule?.login}`
+  // The local store tracks no assignee, so on it any `take` selects every ticket (`assigneeSkip`).
+  if (selection?.tickets === 'db' && (selection.mode === 'team' || (rule?.take ?? 'all') !== 'all')) {
+    return 'every ticket — local tickets are yours'
   }
+  if (selection?.mode === 'team') return `only issues assigned to ${rule?.login}`
   const as = rule?.login ? ` (this machine is ${rule.login})` : ''
   switch (rule?.take ?? 'all') {
     case 'mine':

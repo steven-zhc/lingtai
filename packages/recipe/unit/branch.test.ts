@@ -76,6 +76,12 @@ describe('mode, branch and pr', () => {
     expect(refused(team, withRuntime('{ login: me, take: all }'))).toContain('mode: team takes your own')
     expect(refused(team, withRuntime('{ login: me, take: unassigned }'))).toContain('runtime.assignee.take')
     expect(refused(team, TAIL)).toContain('login')
+    // A declared `queue:` governs `assigneeOf`, so the refusal names its key and not `runtime`'s.
+    const declared = TAIL.replace(
+      'runtime:',
+      'steps:\n  claim:\n    - { name: q, queue: { kinds: [bug], exclude: [], backoff: 1h, assignee: {} } }\nruntime:',
+    )
+    expect(refused(team, declared)).toContain('steps.claim[0].queue.assignee.login')
     expect(modeOf(resolve(team, withRuntime('{ login: me }')).recipe)).toBe('team')
     expect(modeOf(resolve(team, withRuntime('{ login: me, take: mine }')).recipe)).toBe('team')
     expect(refused('branch: { main: main }\n', withRuntime('{ take: mine }'))).toContain('needs a login')
