@@ -70,6 +70,8 @@ export {
   readBacklog,
   readBacklogEffect,
   type BacklogEntry,
+  type BacklogSubject,
+  subjectOf,
   type BacklogStatus,
   type ReadBacklogOptions,
 } from './backlog.ts'

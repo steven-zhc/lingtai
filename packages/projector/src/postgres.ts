@@ -167,8 +167,9 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
   return {
     key: row.key,
     project: row.project,
-    issue: row.issue,
-    taskId: row.task_id,
+    issue: row.issue ?? null,
+    taskId: row.task_id ?? null,
+    pr: row.pr_stream ? { stream: row.pr_stream, n: Number(row.pr_n) } : null,
     runId: row.run_id,
     step: row.step,
     action: row.action,
