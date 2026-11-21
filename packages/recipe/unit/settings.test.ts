@@ -229,9 +229,9 @@ describe('the accessors', () => {
    */
   it('names the key the recipe actually reads the base from, by mode', () => {
     expect(branchKeyOf(RECIPE)).toBe('branch.main')
-    expect(branchKeyOf(Recipe.parse({ ...WRITTEN, mode: 'team', branch: { main: 'develop', personal: 'me/box' } }))).toBe(
-      'branch.personal',
-    )
+    expect(
+      branchKeyOf(Recipe.parse({ ...WRITTEN, mode: 'team', branch: { main: 'develop', personal: 'me/box' } })),
+    ).toBe('branch.personal')
   })
 
   it('answers solo for a recipe with no mode, and the personal branch in team mode', () => {

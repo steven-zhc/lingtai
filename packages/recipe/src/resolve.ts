@@ -21,11 +21,11 @@ import { createHash } from 'node:crypto'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
+import { branchNameRefusal } from './branch-name.ts'
 import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
 import { DiscussAgent, PLUGINS, Recipe, discloseSteps } from './recipe.ts'
-import { branchNameRefusal } from './branch-name.ts'
 import { branchKeyOf, branchOf, modeOf } from './settings.ts'
 
 /** Where a project's recipe lives, by convention and without exception. */
@@ -317,7 +317,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
  * 0130 §2–3), and which of them the file used:
  *
  * - `steps.admit[*].worktree.base` → `branch.main` (it wins over `repo.base`, as
- *   `baseOf` did);
+ *   the old accessor did);
  * - `repo.base` → `branch.main`;
  * - `take: both` at `runtime.assignee` or `steps.claim[*].queue.assignee` → `all`.
  *
@@ -414,9 +414,12 @@ export function refuseOnMeaning(recipe: Recipe, wroteAgent: boolean): string[] {
   }
   if (personal !== undefined) {
     const why = branchNameRefusal(personal)
-    if (why !== null) out.push(`branch.personal: ${JSON.stringify(personal)} is not a branch name git accepts: it ${why}`)
+    if (why !== null)
+      out.push(`branch.personal: ${JSON.stringify(personal)} is not a branch name git accepts: it ${why}`)
     else if (personal.toLowerCase() === recipe.branch.main.toLowerCase()) {
-      out.push(`branch.personal: ${JSON.stringify(personal)} is the same branch as branch.main, ignoring case; name a different one`)
+      out.push(
+        `branch.personal: ${JSON.stringify(personal)} is the same branch as branch.main, ignoring case; name a different one`,
+      )
     }
   }
   if (recipe.pr !== undefined && !team) {

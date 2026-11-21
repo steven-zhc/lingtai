@@ -56,10 +56,7 @@ export type LandingAnswer = { land: 'hold' } | { land: string }
  * (`repo.base`, `worktree.base`) is removed by `editRecipe` in the same write,
  * so the file never holds two homes for the setting.
  */
-export function landingChanges(
-  answer: LandingAnswer,
-  currentProposed: readonly unknown[] | null,
-): RecipeChange[] {
+export function landingChanges(answer: LandingAnswer, currentProposed: readonly unknown[] | null): RecipeChange[] {
   const proposed = currentProposed ?? []
   if (answer.land === 'hold') {
     if (proposed.some(isHumanEntry)) return []
@@ -77,10 +74,7 @@ export function landingChanges(
  * through this, because there the branch comes from a recipe or the repository
  * rather than from a person typing `--land`.
  */
-export function landOnBranchChanges(
-  branch: string,
-  currentProposed: readonly unknown[] | null,
-): RecipeChange[] {
+export function landOnBranchChanges(branch: string, currentProposed: readonly unknown[] | null): RecipeChange[] {
   const removal = holdRemovalChanges(currentProposed ?? [])
   return [{ path: ['branch', 'main'], value: branch }, ...removal]
 }

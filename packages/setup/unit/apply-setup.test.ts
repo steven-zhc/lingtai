@@ -97,7 +97,7 @@ describe('applySetup (#968)', () => {
       ),
     )
     expect(store.size).toBe(0)
-    expect(resolveSource(text, path, path).recipe.repo.remote).toBe('/repo')
+    expect(resolveSource(text, path, path).recipe.repo?.remote).toBe('/repo')
   })
 
   it('a draft keeps every change and writes nothing to its base', async () => {
