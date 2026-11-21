@@ -110,8 +110,9 @@ Read what each cannot do before choosing one:
 
 - **Implement only.** Not `runtime.agent`, not `discuss`, not triage, not
   `design`, `review` or any `judge:`; the recipe is refused by name.
-- **Unpriced.** Neither reports a cost, so no dollar ceiling bounds it. Only
-  `turns` and `wall` do.
+- **Unpriced.** Neither reports a cost, so `run.usd` never stops a run. Only
+  `turns` and `wall` bound one. The day's ceiling cannot see Copilot; for
+  Antigravity it counts an estimate where a rate for its model has been fetched.
 - **Antigravity runs unsandboxed**, and a recipe with `sandbox.required: true`
   cannot name it.
 

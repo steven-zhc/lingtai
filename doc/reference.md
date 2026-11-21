@@ -349,7 +349,7 @@ say different things about the same recipe
 |---|---|---|
 | `runtime.limits.run.turns` | `300` | turns before the runtime stops the agent, **per run** |
 | `runtime.limits.run.wall` | `2h` | wall clock before the same, **per run** |
-| `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would. **A `copilot` or `antigravity` run is unpriced** (`costUsd: null`, `packages/agent/src/acp.ts:323`): `run.usd` and the day's ceiling do not see it, and `turns` and `wall` are what bound it |
+| `runtime.limits.run.usd` | *(none)* | a dollar ceiling before the runtime stops the agent, **per run** (`#370`). No default, unlike `turns` and `wall` — absent means no dollar ceiling, and `lingtai doctor` says so (`usd — none declared`) rather than assuming unbounded or reading a Codex project red forever the way a defaulted `turns` would. **A `copilot` or `antigravity` run is unpriced** (`costUsd: null`, `packages/agent/src/acp.ts:323`): `run.usd` never stops a run on it, and `turns` and `wall` are what bound it. The day's ceiling does not see a Copilot run, which names no model; an Antigravity run names its model, so where a rate for that model has been fetched the day's ceiling counts an *estimate* of it (`packages/projector/src/spend.ts`) |
 | `runtime.limits.attempt.refusalFixes` | `6` | how many times an attempt sends the agent back **into the same worktree**, carrying what a build or review refused. `0` buys no fix, and a refusal then goes to a person |
 | `runtime.limits.attempt.conflictResolutions` | `6` | how many times an attempt sends the agent back to resolve a merge conflict. Two things that mean differently have two names even where their values agree. `0` buys no resolution |
 | `runtime.limits.ticket.newAttempts` | `2` | how many times a spent attempt **starts the ticket over** from the base instead of asking a person. It is bought when a cause says the approach was wrong (`WrongApproach`, from a judge at `findings` or triage) or a conflict has a `Contradicting` hunk — whether or not `refusalFixes` is spent (`actionFor`, `packages/domain/src/failure/respond.ts`). A red build buys one only when triage names `WrongApproach` after its `refusalFixes` are spent (`StartNewAttempt` is permitted for `BuildRed`); a conflict with only mechanical hunks never does. Not a daemon restart. `0` means a spent attempt asks a person |
@@ -1847,7 +1847,10 @@ judges is #1300). Anywhere else the recipe is refused by name when it resolves.
 Three more limits, which a person choosing one should read before the rest:
 
 - **Unpriced.** Neither reports a cost (`costUsd: null`), so `runtime.limits.run.usd`
-  and the day's ceiling do not bound it. `turns` and `wall` do.
+  never stops a run on it; `turns` and `wall` do. The day's ceiling cannot see a
+  Copilot run (it names no model). An Antigravity run names its model, so where a
+  rate for it has been fetched the day's ceiling counts an estimate and can stop
+  scheduling.
 - **Antigravity is never sandboxed in this release**, on any host. A recipe with
   `sandbox.required: true` that names it is refused; see
   [safety](safety.md#without-the-sandbox).
