@@ -205,8 +205,12 @@ export const buildStep: PrStep = {
 }
 
 /** A PR in review whose last pushed commit has not been through the merge back, or is not known to have. */
-export const mergeBackOwed = (state: PrState): boolean =>
-  state.status === 'in-review' && state.lastPushed !== null && state.mergeBack?.prHead !== state.lastPushed
+export const mergeBackOwed = (state: PrState): boolean => {
+  if (state.status !== 'in-review' || state.lastPushed === null) return false
+  const was = state.mergeBack
+  // A failure of `unknown` could not tell whether a push landed, so it is looked at again; any other is the head's answer.
+  return was?.prHead !== state.lastPushed || (was.outcome === 'failed' && was.why === 'unknown')
+}
 
 type Back =
   | { readonly kind: 'unsure' }
@@ -332,31 +336,49 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
 
     const turn = Effect.gen(function* () {
       // Re-read inside the turn: a landing that held the lane first may have changed what is owed.
-      const state = yield* readPr(project, n, ports.store)
+      const state = yield* readPr(project, n, ports.store).pipe(Effect.orElseSucceed(() => null))
       if (state === null || !mergeBackOwed(state) || state.lastPushed !== prHead) return
-      let outcome = yield* attempt(0)
-      // One recompute against the branch where it now is — a person pushed it between the fetch and the push.
-      if (outcome.kind === 'lost') outcome = yield* attempt(1)
-      if (outcome.kind === 'unsure' || outcome.kind === 'lost' || outcome.kind === 'nothing') return
-      if (outcome.kind === 'failed') {
-        yield* failed(outcome.why, outcome.detail)
+      // Only what is read and tried up to the push is caught here: a read that failed pushed nothing, and is said on
+      // the PR's stream. What comes after the push is outside it — a record that fails then must never be turned into
+      // a failure that says nothing was pushed.
+      const decided = yield* Effect.gen(function* () {
+        let outcome = yield* attempt(0)
+        // One recompute against the branch where it now is — a person pushed it between the fetch and the push.
+        if (outcome.kind === 'lost') outcome = yield* attempt(1)
+        return outcome
+      }).pipe(
+        Effect.catch((err: Error) =>
+          failed('unknown', err.message).pipe(
+            Effect.catch((again: Error) =>
+              Effect.sync(() => void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
+            ),
+            Effect.as({ kind: 'nothing' } as Back),
+          ),
+        ),
+      )
+      if (decided.kind === 'unsure' || decided.kind === 'lost' || decided.kind === 'nothing') return
+      if (decided.kind === 'failed') {
+        yield* failed(decided.why, decided.detail).pipe(
+          Effect.catch((err: Error) =>
+            Effect.sync(() => void ports.log?.(`pr ${n} merge back: recording it: ${err.message}`)),
+          ),
+        )
         return
       }
-      yield* recordPrMergedBack(project, n, { prHead, mergeCommit: outcome.mergeCommit, how: 'clean' }, ports.store)
+      // The merge is pushed. A record that fails here leaves it unrecorded: the next serve finds the merge in
+      // `branch.personal`'s history, builds it, and records it.
+      const recorded = yield* Effect.result(
+        recordPrMergedBack(project, n, { prHead, mergeCommit: decided.mergeCommit, how: 'clean' }, ports.store),
+      )
+      if (Result.isFailure(recorded)) {
+        ports.log?.(
+          `pr ${n} merge back pushed ${short(decided.mergeCommit)}; recording it: ${asError(recorded.failure).message}`,
+        )
+        return
+      }
       // The merge is on `branch.personal` now; the ref that kept an unpushed sync alive has nothing left to keep.
       yield* ports.git(project, ['update-ref', '-d', targetRef(n)]).pipe(Effect.ignore)
-    }).pipe(
-      // A read or write that failed before any push was tried pushed nothing: it is said on the PR's stream, once per
-      // head, rather than only in a log. (A push whose outcome cannot be told is `unsure` above and records nothing.)
-      Effect.catch((err: Error) =>
-        failed('unknown', err.message).pipe(
-          Effect.catch((again: Error) =>
-            Effect.succeed(void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
-          ),
-          Effect.asVoid,
-        ),
-      ),
-    )
+    })
 
     yield* (ports.lane ?? landingLane).through(
       integrationStream(project, branch),

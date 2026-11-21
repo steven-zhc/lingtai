@@ -50,7 +50,12 @@ export interface PrState {
    * What the merge back into `branch.personal` came to for the commit it was tried on (`PrMergedBack`,
    * `PrMergeBackFailed`). Keyed by `prHead`, so a later In review on a new head is owed its own.
    */
-  mergeBack: { readonly prHead: string; readonly outcome: 'merged' | 'failed' } | null
+  mergeBack: {
+    readonly prHead: string
+    readonly outcome: 'merged' | 'failed'
+    /** Why it failed. `unknown` is a failure that proves nothing was pushed or not pushed: it is tried again. */
+    readonly why: string | null
+  } | null
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
@@ -152,11 +157,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrMergedBack':
     case 'PrMergeBackFailed': {
-      const d = event.data as { prHead: string }
+      const d = event.data as { prHead: string; why?: string }
+      const merged = event.type === 'PrMergedBack'
       return {
         ...state,
         ...at,
-        mergeBack: { prHead: d.prHead, outcome: event.type === 'PrMergedBack' ? 'merged' : 'failed' },
+        mergeBack: { prHead: d.prHead, outcome: merged ? 'merged' : 'failed', why: merged ? null : (d.why ?? null) },
       }
     }
     case 'PrWaiting': {
@@ -304,7 +310,9 @@ export function mergedBackTransition(
   state: PrState,
   merged: PayloadOf<'PrMergedBack'>,
 ): ToAppend<PayloadOf<'PrMergedBack'>> | null {
-  if (state.status !== 'in-review' || state.mergeBack?.prHead === merged.prHead) return null
+  if (state.status !== 'in-review') return null
+  // A failure — `unknown` above all, which a landed push whose answer was lost looks like — never stands in the way of the merge being found.
+  if (state.mergeBack?.prHead === merged.prHead && state.mergeBack.outcome === 'merged') return null
   return { type: 'PrMergedBack', actor: 'conductor', data: merged }
 }
 
@@ -313,7 +321,9 @@ export function mergeBackFailedTransition(
   state: PrState,
   failed: PayloadOf<'PrMergeBackFailed'>,
 ): ToAppend<PayloadOf<'PrMergeBackFailed'>> | null {
-  if (state.status !== 'in-review' || state.mergeBack?.prHead === failed.prHead) return null
+  if (state.status !== 'in-review') return null
+  const was = state.mergeBack
+  if (was?.prHead === failed.prHead && (was.outcome === 'merged' || was.why === failed.why)) return null
   return { type: 'PrMergeBackFailed', actor: 'conductor', data: failed }
 }
 

@@ -347,7 +347,7 @@ describe('the merge back', () => {
     expect(pushesOf(w)).toEqual([])
     const s = await state(store)
     expect(s.status).toBe('in-review')
-    expect(s.mergeBack).toEqual({ prHead: FROZEN, outcome: 'failed' })
+    expect(s.mergeBack).toEqual({ prHead: FROZEN, outcome: 'failed', why: 'red' })
     const failed = (await store.read(prStream('lingtai', 1))).at(-1)!
     expect(failed).toMatchObject({ type: 'PrMergeBackFailed', data: { why: 'red' } })
     // Once per head: a red merge back is not rebuilt on every later event.
@@ -446,6 +446,68 @@ describe('the merge back', () => {
       expect(pushesOf(w)).toEqual([])
       expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe(green ? 'PrMergedBack' : 'PrMergeBackFailed')
     }
+  })
+
+  it('a push that landed whose PrMergedBack could not be appended is not recorded as a failure, and the next serve records it', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const real = store.append.bind(store)
+    let failing = true
+    const flaky = {
+      ...store,
+      append: (...a: Parameters<typeof store.append>) =>
+        failing && a[2].some((e) => e.type === 'PrMergedBack') ? Promise.reject(new Error('transient')) : real(...a),
+    } as EventStore
+    await Effect.runPromise(mergePrBack(ports(flaky, w), 'lingtai', 1))
+    expect(pushesOf(w)).toHaveLength(1)
+    expect(await types(store)).not.toContain('PrMergeBackFailed')
+    failing = false
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(pushesOf(w)).toHaveLength(1)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrMergedBack')
+  })
+
+  it('an unknown failure is looked at again: a later serve that finds the merge on branch.personal records it', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        { ...p, remote: (pr, args) => (args[0] === 'fetch' ? Effect.fail(new Error('offline')) : p.remote(pr, args)) },
+        'lingtai',
+        1,
+      ),
+    )
+    expect((await state(store)).mergeBack).toMatchObject({ outcome: 'failed', why: 'unknown' })
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrMergedBack')
+    expect(pushesOf(w)).toEqual([])
   })
 
   it('a stranger’s descendant on branch.personal is not recorded as our merge', async () => {
