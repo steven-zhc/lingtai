@@ -201,8 +201,8 @@ in the source.
     (0130 §2). The mirror is fetched from the checkout, each attempt works on
     `agent/<n>` in its own worktree, and the land pushes `lingtai-base` and
     `agent/<n>` back to the checkout; the person's own branch and working tree
-    are never touched. Into `lingtai-base` go only an attempt's merges and the
-    sync that brings `branch.main` in (0130 §6); it reaches `branch.main` through
+    are never touched. Into `lingtai-base` go only an attempt's merges and a
+    PR branch merged back after its sync (0130 §6); it reaches `branch.main` through
     the PR the person submits, which on a local remote is a pushed branch and a
     printed description (0130 §5). Git refuses a push to the branch checked out in a non-bare
     repository, so the land first checks that `lingtai-base` is not the one

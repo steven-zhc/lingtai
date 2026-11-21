@@ -8,6 +8,6 @@ four are known to be used:
 - `G R` recipe, `G O` report, `G W` the first thing waiting on you.
 - On a board: `J` / `K` between cards, `H` / `L` between columns, `Enter` to
   open, `Esc` back.
-- On a PR: `[` / `]` the PR under or over it in its stack, `O` open it on the
-  code host.
+- On a PR: `O` open it on the code host (and `[` / `]` along a stack, if
+  stacked PRs come).
 - `?` listing them all.

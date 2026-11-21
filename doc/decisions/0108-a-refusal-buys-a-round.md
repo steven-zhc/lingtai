@@ -173,7 +173,7 @@ fixes the actions, their bounds and the endings that router works inside.
    | `redoStep` | the step again, whole, after it did not finish (§12) | the head | `stepRedos` | attempt | 3, after 1, 5, 15 minutes (`stepRedoWaits`) | constant |
    | `rerunCommand` | a check that went red, once more on the same commit (§17) | the same commit | `commandReruns` | each red | 1 | constant |
    | `fixRefusal` | `implement` on the head with a refusal's evidence (§3) | the head | `refusalFixes` | attempt | 6 | recipe |
-   | `resolveConflict` | `implement` on the head, merging the base and resolving the hunks | the head | `conflictResolutions` | attempt — or, for a team project's sync, one `main` commit being merged ([0130](0130-a-project-is-solo-or-team.md) §6) | 6 | recipe |
+   | `resolveConflict` | `implement` on the head, merging the base and resolving the hunks | the head | `conflictResolutions` | attempt — or, for a team project's PR, one `main` commit being merged into its branch ([0130](0130-a-project-is-solo-or-team.md) §6) | 6 | recipe |
    | `mergeBaseBranch` | the moved base merged in by the system, no agent (§13) | the head | `baseBranchMerges` | attempt | 10 | constant |
    | `retryLanding` | the same head landed again after a transient refusal (§15) | the head | `landingRetries` | attempt | 3 | constant |
    | `startNewAttempt` | a new attempt from the base (§7) | the base | `newAttempts` | ticket | 2 | recipe |

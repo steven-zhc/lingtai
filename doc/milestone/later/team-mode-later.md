@@ -37,3 +37,18 @@ Later, on the same step of the PR's life:
   build and review — before the PR waits on the person.
 - **Verify**: a step after CI that checks the code against what its tickets
   wanted (0.17's verifiable landing).
+
+## Stacked PRs, and keeping the personal branch current
+
+Cut from 0.16 on 2026-11-20 to keep team mode simple (ADR 0130 §5–6):
+
+- **Stacked PRs** — a second PR based on the first, offered for review before
+  the first merges. Work does not stop without them (tickets keep landing on
+  the personal branch); what they add is earlier review, at the cost of three
+  problems to solve first: a PR closed under another carries its refused
+  tickets up, a squash merge below leaves duplicate commits above, and every
+  `lingtai:pr-fix` below ripples up and re-runs CI above.
+- **Bringing `main` into `branch.personal` whenever it moves** — before each
+  claim and on the sweep — so tickets are always written on today's code. 0.16
+  syncs only at submit and at a fix; doing it always needs a lock that pauses
+  claiming while a conflict waits for a person.

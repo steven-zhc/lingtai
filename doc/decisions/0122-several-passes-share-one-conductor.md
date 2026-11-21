@@ -86,11 +86,11 @@ and the dollar ceiling lands before any N > 1.
    safety: two lanes at once would both compute a merge against one base, and the
    loser would be refused and rebuilt.
 
-   **A team project's sync takes its turn in the same lane** ([0130](0130-a-project-is-solo-or-team.md)
-   §4): merging `branch.main` into `branch.personal` and pushing it is a landing
-   on that branch, so a sync and an attempt's landing never push it at once. A
-   lane holder is then either an attempt (`{runId, issue}`) or the sync
-   (`{sync}`).
+   **A team project's PR takes its turn in the same lane** ([0130](0130-a-project-is-solo-or-team.md)
+   §6): merging `branch.main` into the PR branch, and the PR branch back into
+   `branch.personal`, are landings, so they and an attempt's landing never push
+   a branch at once. A lane holder is then either an attempt (`{runId, issue}`)
+   or a PR (`{pr}`).
 
    **A later landing re-checks on the new base.** Each attempt in `integrate.ts`
    fetches the base afresh, so a landing that starts after the earlier push sees the

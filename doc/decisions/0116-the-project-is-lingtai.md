@@ -38,7 +38,7 @@ and the places that must agree are listed.
    prefix**, on any tracker — the ones it writes (`lingtai:queued`,
    `lingtai:working`, `lingtai:waiting`, `lingtai:publishing`,
    `lingtai:landed`) and the ones a person sets to steer it (`lingtai:hold`,
-   `lingtai:followup`), so a shared tracker can tell them from its own labels and
+   `lingtai:followup`, `lingtai:pr-fix`), so a shared tracker can tell them from its own labels and
    from other tools'. The kind labels (`bug`, `feature`, …) are the person's own,
    named in the recipe.
 
