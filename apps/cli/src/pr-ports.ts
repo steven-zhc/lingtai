@@ -53,9 +53,12 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
       if (slug === null) return undefined
       // Building the client and asking for its token are requests: bounded, so a stalled one cannot hold a push the
       // drain waits for. The token is resolved here (an installation's lasts an hour), never inside `git`.
-      return yield* Effect.tryPromise({
-        try: async () => (await createGitHubClient({ auth: githubClientAuth(), ...slug })).token(),
-        catch: asError,
+      return yield* Effect.gen(function* () {
+        const client = yield* Effect.tryPromise({
+          try: () => createGitHubClient({ auth: githubClientAuth(), ...slug }),
+          catch: asError,
+        })
+        return yield* Effect.tryPromise({ try: () => client.token(), catch: asError })
       }).pipe(
         Effect.timeoutOrElse({
           duration: TOKEN_MS,
