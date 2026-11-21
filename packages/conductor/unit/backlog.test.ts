@@ -442,7 +442,7 @@ describe('acceptFinding', () => {
     expect(r.ok).toBe(false)
     expect(r.detail).toContain('could not be read')
     expect(gh.issues).toEqual([])
-    expect(log.typesOn(stream)).toEqual([])
+    expect(log.typesOn(stream)).toEqual(['FindingAccepted'])
   })
 
   it('opens nothing when a decline landed first', async () => {
