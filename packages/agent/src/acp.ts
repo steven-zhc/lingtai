@@ -202,6 +202,48 @@ interface SessionUpdate extends ToolCallFields {
   content?: { type?: string; text?: string }
 }
 
+/** The SDK's stream with `tap` shown each message the agent sent, unchanged. */
+function tapped(stream: ReturnType<typeof streamOf>, tap: (message: unknown) => void): ReturnType<typeof streamOf> {
+  return {
+    writable: stream.writable,
+    readable: stream.readable.pipeThrough(
+      new TransformStream({
+        transform(message, controller) {
+          tap(message)
+          controller.enqueue(message)
+        },
+      }),
+    ),
+  }
+}
+
+/** What is wrong with a `session/update`, in a sentence, or `undefined` when it is readable. */
+export function invalidUpdate(update: unknown): string | undefined {
+  if (update === null || typeof update !== 'object') return 'update is not an object'
+  const u = update as Record<string, unknown>
+  if (typeof u['sessionUpdate'] !== 'string') return 'sessionUpdate is not a string'
+  if (u['sessionUpdate'] === 'tool_call' || u['sessionUpdate'] === 'tool_call_update') {
+    if (typeof u['toolCallId'] !== 'string') return 'toolCallId is not a string'
+    for (const key of ['kind', 'title', 'status']) {
+      const v = u[key]
+      if (v !== undefined && v !== null && typeof v !== 'string') return `${key} is not a string`
+    }
+    const locations = u['locations']
+    if (locations !== undefined && locations !== null) {
+      if (!Array.isArray(locations)) return 'locations is not an array'
+      for (const l of locations) {
+        const path = (l as { path?: unknown } | null)?.path
+        if (path !== undefined && path !== null && typeof path !== 'string') return 'a location path is not a string'
+      }
+    }
+  }
+  if (u['sessionUpdate'] === 'agent_message_chunk') {
+    const c = u['content'] as { type?: unknown; text?: unknown } | null | undefined
+    if (c?.type === 'text' && typeof c.text !== 'string') return 'message text is not a string'
+  }
+  return undefined
+}
+
 class HookRefused extends Error {
   override readonly name = 'HookRefused'
 }
@@ -290,6 +332,9 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     let finished = false
     let wallHit = false
     let exited = false
+    // Failures of the record or of the protocol: a run that cannot say what it did is not a success.
+    const recordFailures: string[] = []
+    let protocolError: string | undefined
     const timers: ReturnType<typeof setTimeout>[] = []
 
     const finish = (failure: RunOutcome['failure'], exitCode: number | null = null) => {
@@ -315,13 +360,34 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     const record = (payload: Record<string, unknown>) => {
       const sent = send(socketPath, hookRunId, { session_id: sessionId, ...payload }).then(
         (reply) => {
-          if (!reply.allow) note('hook', `refused ${String(payload['tool_name'])}: ${reply.reason ?? ''}`)
+          if (reply.allow) return
+          const why = `the hook socket refused ${String(payload['tool_name'])}: ${reply.reason ?? ''}`
+          note('hook', why)
+          recordFailures.push(why)
         },
-        (error: unknown) =>
-          note('hook', `could not record ${String(payload['tool_name'])}: ${(error as Error).message}`),
+        (error: unknown) => {
+          const why = `could not record ${String(payload['tool_name'])}: ${(error as Error).message}`
+          note('hook', why)
+          recordFailures.push(why)
+        },
       )
       pending.add(sent)
       void sent.then(() => pending.delete(sent))
+    }
+
+    /**
+     * Every message the agent sends, before the SDK reads it. The SDK logs a
+     * notification it cannot parse and goes on, so the tool call it carried would
+     * vanish and the run read as a success; here that ends the run `crash`.
+     */
+    const tap = (message: unknown) => {
+      const m = message as { method?: unknown; params?: { update?: unknown } } | null
+      if (m?.method !== 'session/update') return
+      const invalid = invalidUpdate(m.params?.update)
+      if (invalid === undefined) return
+      protocolError = `${profile.name} sent a session/update that does not parse: ${invalid}`
+      note('protocol', protocolError)
+      finish({ kind: 'crash', detail: withStderr(protocolError) })
     }
 
     const onUpdate = (update: SessionUpdate) => {
@@ -392,16 +458,29 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       .onNotification('session/update', ({ params }) => {
         onUpdate(params.update as unknown as SessionUpdate)
       })
-      .connectWith(streamOf(child), (ctx) => {
+      .connectWith(tapped(streamOf(child), tap), (ctx) => {
         ctxRef = ctx
+        /** The wall came while a step was pending: cancel the session now it has an id, and start nothing more. */
+        const unlessWall = () => {
+          if (!wallHit) return undefined
+          return (
+            sessionId ? ctx.notify('session/cancel', { sessionId }).catch(() => undefined) : Promise.resolve()
+          ).then(() => {
+            throw new Error('the wall was reached before the prompt was sent')
+          })
+        }
         return openSession(ctx, request.cwd)
           .then((id) => {
             sessionId = id
+            return unlessWall()
+          })
+          .then(() => {
             return request.model === undefined
               ? undefined
               : // Copilot advertises no model option; the removed unstable method still works (019 E9).
-                ctx.request('session/set_model', { sessionId: id, modelId: request.model })
+                ctx.request('session/set_model', { sessionId, modelId: request.model })
           })
+          .then(() => unlessWall())
           .then(() =>
             send(socketPath, hookRunId, {
               hook_event_name: 'UserPromptSubmit',
@@ -416,6 +495,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
               },
             ),
           )
+          .then(() => unlessWall())
           .then(() => {
             phase = 'prompting'
             return ctx.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: request.prompt }] })
@@ -425,6 +505,13 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
         (response) =>
           Promise.allSettled(pending).then(() => {
             if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached; the turn was cancelled' })
+            if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
+            if (recordFailures.length > 0) {
+              return finish({
+                kind: 'crash',
+                detail: `the run's record is incomplete — ${recordFailures.join('; ')}`,
+              })
+            }
             const text = chunks.join('')
             finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
           }),

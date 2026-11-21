@@ -310,6 +310,56 @@ describe('an unreachable hook socket', () => {
   })
 })
 
+describe('a run whose record or protocol failed is not a success', () => {
+  it('a PostToolUse the socket cannot take is a crash, though the turn ended end_turn', async () => {
+    const h = harness(goodTurn)
+    const base = h.options.hook!
+    h.options.hook = (socket, runId, payload) =>
+      (payload as Json)['hook_event_name'] === 'PostToolUse'
+        ? Promise.reject(new Error('EPIPE'))
+        : base(socket, runId, payload)
+    const outcome = await run(h)
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('record is incomplete')
+  })
+
+  it('a refused PostToolUse is a crash too', async () => {
+    const h = harness(goodTurn)
+    h.options.hook = (_s, _r, payload) =>
+      Promise.resolve(
+        (payload as Json)['hook_event_name'] === 'PostToolUse' ? { allow: false, reason: 'no' } : { allow: true },
+      )
+    expect((await run(h)).failure?.kind).toBe('crash')
+  })
+
+  it('a session/update the schema rejects (numeric toolCallId) is a crash', async () => {
+    const h = harness((message, agent) => {
+      if (message['method'] !== 'session/prompt') return
+      agent.notify('session/update', {
+        sessionId: 's1',
+        update: { sessionUpdate: 'tool_call', toolCallId: 7, title: 'x', kind: 'read' },
+      })
+      agent.respond(message['id'], { stopReason: 'end_turn' })
+      return true
+    })
+    const outcome = await run(h)
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('toolCallId')
+  })
+
+  it('a wall reached while session/new is pending cancels the session and never prompts', async () => {
+    const h = harness((message, agent) => {
+      if (message['method'] !== 'session/new') return
+      setTimeout(() => agent.respond(message['id'], { sessionId: 's1' }), 60)
+      return true
+    })
+    const outcome = await run(h, h.request({ limits: { wallMs: 20 } }))
+    expect(outcome.failure?.kind).toBe('timeout')
+    expect(h.agent.received.some((m) => m['method'] === 'session/prompt')).toBe(false)
+    expect(h.hook.events).toEqual([])
+  })
+})
+
 describe('the tool ledger', () => {
   it('records an edit once, when it completes, from the location or the raw input', () => {
     const ledger = createToolLedger()
