@@ -59,6 +59,7 @@ export {
   type CodexReceipt,
   type CodexSandbox,
 } from './codex.ts'
+export { ACP_PROFILES, type AcpProfile } from './acp-session.ts'
 export { RUNTIMES, ToolsCannotBeDenied, createRuntime, everyRuntime, type RuntimeOptions } from './runtimes.ts'
 export { codexTextSpendBound, createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
 export {

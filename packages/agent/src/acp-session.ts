@@ -15,6 +15,7 @@ import { tmpdir } from 'node:os'
 import { Readable, Writable } from 'node:stream'
 
 import { client, ndJsonStream, PROTOCOL_VERSION, RequestError, type ClientContext } from '@agentclientprotocol/sdk'
+import type { RuntimeId, TokenCounts } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 /**
@@ -37,6 +38,40 @@ export interface AcpProfile {
   readonly failedTurn: RegExp
   /** What a person types to sign in, said back when `session/new` wants it. */
   readonly loginCommand: string
+  /**
+   * The `session/prompt` result's `usage` as `TokenCounts`, by this agent's own
+   * meaning of each figure. A field the agent did not send stays absent, never
+   * `0` (0110 §4). `note` is for the run log.
+   */
+  readonly tokens: (usage: Record<string, unknown>) => { tokens: TokenCounts; note?: string }
+}
+
+/** A figure the agent sent: a finite number ≥ 0. `null`, a string, a missing key are all *not said*. */
+export const count = (v: unknown): number | undefined =>
+  typeof v === 'number' && Number.isFinite(v) && v >= 0 ? v : undefined
+
+/**
+ * Copilot (019 E1): `inputTokens` already contains both cache figures, and
+ * `thoughtTokens` is inside `outputTokens` — so no `reasoning`, and `fresh` is
+ * the input less the cache.
+ */
+export function copilotTokens(usage: Record<string, unknown>): { tokens: TokenCounts; note?: string } {
+  const input = count(usage['inputTokens'])
+  const cacheRead = count(usage['cachedReadTokens'])
+  const cacheWrite = count(usage['cachedWriteTokens'])
+  const output = count(usage['outputTokens'])
+  const tokens: TokenCounts = {}
+  let note: string | undefined
+  if (input !== undefined && cacheRead !== undefined && cacheWrite !== undefined) {
+    const fresh = input - cacheRead - cacheWrite
+    if (fresh >= 0) tokens.fresh = fresh
+    else
+      note = `inputTokens ${input} is below cachedReadTokens ${cacheRead} + cachedWriteTokens ${cacheWrite}: fresh left absent`
+  }
+  if (cacheRead !== undefined) tokens.cacheRead = cacheRead
+  if (cacheWrite !== undefined) tokens.cacheWrite = cacheWrite
+  if (output !== undefined) tokens.output = output
+  return note === undefined ? { tokens } : { tokens, note }
 }
 
 export const COPILOT_PROFILE: AcpProfile = {
@@ -47,7 +82,11 @@ export const COPILOT_PROFILE: AcpProfile = {
   // 019 E9: *"Error: Execution failed: Model \"gpt-5\" is not available."* as the reply of an `end_turn`.
   failedTurn: /^Error: Execution failed:/,
   loginCommand: 'copilot login',
+  tokens: copilotTokens,
 }
+
+/** The runtimes that speak ACP, by the profile each one runs on. */
+export const ACP_PROFILES: Partial<Record<RuntimeId, AcpProfile>> = { copilot: COPILOT_PROFILE }
 
 /** ACP's own code for *Authentication required*. */
 export const AUTH_REQUIRED = -32000

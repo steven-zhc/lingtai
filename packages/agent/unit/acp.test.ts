@@ -10,7 +10,7 @@ import { PassThrough } from 'node:stream'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { COPILOT_PROFILE } from '../src/acp-session.ts'
+import { ACP_PROFILES, COPILOT_PROFILE } from '../src/acp-session.ts'
 import { acpFailure, acpRun, COPILOT_CAPABILITIES, createToolLedger, type AcpOptions } from '../src/acp.ts'
 import { classifyAcpSession } from '../src/auth.ts'
 import { missingToFailClosed, type RunRequest } from '../src/runtime.ts'
@@ -427,14 +427,14 @@ describe('acpFailure', () => {
 })
 
 describe('what copilot declares', () => {
-  it('can fail closed, takes no schema, and enforces the wall alone', () => {
+  it('can fail closed, takes no schema, and enforces the wall and turns', () => {
     expect(COPILOT_CAPABILITIES).toMatchObject({
       id: 'copilot',
       hooks: [],
       acceptsOutputSchema: false,
       canFailClosed: true,
       canRewriteToolCall: false,
-      enforces: ['wall'],
+      enforces: ['wall', 'turns'],
     })
     expect(missingToFailClosed(COPILOT_CAPABILITIES)).toEqual([])
   })
@@ -444,5 +444,101 @@ describe('what copilot declares', () => {
     const out = classifyAcpSession(COPILOT_PROFILE, { kind: 'auth-required' })
     expect(out.state).toBe('signed-out')
     expect(out.detail).toContain('copilot login')
+  })
+})
+
+describe("usage, by the agent's own meaning", () => {
+  const evidence = {
+    inputTokens: 105816,
+    outputTokens: 794,
+    totalTokens: 106610,
+    thoughtTokens: 215,
+    cachedReadTokens: 89854,
+    cachedWriteTokens: 15941,
+  }
+
+  it('copilot: fresh is input less both cache figures; no reasoning, no model', () => {
+    expect(COPILOT_PROFILE.tokens(evidence)).toEqual({
+      tokens: { fresh: 21, cacheRead: 89854, cacheWrite: 15941, output: 794 },
+    })
+    expect(ACP_PROFILES.copilot).toBe(COPILOT_PROFILE)
+  })
+
+  it('a missing or null field stays absent, and leaves fresh absent', () => {
+    const { cachedWriteTokens: _w, ...noWrite } = evidence
+    expect(COPILOT_PROFILE.tokens(noWrite).tokens).toEqual({ cacheRead: 89854, output: 794 })
+    expect(COPILOT_PROFILE.tokens({ ...evidence, cachedReadTokens: null }).tokens).toEqual({
+      cacheWrite: 15941,
+      output: 794,
+    })
+  })
+
+  it('a negative fresh is absent, and the three numbers are noted', () => {
+    const result = COPILOT_PROFILE.tokens({ ...evidence, inputTokens: 100 })
+    expect(result.tokens).toEqual({ cacheRead: 89854, cacheWrite: 15941, output: 794 })
+    expect(result.note).toContain('100')
+  })
+
+  it('reaches the outcome through the SDK; no usage is []', async () => {
+    const h = harness((message, agent) => {
+      if (message['method'] !== 'session/prompt') return
+      agent.respond(message['id'], { stopReason: 'end_turn', usage: evidence })
+      return true
+    })
+    const outcome = await run(h)
+    expect(outcome.usage).toEqual([{ tokens: { fresh: 21, cacheRead: 89854, cacheWrite: 15941, output: 794 } }])
+    expect(outcome.costUsd).toBeNull()
+
+    const bare = await run(harness(goodTurn))
+    expect(bare.usage).toEqual([])
+  })
+})
+
+describe('the turn limit', () => {
+  const toolCalls =
+    (n: number): Handler =>
+    (message, agent) => {
+      if (message['method'] !== 'session/prompt') return
+      const sessionId = message['params']['sessionId']
+      for (let i = 0; i < n; i++) {
+        agent.notify('session/update', {
+          sessionId,
+          update: {
+            sessionUpdate: 'tool_call',
+            toolCallId: `t${i}`,
+            title: `Read ${i}`,
+            kind: 'read',
+            status: 'pending',
+          },
+        })
+      }
+      return true
+    }
+
+  it('past turns tool calls ends out-of-turns with the group ended', async () => {
+    const h = harness(toolCalls(3))
+    const outcome = await run(h, h.request({ limits: { wallMs: 5_000, turns: 2 } }))
+    expect(outcome.failure?.kind).toBe('out-of-turns')
+    expect(outcome.turns).toBe(3)
+    expect(h.agent.received.some((m) => m['method'] === 'session/cancel')).toBe(true)
+    expect(h.signals).toEqual(['SIGTERM', 'SIGKILL'])
+  })
+
+  it('the wall arriving during the turn stop does not rename it', async () => {
+    const h = harness(toolCalls(3))
+    h.options.cancelWaitMs = 80
+    const outcome = await run(h, h.request({ limits: { wallMs: 40, turns: 2 } }))
+    expect(outcome.failure?.kind).toBe('out-of-turns')
+  })
+
+  it('no turns in the recipe is no limit', async () => {
+    const h = harness((message, agent) => {
+      const first = toolCalls(3)(message, agent)
+      if (message['method'] === 'session/prompt')
+        setTimeout(() => agent.respond(message['id'], { stopReason: 'end_turn' }), 20)
+      return first
+    })
+    const outcome = await run(h)
+    expect(outcome.failure?.kind).not.toBe('out-of-turns')
   })
 })

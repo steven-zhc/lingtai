@@ -23,6 +23,7 @@ import { spawn as nodeSpawn } from 'node:child_process'
 import { connect } from 'node:net'
 
 import type { ClientContext } from '@agentclientprotocol/sdk'
+import type { Usage } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import {
@@ -46,8 +47,8 @@ export const COPILOT_CAPABILITIES: RuntimeCapabilities = {
   acceptsOutputSchema: false,
   canFailClosed: true,
   canRewriteToolCall: false,
-  // Turns and usd are the next ticket's.
-  enforces: ['wall'],
+  // usd stays unenforced: nothing can price the run while it runs.
+  enforces: ['wall', 'turns'],
 }
 
 /** What the hook socket answers: `{ allow, reason? }`, one JSON line. */
@@ -286,10 +287,24 @@ export function createAcpRuntime(options: AcpOptions = {}): Runtime {
   }
 }
 
+/** The `usage` of a `session/prompt` result, as one entry — or none when it carried no figure. */
+function usageOf(profile: AcpProfile, response: unknown, note: (label: string, detail?: string) => void): Usage {
+  const raw = (response as { usage?: unknown } | null)?.usage
+  if (raw === null || typeof raw !== 'object') return []
+  const { tokens, note: said } = profile.tokens(raw as Record<string, unknown>)
+  if (said !== undefined) note('usage', said)
+  return Object.keys(tokens).length === 0 ? [] : [{ tokens }]
+}
+
 const outcomeOf = (
   started: number,
-  parts: Pick<RunOutcome, 'failure' | 'text' | 'sessionId'> & { turns: number; exitCode?: number | null },
+  parts: Pick<RunOutcome, 'failure' | 'text' | 'sessionId'> & {
+    turns: number
+    exitCode?: number | null
+    usage?: Usage
+  },
 ): RunOutcome => ({
+  usage: parts.usage ?? [],
   exitCode: parts.exitCode ?? null,
   turns: parts.turns,
   durationMs: Date.now() - started,
@@ -340,7 +355,8 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     let ctxRef: ClientContext | undefined
     let stderrTail = ''
     let finished = false
-    let wallHit = false
+    let stopping: { kind: 'timeout' | 'out-of-turns'; detail: string } | undefined
+    let usage: Usage = []
     let exited = false
     // Failures of the record or of the protocol: a run that cannot say what it did is not a success.
     const recordFailures: string[] = []
@@ -358,7 +374,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       for (const title of ledger.unfinished()) note('unfinished', title)
       resume(
         Effect.succeed(
-          outcomeOf(started, { turns: calls, text: text === '' ? null : text, sessionId, failure, exitCode }),
+          outcomeOf(started, { turns: calls, text: text === '' ? null : text, sessionId, failure, exitCode, usage }),
         ),
       )
     }
@@ -412,28 +428,32 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       if (update.sessionUpdate === 'tool_call') {
         calls += 1
         note('tool', `${update.kind ?? 'other'}: ${update.title ?? update.toolCallId}`)
+        const allowed = request.limits.turns
+        if (allowed !== undefined && calls > allowed) {
+          stop('out-of-turns', `${calls} turns, and the recipe allows ${allowed}`)
+        }
       }
       const payload = ledger.apply(update)
       if (payload) record(payload)
     }
 
-    /** The wall, or an abort: `session/cancel`, a wait, then the group. */
-    function onWall() {
-      if (finished || wallHit) return
-      wallHit = true
-      note('wall', 'the wall was reached: cancelling, then ending the process group')
+    /** The first reason to stop wins: `session/cancel`, a wait, then the group. */
+    function stop(kind: 'timeout' | 'out-of-turns', detail: string) {
+      if (finished || stopping) return
+      stopping = { kind, detail }
+      note(kind === 'timeout' ? 'wall' : 'turns', `${detail}: cancelling, then ending the process group`)
       if (ctxRef && sessionId) void ctxRef.notify('session/cancel', { sessionId }).catch(() => undefined)
       timers.push(
         setTimeout(() => {
           signalGroup(child, 'SIGTERM')
-          timers.push(
-            setTimeout(
-              () => finish({ kind: 'timeout', detail: 'the wall was reached; the group was killed' }),
-              killWaitMs,
-            ),
-          )
+          timers.push(setTimeout(() => finish({ kind, detail: `${detail}; the group was killed` }), killWaitMs))
         }, cancelWaitMs),
       )
+    }
+
+    /** The wall, or an abort. */
+    function onWall() {
+      stop('timeout', 'the wall was reached')
     }
 
     child.stderr?.on('data', (chunk: Buffer) => {
@@ -445,7 +465,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     child.on('exit', (code, signal) => {
       exited = true
       if (finished) return
-      if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached' }, code)
+      if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail }, code)
       finish({ kind: 'crash', detail: withStderr(`${binary} exited (${signal ?? code}) before the turn ended`) }, code)
     })
 
@@ -474,7 +494,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
         ctxRef = ctx
         /** The wall came while a step was pending: cancel the session now it has an id, and start nothing more. */
         const unlessWall = () => {
-          if (!wallHit) return undefined
+          if (!stopping) return undefined
           return (
             sessionId ? ctx.notify('session/cancel', { sessionId }).catch(() => undefined) : Promise.resolve()
           ).then(() => {
@@ -514,15 +534,17 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
           })
       })
       .then(
-        (response) =>
-          settled(() => delivered >= seen)
+        (response) => {
+          const read = usageOf(profile, response, note)
+          usage = read
+          return settled(() => delivered >= seen)
             .then(() => Promise.allSettled(pending))
             .then(() => {
-              if (delivered < seen && !wallHit && protocolError === undefined) {
+              if (delivered < seen && !stopping && protocolError === undefined) {
                 protocolError = `${profile.name} sent ${seen - delivered} session/update the SDK rejected`
                 note('protocol', protocolError)
               }
-              if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached; the turn was cancelled' })
+              if (stopping) return finish({ kind: stopping.kind, detail: `${stopping.detail}; the turn was cancelled` })
               if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
               if (recordFailures.length > 0) {
                 return finish({
@@ -532,11 +554,12 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
               }
               const text = chunks.join('')
               finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
-            }),
+            })
+        },
         (error: unknown) => {
           if (finished) return
           const message = error instanceof Error ? error.message : String(error)
-          if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached' })
+          if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail })
           if (error instanceof HookRefused) return finish({ kind: 'crash', detail: message })
           if (phase === 'opening' && isAuthRequired(error)) {
             return finish({
