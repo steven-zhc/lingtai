@@ -1381,8 +1381,10 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
  * list has always had: nothing implements it.
  */
 /**
- * The agents a recipe may name at `implement` and nowhere else yet (#1298): an ACP agent takes no output
- * schema, so the cold reviewer, a judge and triage cannot be built on it.
+ * The agents a recipe may name at `implement` and nowhere else yet (#1298): the mandatory ACP hook
+ * (LINGTAI_HOOK_SOCKET, LINGTAI_HOOK_RUN_ID) is wired only on the implement path, so review and judges would fail
+ * at dispatch, triage is excluded by `DiscussAgent`, and it is not sandboxed yet. The ACP runtime does ask for an
+ * output schema in prose (#1300); wiring the hook at review and judges is the follow-up.
  * The recipe refuses each by name when it resolves, and the setup wizard never proposes one.
  */
 export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot', 'antigravity']
@@ -3592,8 +3594,8 @@ export const Recipe = z
         code: 'custom',
         path: ['runtime', 'agent'],
         message:
-          `runtime.agent names \`${recipe.runtime.agent}\`, which runs only at \`implement\` until review, judges and ` +
-          'triage on an ACP agent are built — name it as `agent:` at `implement`',
+          `runtime.agent names \`${recipe.runtime.agent}\`, which runs only at \`implement\` until the ACP hook is ` +
+          'wired at review and judges (#1300) — name it as `agent:` at `implement`',
       })
     }
     for (const [step, actions] of Object.entries(recipe.steps)) {
@@ -3610,7 +3612,7 @@ export const Recipe = z
           if (key === 'judge' || step !== 'implement') {
             refuse(
               `steps.${step}'s "${action.name}" names \`${key}: ${value}\`, which runs only as the \`agent:\` at ` +
-                '`implement` until review, judges and triage on an ACP agent are built',
+                '`implement` until the ACP hook is wired at review and judges (#1300)',
             )
           } else if (isUnsandboxableRuntime(value!)) {
             // Per agent, not per host: it cannot be sandboxed on any host. Unrequired, it runs unsandboxed.
