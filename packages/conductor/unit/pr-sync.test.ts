@@ -61,8 +61,8 @@ const aWorld = (): World => ({
 
 function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPorts {
   const resolved: Record<string, string> = {
-    'refs/heads/main': MAIN,
-    'refs/heads/lingtai-team': PERSONAL,
+    'refs/lingtai/pr/1/main': MAIN,
+    'refs/lingtai/pr/1/personal': PERSONAL,
     [`${MERGE}^2`]: MAIN,
   }
   return {
@@ -90,6 +90,7 @@ function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPor
     remote: (_project, args) =>
       Effect.sync(() => {
         w.remoteCalls.push([...args])
+        if (args[0] === 'fetch') return { code: 0, stdout: '' }
         if (args[0] === 'ls-remote') {
           const lines = [...w.remote].filter(([ref]) => ref === args[3]).map(([ref, sha]) => `${sha}\t${ref}`)
           return { code: 0, stdout: lines.join('\n') }
@@ -205,6 +206,24 @@ describe('sync and build', () => {
     await serve(ports(store, w), named('sync', 'build', 'push'))
     expect((await state(store)).wait).toMatchObject({ step: 'build', reason: 'sync-unknown' })
     expect(pushesOf(w)).toEqual([])
+  })
+
+  it('a frozen commit on the remote before the first push is accepted by sync and by push alike', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    w.remote.set(PR_REF, FROZEN)
+    await serve(ports(store, w), named('sync', 'build', 'push'))
+    expect(pushesOf(w)).toEqual([['push', 'origin', `${MERGE}:${PR_REF}`]])
+    expect((await state(store)).wait).toBeNull()
+  })
+
+  it('fetches into refs of its own, never refs/heads/*', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    await serve(ports(store, w), named('sync', 'build'))
+    const fetches = w.remoteCalls.filter((a) => a[0] === 'fetch')
+    expect(fetches).toHaveLength(1)
+    expect(fetches[0]!.join(' ')).not.toMatch(/:refs\/heads\//)
   })
 
   it('a PR branch somebody else rewrote is sync-rewritten naming both shas, and nothing is merged', async () => {
@@ -349,14 +368,46 @@ describe('the merge back', () => {
     })
   })
 
-  it('a head already in branch.personal appends nothing and pushes nothing', async () => {
+  it('a head already in branch.personal (a push whose record was lost) is recorded as found, with no merge and no push', async () => {
     const store = await inReview()
     const w = aWorld()
-    const before = (await store.read(prStream('lingtai', 1))).length
     await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
-    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrMergedBack',
+      data: { prHead: FROZEN, mergeCommit: PERSONAL },
+    })
     expect(w.merges).toEqual([])
     expect(pushesOf(w)).toEqual([])
+    expect((await state(store)).mergeBack).toEqual({ prHead: FROZEN, outcome: 'merged' })
+  })
+
+  it('a push whose response is lost and whose look fails records nothing, and the next serve reconciles it', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    const before = (await store.read(prStream('lingtai', 1))).length
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'push'
+              ? Effect.sync(() => (w.remote.set(`refs/heads/lingtai-team`, BACK), { code: 1, stdout: '' }))
+              : args[0] === 'ls-remote'
+                ? Effect.succeed({ code: 128, stdout: '' })
+                : p.remote(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    expect((await state(store)).mergeBack).toBeNull()
+    // The merge is on branch.personal now: the next serve finds the head an ancestor and records it.
+    w.ancestor = () => true
+    await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
+    expect((await state(store)).mergeBack).toEqual({ prHead: FROZEN, outcome: 'merged' })
   })
 
   it('a branch checked out in the person’s own checkout is refused before anything is merged', async () => {

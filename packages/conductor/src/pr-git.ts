@@ -21,3 +21,18 @@ export const remoteSha = (ports: PrPorts, project: string, ref: string): Effect.
     }
     return null
   })
+
+/**
+ * Fetches `from` into `to`, refs of the PR's own under `refs/lingtai/pr/`: never `refs/heads/*`, which a checked-out
+ * branch of the mirror (an agent's published one) would refuse to be fetched into, for a PR merge that does not involve it.
+ */
+export const fetchInto = (
+  ports: PrPorts,
+  project: string,
+  pairs: readonly (readonly [from: string, to: string])[],
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const args = ['fetch', '--no-tags', 'origin', ...pairs.map(([from, to]) => `+${from}:${to}`)] as const
+    const answer = yield* ports.remote(project, args)
+    if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
+  })

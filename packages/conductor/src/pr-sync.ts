@@ -15,16 +15,18 @@
 import { type PrState, integrationStream, prStream } from '@lingtai/domain'
 import { PermissionDenied } from '@lingtai/github'
 import { readPr, recordBranchSynced, recordPrMergeBackFailed, recordPrMergedBack } from '@lingtai/project'
-import { Effect } from 'effect'
+import { Effect, Result } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
-import { asError, gitSaid, remoteSha } from './pr-git.ts'
+import { asError, fetchInto, gitSaid, remoteSha } from './pr-git.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
 
 const short = (sha: string): string => sha.slice(0, 7)
 
 /** The one ref this ticket writes in the mirror: it keeps an unpushed merge's objects. */
 const targetRef = (n: number): string => `refs/lingtai/pr/${n}/target`
+/** Where a step fetches a branch of the remote to: a ref of its own, never `refs/heads/*`. */
+const fetchedRef = (n: number, name: 'main' | 'personal'): string => `refs/lingtai/pr/${n}/${name}`
 
 /** A failed read or write is the person's to hear of; a denied permission is the walk's own `denied` wait. */
 const orUnknown = <A>(
@@ -90,8 +92,8 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
         headSha: target,
       })
       yield* ports.sweep(project)
-      yield* ports.fetch(project)
-      const mainSha = yield* resolve(ports, project, `refs/heads/${main}`)
+      yield* fetchInto(ports, project, [[`refs/heads/${main}`, fetchedRef(n, 'main')]])
+      const mainSha = yield* resolve(ports, project, fetchedRef(n, 'main'))
       const start = yield* startOf(ports, project, target, state.lastPushed)
       if (start === null) {
         return wait(
@@ -207,7 +209,7 @@ export const mergeBackOwed = (state: PrState): boolean =>
   state.status === 'in-review' && state.lastPushed !== null && state.mergeBack?.prHead !== state.lastPushed
 
 type Back =
-  | { readonly kind: 'nothing' }
+  | { readonly kind: 'unsure' }
   | { readonly kind: 'merged'; readonly mergeCommit: string }
   | { readonly kind: 'failed'; readonly why: 'conflict' | 'red' | 'unknown' | 'lost-push'; readonly detail: string }
   | { readonly kind: 'lost' }
@@ -237,13 +239,16 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
     const attempt = (tries: number): Effect.Effect<Back, Error> =>
       Effect.gen(function* () {
         yield* ports.sweep(project)
-        yield* ports.fetch(project)
-        const personalSha = yield* resolve(ports, project, `refs/heads/${branch}`)
+        yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
+        const personalSha = yield* resolve(ports, project, fetchedRef(n, 'personal'))
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
           return { kind: 'failed', why: 'unknown', detail: `${short(prHead)} is not in the mirror` } as Back
         }
-        if (yield* isAncestor(ports, project, prHead, personalSha)) return { kind: 'nothing' } as Back
+        // Already on `branch.personal`: a push that landed whose record was lost. The merge is recorded as found.
+        if (yield* isAncestor(ports, project, prHead, personalSha)) {
+          return { kind: 'merged', mergeCommit: personalSha } as Back
+        }
 
         const where = yield* ports.checkedOut(project, branch)
         if (where !== null) {
@@ -283,8 +288,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         const answer = yield* ports.remote(project, push)
         if (answer.code === 0) return { kind: 'merged', mergeCommit: merged.sha } as Back
         // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
-        if ((yield* remoteSha(ports, project, ref)) === merged.sha)
-          return { kind: 'merged', mergeCommit: merged.sha } as Back
+        // A look that itself fails proves nothing either way: record nothing, and the next serve reconciles by ancestry.
+        const looked = yield* Effect.result(remoteSha(ports, project, ref))
+        if (Result.isFailure(looked)) return { kind: 'unsure' } as Back
+        if (looked.success === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
       }).pipe(
@@ -300,7 +307,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       let outcome = yield* attempt(0)
       // One recompute against the branch where it now is — a person pushed it between the fetch and the push.
       if (outcome.kind === 'lost') outcome = yield* attempt(1)
-      if (outcome.kind === 'nothing' || outcome.kind === 'lost') return
+      if (outcome.kind === 'unsure' || outcome.kind === 'lost') return
       if (outcome.kind === 'failed') {
         yield* failed(outcome.why, outcome.detail)
         return

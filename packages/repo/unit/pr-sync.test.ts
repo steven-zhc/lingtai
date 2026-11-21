@@ -10,6 +10,7 @@ import { RepoFailed } from '../src/git.ts'
 import { type GitPort, mergeInWorktree, sweepPrWorktrees } from '../src/pr-sync.ts'
 
 const HOME = '/nonexistent-lingtai-home'
+const WT = `${HOME}/worktrees/p`
 
 function fakeGit(
   opts: { failMerge?: boolean; unmerged?: string; porcelain?: string; failWorktreeAdd?: boolean } = {},
@@ -77,15 +78,16 @@ describe('sweepPrWorktrees', () => {
     const { port, calls } = fakeGit({
       porcelain: [
         wt('/h/repos/p.git'),
-        wt('/h/worktrees/p/pr-sync-1-100'),
-        wt('/h/worktrees/p/pr-back-1-200'),
-        wt('/h/worktrees/p/integrator-main-1-abc'),
-        wt('/h/worktrees/p/base-abcdef0-r1'),
+        wt('/Users/me/src/pr-sync-debug'),
+        wt(`${WT}/pr-sync-1-100`),
+        wt(`${WT}/pr-back-1-200`),
+        wt(`${WT}/integrator-main-1-abc`),
+        wt(`${WT}/base-abcdef0-r1`),
       ].join('\n'),
     })
     await Effect.runPromise(sweepPrWorktrees({ project: 'p', home: HOME, git: port }))
     const removed = calls.filter((c) => c[0] === 'worktree' && c[1] === 'remove').map((c) => c[3])
-    expect(removed).toEqual(['/h/worktrees/p/pr-sync-1-100', '/h/worktrees/p/pr-back-1-200'])
+    expect(removed).toEqual([`${WT}/pr-sync-1-100`, `${WT}/pr-back-1-200`])
     expect(calls.some((c) => c[0] === 'worktree' && c[1] === 'prune')).toBe(true)
   })
 })

@@ -13,7 +13,7 @@
  * start of each step, with no age test — one PR is served at a time per project, so none can be live.
  */
 import { rm } from 'node:fs/promises'
-import { basename } from 'node:path'
+import { dirname } from 'node:path'
 
 import { stateDir } from '@lingtai/env'
 import { Effect, Result } from 'effect'
@@ -106,11 +106,16 @@ export const sweepPrWorktrees = (options: {
     const gitPort = options.git ?? gitEffect
     const at = (args: string[], cwd: string) => gitPort(args, { cwd })
     const registered = yield* at(['worktree', 'list', '--porcelain'], mirror).pipe(Effect.orElseSucceed(() => ''))
+    // Only what this project's own worktree directory holds: a person's worktree of the mirror elsewhere is theirs.
+    const managed = dirname(worktreePath(home, options.project, 'x'))
     for (const line of registered.split('\n')) {
       if (!line.startsWith('worktree ')) continue
       const path = line.slice('worktree '.length).trim()
-      if (!PR_WORKTREE_PREFIXES.some((prefix) => basename(path).startsWith(prefix))) continue
-      yield* mirrorWrite(mirror, at(['worktree', 'remove', '--force', path], mirror)).pipe(Effect.ignore)
+      if (dirname(path) !== managed) continue
+      if (!PR_WORKTREE_PREFIXES.some((prefix) => path.slice(managed.length + 1).startsWith(prefix))) continue
+      // Git refusing (a locked worktree) is the end of it: its files are not removed behind its back.
+      const removed = yield* Effect.result(mirrorWrite(mirror, at(['worktree', 'remove', '--force', path], mirror)))
+      if (Result.isFailure(removed)) continue
       yield* Effect.tryPromise(() => rm(path, { recursive: true, force: true })).pipe(Effect.ignore)
     }
     yield* mirrorWrite(mirror, at(['worktree', 'prune'], mirror)).pipe(Effect.ignore)

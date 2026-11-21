@@ -203,7 +203,10 @@ const pushStep: PrStep = {
         const at = yield* remoteSha(ports, project, ref)
         if (at === target) return yield* pushed('existing')
         if (at === null && state.lastPushed !== null) return moved(null)
-        if (at !== null && at !== state.lastPushed) return moved(at)
+        // Before the first push the frozen commit is what the sync accepted on the remote; the target descends from it.
+        if (at !== null && at !== state.lastPushed && !(state.lastPushed === null && at === state.frozenSha)) {
+          return moved(at)
+        }
 
         // The commit has to be in the mirror to be pushed from it; a re-cloned mirror loses it, and the walk is run again.
         // git exits 1 or 128 for an object it does not have; the steps that made it are done again.
