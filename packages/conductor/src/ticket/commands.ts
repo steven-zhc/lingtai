@@ -75,7 +75,7 @@ import { type StepAction } from '@lingtai/recipe'
 import { Cause, Effect, Exit, Result } from 'effect'
 
 import { editHash } from '../attempts.ts'
-import { endActionsIn, resolveEndActions, type TerminalOutcome } from '../end-step.ts'
+import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
 import { recordPrompt } from '../record-prompt.ts'
 import type { Tickets } from '../ticket-store.ts'
 
@@ -1112,7 +1112,7 @@ export function recordEndPlanEffect(
   return Effect.gen(function* () {
     if (actions.length === 0) return []
     const events = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (error) => error })
-    const toAppend = resolveEndActions(events, endActionsIn(actions, { mode, outcome }), outcome)
+    const toAppend = resolveEndActions(events, actions, outcome, mode)
     if (toAppend.length === 0) return []
     yield* Effect.tryPromise({ try: () => store.append(ticketId, events.length, toAppend), catch: (error) => error })
     return toAppend

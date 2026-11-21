@@ -133,7 +133,7 @@ import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
 // definition of them is a drift nobody would notice.
 import { Cause, Effect } from 'effect'
 
-import { endActionsIn, resolveEndActions } from './end-step.ts'
+import { resolveEndActions } from './end-step.ts'
 import {
   NOT_BUILT_YET,
   type SentBack,
@@ -959,11 +959,7 @@ export function bodiesFor(ports: AttemptPorts): StepBodies {
           Effect.gen(function* () {
             const events = yield* ports.readEnd(ticketId)
             act = 'resolve'
-            const plan = resolveEndActions(
-              events,
-              endActionsIn(actions, { mode: ports.mode ?? 'solo', outcome }),
-              outcome,
-            )
+            const plan = resolveEndActions(events, actions, outcome, ports.mode ?? 'solo')
             if (plan.length === 0) return passed
             act = 'record'
             yield* ports.recordEnd(ticketId, events.length, plan)

@@ -2,7 +2,7 @@
 import type { StepAction } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { endActionsIn } from '../src/end-step.ts'
+import { endActionsIn, resolveEndActions } from '../src/end-step.ts'
 
 const close = { name: 'c', close: true, when: 'any' } as unknown as StepAction
 const labels = { name: 'l', labels: ['x'], when: 'landed' } as unknown as StepAction
@@ -18,5 +18,14 @@ describe('endActionsIn', () => {
   })
   it('is the identity in solo', () => {
     expect(endActionsIn(actions, { mode: 'solo', outcome: 'landed' })).toBe(actions)
+  })
+})
+
+describe('resolveEndActions in team mode', () => {
+  it('still records a landing whose only declared action was a close, as an empty plan', () => {
+    const plan = resolveEndActions([], [close], 'landed', 'team')
+    expect(plan).toHaveLength(1)
+    expect((plan[0]!.data as { actions: unknown[] }).actions).toEqual([])
+    expect(resolveEndActions([], [close], 'landed')).toHaveLength(1)
   })
 })
