@@ -12,7 +12,7 @@ import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlit
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import type { GitHubClient } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
-import { queueOf } from '@lingtai/recipe/settings'
+import { queueOf, selectionOf } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -297,7 +297,11 @@ describe('a pass under source.tickets: db', () => {
     const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
     const recipe = await recipeOf(RECIPE_DB)
 
-    const offered = await runnableNow({ client: ticketedClientOf(github, tickets), queue: queueOf(recipe) })
+    const offered = await runnableNow({
+      client: ticketedClientOf(github, tickets),
+      queue: queueOf(recipe),
+      selection: selectionOf(recipe),
+    })
 
     expect(offered.runnable.map((r) => r.ref)).toEqual([String(created.number)])
     expect(ticketCalls).toEqual([])

@@ -65,6 +65,8 @@ const issue = (over: Omit<Partial<Issue>, 'labels'> & { number: number; labels?:
   labels: (over.labels ?? []).map((l) => (typeof l === 'string' ? { name: l, color: null } : l)),
 })
 
+const SOLO = { mode: 'solo', tickets: 'github' } as const
+
 describe('kindOf', () => {
   const kinds = ['bug', 'tech-debt', 'documentation']
 
@@ -101,7 +103,7 @@ describe('kindOf', () => {
 
 describe('considerIssue', () => {
   it('accepts an open issue of a wanted kind', () => {
-    expect(considerIssue(issue({ number: 1, labels: ['bug'] }), queue).skip).toBeNull()
+    expect(considerIssue(issue({ number: 1, labels: ['bug'] }), queue, SOLO).skip).toBeNull()
   })
 
   /**
@@ -111,31 +113,35 @@ describe('considerIssue', () => {
    * ready work an agent had filed — down with `agent:wip`.
    */
   it("refuses another system's labels when the recipe names them", () => {
-    expect(considerIssue(issue({ number: 2, labels: ['bug', 'agent:wip'] }), queue).skip).toBe('excluded-label')
-    expect(considerIssue(issue({ number: 3, labels: ['bug', 'agent:review'] }), queue).skip).toBe('excluded-label')
+    expect(considerIssue(issue({ number: 2, labels: ['bug', 'agent:wip'] }), queue, SOLO).skip).toBe('excluded-label')
+    expect(considerIssue(issue({ number: 3, labels: ['bug', 'agent:review'] }), queue, SOLO).skip).toBe(
+      'excluded-label',
+    )
   })
 
   it('takes a label in that namespace the recipe did not name', () => {
     // `agent:followup` is not in the exclude list, so it is ordinary work. The
     // old rule would have skipped it for its prefix alone.
-    expect(considerIssue(issue({ number: 5, labels: ['bug', 'agent:followup'] }), queue).skip).toBeNull()
+    expect(considerIssue(issue({ number: 5, labels: ['bug', 'agent:followup'] }), queue, SOLO).skip).toBeNull()
   })
 
   it("names the first exclude entry in the recipe's order and spelling", () => {
     const q = { ...queue, exclude: ['Needs-Design', 'agent:wip'] }
-    const held = considerIssue(issue({ number: 6, labels: ['bug', 'agent:wip', 'needs-design'] }), q)
+    const held = considerIssue(issue({ number: 6, labels: ['bug', 'agent:wip', 'needs-design'] }), q, SOLO)
     expect(held.label).toBe('Needs-Design')
-    expect(considerIssue(issue({ number: 7, labels: ['bug'] }), q).label).toBeNull()
-    expect(considerIssue(issue({ number: 8, labels: [] }), q)).toMatchObject({ skip: 'no-kind', label: null })
+    expect(considerIssue(issue({ number: 7, labels: ['bug'] }), q, SOLO).label).toBeNull()
+    expect(considerIssue(issue({ number: 8, labels: [] }), q, SOLO)).toMatchObject({ skip: 'no-kind', label: null })
   })
 
   it("honours the recipe's own exclude list", () => {
-    expect(considerIssue(issue({ number: 4, labels: ['bug', 'blocked'] }), queue).skip).toBe('excluded-label')
-    expect(considerIssue(issue({ number: 5, labels: ['bug', 'Needs-Design'] }), queue).skip).toBe('excluded-label')
+    expect(considerIssue(issue({ number: 4, labels: ['bug', 'blocked'] }), queue, SOLO).skip).toBe('excluded-label')
+    expect(considerIssue(issue({ number: 5, labels: ['bug', 'Needs-Design'] }), queue, SOLO).skip).toBe(
+      'excluded-label',
+    )
   })
 
   it("takes a label of the repository's own that no enum ever had", () => {
-    expect(considerIssue(issue({ number: 9, labels: ['documentation'] }), queue).skip).toBeNull()
+    expect(considerIssue(issue({ number: 9, labels: ['documentation'] }), queue, SOLO).skip).toBeNull()
   })
 
   it('skips a kind this project does not want, and says which reason', () => {
@@ -143,24 +149,26 @@ describe('considerIssue', () => {
     // there is no difference between "unclassified" and "classified as
     // something this project does not take". `kind-not-wanted` named that gap
     // and the gap is gone (#76).
-    expect(considerIssue(issue({ number: 6, labels: ['tech-debt'] }), queue).skip).toBe('no-kind')
-    expect(considerIssue(issue({ number: 7, labels: [] }), queue).skip).toBe('no-kind')
-    expect(considerIssue(issue({ number: 8, labels: ['bug'], state: 'closed' }), queue).skip).toBe('closed')
+    expect(considerIssue(issue({ number: 6, labels: ['tech-debt'] }), queue, SOLO).skip).toBe('no-kind')
+    expect(considerIssue(issue({ number: 7, labels: [] }), queue, SOLO).skip).toBe('no-kind')
+    expect(considerIssue(issue({ number: 8, labels: ['bug'], state: 'closed' }), queue, SOLO).skip).toBe('closed')
   })
 
   /** #957: open sub-issues make an epic, whatever its labels; closed ones do not. */
   it('passes over an epic before it reads a label, and offers a ticket whose sub-issues are all closed', () => {
     const epic = { total: 7, completed: 5 }
-    expect(considerIssue(issue({ number: 1, labels: ['bug'], subIssues: epic }), queue).skip).toBe('epic')
-    expect(considerIssue(issue({ number: 2, labels: ['bug', 'agent:hold'], subIssues: epic }), queue).skip).toBe('epic')
+    expect(considerIssue(issue({ number: 1, labels: ['bug'], subIssues: epic }), queue, SOLO).skip).toBe('epic')
+    expect(considerIssue(issue({ number: 2, labels: ['bug', 'agent:hold'], subIssues: epic }), queue, SOLO).skip).toBe(
+      'epic',
+    )
     expect(
-      considerIssue(issue({ number: 3, labels: ['bug'], subIssues: { total: 7, completed: 7 } }), queue).skip,
+      considerIssue(issue({ number: 3, labels: ['bug'], subIssues: { total: 7, completed: 7 } }), queue, SOLO).skip,
     ).toBe(null)
     expect(
-      considerIssue(issue({ number: 4, labels: ['bug'], subIssues: { total: 0, completed: 0 } }), queue).skip,
+      considerIssue(issue({ number: 4, labels: ['bug'], subIssues: { total: 0, completed: 0 } }), queue, SOLO).skip,
     ).toBe(null)
-    expect(considerIssue(issue({ number: 5, labels: ['bug'], subIssues: null }), queue).skip).toBe(null)
-    expect(considerIssue(issue({ number: 6, state: 'closed', subIssues: epic }), queue).skip).toBe('closed')
+    expect(considerIssue(issue({ number: 5, labels: ['bug'], subIssues: null }), queue, SOLO).skip).toBe(null)
+    expect(considerIssue(issue({ number: 6, state: 'closed', subIssues: epic }), queue, SOLO).skip).toBe('closed')
   })
 
   /**
@@ -172,8 +180,11 @@ describe('considerIssue', () => {
    */
   it('passes over an issue an open one still blocks', () => {
     expect(
-      considerIssue(issue({ number: 123, labels: ['bug'], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }), queue)
-        .skip,
+      considerIssue(
+        issue({ number: 123, labels: ['bug'], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
+        queue,
+        SOLO,
+      ).skip,
     ).toBe('blocked-by')
   })
 
@@ -184,12 +195,18 @@ describe('considerIssue', () => {
    */
   it('is not held by a blocker that has closed, nor by an empty list', () => {
     expect(
-      considerIssue(issue({ number: 124, labels: ['bug'], dependencies: { blockedBy: 0, totalBlockedBy: 2 } }), queue)
-        .skip,
+      considerIssue(
+        issue({ number: 124, labels: ['bug'], dependencies: { blockedBy: 0, totalBlockedBy: 2 } }),
+        queue,
+        SOLO,
+      ).skip,
     ).toBeNull()
     expect(
-      considerIssue(issue({ number: 125, labels: ['bug'], dependencies: { blockedBy: 0, totalBlockedBy: 0 } }), queue)
-        .skip,
+      considerIssue(
+        issue({ number: 125, labels: ['bug'], dependencies: { blockedBy: 0, totalBlockedBy: 0 } }),
+        queue,
+        SOLO,
+      ).skip,
     ).toBeNull()
   })
 
@@ -199,7 +216,7 @@ describe('considerIssue', () => {
    * rather than passing every ticket over; `runnableNow` is what says so.
    */
   it('takes an issue whose repository reports no dependencies at all', () => {
-    expect(considerIssue(issue({ number: 126, labels: ['bug'], dependencies: null }), queue).skip).toBeNull()
+    expect(considerIssue(issue({ number: 126, labels: ['bug'], dependencies: null }), queue, SOLO).skip).toBeNull()
   })
 
   /**
@@ -216,6 +233,7 @@ describe('considerIssue', () => {
           dependencies: { blockedBy: 1, totalBlockedBy: 1 },
         }),
         queue,
+        SOLO,
       ).skip,
     ).toBe('excluded-label')
   })
@@ -232,34 +250,34 @@ describe('the assignee', () => {
   const nobodys = issue({ number: 183, labels: ['bug'] })
 
   it("is not offered under `mine` when it is somebody else's, and is under `both`", () => {
-    expect(considerIssue(alices, as({ login: 'bob', take: 'mine' })).skip).toBe('assigned-elsewhere')
-    expect(considerIssue(alices, as({ login: 'bob', take: 'all' })).skip).toBeNull()
+    expect(considerIssue(alices, as({ login: 'bob', take: 'mine' }), SOLO).skip).toBe('assigned-elsewhere')
+    expect(considerIssue(alices, as({ login: 'bob', take: 'all' }), SOLO).skip).toBeNull()
   })
 
   /** Unassigned work is taken by default — what the queue did before, and what somebody alone expects. */
   it('offers everything when the machine says nothing', () => {
-    for (const i of [alices, mine, nobodys]) expect(considerIssue(i, queue).skip).toBeNull()
+    for (const i of [alices, mine, nobodys]) expect(considerIssue(i, queue, SOLO).skip).toBeNull()
   })
 
   it("under `mine`, takes only this login's, compared as GitHub does, without case", () => {
     const rule = as({ login: 'bob', take: 'mine' })
-    expect(considerIssue(mine, rule).skip).toBeNull()
-    expect(considerIssue(nobodys, rule).skip).toBe('unassigned')
+    expect(considerIssue(mine, rule, SOLO).skip).toBeNull()
+    expect(considerIssue(nobodys, rule, SOLO).skip).toBe('unassigned')
   })
 
   it("under `unassigned`, takes only nobody's", () => {
     const rule = as({ login: 'bob', take: 'unassigned' })
-    expect(considerIssue(nobodys, rule).skip).toBeNull()
-    expect(considerIssue(alices, rule).skip).toBe('assigned-elsewhere')
-    expect(considerIssue(mine, rule).skip).toBe('assigned-to-me')
+    expect(considerIssue(nobodys, rule, SOLO).skip).toBeNull()
+    expect(considerIssue(alices, rule, SOLO).skip).toBe('assigned-elsewhere')
+    expect(considerIssue(mine, rule, SOLO).skip).toBe('assigned-to-me')
   })
 
   /** With no login, whose an assigned issue is cannot be said — so it is not said to be somebody else's. */
   it('under `unassigned` with no login, passes over assigned work without naming whose', () => {
     const rule = as({ take: 'unassigned' })
-    expect(considerIssue(nobodys, rule).skip).toBeNull()
-    expect(considerIssue(mine, rule).skip).toBe('assigned')
-    expect(considerIssue(alices, rule).skip).toBe('assigned')
+    expect(considerIssue(nobodys, rule, SOLO).skip).toBeNull()
+    expect(considerIssue(mine, rule, SOLO).skip).toBe('assigned')
+    expect(considerIssue(alices, rule, SOLO).skip).toBe('assigned')
   })
 
   it("is checked after blocked-by, so a blocked issue of somebody else's reports the block", () => {
@@ -269,18 +287,19 @@ describe('the assignee', () => {
       assignees: ['alice'],
       dependencies: { blockedBy: 1, totalBlockedBy: 1 },
     })
-    expect(considerIssue(blocked, as({ login: 'bob', take: 'mine' })).skip).toBe('blocked-by')
+    expect(considerIssue(blocked, as({ login: 'bob', take: 'mine' }), SOLO).skip).toBe('blocked-by')
   })
 
   /** A stale label misinforms and blocks nobody. */
   it('does not read `lingtai:working`, under any setting', () => {
     const working = issue({ number: 184, labels: ['bug', 'lingtai:working'] })
-    expect(considerIssue(working, as({ take: 'all' })).skip).toBeNull()
-    expect(considerIssue(working, as({ take: 'unassigned' })).skip).toBeNull()
+    expect(considerIssue(working, as({ take: 'all' }), SOLO).skip).toBeNull()
+    expect(considerIssue(working, as({ take: 'unassigned' }), SOLO).skip).toBeNull()
   })
 
   it('is counted on the line `lingtai status` prints, beside the other reasons', async () => {
     const found = await runnableNow({
+      selection: SOLO,
       client: fakeClient([alices, mine, nobodys]),
       queue: as({ login: 'bob', take: 'mine' }),
     })
@@ -463,7 +482,7 @@ describe('runnableNow', () => {
       issue({ number: 104, labels: [] }),
     ]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['101', '102'])
     expect(result.runnable[0]).toEqual({
@@ -515,7 +534,7 @@ describe('runnableNow', () => {
       issue({ number: 123, labels: ['bug'], dependencies: { blockedBy: 2, totalBlockedBy: 2 } }),
     ]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
     expect(result.skipped).toEqual([
@@ -546,7 +565,7 @@ describe('runnableNow', () => {
       issue({ number: 132, labels: ['feature'], dependencies: null }),
     ]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['131', '132'])
     expect(result.skipped).toEqual([])
@@ -567,7 +586,7 @@ describe('runnableNow', () => {
       issue({ number: 123, labels: ['bug'], dependencies: { blockedBy: 1, totalBlockedBy: 2 } }),
     ]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['121', '122'])
     expect(result.skipped).toEqual([
@@ -599,7 +618,7 @@ describe('runnableNow', () => {
       issue({ number: 402, labels: [{ name: 'feature', color: '#a2eeef' }] }),
     ]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.kindColors).toEqual({ bug: '#d73a4a', feature: '#a2eeef' })
   })
@@ -614,7 +633,7 @@ describe('runnableNow', () => {
     const PROJECT = newProject()
     const issues = [issue({ number: 403, labels: [{ name: 'bug', color: '#d73a4a' }, 'blocked'] })]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.runnable).toEqual([])
     expect(result.skipped).toEqual([
@@ -641,7 +660,7 @@ describe('runnableNow', () => {
     const PROJECT = newProject()
     const issues = [issue({ number: 404, labels: ['bug'] })]
 
-    const result = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(result.kindColors).toEqual({})
   })
@@ -650,7 +669,7 @@ describe('runnableNow', () => {
     const PROJECT = newProject()
     const issues = [issue({ number: 201, labels: ['bug'] })]
 
-    await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     // The whole point of 0012: which issues exist is GitHub's state, and one
     // event per issue per pass was reproducing a fact GitHub answers on demand.
@@ -666,11 +685,7 @@ describe('runnableNow', () => {
     const PROJECT = newProject()
     const issues = [issue({ number: 301, labels: ['bug'] }), issue({ number: 302, labels: ['bug'] })]
 
-    const result = await runnableNow({
-      client: fakeClient(issues, PROJECT),
-      queue,
-      only: [302],
-    })
+    const result = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue, only: [302] })
 
     expect(result.runnable.map((r) => r.ref)).toEqual(['302'])
   })
@@ -703,9 +718,36 @@ describe('runnableNow', () => {
       },
     }
 
-    const viaPort = await runnableNow({ client: plain, queue })
-    const viaGitHubClient = await runnableNow({ client: fakeClient(issues, PROJECT), queue })
+    const viaPort = await runnableNow({ selection: SOLO, client: plain, queue })
+    const viaGitHubClient = await runnableNow({ selection: SOLO, client: fakeClient(issues, PROJECT), queue })
 
     expect(viaPort).toEqual(viaGitHubClient)
+  })
+})
+
+describe('team mode and the landed label (#1310)', () => {
+  const TEAM = { mode: 'team', tickets: 'github' } as const
+  const DB = { mode: 'team', tickets: 'db' } as const
+  const queue = { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { login: 'me', take: 'all' as const } }
+  const skip = (
+    over: Omit<Partial<Issue>, 'labels'> & { labels?: string[] },
+    selection: Parameters<typeof considerIssue>[2],
+  ) => considerIssue(issue({ number: 1, labels: ['bug'], ...over }), queue, selection).skip
+
+  it('takes only the issues assigned to the login, whatever the parsed take says', () => {
+    expect(skip({ assignees: ['ME'] }, TEAM)).toBeNull()
+    expect(skip({ assignees: ['you'] }, TEAM)).toBe('assigned-elsewhere')
+    expect(skip({ assignees: [] }, TEAM)).toBe('unassigned')
+    expect(skip({ assignees: ['you'] }, SOLO)).toBeNull()
+  })
+
+  it('takes every local ticket, whose listing carries no assignee', () => {
+    expect(skip({ assignees: [] }, DB)).toBeNull()
+    expect(skip({ assignees: [] }, { mode: 'solo', tickets: 'db' })).toBeNull()
+  })
+
+  it('passes over lingtai:landed in solo mode only, even with nothing excluded', () => {
+    expect(skip({ labels: ['bug', 'Lingtai:Landed'] }, SOLO)).toBe('landed-elsewhere')
+    expect(skip({ labels: ['bug', 'lingtai:landed'], assignees: ['me'] }, TEAM)).toBeNull()
   })
 })

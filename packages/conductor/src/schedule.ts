@@ -34,7 +34,7 @@ import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotSto
  * starts fresh, which is what you want after a fix.
  */
 import { parseDuration, type Recipe } from '@lingtai/recipe'
-import { backoffOf, branchOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { backoffOf, branchOf, kindsOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -234,6 +234,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
       const listed = yield* runnableNowEffect({
         client: options.discovery ?? options.client,
         queue: queueOf(options.recipe),
+        selection: selectionOf(options.recipe),
       }).pipe(Effect.orDie)
       // **A red base is the project's** (#1208, 0108 §13): while its head is the commit the red was recorded
       // on, every ticket is passed over as `base-red`. The mirror is read only for a base that is red, and a

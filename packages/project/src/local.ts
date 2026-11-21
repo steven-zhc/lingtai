@@ -31,6 +31,7 @@ import {
   recipeFileIn,
   resolveAgent,
   resolveSource,
+  selectionOf,
 } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -246,7 +247,7 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   const rule = assigneeOf(recipe)
   const atStep = recipe.steps.claim.some((action) => 'queue' in action) ? from('steps.claim') : null
   provenance['runtime.assignee.take'] =
-    `${rule?.take ?? 'all'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
+    `${selectionOf(recipe).mode === 'team' ? 'mine' : (rule?.take ?? 'all')}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
   provenance['runtime.assignee.login'] =
     `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
 

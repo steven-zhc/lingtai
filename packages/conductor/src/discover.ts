@@ -27,11 +27,12 @@
  * discover it at all.
  */
 import { PUBLISHING_LABEL } from '@lingtai/domain'
-import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
+import type { AssigneeRule, QueueSettings, Selection } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 // `ticketStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
+import { LANDED_LABEL } from './labels.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /**
@@ -154,6 +155,11 @@ function normaliseLabel(label: string): string {
  */
 export type SkipReason =
   | 'closed'
+  /**
+   * A team machine landed it on its person's own branch and left it open for the PR (#1309). A solo
+   * machine passes over `lingtai:landed` and no recipe can lift that (#1310).
+   */
+  | 'landed-elsewhere'
   /** It has open sub-issues, so it is a container of work and never work itself (#957). */
   | 'epic'
   | 'no-kind'
@@ -220,7 +226,7 @@ export interface Considered {
  * Separated from the appending so `lingtai status` can explain a queue's *absences*,
  * which is the question the old loop's `pick_ticket` could never answer.
  */
-export function considerIssue(issue: TicketListing, queue: QueueSettings): Considered {
+export function considerIssue(issue: TicketListing, queue: QueueSettings, selection: Selection): Considered {
   if (issue.state === 'closed') return { issue, skip: 'closed', label: null }
 
   // Before any label is read: an epic is never work, which is more permanent
@@ -231,6 +237,11 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
 
   // The system's own label, not the recipe's: checked before `exclude` so no recipe can lift it.
   if (labels.includes(PUBLISHING_LABEL)) return { issue, skip: 'publishing', label: null }
+
+  // Somebody's team machine has it on their own branch, waiting on their PR. Checked like `publishing`.
+  if (selection.mode === 'solo' && labels.includes(LANDED_LABEL.toLowerCase())) {
+    return { issue, skip: 'landed-elsewhere', label: null }
+  }
 
   // Every reason an issue is not this agent's comes from the recipe. There used
   // to be one more, hardcoded here: any label starting `agent:` meant the issue
@@ -264,7 +275,7 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
 
   // Last: whose work it is (#181). An issue both blocked and somebody else's
   // reports `blocked-by`, the reason that clears on its own.
-  const assignee = assigneeSkip(issue, queue.assignee)
+  const assignee = assigneeSkip(issue, queue.assignee, selection)
   if (assignee) return { issue, skip: assignee, label: null }
 
   return { issue, skip: null, label: null }
@@ -280,9 +291,19 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
  * Absent is `all`: every issue is offered whoever it is assigned to, which is
  * what the queue did before it read an assignee. Logins compare
  * case-insensitively, because GitHub's do.
+ *
+ * **On the local store every ticket is the person's** (0130 §3): it tracks no assignee, so every
+ * listing row has none, and *mine* is everyone. **In team mode the rule is `mine`** whatever the parsed
+ * `take` says: a written `all` or `unassigned` was refused when the recipe resolved, so the `all` that
+ * arrives here can only be the schema's default (#1310).
  */
-export function assigneeSkip(issue: TicketListing, rule: AssigneeRule | undefined): SkipReason | null {
-  const take = rule?.take ?? 'all'
+export function assigneeSkip(
+  issue: TicketListing,
+  rule: AssigneeRule | undefined,
+  selection: Selection,
+): SkipReason | null {
+  if (selection.tickets === 'db') return null
+  const take = selection.mode === 'team' ? 'mine' : (rule?.take ?? 'all')
   if (take === 'all') return null
   const me = rule?.login?.toLowerCase()
   const assignees = issue.assignees.map((a) => a.toLowerCase())
@@ -415,6 +436,8 @@ export interface RunnableNowOptions {
    * ticket a pass takes is the one the reading of that action says it took.
    */
   queue: QueueSettings
+  /** The mode and ticket source (`selectionOf(recipe)`), which `queue:` does not carry (#1310). */
+  selection: Selection
   /** Restricts the read to specific issue numbers. */
   only?: number[]
 }
@@ -441,7 +464,7 @@ export function runnableNow(options: RunnableNowOptions): Promise<Offered> {
 /** `runnableNow` as an Effect: a failed listing is the failure, with the client's own error, never an empty queue. */
 export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Offered, unknown> {
   return Effect.gen(function* () {
-    const { client, queue } = options
+    const { client, queue, selection } = options
 
     const issues = yield* Effect.tryPromise({
       try: () => (options.only ? Promise.all(options.only.map((n) => client.getIssue(n))) : client.listOpenIssues()),
@@ -463,7 +486,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
         result.kindColors[matched.kind] = matched.label.color
       }
 
-      const { skip, label } = considerIssue(issue, queue)
+      const { skip, label } = considerIssue(issue, queue, selection)
       if (skip) {
         result.skipped.push({
           ref: issue.number,

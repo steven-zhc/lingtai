@@ -25,6 +25,7 @@ vi.mock('@lingtai/recipe/settings', () => ({
     ticket: { newAttempts: 1 },
   }),
   queueOf: () => ({}),
+  selectionOf: () => ({ mode: 'solo', tickets: 'github' }),
 }))
 
 import { runnableNow } from '@lingtai/conductor/discover'
