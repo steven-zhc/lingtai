@@ -12,7 +12,7 @@
  * reviewer, the install and build commands, the ticket source and the kinds
  * (#396), the landing branch and the limits, in that order. **An absent
  * recipe is created once, with every one of those first-run answers and the
- * seeds below — `repo.base` and `env.plantAt` — rather than refused (#432).**
+ * seeds below — `branch.main` and `env.plantAt` — rather than refused (#432).**
  * **Nothing is written here (#968):** the answers are
  * collected and returned, and `applySetup` writes them once, just before the registration. With
  * nothing configured at a terminal, every question below still runs: a recipe
@@ -52,7 +52,7 @@ export type Reach = { kind: 'app'; installation: Installation } | { kind: 'gh' }
 /**
  * The repository's default branch, through the same calls `checkInstallation`
  * and `add()` make to read it. Three callers read it, through the one
- * memoized `defaultBranch` closure below: the `repo.base` seed on an absent
+ * memoized `defaultBranch` closure below: the `branch.main` seed on an absent
  * file, where a null answers the *pass --base* refusal (#432); the fallback
  * for the land question's own default, where a failure is harmless, since a
  * question's `detected` is just one more thing a person can type past
@@ -228,7 +228,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // `--land <branch>` and `--main` are different questions — where to read the
   // recipe from, and what it should land on — and a person who named both must
   // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--main` against the recipe's own `repo.base`).
+  // `--main` against the recipe's own `branch.main`).
   if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
     console.error(
       `--land ${land} and --main ${base} name two different branches, and this command will not pick one ` +

@@ -20,13 +20,13 @@
  * pushes back into the checkout, `packages/actions/src/merge-action.ts:47`; no
  * `origin` is needed), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
- * then does `askRecipe` (#431) take `repo.base`, `repo.remote` and, on an
+ * then does `askRecipe` (#431) take `branch.main`, `repo.remote` and, on an
  * absent file, `env.plantAt` as its seeds, and ask the rest of the recipe's
  * questions — writing all of it, seeds and answers together, in the one
  * creation write an absent file gets (#432). **That seed's `base` is not
  * necessarily final**: `askLanding`, inside `askRecipe`, can still move
- * `repo.base` — so what follows is a re-read of the file for its actual
- * `repo.base`, a second `git rev-parse` for that base's sha when it moved,
+ * `branch.main` — so what follows is a re-read of the file for its actual
+ * `branch.main`, a second `git rev-parse` for that base's sha when it moved,
  * `resolveLocalRecipe` reading the file back for its `configHash`, and
  * `register` (`addLocal` in `@lingtai/conductor/onboard`) appending
  * `ProjectConfigured` with `owner: null` against that final base, not the
@@ -320,7 +320,7 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   // `--land <branch>` and `--main` are different questions — where to read the
   // recipe from, and what it should land on — and a person who named both must
   // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--main` against the recipe's own `repo.base`). Checked here, before
+  // `--main` against the recipe's own `branch.main`). Checked here, before
   // anything is written, rather than inside `askRecipe`, where `askLanding`
   // would otherwise overwrite the base question's own answer silently.
   if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
@@ -943,7 +943,7 @@ function runLocalBranch(
         })
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
 
-    // `askLanding`, inside `askRecipe`, can move `repo.base` on a local
+    // `askLanding`, inside `askRecipe`, can move `branch.main` on a local
     // project (#431's Watch out) — re-read the file it left behind rather than
     // trust the `base` this function's own question settled.
     const previewedOrRefused = yield* refusingOn(

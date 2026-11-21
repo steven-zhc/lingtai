@@ -48,7 +48,7 @@ import {
  * on CI, and nothing anywhere said "wrong scope".
  *
  * The base is not this command's to decide, and `--base` is not a second way of
- * deciding it (#75). The recipe's own `repo.base` says what the base *is*.
+ * deciding it (#75). The recipe's own `branch.main` says what the base *is*.
  * Given no flag, or a remembered base, this adopts it; given a flag the recipe
  * contradicts, it refuses and names both, because a person typed something
  * specific and must not be silently overridden.
@@ -84,7 +84,7 @@ export interface AddOptions {
   slug: string
   /**
    * Where to *read the recipe from* — a bootstrap hint, not the base. The
-   * recipe's `repo.base` decides that, and a `--base` disagreeing with it is
+   * recipe's `branch.main` decides that, and a `--main` disagreeing with it is
    * refused rather than obeyed (#75). Defaults to the repository's own default
    * branch.
    *
@@ -95,7 +95,7 @@ export interface AddOptions {
    * the board's `Recheck` (#163) — is not named and must not be refused:
    * there is no flag for a button to omit, so the refusal would be permanent
    * and its advice would name something nobody typed. Remembered, the recipe's
-   * `repo.base` is adopted from it exactly as it is from the default branch.
+   * `branch.main` is adopted from it exactly as it is from the default branch.
    */
   base?: { ref: string; named: boolean }
   /**
@@ -114,7 +114,7 @@ export interface AddOptions {
  * a `ProjectOnboardingStarted` and nothing else: the base on it was filled from
  * GitHub's default branch by the wizard, which makes it *exactly* the bootstrap
  * hint `--base` is not. Sent as a named base it would be refused for ever the
- * moment a review corrected `repo.base` in the recipe PR — the card advising an
+ * moment a review corrected `branch.main` in the recipe PR — the card advising an
  * operator to re-run without a flag that a button cannot omit. Sent as what it
  * is, the recipe decides the base, which is #75's rule and not an exception to
  * it.
@@ -532,7 +532,7 @@ export const addEffect = Effect.fn('onboard.add')(function* (
   // 3. The recipe, and with it the base — which is the recipe's, not this
   //    command's. A `--base` a person typed and the file contradicts is refused
   //    by name rather than overruled (#75); a remembered one is a hint, and the
-  //    file's `repo.base` is adopted over it (#163).
+  //    file's `branch.main` is adopted over it (#163).
   const local = yield* loadProject(repo, { signedIn: signedInHere, ...HOST_FOR_SAVING, store: eventStore }).pipe(
     Effect.map((loaded) => ({ recipe: loaded.recipe }) as const),
     Effect.catch((err) => Effect.succeed({ err } as const)),
@@ -569,7 +569,7 @@ export const addEffect = Effect.fn('onboard.add')(function* (
     parsePayload('ProjectConfigured', {
       project: repo,
       owner,
-      // A copy of the recipe's `repo.base`, not a decision taken beside it
+      // A copy of the recipe's `branch.main`, not a decision taken beside it
       // (#75). Recorded rather than re-derived because a run must not have to
       // ask GitHub which branch governs it; later drift is caught by the run's
       // own refusal rather than manufactured here.

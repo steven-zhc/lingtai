@@ -85,7 +85,7 @@ export const signedInHere: SignedIn = signedInProbe(everyRuntime())
  *
  * `base` becomes `ref`: the file has no branch of its own, so the branch this
  * project was registered against stands in, and `baseDivergence` still
- * compares it with the recipe's `repo.base`.
+ * compares it with the recipe's `branch.main`.
  *
  * **`StepsResolved` does store a recipe, and it is not that snapshot** (0047
  * §1, 0128 §4). It records the recipe a run that is *over* was given, beside the hash it

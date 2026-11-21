@@ -256,7 +256,7 @@ export function conductWork(
 
       if (project.owner === null) {
         // A local registration always records `base` (`first-project.ts`). If it
-        // did not, the fallback is the recipe's own `repo.base` — never
+        // did not, the fallback is the recipe's own `branch.main` — never
         // `client.defaultBranch()`, which there is no client to ask.
         where.ref = project.base
         resolved = yield* Effect.promise(() => world.currentRecipe(project, undefined, where.ref ?? undefined))

@@ -538,10 +538,10 @@ export function unknownKeys(raw: unknown): string[] {
  * same ref as the branch it governs?
  *
  * Two different branches were both called "the base". `resolveRecipe` reads from
- * one — the branch recorded at `lingtai add` — and `repo.base` inside the file
+ * one — the branch recorded at `lingtai add` — and `branchOf` inside the file
  * it returns names another, which is what the worktree is cut from and what the
  * merge goes back into. When they disagree the run is right about everything
- * except the rules: it merges into `repo.base` under steps read from somewhere
+ * except the rules: it merges into `branchOf`'s branch under steps read from somewhere
  * else. A `human:` action at `merge` declared on one branch and not the other is
  * then a control that is declared and does not run.
  *
@@ -559,9 +559,7 @@ export function baseDivergence(resolved: ResolvedRecipe, slug: string): string |
   const declared = branchOf(resolved.recipe)
   if (declared === resolved.ref) return null
   return (
-    // The key as this recipe writes it, not as v1 wrote it: a refusal that names
-    // `repo.base` at a recipe declaring `worktree:` at `admit` sends a person to
-    // the line nothing reads (`#268`).
+    // The key `branchOf` reads, by mode: `branch.personal` in team, `branch.main` in solo.
     `recipe read from ${resolved.ref} declares ${branchKeyOf(resolved.recipe)}: ${declared} — ` +
     'the rules and the merge target are different branches. ' +
     `Re-register: lingtai add ${slug} --main ${declared}`

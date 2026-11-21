@@ -249,7 +249,7 @@ function carries(value: unknown, path: string): boolean {
  * Where a value in the resolved recipe came from: the file, the preset
  * underneath it, or the schema (#218).
  *
- * **Three origins and not two.** Every key here but `repo.base`, `source.kinds`
+ * **Three origins and not two.** Every key here but `branch.main`, `source.kinds`
  * and `env.plantAt` has a schema default, and `steps` — the most consequential
  * of them, since it is what holds a run — can also come from a preset. A
  * resolved recipe reads the same in all three cases, so a reader told

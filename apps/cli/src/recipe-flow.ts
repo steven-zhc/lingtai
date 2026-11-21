@@ -82,8 +82,8 @@ export interface RecipeAt {
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
-   * The caller's own first-run answers — `repo.base`/`repo.remote`/`env.plantAt`
-   * for a local project, `repo.base`/`env.plantAt` for a GitHub one. Written as
+   * The caller's own first-run answers — `branch.main`/`repo.remote`/`env.plantAt`
+   * for a local project, `branch.main`/`env.plantAt` for a GitHub one. Written as
    * their own `setRecipe` call when the file already exists; reduced into the
    * one creation write, alongside this function's own four sections' answers,
    * when it does not (#432).

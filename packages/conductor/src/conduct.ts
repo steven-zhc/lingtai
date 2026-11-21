@@ -4701,7 +4701,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * here by name and is replaceable by writing one line in the file.
        *
        * **`admit` is the first row, and `#268` is what put it here.** `admit`
-       * used to cut the worktree in its body, from `repo.base` and
+       * used to cut the worktree in its body, from `branch.main` and
        * `repo.submodules`, where no recipe could see, name or replace it. Now the
        * body is empty and this is what an unconfigured `admit` runs — the same
        * action a declared `worktree:` builds, over the same values, because
@@ -4711,7 +4711,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * paste.
        *
        * **`merge` is the second row, and `#270` is what put it here.** It landed
-       * the branch in its body, from `repo.base`, where no recipe could see, name
+       * the branch in its body, from `branch.main`, where no recipe could see, name
        * or replace it. Now the body is empty and this is what an unconfigured
        * `merge` runs — the same `integrate` call a declared `merge:` builds, over
        * the same base, because `land` above is handed the base by the pass rather

@@ -891,14 +891,14 @@ export const refsPlugin = definePlugin('refs', {
  * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §1 writes, and
  * that file is the target T3 is checked against.
  *
- * **`base` is written here, and `repo.base` is the same setting's v1
- * spelling** (`#268`). This is the home 0061 §4 gives it; `branchOf` in
- * [`settings.ts`](settings.ts) is the one place that knows a file may still
- * write the other, and every reader — the merge lane, `lingtai doctor`,
- * `lingtai add`, the board, the wizard — asks that one question. So the two are
- * not two homes for one setting, and a declaration here cannot disagree with
- * what the merge lane lands on: the lane goes on being *handed* the base rather
- * than declaring one of its own (§4).
+ * **`worktree:` carries `submodules` only** (0104 §5): the branch is
+ * `branch.main`/`branch.personal`, read through `branchOf` in
+ * [`settings.ts`](settings.ts) by every reader — the merge lane, `lingtai
+ * doctor`, `lingtai add`, the board, the wizard — and handed to this action as
+ * `deps.base`. A declaration here cannot disagree with what the merge lane
+ * lands on: the lane goes on being *handed* the base rather than declaring one
+ * of its own (§4). The v1 spellings (`repo.base`, `worktree.base`) are
+ * rewritten to `branch.main` before the parse (`readOldSpellings`).
  *
  * **`submodules` is required and is not defaulted**, which is the one way this
  * declaration differs from the `repo:` block it replaces. `git worktree add`
@@ -1795,9 +1795,10 @@ const ONLY_ADMIT_CUTS =
   'move the ground under a change already written, and one before `admit` would ask for a tree while ' +
   'the item is still in the queue. Written at `admit` it is read — `createWorktreeAction` in ' +
   '`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there ' +
-  'runs that same action off `branchOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and ' +
-  'nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting ' +
-  'with two homes, so what an attempt lands cannot disagree with what it was cut from'
+  'runs that same action off `branchOf`/`submodulesOf` (0065 §2) — and **the branch is `branch.main` ' +
+  '(`branch.personal` in team mode) and nowhere else** (0104 §5): the base is one value that flows to ' +
+  'the merge lane rather than a setting with two homes, so what an attempt lands cannot disagree with ' +
+  'what it was cut from'
 
 /**
  * **Why a `queue:` belongs at `claim` and nowhere else** — `ONLY_ADMIT_CUTS`'s

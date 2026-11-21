@@ -53,7 +53,7 @@ export interface LocalRecipeOptions extends SandboxHostOptions {
   signedIn: SignedIn
   /**
    * The branch this project was registered against, which becomes `ref`. The
-   * file has no branch of its own, so the recipe's `repo.base` stands in when
+   * file has no branch of its own, so the recipe's `branch.main` stands in when
    * nothing was recorded — and `baseDivergence` still compares the two.
    */
   base?: string | null
@@ -198,7 +198,7 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
 
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
-    'repo.base': branchOf(recipe),
+    'branch.main': branchOf(recipe),
     'source.kinds': kindsOf(recipe).join(' > '),
     'source.exclude': list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
