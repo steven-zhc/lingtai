@@ -59,7 +59,9 @@ const RECIPE_FLOW_FLAGS = [
   'none',
   '--land',
   'main',
-  '--rounds',
+  '--refusal-fixes',
+  '0',
+  '--conflict-resolutions',
   '0',
   '--wall',
   '30m',
@@ -435,7 +437,9 @@ describe('lingtai init (#186)', () => {
       lastSeq: 1n,
     }
     const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
-    expect(await initCommand(flagsFromArgv(['--rounds', '3', '--agent', 'claude-code', '--budget', '9']), w)).toBe(1)
+    expect(
+      await initCommand(flagsFromArgv(['--refusal-fixes', '3', '--agent', 'claude-code', '--budget', '9']), w),
+    ).toBe(1)
     expect(seen.lines.join('\n')).toContain('--agent claude-code')
     expect(seen.boards).toBe(0)
   })
