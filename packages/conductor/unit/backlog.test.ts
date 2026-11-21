@@ -440,7 +440,7 @@ describe('acceptFinding', () => {
     const prEntry: BacklogEntry = { ...entry, issue: null, taskId: null, pr: { stream: 'pr-lingtai-7', n: 7 } }
     const r = await accept(log, githubTicketStore(gh.client), { entry: async () => prEntry })
     expect(r.ok).toBe(false)
-    expect(r.detail).toContain('db blip')
+    expect(r.detail).toContain('could not be read')
     expect(gh.issues).toEqual([])
     expect(log.typesOn(stream)).toEqual([])
   })
