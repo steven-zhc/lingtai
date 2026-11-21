@@ -11,3 +11,4 @@ it, kept here with its findings until a milestone takes it.
 | [pr-history.md](pr-history.md) | A team project's PR history on the PR page: each PR submitted from the personal branch, its tickets and how it ended | 0.16.0 discussion, 2026-11-20 |
 | [team-mode-later.md](team-mode-later.md) | What 0130's cold review moved out of 0.16: review state and comments on the PR page, and a blocker in review that no longer blocks (stacked PRs) | 0.16.0 review, 2026-11-20 |
 | [keys.md](keys.md) | The keyboard shortcuts beyond the four and `#` that 0.16 ships: `G R`/`G O`/`G W`, moving between cards, a PR's stack, `?` listing them | 0.16.0 discussion, 2026-11-20 |
+| [handled-footnote.html](handled-footnote.html) | Mock: while tickets wait on you, the Waiting column ends with a one-line footnote of what Lingtai solved today, in words, with no coloured bar | 0.16.0 discussion, 2026-11-21 |
