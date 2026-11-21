@@ -23,6 +23,7 @@ import {
   stepDoneTransition,
   waitTransition,
   ticketStream,
+  integrationStream,
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type Recipe, modeOf } from '@lingtai/recipe'
@@ -158,6 +159,39 @@ export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrW
     (state) => waitTransition(state, wait),
     (_state, appended) => appended,
   )
+
+/**
+ * The tickets whose landing on `base` has begun and is not yet on the log as a `TicketLanded`: an integration attempted
+ * with no terminal, or one that succeeded (the push is done) before its ticket recorded the landing. Git can already
+ * hold such a ticket's merge commit while the draft cannot yet name it, so a freeze that reads both must wait these out.
+ */
+export function landingsInFlight(project: string, base: string, store: EventStore): Effect.Effect<string[], Error> {
+  return Effect.gen(function* () {
+    const events = yield* Effect.tryPromise({ try: () => store.read(integrationStream(project, base)), catch: failed })
+    const last = new Map<string, Envelope>()
+    for (const e of events) {
+      if (e.type !== 'IntegrationAttempted' && e.type !== 'IntegrationRefused' && e.type !== 'IntegrationSucceeded') {
+        continue
+      }
+      last.set((e.data as { ticketId: string }).ticketId, e)
+    }
+    const pending: string[] = []
+    for (const [ticketId, e] of last) {
+      if (e.type === 'IntegrationRefused') continue
+      if (e.type === 'IntegrationAttempted') {
+        pending.push(ticketId)
+        continue
+      }
+      const mergeCommit = (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit
+      const ticket = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: failed })
+      const recorded = ticket.some(
+        (t) => t.type === 'TicketLanded' && (t.data as PayloadOf<'TicketLanded'>).mergeCommit === mergeCommit,
+      )
+      if (!recorded) pending.push(ticketId)
+    }
+    return pending
+  })
+}
 
 /** A ticket in the draft: what a PR would hold of it. */
 export interface PrDraftTicket {

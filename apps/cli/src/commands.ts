@@ -154,7 +154,7 @@ export const COMMANDS = [
       'lingtai pr submit [<project>] [--json] [--no-color]',
       '  Freezes branch.personal at one commit and starts the PR. Refused',
       '  while another PR is open, saying which, and in a solo project.',
-      '  It is served by a running conductor: lingtai start, or lingtai run.',
+      '  It is served by a running conductor: lingtai start.',
     ],
     examples: ['lingtai pr', 'lingtai pr submit lingtai'],
   }),

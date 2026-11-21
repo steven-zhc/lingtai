@@ -2,7 +2,7 @@
  * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
  * In progress's steps.
  */
-import { prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { requestPrSubmit } from '@lingtai/project'
@@ -10,7 +10,14 @@ import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { IN_PROGRESS_STEPS, type PrPorts, type PrStep, inProgressStepNames, servePr } from '../src/pr.ts'
+import {
+  IN_PROGRESS_STEPS,
+  type PrPorts,
+  type PrStep,
+  inProgressStepNames,
+  makePrHandlers,
+  servePr,
+} from '../src/pr.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
 const solo = { branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -136,6 +143,74 @@ describe('the freeze', () => {
     const head = await store.head(prStream('lingtai', 1))
     await serve(p)
     expect(await store.head(prStream('lingtai', 1))).toBe(head)
+  })
+})
+
+describe('a landing in flight', () => {
+  it('is waited for: a pushed ticket whose TicketLanded is not yet recorded is in the freeze, not in the draft later', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await store.append(ticketStream('lingtai', '2'), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'conductor',
+        data: {
+          project: 'lingtai',
+          source: 'github-issue',
+          externalRef: '2',
+          title: 'ticket 2',
+          kind: 'bug',
+          labels: [],
+        },
+      },
+    ])
+    const lane = integrationStream('lingtai', 'lingtai-team')
+    const ticketId = ticketStream('lingtai', '2')
+    await store.append(lane, 0, [
+      { type: 'IntegrationAttempted', actor: 'conductor', data: { ticketId, branch: 'b', headSha: 'h' } },
+      {
+        type: 'IntegrationSucceeded',
+        actor: 'conductor',
+        data: { ticketId, branch: 'b', base: 'lingtai-team', mergeCommit: 'm2' },
+      },
+    ])
+    await request(store)
+    const p = ports(store, { reachable: ['m1', 'm2'] })
+    let looks = 0
+    const waiting: PrPorts = {
+      ...p,
+      landingWaitMs: 0,
+      // The landing records itself on the second look, as conduct.ts does after the push.
+      fetch: () =>
+        Effect.promise(async () => {
+          if (++looks === 2) {
+            await store.append(ticketId, 1, [
+              { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm2', base: 'lingtai-team' } },
+            ])
+          }
+        }),
+    }
+    await serve(waiting)
+    expect(looks).toBe(2)
+    expect((await state(store)).tickets.map((t) => t.ticket)).toEqual(['1', '2'])
+  })
+})
+
+describe('resuming', () => {
+  it('a failure serving one PR does not leave the others unserved', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await Effect.runPromise(requestPrSubmit('a', 'team', 'human:steven', store))
+    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    const p = ports(store, { reachable: ['m1'] })
+    const flaky: PrPorts = {
+      ...p,
+      projects: () => Effect.succeed(['a', 'lingtai']),
+      fetch: (project) => (project === 'a' ? Effect.fail(new Error('offline')) : p.fetch(project)),
+    }
+    await Effect.runPromise(makePrHandlers(flaky).resume())
+    expect((await state(store)).status).toBe('in-progress')
+    expect(reducePr(await store.read(prStream('a', 1))).status).toBe('requested')
   })
 })
 

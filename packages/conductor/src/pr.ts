@@ -12,6 +12,7 @@ import { type Envelope, type PayloadOf, type PrState, parsePrStream } from '@lin
 import type { EventStore } from '@lingtai/event-store/store'
 import { PermissionDenied } from '@lingtai/github'
 import {
+  landingsInFlight,
   listPrs,
   readPr,
   readPrDraft,
@@ -42,7 +43,12 @@ export interface PrPorts {
   /** The projects to look at on a start. */
   projects(): Effect.Effect<readonly string[], Error>
   readonly log?: (line: string) => void
+  /** How long the freeze waits between looks at a landing still in flight (default 1s); 0 in a test. */
+  readonly landingWaitMs?: number
 }
+
+/** How many times the freeze looks again at a landing in flight before it gives up and is served again later. */
+const LANDING_LOOKS = 120
 
 /** What a step answers. `again` records nothing: the next serve runs it again. */
 export type StepAnswer =
@@ -103,12 +109,24 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
     const main = recipe.branch.main
     const personal = recipe.branch.personal ?? main
 
-    yield* ports.fetch(project)
+    // **Git and the log are read together or not at all.** A landing pushes before it records `TicketLanded`, so a
+    // frozen commit can hold a ticket the draft cannot yet name. Its integration is attempted before it pushes, so
+    // once the commit is read a landing that reached it is visible on the lane: wait it out, and read the commit again.
     const verify = ['rev-parse', '--verify', '--quiet', `refs/heads/${personal}^{commit}`] as const
-    const head = yield* ports.git(project, verify)
-    if (head.code === 1) return yield* refuse('personal-missing', `${personal} is not in the mirror`)
-    if (head.code !== 0) return yield* refuse('git', gitSaid(verify, head))
-    const frozenSha = head.stdout.trim()
+    let frozenSha = ''
+    for (let look = 0; ; look++) {
+      yield* ports.fetch(project)
+      const head = yield* ports.git(project, verify)
+      if (head.code === 1) return yield* refuse('personal-missing', `${personal} is not in the mirror`)
+      if (head.code !== 0) return yield* refuse('git', gitSaid(verify, head))
+      frozenSha = head.stdout.trim()
+      const pending = yield* landingsInFlight(project, personal, ports.store)
+      if (pending.length === 0) break
+      if (look >= LANDING_LOOKS) {
+        return yield* Effect.fail(new Error(`a landing on ${personal} is still in flight (${pending.join(', ')})`))
+      }
+      yield* Effect.sleep(ports.landingWaitMs ?? 1000)
+    }
 
     const draft = yield* readPrDraft(project, recipe, yield* ports.candidates(project), ports.store)
     const held: PayloadOf<'PrInProgress'>['tickets'] = []
@@ -197,10 +215,24 @@ export const makePrHandlers = (ports: PrPorts, steps: readonly PrStep[] = IN_PRO
   },
   resume: (): Effect.Effect<void> =>
     Effect.gen(function* () {
-      for (const project of yield* ports.projects()) {
-        for (const pr of yield* listPrs(project, ports.store)) {
+      const say = (line: string) => ports.log?.(line)
+      const projects = yield* ports
+        .projects()
+        .pipe(
+          Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume: ${err.message}`), [] as readonly string[]))),
+        )
+      // One PR's failure is that PR's: the others are still owed their serve, and nothing sweeps for them later.
+      for (const project of projects) {
+        const prs = yield* listPrs(project, ports.store).pipe(
+          Effect.catch((err: Error) =>
+            Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[])),
+          ),
+        )
+        for (const pr of prs) {
           if ((pr.status === 'requested' || pr.status === 'in-progress') && pr.n !== null) {
-            yield* servePr(ports, project, pr.n, steps)
+            yield* servePr(ports, project, pr.n, steps).pipe(
+              Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
+            )
           }
         }
       }
