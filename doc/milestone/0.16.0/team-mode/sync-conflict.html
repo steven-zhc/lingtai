@@ -169,7 +169,7 @@ async function play(o){
     $('out').innerHTML='main is already in the PR's branch. Nothing is merged, no commit is made, and the PR goes straight on to CI.';return}
   steps(['ok','run'],['yes · 2 commits','bringing it down']);draw('arc');await wait(900);if(me!==run)return;show('snode');node('#9c5a08','sync');
   if(o==='clean'){await wait(600);node('#2c7a4c','✓');steps(['ok','ok','skip','ok','ok'],['yes · 2 commits','clean','not needed','build ✓ before the push','pushed · CI next']);show('nxt');
-    $('out').innerHTML='No file changed on both sides, so git merged it by itself; the result was built before it was pushed, so a red main never becomes the base your tickets are cut from.';return}
+    $('out').innerHTML='No file changed on both sides, so git merged it by itself; the result was built before it was pushed, so the team never reviews a PR that does not build on today’s main.';return}
   show('hit');node('#9c5a08','!');$('snode').classList.add('pulse');
   steps(['ok','no','run'],['yes · 2 commits','conflict in shelf.ts','an agent · round 1 of 6']);
   $('out').innerHTML='li-wei and #43 both changed <code>shelf.ts</code>. An agent is handed both sides — what #43 meant, and what li-wei’s commit meant — and resolves it.';
