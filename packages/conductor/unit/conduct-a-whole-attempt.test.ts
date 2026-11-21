@@ -2580,7 +2580,9 @@ runtime:
         if (!request.runId.includes(':fix:')) return refusingRuntime.run(request)
         fixes += 1
         // Round 1 commits partial work (H2) and disputes; every later round moves nothing and says it is done.
-        if (fixes === 1) tree.at = H2
+        // Each round is wired now, and the fake's `wire` moves the tree to its implementer's commit, so a
+        // round that moves nothing sets the head back to where the last one left it.
+        tree.at = H2
         return Effect.succeed({
           exitCode: 0,
           turns: 1,
@@ -2611,6 +2613,9 @@ runtime:
       fakePorts(did, store, false, tree),
     )
 
+    // Every fix round is wired and smoke-tested as the first dispatch is (#1346).
+    expect(did.filter((d) => d === 'wire')).toHaveLength(fixes + 1)
+    expect(did.filter((d) => d === 'smokeTest')).toHaveLength(fixes + 1)
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const implementEnds = stepOutcomesOf(run as never).filter((o) => o.step === 'implement' && o.round > 0)
     expect(implementEnds[0]!.actions[0]!.result).toMatchObject({ head: H2, outcome: { _tag: 'Disputed' } })
