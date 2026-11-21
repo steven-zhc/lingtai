@@ -79,3 +79,20 @@ describe('the recipe page’s sandbox card', () => {
     expect(sourceOfRow([])).toBe('← built in')
   })
 })
+
+describe('the agents block (#1329)', () => {
+  it('sits above state, and Copilot rows appear only when the recipe names Copilot', () => {
+    const html = render({ runtimes: ['claude-code', 'copilot', 'antigravity'] })
+    expect(html.indexOf('which agents run inside it')).toBeGreaterThan(0)
+    expect(html.indexOf('which agents run inside it')).toBeLessThan(html.indexOf('>state<'))
+    expect(html).toContain('*.githubcopilot.com')
+    expect(html).toContain('~/.copilot')
+    expect(html).toContain('runs outside, with your keys')
+    const plain = render({ runtimes: ['codex'] })
+    expect(plain).not.toContain('githubcopilot')
+    expect(plain).not.toContain('.copilot')
+  })
+  it('draws no block with the sandbox off', () => {
+    expect(render({ own: undefined, runtimes: ['codex'] })).not.toContain('which agents run inside it')
+  })
+})

@@ -1,3 +1,4 @@
+import { sandboxFactsOf, type RuntimeSandboxFacts } from '@lingtai/agent/sandbox-facts'
 /**
  * What the Sandbox tab draws (#1161), as data: no React and no reads.
  *
@@ -8,7 +9,7 @@
  * A row is one wrapped invocation (`commandId`), never one `runId`: `runId` is minted once per claim and every
  * implement, fix, review and `run:` of the attempt shares it.
  */
-import { type AttemptState, type SandboxInvocation } from '@lingtai/domain'
+import { isUnsandboxableRuntime, type AttemptState, type SandboxInvocation } from '@lingtai/domain'
 import { isNetworkEntry } from '@lingtai/recipe'
 import { BUILT_IN_DOMAIN_VENDORS } from '@lingtai/sandbox/policy'
 
@@ -102,9 +103,11 @@ export interface SandboxView {
   }
 }
 
+export const CODEX_LOGIN_READABLE = "Codex's login stays readable to a Codex run."
+
 /** Fixed text: the three things 0.14 does not cover. */
 export const NOT_COVERED: readonly string[] = [
-  "Codex's login stays readable to a Codex run.",
+  CODEX_LOGIN_READABLE,
   'srt does not report refused file access, so a refused read or write is not listed.',
   'srt is a research preview, pinned per run.',
 ]
@@ -658,4 +661,73 @@ export function vendorGroupsOf(domains: readonly PolicyGroup['domains'][number][
     vendors: VENDOR_ORDER.flatMap((vendor) => (by.has(vendor) ? [{ vendor, hosts: by.get(vendor)! }] : [])),
     recipe,
   }
+}
+
+/** One agent that runs inside the sandbox: how it signs in, and what it adds to the card's rows. */
+export interface InsideAgent {
+  readonly id: string
+  readonly name: string
+  readonly signsIn: string
+  readonly adds: { readonly hosts: readonly string[]; readonly writes: readonly string[] }
+}
+
+export interface AgentsInSandbox {
+  readonly inside: readonly InsideAgent[]
+  readonly outside: readonly { readonly id: string; readonly name: string; readonly why: string }[]
+  /** Ids this board has no facts for: neither inside nor known to be outside. */
+  readonly unknown: readonly { readonly id: string; readonly why: string }[]
+}
+
+export const ANTIGRAVITY_OUTSIDE =
+  'outside the sandbox in 0.16. It reads its login from the keychain and binds a local port, which the sandbox denies. Its runs see your files and keys like any program you start. A recipe with `sandbox.required: true` cannot name it.'
+
+export const UNKNOWN_AGENT_WHY = 'how it runs in the sandbox is not known to this board'
+
+function signsInSentence(f: RuntimeSandboxFacts): string {
+  switch (f.login) {
+    case 'own token': {
+      const set = f.tokenCommand === undefined ? '' : `, set with \`${f.tokenCommand}\``
+      return f.homeFolder === undefined
+        ? 'signs in with its own long-lived token, never your login'
+        : `its own fine-grained token (Copilot Requests)${set}`
+    }
+    case 'login readable':
+      return CODEX_LOGIN_READABLE.replace("Codex's login", 'its login')
+    case null:
+      return ''
+  }
+}
+
+/**
+ * Which of the recipe's agents run inside the sandbox, and how each signs in (#1329). `runtimes` is `runtimesOf`'s
+ * answer, in its order. `null` where the sandbox is off: nothing runs inside it.
+ */
+export function agentsInSandbox(
+  runtimes: readonly string[],
+  own: { readonly enabled: boolean } | undefined,
+  home: string,
+): AgentsInSandbox | null {
+  if (own === undefined || !own.enabled) return null
+  const inside: InsideAgent[] = []
+  const outside: { id: string; name: string; why: string }[] = []
+  const unknown: { id: string; why: string }[] = []
+  for (const id of runtimes) {
+    const f = sandboxFactsOf(id)
+    if (f === undefined) {
+      unknown.push({ id, why: UNKNOWN_AGENT_WHY })
+    } else if (isUnsandboxableRuntime(id)) {
+      outside.push({ id, name: f.name, why: ANTIGRAVITY_OUTSIDE })
+    } else {
+      inside.push({
+        id,
+        name: f.name,
+        signsIn: signsInSentence(f),
+        adds: {
+          hosts: f.network,
+          writes: f.homeFolder === undefined ? [] : [`${home.replace(/\/+$/, '')}/${f.homeFolder}`],
+        },
+      })
+    }
+  }
+  return { inside, outside, unknown }
 }

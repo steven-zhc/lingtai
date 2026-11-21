@@ -3,7 +3,15 @@ import { WORKTREE_PLACEHOLDER } from '@lingtai/sandbox/policy'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import { chipsOf, legendOf, vendorGroupsOf, type Chip, type PathRoots } from '@/lib/sandbox-view'
+import {
+  agentsInSandbox,
+  chipsOf,
+  type AgentsInSandbox,
+  legendOf,
+  vendorGroupsOf,
+  type Chip,
+  type PathRoots,
+} from '@/lib/sandbox-view'
 
 /** What the recipe says in its `sandbox:` block, as the resolved recipe holds it; undefined where it has none. */
 export interface OwnSandbox {
@@ -52,6 +60,56 @@ function Sub({ label, children }: { label: string; children: ReactNode }) {
   )
 }
 
+/** Which of the recipe's agents run inside the sandbox (#1329): the box, then one line per agent. */
+function AgentsBlock({ agents, roots }: { agents: AgentsInSandbox; roots: PathRoots }) {
+  return (
+    <div className="sbagents">
+      <div className="sbagents-h">which agents run inside it</div>
+      <div className="sbagents-box">
+        <span className="sbagents-boxl">SANDBOX — the worktree, the allowlisted hosts — no keys</span>
+        {agents.inside.map((a) => (
+          <span key={a.id} className="chip-code">
+            {a.name}
+          </span>
+        ))}
+      </div>
+      {agents.outside.length === 0 ? null : (
+        <div className="sbagents-out">
+          {agents.outside.map((a) => (
+            <span key={a.id} className="chip-code">
+              {a.name}
+            </span>
+          ))}
+          <span className="sbsent"> runs outside, with your keys</span>
+        </div>
+      )}
+      {agents.inside.map((a) => {
+        const adds = [
+          ...(a.adds.hosts.length === 0 ? [] : [`reaches ${a.adds.hosts.join(', ')}`]),
+          ...chipsOf(a.adds.writes, roots).map((c) => `writes ${c.label}`),
+          ...(a.adds.hosts.length === 0 ? [] : ['its telemetry refused']),
+        ]
+        return (
+          <p key={a.id} className="sbsent">
+            {a.name} — inside · {a.signsIn}
+            {adds.length === 0 ? '' : `; ${adds.join(', ')}`}
+          </p>
+        )
+      })}
+      {agents.outside.map((a) => (
+        <p key={a.id} className="sbsent">
+          {a.name} — {a.why}
+        </p>
+      ))}
+      {agents.unknown.map((a) => (
+        <p key={a.id} className="sbsent">
+          {a.id} — {a.why}
+        </p>
+      ))}
+    </div>
+  )
+}
+
 function None({ href }: { href: string }) {
   return (
     <span className="sbnone">
@@ -78,6 +136,7 @@ function PathsRow({
   unknown,
   editHref,
   showOwn,
+  extra,
 }: {
   name: string
   own: readonly string[]
@@ -85,12 +144,14 @@ function PathsRow({
   unknown: string | null
   editHref: string
   showOwn: boolean
+  extra?: ReactNode
 }) {
   return (
     <Row name={name} source={sourceOfRow(own)}>
       {showOwn ? (
         <Sub label="this recipe">{own.length === 0 ? <None href={editHref} /> : <OwnChips entries={own} />}</Sub>
       ) : null}
+      {extra}
       {chips === null ? (
         <p className="fail sbsub-note">{unknown}</p>
       ) : (
@@ -116,6 +177,7 @@ export function SandboxSection({
   own,
   recipeError,
   builtIn,
+  runtimes = [],
 }: {
   project: string
   /** The render's stamp for the editor link (`?r=`): what makes a second click a new command. Absent: no stamp. */
@@ -127,7 +189,13 @@ export function SandboxSection({
   own: OwnSandbox | undefined
   recipeError: boolean
   builtIn: BuiltInSandbox
+  /** `runtimesOf(recipe)`: the agents the recipe names. */
+  runtimes?: readonly string[]
 }) {
+  const agents = recipeError ? null : agentsInSandbox(runtimes, own, roots.home)
+  const addedHosts = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.hosts))]
+  const addedWrites = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.writes))]
+  const addedWriteChips = chipsOf(addedWrites, roots)
   const editHref = `/recipe/${encodeURIComponent(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
   const paths = builtIn.paths
   const unknown = `the built-in paths could not be read${builtIn.pathsWhy === null ? '' : ` (${builtIn.pathsWhy})`}`
@@ -155,6 +223,7 @@ export function SandboxSection({
         What every run of an attempt may reach — the agents and the install and build commands alike. The merge is
         Lingtai&apos;s own and runs outside it.
       </p>
+      {agents === null ? null : <AgentsBlock agents={agents} roots={roots} />}
       <Row name="state" source="← recipe.yml">
         {recipeError ? (
           <span className="sbsent">the recipe could not be read, so what it configures is unknown</span>
@@ -186,6 +255,15 @@ export function SandboxSection({
         {recipeError ? null : (
           <Sub label="this recipe">{reach.length === 0 ? <None href={editHref} /> : <OwnChips entries={reach} />}</Sub>
         )}
+        {addedHosts.length === 0 ? null : (
+          <Sub label="copilot">
+            {addedHosts.map((h) => (
+              <span key={h} className="chip-code" title={h}>
+                {h}
+              </span>
+            ))}
+          </Sub>
+        )}
         {hosts.vendors.map((v) => (
           <Sub key={v.vendor} label={v.vendor}>
             {v.hosts.map((h) => (
@@ -203,6 +281,15 @@ export function SandboxSection({
         unknown={unknown}
         editHref={editHref}
         showOwn={!recipeError}
+        extra={
+          addedWriteChips.length === 0 ? null : (
+            <Sub label="copilot">
+              {addedWriteChips.map((c) => (
+                <BuiltInChip key={c.label} chip={c} />
+              ))}
+            </Sub>
+          )
+        }
       />
       <PathsRow
         name="cannot be read"

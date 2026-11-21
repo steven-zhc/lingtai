@@ -7,7 +7,8 @@
     ".": "./src/index.ts",
     "./run-log": "./src/run-log.ts",
     "./run-log-format": "./src/run-log-format.ts",
-    "./auth": "./src/auth.ts"
+    "./auth": "./src/auth.ts",
+    "./sandbox-facts": "./src/sandbox-facts.ts"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"
