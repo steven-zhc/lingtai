@@ -161,28 +161,35 @@ export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrW
     (_state, appended) => appended,
   )
 
+/** A landing begun and not on the log as a `TicketLanded`; `headSha` is set when whether it pushed is for git to say. */
+export interface LandingInFlight {
+  readonly ticketId: string
+  readonly headSha: string | null
+}
+
 /**
  * The tickets whose landing on `base` has begun and is not yet on the log as a `TicketLanded`: an integration attempted
- * with no terminal, or one that succeeded (the push is done) before its ticket recorded the landing. Git can already
- * hold such a ticket's merge commit while the draft cannot yet name it, so a freeze that reads both must wait these out.
+ * with no terminal, an `unexpected` refusal, or one that succeeded (the push is done) before its ticket recorded the
+ * landing. Git can already hold such a ticket's merge commit while the draft cannot yet name it, so a freeze that reads
+ * both must wait these out. **The ticket's lifecycle says nothing here**: a release or a close does not take back a push,
+ * so an attempt nobody finished carries its `headSha` and the freeze asks git whether the frozen commit holds it.
  */
-export function landingsInFlight(project: string, base: string, store: EventStore): Effect.Effect<string[], Error> {
+export function landingsInFlight(
+  project: string,
+  base: string,
+  store: EventStore,
+): Effect.Effect<LandingInFlight[], Error> {
   return Effect.gen(function* () {
     const events = yield* Effect.tryPromise({ try: () => store.read(integrationStream(project, base)), catch: failed })
-    const pending: string[] = []
+    const pending: LandingInFlight[] = []
     for (const started of landingsStarted(events)) {
       const ticket = reduceTicket(yield* Effect.tryPromise({ try: () => store.read(started.ticketId), catch: failed }))
       if (started.mergeCommit === null) {
-        // An attempt nobody finished is running only while its ticket is still claimed: a daemon killed before the push
-        // releases the ticket on restart (or a person closes it), and that integration is history, not live.
-        // An `unexpected` refusal may be a push whose record failed: it stays owed until the ticket lands or ends.
-        const live = started.unexpected
-          ? ticket.landed === null && ticket.lifecycle.status !== 'closed'
-          : ticket.lifecycle.status === 'claimed'
-        if (live) pending.push(started.ticketId)
+        if (ticket.landed === null) pending.push({ ticketId: started.ticketId, headSha: started.headSha })
         continue
       }
-      if (ticket.landed?.mergeCommit !== started.mergeCommit) pending.push(started.ticketId)
+      if (ticket.landed?.mergeCommit !== started.mergeCommit)
+        pending.push({ ticketId: started.ticketId, headSha: null })
     }
     return pending
   })

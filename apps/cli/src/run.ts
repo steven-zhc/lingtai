@@ -25,7 +25,7 @@ import { accountWords, type ControlState, type ProjectState } from '@lingtai/dom
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
-import { readProject } from '@lingtai/project'
+import { listPrs, readProject } from '@lingtai/project'
 import {
   boundsBesides,
   dispatchingSteps,
@@ -337,6 +337,12 @@ export function run(
   world: RunWorld = liveRunWorld(options, log),
 ): Effect.Effect<number> {
   const locked = lockedFor(options.store, options.dayCeiling)
+  const servePrs = servePendingPrs(livePrPorts(options.store ?? eventStore, log), [options.project])
+  /** Whether a PR of this project is waiting to be served; a failed read says no, and the next conductor serves it. */
+  const prOwed = listPrs(options.project, options.store ?? eventStore).pipe(
+    Effect.map((prs) => prs.some((pr) => pr.status === 'requested' || pr.status === 'in-progress')),
+    Effect.orElseSucceed(() => false),
+  )
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -450,6 +456,9 @@ export function run(
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
       yield* Projector
+      // A PR a person asked for is served by whoever conducts (0130 §5): with no daemon, this command is it. Before
+      // the project's lock is heeded and in both branches, since the freeze spends nothing and is served under a pause.
+      yield* servePrs
       // The first the guard is asked: it appends the ceiling's transitions, and
       // only the lock's holder may (0126 §4). After the projector is up, so a
       // `spend` that trails the log is caught up rather than refused forever.
@@ -676,9 +685,6 @@ export function run(
           stopped: again.stopped !== null ? 'paused' : (queued?.stopped ?? (first.stopped !== null ? 'paused' : 'max')),
         }
 
-        // A PR a person asked for is served by whoever conducts (0130 §5): with no daemon, this command is it.
-        yield* servePendingPrs(livePrPorts(options.store ?? eventStore, log), [options.project])
-
         // Read back, not counted up. An item this pass held and somebody approved
         // while the pass carried on has landed, and the log says so — see
         // `tallyTurn`. Counting the merges this process performed printed
@@ -758,11 +764,16 @@ export function run(
     // this. Who and why, because a pause nobody remembers is the one this
     // line is for.
     Effect.catchTag('Paused', (p) =>
-      Effect.sync(() => {
-        log(saidPaused(p))
-        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
-        return 0
-      }),
+      // A person's Submit is still served under a pause (0130 §5): it spends nothing, and the lock is taken for it —
+      // only when one is owed, so a pause with nothing to serve still never reaches the lock.
+      prOwed.pipe(
+        Effect.flatMap((owed) => (owed ? Effect.scoped(servePrs.pipe(Effect.provide(world.lock))) : Effect.void)),
+        Effect.map(() => {
+          log(saidPaused(p))
+          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+          return 0
+        }),
+      ),
     ),
     Effect.catchTag('ProjectLocked', (l) =>
       Effect.sync(() => {

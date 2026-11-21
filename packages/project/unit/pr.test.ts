@@ -199,7 +199,7 @@ describe('landings in flight', () => {
       },
     ])
 
-  it('an unexpected refusal may be a push whose record failed: it stays owed until the ticket lands or closes', async () => {
+  it('an unexpected refusal may be a push whose record failed: it stays owed whatever becomes of the ticket', async () => {
     const store = createMemoryEventStore()
     await discovered(store, '2')
     await attempted(store, '2', 0)
@@ -210,18 +210,24 @@ describe('landings in flight', () => {
         data: { ticketId: ticketStream('lingtai', '2'), branch: 'b', reason: 'unexpected', detail: 'log down' },
       },
     ])
-    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([ticketStream('lingtai', '2')])
+    const owed = [{ ticketId: ticketStream('lingtai', '2'), headSha: 'h' }]
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual(owed)
+    // Closing a ticket does not take back what was pushed: git, not the lifecycle, says whether it is in the commit.
     await store.append(ticketStream('lingtai', '2'), 1, [
       { type: 'TicketClosed', actor: 'human:steven', data: { by: 'human:steven', reason: 'done' } },
     ])
-    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([])
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual(owed)
   })
 
-  it('an attempt nobody finished is history once its ticket is no longer claimed', async () => {
+  it('an attempt nobody finished stays owed after its ticket is released, carrying the head git is asked about', async () => {
     const store = createMemoryEventStore()
     await discovered(store, '3')
     await attempted(store, '3', 0)
-    // Backlog: never claimed (or released after a restart).
-    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([])
+    await store.append(ticketStream('lingtai', '3'), 1, [
+      { type: 'TicketReleased', actor: 'conductor', data: { runId: 'r', reason: 'restart', cause: null } },
+    ])
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([
+      { ticketId: ticketStream('lingtai', '3'), headSha: 'h' },
+    ])
   })
 })

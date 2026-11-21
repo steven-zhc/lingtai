@@ -196,6 +196,44 @@ describe('a landing in flight', () => {
   })
 })
 
+describe('a push whose landing was never recorded', () => {
+  it('is waited for even when its ticket was released, and ignored when the frozen commit does not hold its head', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await store.append(ticketStream('lingtai', '2'), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'conductor',
+        data: {
+          project: 'lingtai',
+          source: 'github-issue',
+          externalRef: '2',
+          title: 'ticket 2',
+          kind: 'bug',
+          labels: [],
+        },
+      },
+    ])
+    const ticketId = ticketStream('lingtai', '2')
+    await store.append(integrationStream('lingtai', 'lingtai-team'), 0, [
+      { type: 'IntegrationAttempted', actor: 'conductor', data: { ticketId, branch: 'b', headSha: 'h2' } },
+    ])
+    await store.append(ticketId, 1, [
+      { type: 'TicketReleased', actor: 'conductor', data: { runId: 'r', reason: 'restart', cause: null } },
+    ])
+    await request(store)
+
+    // The frozen commit holds h2: the push happened, its landing is owed, and the freeze will not omit the ticket.
+    const pushed = { ...ports(store, { reachable: ['m1', 'h2'] }), landingWaitMs: 0 }
+    await expect(serve({ ...pushed })).rejects.toThrow(/still in flight/)
+    expect((await state(store)).status).toBe('requested')
+
+    // Not an ancestor: it never pushed, so the PR freezes with what landed.
+    await serve({ ...ports(store, { reachable: ['m1'] }), landingWaitMs: 0 })
+    expect((await state(store)).tickets.map((t) => t.ticket)).toEqual(['1'])
+  })
+})
+
 describe('resuming', () => {
   it('a failure serving one PR does not leave the others unserved', async () => {
     const store = createMemoryEventStore()

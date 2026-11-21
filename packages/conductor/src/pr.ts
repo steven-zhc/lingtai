@@ -123,7 +123,23 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
       if (head.code === 1) return yield* refuse('personal-missing', `${personal} is not in the mirror`)
       if (head.code !== 0) return yield* refuse('git', gitSaid(verify, head))
       frozenSha = head.stdout.trim()
-      const pending = yield* landingsInFlight(project, personal, ports.store)
+      const pending: string[] = []
+      for (const landing of yield* landingsInFlight(project, personal, ports.store)) {
+        // A landing whose push is certain is owed. One nobody finished is for git to say: the frozen commit holds the
+        // branch head if it pushed, whatever became of the ticket (a release or a close takes nothing back), and a
+        // head the mirror lacks was never pushed.
+        if (landing.headSha === null) {
+          pending.push(landing.ticketId)
+          continue
+        }
+        const known = yield* ports.git(project, ['rev-parse', '--verify', '--quiet', `${landing.headSha}^{commit}`])
+        if (known.code === 1) continue
+        if (known.code !== 0) return yield* refuse('git', gitSaid(['rev-parse', landing.headSha], known))
+        const ask = ['merge-base', '--is-ancestor', landing.headSha, frozenSha] as const
+        const held = yield* ports.git(project, ask)
+        if (held.code === 0) pending.push(landing.ticketId)
+        else if (held.code !== 1) return yield* refuse('git', gitSaid(ask, held))
+      }
       if (pending.length === 0) break
       if (look >= LANDING_LOOKS) {
         return yield* Effect.fail(new Error(`a landing on ${personal} is still in flight (${pending.join(', ')})`))

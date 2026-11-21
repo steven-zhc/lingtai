@@ -257,30 +257,36 @@ export function landedSeq(events: readonly Envelope[], base: string): bigint | n
  * terminal is `mergeCommit: null` (the push may or may not have happened); a success carries the commit it pushed.
  * **A refusal is proof of nothing pushed only when it names a reason git gave**: `unexpected` is what the integrator
  * records when appending its own `IntegrationSucceeded` failed after the push, so it is `mergeCommit: null` too — the
- * push may have happened. The caller checks each success against its ticket's own `TicketLanded`, and each `null`
- * against whether the ticket is still being worked at all.
+ * push may have happened. `headSha` is the branch head of the ticket's latest attempt: a `--no-ff` merge holds it, so
+ * whether the push happened is a question git answers, never the ticket's lifecycle (releasing or closing a ticket
+ * does not take back pushed code).
  */
 export function landingsStarted(
   laneEvents: readonly Envelope[],
-): { ticketId: string; mergeCommit: string | null; unexpected: boolean }[] {
+): { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] {
   const last = new Map<string, Envelope>()
+  const heads = new Map<string, string>()
   for (const e of laneEvents) {
     if (e.type === 'IntegrationAttempted' || e.type === 'IntegrationRefused' || e.type === 'IntegrationSucceeded') {
-      last.set((e.data as { ticketId: string }).ticketId, e)
+      const ticketId = (e.data as { ticketId: string }).ticketId
+      last.set(ticketId, e)
+      if (e.type === 'IntegrationAttempted') heads.set(ticketId, (e.data as PayloadOf<'IntegrationAttempted'>).headSha)
     }
   }
-  const started: { ticketId: string; mergeCommit: string | null; unexpected: boolean }[] = []
+  const started: { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] = []
   for (const [ticketId, e] of last) {
-    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null, unexpected: false })
+    const headSha = heads.get(ticketId) ?? null
+    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null, unexpected: false, headSha })
     if (e.type === 'IntegrationSucceeded') {
       started.push({
         ticketId,
         mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit,
         unexpected: false,
+        headSha,
       })
     }
     if (e.type === 'IntegrationRefused' && (e.data as { reason?: string }).reason === 'unexpected') {
-      started.push({ ticketId, mergeCommit: null, unexpected: true })
+      started.push({ ticketId, mergeCommit: null, unexpected: true, headSha })
     }
   }
   return started
