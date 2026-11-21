@@ -97,7 +97,7 @@ async function run(): Promise<{ code: number; lines: string[] }> {
   }
   const lifted = liftInitWorld(world)
   const code = await Effect.runPromise(
-    initCommandEffect(flagsFromArgv(['--local', '/repo']), lifted).pipe(
+    initCommandEffect(flagsFromArgv(['--local', '/repo', '--mode', 'solo']), lifted).pipe(
       Effect.provideService(ProjectFiles, lifted.files),
     ),
   )

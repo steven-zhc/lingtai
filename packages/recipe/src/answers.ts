@@ -162,6 +162,33 @@ export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknow
   ]
 }
 
+/**
+ * The queue's assignee rule, written where `assigneeOf` reads it (`settings.ts`:
+ * `takeAt(recipe)?.assignee ?? recipe.runtime.assignee`), for `kindsChanges`'
+ * reason: a recipe that declares its queue at `claim` would take a
+ * `runtime.assignee` write and keep taking every issue without a word. A queue
+ * entry at `claim` has its `assignee` rewritten in place; otherwise it is
+ * `runtime.assignee`.
+ */
+export function assigneeChanges(
+  rule: { login: string; take: 'mine' | 'all' },
+  rawClaim: readonly unknown[] | null,
+): RecipeChange[] {
+  const claim = rawClaim ?? []
+  const queueIndex = claim.findIndex(isQueueEntry)
+  if (queueIndex === -1) return [{ path: ['runtime', 'assignee'], value: { ...rule } }]
+  return [
+    {
+      path: ['steps', 'claim'],
+      value: claim.map((entry, i) =>
+        i === queueIndex && isQueueEntry(entry)
+          ? { ...entry, queue: { ...entry.queue, assignee: { ...rule } } }
+          : entry,
+      ),
+    },
+  ]
+}
+
 /** `runtime.limits.run.turns` — what one agent run may take in turns; `unbounded` is the recipe saying it promises none (#971). */
 export function turnsChange(turns: number | typeof UNBOUNDED): RecipeChange {
   return { path: ['runtime', 'limits', 'run', 'turns'], value: turns }

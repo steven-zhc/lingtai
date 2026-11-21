@@ -77,6 +77,8 @@ function fakeGitHub(refs: readonly string[], opts: { refuseFrom?: string } = {})
       dependencies: { blockedBy: 0, totalBlockedBy: 0 },
       assignees: [],
     }),
+    branchExists: async () => false,
+    createBranch: async () => {},
     matchingRefs: async (prefix: string) => [...held].filter((ref) => ref.startsWith(prefix)),
     deleteRef: async (ref: string) => {
       if (opts.refuseFrom !== undefined && ref >= opts.refuseFrom) {

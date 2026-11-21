@@ -35,6 +35,9 @@ export const recipeOptions = {
   budget: text('budget'),
   sandbox: text('sandbox'),
   'sandbox-hosts': text('sandbox-hosts'),
+  mode: text('mode'),
+  login: text('login'),
+  personal: text('personal'),
   defaults: Flag.Boolean('defaults').pipe(Flag.withDefault(false)),
   yes: Flag.Boolean('yes').pipe(Flag.withDefault(false)),
   // `cli` applies NO_COLOR itself; this only lets the parser accept the flag.

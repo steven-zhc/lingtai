@@ -414,6 +414,8 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
     defaultBranch: async () => 'develop',
     fileAt: async () => null,
     refSha: async () => '0'.repeat(40),
+    branchExists: async () => false,
+    createBranch: async () => {},
     matchingRefs: async () => [],
     deleteRef: async () => {
       throw new Error('no writes in this test')
