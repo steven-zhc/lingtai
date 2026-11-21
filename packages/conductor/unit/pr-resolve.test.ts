@@ -511,7 +511,7 @@ describe('resolveRounds, the sequences a review refused', () => {
         return done
       },
       read: (stream: string) =>
-        failing && thrown++ === 0 ? Promise.reject(new Error('read failed')) : store.read(stream),
+        failing && thrown++ < 2 ? Promise.reject(new Error('read failed')) : store.read(stream),
     } as EventStore
     await Effect.runPromise(resolveRounds(ports(reading, w), resolverFor(reading, w), askSync())).catch(() => undefined)
     const ended = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'StepEnded')

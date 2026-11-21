@@ -394,15 +394,46 @@ export const resolveRounds = (
         const actions: PayloadOf<'StepEnded'>['outcome']['actions'] = []
         // On the PR's stream with the run id the review's spend names, so `findingsRaisedOf` reads its minors unchanged.
         let recorded = false
+        const reviewRunId = runId('review')
+        /** Whether the review's `StepEnded` is already on the log: an append whose acknowledgement was lost is not made twice. */
+        const onLog = Effect.tryPromise({ try: () => ports.store.read(stream), catch: asError }).pipe(
+          Effect.map((events) =>
+            events.some((e) => e.type === 'StepEnded' && (e.data as { runId?: string }).runId === reviewRunId),
+          ),
+        )
         const recordReview = () =>
-          appendOnPr(ports, project, n, 'StepEnded', {
-            runId: runId('review'),
-            outcome: { step: 'review', round, actions },
-          }).pipe(Effect.tap(() => Effect.sync(() => void (recorded = true))))
+          onLog.pipe(
+            Effect.flatMap((has) =>
+              has
+                ? Effect.void
+                : appendOnPr(ports, project, n, 'StepEnded', {
+                    runId: reviewRunId,
+                    outcome: { step: 'review', round, actions },
+                  }),
+            ),
+            Effect.tap(() => Effect.sync(() => void (recorded = true))),
+          )
+        /** Persisting what was paid for rides out an outage that spans several reads; it is never dropped on the first failure. */
+        const persistReview = (left: number): Effect.Effect<void, Error> =>
+          recordReview().pipe(
+            Effect.catch((err: Error) =>
+              left > 0 ? Effect.sleep('200 millis').pipe(Effect.andThen(persistReview(left - 1))) : Effect.fail(err),
+            ),
+          )
         /** Whatever fails after a review was paid for — a read of the log, a later append — leaves its findings on the log first. */
         const keepPaid = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
           effect.pipe(
-            Effect.onError(() => (actions.length > 0 && !recorded ? recordReview().pipe(Effect.ignore) : Effect.void)),
+            Effect.onError(() =>
+              actions.length > 0 && !recorded
+                ? persistReview(8).pipe(
+                    Effect.catch((err: Error) =>
+                      Effect.sync(() =>
+                        ports.log?.(`pr ${n}: a paid review could not be put on the log: ${err.message}`),
+                      ),
+                    ),
+                  )
+                : Effect.void,
+            ),
           )
         const blocking: string[] = []
         for (const reviewer of reviewers) {
@@ -410,7 +441,7 @@ export const resolveRounds = (
           const stopped = yield* keepPaid(stoppedNow)
           if (stopped !== null) {
             // The reviews already paid for are on the log before the round is left: their findings are not lost with it.
-            if (actions.length > 0 && !recorded) yield* recordReview()
+            if (actions.length > 0 && !recorded) yield* persistReview(8)
             if (blocking.length > 0) {
               const said = blocking.join('\n')
               yield* recordSyncRoundRefused(
