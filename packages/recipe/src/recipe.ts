@@ -1,6 +1,7 @@
 import {
   SEVERITIES,
   RuntimeId,
+  isUnsandboxableRuntime,
   JudgeWhen,
   RETIRED_JUDGE_WHEN,
   type Step,
@@ -1387,7 +1388,7 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
  * schema, so the cold reviewer, a judge and triage cannot be built on it, and it is not sandboxed yet.
  * The recipe refuses each by name when it resolves, and the setup wizard never proposes one.
  */
-export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot']
+export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot', 'antigravity']
 export const isImplementOnlyAgent = (agent: string): boolean =>
   (IMPLEMENT_ONLY_AGENTS as readonly string[]).includes(agent)
 
@@ -3589,6 +3590,14 @@ export const Recipe = z
               `steps.${step}'s "${action.name}" names \`${key}: ${value}\`, which runs only as the \`agent:\` at ` +
                 '`implement` until review, judges and triage on an ACP agent are built',
             )
+          } else if (isUnsandboxableRuntime(value!)) {
+            // Per agent, not per host: it cannot be sandboxed on any host. Unrequired, it runs unsandboxed.
+            if (recipe.sandbox?.enabled && recipe.sandbox.required) {
+              refuse(
+                `steps.${step}'s "${action.name}" names \`agent: ${value}\` — ${value} cannot run sandboxed in this ` +
+                  'release — set `sandbox.required: false`, or name another agent',
+              )
+            }
           } else if (recipe.sandbox?.enabled) {
             refuse(
               `steps.${step}'s "${action.name}" names \`agent: ${value}\`, but ${value} cannot run sandboxed yet — ` +

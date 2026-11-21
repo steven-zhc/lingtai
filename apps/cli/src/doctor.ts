@@ -83,6 +83,7 @@ import {
   type RecordedRefusal,
   REDUCERS,
   RuntimeId,
+  isUnsandboxableRuntime,
   ceilingFacts,
   isEventType,
   locksOn,
@@ -2662,9 +2663,25 @@ export function unpricedRow(project: string, agent: RuntimeId, recipe: Recipe, k
     status: 'info',
     title: `${project}: ${agent} runs unpriced`,
     detail:
-      `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · ` +
+      `${agent} reports tokens and no cost${agent === 'antigravity' ? ', and no rate row prices its model' : ', and names no model'}: run.usd and the day ceiling do not count its runs · ` +
       `bounded by turns ${ceiling.turns === UNBOUNDED ? 'unbounded' : ceiling.turns} and wall ${ceiling.wall} · ` +
       `needed by ${keys.join(', ')}`,
+  }
+}
+
+/** An agent that cannot run inside the sandbox runs without it, and `doctor` says so and why. */
+export function unsandboxedRow(project: string, agent: RuntimeId, recipe: Recipe): CheckResult {
+  const on = recipe.sandbox?.enabled === true
+  return {
+    name: `runtime: ${project} ${agent} unsandboxed`,
+    status: 'info',
+    title: `${project}: ${agent} runs unsandboxed`,
+    detail: on
+      ? `${agent} cannot run inside srt in this release (it binds a local port and reads the keychain), so its ` +
+        "invocations run unsandboxed, recorded as `runtime cannot` · this project's other agents stay sandboxed · " +
+        'its login is in the keychain, which only a process in your GUI login session can read'
+      : `${agent} runs unsandboxed: off by choice, like every run here · its login is in the keychain, which only a ` +
+        'process in your GUI login session can read',
   }
 }
 
@@ -3251,6 +3268,7 @@ export function declaredEnvironment(
             })
             if (ACP_PROFILES[agent] !== undefined)
               results.push(unpricedRow(project.project!, agent, resolved.recipe, keys))
+            if (isUnsandboxableRuntime(agent)) results.push(unsandboxedRow(project.project!, agent, resolved.recipe))
           }
           for (const role of ['discuss', 'triage'] as const) {
             const selected = resolved.recipe[role]

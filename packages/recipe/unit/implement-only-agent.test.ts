@@ -22,8 +22,8 @@ const reader = (files: Record<string, string>) => async (path: string, ref: stri
 const resolve = (text: string) => resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: text }), 'develop')
 
 describe('an agent that runs only at implement', () => {
-  it('is copilot', () => {
-    expect(IMPLEMENT_ONLY_AGENTS).toEqual(['copilot'])
+  it('is copilot and antigravity', () => {
+    expect(IMPLEMENT_ONLY_AGENTS).toEqual(['copilot', 'antigravity'])
   })
 
   it('resolves as the agent at implement', async () => {
@@ -65,5 +65,19 @@ describe('an agent that runs only at implement', () => {
     await expect(resolve(`${HEAD}discuss:\n  agent: copilot\nruntime:\n  agent: claude-code\n`)).rejects.toThrow(
       /discuss\.agent/,
     )
+  })
+
+  const antigravity = (sandbox: string) =>
+    `${HEAD}${sandbox}steps:\n  implement:\n    - name: build\n      agent: antigravity\n      prompt: go\nruntime:\n  agent: claude-code\n`
+
+  it('antigravity is refused where the sandbox is required, by name', async () => {
+    await expect(resolve(antigravity('sandbox:\n  enabled: true\n  required: true\n'))).rejects.toThrow(
+      /antigravity cannot run sandboxed in this release — set `sandbox.required: false`, or name another agent/,
+    )
+  })
+
+  it('antigravity resolves under a sandbox that is on and not required', async () => {
+    const { recipe } = await resolve(antigravity('sandbox:\n  enabled: true\n  required: false\n'))
+    expect(recipe.steps.implement[0]).toMatchObject({ agent: 'antigravity' })
   })
 })
