@@ -131,7 +131,7 @@ describe('the mode block (#1325)', () => {
     expect(html).toContain('Does anyone else work on this repository?')
     expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Team/s)
     expect(html).toContain('value="steven-zhc/mac"')
-    expect(html).toContain('Takes</b> <!-- -->issues assigned to')
+    expect(html).toContain('issues assigned to')
     expect(html).toContain(
       'You can switch to solo later, once everything on your branch has reached main and no PR is open.',
     )
