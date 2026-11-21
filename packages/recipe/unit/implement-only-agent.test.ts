@@ -53,12 +53,12 @@ describe('an agent that runs only at implement', () => {
     ).rejects.toThrow(/judge: copilot/)
   })
 
-  it('is refused under an enabled sandbox, in the shape of the required-sandbox refusal', async () => {
+  it('resolves under an enabled sandbox (#1301)', async () => {
     await expect(
       resolve(
         `${HEAD}sandbox:\n  enabled: true\nsteps:\n  implement:\n    - name: build\n      agent: copilot\n      prompt: go\nruntime:\n  agent: claude-code\n`,
       ),
-    ).rejects.toThrow(/copilot cannot run sandboxed yet/)
+    ).resolves.toBeDefined()
   })
 
   it('is refused at a discussion, by the discussion enum', async () => {

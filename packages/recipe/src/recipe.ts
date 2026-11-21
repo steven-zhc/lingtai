@@ -1385,7 +1385,7 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
  */
 /**
  * The agents a recipe may name at `implement` and nowhere else yet (#1298): an ACP agent takes no output
- * schema, so the cold reviewer, a judge and triage cannot be built on it, and it is not sandboxed yet.
+ * schema, so the cold reviewer, a judge and triage cannot be built on it.
  * The recipe refuses each by name when it resolves, and the setup wizard never proposes one.
  */
 export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot', 'antigravity']
@@ -3598,11 +3598,6 @@ export const Recipe = z
                   'release — set `sandbox.required: false`, or name another agent',
               )
             }
-          } else if (recipe.sandbox?.enabled) {
-            refuse(
-              `steps.${step}'s "${action.name}" names \`agent: ${value}\`, but ${value} cannot run sandboxed yet — ` +
-                'set `sandbox.enabled: false` or name another agent',
-            )
           }
         }
         if ('judge' in action && action.when === 'sandbox-refused') {

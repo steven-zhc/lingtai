@@ -39,6 +39,8 @@ import {
   type SpawnAgent,
 } from './acp-session.ts'
 import { acpAuth, runtimeVersionEffect } from './auth.ts'
+import type { SandboxedLaunch } from './claude-sandbox.ts'
+import { copilotSandboxedLaunch, type CopilotSandboxPorts } from './copilot-sandbox.ts'
 import type { Invocable, RunOutcome, RunRequest, Runtime, RuntimeCapabilities, Spawned } from './runtime.ts'
 
 /** An ACP agent's capabilities: every one the same but for which runtime it is. */
@@ -275,6 +277,8 @@ export interface AcpOptions {
   cancelWaitMs?: number
   /** How long after `SIGTERM` before `SIGKILL`. */
   killWaitMs?: number
+  /** The ports a sandboxed run reads through; a test replaces them (#1301). */
+  sandbox?: CopilotSandboxPorts
 }
 
 export function createAcpRuntime(options: AcpOptions = {}): Runtime {
@@ -407,244 +411,284 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     })
   }
 
-  return yield* Effect.callback<RunOutcome>((resume) => {
-    const trace = request.log
-    const note = (label: string, detail?: string) => trace?.note(label, detail)
-    const child = spawnAgent(spawn, binary, profile.args, { cwd: request.cwd, env: request.env })
-    const ledger = createToolLedger()
-    const chunks: string[] = []
-    const pending = new Set<Promise<unknown>>()
-    let calls = 0
-    // Updates the agent sent, and updates the SDK accepted and handed on: a difference is one it rejected.
-    let seen = 0
-    let delivered = 0
-    let sessionId = ''
-    let session: SessionNew = {}
-    let model: string | undefined
-    let phase: 'opening' | 'prompting' = 'opening'
-    let ctxRef: ClientContext | undefined
-    let stderrTail = ''
-    let finished = false
-    let stopping: { kind: 'timeout' | 'out-of-turns'; detail: string } | undefined
-    let usage: Usage = []
-    let exited = false
-    // Failures of the record or of the protocol: a run that cannot say what it did is not a success.
-    const recordFailures: string[] = []
-    let protocolError: string | undefined
-    const timers: ReturnType<typeof setTimeout>[] = []
+  const runChild = (launch: SandboxedLaunch, sandboxed: boolean) =>
+    Effect.callback<RunOutcome>((resume) => {
+      const trace = request.log
+      const note = (label: string, detail?: string) => trace?.note(label, detail)
+      const child = spawnAgent(spawn, launch.command, launch.args, { cwd: request.cwd, env: launch.env })
+      const ledger = createToolLedger()
+      const chunks: string[] = []
+      const pending = new Set<Promise<unknown>>()
+      let calls = 0
+      // Updates the agent sent, and updates the SDK accepted and handed on: a difference is one it rejected.
+      let seen = 0
+      let delivered = 0
+      let sessionId = ''
+      let session: SessionNew = {}
+      let model: string | undefined
+      let phase: 'opening' | 'prompting' = 'opening'
+      let ctxRef: ClientContext | undefined
+      let stderrTail = ''
+      let finished = false
+      let stopping: { kind: 'timeout' | 'out-of-turns'; detail: string } | undefined
+      let usage: Usage = []
+      let exited = false
+      // Failures of the record or of the protocol: a run that cannot say what it did is not a success.
+      const recordFailures: string[] = []
+      let protocolError: string | undefined
+      const timers: ReturnType<typeof setTimeout>[] = []
 
-    const finish = (failure: RunOutcome['failure'], exitCode: number | null = null) => {
-      if (finished) return
-      finished = true
-      for (const timer of timers) clearTimeout(timer)
-      // The turn is over; so is everything the agent started.
-      signalGroup(child, 'SIGKILL')
-      request.signal?.removeEventListener('abort', onWall)
-      const text = chunks.join('')
-      for (const title of ledger.unfinished()) note('unfinished', title)
-      resume(
-        Effect.succeed(
-          outcomeOf(started, { turns: calls, text: text === '' ? null : text, sessionId, failure, exitCode, usage }),
-        ),
-      )
-    }
-
-    /** The detail every `crash` carries: what stderr last said. */
-    const withStderr = (message: string) =>
-      stderrTail.trim() === '' ? message : `${message}\nstderr: ${stderrTail.trim()}`
-
-    const record = (payload: Record<string, unknown>) => {
-      const sent = send(socketPath, hookRunId, { session_id: sessionId, ...payload }).then(
-        (reply) => {
-          if (reply.allow) return
-          const why = `the hook socket refused ${String(payload['tool_name'])}: ${reply.reason ?? ''}`
-          note('hook', why)
-          recordFailures.push(why)
-        },
-        (error: unknown) => {
-          const why = `could not record ${String(payload['tool_name'])}: ${(error as Error).message}`
-          note('hook', why)
-          recordFailures.push(why)
-        },
-      )
-      pending.add(sent)
-      void sent.then(() => pending.delete(sent))
-    }
-
-    /**
-     * Every message the agent sends, before the SDK reads it. The SDK logs a
-     * notification it cannot parse and goes on, so the tool call it carried would
-     * vanish and the run read as a success; here that ends the run `crash`.
-     */
-    const tap = (message: unknown) => {
-      const m = message as { method?: unknown; params?: { update?: unknown } } | null
-      if (m?.method !== 'session/update') return
-      seen += 1
-      const invalid = invalidUpdate(m.params?.update)
-      if (invalid === undefined) return
-      protocolError = `${profile.name} sent a session/update that does not parse: ${invalid}`
-      note('protocol', protocolError)
-      finish({ kind: 'crash', detail: withStderr(protocolError) })
-    }
-
-    const onUpdate = (update: SessionUpdate) => {
-      if (update.sessionUpdate === 'agent_message_chunk') {
-        if (update.content?.type === 'text' && typeof update.content.text === 'string') {
-          chunks.push(update.content.text)
-        }
-        return
-      }
-      if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return
-      if (update.sessionUpdate === 'tool_call') {
-        calls += 1
-        note('tool', `${update.kind ?? 'other'}: ${update.title ?? update.toolCallId}`)
-        const allowed = request.limits.turns
-        if (allowed !== undefined && calls > allowed) {
-          stop('out-of-turns', `${calls} turns, and the recipe allows ${allowed}`)
-        }
-      }
-      const payload = ledger.apply(update)
-      if (payload) record(payload)
-    }
-
-    /** The first reason to stop wins: `session/cancel`, a wait, then the group. */
-    function stop(kind: 'timeout' | 'out-of-turns', detail: string) {
-      if (finished || stopping) return
-      stopping = { kind, detail }
-      note(kind === 'timeout' ? 'wall' : 'turns', `${detail}: cancelling, then ending the process group`)
-      if (ctxRef && sessionId) void ctxRef.notify('session/cancel', { sessionId }).catch(() => undefined)
-      timers.push(
-        setTimeout(() => {
-          signalGroup(child, 'SIGTERM')
-          timers.push(setTimeout(() => finish({ kind, detail: `${detail}; the group was killed` }), killWaitMs))
-        }, cancelWaitMs),
-      )
-    }
-
-    /** The wall, or an abort. */
-    function onWall() {
-      stop('timeout', 'the wall was reached')
-    }
-
-    child.stderr?.on('data', (chunk: Buffer) => {
-      stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL)
-    })
-    child.on('error', (error) =>
-      finish({ kind: 'crash', detail: withStderr(`could not start ${binary}: ${error.message}`) }),
-    )
-    child.on('exit', (code, signal) => {
-      exited = true
-      if (finished) return
-      if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail }, code)
-      finish({ kind: 'crash', detail: withStderr(`${binary} exited (${signal ?? code}) before the turn ended`) }, code)
-    })
-
-    timers.push(setTimeout(onWall, request.limits.wallMs))
-    if (request.signal?.aborted) onWall()
-    else request.signal?.addEventListener('abort', onWall, { once: true })
-
-    lingtaiClient()
-      .onRequest('session/request_permission', ({ params }) => {
-        // *Allow once*, never a reject and never an auto mode (0.16.md): Lingtai
-        // refuses no tool call, it writes down that one was asked.
-        const allow = params.options.find((o) => o.kind === 'allow_once')
-        note(
-          'permission',
-          `asked ${params.toolCall.title ?? params.toolCall.toolCallId}: ${allow ? 'allowed' : 'no allow-once offered'}`,
+      const finish = (failure: RunOutcome['failure'], exitCode: number | null = null) => {
+        if (finished) return
+        finished = true
+        for (const timer of timers) clearTimeout(timer)
+        // The turn is over; so is everything the agent started.
+        signalGroup(child, 'SIGKILL')
+        request.signal?.removeEventListener('abort', onWall)
+        const text = chunks.join('')
+        for (const title of ledger.unfinished()) note('unfinished', title)
+        resume(
+          Effect.succeed(
+            outcomeOf(started, { turns: calls, text: text === '' ? null : text, sessionId, failure, exitCode, usage }),
+          ),
         )
-        return allow
-          ? { outcome: { outcome: 'selected' as const, optionId: allow.optionId } }
-          : { outcome: { outcome: 'cancelled' as const } }
-      })
-      .onNotification('session/update', ({ params }) => {
-        delivered += 1
-        onUpdate(params.update as unknown as SessionUpdate)
-      })
-      .connectWith(tapped(streamOf(child), tap), (ctx) => {
-        ctxRef = ctx
-        /** The wall came while a step was pending: cancel the session now it has an id, and start nothing more. */
-        const unlessWall = () => {
-          if (!stopping) return undefined
-          return (
-            sessionId ? ctx.notify('session/cancel', { sessionId }).catch(() => undefined) : Promise.resolve()
-          ).then(() => {
-            throw new Error('the wall was reached before the prompt was sent')
-          })
+      }
+
+      /** The detail every `crash` carries: what stderr last said. */
+      const withStderr = (message: string) =>
+        stderrTail.trim() === '' ? message : `${message}\nstderr: ${stderrTail.trim()}`
+
+      const record = (payload: Record<string, unknown>) => {
+        const sent = send(socketPath, hookRunId, { session_id: sessionId, ...payload }).then(
+          (reply) => {
+            if (reply.allow) return
+            const why = `the hook socket refused ${String(payload['tool_name'])}: ${reply.reason ?? ''}`
+            note('hook', why)
+            recordFailures.push(why)
+          },
+          (error: unknown) => {
+            const why = `could not record ${String(payload['tool_name'])}: ${(error as Error).message}`
+            note('hook', why)
+            recordFailures.push(why)
+          },
+        )
+        pending.add(sent)
+        void sent.then(() => pending.delete(sent))
+      }
+
+      /**
+       * Every message the agent sends, before the SDK reads it. The SDK logs a
+       * notification it cannot parse and goes on, so the tool call it carried would
+       * vanish and the run read as a success; here that ends the run `crash`.
+       */
+      const tap = (message: unknown) => {
+        const m = message as { method?: unknown; params?: { update?: unknown } } | null
+        if (m?.method !== 'session/update') return
+        seen += 1
+        const invalid = invalidUpdate(m.params?.update)
+        if (invalid === undefined) return
+        protocolError = `${profile.name} sent a session/update that does not parse: ${invalid}`
+        note('protocol', protocolError)
+        finish({ kind: 'crash', detail: withStderr(protocolError) })
+      }
+
+      const onUpdate = (update: SessionUpdate) => {
+        if (update.sessionUpdate === 'agent_message_chunk') {
+          if (update.content?.type === 'text' && typeof update.content.text === 'string') {
+            chunks.push(update.content.text)
+          }
+          return
         }
-        return openSession(ctx, request.cwd)
-          .then((opened) => {
-            sessionId = opened.id
-            session = opened.response as unknown as SessionNew
-            return unlessWall()
-          })
-          .then(() => selectMode(ctx, profile, sessionId, session))
-          .then(() => selectModel(ctx, profile, sessionId, session, request.model))
-          .then((chosen) => {
-            model = chosen
-          })
-          .then(() => unlessWall())
-          .then(() =>
-            send(socketPath, hookRunId, {
-              hook_event_name: 'UserPromptSubmit',
-              session_id: sessionId,
-              prompt: request.prompt,
-            }).then(
-              (reply) => {
-                if (!reply.allow) throw new HookRefused(`the hook socket ${socketPath} refused: ${reply.reason ?? ''}`)
-              },
-              (error: unknown) => {
-                throw new HookRefused(`the hook socket ${socketPath} could not be reached: ${(error as Error).message}`)
-              },
-            ),
-          )
-          .then(() => unlessWall())
-          .then(() => {
-            phase = 'prompting'
-            return ctx.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: request.prompt }] })
-          })
+        if (update.sessionUpdate !== 'tool_call' && update.sessionUpdate !== 'tool_call_update') return
+        if (update.sessionUpdate === 'tool_call') {
+          calls += 1
+          note('tool', `${update.kind ?? 'other'}: ${update.title ?? update.toolCallId}`)
+          const allowed = request.limits.turns
+          if (allowed !== undefined && calls > allowed) {
+            stop('out-of-turns', `${calls} turns, and the recipe allows ${allowed}`)
+          }
+        }
+        const payload = ledger.apply(update)
+        if (payload) record(payload)
+      }
+
+      /** The first reason to stop wins: `session/cancel`, a wait, then the group. */
+      function stop(kind: 'timeout' | 'out-of-turns', detail: string) {
+        if (finished || stopping) return
+        stopping = { kind, detail }
+        note(kind === 'timeout' ? 'wall' : 'turns', `${detail}: cancelling, then ending the process group`)
+        if (ctxRef && sessionId) void ctxRef.notify('session/cancel', { sessionId }).catch(() => undefined)
+        timers.push(
+          setTimeout(() => {
+            signalGroup(child, 'SIGTERM')
+            timers.push(setTimeout(() => finish({ kind, detail: `${detail}; the group was killed` }), killWaitMs))
+          }, cancelWaitMs),
+        )
+      }
+
+      /** The wall, or an abort. */
+      function onWall() {
+        stop('timeout', 'the wall was reached')
+      }
+
+      child.stderr?.on('data', (chunk: Buffer) => {
+        stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL)
       })
-      .then(
-        (response) => {
-          const read = usageOf(profile, response, note, model)
-          usage = read
-          return settled(() => delivered >= seen)
-            .then(() => Promise.allSettled(pending))
-            .then(() => {
-              if (delivered < seen && !stopping && protocolError === undefined) {
-                protocolError = `${profile.name} sent ${seen - delivered} session/update the SDK rejected`
-                note('protocol', protocolError)
-              }
-              if (stopping) return finish({ kind: stopping.kind, detail: `${stopping.detail}; the turn was cancelled` })
-              if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
-              if (recordFailures.length > 0) {
-                return finish({
-                  kind: 'crash',
-                  detail: `the run's record is incomplete — ${recordFailures.join('; ')}`,
-                })
-              }
-              const text = chunks.join('')
-              finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
-            })
-        },
-        (error: unknown) => {
-          if (finished) return
-          const message = error instanceof Error ? error.message : String(error)
-          if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail })
-          if (error instanceof HookRefused) return finish({ kind: 'crash', detail: message })
-          if (phase === 'opening' && isAuthRequired(error)) {
-            return finish({
-              kind: 'never-started',
-              detail: `${profile.signedOut} (code ${AUTH_REQUIRED})`,
+      child.on('error', (error) =>
+        finish({ kind: 'crash', detail: withStderr(`could not start ${binary}: ${error.message}`) }),
+      )
+      child.on('exit', (code, signal) => {
+        exited = true
+        if (finished) return
+        if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail }, code)
+        finish(
+          { kind: 'crash', detail: withStderr(`${binary} exited (${signal ?? code}) before the turn ended`) },
+          code,
+        )
+      })
+
+      timers.push(setTimeout(onWall, request.limits.wallMs))
+      if (request.signal?.aborted) onWall()
+      else request.signal?.addEventListener('abort', onWall, { once: true })
+
+      lingtaiClient()
+        .onRequest('session/request_permission', ({ params }) => {
+          // *Allow once*, never a reject and never an auto mode (0.16.md): Lingtai
+          // refuses no tool call, it writes down that one was asked.
+          const allow = params.options.find((o) => o.kind === 'allow_once')
+          note(
+            'permission',
+            `asked ${params.toolCall.title ?? params.toolCall.toolCallId}: ${allow ? 'allowed' : 'no allow-once offered'}`,
+          )
+          return allow
+            ? { outcome: { outcome: 'selected' as const, optionId: allow.optionId } }
+            : { outcome: { outcome: 'cancelled' as const } }
+        })
+        .onNotification('session/update', ({ params }) => {
+          delivered += 1
+          onUpdate(params.update as unknown as SessionUpdate)
+        })
+        .connectWith(tapped(streamOf(child), tap), (ctx) => {
+          ctxRef = ctx
+          /** The wall came while a step was pending: cancel the session now it has an id, and start nothing more. */
+          const unlessWall = () => {
+            if (!stopping) return undefined
+            return (
+              sessionId ? ctx.notify('session/cancel', { sessionId }).catch(() => undefined) : Promise.resolve()
+            ).then(() => {
+              throw new Error('the wall was reached before the prompt was sent')
             })
           }
-          finish({ kind: 'crash', detail: withStderr(exited ? `${binary} exited: ${message}` : message) })
-        },
-      )
+          return openSession(ctx, request.cwd)
+            .then((opened) => {
+              sessionId = opened.id
+              session = opened.response as unknown as SessionNew
+              return unlessWall()
+            })
+            .then(() => selectMode(ctx, profile, sessionId, session))
+            .then(() => selectModel(ctx, profile, sessionId, session, request.model))
+            .then((chosen) => {
+              model = chosen
+            })
+            .then(() => unlessWall())
+            .then(() =>
+              send(socketPath, hookRunId, {
+                hook_event_name: 'UserPromptSubmit',
+                session_id: sessionId,
+                prompt: request.prompt,
+              }).then(
+                (reply) => {
+                  if (!reply.allow)
+                    throw new HookRefused(`the hook socket ${socketPath} refused: ${reply.reason ?? ''}`)
+                },
+                (error: unknown) => {
+                  throw new HookRefused(
+                    `the hook socket ${socketPath} could not be reached: ${(error as Error).message}`,
+                  )
+                },
+              ),
+            )
+            .then(() => unlessWall())
+            .then(() => {
+              phase = 'prompting'
+              return ctx.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: request.prompt }] })
+            })
+        })
+        .then(
+          (response) => {
+            const read = usageOf(profile, response, note, model)
+            usage = read
+            return settled(() => delivered >= seen)
+              .then(() => Promise.allSettled(pending))
+              .then(() => {
+                if (delivered < seen && !stopping && protocolError === undefined) {
+                  protocolError = `${profile.name} sent ${seen - delivered} session/update the SDK rejected`
+                  note('protocol', protocolError)
+                }
+                if (stopping)
+                  return finish({ kind: stopping.kind, detail: `${stopping.detail}; the turn was cancelled` })
+                if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
+                if (recordFailures.length > 0) {
+                  return finish({
+                    kind: 'crash',
+                    detail: `the run's record is incomplete — ${recordFailures.join('; ')}`,
+                  })
+                }
+                const text = chunks.join('')
+                finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
+              })
+          },
+          (error: unknown) => {
+            if (finished) return
+            const message = error instanceof Error ? error.message : String(error)
+            if (stopping) return finish({ kind: stopping.kind, detail: stopping.detail })
+            if (error instanceof HookRefused) return finish({ kind: 'crash', detail: message })
+            if (phase === 'opening' && isAuthRequired(error)) {
+              return finish({
+                kind: 'never-started',
+                detail: sandboxed
+                  ? `${profile.name} refused its token (code ${AUTH_REQUIRED}): set a fine-grained token with Copilot Requests in \`copilot.github_token\` (a classic \`ghp_\` token is ignored)`
+                  : `${profile.signedOut} (code ${AUTH_REQUIRED})`,
+              })
+            }
+            finish({ kind: 'crash', detail: withStderr(exited ? `${binary} exited: ${message}` : message) })
+          },
+        )
 
-    return Effect.sync(() => {
-      finished = true
-      for (const timer of timers) clearTimeout(timer)
-      signalGroup(child, 'SIGKILL')
+      return Effect.sync(() => {
+        finished = true
+        for (const timer of timers) clearTimeout(timer)
+        signalGroup(child, 'SIGKILL')
+      })
     })
-  })
+
+  // Absent is today's run, untouched. A sandboxed run is wrapped, and its scope stays open until the child has
+  // exited, since srt's per-command network list is cleaned up when it closes.
+  const sandbox = request.sandbox
+  if (sandbox === undefined) {
+    return yield* runChild({ command: binary, args: profile.args, env: request.env }, false)
+  }
+  return yield* Effect.scoped(
+    copilotSandboxedLaunch(
+      sandbox,
+      { argv: [binary, ...profile.args], env: request.env, cwd: request.cwd },
+      (line) => request.log?.note('sandbox', line),
+      options.sandbox,
+    ).pipe(
+      Effect.matchEffect({
+        // A refusal is a crash and never `never-started`: that stands the whole conductor down as an account
+        // fact (0031), and this is about the host or the project, which a person has to read.
+        onFailure: (refused) =>
+          Effect.succeed(
+            outcomeOf(started, {
+              turns: 0,
+              text: null,
+              sessionId: '',
+              failure: { kind: 'crash', detail: refused.sentence },
+            }),
+          ),
+        onSuccess: (launch) => runChild(launch, true),
+      }),
+    ),
+  )
 })

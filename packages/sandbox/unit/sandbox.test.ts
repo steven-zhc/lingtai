@@ -19,6 +19,8 @@ import {
   SRT_VERSION,
   parseViolationLine,
   isTelemetryHost,
+  KNOWN_TELEMETRY_DOMAINS,
+  instanceConfig,
   resolvedPolicy,
   policyFingerprint,
   fingerprintSource,
@@ -724,5 +726,19 @@ describe('policyFingerprint (#1153)', () => {
 describe('the vendor of each built-in host (#1196)', () => {
   it('names every built-in host and no other', () => {
     expect(Object.keys(BUILT_IN_DOMAIN_VENDORS).sort()).toEqual([...BUILT_IN_DOMAINS].sort())
+  })
+})
+
+describe('the instance denies Copilot telemetry (#1301)', () => {
+  it('holds the three hosts, on both platforms, so `*.githubcopilot.com` admits nothing of them', () => {
+    const hosts = [
+      'telemetry.individual.githubcopilot.com',
+      'telemetry.business.githubcopilot.com',
+      'telemetry.enterprise.githubcopilot.com',
+    ]
+    expect([...KNOWN_TELEMETRY_DOMAINS]).toEqual(hosts)
+    for (const platform of ['darwin', 'linux']) {
+      expect(instanceConfig(hostFor(platform)).network.deniedDomains).toEqual(hosts)
+    }
   })
 })
