@@ -9,6 +9,7 @@
  * The git side is a port, so the freeze is tested against a fake that answers by exit code, as git does.
  */
 import {
+  type ConflictEnd,
   type Envelope,
   type PayloadOf,
   type PrState,
@@ -20,6 +21,7 @@ import {
   prStream,
   ticketStream,
 } from '@lingtai/domain'
+import type { RuntimeId, Usage } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, PermissionDenied, type PullState } from '@lingtai/github'
 import {
@@ -40,7 +42,7 @@ import {
   recordPrWaiting,
 } from '@lingtai/project'
 import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
-import type { MergeInWorktreeResult } from '@lingtai/repo'
+import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
 import { Effect, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
@@ -107,9 +109,49 @@ export interface PrPorts {
   checkedOut(project: string, branch: string): Effect.Effect<string | null, Error>
   /** The projects to look at on a start. */
   projects(): Effect.Effect<readonly string[], Error>
+  /**
+   * What an agent needs to resolve a PR's conflict (#1313). **Absent means no agent can**: a conflicting sync then waits on
+   * the person as it did before, and a conflicting merge back is `PrMergeBackFailed { why: 'conflict' }`.
+   */
+  readonly resolver?: ConflictResolver
   readonly log?: (line: string) => void
   /** How long the freeze waits between looks at a landing still in flight (default 1s); 0 in a test. */
   readonly landingWaitMs?: number
+}
+
+/** One agent run outside any attempt: what is dispatched, and what is handed back. */
+export interface PrDispatch {
+  readonly runtime: RuntimeId
+  readonly model?: string
+  readonly cwd: string
+  readonly prompt: string
+  readonly runId: string
+  /** The runtime's own flags (`--max-turns`, a wall clock, `--max-budget-usd`): a PR round has no hook to enforce them. */
+  readonly limits: { readonly turns?: number; readonly wallMs: number; readonly usd?: number }
+}
+
+export interface PrDispatched {
+  readonly turns: number
+  readonly durationMs: number
+  readonly costUsd: number | null
+  readonly usage?: Usage
+  readonly text: string | null
+  readonly failure: { readonly kind: string; readonly detail: string } | null
+}
+
+export interface ConflictResolver {
+  /** `git merge --no-commit --no-ff` stood up in a `pr-sync-…` / `pr-back-…` worktree, markers left. Never aborts or releases. */
+  standMerge(project: string, options: { name: string; at: string; theirs: string }): Effect.Effect<StandMergeResult>
+  /** Runs `git` in a directory other than the mirror: a round's worktree. A non-zero exit is an answer. */
+  gitIn(cwd: string, args: readonly string[]): Effect.Effect<PrGitAnswer, Error>
+  /** One run of an agent. **Not bounded like a read**: its limit is the recipe's `run.wall`. */
+  dispatch(project: string, request: PrDispatch): Effect.Effect<PrDispatched, Error>
+  /** The runtime's `--version`, or null where it could not be asked (#929). */
+  runtimeVersion(project: string, runtime: RuntimeId): Effect.Effect<string | null>
+  /** A ticket's body as claimed, or the reason it could not be read. */
+  ticketBody(project: string, ticket: string): Effect.Effect<string, Error>
+  /** The sentence for a lock that stops new work on the project (0126 §6), or null when none does. */
+  locked(project: string): Effect.Effect<string | null>
 }
 
 /** What a build of a commit came to: green, the first run that failed, or why it could not be told. */
@@ -138,6 +180,8 @@ export type StepAnswer =
       readonly reason: PayloadOf<'PrWaiting'>['reason']
       readonly detail: string
       readonly headSha: string
+      /** What a conflict the agent did not resolve came to (#1313), for the person who must. */
+      readonly conflict?: ConflictEnd
     }
   | { readonly kind: 'again' }
   /** An earlier step's work is gone: In progress starts again from its first step. */
@@ -472,7 +516,13 @@ export const walkPr = (
         yield* recordPrWaiting(
           project,
           n,
-          { step: next.name, reason: answer.reason, detail: answer.detail, headSha: answer.headSha },
+          {
+            step: next.name,
+            reason: answer.reason,
+            detail: answer.detail,
+            headSha: answer.headSha,
+            ...(answer.conflict === undefined ? {} : { conflict: answer.conflict }),
+          },
           ports.store,
         )
         return
