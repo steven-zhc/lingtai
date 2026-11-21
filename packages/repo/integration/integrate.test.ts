@@ -72,13 +72,21 @@ async function branchWith(branch: string, files: Record<string, string>): Promis
   await g(['checkout', '-q', 'develop'], work)
 }
 
-const base = () => ({
+/**
+ * The lane lands the head the build ran on (8ccb4e6f, *a tree is landed only if
+ * build ran on it*), so a test hands it the tip of the branch it just made.
+ */
+const headOf = async (branch: string): Promise<string> =>
+  (await exec('git', ['rev-parse', branch], { cwd: originPath })).stdout.trim()
+
+const base = async (branch: string) => ({
+  branch,
+  headSha: await headOf(branch),
   project: PROJECT,
   owner: 'steven-zhc',
   repo: PROJECT,
   base: 'develop',
   ticketId: `ticket-${PROJECT}-1`,
-  headSha: '0'.repeat(40),
   stepsPassed: true,
   home,
   store,
@@ -116,7 +124,7 @@ describe('integrate', () => {
     const branchHead = (await exec('git', ['rev-parse', 'agent/1'], { cwd: originPath })).stdout.trim()
 
     const before = (await lane()).length
-    const result = await integrate({ ...base(), branch: 'agent/1' })
+    const result = await integrate({ ...(await base('agent/1')) })
 
     expect(result.ok, JSON.stringify(result)).toBe(true)
     if (!result.ok) return
@@ -161,7 +169,7 @@ describe('integrate', () => {
     const agentWorktree = join(home, 'worktrees', PROJECT, 'agent-13')
     await exec('git', ['worktree', 'add', '-q', agentWorktree, 'agent/13'], { cwd: mirror })
 
-    const result = await integrate({ ...base(), branch: 'agent/13' })
+    const result = await integrate({ ...(await base('agent/13')) })
     expect(result.ok, JSON.stringify(result)).toBe(true)
 
     const log = await exec('git', ['log', '--oneline', 'develop'], { cwd: originPath })
@@ -184,7 +192,7 @@ describe('integrate', () => {
     const agent2Sha = (await g(['rev-parse', 'agent/2'], work)).stdout.trim()
 
     const before = (await lane()).length
-    const result = await integrate({ ...base(), branch: 'agent/2' })
+    const result = await integrate({ ...(await base('agent/2')) })
 
     expect(result.ok).toBe(false)
     if (result.ok) return
@@ -199,7 +207,7 @@ describe('integrate', () => {
   it('refuses a branch with nothing to merge', async () => {
     await g(['push', '-q', 'origin', 'develop:refs/heads/agent/3'], work)
 
-    const result = await integrate({ ...base(), branch: 'agent/3' })
+    const result = await integrate({ ...(await base('agent/3')) })
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toBe('no-commits')
@@ -212,7 +220,7 @@ describe('integrate', () => {
       'prisma/migrations/20260901_add_index/migration.sql': 'create index x on y (z);\n',
     })
 
-    const result = await integrate({ ...base(), branch: 'agent/4' })
+    const result = await integrate({ ...(await base('agent/4')) })
     expect(result.ok).toBe(false)
     if (result.ok) return
     expect(result.reason).toBe('pending-migration')
@@ -224,8 +232,7 @@ describe('integrate', () => {
     await branchWith('agent/5', { 'src/b.ts': 'export const b = 1;\n' })
 
     const result = await integrate({
-      ...base(),
-      branch: 'agent/5',
+      ...(await base('agent/5')),
       stepsPassed: false,
       stepDetail: 'build exited 1',
     })
@@ -248,7 +255,7 @@ describe('integrate', () => {
   it('leaves no worktree behind, and never two integrations in one directory', async () => {
     await branchWith('agent/9', { 'src/f.ts': 'export const f = 1;\n' })
 
-    const result = await integrate({ ...base(), branch: 'agent/9' })
+    const result = await integrate({ ...(await base('agent/9')) })
     expect(result.ok, JSON.stringify(result)).toBe(true)
 
     const registered = await exec('git', ['worktree', 'list', '--porcelain'], {
@@ -283,7 +290,7 @@ describe('integrate', () => {
     const old = new Date(Date.now() - 3 * 60 * 60 * 1_000)
     await utimes(abandoned, old, old)
 
-    const result = await integrate({ ...base(), branch: 'agent/11' })
+    const result = await integrate({ ...(await base('agent/11')) })
     expect(result.ok, JSON.stringify(result)).toBe(true)
 
     // Gone from the disk and from the mirror's registrations, both halves of
@@ -330,7 +337,7 @@ describe('integrate', () => {
 
     // Not rejecting is half of what is under test: an `await` that threw here
     // fails this, and is what `approve.ts` would have got.
-    const result = await integrate({ ...base(), branch: 'agent/12', store: unreachable })
+    const result = await integrate({ ...(await base('agent/12')), store: unreachable })
 
     expect(result.ok, JSON.stringify(result)).toBe(false)
     if (result.ok) return

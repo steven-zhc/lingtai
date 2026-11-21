@@ -49,7 +49,7 @@ source: { kinds: [bug, tech-debt], exclude: ["blocked", "agent:hold"] }
 env: { plantAt: .env.local }
 runtime:
   agent: claude-code
-  limits: { turns: 150, rounds: 3 }
+  limits: { run: { turns: 150 }, attempt: { refusalFixes: 3, conflictResolutions: 3 } }
 steps:
   proposed:
     - { name: build, run: "pnpm test", timeout: 20m }
@@ -316,7 +316,7 @@ describe('a recipe that cannot be read', () => {
   it("names the recipe's file for a wall that is not a duration, and never the machine", async () => {
     await writeFile(
       join(home, 'app', 'recipe.yml'),
-      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  agent: claude-code\n  limits: { wall: "90" }\nsteps:\n  proposed: []\n',
+      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  agent: claude-code\n  limits: { run: { wall: "90" } }\nsteps:\n  proposed: []\n',
     )
     const view = await projectRecipe(state)
     const html = render(view)
