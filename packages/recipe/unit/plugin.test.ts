@@ -826,7 +826,7 @@ describe('the one `claim` holds', () => {
    * `login`, so a person reading it is told what to add rather than what to
    * remove.
    */
-  it('keeps the rule that `assignee: { take: mine }` needs a login', () => {
+  it('parses `assignee: { take: mine }` and leaves the login refusal to the resolver', () => {
     // The other three, because the block requires all four — `assignee: {}` is
     // still how a person writes *whoever it is assigned to*.
     const q = { kinds: ['bug'], exclude: [], backoff: '1h' }
@@ -834,13 +834,8 @@ describe('the one `claim` holds', () => {
       queue: { assignee: { take: 'all' } },
     })
 
-    const refused = queuePlugin.schema.safeParse({
-      name: 'q',
-      queue: { ...q, assignee: { take: 'mine' } },
-    })
-    expect(refused.success).toBe(false)
-    expect(refused.error!.issues[0]!.message).toContain('take: mine needs a login')
-    expect(refused.error!.issues[0]!.path).toEqual(['queue', 'assignee', 'login'])
+    // The login refusal is the resolver's now (#1310): only it knows whether tickets are on GitHub.
+    expect(queuePlugin.schema.safeParse({ name: 'q', queue: { ...q, assignee: { take: 'mine' } } }).success).toBe(true)
 
     expect(
       queuePlugin.schema.parse({

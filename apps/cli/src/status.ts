@@ -64,7 +64,7 @@ import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { loadProjectsEffect } from '@lingtai/project'
 import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { branchOf, queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -491,7 +491,11 @@ export const readStatus = (
         // Always, never behind a flag; takes nothing, claims nothing, appends no
         // event. **`tickets`, not `client`** (#382): a `db` project's queue lives
         // in `dbTickets`, same as `board.ts` and `queued.ts`.
-        const asked_ = yield* runnableNowEffect({ client: tickets, queue: queueOf(recipe) }).pipe(
+        const asked_ = yield* runnableNowEffect({
+          client: tickets,
+          queue: queueOf(recipe),
+          selection: selectionOf(recipe),
+        }).pipe(
           Effect.map((found) => ({ found })),
           recovering((err) => Effect.succeed({ failed: err.message })),
         )

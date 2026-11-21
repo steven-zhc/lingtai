@@ -37,7 +37,9 @@ import {
   kindsOf,
   limitsFor,
   remoteOf,
+  selectionOf,
   ticketSourceOf,
+  type Selection,
   type StepBound,
 } from '@lingtai/recipe/settings'
 import { Cause, Effect } from 'effect'
@@ -574,7 +576,7 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
     // With the login in it, because a wrong login is the mistake this setting
     // can have, and it should be readable before it hands over somebody else's
     // tickets rather than only after (0046 §2, #181).
-    ['assignee', describeAssignee(assigneeOf(filter.recipe))],
+    ['assignee', describeAssignee(assigneeOf(filter.recipe), selectionOf(filter.recipe))],
     // Printed whether it buys anything or not, like a `skipped` gate point: a
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2). **The product, not the
@@ -587,7 +589,13 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
 }
 
 /** `queue:`'s `assignee` as a person reads it. Absent is `all`, and says so. */
-export function describeAssignee(rule: AssigneeRule | undefined): string {
+export function describeAssignee(rule: AssigneeRule | undefined, selection?: Selection): string {
+  // Team mode takes `mine` and nothing else (0130 §3); on the local store *mine* is every ticket.
+  if (selection?.mode === 'team') {
+    return selection.tickets === 'db'
+      ? 'every ticket — local tickets are yours'
+      : `only issues assigned to ${rule?.login}`
+  }
   const as = rule?.login ? ` (this machine is ${rule.login})` : ''
   switch (rule?.take ?? 'all') {
     case 'mine':

@@ -20,11 +20,13 @@ runtime:
   agent: claude-code
 `
 
-const resolve = (head: string) => resolveSource(`version: 2\n${head}${TAIL}`, 'main', 'recipe.yml')
+const TAIL_ME = TAIL.replace('agent: claude-code', 'agent: claude-code\n  assignee: { login: me }')
+
+const resolve = (head: string, tail = TAIL) => resolveSource(`version: 2\n${head}${tail}`, 'main', 'recipe.yml')
 
 describe('mode, branch and pr', () => {
   it('resolves a team recipe, and answers solo for one that names no mode', () => {
-    const team = resolve('mode: team\nbranch: { main: main, personal: steven/box }\npr: {}\n').recipe
+    const team = resolve('mode: team\nbranch: { main: main, personal: steven/box }\npr: {}\n', TAIL_ME).recipe
     expect(modeOf(team)).toBe('team')
     expect(branchOf(team)).toBe('steven/box')
     expect(team.pr).toEqual({ limits: { turns: 20, wall: '5m' } })
@@ -56,6 +58,32 @@ describe('mode, branch and pr', () => {
       expect((thrown as RecipeRefusedError)._tag).toBe('RecipeRefused')
       expect((thrown as RecipeRefusedError).message).toContain(key)
     }
+  })
+
+  it('team mode takes only mine: a written take: all or unassigned is refused, an absent one is not (#1310)', () => {
+    const team = 'mode: team\nbranch: { main: main, personal: me/box }\n'
+    const withRuntime = (assignee: string) =>
+      TAIL.replace('agent: claude-code', `agent: claude-code\n  assignee: ${assignee}`)
+    const refused = (head: string, tail: string) => {
+      try {
+        resolve(head, tail)
+      } catch (err) {
+        expect(err).toBeInstanceOf(RecipeRefusedError)
+        return (err as RecipeRefusedError).message
+      }
+      throw new Error('resolved')
+    }
+    expect(refused(team, withRuntime('{ login: me, take: all }'))).toContain('mode: team takes your own')
+    expect(refused(team, withRuntime('{ login: me, take: unassigned }'))).toContain('runtime.assignee.take')
+    expect(refused(team, TAIL)).toContain('login')
+    expect(modeOf(resolve(team, withRuntime('{ login: me }')).recipe)).toBe('team')
+    expect(modeOf(resolve(team, withRuntime('{ login: me, take: mine }')).recipe)).toBe('team')
+    expect(refused('branch: { main: main }\n', withRuntime('{ take: mine }'))).toContain('needs a login')
+    // A solo recipe that names only a login still takes everyone: no refusal, and nothing renamed.
+    expect(resolve('branch: { main: main }\n', withRuntime('{ login: me }')).recipe.runtime.assignee).toEqual({
+      login: 'me',
+      take: 'all',
+    })
   })
 
   it('refuses a pr: that spends, or names an agent that cannot run with no tools', () => {

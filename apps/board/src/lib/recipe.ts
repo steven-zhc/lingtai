@@ -42,6 +42,7 @@ import {
   parseDuration,
   provenanceSource,
   resolveRecipe,
+  selectionOf,
   type StepAction,
   type PluginSecrets,
   type Recipe,
@@ -915,7 +916,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: 'assignee',
-      says: describeAssignee(assigneeOf(recipe)),
+      says: describeAssignee(assigneeOf(recipe), selectionOf(recipe)),
       keys: ['runtime.assignee.take', 'runtime.assignee.login'],
     },
     {
