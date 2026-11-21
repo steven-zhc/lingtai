@@ -56,3 +56,27 @@ describe('PrFixLanded', () => {
     expect(fixRestartTransition(inReview)).toBeNull()
   })
 })
+
+describe('what an ending and a merge back cover is per ticket (#1341)', () => {
+  const frozen = { ...inReview, covers: { [head]: 1 } }
+  const landed = reducePrEvent(frozen, event('PrFixLanded', { ticket: '11', mergeCommit: fixHead }))
+
+  it('a PR merged at the old head holds only the tickets that head held', () => {
+    const merged = reducePrEvent(landed, event('PrMerged', { how: 'host', headSha: head, mergeSha: null }))
+    expect(merged.mergedTickets).toEqual(['10'])
+  })
+
+  it('a PR merged at the fix head holds both', () => {
+    const merged = reducePrEvent(landed, event('PrMerged', { how: 'git', headSha: fixHead, mergeSha: null }))
+    expect(merged.mergedTickets).toEqual(['10', '11'])
+  })
+
+  it('a merge back carries the tickets of its head, and a later fix does not take that away', () => {
+    const back = reducePrEvent(
+      landed,
+      event('PrMergedBack', { prHead: fixHead, mergeCommit: 'c'.repeat(40), how: 'clean' }),
+    )
+    const later = reducePrEvent(back, event('PrFixLanded', { ticket: '12', mergeCommit: 'e'.repeat(40) }))
+    expect(later.mergedBackTickets).toEqual(['10', '11'])
+  })
+})

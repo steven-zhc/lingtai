@@ -107,7 +107,7 @@ import {
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type Snapshot } from '@lingtai/event-store'
-import { latestPr, observeSandbox, readPr, recordPrFixLanded } from '@lingtai/project'
+import { latestPr, observeSandbox, readPr, readUnheldFixLandings, recordPrFixLanded } from '@lingtai/project'
 import { readBacklogEffect } from '@lingtai/projector'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
@@ -856,9 +856,6 @@ function approvalOf(
 }
 
 /** srt's own explanation out of a `SandboxWrapFailed`'s `cause`. */
-/** Fixes landed on a PR's branch by this process that the PR was not told of, by `project:pr`, in landing order (#1341). */
-const untoldFixes = new Map<string, { ticket: string; mergeCommit: string; title?: string }[]>()
-
 const causeText = (cause: unknown): string =>
   cause instanceof Error ? cause.message : typeof cause === 'string' ? cause : 'no explanation was given'
 
@@ -3954,6 +3951,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // held, and nothing is merged.
           let expectBase: string | undefined
           if (attemptCut !== null && attemptCut.pr !== null) {
+            // A fix an earlier landing pushed and could not tell the PR of is told first, from the log (its
+            // `TicketLanded` on this branch), so the head checked below is the PR's however many processes ago that was.
+            const mended = yield* Effect.result(
+              Effect.gen(function* () {
+                const open = yield* Effect.tryPromise({ try: () => options.client.listOpenIssues(), catch: (e) => e })
+                const current = yield* readPr(project, attemptCut!.pr!, store)
+                if (current === null) return
+                const owed = yield* readUnheldFixLandings(
+                  project,
+                  current,
+                  open.map((i) => ({ issue: String(i.number) })),
+                  store,
+                )
+                for (const fix of owed) yield* recordPrFixLanded(project, attemptCut!.pr!, fix, store)
+              }),
+            )
+            if (Result.isFailure(mended))
+              log(`PR ${attemptCut.pr}: fixes not told of were not mended: ${whyOf(mended.failure)}`)
             const prRead = yield* Effect.result(readPr(project, attemptCut.pr, store))
             if (Result.isFailure(prRead)) {
               return {
@@ -3961,17 +3976,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               } as LandAnswer
             }
             expectBase = prRead.success?.lastPushed ?? undefined
-            // A fix this process pushed and could not tell the PR of is the branch's head though the PR does not know
-            // it yet; one the PR has since learned of (the sweep's repair) is no longer owed.
-            const key = `${project}:${attemptCut.pr}`
-            const owed = (untoldFixes.get(key) ?? []).filter(
-              (f) => !(prRead.success?.tickets ?? []).some((t) => t.ticket === f.ticket),
-            )
-            if (owed.length === 0) untoldFixes.delete(key)
-            else {
-              untoldFixes.set(key, owed)
-              expectBase = owed[owed.length - 1]!.mergeCommit
-            }
           }
 
           const result = yield* repo.integrate({
@@ -3999,36 +4003,24 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // the push step never finds the branch at a commit the PR does not know (#1341). The push has happened,
             // so a failed append is the sweep's to repair, not the landing's to fail.
             if (attemptCut !== null && attemptCut.pr !== null) {
-              // In the order they landed, earlier untold fixes first: the PR's head must never move back. A fix that
-              // cannot be told stays owed, so the next landing on this branch is checked against it and not the stale
-              // head the PR still holds — the lane is released before the sweep's repair runs.
-              const key = `${project}:${attemptCut.pr}`
-              const queue = [
-                ...(untoldFixes.get(key) ?? []),
-                {
-                  ticket: String(options.issue),
-                  mergeCommit: result.mergeCommit,
-                  ...(took === null ? {} : { title: took.ticket.title }),
-                },
-              ]
-              let told = 0
-              for (const fix of queue) {
-                const answered = yield* Effect.result(
-                  recordPrFixLanded(project, attemptCut.pr, fix, store).pipe(Effect.retry({ times: 4 })),
+              const answered = yield* Effect.result(
+                recordPrFixLanded(
+                  project,
+                  attemptCut.pr,
+                  {
+                    ticket: String(options.issue),
+                    mergeCommit: result.mergeCommit,
+                    ...(took === null ? {} : { title: took.ticket.title }),
+                  },
+                  store,
+                ).pipe(Effect.retry({ times: 4 })),
+              )
+              if (Result.isFailure(answered))
+                log(`PR ${attemptCut.pr} was not told of the fix: ${whyOf(answered.failure)}`)
+              else if (!answered.success)
+                log(
+                  `PR ${attemptCut.pr} holds ${options.issue} already or is no longer open: it stays on ${attemptBase()}`,
                 )
-                if (Result.isFailure(answered)) {
-                  log(`PR ${attemptCut.pr} was not told of the fix: ${whyOf(answered.failure)}`)
-                  break
-                }
-                told++
-                if (!answered.success)
-                  log(
-                    `PR ${attemptCut.pr} holds ${fix.ticket} already or is no longer open: it stays on ${attemptBase()}`,
-                  )
-              }
-              const left = queue.slice(told)
-              if (left.length === 0) untoldFixes.delete(key)
-              else untoldFixes.set(key, left)
             }
             return { merged: result.mergeCommit } as LandAnswer
           }

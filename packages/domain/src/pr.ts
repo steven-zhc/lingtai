@@ -47,6 +47,15 @@ export interface PrState {
    * `PrInProgress` clears it): the serve answers it before anything else (#1341).
    */
   fixOwed: boolean
+  /**
+   * How many of `tickets` each commit holds (#1341): set when a head becomes the PR's — frozen, restarted, a pr-fix's
+   * landing, a sync. What an ending or a merge back covers is read from here, never from the branch as a whole.
+   */
+  covers: Readonly<Record<string, number>>
+  /** The tickets the commit a `PrMerged` named holds; the rest landed on the PR branch after it and are not merged. */
+  mergedTickets: readonly string[]
+  /** The tickets a successful merge back into the personal branch carried, over every merge back. */
+  mergedBackTickets: readonly string[]
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
@@ -89,6 +98,9 @@ export const emptyPr: PrState = {
   tickets: [],
   lastPushed: null,
   fixOwed: false,
+  covers: {},
+  mergedTickets: [],
+  mergedBackTickets: [],
   host: null,
   steps: [],
   mergeBack: null,
@@ -103,6 +115,13 @@ export const emptyPr: PrState = {
 function withStep(state: PrState, record: PrStepRecord): PrState {
   const steps = state.steps.some((r) => r.step === record.step) ? state.steps : [...state.steps, record]
   return { ...state, status: state.status === 'waiting' ? 'in-progress' : state.status, steps, wait: null }
+}
+
+/** How many tickets a commit holds: what was recorded for it, else all if it is the PR's head, else those it was frozen with. */
+function heldAt(state: PrState, sha: string): number {
+  return (
+    state.covers[sha] ?? (sha === state.lastPushed ? state.tickets.length : (state.covers[state.frozenSha ?? ''] ?? 0))
+  )
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -136,6 +155,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         frozenSha: d.frozenSha,
         target: d.frozenSha,
         tickets: d.tickets,
+        covers: { ...state.covers, [d.frozenSha]: d.tickets.length },
         fixOwed: false,
         steps: [],
         wait: null,
@@ -144,15 +164,17 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     case 'PrFixLanded': {
       const d = event.data as PayloadOf<'PrFixLanded'>
       // The landing is the PR branch's new head: it is what In progress means to push, and what the push step finds there.
+      const tickets = state.tickets.some((t) => t.ticket === d.ticket)
+        ? state.tickets
+        : [...state.tickets, { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '' }]
       return {
         ...state,
         ...at,
         lastPushed: d.mergeCommit,
         target: d.mergeCommit,
         fixOwed: true,
-        tickets: state.tickets.some((t) => t.ticket === d.ticket)
-          ? state.tickets
-          : [...state.tickets, { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '' }],
+        tickets,
+        covers: { ...state.covers, [d.mergeCommit]: tickets.length },
       }
     }
     case 'PrStepDone': {
@@ -183,22 +205,31 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       // `already` is the sync step's own record; a merge is recorded by the build that passed it. The target is the
       // commit the push step means to push, whichever it was.
       const step = d.how === 'already' ? 'sync' : 'build'
-      return { ...withStep(state, { step, headSha: d.head }), ...at, target: d.head }
+      const held = heldAt(state, state.target ?? '')
+      return {
+        ...withStep(state, { step, headSha: d.head }),
+        ...at,
+        target: d.head,
+        covers: { ...state.covers, [d.head]: state.covers[d.head] ?? held },
+      }
     }
     case 'PrMergedBack':
     case 'PrMergeBackFailed': {
       const d = event.data as { prHead: string; why?: string }
       const merged = event.type === 'PrMergedBack'
+      const carried = merged ? state.tickets.slice(0, heldAt(state, d.prHead)).map((t) => t.ticket) : []
       return {
         ...state,
         ...at,
         mergeBack: { prHead: d.prHead, outcome: merged ? 'merged' : 'failed', why: merged ? null : (d.why ?? null) },
+        mergedBackTickets: [...new Set([...state.mergedBackTickets, ...carried])],
       }
     }
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'merged', wait: null, ended }
+      const mergedTickets = state.tickets.slice(0, heldAt(state, d.headSha)).map((t) => t.ticket)
+      return { ...state, ...at, status: 'merged', wait: null, ended, mergedTickets }
     }
     case 'PrClosed': {
       const d = event.data as PayloadOf<'PrClosed'>

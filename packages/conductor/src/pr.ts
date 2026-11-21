@@ -692,7 +692,9 @@ const closeMergedTickets = (
     if (memory.get(doneKey) === 'done') return
     const after = state.ended.seq
     let channel: IssueChannel | null = null
-    for (const t of state.tickets) {
+    // Only what the merged commit held: a fix that landed on the branch after it is not in the merge (#1341).
+    const merged = state.tickets.filter((t) => state.mergedTickets.includes(t.ticket))
+    for (const t of merged) {
       const ticketId = ticketStream(project, t.ticket)
       const events = yield* Effect.tryPromise({ try: () => ports.store.read(ticketId), catch: asError })
       const closed = events.some(
@@ -704,7 +706,7 @@ const closeMergedTickets = (
     }
     // Only a pass that found every ticket with a recorded close is done (a failed close is `IssueUpdateFailed`).
     let all = true
-    for (const t of state.tickets) {
+    for (const t of merged) {
       const events = yield* Effect.tryPromise({
         try: () => ports.store.read(ticketStream(project, t.ticket)),
         catch: asError,
