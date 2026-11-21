@@ -12,6 +12,7 @@ Generated from `apps/cli/src/commands.ts` and the parser; `lingtai --help` print
 | take the queue, in the recipe’s priority order | [lingtai run](#lingtai-run) |
 | what is runnable, and what is holding the rest | [lingtai status](#lingtai-status) |
 | ask for one ticket ahead of the queue | [lingtai now](#lingtai-now) |
+| what a team project’s draft holds, and where its open PR is | [lingtai pr](#lingtai-pr) |
 | follow a run’s log, from the beginning | [lingtai attach](#lingtai-attach) |
 | the minor findings passing steps raised | [lingtai backlog](#lingtai-backlog) |
 | what the pipeline did over a window of days | [lingtai report](#lingtai-report) |
@@ -140,6 +141,28 @@ lingtai now <project> --issue <n> [--json] [--no-color]
 
 ```sh
 lingtai now lingtai --issue <n>
+```
+
+### lingtai pr
+
+What a team project’s draft holds, and where its open PR is.
+
+Changes state — `--json` on its verdict (version 1).
+
+```text
+lingtai pr [<project>] [--json] [--no-color]
+  The tickets landed on branch.personal that no PR holds, and the
+  open PR: its number, its state and the steps it has been through.
+  A solo project has no PR page: it lands on branch.main itself.
+lingtai pr submit [<project>] [--json] [--no-color]
+  Freezes branch.personal at one commit and starts the PR. Refused
+  while another PR is open, saying which, and in a solo project.
+  It is served by a running conductor: lingtai start, or lingtai run.
+```
+
+```sh
+lingtai pr
+lingtai pr submit lingtai
 ```
 
 ### lingtai attach

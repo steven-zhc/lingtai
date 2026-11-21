@@ -60,6 +60,7 @@ What recurs where there is no owner:
    | Aggregate | Stream | Owner |
    | --- | --- | --- |
    | Project | `prj-{project}` | `@lingtai/project` (0128) |
+   | PR | `pr-{project}-{n}` | `packages/project/src/pr.ts` |
    | Ticket | `ticket-{project}-{issue}` | a ticket module in `@lingtai/conductor` — to be built |
    | Attempt | `pass-{uuid}` | the conductor's attempt (`run-attempt.ts` and what it calls) — to be named and held |
    | Integration | `int-{project}-{base}` | the conductor's landing lane — to be built; `@lingtai/repo` does git, not appends |

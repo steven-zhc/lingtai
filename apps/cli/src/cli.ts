@@ -384,6 +384,36 @@ const now = Command.make(
     ),
 ).pipe(Command.withDescription(definitionOf('now').task))
 
+const prProject = Argument.String('project').pipe(Argument.optional)
+
+const prSubmit = Command.make('submit', { project: prProject, json, noColor }, (args) =>
+  answerWith('pr submit', args, () =>
+    Effect.gen(function* () {
+      const pr = yield* lift(() => import('./pr.ts'))
+      const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+      if ('refused' in chosen) return chosen.refused
+      return yield* pr.prSubmitVerdict(chosen.project, `human:${process.env['USER'] ?? 'operator'}`, pr.livePrWorld())
+    }),
+  ),
+).pipe(Command.withDescription('freeze the personal branch into a PR'))
+
+const prCommand = Command.make('pr', { project: prProject, json, noColor }, (args) =>
+  Effect.gen(function* () {
+    if (args.noColor) applyNoColor()
+    const pr = yield* lift(() => import('./pr.ts'))
+    const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+    if ('refused' in chosen) {
+      if (args.json) printJson('pr', verdictJson(chosen.refused.verdict))
+      else console.log(chosen.refused.verdict.detail)
+      return yield* exitWith(chosen.refused.code)
+    }
+    const report = yield* pr.prReport(chosen.project, pr.livePrWorld())
+    if (args.json) printJson('pr', report.json)
+    else for (const line of report.lines) console.log(line)
+    yield* exitWith(report.code)
+  }).pipe(orFailed('pr', args.json)),
+).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit]))
+
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
 export interface BoardRequest {
   verb: BoardVerb
@@ -1419,6 +1449,7 @@ export const root = Command.make('lingtai').pipe(
     ask,
     answer,
     now,
+    prCommand,
     board,
     runCommand,
     attachCommand,
