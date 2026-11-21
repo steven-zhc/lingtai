@@ -382,7 +382,9 @@ export function closedTransition(
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */
 export function waitTransition(state: PrState, wait: PayloadOf<'PrWaiting'>): ToAppend<PayloadOf<'PrWaiting'>> | null {
-  if (state.status !== 'in-progress' && state.status !== 'waiting') return null
+  // A head that moved while the PR was being marked ready takes it back out of In review.
+  const takenBack = state.status === 'in-review' && wait.reason === 'branch-moved'
+  if (state.status !== 'in-progress' && state.status !== 'waiting' && !takenBack) return null
   if (state.status === 'waiting' && state.wait?.step === wait.step && state.wait.reason === wait.reason) return null
   return { type: 'PrWaiting', actor: 'conductor', data: wait }
 }

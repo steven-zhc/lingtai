@@ -38,6 +38,8 @@ interface World {
   draft: boolean
   pullHead: string
   pushOnMark?: string
+  failGetAfterMark?: boolean
+  pullHeads?: string[]
   marked: string[]
   reverted: string[]
   readFails: boolean
@@ -96,14 +98,16 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         },
       ]),
     getPull: () =>
-      Effect.succeed({
-        state: 'open',
-        merged: false,
-        mergeCommitSha: null,
-        headSha: w.pullHead,
-        updatedAt: 'x',
-        draft: w.draft,
-      } satisfies PullState),
+      w.failGetAfterMark === true && w.marked.length > 0
+        ? Effect.fail(new GitHubFailed(0, 'pulls/7', 'down'))
+        : Effect.succeed({
+            state: 'open',
+            merged: false,
+            mergeCommitSha: null,
+            headSha: w.pullHeads?.shift() ?? w.pullHead,
+            updatedAt: 'x',
+            draft: w.draft,
+          } satisfies PullState),
     convertToDraft: (id: string) => Effect.sync(() => void w.reverted.push(id)),
     markReadyForReview: (id: string) =>
       w.markFails
@@ -292,6 +296,27 @@ describe('the ci and ready steps', () => {
     expect(w.reverted).toEqual(['PR_7'])
     expect(await types(store)).not.toContain('PrOpened')
     expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
+  })
+
+  it('a failed read after marking ready puts it back to a draft and records no PrOpened', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    w.failGetAfterMark = true
+    await serve(ports(store, w, recipeWith())).catch(() => undefined)
+    expect(w.reverted).toEqual(['PR_7'])
+    expect(await types(store)).not.toContain('PrOpened')
+  })
+
+  it('a push after the append is put back to a draft and the log leaves In review', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    // getPull calls: ready's look, after the mutation, next to the append, then the settling look.
+    w.pullHeads = [FROZEN, FROZEN, FROZEN, 'b'.repeat(40)]
+    await serve(ports(store, w, recipeWith()))
+    expect(w.reverted).toEqual(['PR_7'])
+    const s = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(s.status).toBe('waiting')
+    expect(s.wait).toMatchObject({ reason: 'branch-moved' })
   })
 
   it('the step code imports nothing from the one adapter', () => {

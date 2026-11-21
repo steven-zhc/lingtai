@@ -20,6 +20,8 @@ import {
   prDescription,
   prStream,
   ciVerdict,
+  openedTransition,
+  reducePr,
   ticketStream,
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -31,6 +33,7 @@ import {
   recordPrClosed,
   recordPrMerged,
   readPr,
+  readPrEvents,
   readPrDraft,
   recordPrCiSkipped,
   recordPrChecked,
@@ -539,26 +542,61 @@ const readyStep: PrStep = {
         headSha: target,
         record: (project, n, store) =>
           Effect.gen(function* () {
-            // The last look is the one next to the append: the walk's own store reads sit between the step and here.
-            const last = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
+            const opened = { host: 'github' as const, number: host.number, url: host.url }
+            const revert = (why: string) =>
+              github
+                .convertToDraft(host.nodeId)
+                .pipe(
+                  Effect.mapError(asError),
+                  Effect.andThen(
+                    recordPrWaiting(
+                      project,
+                      n,
+                      { step: 'ready', reason: 'branch-moved', detail: why, headSha: target },
+                      store,
+                    ),
+                  ),
+                )
+            // The store is read first and the pull request last, so the look is the thing next to the append: no read sits
+            // between them for a push to land in. A head that moved, or a look that failed, is never recorded as In review.
+            const events = yield* readPrEvents(project, n, store)
+            const state = reducePr(events)
+            const next = openedTransition(state, opened)
+            if (next === null) return false
+            const last = yield* github
+              .getPull(host.number)
+              .pipe(
+                Effect.catch((err: unknown) =>
+                  (marked ? github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError)) : Effect.void).pipe(
+                    Effect.andThen(Effect.fail(asError(err))),
+                  ),
+                ),
+              )
             if (last.headSha !== target) {
               if (marked) yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
               return yield* Effect.fail(
                 new Error(`the pull request moved to ${last.headSha.slice(0, 7)} before In review was recorded`),
               )
             }
-            const opened = yield* recordPrOpened(
-              project,
-              n,
-              { host: 'github', number: host.number, url: host.url },
-              store,
-            )
-            // The append read the store, and a push may have landed during it: look once more, and never leave it ready.
-            const settled = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
-            if (settled.headSha !== target && !settled.draft) {
-              yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
+            yield* Effect.tryPromise({
+              try: () => store.append(prStream(project, n), state.version, [next]),
+              catch: asError,
+            })
+            // A push may still have landed in the instant between the look and the append. It is caught here, put back to a
+            // draft, and the log says so: In review is never left standing on a head CI did not read.
+            const settled = yield* github
+              .getPull(host.number)
+              .pipe(
+                Effect.catch((err: unknown) =>
+                  revert(`could not confirm the head after marking it ready: ${asError(err).message}`).pipe(
+                    Effect.andThen(Effect.fail(asError(err))),
+                  ),
+                ),
+              )
+            if (settled.headSha !== target) {
+              yield* revert(`the pull request moved to ${settled.headSha.slice(0, 7)} as it was marked ready`)
             }
-            return opened
+            return true
           }),
       } as StepAnswer
     }),
