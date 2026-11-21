@@ -43,7 +43,9 @@ export interface RuntimeCapabilities {
   /**
    * Whether `RunRequest.outputSchema` reaches the model. Claude Code's
    * `--json-schema` and Codex CLI's `--output-schema` do; the model-only
-   * Responses route refuses any schema outright. Absent is false (#582).
+   * Responses route refuses any schema outright. Absent is false (#582). A runtime that cannot force the
+   * shape may still ask for it in prose (the ACP runtime does, #1300): the flag stays false, because the
+   * shape is asked for and not enforced.
    */
   acceptsOutputSchema?: boolean
   /**

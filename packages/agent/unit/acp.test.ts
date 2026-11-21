@@ -11,7 +11,14 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { ACP_PROFILES, COPILOT_PROFILE } from '../src/acp-session.ts'
-import { acpFailure, acpRun, COPILOT_CAPABILITIES, createToolLedger, type AcpOptions } from '../src/acp.ts'
+import {
+  acpFailure,
+  acpRun,
+  COPILOT_CAPABILITIES,
+  createToolLedger,
+  withReplyShape,
+  type AcpOptions,
+} from '../src/acp.ts'
 import { classifyAcpSession } from '../src/auth.ts'
 import { missingToFailClosed, type RunRequest } from '../src/runtime.ts'
 
@@ -206,6 +213,25 @@ describe('a run that succeeds', () => {
     const request = h.request({ log: { note: (l: string, d?: string) => void notes.push(`${l}: ${d}`) } })
     await run(h, request)
     expect(notes).toContain('permission: asked Edit a.ts: allowed')
+  })
+
+  it('asks for the output schema in the prompt, to the agent and the hook alike, and only when one is set', async () => {
+    const schema = { type: 'object', properties: { findings: { type: 'array' } } }
+    const withSchema = harness(goodTurn)
+    await run(withSchema, withSchema.request({ outputSchema: schema }))
+    const sent = withSchema.agent.received.find((m) => m['method'] === 'session/prompt')?.['params'].prompt[0].text
+    expect(sent).toBe(withReplyShape('do the thing', schema))
+    expect(sent).toContain('## How to reply')
+    expect(sent).toContain(JSON.stringify(schema, null, 1))
+    expect(withSchema.hook.payloads.find((p) => p['hook_event_name'] === 'UserPromptSubmit')?.['prompt']).toBe(sent)
+    const plain = harness(goodTurn)
+    await run(plain)
+    expect(plain.agent.received.find((m) => m['method'] === 'session/prompt')?.['params'].prompt[0].text).toBe(
+      'do the thing',
+    )
+    expect(plain.hook.payloads.find((p) => p['hook_event_name'] === 'UserPromptSubmit')?.['prompt']).toBe(
+      'do the thing',
+    )
   })
 
   it('sends the model as session/set_model, and nothing when none is set', async () => {
