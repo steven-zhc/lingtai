@@ -208,6 +208,37 @@ describe('the sweep learns what became of the open PR', () => {
   })
 })
 
+describe('an unfinished close is retried after a later PR merges', () => {
+  it('closes the earlier PR’s ticket once the channel works again, though PR 2 is the latest merged', async () => {
+    const { store, w } = await inReview()
+    let broken = true
+    const base = ports(store, w)
+    const p: PrPorts = {
+      ...base,
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
+      tickets: () =>
+        Effect.succeed({
+          closeIssue: async (issue: number) => {
+            if (broken) throw new Error('no issue-write permission')
+            w.closed.push(issue)
+          },
+        } as unknown as IssueChannel),
+    }
+    w.pull = { ...open, merged: true, state: 'closed' }
+    await sweep(p)
+    expect(w.closed).toEqual([])
+    await landed(store, '3')
+    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await Effect.runPromise(servePr(p, 'lingtai', 2))
+    w.pull = { ...open, merged: true, state: 'closed' }
+    await sweep(p)
+    broken = false
+    await sweep(p)
+    await sweep(p)
+    expect(w.closed.sort()).toEqual([1, 2, 3])
+  })
+})
+
 describe('the handlers’ sweep', () => {
   it('runs the read and the reaction', async () => {
     const { store, w } = await inReview()

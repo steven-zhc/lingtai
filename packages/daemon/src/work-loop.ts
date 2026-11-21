@@ -307,9 +307,9 @@ export interface WorkLoopOptions {
     serve: (event: Envelope) => Effect.Effect<void>
     resume: () => Effect.Effect<void>
     /**
-     * What a PR came to, and every PR still owed a serve (#1317): run at the end of `start()` in place of `resume`,
+     * What a PR came to (#1317): run at the end of `start()` beside `resume`,
      * and on the sweep timer, **whether or not the conductor is paused** — it records a fact and takes no work, so
-     * it never goes through `drain` and never asks `paused` or `shutdown`. Tracked, so `stop()` waits for it; a tick
+     * it never goes through `drain` and never asks `paused` or `shutdown`. Not waited for by `stop()`, which interrupts it; a tick
      * that finds the last one still running starts nothing.
      */
     sweep?: () => Effect.Effect<void>
@@ -451,18 +451,39 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
   }
 
   let sweepingPrs = false
-  /** One PR sweep (or the resume, for a handler with no sweep), tracked; a tick that finds one running starts none. */
-  function sweepPrs(): Promise<void> {
+  let walkingPrs = false
+  const sweepAbort = new AbortController()
+  /** The walks a request or a restart left unfinished, tracked so `stop()` waits for the step in flight; one at a time. */
+  function resumePrs(): void {
     const handlers = options.pr
-    if (handlers === undefined || sweepingPrs || stopped) return Promise.resolve()
-    sweepingPrs = true
-    const run = Effect.runPromiseWith(services)((handlers.sweep ?? handlers.resume)())
+    if (handlers === undefined || walkingPrs || stopped) return
+    walkingPrs = true
+    const run = Effect.runPromiseWith(services)(handlers.resume())
     passesInFlight.track(run)
-    return run.then(
+    void run.then(
+      () => void (walkingPrs = false),
+      (err: unknown) => {
+        walkingPrs = false
+        tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`)
+      },
+    )
+  }
+  /**
+   * One read of what each open PR came to, and the walks still owed. The read is **not** tracked: `stop()` never waits
+   * on it, since its requests (the host, a fetch) have no bound; it is interrupted instead. A tick that finds the last
+   * one still running starts none.
+   */
+  function sweepPrs(): void {
+    resumePrs()
+    const handlers = options.pr
+    if (handlers?.sweep === undefined || sweepingPrs || stopped) return
+    sweepingPrs = true
+    const run = Effect.runPromiseWith(services)(handlers.sweep(), { signal: sweepAbort.signal })
+    void run.then(
       () => void (sweepingPrs = false),
       (err: unknown) => {
         sweepingPrs = false
-        tell(`pr sweep failed: ${String(err instanceof Error ? err.message : err)}`)
+        if (!stopped) tell(`pr sweep failed: ${String(err instanceof Error ? err.message : err)}`)
       },
     )
   }
@@ -688,7 +709,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // A request made while the daemon was down is waiting in the stream rather than lost, and a walk a restart
         // cut off is resumed at its first unrecorded step. Tracked, so the drain that follows waits for it.
         if (options.pr) {
-          void sweepPrs()
+          sweepPrs()
         }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
@@ -701,7 +722,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
                 Effect.andThen(
                   Effect.sync(() => {
                     void kick('sweep')
-                    void sweepPrs()
+                    sweepPrs()
                   }),
                 ),
               ),
@@ -714,6 +735,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
     stop: () =>
       Effect.gen(function* () {
         stopped = true
+        sweepAbort.abort()
         // The subscription is closed first so nothing new arrives to set
         // `again` while this waits — though it would lapse on
         // `if (stopped) break` if it did.

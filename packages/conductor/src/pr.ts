@@ -597,12 +597,19 @@ const learnOnePr = (
 /**
  * Closes every ticket a merged PR held, keyed by its `PrMerged`: a ticket whose stream already has
  * `IssueUpdated { change: 'closed' }` after it is skipped, so a second sweep closes none and a restart in the middle
- * finishes the rest. **Only the project's highest-numbered merged PR is looked at each sweep** — a leftover can survive
- * only if a kill lands between closes and the next PR has merged before the next sweep, which is accepted.
+ * finishes the rest. Every merged PR is visited, so a close that failed under an earlier PR is retried after later
+ * ones merge; `memory` remembers a PR whose tickets are all closed, so the reads stop once it is done.
  */
-const closeMergedTickets = (ports: PrPorts, project: string, state: PrState): Effect.Effect<void, Error> =>
+const closeMergedTickets = (
+  ports: PrPorts,
+  memory: SweepMemory,
+  project: string,
+  state: PrState,
+): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
-    if (state.status !== 'merged' || state.ended === null) return
+    if (state.status !== 'merged' || state.ended === null || state.n === null) return
+    const doneKey = `closed ${prStream(project, state.n)}`
+    if (memory.get(doneKey) === 'done') return
     const after = state.ended.seq
     let channel: IssueChannel | null = null
     for (const t of state.tickets) {
@@ -615,6 +622,22 @@ const closeMergedTickets = (ports: PrPorts, project: string, state: PrState): Ef
       channel ??= yield* ports.tickets(project)
       yield* tellGitHubEffect({ store: ports.store, github: channel, ticketId, change: { kind: 'closed' } })
     }
+    // Only a pass that found every ticket with a recorded close is done (a failed close is `IssueUpdateFailed`).
+    let all = true
+    for (const t of state.tickets) {
+      const events = yield* Effect.tryPromise({
+        try: () => ports.store.read(ticketStream(project, t.ticket)),
+        catch: asError,
+      })
+      if (
+        !events.some(
+          (e) =>
+            e.type === 'IssueUpdated' && e.seq > after && (e.data as PayloadOf<'IssueUpdated'>).change === 'closed',
+        )
+      )
+        all = false
+    }
+    if (all) memory.set(doneKey, 'done')
   })
 
 /**
@@ -634,8 +657,11 @@ export const learnPrEnds = (
           yield* learnOnePr(ports, memory, project, latest)
         }
         const prs = yield* listPrs(project, ports.store)
-        const merged = prs.filter((p) => p.status === 'merged').pop()
-        if (merged !== undefined) yield* closeMergedTickets(ports, project, merged)
+        for (const merged of prs.filter((p) => p.status === 'merged')) {
+          yield* closeMergedTickets(ports, memory, project, merged).pipe(
+            Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
+          )
+        }
       }).pipe(Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))))
     }
   })
@@ -671,14 +697,13 @@ export const makePrHandlers = (ports: PrPorts, steps: readonly PrStep[] = IN_PRO
       }),
     /**
      * What the daemon runs at startup and on its sweep timer, **paused or not** — learning that a PR merged records a
-     * fact and takes no work: what each open PR came to, the tickets of a merged one closed, then every PR still owed a
-     * serve (a step that answered `again`).
+     * fact and takes no work: what each open PR came to, and the tickets of a merged one closed. It pushes nothing, so it
+     * can be interrupted; the walks owed are `resume`'s.
      */
     sweep: (): Effect.Effect<void> =>
       Effect.gen(function* () {
         const projects = yield* projectsOf('pr sweep')
         yield* learnPrEnds(ports, projects, memory)
-        yield* servePendingPrs(ports, projects, steps)
       }),
   }
 }
