@@ -81,7 +81,7 @@ function commentAbove(text: string, dotted: string): string {
 const BASE_AT = {
   runtimes: ONE_RUNTIME,
   reader: EMPTY_SETUP_READER,
-  flags: { install: 'none' },
+  flags: { install: 'none', mode: 'solo' },
   buildFlags: ['none'] as readonly string[],
   defaultBranch: async () => null,
   history: async () => [] as readonly string[],
@@ -284,7 +284,7 @@ describe('askRecipe — --defaults (#433)', () => {
       ...BASE_AT,
       project: 'widget',
       local: true,
-      flags: { ...BASE_AT.flags, defaults: '', 'refusal-fixes': '5' },
+      flags: { ...BASE_AT.flags, defaults: '', mode: 'solo', 'refusal-fixes': '5' },
       seeds,
       kept: 'the seeded recipe is kept',
       again: 'lingtai add --local /repo',
@@ -340,14 +340,14 @@ describe('askRecipe — --defaults (#433)', () => {
   }
 
   it('with two runtimes signed in, --defaults writes claude-code as the writer and codex as the reviewer (#727)', async () => {
-    const { result, text, resolved } = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' })
+    const { result, text, resolved } = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', mode: 'solo' })
     expect(result).toMatchObject({ ok: true })
     expect(resolved!.runtime.agent).toBe('claude-code')
     expect(text).toMatch(/agent: codex/)
   })
 
   it('the writer is the enum-first runtime however the runtimes are listed (#727)', async () => {
-    const { result, resolved } = await runTwo([...TWO_RUNTIMES].reverse(), NO_TERMINAL, { defaults: '' })
+    const { result, resolved } = await runTwo([...TWO_RUNTIMES].reverse(), NO_TERMINAL, { defaults: '', mode: 'solo' })
     expect(result).toMatchObject({ ok: true })
     expect(resolved!.runtime.agent).toBe('claude-code')
   })
@@ -369,11 +369,11 @@ describe('askRecipe — --defaults (#433)', () => {
   })
 
   it('a recipe whose writer is codex keeps codex under --defaults (#727)', async () => {
-    const first = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', agent: 'codex' })
+    const first = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', mode: 'solo', agent: 'codex' })
     expect(first.resolved!.runtime.agent).toBe('codex')
     const path = recipePath('widget', HOME)
     const files = mapFiles({ [path]: first.text })
-    const again = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '' }, files)
+    const again = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', mode: 'solo' }, files)
     expect(again.result).toMatchObject({ ok: true })
     expect(again.resolved!.runtime.agent).toBe('codex')
   })
@@ -387,6 +387,7 @@ describe('askRecipe — --defaults (#433)', () => {
   // "every default" instead, silently taking every other default along with
   // it (#433 fix round, findings 1 and 2).
   const FULLY_FLAGGED = {
+    mode: 'solo',
     agent: 'claude-code',
     model: '',
     reviewer: 'none',
@@ -476,7 +477,7 @@ describe('askRecipe — the trial run (#436)', () => {
       ...BASE_AT,
       project: 'widget',
       local: true,
-      flags: { install: 'none', ...flags },
+      flags: { install: 'none', mode: 'solo', ...flags },
       buildFlags: ['pnpm test'],
       seeds: [
         { path: ['branch', 'main'], value: 'main' },
@@ -502,13 +503,13 @@ describe('askRecipe — the trial run (#436)', () => {
   }
 
   it('does not run under --defaults', async () => {
-    const { result, calls } = await run({ defaults: '' })
+    const { result, calls } = await run({ defaults: '', mode: 'solo' })
     expect(result).toMatchObject({ ok: true })
     expect(calls).toEqual([])
   })
 
   it('runs under --defaults --check-build yes, and tells the caller how it went', async () => {
-    const { calls, result } = await run({ defaults: '', 'check-build': 'yes' })
+    const { calls, result } = await run({ defaults: '', mode: 'solo', 'check-build': 'yes' })
     expect(calls).toEqual([['pnpm test']])
     expect(result).toMatchObject({ ok: true, trial: { trial: 'passed' } })
   })
@@ -553,7 +554,7 @@ describe('askRecipe — the trial run (#436)', () => {
           ...BASE_AT,
           project: 'widget',
           local: true,
-          flags: { install: 'none', 'check-build': 'yes' },
+          flags: { install: 'none', mode: 'solo', 'check-build': 'yes' },
           buildFlags: ['pnpm test'],
           seeds: [
             { path: ['branch', 'main'], value: 'main' },

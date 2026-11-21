@@ -22,12 +22,21 @@
  * registration, or the exit code to stop with. A local project, and a
  * GitHub one picked on the board, reach none of this yet.
  */
+import { hostname } from 'node:os'
+
 import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
-import { createGitHubClient, GitHubFailed, type Installation, installationForRepo, parseSlug } from '@lingtai/github'
+import {
+  createGitHubClient,
+  type GitHubClient,
+  GitHubFailed,
+  type Installation,
+  installationForRepo,
+  parseSlug,
+} from '@lingtai/github'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
@@ -206,6 +215,14 @@ export const attempt = <A, E, R>(self: Effect.Effect<A, E, R>) =>
     recovering((threw) => Effect.succeed({ threw } as const)),
   )
 
+/** `refs/heads/<name>` at the tip of `<from>`: read first, then made, so a failed read makes nothing. */
+export const makePersonalBranch = (
+  client: Pick<GitHubClient, 'refSha' | 'createBranch'>,
+  name: string,
+  from: string,
+): Effect.Effect<void, unknown> =>
+  lift(() => client.refSha(from)).pipe(Effect.flatMap((sha) => lift(() => client.createBranch(name, sha))))
+
 /** A number is an exit code: the add stops there. Otherwise the add goes on. */
 export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (
   slug: string,
@@ -274,6 +291,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // `gh` machine. `reach` is how the repository is read from here on.
   let reach: Reach | undefined
   let ghDefaultBranch: string | null = null
+  // The person this machine's `gh` is signed in as; an App acts for nobody, so it is `null` there.
+  let ghLogin: string | null = null
   if (kind === 'gh') {
     const checked: string[] = []
     const read = yield* attempt(deps.ghAccess(slug, (line) => checked.push(line)))
@@ -286,6 +305,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     }
     reach = { kind: 'gh' }
     ghDefaultBranch = access.defaultBranch
+    ghLogin = access.login === '' ? null : access.login
   }
 
   if (kind !== 'gh' && hasGitHubApp()) {
@@ -416,9 +436,29 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // `askRecipe`'s `defaultBranch` is still a promise port (`landing.ts`, `init.ts`): run in this fiber's
   // services, and through the same memo, so one run still asks GitHub once (#402).
   const run = Effect.runPromiseWith(yield* Effect.context<never>())
+  // Built per call, as the trial build's `token` is: an installation token lasts an hour.
+  const githubClient = () =>
+    lift(() =>
+      createGitHubClient({
+        auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
+        owner,
+        repo,
+        ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
+      }),
+    )
   const recipeResult = yield* askRecipeEffect(world, {
     project: repo,
     local: false,
+    team: {
+      knownLogin: ghLogin,
+      hostname: () => hostname(),
+      // An exact ref, never `matchingRefs`: `foundry-pr-7` existing is not `foundry` existing.
+      branchExists: (name) =>
+        githubClient().pipe(
+          Effect.flatMap((client) => lift(() => client.branchExists(name))),
+          recovering(() => Effect.succeed('unreadable' as const)),
+        ),
+    },
     proposal,
     runtimes,
     reader,
@@ -474,12 +514,28 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     'budget',
     'sandbox',
     'sandbox-hosts',
+    'mode',
+    'login',
+    'personal',
   ]) {
     delete flags[name]
   }
   if ('refused' in recipeResult) {
     console.error(recipeResult.refused)
     return 1
+  }
+  // After every question and before `applySetup` writes the recipe: a crash between them leaves a branch and no
+  // project, and the next add finds the branch *exists* and uses it. Never retried: a 422 is read as *exists*.
+  if (recipeResult.make !== undefined) {
+    const { name, from } = recipeResult.make
+    const made = yield* attempt(githubClient().pipe(Effect.flatMap((client) => makePersonalBranch(client, name, from))))
+    if ('threw' in made) {
+      console.error(
+        `could not make ${name} from origin/${from} — ${made.threw instanceof Error ? made.threw.message : String(made.threw)}. Nothing was written and nothing was registered`,
+      )
+      return 1
+    }
+    console.log(`made ${name} from origin/${from} and pushed it`)
   }
   if (deps.claudeToken !== undefined) {
     // The recipe is a draft until `applySetup` writes it, so its final form is the preview of the answers.

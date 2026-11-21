@@ -44,6 +44,15 @@ lingtai add [<owner>/<repo>] [flags]
       A recipe's own branch.main contradicting it is refused.
       default: the repository's own default branch
       (--base is the old name for this flag, and is refused)
+  --mode <team|solo>
+      does anyone else work on this repository? team is the default:
+      Lingtai works on a personal branch and you send main a PR
+  --login <login>
+      team mode on a machine that does not know your GitHub login:
+      the issues assigned to it are the ones taken
+  --personal <branch>
+      team mode: the branch Lingtai works on, yours alone. default:
+      <login>/<machine>, or lingtai-base for a local project
   --tickets <github|db>
       where tickets come from, instead of being asked. local takes
       db only (#396)
@@ -682,6 +691,8 @@ lingtai init [flags]
       how this machine reaches GitHub, asked only when nothing is set:
       the signed-in gh login, or the App. gh is checked, not trusted
   --main <branch>           the branch a local project governs
+  --mode <team|solo>        does anyone else work here? team is the default
+  --personal <branch>       team mode: the branch Lingtai works on
   --tickets <github|db>     where tickets come from
   --kinds <a,b,c>          which labels are work, first taken first
   --agent <claude-code|codex>  which agent writes the change

@@ -542,10 +542,11 @@ export const addEffect = Effect.fn('onboard.add')(function* (
     return { ok: false } as Added
   }
   const resolved: ResolvedRecipe = local.recipe
-  if (options.base?.named && options.base.ref !== branchOf(resolved.recipe)) {
-    const wrote = branchKeyOf(resolved.recipe)
+  // `--main` names `branch.main` in either mode; in team mode `branchOf` is the personal branch, a different thing.
+  if (options.base?.named && options.base.ref !== resolved.recipe.branch.main) {
+    const wrote = 'branch.main'
     log(
-      `--main ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${branchOf(resolved.recipe)}. ` +
+      `--main ${options.base.ref}, but ${recipePath(repo)} declares ${wrote}: ${resolved.recipe.branch.main}. ` +
         "This command will not overrule either — re-run without --main to take the recipe's, " +
         `or fix ${wrote} in the file.`,
     )
