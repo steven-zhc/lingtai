@@ -2,7 +2,7 @@
  * The left half of the bar: which repositories there are, and a way to add one.
  *
  * **The filter is one of the three, and it is one control** (the-bar.md, *Since
- * 2026-11-05*). The objects are filter, health, headline — the filter
+ * 2026-11-05*, 0.16). The objects are place, health, headline — the place
  * among them, left of the separator. The `<summary>` names the project
  * in view, and the menu under it is *all projects* and a row per repository,
  * each one link. A registered project's row hints, on hover, at what choosing
@@ -36,16 +36,6 @@ const addTarget = (app: boolean) => ({
   where: app ? '/setup/repository' : '/setup/github-app',
   why: app ? 'add a repository' : 'create the GitHub App, then install it',
 })
-
-/** The `+` beside the menu. Needs only `app`, so the shell draws it before any read. */
-export function AddProject({ app }: { app: boolean }) {
-  const { where, why } = addTarget(app)
-  return (
-    <Link className="addp" href={where} title={why} aria-label={why}>
-      +
-    </Link>
-  )
-}
 
 /**
  * What is inside the menu: *all projects* and a row per repository, or — with
@@ -110,6 +100,10 @@ export function ProjectRows({
           {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
         </Link>
       ))}
+      {/* Last row: the affordance lives in the menu it belongs to (#216, 0.16), and is not a fourth object. */}
+      <Link className="tab" href={where} title={why}>
+        {why}
+      </Link>
     </div>
   )
 }
@@ -120,6 +114,9 @@ export const filterSummary = (label: ReactNode): ReactNode => (
     {label} <span aria-hidden="true">▾</span>
   </>
 )
+
+/** The summary's tooltip names its key: `<project> · G S`. */
+export const filterTitle = (only: string | undefined): string => `${only ?? 'Projects'} · G S`
 
 /**
  * The slot, in its three states.
@@ -154,10 +151,9 @@ export function Projects({
 
   return (
     <>
-      <FilterMenu className="filter" summary={filterSummary(only ?? 'all projects')}>
+      <FilterMenu className="filter" summary={filterSummary(only ?? 'all projects')} title={filterTitle(only)}>
         <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} sandbox={sandbox} />
       </FilterMenu>
-      <AddProject app={app} />
     </>
   )
 }

@@ -156,6 +156,7 @@ export interface KeyLike {
   key: string
   metaKey?: boolean
   ctrlKey?: boolean
+  altKey?: boolean
   isComposing?: boolean
   keyCode?: number
 }
@@ -168,6 +169,47 @@ export function isOpenKey(k: KeyLike, isMac: boolean): boolean {
   if (composing(k)) return false
   if (k.key.toLowerCase() !== 'k') return false
   return isMac ? k.metaKey === true && k.ctrlKey !== true : k.ctrlKey === true
+}
+
+/** Where a key landed, as plain data: the tag, and whether it is a `contenteditable`. */
+export interface TargetLike {
+  tag: string
+  editable: boolean
+}
+
+const FIELDS = new Set(['INPUT', 'TEXTAREA', 'SELECT'])
+
+/** A key is never bound while focus is in a field. */
+const inField = (t: TargetLike): boolean => t.editable || FIELDS.has(t.tag.toUpperCase())
+
+const modified = (k: KeyLike): boolean => k.metaKey === true || k.ctrlKey === true || k.altKey === true
+
+/** `#` outside a field opens the palette with `#` typed. Matched on `key`, never `keyCode`; never while composing. */
+export function isHashKey(k: KeyLike, t: TargetLike): boolean {
+  return !composing(k) && k.key === '#' && !modified(k) && !inField(t)
+}
+
+/** How long `g` waits for its second key. */
+export const GO_WINDOW_MS = 1500
+
+export interface GoState {
+  armedAt: number | null
+}
+
+export type GoEffect = { go: 't' | 'p' | 's' } | null
+
+/** `G T`, `G P`, `G S`: `g` arms for 1500 ms, the next key is the place; any other key disarms. */
+export function goKey(state: GoState, k: KeyLike, t: TargetLike, now: number): { state: GoState; effect: GoEffect } {
+  const off = { state: { armedAt: null }, effect: null }
+  if (composing(k) || inField(t)) return off
+  // A bare modifier is part of typing `G`, not a second key.
+  if (['Shift', 'Control', 'Alt', 'Meta'].includes(k.key)) return { state, effect: null }
+  if (modified(k)) return off
+  const key = k.key.toLowerCase()
+  if (state.armedAt !== null && now - state.armedAt <= GO_WINDOW_MS && (key === 't' || key === 'p' || key === 's')) {
+    return { state: { armedAt: null }, effect: { go: key } }
+  }
+  return key === 'g' ? { state: { armedAt: now }, effect: null } : off
 }
 
 export interface PaletteState {

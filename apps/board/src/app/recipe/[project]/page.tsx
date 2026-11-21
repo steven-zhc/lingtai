@@ -7,8 +7,9 @@ import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { type ReactNode } from 'react'
 
-import { Bar } from '@/app/bar.tsx'
+import { Bar, BarActions } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { PlaceLine, viewsFor } from '@/app/place-line.tsx'
 import { ModeGraph } from '@/components/mode-graph.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
@@ -284,7 +285,13 @@ export function Recipe({
     <>
       <main className="detail">
         {bar === undefined ? (
-          <Bar project={view.project} registered here="recipe" pause={pause} />
+          <Bar
+            project={view.project}
+            here="recipe"
+            actions={<BarActions project={view.project} here="recipe" pause={pause} recipe={false} />}
+          >
+            <PlaceLine project={view.project} views={viewsFor(view.project)} here="recipe" />
+          </Bar>
         ) : (
           <RecipeBar project={view.project} {...bar} pause={pause} />
         )}
@@ -412,7 +419,9 @@ export default async function RecipePage({
   } catch {
     return (
       <main className="detail">
-        <Bar project={name} here="recipe" />
+        <Bar project={name} here="recipe">
+          <PlaceLine project={name} views={viewsFor(name)} here="recipe" />
+        </Bar>
         <LockBanner project={name} />
       </main>
     )
