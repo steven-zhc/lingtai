@@ -28,8 +28,10 @@ import {
  * the append-only rules by trying to break them, which means writing probe rows
  * to the event log. A diagnostic that appends to the system of record is the
  * wrong shape; every check below reads the catalogue instead. Bootstrap stays as
- * the write-side setup step. The one exception is `NOTIFY`, which is a
- * transient signal and touches no table.
+ * the write-side setup step. There are two exceptions. `NOTIFY` is a
+ * transient signal and touches no table. `--fix` (#1307) rewrites a recipe that
+ * uses an old spelling, and only through `changeRecipe` — 0128 §6's one write of
+ * a recipe — never by appending to the log itself.
  *
  * **A check that cannot run yet says so.** The checks for the repository, the
  * hook and GitHub are listed as `skip` rather than omitted — a
@@ -134,7 +136,7 @@ import {
 } from '@lingtai/event-store/queries'
 import type { GhRun, GhStatus, GitHubClient } from '@lingtai/github'
 import { ghScopeGap, ghScopeRefresh, ghStatusEffect, REQUIRED_PERMISSIONS } from '@lingtai/github'
-import { listProjectStreamsEffect, loadProjects, loadProjectsEffect, recipePath } from '@lingtai/project'
+import { changeRecipe, listProjectStreamsEffect, loadProjects, loadProjectsEffect, recipePath } from '@lingtai/project'
 import {
   backlogProjection,
   describeShape,
@@ -157,8 +159,10 @@ import {
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
+  oldSpellingFixes,
   remoteOf,
   sandboxDecision,
+  sourceHashOf,
   verdictOf,
   type Recipe,
 } from '@lingtai/recipe'
@@ -2439,6 +2443,123 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 }
 
 /**
+ * Per project: does the recipe still write an old spelling (#1307)? A `warn` and not a `fail`: under #1306 the
+ * old spelling still runs, and `lingtai restart` refuses while doctor fails, so a `fail` would block the very
+ * restart onto the code that can fix it. Read off the report's one resolve — the recipe is never parsed again.
+ */
+export function recipeSpellings(filters: readonly ProjectFilter[] | null): CheckResult[] {
+  if (filters === null) {
+    return [{ name: 'recipe: spelling', status: 'skip', detail: 'the project streams could not be read' }]
+  }
+  return filters.map((f): CheckResult => {
+    const name = `recipe: ${f.project} spelling`
+    if (!f.ok) {
+      return {
+        name,
+        status: 'skip',
+        detail: 'the recipe does not resolve — `recipe: resolves for every project` says why',
+      }
+    }
+    if (f.oldSpellings.length === 0) return { name, status: 'ok', detail: 'no old spelling' }
+    const { lines } = oldSpellingFixes(f.oldSpellings, f.recipe.branch.main)
+    return {
+      name,
+      status: 'warn',
+      title: `${f.project}: the recipe writes an old spelling`,
+      detail: lines.join('\n'),
+      fix: 'lingtai doctor --fix',
+    }
+  })
+}
+
+/** What `--fix` did to one project. */
+export type SpellingFix =
+  | { project: string; outcome: 'written'; sourceHash: string; lines: readonly string[] }
+  | { project: string; outcome: 'nothing'; detail?: string }
+  | { project: string; outcome: 'failed'; detail: string }
+
+/**
+ * `lingtai doctor --fix` (#1307): rewrites each project's recipe from its old spellings to `branch.main` and
+ * `take: all` as a new recipe change by `by`, through `changeRecipe` and nothing else. It resolves again rather
+ * than reading a report: the changes are made from the recipe as it is now, and `changeRecipe` applies them to
+ * the file as it is when written. A project that fails does not stop the others. A process dying between the
+ * file and the event is `changeRecipe`'s known edge: the next load records the file `by: 'file'`.
+ */
+export function fixOldSpellings(
+  load: LoadProjects,
+  reach: LookupReach,
+  options: { by: string; store?: EventStore; home?: string },
+): Effect.Effect<SpellingFix[] | null> {
+  return Effect.gen(function* () {
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) return null
+    const recipeFor = recipeLookup(reach)
+    const out: SpellingFix[] = []
+    for (const state of projects) {
+      const project = state.project
+      if (!project) continue
+      const done = yield* recovering(
+        Effect.gen(function* () {
+          const resolved = yield* recipeFor(state, undefined).pipe(Effect.catch(() => Effect.succeed(null)))
+          if (resolved === null) {
+            return { project, outcome: 'nothing', detail: 'the recipe does not resolve' } satisfies SpellingFix
+          }
+          const { lines, changes } = oldSpellingFixes(resolved.oldSpellings, resolved.recipe.branch.main)
+          if (changes.length === 0) return { project, outcome: 'nothing' } satisfies SpellingFix
+          const result = yield* changeRecipe(
+            project,
+            { changes },
+            {
+              by: options.by,
+              ...(options.store === undefined ? {} : { store: options.store }),
+              ...(options.home === undefined ? {} : { home: options.home }),
+            },
+          )
+          if (!result.ok) return { project, outcome: 'failed', detail: result.message } satisfies SpellingFix
+          return {
+            project,
+            outcome: 'written',
+            sourceHash: sourceHashOf(result.content),
+            lines,
+          } satisfies SpellingFix
+        }),
+        (err): SpellingFix => ({ project, outcome: 'failed', detail: (err as Error).message }),
+      )
+      out.push(done)
+    }
+    return out
+  })
+}
+
+/** The lines `--fix` prints, one block per project that was written or failed. */
+export function renderSpellingFixes(fixes: readonly SpellingFix[] | null): string[] {
+  if (fixes === null) return ['the project streams could not be read — nothing was fixed']
+  const out: string[] = []
+  for (const f of fixes) {
+    if (f.outcome === 'written') {
+      out.push(
+        `${f.project}: rewrote the recipe (new hash ${f.sourceHash.slice(0, 12)})`,
+        ...f.lines.map((l) => `  ${l}`),
+      )
+    } else if (f.outcome === 'failed') out.push(`${f.project}: not fixed — ${f.detail}`)
+    else if (f.detail !== undefined) out.push(`${f.project}: skipped — ${f.detail}`)
+  }
+  if (!out.some((l) => !l.startsWith('  ') && !l.includes('skipped'))) out.push('nothing to fix')
+  else if (out.some((l) => l.includes('rewrote the recipe')))
+    out.push(
+      'if this stops between the file and the log, the next load records the file as `by: file` — the text is kept, only who saved it is lost',
+    )
+  return out
+}
+
+/** `--fix` with `--json` is refused by name: no script reads a report that wrote something. */
+export function fixRefusal(args: { fix: boolean; json: boolean }): string | null {
+  return args.fix && args.json
+    ? '--fix cannot be combined with --json: --fix writes, and a script must not read a report that wrote something'
+    : null
+}
+
+/**
  * Per project: does its recipe resolve at all, and what will it therefore take.
  *
  * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
@@ -3993,6 +4114,10 @@ export function runDoctor(
     yield* step(
       'project recipes',
       projectRecipes(filters, reach.signedIn ?? signedInHere).pipe(Effect.orDie, Effect.map(pushAll)),
+    )
+    yield* step(
+      'recipe spellings',
+      Effect.sync(() => pushAll(recipeSpellings(filters))),
     )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
