@@ -289,6 +289,9 @@ export function resolveSource(
   const retired = [...retiredTier(applied.recipe), ...retiredLimits(applied.recipe)]
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
+  const credentials = jenkinsCredentials(applied.recipe)
+  if (credentials.length > 0) throw new RecipeRefusedError(ref, credentials, where)
+
   // A recipe may write no `runtime:` at all — its agent on each step or
   // detected (#372), and every field inside defaulted — so an absent one is
   // the schema's, as `emitRecipe` already reads it.
@@ -519,7 +522,43 @@ export function refuseOnMeaning(recipe: Recipe, wroteAgent: boolean, raw: unknow
   if (team && wroteAgent && recipe.pr?.agent === undefined && !DiscussAgent.safeParse(recipe.runtime.agent).success) {
     out.push('pr.agent: `pr:` needs an agent that can run with no tools; name a `pr.agent`')
   }
+  const ci = recipe.pr?.ci
+  if (ci !== undefined) {
+    if (ci.provider === 'jenkins') {
+      out.push(
+        'pr.ci.provider: the Jenkins CI adapter is next release; use `provider: github-actions`, `none`, or leave it out to detect',
+      )
+    } else if (ci.jenkins !== undefined) {
+      out.push('pr.ci.jenkins: `pr.ci.jenkins` is read only with `provider: jenkins`')
+    }
+    if (ci.required !== undefined && ci.required.length === 0) {
+      out.push('pr.ci.required: `required: []` names no check; leave `required` out to require every check')
+    }
+  }
   return out
+}
+
+/**
+ * Credentials never go in the recipe (0117): a `pr.ci.jenkins.user` or
+ * `.token` is refused **by name before the parse**, because `jenkins` is a
+ * strict object and an unknown key would otherwise fail as a plain
+ * `RecipeInvalidError` with no sentence about where it goes. Any other unknown
+ * key in `jenkins:` is still the schema's.
+ */
+export function jenkinsCredentials(raw: unknown): string[] {
+  if (typeof raw !== 'object' || raw === null) return []
+  const pr = (raw as Record<string, unknown>)['pr']
+  if (typeof pr !== 'object' || pr === null) return []
+  const ci = (pr as Record<string, unknown>)['ci']
+  if (typeof ci !== 'object' || ci === null) return []
+  const jenkins = (ci as Record<string, unknown>)['jenkins']
+  if (typeof jenkins !== 'object' || jenkins === null) return []
+  return ['user', 'token']
+    .filter((key) => key in jenkins)
+    .map(
+      (key) =>
+        `pr.ci.jenkins.${key}: credentials are never in the recipe — they go in \`~/.lingtai/config.yml\` as \`jenkins.user\` and \`jenkins.token\` (ADR 0117)`,
+    )
 }
 
 /**

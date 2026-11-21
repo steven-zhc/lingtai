@@ -3012,6 +3012,31 @@ export const Pr = z.strictObject({
         .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' }),
     })
     .default({ turns: 20, wall: '5m' }),
+  /**
+   * **`pr.ci`: which CI a PR waits on** (0130 §5). `provider` is `github-actions`,
+   * `none`, or absent to detect; `jenkins` parses and is refused when the recipe
+   * resolves (the adapter is next release). `required` names the checks that
+   * count, absent meaning every check on the head; an empty list is refused in
+   * `refuseOnMeaning`, not here, so it is a `RecipeRefusedError`. `timeout` is how
+   * long a run may take. `jenkins` is read only with `provider: jenkins`.
+   *
+   * **No `.default()` anywhere in it**: a default would put the key into every
+   * parsed recipe and move the hash with no edit to any file (see `source.tickets`
+   * above); the defaults are `ciOf`'s. **Credentials are never in the recipe**:
+   * they live in `~/.lingtai/config.yml` as `jenkins.user` and `jenkins.token`
+   * (ADR 0117), and `resolve.ts` refuses those keys by name.
+   */
+  ci: z
+    .strictObject({
+      provider: z.enum(['github-actions', 'jenkins', 'none']).optional(),
+      required: z.array(z.string().min(1)).optional(),
+      timeout: z
+        .string()
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 60m' })
+        .optional(),
+      jenkins: z.strictObject({ url: z.url(), job: z.string().min(1) }).optional(),
+    })
+    .optional(),
 })
 export type Pr = z.infer<typeof Pr>
 

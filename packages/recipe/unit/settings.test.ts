@@ -51,6 +51,7 @@ import {
   backoffOf,
   branchKeyOf,
   branchOf,
+  ciOf,
   modeOf,
   boundsBesides,
   ceilingOf,
@@ -587,5 +588,38 @@ describe('nothing reaches past them', () => {
         'steps, ' +
         'and a reader that reaches past the accessor is a file that ticket has to edit',
     ).toEqual([])
+  })
+})
+
+describe('ciOf and pr.ci (#1338)', () => {
+  const TEAM = { ...WRITTEN, mode: 'team', branch: { main: 'main', personal: 'me/work' } }
+
+  it('answers the written values from the recipe', () => {
+    const r = Recipe.parse({
+      ...TEAM,
+      pr: { ci: { provider: 'github-actions', required: ['test', 'lint'], timeout: '30m' } },
+    })
+    expect(ciOf(r)).toEqual({
+      provider: 'github-actions',
+      required: ['test', 'lint'],
+      timeoutMs: 1_800_000,
+      from: { provider: 'recipe', required: 'recipe', timeout: 'recipe' },
+    })
+  })
+
+  it('answers detect, all and 60m from the default, and hashes as if ci were never there', () => {
+    const r = Recipe.parse({ ...TEAM, pr: {} })
+    expect(ciOf(r)).toEqual({
+      provider: 'detect',
+      required: 'all',
+      timeoutMs: 3_600_000,
+      from: { provider: 'default', required: 'default', timeout: 'default' },
+    })
+    expect('ci' in (r.pr ?? {})).toBe(false)
+    expect(ciOf(Recipe.parse(TEAM)).provider).toBe('detect')
+  })
+
+  it('refuses an unresolved jenkins provider', () => {
+    expect(() => ciOf(Recipe.parse({ ...TEAM, pr: { ci: { provider: 'jenkins' } } }))).toThrow(/never resolved/)
   })
 })

@@ -257,6 +257,34 @@ export function modeOf(recipe: Recipe): 'solo' | 'team' {
 }
 
 /**
+ * What `pr.ci` resolves to, and where each value came from (0130 §5). **The one
+ * reader**: the recipe carries no defaults for these keys (they would move the
+ * hash), so absent means `detect`, every check (`'all'`) and 60 minutes. A
+ * `jenkins` provider is refused when a recipe resolves, so reaching here with
+ * one means the recipe was parsed and never resolved.
+ */
+export function ciOf(recipe: Recipe): {
+  provider: 'github-actions' | 'none' | 'detect'
+  required: readonly string[] | 'all'
+  timeoutMs: number
+  from: { provider: 'recipe' | 'default'; required: 'recipe' | 'default'; timeout: 'recipe' | 'default' }
+} {
+  const ci = recipe.pr?.ci
+  if (ci?.provider === 'jenkins')
+    throw new Error('pr.ci.provider: jenkins reached ciOf from a recipe that was never resolved')
+  return {
+    provider: ci?.provider ?? 'detect',
+    required: ci?.required ?? 'all',
+    timeoutMs: ci?.timeout === undefined ? 3_600_000 : parseDuration(ci.timeout),
+    from: {
+      provider: ci?.provider === undefined ? 'default' : 'recipe',
+      required: ci?.required === undefined ? 'default' : 'recipe',
+      timeout: ci?.timeout === undefined ? 'default' : 'recipe',
+    },
+  }
+}
+
+/**
  * The branch a pass cuts from and lands on: `branch.personal` in team mode and
  * `branch.main` in solo (0104 §5, 0130 §2). **The one reader**; the old
  * spellings (`repo.base`, `worktree.base`) are refused by name

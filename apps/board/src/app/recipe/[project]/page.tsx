@@ -105,7 +105,7 @@ function Action({ action }: { action: StepActionLine }) {
 }
 
 /** The mode, first (#1326): a reading of the resolved recipe, never of the log. */
-function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['recipe'] }) {
+export function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['recipe'] }) {
   const mode = modeLines(recipe)
   return (
     <section className="rcard" id="mode">
@@ -129,6 +129,20 @@ function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['re
             summary · <span className="mono">{mode.pr.agent}</span>
             {mode.pr.agentFromDefault ? ' ← runtime.agent' : ''} · {mode.pr.turns} turns · {mode.pr.wall}
             {mode.pr.fromDefault ? ' ← default' : ''}
+          </span>
+        </div>
+      )}
+      {mode.pr === null ? null : (
+        <div className="step-set">
+          <span className="step-set-k">CI</span>{' '}
+          <span>
+            {mode.pr.ci.provider === 'detect'
+              ? 'detect (a pull_request workflow means GitHub Actions)'
+              : mode.pr.ci.provider}
+            {mode.pr.ci.from.provider === 'default' ? ' ← default' : ' ← recipe.yml'} ·{' '}
+            {mode.pr.ci.required === 'all' ? 'every check' : mode.pr.ci.required.join(', ')}
+            {mode.pr.ci.from.required === 'default' ? ' ← default' : ' ← recipe.yml'} · {mode.pr.ci.timeout}
+            {mode.pr.ci.from.timeout === 'default' ? ' ← default' : ' ← recipe.yml'}
           </span>
         </div>
       )}
