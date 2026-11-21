@@ -473,13 +473,19 @@ export function mergedTransition(
   return { type: 'PrMerged', actor: 'conductor', data: merged }
 }
 
+const closeEvent = (closed: PayloadOf<'PrClosed'>): ToAppend<PayloadOf<'PrClosed'>> => ({
+  type: 'PrClosed',
+  actor: 'conductor',
+  data: closed,
+})
+
 /** The PR was found closed without a merge. Only the code host can say so, so a PR with no host number cannot be. */
 export function closedTransition(
   state: PrState,
   closed: PayloadOf<'PrClosed'>,
 ): ToAppend<PayloadOf<'PrClosed'>> | null {
   if (!isOpen(state) || state.status === 'requested' || state.host === null) return null
-  return { type: 'PrClosed', actor: 'conductor', data: closed }
+  return closeEvent(closed)
 }
 
 /**
@@ -491,7 +497,7 @@ export function backClosedTransition(
   closed: PayloadOf<'PrClosed'>,
 ): ToAppend<PayloadOf<'PrClosed'>> | null {
   if (state.pending?.kind !== 'back' || !isOpen(state) || state.status === 'requested') return null
-  return { type: 'PrClosed', actor: 'conductor', data: closed }
+  return closeEvent(closed)
 }
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */
