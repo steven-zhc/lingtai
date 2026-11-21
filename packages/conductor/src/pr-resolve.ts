@@ -195,6 +195,13 @@ const theirsOf = (
     return commits
   })
 
+/** How many commits `main` moved, over the whole range and not the conflicted paths; null when git could not say. */
+const aheadOf = (ports: PrPorts, ask: ConflictAsk): Effect.Effect<number | null> =>
+  ports.git(ask.project, ['rev-list', '--count', `${ask.start}..${ask.commit}`]).pipe(
+    Effect.map((a) => (a.code === 0 && /^\d+$/.test(a.stdout.trim()) ? Number(a.stdout.trim()) : null)),
+    Effect.orElseSucceed(() => null),
+  )
+
 /** The wait or the failure a person reads when the rounds are spent: everything needed to choose (#1314 reads it). */
 const endOf = (
   ask: ConflictAsk,
@@ -203,6 +210,7 @@ const endOf = (
   theirs: Read<TheirsCommit>,
   roundsUsed: number,
   last: Refusal | null,
+  mainAhead: number | null,
 ): ConflictEnd => ({
   merging: ask.merging,
   commit: ask.commit,
@@ -213,6 +221,7 @@ const endOf = (
   ...(failedRead(ours) || failedRead(theirs)
     ? { unread: { ours: failedRead(ours) ? ours.failed : null, theirs: failedRead(theirs) ? theirs.failed : null } }
     : {}),
+  mainAhead,
   roundsUsed,
   last,
 })
@@ -239,19 +248,20 @@ export const resolveRounds = (
 
     let last: Refusal | null = null
     let paths: readonly string[] = ask.paths
-    let sides: { ours: Read<OursTicket>; theirs: Read<TheirsCommit> } | null = null
+    let sides: { ours: Read<OursTicket>; theirs: Read<TheirsCommit>; ahead: number | null } | null = null
     const sidesNow = Effect.gen(function* () {
       if (sides === null) {
         sides = {
           ours: yield* read(oursOf(ports, resolver, ask, paths)),
           theirs: yield* read(theirsOf(ports, ask, paths)),
+          ahead: yield* aheadOf(ports, ask),
         }
       }
       return sides
     })
     const spent = (used: number) =>
       sidesNow.pipe(
-        Effect.map((s) => ({ kind: 'spent', end: endOf(ask, paths, s.ours, s.theirs, used, last) }) as const),
+        Effect.map((s) => ({ kind: 'spent', end: endOf(ask, paths, s.ours, s.theirs, used, last, s.ahead) }) as const),
       )
 
     const oneRound = (round: number): Effect.Effect<Round | ResolveEnd, Error> =>
@@ -381,7 +391,7 @@ export const resolveRounds = (
           return {
             kind: 'locked',
             sentence: stopped,
-            end: endOf(ask, paths, s.ours, s.theirs, used ?? round, last),
+            end: endOf(ask, paths, s.ours, s.theirs, used ?? round, last, s.ahead),
           } as const
         })
 
@@ -543,7 +553,11 @@ export const resolveRounds = (
       const lock = yield* resolver.locked(project)
       if (lock !== null) {
         const s = yield* sidesNow
-        return { kind: 'locked', sentence: lock, end: endOf(ask, paths, s.ours, s.theirs, used, last) } as const
+        return {
+          kind: 'locked',
+          sentence: lock,
+          end: endOf(ask, paths, s.ours, s.theirs, used, last, s.ahead),
+        } as const
       }
 
       // Before the dispatch, so a crash leaves the round spent. A round another appender counted first is read again.

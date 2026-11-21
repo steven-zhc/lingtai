@@ -75,7 +75,7 @@ export function prWaitOf(state: PrState, facts: PrWaitFacts): PrWaitView | null 
       detail: wait.detail,
       commit: c?.commit ?? null,
       merging: c?.merging ?? null,
-      mainAhead: c === null || c.unread?.theirs ? null : c.theirs.length,
+      mainAhead: c?.mainAhead ?? null,
       paths: c?.paths ?? null,
       roundsUsed: used,
       roundsAllowed: c === null ? null : facts.conflictResolutions + grantedFor(state, c.merging, c.commit),

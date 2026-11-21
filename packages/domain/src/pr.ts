@@ -80,6 +80,11 @@ export interface PrState {
    * make was not built by Lingtai**, so the build step builds it rather than take the sync's word.
    */
   adopted: string | null
+  /**
+   * The conflict a grant sent back to the agent, until the PR waits again or moves past it (#1314): a second grant for the
+   * same commit, read against the state the first one left, is still a person's decision and adds to it.
+   */
+  granting: { readonly merging: 'main' | 'back'; readonly commit: string } | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
   /** How the PR ended, once it has (`PrMerged`, `PrClosed`); `how` is null for a close. `seq` is the ending event's. */
   ended: {
@@ -115,6 +120,7 @@ export const emptyPr: PrState = {
   pending: null,
   grants: [],
   adopted: null,
+  granting: null,
   refusal: null,
   ended: null,
   version: 0,
@@ -168,6 +174,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         wait: null,
         waitSince: null,
         pending: null,
+        granting: null,
       }
     }
     case 'PrStepDone': {
@@ -183,6 +190,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         wait: null,
         waitSince: null,
         pending: state.status === 'waiting' ? null : state.pending,
+        granting: null,
         adopted,
       }
     }
@@ -232,17 +240,17 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'merged', wait: null, waitSince: null, pending: null, ended }
+      return { ...state, ...at, status: 'merged', wait: null, waitSince: null, pending: null, granting: null, ended }
     }
     case 'PrClosed': {
       const d = event.data as PayloadOf<'PrClosed'>
       const ended = { how: null, headSha: d.headSha, mergeSha: null, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'closed', wait: null, waitSince: null, pending: null, ended }
+      return { ...state, ...at, status: 'closed', wait: null, waitSince: null, pending: null, granting: null, ended }
     }
     case 'PrWaiting': {
       const d = event.data as PayloadOf<'PrWaiting'>
       const since = state.status === 'waiting' && state.wait?.reason === d.reason ? state.waitSince : event.at
-      return { ...state, ...at, status: 'waiting', wait: d, waitSince: since, pending: null }
+      return { ...state, ...at, status: 'waiting', wait: d, waitSince: since, pending: null, granting: null }
     }
     case 'PrRoundsGranted': {
       // The grant is the person's answer taking effect: the PR walks again from the step it waited at, which counts the rounds.
@@ -255,6 +263,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         status: walks ? 'in-progress' : state.status,
         wait: walks ? null : state.wait,
         waitSince: walks ? null : state.waitSince,
+        granting: walks && state.wait?.conflict ? { merging: d.merging, commit: d.commit } : state.granting,
       }
     }
     case 'PrRetryRequested': {
@@ -716,6 +725,23 @@ export function grantTransition(
   if (no !== null) return no
   if (state === null || state.n === null) return refused(`${project} has no PR open`)
   const name = prName(project, state.n)
+  const granted: PrRequest<PayloadOf<'PrRoundsGranted'>> = {
+    kind: 'request',
+    event: {
+      type: 'PrRoundsGranted',
+      actor: grant.by,
+      data: { by: grant.by, merging: grant.merging, commit: grant.commit, rounds: 3 },
+    },
+  }
+  // Two people granting against one wait: the first moved the PR on, and the second still adds to the same commit.
+  if (
+    state.status === 'in-progress' &&
+    state.granting !== null &&
+    state.granting.merging === grant.merging &&
+    state.granting.commit === grant.commit
+  ) {
+    return granted
+  }
   if (state.status !== 'waiting' || state.wait === null)
     return refused(`${name} is ${state.status}, not waiting on you`)
   if (state.wait.reason !== 'sync-conflict') {
@@ -732,14 +758,7 @@ export function grantTransition(
       `${name} now waits on ${conflict.merging === 'main' ? 'main' : 'the merge back'} at ${conflict.commit.slice(0, 7)}, not ${grant.commit.slice(0, 7)}: read it again`,
     )
   }
-  return {
-    kind: 'request',
-    event: {
-      type: 'PrRoundsGranted',
-      actor: grant.by,
-      data: { by: grant.by, merging: grant.merging, commit: grant.commit, rounds: 3 },
-    },
-  }
+  return granted
 }
 
 /** *Check again* (#1314): refused by name on a solo project, with no PR open, and on a PR that is not waiting. */

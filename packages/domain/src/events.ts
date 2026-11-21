@@ -2594,6 +2594,8 @@ export const ConflictEnd = z.object({
    * of the tickets or the commits is never recorded as there being nothing.
    */
   unread: z.object({ ours: z.string().nullable(), theirs: z.string().nullable() }).nullable().optional(),
+  /** How far `main` moved: every commit in the range, not only those touching a conflicted path. Null: could not be counted. */
+  mainAhead: z.number().int().nonnegative().nullable().optional(),
   roundsUsed: z.number().int().nonnegative(),
   last: z.object({ step: z.enum(['build', 'review', 'answer']), said: z.string() }).nullable(),
 })

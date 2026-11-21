@@ -634,15 +634,32 @@ const serveBack = (ports: PrPorts, project: string, n: number): Effect.Effect<vo
     if (prHostOf(recipe) === 'github' && state.host !== null) {
       const number = state.host.number
       const github = yield* ports.github(project)
-      yield* github
-        .closePull(number)
-        .pipe(
+      // A close request's answer is not evidence of how the PR ended: the host is read, and a PR it merged is merged.
+      const merged = (host: PullState) =>
+        recordPrMerged(project, n, { how: 'host', headSha: host.headSha, mergeSha: host.mergeCommitSha }, ports.store)
+      const before = yield* github.getPull(number).pipe(Effect.mapError(asError))
+      if (before.merged) {
+        yield* merged(before)
+        return
+      }
+      if (before.state === 'open') {
+        const refused = yield* github.closePull(number).pipe(
+          Effect.as(false),
           Effect.catch((err: unknown) =>
             err instanceof GitHubFailed && err.status === 422 && /closed/i.test(err.detail)
-              ? Effect.void
+              ? Effect.succeed(true)
               : Effect.fail(asError(err)),
           ),
         )
+        // Closed under us (422): it may have been merged after the read above, so the host says which.
+        if (refused) {
+          const after = yield* github.getPull(number).pipe(Effect.mapError(asError))
+          if (after.merged) {
+            yield* merged(after)
+            return
+          }
+        }
+      }
     }
     const headSha = state.lastPushed ?? state.target ?? state.frozenSha
     if (headSha === null) return

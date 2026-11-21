@@ -34,6 +34,8 @@ interface World {
   holds: number
   closeCalls: number[]
   closeFails: GitHubFailed | null
+  /** What the host says the pull request is: `merged` reads as closed and merged. */
+  hostState: 'open' | 'closed' | 'merged'
   gitCalls: string[][]
 }
 
@@ -45,6 +47,14 @@ const ports = (store: EventStore, w: World): PrPorts =>
     sweep: () => Effect.void,
     github: () =>
       Effect.succeed({
+        getPull: () =>
+          Effect.succeed({
+            state: w.hostState === 'open' ? 'open' : 'closed',
+            merged: w.hostState === 'merged',
+            mergeCommitSha: null,
+            headSha: FROZEN,
+            updatedAt: 't',
+          }),
         closePull: (number: number) => {
           w.closeCalls.push(number)
           return w.closeFails === null ? Effect.void : Effect.fail(w.closeFails)
@@ -71,6 +81,7 @@ const aWorld = (over: Partial<World> = {}): World => ({
   holds: 0,
   closeCalls: [],
   closeFails: null,
+  hostState: 'open',
   gitCalls: [],
   ...over,
 })
@@ -194,6 +205,40 @@ describe('a back, served', () => {
     await run(requestPrBack(ref, { by: 'human:steven' }, store))
     await run(servePr(ports(store, w), 'lingtai', 1, []))
     expect((await state(store)).status).toBe('closed')
+  })
+
+  it('a pull request GitHub merged since the last sweep is recorded merged, never closed, and no close is sent', async () => {
+    const store = await drafted(true)
+    const w = aWorld({ hostState: 'merged' })
+    await run(requestPrBack(ref, { by: 'human:steven' }, store))
+    await run(servePr(ports(store, w), 'lingtai', 1, []))
+    expect(w.closeCalls).toEqual([])
+    expect(await state(store)).toMatchObject({ status: 'merged', pending: null })
+    expect(await types(store)).not.toContain('PrClosed')
+  })
+
+  it('a 422 closed answer on a pull request that was merged is recorded merged', async () => {
+    const store = await drafted(true)
+    const w = aWorld({ closeFails: new GitHubFailed(422, 'pulls/7', 'Pull request is already closed') })
+    const gh = ports(store, w)
+    let reads = 0
+    const base = await Effect.runPromise(gh.github('lingtai'))
+    const flip = {
+      ...base,
+      getPull: (n: number) =>
+        reads++ === 0
+          ? base.getPull(n)
+          : Effect.succeed({
+              state: 'closed',
+              merged: true,
+              mergeCommitSha: 'c'.repeat(40),
+              headSha: FROZEN,
+              updatedAt: 't',
+            }),
+    }
+    await run(requestPrBack(ref, { by: 'human:steven' }, store))
+    await run(servePr({ ...gh, github: () => Effect.succeed(flip as unknown as GitHub) } as PrPorts, 'lingtai', 1, []))
+    expect((await state(store)).status).toBe('merged')
   })
 
   it('before the draft was opened there is nothing to close: PrClosed alone', async () => {

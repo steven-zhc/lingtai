@@ -22,7 +22,7 @@ import {
   requestPrRetry,
   requestPrSubmit,
 } from '@lingtai/project'
-import { type Recipe, ceilingOf, modeOf } from '@lingtai/recipe'
+import { type Recipe, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { livePrPorts } from './pr-ports.ts'
@@ -73,11 +73,16 @@ const stepLines = (state: PrState): string[] =>
       `  ${row.status === 'done' ? '✓' : row.status === 'waiting' ? '!' : '·'} ${row.step}${row.headSha === null ? '' : ` @ ${row.headSha.slice(0, 7)}`}`,
   )
 
-/** The view of a waiting PR, as `lingtai pr` and the PR page both read it. The checkout is null: the recipe holds none to name. */
+/** The view of a waiting PR, as `lingtai pr` and the PR page both read it. A local project's checkout is `repo.remote`, a path. */
+const localCheckout = (recipe: Recipe): string | null => {
+  const remote = remoteOf(recipe)
+  return remote !== null && (remote.startsWith('/') || remote.startsWith('~')) ? remote : null
+}
+
 const waitViewOf = (state: PrState, project: string, recipe: Recipe) =>
   prWaitOf(state, {
     project,
-    checkout: null,
+    checkout: localCheckout(recipe),
     conflictResolutions: ceilingOf(recipe).attempt.conflictResolutions,
   })
 

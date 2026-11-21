@@ -33,6 +33,7 @@ const conflict = (commit = M, over: Partial<ConflictEnd> = {}): ConflictEnd => (
   paths: ['shelf.ts'],
   ours: [{ number: '43', title: 'sorts the shelf by last chapter', mergeCommit: 'd'.repeat(40) }],
   theirs: [{ sha: commit, author: 'li-wei', subject: 'shelf grouped by series' }],
+  mainAhead: 5,
   roundsUsed: 2,
   last: { step: 'build', said: 'shelf.test.ts › sorts by last chapter' },
   ...over,
@@ -87,6 +88,15 @@ describe('give the agent 3 more rounds', () => {
     const s = await state(store)
     expect(conflictRoundsLeft(s, 'main', M, 2, grantedFor(s, 'main', M))).toEqual({ used: 2, left: 3, next: 3 })
     expect(conflictRoundsLeft(s, 'main', N, 2, grantedFor(s, 'main', N))).toEqual({ used: 0, left: 2, next: 1 })
+  })
+
+  it('two grants against one wait both count: five rounds become eight', async () => {
+    const store = await waiting()
+    const ask = { by: 'human:x', merging: 'main' as const, commit: M }
+    await Promise.all([run(grantPrRounds(ref, ask, store)), run(grantPrRounds(ref, ask, store))])
+    const s = await state(store)
+    expect(s.grants).toHaveLength(2)
+    expect(grantedFor(s, 'main', M)).toBe(6)
   })
 
   it('is refused by name, appending nothing: solo, no PR, another wait, a stale commit, a second request', async () => {
@@ -178,7 +188,7 @@ describe('what a waiting PR shows', () => {
     expect(view).toMatchObject({
       kind: 'conflict',
       commit: M,
-      mainAhead: 1,
+      mainAhead: 5,
       paths: ['shelf.ts'],
       roundsUsed: 2,
       roundsAllowed: 5,
