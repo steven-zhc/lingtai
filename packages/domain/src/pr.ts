@@ -46,6 +46,16 @@ export interface PrState {
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
+  /**
+   * What the merge back into `branch.personal` came to for the commit it was tried on (`PrMergedBack`,
+   * `PrMergeBackFailed`). Keyed by `prHead`, so a later In review on a new head is owed its own.
+   */
+  mergeBack: {
+    readonly prHead: string
+    readonly outcome: 'merged' | 'failed'
+    /** Why it failed. `unknown` is a failure that proves nothing was pushed or not pushed: it is tried again. */
+    readonly why: string | null
+  } | null
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
@@ -75,6 +85,7 @@ export const emptyPr: PrState = {
   lastPushed: null,
   host: null,
   steps: [],
+  mergeBack: null,
   wait: null,
   refusal: null,
   ended: null,
@@ -145,6 +156,23 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       const d = event.data as PayloadOf<'PrOpened'>
       const stepped = d.host === 'none' ? withStep(state, { step: 'open', headSha: state.target ?? '' }) : state
       return { ...stepped, ...at, status: 'in-review', wait: null }
+    }
+    case 'BranchSynced': {
+      const d = event.data as PayloadOf<'BranchSynced'>
+      // `already` is the sync step's own record; a merge is recorded by the build that passed it. The target is the
+      // commit the push step means to push, whichever it was.
+      const step = d.how === 'already' ? 'sync' : 'build'
+      return { ...withStep(state, { step, headSha: d.head }), ...at, target: d.head }
+    }
+    case 'PrMergedBack':
+    case 'PrMergeBackFailed': {
+      const d = event.data as { prHead: string; why?: string }
+      const merged = event.type === 'PrMergedBack'
+      return {
+        ...state,
+        ...at,
+        mergeBack: { prHead: d.prHead, outcome: merged ? 'merged' : 'failed', why: merged ? null : (d.why ?? null) },
+      }
     }
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
@@ -279,6 +307,43 @@ export function pushedTransition(
   // A push of an earlier pass's target, recorded after a newer pass began, proves nothing about this one.
   if (pushed.headSha !== (state.target ?? state.frozenSha)) return null
   return { type: 'PrPushed', actor: 'conductor', data: pushed }
+}
+
+/**
+ * Main is in the PR's commit. A step already recorded since the latest `PrInProgress` appends nothing: `already` is the
+ * `sync` step's record and a merge that built is the `build` step's. A sync recorded after a newer pass began proves
+ * nothing about it, so it is held to the commit it was begun from.
+ */
+export function syncedTransition(
+  state: PrState,
+  synced: PayloadOf<'BranchSynced'>,
+): ToAppend<PayloadOf<'BranchSynced'>> | null {
+  if (!walking(state)) return null
+  const step = synced.how === 'already' ? 'sync' : 'build'
+  if (state.steps.some((s) => s.step === step)) return null
+  return { type: 'BranchSynced', actor: 'conductor', data: synced }
+}
+
+/** The PR branch was merged back into `branch.personal` and pushed; only a PR in review, once per head. */
+export function mergedBackTransition(
+  state: PrState,
+  merged: PayloadOf<'PrMergedBack'>,
+): ToAppend<PayloadOf<'PrMergedBack'>> | null {
+  if (state.status !== 'in-review') return null
+  // A failure — `unknown` above all, which a landed push whose answer was lost looks like — never stands in the way of the merge being found.
+  if (state.mergeBack?.prHead === merged.prHead && state.mergeBack.outcome === 'merged') return null
+  return { type: 'PrMergedBack', actor: 'conductor', data: merged }
+}
+
+/** The merge back did not happen; the PR's own state does not change. Once per head, like the success. */
+export function mergeBackFailedTransition(
+  state: PrState,
+  failed: PayloadOf<'PrMergeBackFailed'>,
+): ToAppend<PayloadOf<'PrMergeBackFailed'>> | null {
+  if (state.status !== 'in-review') return null
+  const was = state.mergeBack
+  if (was?.prHead === failed.prHead && (was.outcome === 'merged' || was.why === failed.why)) return null
+  return { type: 'PrMergeBackFailed', actor: 'conductor', data: failed }
 }
 
 /** The draft pull request is open; a step already recorded since the latest `PrInProgress` appends nothing. */

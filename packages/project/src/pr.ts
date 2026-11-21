@@ -29,6 +29,9 @@ import {
   mergedTransition,
   closedTransition,
   waitTransition,
+  syncedTransition,
+  mergedBackTransition,
+  mergeBackFailedTransition,
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
@@ -199,6 +202,41 @@ export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'Pr
     project,
     n,
     (state) => openedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** Main is in the PR's commit (already, or merged and built). A step already recorded appends nothing. */
+export const recordBranchSynced = (project: string, n: number, synced: PayloadOf<'BranchSynced'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncedTransition(state, synced),
+    (_state, appended) => appended,
+  )
+
+/** The merge back pushed `branch.personal`. Once per head. */
+export const recordPrMergedBack = (project: string, n: number, merged: PayloadOf<'PrMergedBack'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergedBackTransition(state, merged),
+    (_state, appended) => appended,
+  )
+
+/** The merge back failed and nothing was pushed. Once per head. */
+export const recordPrMergeBackFailed = (
+  project: string,
+  n: number,
+  failed: PayloadOf<'PrMergeBackFailed'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergeBackFailedTransition(state, failed),
     (_state, appended) => appended,
   )
 

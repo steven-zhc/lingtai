@@ -4,19 +4,32 @@
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
-import type { PrPorts } from '@lingtai/conductor'
+import { type PrPorts, buildAt } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
-import { githubClientAuth } from '@lingtai/env'
+import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS } from '@lingtai/projector/task-view'
 import { remoteOf } from '@lingtai/recipe'
-import { RepoFailed, ensureMirrorEffect, gitEffect, mirrorPathFor } from '@lingtai/repo'
+import {
+  RepoFailed,
+  retryUnreachable,
+  checkedOutAt,
+  ensureMirrorEffect,
+  gitEffect,
+  isLocalRemote,
+  mergeInWorktree,
+  mirrorPathFor,
+  sweepPrWorktrees,
+} from '@lingtai/repo'
 import { Effect } from 'effect'
+
+import { processSandbox } from './sandbox.ts'
+import { tracedPorts } from './tracing.ts'
 
 /** How long the installation token may take: a read inside a write the drain waits for. */
 const TOKEN_MS = 60_000
@@ -103,9 +116,41 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     remote: (project, args) =>
       Effect.gen(function* () {
         const token = yield* tokenOf(project)
-        return yield* answered(gitEffect([...args], { cwd: mirrorPathFor(project), token }))
+        const run = gitEffect([...args], { cwd: mirrorPathFor(project), token })
+        // A fetch that could not reach origin is tried again, as the lane's is; a push is never retried blind.
+        return yield* answered(args[0] === 'fetch' ? retryUnreachable(run) : run)
       }),
     github: githubOf,
+    merge: (project, options) => mergeInWorktree({ project, ...options }),
+    sweep: (project) => sweepPrWorktrees({ project }),
+    build: (project, options) =>
+      Effect.gen(function* () {
+        const recipe = yield* recipeOf(project)
+        const token = yield* tokenOf(project)
+        return yield* buildAt({
+          store,
+          log,
+          home: stateDir(),
+          project,
+          recipe,
+          sha: options.sha,
+          base: options.base,
+          checkId: options.checkId,
+          sandbox: processSandbox,
+          token,
+        }).pipe(Effect.provide(tracedPorts))
+      }),
+    checkedOut: (project, branch) =>
+      Effect.gen(function* () {
+        const remote = remoteOf(yield* recipeOf(project))
+        if (remote === null || !isLocalRemote(remote)) return null
+        const listed = yield* gitEffect(['worktree', 'list', '--porcelain'], { cwd: remote }).pipe(
+          Effect.mapError(asError),
+        )
+        const found = checkedOutAt(listed, branch)
+        if (found === 'unreadable') return yield* Effect.fail(new Error(`could not read the worktrees of ${remote}`))
+        return found === null ? null : found.dir
+      }),
     // The project's own channel, never the raw GitHub client: a `db` project's ticket numbers are not issues there.
     tickets: (project) =>
       Effect.gen(function* () {
