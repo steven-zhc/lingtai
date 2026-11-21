@@ -266,11 +266,19 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
     expect((await pr(store)).status).not.toBe('merged')
   })
 
-  it('a hung ls-remote is bounded', async () => {
-    const { store, w } = await inReview()
-    const p: PrPorts = { ...ports(store, w), remote: () => Effect.never }
-    const handlers = makePrHandlers(p, undefined, 20)
-    await Effect.runPromise(handlers.resume())
+  it('a hung ls-remote is bounded: the walk reaches remote and still returns', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    const w = aWorld()
+    let asked = 0
+    const p: PrPorts = {
+      ...ports(store, w),
+      remote: () => Effect.sync(() => void asked++).pipe(Effect.andThen(Effect.never)),
+    }
+    await Effect.runPromise(makePrHandlers(p, undefined, 20).resume())
+    expect(asked).toBeGreaterThan(0)
+    expect((await pr(store)).status).toBe('in-progress')
   })
 
   it('an answered failure is not logged as a timeout', async () => {

@@ -20,6 +20,9 @@ import { Effect } from 'effect'
 /** A window that covers every landed row: the board's two-day default would lose a ticket landed last week. */
 const EVERY_LANDED_ROW_DAYS = 36_500
 
+/** How long the installation token may take: a read inside a write the drain waits for. */
+const TOKEN_MS = 60_000
+
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 export function livePrPorts(store: EventStore, log: (line: string) => void): PrPorts {
@@ -48,11 +51,17 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     Effect.gen(function* () {
       const slug = yield* slugOf(project)
       if (slug === null) return undefined
-      const client = yield* Effect.tryPromise({
-        try: () => createGitHubClient({ auth: githubClientAuth(), ...slug }),
+      // Building the client and asking for its token are requests: bounded, so a stalled one cannot hold a push the
+      // drain waits for. The token is resolved here (an installation's lasts an hour), never inside `git`.
+      return yield* Effect.tryPromise({
+        try: async () => (await createGitHubClient({ auth: githubClientAuth(), ...slug })).token(),
         catch: asError,
-      })
-      return () => client.token()
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: TOKEN_MS,
+          orElse: () => Effect.fail(new Error(`the installation token did not arrive in ${TOKEN_MS}ms`)),
+        }),
+      )
     })
   const answered = (run: Effect.Effect<string, RepoFailed>) =>
     run.pipe(
