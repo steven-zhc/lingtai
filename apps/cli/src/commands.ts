@@ -617,7 +617,7 @@ export const COMMANDS = [
     usage: [
       'lingtai doctor [--verbose] [--json] [--no-color] [--fix]',
       '  Lists only what needs attention; --verbose lists every check, explained.',
-      '  --fix is the one way doctor writes: it rewrites a recipe that uses an old',
+      '  --fix is the one way doctor writes: it rewrites a recipe refused for an old',
       '  spelling (repo.base, worktree.base, take: both) as a new recipe change, and',
       '  nothing else. It cannot be combined with --json.',
       '  Exits non-zero on any failure. Under --json a failing report is still the',

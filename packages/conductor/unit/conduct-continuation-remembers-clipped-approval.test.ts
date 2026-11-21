@@ -15,7 +15,8 @@ import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } f
 
 const REVIEWER_THEN_SIGNOFF = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

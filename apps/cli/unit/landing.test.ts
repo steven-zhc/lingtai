@@ -75,7 +75,9 @@ function world(answers: (string | null)[] = []): { world: QuestionWorld; lines: 
 
 /** A resolvable recipe with `merge:` written — the fixture `write.test.ts` asks for the shape of. */
 const FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -87,7 +89,9 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 
 /** The same, holding at `proposed` beside a judge, so removing the hold can be told apart from removing the judge. */
 const HOLDING = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -102,7 +106,9 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 
 /** No `runtime.limits` at all — every number is the schema's own default. */
 const INHERITING = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps: {}
@@ -116,32 +122,35 @@ runtime: {agent: claude-code}
  */
 const PRESET_NO_STEPS = `version: 2
 extends: pnpm-workspace
-repo: {base: main}
+branch:
+  main: main
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /**
- * `repo.base: main` but the branch a pass actually cuts from and lands on is
- * `steps.admit`'s `worktree.base: release` (`#268`'s v2 spelling) — the
- * shape `branchOf` (`settings.ts`) exist to read
- * correctly instead of assuming `repo.base`.
+ * `branch.main: release` with a `steps.admit` `worktree:` that carries `submodules` only (0104 §5) — the
+ * shape the old `worktree.base` spelling migrates to (#1308).
  */
 const WORKTREE_ADMIT = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: release
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
   admit:
     - name: cut the tree
-      worktree: {base: release, submodules: false}
+      worktree: {submodules: false}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /** A terse `steps.proposed` entry, with none of `runPlugin`'s defaulted fields (`timeout`, `env`) written. */
 const TERSE_PROPOSED = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -358,7 +367,7 @@ describe('askLanding', () => {
   })
 
   it('land on a base named hold removes the hold and keeps the base', async () => {
-    const files = mapFiles({ [PATH]: HOLDING.replace('base: main', 'base: hold') })
+    const files = mapFiles({ [PATH]: HOLDING.replace('main: main', 'main: hold') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
       home: HOME,
@@ -371,7 +380,7 @@ describe('askLanding', () => {
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
 
-  it("--land develop on a recipe cutting from steps.admit's worktree.base writes branch.main and takes the old worktree.base out", async () => {
+  it("--land develop on a recipe with a steps.admit worktree writes branch.main and leaves the worktree's submodules alone", async () => {
     const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
@@ -403,7 +412,9 @@ describe('askLanding', () => {
 
   it('--land release on a hand-written hold carrying a comment removes the hold and its comment (0104 §14)', async () => {
     const COMMENTED_HOLD = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -433,7 +444,9 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
  * `limitsFor(…, 'implement')`) prints the narrow figure, not the ceiling.
  */
 const NARROW_IMPLEMENT = `version: 2
-repo: {base: main, submodules: false}
+branch:
+  main: main
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:

@@ -24,7 +24,8 @@ const blocker = (number: number): LinkedIssue => ({ number }) as unknown as Link
 
 const RECIPE = `
 version: 2
-repo: { base: main, remote: git@example.com:o/r.git }
+branch: { main: main }
+repo: { remote: git@example.com:o/r.git }
 source: { kinds: [bug], exclude: [agent:hold] }
 env: { required: [], plantAt: .env.local }
 steps: {}

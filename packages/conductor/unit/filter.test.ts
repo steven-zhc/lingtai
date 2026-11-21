@@ -36,8 +36,8 @@ const project = { project: 'lingtai', owner: 'steven-zhc', base: 'main' } as Pro
 
 const RECIPE = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug, tech-debt, documentation]
   exclude: [blocked, agent:hold]
@@ -180,6 +180,17 @@ describe('projectFilter', () => {
     expect(filter.problem).not.toContain('\n')
   })
 
+  it('carries the old spellings a refused recipe wrote, so doctor needs no second read (#1308)', async () => {
+    const old = RECIPE.replace('branch:\n  main: main', 'repo:\n  base: main')
+    expect(old).not.toBe(RECIPE)
+    const filter = await projectFilter(project, async () => client(old), fromFile)
+
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.oldSpellings?.map((s) => s.at)).toEqual(['repo.base'])
+    expect(filter.problem).toContain('lingtai doctor --fix')
+  })
+
   it('says so when there is no recipe at all', async () => {
     const filter = await projectFilter(project, async () => client(null), fromFile)
 
@@ -209,7 +220,8 @@ const ownerlessState = { project: 'esctest', owner: null, base: 'main' } as Proj
 
 const RECIPE_OWNERLESS = `
 version: 2
-repo: { base: main, remote: git@example.com:esctest/esctest.git }
+branch: { main: main }
+repo: { remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -218,7 +230,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
 const RECIPE_OWNERLESS_NO_DB = `
 version: 2
-repo: { base: main, remote: git@example.com:esctest/esctest.git }
+branch: { main: main }
+repo: { remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -227,7 +240,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
 const RECIPE_OWNERLESS_NO_REMOTE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -236,7 +249,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
 const RECIPE_OWNERLESS_NEITHER = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -330,7 +343,8 @@ function freshSql(): TicketSql {
 
 const RECIPE_GITHUB_TICKETS = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -339,7 +353,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
 const RECIPE_DB_TICKETS = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}

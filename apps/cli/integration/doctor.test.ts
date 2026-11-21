@@ -515,8 +515,8 @@ describe('lingtai doctor — the declared environment', () => {
 describe("lingtai doctor — an extension's declared environment", () => {
   const RECIPE = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -909,7 +909,7 @@ describe.skipIf(!postgresUnderTest())('against the real database', () => {
     const OWN = 'esctestdoctorsown'
     const RECIPE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 # Named, so resolving the recipe never asks which runtimes are signed in on the

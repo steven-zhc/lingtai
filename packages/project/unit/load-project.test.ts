@@ -15,7 +15,7 @@ import { ProjectFiles, loadProject, recipePath, recordFileRecipe } from '../src/
 const HOME = '/h'
 const P = 'app'
 const PATH = recipePath(P, HOME)
-const A = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+const A = 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
 const B = `${A}# edited\n`
 
 function port(initial: Record<string, string>, failRead = false) {

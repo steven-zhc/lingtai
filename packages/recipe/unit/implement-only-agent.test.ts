@@ -9,8 +9,9 @@ import { IMPLEMENT_ONLY_AGENTS, RECIPE_PATH, resolveRecipe } from '../src/index.
 
 const HEAD = `
 version: 2
+branch:
+  main: develop
 repo:
-  base: develop
   submodules: true
 source:
   kinds: [bug]

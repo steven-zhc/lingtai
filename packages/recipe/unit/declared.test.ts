@@ -17,7 +17,7 @@ import {
 } from '../src/index.ts'
 
 const root = fileURLToPath(new URL('../../../', import.meta.url))
-const MINIMAL = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+const MINIMAL = 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
 
 describe('sourceOf and sourceHashOf', () => {
   it('makes every CRLF and bare CR an LF and changes nothing else', () => {

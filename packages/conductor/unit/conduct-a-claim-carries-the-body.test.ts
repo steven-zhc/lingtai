@@ -16,7 +16,8 @@ import { fakeGitHub, fakePorts, issue, memoryStore, once, project, runtime, PROJ
 
 const APPROVAL_AT_PROPOSED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

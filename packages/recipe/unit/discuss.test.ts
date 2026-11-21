@@ -8,8 +8,9 @@ import { DISCUSS_DEFAULTS, RECIPE_PATH, hashRecipe, resolveRecipe } from '../src
 
 const BASE = `
 version: 2
+branch:
+  main: develop
 repo:
-  base: develop
   submodules: true
 source:
   kinds: [bug, feature]

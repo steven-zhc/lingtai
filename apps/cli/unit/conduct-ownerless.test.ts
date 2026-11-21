@@ -64,8 +64,9 @@ const GH_PROJECT: ProjectState = { ...LOCAL_PROJECT, project: 'gh', owner: 'stev
 
 const LOCAL_RECIPE_YAML = `
 version: 2
+branch:
+  main: main
 repo:
-  base: main
   remote: https://example.invalid/local.git
 source:
   kinds: [bug]
@@ -83,8 +84,8 @@ steps:
 
 const GH_RECIPE_YAML = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

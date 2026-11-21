@@ -163,7 +163,8 @@ import {
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
-  oldSpellingFixes,
+  OldSpellingRefusedError,
+  type OldSpelling,
   RecipeInvalidError,
   RecipeMissingError,
   remoteOf,
@@ -2453,9 +2454,18 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 }
 
 /**
- * Per project: does the recipe still write an old spelling (#1307)? A `warn` and not a `fail`: under #1306 the
- * old spelling still runs, and `lingtai restart` refuses while doctor fails, so a `fail` would block the very
- * restart onto the code that can fix it. Read off the report's one resolve — the recipe is never parsed again.
+ * The lines a person reads for a set of old spellings: each key and what it becomes.
+ * One entry per spelling, so a base written twice shows both.
+ */
+function spellingLines(spellings: readonly OldSpelling[]): string[] {
+  return spellings.map((s) => s.sentence)
+}
+
+/**
+ * Per project: does the recipe still write an old spelling (#1308)? A `fail`: the recipe no longer runs, and
+ * `lingtai restart` refuses on a red doctor before it drains, which is the safe side. The spellings are the
+ * refusal's own (`OldSpellingRefusedError`, via the filter), so the row names exactly the keys the resolver
+ * refused and the recipe is never read again. A file that resolves cannot hold one.
  */
 export function recipeSpellings(filters: readonly ProjectFilter[] | null): CheckResult[] {
   if (filters === null) {
@@ -2463,20 +2473,19 @@ export function recipeSpellings(filters: readonly ProjectFilter[] | null): Check
   }
   return filters.map((f): CheckResult => {
     const name = `recipe: ${f.project} spelling`
-    if (!f.ok) {
+    if (f.ok) return { name, status: 'ok', detail: 'no old spelling' }
+    if (f.oldSpellings === undefined || f.oldSpellings.length === 0) {
       return {
         name,
         status: 'skip',
         detail: 'the recipe does not resolve — `recipe: resolves for every project` says why',
       }
     }
-    if (f.oldSpellings.length === 0) return { name, status: 'ok', detail: 'no old spelling' }
-    const { lines } = oldSpellingFixes(f.oldSpellings, f.recipe.branch.main)
     return {
       name,
-      status: 'warn',
+      status: 'fail',
       title: `${f.project}: the recipe writes an old spelling`,
-      detail: lines.join('\n'),
+      detail: spellingLines(f.oldSpellings).join('\n'),
       fix: 'lingtai doctor --fix',
     }
   })
@@ -2494,6 +2503,10 @@ export type SpellingFix =
  * than reading a report: the changes are made from the recipe as it is now, and `changeRecipe` applies them to
  * the file as it is when written. A project that fails does not stop the others. A process dying between the
  * file and the event is `changeRecipe`'s known edge: the next load records the file `by: 'file'`.
+ *
+ * Two gaps, both named rather than fixed (#1308): the refusal is thrown before any other check, so a file with an
+ * old spelling *and* a second fault shows the second after `--fix`; and a `worktree:` that held only `base` is left
+ * `{}`, which the final resolve refuses (`submodules` has no default), so that project is `failed` and unchanged.
  */
 export function fixOldSpellings(
   load: LoadProjects,
@@ -2510,20 +2523,28 @@ export function fixOldSpellings(
       if (!project) continue
       const done = yield* recovering(
         Effect.gen(function* () {
-          // Only a recipe that does not resolve is "nothing to fix"; any other failure (a log read, the disk)
-          // propagates to the project's `failed` below, never to a green no-op.
-          const resolved = yield* recipeFor(state, undefined).pipe(
+          // A refusal for an old spelling carries what it found. Only another recipe that does not resolve is
+          // "nothing to fix"; any other failure (a log read, the disk) propagates to the project's `failed`
+          // below, never to a green no-op.
+          const refused = yield* recipeFor(state, undefined).pipe(
+            Effect.map((): readonly OldSpelling[] | null => null),
             Effect.catch((err) =>
-              err instanceof RecipeInvalidError || err instanceof RecipeMissingError
-                ? Effect.succeed(null)
-                : Effect.fail(err),
+              err instanceof OldSpellingRefusedError
+                ? Effect.succeed(err.spellings)
+                : err instanceof RecipeInvalidError || err instanceof RecipeMissingError
+                  ? Effect.succeed(null)
+                  : Effect.fail(err),
             ),
           )
-          if (resolved === null) {
-            return { project, outcome: 'nothing', detail: 'the recipe does not resolve' } satisfies SpellingFix
+          if (refused === null) {
+            return {
+              project,
+              outcome: 'nothing',
+              detail: 'the recipe does not write an old spelling, or does not resolve',
+            } satisfies SpellingFix
           }
-          const { lines, changes } = oldSpellingFixes(resolved.oldSpellings, resolved.recipe.branch.main)
-          if (changes.length === 0) return { project, outcome: 'nothing' } satisfies SpellingFix
+          const lines = spellingLines(refused)
+          const changes = refused.flatMap((s) => s.changes)
           const result = yield* changeRecipe(
             project,
             { changes },

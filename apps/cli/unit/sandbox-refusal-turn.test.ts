@@ -18,8 +18,8 @@ import { type TurnOutcome, conductProjects } from '../src/conduct.ts'
 const HOME = '/home/me/.lingtai'
 const PROJECT = 'app'
 const RECIPE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

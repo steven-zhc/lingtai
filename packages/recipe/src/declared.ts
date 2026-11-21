@@ -12,7 +12,8 @@ import { Recipe } from './recipe.ts'
 import {
   RecipeInvalidError,
   RecipeRefusedError,
-  readOldSpellings,
+  OldSpellingRefusedError,
+  oldSpellingsIn,
   refuseOnMeaning,
   retiredLimits,
   retiredTier,
@@ -52,9 +53,8 @@ export function checkDeclared(text: string, where: string): void {
     // unknown `extends:` — left to the resolve
   }
 
-  const old = readOldSpellings(applied)
-  if (old.twoHomes.length > 0) throw new RecipeRefusedError(ref, old.twoHomes, where)
-  applied = asRecord(old.recipe) ?? applied
+  const old = oldSpellingsIn(applied)
+  if (old.length > 0) throw new OldSpellingRefusedError(ref, old, where)
 
   const unknown = unknownKeys(applied)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)

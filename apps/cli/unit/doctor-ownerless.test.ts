@@ -75,7 +75,8 @@ const runtimesStub: DoctorReach['runtimes'] = () =>
 
 const RECIPE_OK = `
 version: 2
-repo: { base: main, remote: git@example.com:esctest/esctest.git }
+branch: { main: main }
+repo: { remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 runtime: { name: x, prompt: y, agent: claude-code }
@@ -84,7 +85,7 @@ steps: {}
 
 const RECIPE_NO_REMOTE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 runtime: { name: x, prompt: y, agent: claude-code }

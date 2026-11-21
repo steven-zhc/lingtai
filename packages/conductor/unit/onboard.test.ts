@@ -23,8 +23,8 @@ import {
 
 const recipe = (base: string) => `
 version: 2
-repo:
-  base: ${base}
+branch:
+  main: ${base}
 source:
   kinds: [bug]
 env:
