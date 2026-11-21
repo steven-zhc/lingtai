@@ -85,6 +85,7 @@ const ENTRY: BacklogEntry = {
   project: 'lingtai',
   issue: '49',
   taskId: 'ticket-lingtai-49',
+  pr: null,
   runId: 'pass-1',
   step: 'proposed',
   action: 'review',

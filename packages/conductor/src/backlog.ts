@@ -43,12 +43,15 @@ import {
   type PayloadOf,
   SEVERITIES,
   type Severity,
+  type PrState,
   parsePayload,
+  prStream,
   reduceFinding,
+  reducePr,
   ticketStream,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, eventStore } from '@lingtai/event-store'
-import { type BacklogEntry, readBacklog } from '@lingtai/projector'
+import { type BacklogEntry, readBacklog, subjectOf } from '@lingtai/projector'
 import { Cause, Effect } from 'effect'
 
 import { asFailure } from './port-face.ts'
@@ -130,13 +133,31 @@ export type BacklogDecision =
 type Decision = Pick<PayloadOf<'FindingAccepted'>, 'kind' | 'labels'>
 
 /** What an accepted entry opens. Pure, so what an issue will say is testable. */
-export function proposalFor(entry: BacklogEntry, decision: Decision, since: Date): ProposedTicket {
+export function proposalFor(
+  entry: BacklogEntry,
+  decision: Decision,
+  since: Date,
+  pr: Pick<PrState, 'branch' | 'main' | 'prBranch' | 'host'> | null = null,
+): ProposedTicket {
   const firstLine = entry.claim.trim().split('\n')[0] ?? entry.claim
   const title = firstLine.length > 100 ? `${firstLine.slice(0, 97)}...` : firstLine
   const where = entry.line === null ? entry.file : `${entry.file}:${entry.line}`
+  const subject = subjectOf(entry)
+  const origin =
+    subject.kind === 'pr'
+      ? `A \`${entry.severity}\` finding from a passing \`${entry.step}\` of the resolution of PR ${subject.n}'s merge with \`${pr?.main ?? 'main'}\`. ` +
+        `It did not stop that resolution, and a person accepted it from the backlog.`
+      : `A \`${entry.severity}\` finding from a passing \`${entry.step}:${entry.action}\` on ${subject.kind === 'ticket' ? `#${subject.issue}` : 'an unknown subject'}. ` +
+        `It did not stop that run, and a person accepted it from the backlog.`
+  const source =
+    subject.kind === 'pr'
+      ? [
+          `- PR: ${subject.n} (${[pr?.prBranch ? `\`${pr.prBranch}\`` : null, pr?.host ? `code host #${pr.host.number}` : null, `\`${subject.stream}\``].filter((x) => x !== null).join(', ')})`,
+          `- resolution: \`${entry.onSha.slice(0, 12)}\``,
+        ]
+      : [subject.kind === 'ticket' ? `- ticket: #${subject.issue}` : '- ticket: unknown subject']
   const body = [
-    `A \`${entry.severity}\` finding from a passing \`${entry.step}:${entry.action}\` on #${entry.issue}. ` +
-      `It did not stop that run, and a person accepted it from the backlog.`,
+    origin,
     '',
     `**\`${where}\`** — ${entry.claim.trim()}`,
     '',
@@ -146,7 +167,7 @@ export function proposalFor(entry: BacklogEntry, decision: Decision, since: Date
     '',
     '## Where it came from',
     '',
-    `- ticket: #${entry.issue}`,
+    ...source,
     `- run: \`${entry.runId}\`, reviewing \`${entry.onSha.slice(0, 12)}\``,
     `- step: \`${entry.step}\`, action \`${entry.action}\``,
     `- finding: \`${entry.key}\` (seq ${entry.raisedSeq})`,
@@ -319,7 +340,17 @@ const open = (
 ): Effect.Effect<BacklogDecision, Error> =>
   Effect.gen(function* () {
     const streamId = backlogStream(options.project, options.key)
-    const proposed = yield* caught(Effect.suspend(() => options.tickets.propose(proposalFor(entry, decision, since))))
+    // A PR's branch and code-host number are read now, not stored: the host's number may
+    // arrive after the review. A failed read only leaves them out.
+    const pr = entry.pr
+      ? yield* Effect.tryPromise(() => events.read(prStream(entry.project, entry.pr!.n))).pipe(
+          Effect.map((evs) => (evs.length === 0 ? null : reducePr(evs))),
+          Effect.catch(() => Effect.succeed(null)),
+        )
+      : null
+    const proposed = yield* caught(
+      Effect.suspend(() => options.tickets.propose(proposalFor(entry, decision, since, pr))),
+    )
     if (!proposed.ok) {
       return {
         ok: false,
@@ -360,7 +391,7 @@ const open = (
     }
     return {
       ok: true,
-      detail: `${ref.created ? 'opened' : 'recorded'} ${ref.url ?? ref.externalRef} for ${options.key} (${ticketStream(entry.project, entry.issue)})`,
+      detail: `${ref.created ? 'opened' : 'recorded'} ${ref.url ?? ref.externalRef} for ${options.key} (${entry.pr ? entry.pr.stream : entry.issue === null ? 'unknown subject' : ticketStream(entry.project, entry.issue)})`,
       externalRef: ref.externalRef,
       url: ref.url,
     }

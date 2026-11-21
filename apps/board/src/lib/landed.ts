@@ -270,7 +270,10 @@ export async function currentLanded(q: LandedQuery): Promise<LandedData> {
         ...(q.project === null ? {} : { project: q.project }),
         taskIds: rows.map((r) => r.ticket),
       })
-      for (const e of entries) backlog.set(e.taskId, [...(backlog.get(e.taskId) ?? []), e])
+      for (const e of entries) {
+        if (e.taskId === null) continue // a PR's entry has no ticket to land under
+        backlog.set(e.taskId, [...(backlog.get(e.taskId) ?? []), e])
+      }
     } catch (err) {
       backlogError = (err as Error).message
     }

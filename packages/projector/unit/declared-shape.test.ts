@@ -67,6 +67,8 @@ const EXPECTED: [string, [string, string[]][]][] = [
           'key',
           'issue',
           'task_id',
+          'pr_stream',
+          'pr_n',
           'run_id',
           'step',
           'action',
