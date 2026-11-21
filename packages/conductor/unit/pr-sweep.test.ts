@@ -300,3 +300,57 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
     expect(lines.some((l) => l.includes('did not answer'))).toBe(false)
   })
 })
+
+describe('a pr-fix landing on the PR branch (#1341)', () => {
+  const FIX = 'c'.repeat(40)
+  const landedOnPrBranch = async (store: EventStore, issue: string) => {
+    // The landing's base is the PR branch, not `branch.personal`; the ticket is `9<issue>`.
+    await store.append(ticketStream('lingtai', '9' + issue), 0, [
+      {
+        type: 'TicketLanded',
+        actor: 'conductor',
+        data: { mergeCommit: FIX, base: 'lingtai-team-pr-1' },
+      },
+    ])
+  }
+
+  it('the sweep tells the PR of a landing it does not hold, once', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    const fixes = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrFixLanded')
+    expect(fixes).toHaveLength(1)
+    expect(fixes[0]!.data).toMatchObject({ ticket: '93', mergeCommit: FIX })
+    await sweep(p)
+    expect((await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrFixLanded')).toHaveLength(1)
+  })
+
+  it('the serve answers it with In progress because pr-fix, on the fix head', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    await Effect.runPromise(servePr(p, 'lingtai', 1, PUSH_OPEN))
+    const inProgress = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrInProgress')
+    expect(inProgress[inProgress.length - 1]!.data).toMatchObject({ because: 'pr-fix', frozenSha: FIX })
+    expect((await pr(store)).fixOwed).toBe(false)
+  })
+
+  it('on a merged PR the landing is refused and nothing is appended', async () => {
+    const { store, w } = await inReview()
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    await sweep(ports(store, w))
+    expect((await pr(store)).status).toBe('merged')
+    const before = (await types(store)).length
+    await landedOnPrBranch(store, '3')
+    await sweep({ ...ports(store, w), candidates: () => Effect.succeed([{ issue: '1' }, { issue: '93' }]) })
+    expect(await types(store)).toHaveLength(before)
+  })
+})
