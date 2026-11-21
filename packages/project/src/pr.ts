@@ -22,6 +22,10 @@ import {
   teamSince,
   refuseTransition,
   stepDoneTransition,
+  pushedTransition,
+  restartTransition,
+  draftOpenedTransition,
+  openedTransition,
   waitTransition,
   ticketStream,
   integrationStream,
@@ -141,6 +145,16 @@ export const recordPrInProgress = (
     (_state, appended) => appended,
   )
 
+/** In progress starts again from its first step, on the same freeze. */
+export const recordPrRestart = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => restartTransition(state),
+    (_state, appended) => appended,
+  )
+
 /** A step answered `done`, on the head it ran on. A step already recorded appends nothing. */
 export const recordPrStepDone = (project: string, n: number, done: PayloadOf<'PrStepDone'>, store: EventStore) =>
   transitionPr(
@@ -148,6 +162,41 @@ export const recordPrStepDone = (project: string, n: number, done: PayloadOf<'Pr
     project,
     n,
     (state) => stepDoneTransition(state, done),
+    (_state, appended) => appended,
+  )
+
+/** The PR branch is on the remote. A push already recorded since the latest `PrInProgress` appends nothing. */
+export const recordPrPushed = (project: string, n: number, pushed: PayloadOf<'PrPushed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => pushedTransition(state, pushed),
+    (_state, appended) => appended,
+  )
+
+/** The draft pull request is open on GitHub. Recorded once per pass through In progress. */
+export const recordPrDraftOpened = (
+  project: string,
+  n: number,
+  opened: PayloadOf<'PrDraftOpened'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => draftOpenedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** The PR is In review. */
+export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'PrOpened'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => openedTransition(state, opened),
     (_state, appended) => appended,
   )
 
@@ -238,6 +287,7 @@ export function readPrDraft(
       for (const t of pr.tickets) held.add(t.ticket)
     }
 
+    const landedAtTime = new Map<string, number>()
     const draft: PrDraftTicket[] = []
     for (const { issue } of candidates) {
       if (held.has(issue)) continue
@@ -246,8 +296,11 @@ export function readPrDraft(
       if (state.landed === null || state.landed.base !== personal) continue
       const landedAt = landedSeq(events, personal)
       if (landedAt === null || landedAt <= since) continue
+      const landing = events.find((e) => e.seq === landedAt)
+      landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())
       draft.push({ ticket: issue, mergeCommit: state.landed.mergeCommit, title: state.title ?? `#${issue}` })
     }
-    return draft
+    // In the order they landed, not the order of their numbers; a tie keeps the candidates' order.
+    return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
   })
 }

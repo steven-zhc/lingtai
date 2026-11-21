@@ -54,6 +54,9 @@ function ports(
     candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.sync(() => void calls.push('fetch')),
     projects: () => Effect.succeed(['lingtai']),
+    remote: () => Effect.fail(new Error('the freeze never reaches the remote')),
+    github: () => Effect.fail(new Error('the freeze never reaches GitHub')),
+    facts: () => Effect.succeed([]),
     git: (_project, args) =>
       Effect.sync(() => {
         calls.push(args.join(' '))
@@ -68,7 +71,7 @@ function ports(
 
 const state = async (store: EventStore, n = 1) => reducePr(await store.read(prStream('lingtai', n)))
 const request = (store: EventStore) => Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
-const serve = (p: PrPorts, steps?: readonly PrStep[]) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
+const serve = (p: PrPorts, steps: readonly PrStep[] = []) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
 
 describe('the freeze', () => {
   it('walks PrSubmitRequested to PrInProgress with the branch, the frozen sha and the tickets the commit holds', async () => {
@@ -259,7 +262,7 @@ describe('the walk', () => {
   })
 
   it('is empty in this ticket: a PR stays in progress', () => {
-    expect(IN_PROGRESS_STEPS).toEqual([])
+    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['push', 'open'])
   })
 
   it('records each step with the head sha it ran on, and a second serve runs none of them again', async () => {

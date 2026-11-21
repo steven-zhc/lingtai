@@ -143,6 +143,36 @@ export interface Dependencies {
   totalBlockedBy: number
 }
 
+/** A pull request as Lingtai reads one: only these fields of GitHub's answer. */
+export interface OpenPull {
+  readonly number: number
+  readonly nodeId: string
+  readonly url: string
+  readonly headRef: string
+  readonly headSha: string
+  readonly state: string
+  readonly draft: boolean
+}
+
+interface RawPull {
+  number: number
+  node_id: string
+  html_url: string
+  head: { ref: string; sha: string }
+  state: string
+  draft?: boolean
+}
+
+const toPull = (raw: RawPull): OpenPull => ({
+  number: raw.number,
+  nodeId: raw.node_id,
+  url: raw.html_url,
+  headRef: raw.head.ref,
+  headSha: raw.head.sha,
+  state: raw.state,
+  draft: raw.draft === true,
+})
+
 export interface Issue {
   number: number
   title: string
@@ -282,6 +312,19 @@ export interface GitHub {
    */
   listIssuesSince(since: Date): E<Issue[]>
   getIssue(number: number): E<Issue>
+
+  /**
+   * The open pull requests whose head is `<owner>:<head>`, **filtered here to the head branch's exact name**:
+   * GitHub's `head` filter is a plain string match on the ref, so `-pr-1` would answer `-pr-10`'s PR too.
+   * Fails on anything but an answer: an unreadable list is never *no pull request* (0130 §5).
+   */
+  findOpenPull(head: string): E<readonly OpenPull[]>
+
+  /**
+   * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
+   * answers 422 and that is the caller's to read: this never opens a ready one instead.
+   */
+  openDraftPull(input: { title: string; head: string; base: string; body: string }): E<OpenPull>
 
   /**
    * Posts a comment.
@@ -687,6 +730,14 @@ export const makeGitHub = (
           (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
         )
 
+      /** A 403 that is a missing `pull_requests` permission is `PermissionDenied`; a rate limit is passed on. */
+      const asPullCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
+        Effect.catchIf(
+          call,
+          (err) => err.status === 403 && !isRateLimited(err),
+          (err) => Effect.fail(new PermissionDenied(err, 'pull_requests', level, isGh(auth) ? 'gh' : 'app')),
+        )
+
       const listLinked = (path: string): E<LinkedIssue[]> =>
         asLinkCall(
           'read',
@@ -934,6 +985,28 @@ export const makeGitHub = (
 
         getIssue: Effect.fn('github.getIssue')(function* (number: number) {
           return toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${number}`))
+        }),
+
+        findOpenPull: Effect.fn('github.findOpenPull')(function* (head: string) {
+          const raw = yield* asPullCall(
+            'read',
+            send<RawPull[]>(
+              'GET',
+              `${repoPath}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${owner}:${head}`)}`,
+            ),
+          )
+          return raw.map(toPull).filter((p) => p.headRef === head)
+        }),
+
+        openDraftPull: Effect.fn('github.openDraftPull')(function* (input: {
+          title: string
+          head: string
+          base: string
+          body: string
+        }) {
+          return toPull(
+            yield* asPullCall('write', send<RawPull>('POST', `${repoPath}/pulls`, { ...input, draft: true })),
+          )
         }),
       }
       return github
