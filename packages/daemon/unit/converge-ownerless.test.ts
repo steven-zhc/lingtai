@@ -46,6 +46,7 @@ const project: ProjectState = {
 const RECIPE = {
   version: 2 as const,
   source: { kinds: ['bug'], tickets: 'db' },
+  branch: { main: 'main' },
   repo: { remote: 'https://example.invalid/local-proj.git' },
 } as never
 
