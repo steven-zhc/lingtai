@@ -85,24 +85,37 @@ describe('signedInProbe', () => {
   })
 })
 
-describe('the probe hands Copilot the token a sandboxed run would hold (#1301)', () => {
-  it('sets COPILOT_GITHUB_TOKEN in the probe env when the machine has one', async () => {
+describe('the probe admits Copilot by its login or by the token a sandboxed run is handed (#1301)', () => {
+  const copilot = { ...CLAUDE_CODE_CAPABILITIES, id: 'copilot' as const }
+  const withToken = async (value: string, run: () => Promise<void>) => {
     const prior = process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
-    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = 'github_pat_FAKE_probe'
+    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = value
     try {
-      const seen: Array<string | undefined> = []
-      const runtime = {
-        capabilities: CLAUDE_CODE_CAPABILITIES,
-        checkAuth: async (env: Record<string, string>) => {
-          seen.push(env['COPILOT_GITHUB_TOKEN'])
-          return { state: 'signed-in' as const, loggedIn: true, method: null, detail: '' }
-        },
-      }
-      await signedInProbe([runtime])()
-      expect(seen).toEqual(['github_pat_FAKE_probe'])
+      await run()
     } finally {
       if (prior === undefined) delete process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
       else process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = prior
     }
+  }
+  const fake = (works: (env: Record<string, string>) => boolean) => ({
+    capabilities: copilot,
+    checkAuth: async (env: Record<string, string>) => {
+      const ok = works(env)
+      return { state: ok ? ('signed-in' as const) : ('signed-out' as const), loggedIn: ok, method: null, detail: '' }
+    },
+  })
+
+  it('a token-only machine is signed in', async () => {
+    await withToken('github_pat_FAKE_probe', async () => {
+      const runtime = fake((env) => env['COPILOT_GITHUB_TOKEN'] === 'github_pat_FAKE_probe')
+      expect(await signedInProbe([runtime])()).toEqual(['copilot'])
+    })
+  })
+
+  it('an expired token does not reject a working ordinary login', async () => {
+    await withToken('github_pat_EXPIRED', async () => {
+      const runtime = fake((env) => env['COPILOT_GITHUB_TOKEN'] === undefined)
+      expect(await signedInProbe([runtime])()).toEqual(['copilot'])
+    })
   })
 })

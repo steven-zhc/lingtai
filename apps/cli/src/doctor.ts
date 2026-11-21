@@ -2998,7 +2998,23 @@ function dispatchedAuthRow(
   return Effect.gen(function* () {
     if (!asked.has(agent)) {
       const runtime = runtimes.find((r) => r.capabilities.id === agent)
-      asked.set(agent, runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null)
+      let status: AuthStatus | null = runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null
+      // Copilot is signed in by its own login, or by the token a sandboxed run is handed (#1301): either admits it,
+      // as the conductor's probe does. A token that cannot be read adds nothing; `copilot: token` says so.
+      if (agent === 'copilot' && runtime?.checkAuth && status?.loggedIn !== true) {
+        let token: string | undefined
+        try {
+          const read = copilotGithubToken()
+          token = read === undefined ? undefined : Redacted.value(read)
+        } catch {
+          token = undefined
+        }
+        if (token !== undefined) {
+          const withToken = yield* lift(() => runtime.checkAuth!({ ...env, COPILOT_GITHUB_TOKEN: token }))
+          if (withToken.loggedIn) status = withToken
+        }
+      }
+      asked.set(agent, status)
     }
     return authRow(project, agent, asked.get(agent) ?? null, label, keys)
   })

@@ -46,18 +46,26 @@ export function signedInProbe(
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
       const env = runnableEnv({})
-      // A sandboxed Copilot run signs in with the machine's token, not a login (#1301): ask with the one it would be
-      // handed. An unreadable file adds nothing; the run and doctor's token row say so by name.
+      // Copilot is signed in by its own login or by the token a sandboxed run is handed (#1301): either admits it,
+      // so an expired machine token cannot reject an unsandboxed project's working login. An unreadable file adds
+      // nothing; the run and doctor's token row say so by name.
+      let token: string | undefined
       try {
-        const token = copilotGithubToken()
-        if (token !== undefined) env['COPILOT_GITHUB_TOKEN'] = Redacted.value(token)
+        const read = copilotGithubToken()
+        token = read === undefined ? undefined : Redacted.value(read)
       } catch {
-        // see above
+        token = undefined
       }
       // `SignedIn` is `@lingtai/recipe`'s promise port, so this stays a promise; `signedInIdsEffect` is the same question as an Effect.
       const ids = Promise.all(
         runtimes.map((r) =>
-          Promise.resolve(r.checkAuth?.(env)).then((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
+          Promise.resolve(r.checkAuth?.(env))
+            .then((auth) =>
+              auth?.loggedIn || token === undefined || r.capabilities.id !== 'copilot'
+                ? auth
+                : Promise.resolve(r.checkAuth?.({ ...env, COPILOT_GITHUB_TOKEN: token })),
+            )
+            .then((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
         ),
       ).then((found) => found.flat())
       kept = { at: now(), ids }
