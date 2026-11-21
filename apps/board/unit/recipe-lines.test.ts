@@ -6,7 +6,8 @@ import { recipeLines } from '../src/lib/recipe-lines.ts'
 
 const BASE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug, tech-debt], exclude: [blocked, agent:hold] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -19,7 +20,8 @@ runtime: { agent: claude-code, limits: { run: { turns: unbounded, wall: 2m }, at
 `
 const MINIMAL = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -102,7 +104,7 @@ describe('recipeLines', () => {
     const read = await lines(
       MINIMAL.replace(
         'steps: {}',
-        'steps:\n  claim:\n    - { name: take, queue: { kinds: [feature], exclude: [wip], backoff: 1h, assignee: { take: both } } }',
+        'steps:\n  claim:\n    - { name: take, queue: { kinds: [feature], exclude: [wip], backoff: 1h, assignee: { take: all } } }',
       ),
     )
     expect(setting(read, 'claim', 'kinds')).toBe('feature')

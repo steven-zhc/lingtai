@@ -24,7 +24,8 @@ import { askProject } from '../src/lib/board.ts'
 
 const RECIPE = `
 version: 2
-repo: { base: main, remote: git@example.com:esctest/esctest.git }
+branch: { main: main }
+repo: { remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug, feature], exclude: [agent:hold], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}

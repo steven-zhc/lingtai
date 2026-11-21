@@ -653,7 +653,7 @@ describe('init on a machine that already has projects names the directory it was
       { '/work/Widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/Widgets\n', stderr: '' } },
       {
         [`${HOME}/widgets/recipe.yml`]:
-          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  tickets: github\n  kinds: [bug, feature]\n',
+          'version: 2\nbranch:\n  main: main\nenv:\n  plantAt: .env.local\nsource:\n  tickets: github\n  kinds: [bug, feature]\n',
       },
     )
     expectClosesOn(logged, [
@@ -668,7 +668,7 @@ describe('init on a machine that already has projects names the directory it was
       { '/work/widgets::rev-parse --show-toplevel': { ok: true, stdout: '/work/widgets\n', stderr: '' } },
       {
         [`${HOME}/widgets/recipe.yml`]:
-          'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [obsolete]\nsteps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [tech debt, bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n',
+          'version: 2\nbranch:\n  main: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [obsolete]\nsteps:\n  claim:\n    - name: pick\n      queue:\n        kinds: [tech debt, bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: unassigned\n',
       },
     )
     expect(lines(logged).join('\n')).toContain("gh issue create -R acme/widgets --label 'tech debt'")

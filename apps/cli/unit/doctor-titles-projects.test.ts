@@ -153,7 +153,8 @@ function recipeOf(text: string): RecipeForEffect {
 
 const RECIPE = `
 version: 2
-repo: { base: main, remote: git@example.com:acme/alpha.git }
+branch: { main: main }
+repo: { remote: git@example.com:acme/alpha.git }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 runtime: { name: x, prompt: y, agent: claude-code }

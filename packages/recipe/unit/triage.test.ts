@@ -8,8 +8,9 @@ import { RECIPE_PATH, canonicalRecipe, hashRecipe, resolveRecipe, triageCallFor 
 
 const BASE = `
 version: 2
+branch:
+  main: develop
 repo:
-  base: develop
   submodules: true
 source:
   kinds: [bug, feature]

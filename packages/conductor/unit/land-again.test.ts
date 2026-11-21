@@ -116,7 +116,8 @@ describe('a landing the lane refused because origin did not answer', () => {
   it('is not asked of a declared judge while a land-again is on offer', async () => {
     const recipe = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -141,7 +142,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   it('asks a declared judge once the retries are spent', async () => {
     const recipe = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

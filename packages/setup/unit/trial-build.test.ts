@@ -194,7 +194,7 @@ describe('runTrialEffect', () => {
   })
 
   it('cuts from the base and submodules the existing recipe declares, not the one handed in', async () => {
-    const yml = 'repo:\n  base: release\n  submodules: true\n'
+    const yml = 'branch:\n  main: release\nrepo:\n    submodules: true\n'
     const { deps, cuts } = fakes({})
     await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['x']))
     expect(cuts).toEqual([{ base: 'release', submodules: true }])
@@ -202,7 +202,7 @@ describe('runTrialEffect', () => {
 
   it('prefers the worktree action at admit over repo', async () => {
     const yml =
-      'repo:\n  base: release\nsteps:\n  admit:\n    - worktree:\n        base: next\n        submodules: true\n'
+      'branch:\n  main: release\nsteps:\n  admit:\n    - worktree:\n        base: next\n        submodules: true\n'
     const { deps, cuts } = fakes({})
     await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['x']))
     expect(cuts).toEqual([{ base: 'next', submodules: true }])

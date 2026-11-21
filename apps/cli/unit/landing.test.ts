@@ -75,7 +75,8 @@ function world(answers: (string | null)[] = []): { world: QuestionWorld; lines: 
 
 /** A resolvable recipe with `merge:` written — the fixture `write.test.ts` asks for the shape of. */
 const FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -87,7 +88,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 
 /** The same, holding at `proposed` beside a judge, so removing the hold can be told apart from removing the judge. */
 const HOLDING = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -102,7 +104,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 
 /** No `runtime.limits` at all — every number is the schema's own default. */
 const INHERITING = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps: {}
@@ -116,7 +119,7 @@ runtime: {agent: claude-code}
  */
 const PRESET_NO_STEPS = `version: 2
 extends: pnpm-workspace
-repo: {base: main}
+branch: { main: main }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
@@ -129,19 +132,21 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
  * correctly instead of assuming `repo.base`.
  */
 const WORKTREE_ADMIT = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: release }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
   admit:
     - name: cut the tree
-      worktree: {base: release, submodules: false}
+      worktree: {submodules: false}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
 /** A terse `steps.proposed` entry, with none of `runPlugin`'s defaulted fields (`timeout`, `env`) written. */
 const TERSE_PROPOSED = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -403,7 +408,8 @@ describe('askLanding', () => {
 
   it('--land release on a hand-written hold carrying a comment removes the hold and its comment (0104 §14)', async () => {
     const COMMENTED_HOLD = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:
@@ -433,7 +439,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
  * `limitsFor(…, 'implement')`) prints the narrow figure, not the ceiling.
  */
 const NARROW_IMPLEMENT = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps:

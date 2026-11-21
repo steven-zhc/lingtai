@@ -13,7 +13,8 @@ import { fakeGitHub, fakePorts, memoryStore, once, project, runtime } from '../t
 
 const RECIPE_WITH_CONFLICT_JUDGE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

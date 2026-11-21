@@ -665,7 +665,8 @@ describe('lingtai doctor — the recipe row asks the sign-in probe once (#1122)'
     const state = { project: 'esctest', owner: null, base: 'main', refused: null } as unknown as ProjectState
     const text = `
 version: 2
-repo: { base: main, remote: git@example.com:esctest/esctest.git }
+branch: { main: main }
+repo: { remote: git@example.com:esctest/esctest.git }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 runtime: { name: x, prompt: y, agent: claude-code }

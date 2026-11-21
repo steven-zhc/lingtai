@@ -38,8 +38,9 @@ const PROJECT: ProjectState = {
 
 const RECIPE_YAML = `
 version: 2
+branch:
+  main: main
 repo:
-  base: main
   remote: https://example.invalid/local.git
 source:
   kinds: [bug]

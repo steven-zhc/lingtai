@@ -17,8 +17,8 @@ const HOME = '/home/me/.lingtai'
  * touches. */
 const FIXTURE = `version: 2
 # the repo this governs
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]  # priority order
   # how long a backoff waits
@@ -69,8 +69,8 @@ describe('setRecipe', () => {
 
     const expected = `version: 2
 # the repo this governs
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]  # priority order
   # how long a backoff waits
@@ -158,8 +158,8 @@ steps:
   it('widens a narrow steps.* write to the whole block when the file inherits the rest from a preset', async () => {
     const PRESET_FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -194,8 +194,8 @@ env:
     // narrow (preset-losing) change straight through.
     const STUB = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 `
     const files = mapFiles({ [PATH]: STUB })
     const result = await Effect.runPromise(
@@ -323,7 +323,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
 
   it('leaves the order of a file that already exists', async () => {
     const existing =
-      'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
+      'version: 2\nbranch:\n  main: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
     const files = mapFiles({ [PATH]: existing })
     const { text } = await Effect.runPromise(
       seedRecipe('app', [{ path: ['steps', 'prepared'], value: run }], { home: HOME, files }),

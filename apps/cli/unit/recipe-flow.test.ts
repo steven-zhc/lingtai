@@ -203,8 +203,9 @@ describe('askRecipe — an absent file (#432)', () => {
 
 describe('askRecipe — an existing file (#432)', () => {
   const FIXTURE = `version: 2
+branch:
+  main: main
 repo:
-  base: main
   remote: https://github.com/acme/widget.git
 # a note somebody left here
 source:
@@ -607,7 +608,7 @@ describe('askRecipe — a draft, never a write (#1182)', () => {
 
     const path = recipePath('widget', HOME)
     const existing = mapFiles({
-      [path]: 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      [path]: 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
     })
     const second = await askRecipe(defaultsWorld(), {
       ...BASE_AT,

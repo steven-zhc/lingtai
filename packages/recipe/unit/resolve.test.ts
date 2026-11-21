@@ -18,8 +18,9 @@ import {
 
 const VALID = `
 version: 2
+branch:
+  main: develop
 repo:
-  base: develop
   submodules: true
 source:
   kinds: [bug, feature]
