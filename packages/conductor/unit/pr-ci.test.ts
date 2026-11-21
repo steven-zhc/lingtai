@@ -37,6 +37,7 @@ interface World {
   detect: 'configured' | 'none'
   draft: boolean
   pullHead: string
+  pushOnMark?: string
   marked: string[]
   readFails: boolean
   markFails: boolean
@@ -103,7 +104,12 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         draft: w.draft,
       } satisfies PullState),
     markReadyForReview: (id: string) =>
-      w.markFails ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom')) : Effect.sync(() => void w.marked.push(id)),
+      w.markFails
+        ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom'))
+        : Effect.sync(() => {
+            w.marked.push(id)
+            if (w.pushOnMark !== undefined) w.pullHead = w.pushOnMark
+          }),
   } as unknown as GitHub
   return {
     store,
@@ -271,6 +277,15 @@ describe('the ci and ready steps', () => {
     w.pullHead = 'b'.repeat(40)
     await serve(ports(store, w, recipeWith()))
     expect(w.marked).toEqual([])
+    expect(await types(store)).not.toContain('PrOpened')
+    expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
+  })
+
+  it('a push landing between the look and the mutation appends no PrOpened', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    w.pushOnMark = 'b'.repeat(40)
+    await serve(ports(store, w, recipeWith()))
     expect(await types(store)).not.toContain('PrOpened')
     expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
   })

@@ -499,7 +499,20 @@ const readyStep: PrStep = {
           headSha: target,
         } as StepAnswer
       }
-      if (pull.draft) yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
+      if (pull.draft) {
+        yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
+        // The mutation takes no expected head, so the head is read again after it: a push between the look and the write
+        // is caught here and `PrOpened` is never appended for a commit CI did not read.
+        const after = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
+        if (after.headSha !== target) {
+          return {
+            kind: 'wait',
+            reason: 'branch-moved',
+            detail: `the pull request moved to ${after.headSha.slice(0, 7)} while it was marked ready, but CI was read on ${target.slice(0, 7)}`,
+            headSha: target,
+          } as StepAnswer
+        }
+      }
       return {
         kind: 'done',
         headSha: target,
