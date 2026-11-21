@@ -1,4 +1,6 @@
-import { proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
+import { hostname } from 'node:os'
+
+import { ghLoginHere, proposalFor, projectNameOf, readLocalTarget, recipeIsNew } from '@lingtai/conductor/add-from-page'
 import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { loadAllProjects } from '@lingtai/project'
 /**
@@ -9,12 +11,13 @@ import { loadAllProjects } from '@lingtai/project'
  * possible. Nothing is written until Add.
  */
 import { verdictOf } from '@lingtai/recipe'
-import { alreadyAdded } from '@lingtai/setup'
+import { alreadyAdded, defaultPersonalBranch, LINGTAI_BASE, machineName } from '@lingtai/setup'
 import { alreadyAddedSentence, type SetupTarget } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { Bar } from '@/app/bar.tsx'
 
+import type { TeamView } from './read-model.ts'
 import { SetupForm } from './setup-form.tsx'
 import { emptyView, viewOf } from './view.ts'
 
@@ -24,16 +27,28 @@ const SLUG = /^([\w.-]+)\/([\w.-]+)$/
 
 type Params = { repo?: string; path?: string }
 
-async function resolveTarget(params: Params): Promise<{ target: SetupTarget; remote: string | null } | string> {
+/** What the mode block starts from: the signed-in login on a `gh` machine, this machine's name, a directory's own branch. */
+async function teamViewOf(target: SetupTarget, checkedOut: string | null): Promise<TeamView> {
+  const host = machineName(hostname())
+  if (target.kind === 'local') return { login: null, host, personal: LINGTAI_BASE, checkedOut }
+  const login = await Effect.runPromise(ghLoginHere)
+  return { login, host, personal: login === null ? '' : defaultPersonalBranch(login, hostname()), checkedOut: null }
+}
+
+async function resolveTarget(
+  params: Params,
+): Promise<{ target: SetupTarget; remote: string | null; branch: string | null } | string> {
   if (params.repo !== undefined) {
     const m = SLUG.exec(params.repo)
     return m === null
       ? `${params.repo} is not owner/repo`
-      : { target: { kind: 'github', owner: m[1]!, repo: m[2]! }, remote: null }
+      : { target: { kind: 'github', owner: m[1]!, repo: m[2]! }, remote: null, branch: null }
   }
   if (params.path !== undefined) {
     const found = await Effect.runPromise(readLocalTarget(params.path))
-    return found.ok ? { target: { kind: 'local', path: found.path }, remote: found.path } : found.why
+    return found.ok
+      ? { target: { kind: 'local', path: found.path }, remote: found.path, branch: found.branch }
+      : found.why
   }
   return 'nothing was chosen'
 }
@@ -79,6 +94,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
   }
   // `suspend` so a reader that throws while it is built (an unreadable App key) is a failed read, not a failed page.
   const isNew = await Effect.runPromise(recipeIsNew(project))
+  const team = await teamViewOf(target.target, target.branch)
   const proposal = await Effect.runPromise(
     Effect.suspend(() => proposalFor(target.target, undefined, { recipeIsNew: isNew })).pipe(
       Effect.timeout('25 seconds'),
@@ -101,9 +117,9 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
           Reading the repository failed: {proposal}. <a href="">Reload</a> to read it again, or fill the lines in
           yourself.
         </p>
-        <SetupForm view={emptyView(target.target, project, target.remote, proposal, sandbox)} />
+        <SetupForm view={emptyView(target.target, project, target.remote, proposal, team, sandbox)} />
       </>,
     )
   }
-  return frame(`step 2 — ${label}`, <SetupForm view={viewOf(proposal, project, target.remote)} />)
+  return frame(`step 2 — ${label}`, <SetupForm view={viewOf(proposal, project, target.remote, team)} />)
 }

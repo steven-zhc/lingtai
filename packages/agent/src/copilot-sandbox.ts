@@ -7,6 +7,7 @@ import { Effect, Redacted, type Scope } from 'effect'
 import { collidingDenies, SandboxRunRefused, type RunSandbox, type SandboxedLaunch } from './claude-sandbox.ts'
 import { operatorCodexDenies } from './codex-sandbox.ts'
 import { userPermissionsAt, type UserPermissions } from './codex.ts'
+import { COPILOT_HOME_FOLDER, COPILOT_NETWORK } from './sandbox-facts.ts'
 
 /**
  * A sandboxed Copilot run (#1301, 0127 §1 and §8): Copilot's own sandbox is off (`--no-sandbox`), srt is the boundary,
@@ -19,8 +20,7 @@ export const NO_COPILOT_TOKEN_SENTENCE =
 export const CLASSIC_COPILOT_TOKEN_SENTENCE =
   'the Copilot token is a classic token (it begins `ghp_`), which Copilot ignores: make a fine-grained token with Copilot Requests'
 
-/** The hosts a Copilot run reaches that the built-in list does not hold. */
-export const COPILOT_NETWORK = ['*.githubcopilot.com'] as const
+export { COPILOT_NETWORK }
 
 /** The person's own GitHub credentials, which a run must never be handed: Copilot would read them after its own. */
 const PERSONAL_TOKEN_NAMES = ['GH_TOKEN', 'GITHUB_TOKEN'] as const
@@ -62,7 +62,7 @@ export const copilotSandboxedLaunch = (
     if (home === undefined || home === '') {
       return yield* Effect.fail(new SandboxRunRefused('the run has no HOME, so its Copilot home cannot be named'))
     }
-    const copilotHome = posix.join(home, '.copilot')
+    const copilotHome = posix.join(home, COPILOT_HOME_FOLDER)
 
     const profile = operatorCodexDenies(
       (ports.readCodexPermissions ?? userPermissionsAt)(run.env, run.cwd),

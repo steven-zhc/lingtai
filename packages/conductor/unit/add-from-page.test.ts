@@ -33,6 +33,9 @@ const FORM: SetupForm = {
   personApprovesMerge: false,
   limits: { turns: 300, wall: '2h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
   turnsUnbounded: false,
+  mode: 'solo',
+  personal: '',
+  login: null,
   sandbox: null,
 }
 
@@ -249,5 +252,85 @@ describe('two checks whose names collide once ":" is replaced (#971)', () => {
       ).pipe(Effect.provideService(ProjectFiles, files())),
     )
     expect(out).toEqual({ text: expect.stringContaining('lint-check-2') })
+  })
+})
+
+describe('a team project (#1325)', () => {
+  const TEAM: SetupForm = { ...FORM, mode: 'team', personal: 'steven-zhc/mac', login: 'steven-zhc' }
+  const ports = (makePersonal: NonNullable<Parameters<typeof addProject>[1]['makePersonal']>, log: string[] = []) => ({
+    locker,
+    home: HOME,
+    ...WHO(),
+    projects: async () => [] as ProjectState[],
+    register: () => {
+      log.push('register')
+      return Effect.void
+    },
+    makePersonal,
+  })
+
+  it('makes an absent branch before the recipe is written, and writes mode, branch and login', async () => {
+    const f = files()
+    const log: string[] = []
+    const out = await runWith(
+      f,
+      addProject(
+        TEAM,
+        ports((form) => {
+          log.push(`make ${form.personal} written=${f.store.size}`)
+          return Effect.succeed('made' as const)
+        }, log),
+      ),
+    )
+    expect(out).toMatchObject({ ok: true })
+    expect(log).toEqual(['make steven-zhc/mac written=0', 'register'])
+    const text = f.store.get(recipePath(TEAM.project, HOME)) ?? ''
+    expect(text).toContain('mode: team')
+    expect(text).toContain('personal: steven-zhc/mac')
+    expect(text).toContain('login: steven-zhc')
+  })
+
+  it('a failed create writes no recipe and registers nothing', async () => {
+    const f = files()
+    const log: string[] = []
+    const out = await runWith(
+      f,
+      addProject(
+        TEAM,
+        ports(() => Effect.fail(new Error('403 forbidden')), log),
+      ),
+    )
+    expect(out).toEqual({ ok: false, say: '403 forbidden' })
+    expect(f.store.size).toBe(0)
+    expect(log).toEqual([])
+  })
+
+  it('uses a branch that exists as it is', async () => {
+    const f = files()
+    const out = await runWith(
+      f,
+      addProject(
+        TEAM,
+        ports(() => Effect.succeed('exists' as const)),
+      ),
+    )
+    expect(out).toMatchObject({ ok: true })
+    expect(f.store.size).toBe(1)
+  })
+
+  it('a solo project never asks for a branch', async () => {
+    const f = files()
+    let asked = 0
+    await runWith(
+      f,
+      addProject(
+        FORM,
+        ports(() => {
+          asked++
+          return Effect.succeed('made' as const)
+        }),
+      ),
+    )
+    expect(asked).toBe(0)
   })
 })

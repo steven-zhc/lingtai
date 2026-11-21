@@ -7,8 +7,10 @@ import type { ReadView } from '../src/app/setup/repository/read/read-model.ts'
 vi.mock('../src/app/setup/repository/read/actions.ts', () => ({
   addRepository: async () => ({ ok: true, project: 'p' }),
   previewAdd: async () => ({ refused: 'x' }),
+  checkPersonal: async () => ({ ok: true, exists: false }),
 }))
 
+const TEAM = { login: 'steven-zhc', host: 'mac', personal: 'steven-zhc/mac', checkedOut: null }
 const line = <T,>(value: T) => ({ value, note: 'because', known: true })
 
 const view = (target: ReadView['target']): ReadView => ({
@@ -30,6 +32,7 @@ const view = (target: ReadView['target']): ReadView => ({
   end: line(true),
   limits: { turns: 300, wall: '1h', refusalFixes: 3, conflictResolutions: 3, newAttempts: 1 },
   sandbox: null,
+  team: { login: 'steven-zhc', host: 'mac', personal: 'steven-zhc/mac', checkedOut: null },
 })
 
 const render = async (target: ReadView['target']) => {
@@ -98,8 +101,8 @@ describe('the sandbox step (#1160)', () => {
   it('a failed read still offers the step, on, for a new recipe (#1160)', async () => {
     const { emptyView } = await import('../src/app/setup/repository/read/view.ts')
     const target = { kind: 'github', owner: 'o', repo: 'p' } as const
-    expect(emptyView(target, 'p', null, 'it took too long').sandbox).toBeNull()
-    const asked = emptyView(target, 'p', null, 'it took too long', {
+    expect(emptyView(target, 'p', null, 'it took too long', TEAM).sandbox).toBeNull()
+    const asked = emptyView(target, 'p', null, 'it took too long', TEAM, {
       verdict: { can: false, reason: 'bwrap is missing', sentences: [] },
       install: { missing: ['bwrap'], command: 'apt install bubblewrap' },
       builtIns: ['api.example.com'],
@@ -117,5 +120,29 @@ describe('the sandbox step (#1160)', () => {
       offLine: 'x',
     })
     expect(html).toContain('This machine cannot run the sandbox yet: no bwrap.')
+  })
+})
+
+describe('the mode block (#1325)', () => {
+  const gh = { kind: 'github', owner: 'o', repo: 'r' } as const
+
+  it('is inside step 2’s one form, Team selected, the personal branch prefilled, the footer said', async () => {
+    const html = await render(gh)
+    expect(html).toContain('Does anyone else work on this repository?')
+    expect(html).toMatch(/aria-pressed="true"[^>]*>.*?Team/s)
+    expect(html).toContain('value="steven-zhc/mac"')
+    expect(html).toContain('issues assigned to')
+    expect(html).toContain(
+      'You can switch to solo later, once everything on your branch has reached main and no PR is open.',
+    )
+    expect(html).not.toContain('kept current')
+    expect(html).not.toContain('before each ticket')
+    expect(html.match(/<button type="button" class="btn go"/g)).toHaveLength(1)
+  })
+
+  it('a directory’s team project names no login and takes every ticket', async () => {
+    const html = await render({ kind: 'local', path: '/tmp/x' })
+    expect(html).not.toContain('your GitHub login')
+    expect(html).toContain('every ticket in this project')
   })
 })

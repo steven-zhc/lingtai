@@ -276,6 +276,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
           project: name,
           offered: offered.runnable,
           kinds: kindsOf(options.recipe),
+          mode: selectionOf(options.recipe).mode,
           // The recipe's, not a constant's (0028). Read here rather than held
           // on `ScheduleOptions`, beside the `kinds` it belongs with — both are
           // the same recipe answering the same question about the same pass.

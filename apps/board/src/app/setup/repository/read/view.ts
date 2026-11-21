@@ -15,14 +15,14 @@ import {
   type SetupTarget,
 } from '@lingtai/setup'
 
-import type { CheckView, LineView, ReadView } from './read-model.ts'
+import type { CheckView, LineView, ReadView, TeamView } from './read-model.ts'
 
 const lineOf = <T, U>(line: Line<T>, pick: (v: T) => U, fallback: U): LineView<U> =>
   line.known
     ? { value: pick(line.value), note: line.because, known: true }
     : { value: fallback, note: `could not be read: ${line.reason}`, known: false }
 
-export function viewOf(proposal: Proposal, project: string, remote: string | null): ReadView {
+export function viewOf(proposal: Proposal, project: string, remote: string | null, team: TeamView): ReadView {
   const local = proposal.target.kind === 'local'
   const detected = proposal.detected.known ? proposal.detected.value : null
   const checks: CheckView[] =
@@ -89,6 +89,7 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
             cannot: sandboxCannotSentence(proposal.sandbox),
             offLine: SANDBOX_OFF_LINE,
           },
+    team,
   }
 }
 
@@ -105,6 +106,7 @@ export function emptyView(
   remote: string | null,
   reason: string,
   /** Where the recipe is new, the sandbox step is still offered, on: a failed read never drops the default (#1160). */
+  team: TeamView,
   sandbox: SandboxProposal | null = null,
 ): ReadView {
   const local = target.kind === 'local'
@@ -142,5 +144,6 @@ export function emptyView(
             cannot: sandboxCannotSentence(sandbox),
             offLine: SANDBOX_OFF_LINE,
           },
+    team,
   }
 }

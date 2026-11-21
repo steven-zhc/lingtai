@@ -2,17 +2,19 @@ import { homedir } from 'node:os'
 
 import { hasGitHubAuth, stateDir } from '@lingtai/env'
 import { builtInSandboxEffect } from '@lingtai/project'
+import { branchOf, runtimesOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { type ReactNode } from 'react'
 
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { ModeGraph } from '@/components/mode-graph.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
-import { recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
+import { modeLines, modeSource, recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 
 import { FooterFetched } from '../../footer-fetched'
@@ -102,6 +104,38 @@ function Action({ action }: { action: StepActionLine }) {
   )
 }
 
+/** The mode, first (#1326): a reading of the resolved recipe, never of the log. */
+function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['recipe'] }) {
+  const mode = modeLines(recipe)
+  return (
+    <section className="rcard" id="mode">
+      <h3 className="rcard-h">
+        <span>Mode · {mode.mode}</span>
+        <small className="src">← {modeSource(recipe)}</small>
+      </h3>
+      <ModeGraph mode={mode.mode} main={mode.main} personal={mode.personal} />
+      {mode.named ? null : (
+        <p className="rcard-lede">No mode in the recipe reads as solo, so a project made before 0.16 runs as it did.</p>
+      )}
+      {mode.lines.map((line) => (
+        <div className="step-set" key={line.label}>
+          <span className="step-set-k">{line.label}</span> <span>{line.says}</span>
+        </div>
+      ))}
+      {mode.pr === null ? null : (
+        <div className="step-set">
+          <span className="step-set-k">PR</span>{' '}
+          <span>
+            summary · <span className="mono">{mode.pr.agent}</span>
+            {mode.pr.agentFromDefault ? ' ← runtime.agent' : ''} · {mode.pr.turns} turns · {mode.pr.wall}
+            {mode.pr.fromDefault ? ' ← default' : ''}
+          </span>
+        </div>
+      )}
+    </section>
+  )
+}
+
 /**
  * The recipe read-only (#983): the ten steps in the order an attempt reaches
  * them, each with what it is for and what this recipe sets there, then what an
@@ -116,6 +150,7 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
   const source = stepsRow === undefined ? 'not said' : (sourceOf(stepsRow, view.provenance) ?? 'not said')
   return (
     <div className="s2-left">
+      <ModeCard recipe={view.recipe} />
       <section className="rcard">
         <h3 className="rcard-h">
           <span>What one attempt does, in order</span>
@@ -250,10 +285,14 @@ export function Recipe({
                 matters on the day they differ (#217). */}
               <span className="hfact">
                 {view.ok
-                  ? `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
+                  ? view.recipe.mode === 'team'
+                    ? `recipe ${view.configHash.slice(0, 12)} · main ${view.recipe.branch.main} · yours ${branchOf(view.recipe)} — what the next attempt gets`
+                    : `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
                   : view.fault === 'recipe'
                     ? 'it could not be read, so nothing will be taken from this project'
-                    : 'it could not be resolved, so nothing will be taken from this project'}
+                    : view.fault === 'refused'
+                      ? 'it was refused, so nothing will be taken from this project'
+                      : 'it could not be resolved, so nothing will be taken from this project'}
               </span>
             </h2>
 
@@ -274,6 +313,8 @@ export function Recipe({
                   <>
                     The recipe at <span className="mono">{underHome(view.at)}</span> could not be read: {view.problem}.
                   </>
+                ) : view.fault === 'refused' ? (
+                  <>recipe refused — {view.problem}</>
                 ) : (
                   <>
                     The recipe was not resolved, and the fault is in this machine&apos;s{' '}
@@ -397,6 +438,7 @@ export default async function RecipePage({
           stamp={stamp}
           own={view.ok ? view.recipe.sandbox : undefined}
           recipeError={!view.ok}
+          runtimes={view.ok ? runtimesOf(view.recipe) : []}
           builtIn={builtIn}
           at={underHome(view.at)}
           roots={{ home: homedir(), lingtaiHome: stateDir(), project: name }}

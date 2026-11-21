@@ -1,10 +1,14 @@
+import { LANDED_LABEL, PR_FIX_LABEL } from '@lingtai/conductor/labels'
 import { STEPS, type Step } from '@lingtai/domain'
 import {
+  assigneeOf,
+  branchOf,
   ceilingOf,
   discloseSteps,
   excludeOf,
   kindOfAction,
   kindsOf,
+  selectionOf,
   ticketSourceOf,
   type Recipe,
   type StepAction,
@@ -148,3 +152,90 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
     ceiling: says('an attempt'),
   }
 }
+
+/** One line of the mode card: what 0130 decides, as a reading of the recipe. */
+export interface ModeLine {
+  label: string
+  says: string
+}
+
+export interface ModeReading {
+  mode: 'solo' | 'team'
+  /** False when the recipe names no mode: it reads as solo. */
+  named: boolean
+  main: string
+  personal: string | null
+  lines: readonly ModeLine[]
+  /** The summary agent's row; null in solo, where there is no PR. */
+  pr: { agent: string; agentFromDefault: boolean; turns: number; wall: string; fromDefault: boolean } | null
+}
+
+/**
+ * What the recipe's mode means, in plain lines (#1326). A reading of the recipe through
+ * `selectionOf` / `assigneeOf` / `excludeOf` and never a second statement of the rule: the
+ * source is `ticketSourceOf`'s answer, so a later change to what team takes is read here, not
+ * restated.
+ */
+export function modeLines(recipe: Recipe): ModeReading {
+  const { mode, tickets } = selectionOf(recipe)
+  const named = recipe.mode !== undefined
+  const main = recipe.branch.main
+  if (mode === 'team') {
+    const personal = branchOf(recipe)
+    const rule = assigneeOf(recipe)
+    const takes =
+      tickets === 'db'
+        ? 'every ticket — local tickets are yours'
+        : // Team takes `mine` whatever the parsed `take` says: the schema's `all` is only a default (`assigneeSkip`).
+          `tickets assigned to ${rule?.login ?? 'you'}`
+    const pr = recipe.pr
+    return {
+      mode,
+      named,
+      main,
+      personal,
+      lines: [
+        { label: 'Takes', says: `${takes}; a ${PR_FIX_LABEL} ticket first` },
+        { label: 'Works on', says: `${personal}; ${main} is brought in when you submit a PR` },
+        {
+          label: 'A landed ticket',
+          says: `stays on ${personal}, open on the tracker as ${LANDED_LABEL}, until the PR that holds it merges`,
+        },
+        { label: 'Reaches main', says: `only through a PR you submit, one at a time` },
+        { label: 'Never', says: `pushes ${main}` },
+      ],
+      pr: {
+        agent: pr?.agent ?? recipe.runtime.agent,
+        agentFromDefault: pr?.agent === undefined,
+        turns: pr?.limits.turns ?? 20,
+        wall: pr?.limits.wall ?? '5m',
+        fromDefault: pr === undefined,
+      },
+    }
+  }
+  // The same expression as `summariseRecipe`'s `landsUnattended` (apps/cli/src/recipe-flow.ts:192).
+  const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[]>
+  const unattended = !(steps['proposed'] ?? []).some((a) => 'human' in a)
+  const excluded = excludeOf(recipe)
+  return {
+    mode,
+    named,
+    main,
+    personal: null,
+    lines: [
+      {
+        label: 'Takes',
+        says:
+          `every ticket with a kind label` +
+          (excluded.length > 0 ? ` and none of ${excluded.join(', ')}` : '') +
+          `, never one labelled ${LANDED_LABEL}`,
+      },
+      { label: 'Lands on', says: unattended ? `${main}, unattended` : `${main}, held for a person` },
+      { label: 'PR', says: 'none — each ticket lands itself' },
+    ],
+    pr: null,
+  }
+}
+
+/** Whether the mode is the one a reader would assume, so the card can say where it came from. */
+export const modeSource = (recipe: Recipe): string => (recipe.mode === undefined ? 'default' : 'recipe.yml')

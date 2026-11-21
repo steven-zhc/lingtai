@@ -415,7 +415,7 @@ export type ProjectRecipe =
       /** The file to open: the recipe, or this machine's `config.yml` when the fault is there. */
       at: string
       /** Which of the two files `at` is, so the page can name the fault it actually has. */
-      fault: 'recipe' | 'machine'
+      fault: 'recipe' | 'machine' | 'refused'
       problem: string
       /**
        * The recipe file's own text when the fault is the recipe's and the file
@@ -434,10 +434,12 @@ export type ProjectRecipe =
  * Each names its own remedy in its message; what a caller must not do is wrap
  * them in a sentence about the other file.
  */
-function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' } {
-  return err instanceof MachineConfigInvalidError
-    ? { at: machinePath(), fault: 'machine' }
-    : { at: recipe, fault: 'recipe' }
+export function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' | 'refused' } {
+  if (err instanceof MachineConfigInvalidError) return { at: machinePath(), fault: 'machine' }
+  // By the tag and never by the sentence (#1306): a refusal reworded later must not change paragraph.
+  if (typeof err === 'object' && err !== null && '_tag' in err && err._tag === 'RecipeRefused')
+    return { at: recipe, fault: 'refused' }
+  return { at: recipe, fault: 'recipe' }
 }
 
 /** Run outside any fiber, uncounted — the board's edge (as `locks.ts`). */
@@ -490,8 +492,11 @@ export async function projectRecipe(
       ok: false,
       project,
       ...fault,
-      text: fault.fault === 'recipe' ? await textIfReadable(project) : null,
-      problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
+      text: fault.fault !== 'machine' ? await textIfReadable(project) : null,
+      problem:
+        fault.fault === 'refused' && Array.isArray((err as { problems?: unknown }).problems)
+          ? (err as { problems: readonly string[] }).problems.join(' ').trim()
+          : (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
     }
   }
   return {
