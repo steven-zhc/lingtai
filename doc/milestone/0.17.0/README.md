@@ -21,6 +21,8 @@ The operator's shape (2026-11-16):
 
 ## What already exists
 
+- [0.17-zh.md](0.17-zh.md) — the 2026-11-21 discussion draft, in Chinese until agreed: the long-term shape (the person writes tickets; Lingtai proves the result and hands over evidence), the verify step on a PR after CI, and what the Claude Code team's verification practices map to here.
+
 | File | What it is |
 |---|---|
 | [../../design/acceptance.md](../../design/acceptance.md) | The discussion draft: written before `implement` by someone other than the implementer; red on base, green on the candidate; by kind; where it sits; what it costs; open questions |
