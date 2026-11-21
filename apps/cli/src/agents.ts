@@ -25,7 +25,7 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeDraft } from '@lingtai/project'
 import type { RecipeChange } from '@lingtai/recipe'
-import { isBuiltInJudge, unboundedTurnsChange } from '@lingtai/recipe'
+import { isBuiltInJudge, isImplementOnlyAgent, unboundedTurnsChange } from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 import { Effect } from 'effect'
 
@@ -195,7 +195,8 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   at: AskAgentsAt,
 ): Effect.fn.Return<{ changes: RecipeChange[]; modelChanges: RecipeChange[] } | { refused: string }, unknown> {
   const signedIn = at.runtimes.filter((r) => r.signedIn)
-  const signedInIds: string[] = signedIn.map((r) => r.id)
+  // Not an agent that runs only at `implement` (#1298): the wizard proposes none, so it offers none.
+  const signedInIds: string[] = signedIn.map((r) => r.id).filter((id) => !isImplementOnlyAgent(id))
   for (const r of at.runtimes) {
     if (!r.signedIn) world.log(whyMissing(r))
   }
