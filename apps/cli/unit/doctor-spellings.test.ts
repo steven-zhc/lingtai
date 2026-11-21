@@ -99,6 +99,18 @@ describe('fixOldSpellings', () => {
     expect(renderSpellingFixes(out).join('\n')).toContain('a: not fixed')
   })
 
+  it('a recipe lookup that fails for another reason is failed, not nothing to fix', async () => {
+    const w = world({})
+    const out = await Effect.runPromise(
+      fixOldSpellings(
+        () => Effect.succeed([{ project: 'app' } as ProjectState]),
+        { recipe: () => Effect.fail(new Error('database down')) },
+        { by: 'human:me', store: w.store, home: HOME },
+      ),
+    )
+    expect(out).toEqual([{ project: 'app', outcome: 'failed', detail: 'database down' }])
+  })
+
   it('answers null where the project streams cannot be read, and writes nothing', async () => {
     const w = world({})
     const out = await Effect.runPromise(

@@ -160,6 +160,8 @@ import {
   declaresTurnsOn,
   isBuiltInJudge,
   oldSpellingFixes,
+  RecipeInvalidError,
+  RecipeMissingError,
   remoteOf,
   sandboxDecision,
   sourceHashOf,
@@ -2500,7 +2502,15 @@ export function fixOldSpellings(
       if (!project) continue
       const done = yield* recovering(
         Effect.gen(function* () {
-          const resolved = yield* recipeFor(state, undefined).pipe(Effect.catch(() => Effect.succeed(null)))
+          // Only a recipe that does not resolve is "nothing to fix"; any other failure (a log read, the disk)
+          // propagates to the project's `failed` below, never to a green no-op.
+          const resolved = yield* recipeFor(state, undefined).pipe(
+            Effect.catch((err) =>
+              err instanceof RecipeInvalidError || err instanceof RecipeMissingError
+                ? Effect.succeed(null)
+                : Effect.fail(err),
+            ),
+          )
           if (resolved === null) {
             return { project, outcome: 'nothing', detail: 'the recipe does not resolve' } satisfies SpellingFix
           }
