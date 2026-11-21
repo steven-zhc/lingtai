@@ -882,24 +882,54 @@ function runLocalBranch(
     // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
     // cuts from a mirror of this checkout at `base`.
     let madeKept: string | null = null
-    if (source !== null) {
-      const made = yield* world.git(toplevel, ['branch', base, source])
-      if (!made.ok) {
-        return {
-          refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+    const makeBranch = () =>
+      Effect.gen(function* () {
+        if (source === null) return null
+        const made = yield* world.git(toplevel, ['branch', base, source])
+        if (!made.ok) {
+          return {
+            refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+          }
         }
-      }
-      const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
-      if (!tip.ok) {
+        const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
+        if (!tip.ok) {
+          return {
+            refused:
+              `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
+              `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
+          }
+        }
+        fromSha = tip.stdout.trim()
+        madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+        return null
+      })
+    // A team project's personal branch is made only after every question is answered, and only once the person
+    // said yes: the trial build below cuts at `branch.main`, which is where the branch would be cut from anyway.
+    const deferBranch = mode === 'team' && source !== null
+    if (deferBranch) {
+      const confirmed = yield* questionEffect(lingtaiWorld, {
+        name: 'making the personal branch',
+        flag: `--defaults, or make it yourself: git branch ${base} ${source}`,
+        given: flags['defaults'] !== undefined ? 'yes' : null,
+        prompt: `${base} does not exist in ${toplevel}. Make it from ${source}?`,
+        choices: ['yes', 'no'],
+        fallback: 'yes',
+        kept: world.kept,
+      })
+      if ('refused' in confirmed) return { refused: confirmed.refused }
+      if (confirmed.answer === 'no') {
         return {
           refused:
-            `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
-            `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
+            `${base} was not made — nothing was written and nothing was registered. ` +
+            `Make it yourself with: git branch ${base} ${source}, then run this again. ${world.kept}`,
         }
       }
-      fromSha = tip.stdout.trim()
-      madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+    } else {
+      const refusal = yield* makeBranch()
+      if (refusal !== null) return refusal
     }
+    // Until the branch is made, a deferred one is cut at the main it would be made from.
+    const trialBase = deferBranch && mainBranch !== null ? mainBranch : base
 
     const path = recipePath(name, world.home)
     const existingText = onDisk.text()
@@ -991,7 +1021,7 @@ function runLocalBranch(
               project: name,
               owner: '',
               repo: name,
-              base,
+              base: trialBase,
               remote,
               home: world.home,
               draft,
@@ -1005,6 +1035,10 @@ function runLocalBranch(
           home: world.home,
         })
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
+    if (deferBranch && !repairOnly) {
+      const refusal = yield* makeBranch()
+      if (refusal !== null) return refusal
+    }
 
     // `askLanding`, inside `askRecipe`, can move `branch.main` on a local
     // project (#431's Watch out) — re-read the file it left behind rather than

@@ -1738,4 +1738,14 @@ describe('chooseFirstProject — a local team project (#1324)', () => {
 
     expect(result).toEqual({ refused: expect.stringContaining('same branch as main, ignoring case') })
   })
+
+  it('asks before making the personal branch, and answering no makes nothing', async () => {
+    const t = teamHarness()
+    t.world.ask = async (prompt) => (/Make it from/.test(prompt) ? 'no' : /use every default/.test(prompt) ? 'no' : '')
+
+    const result = await chooseFirstProject(t.world, { local: '/repo', mode: 'team', install: 'none' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('was not made') })
+    expect(t.calls.filter((c) => c.startsWith('branch '))).toEqual([])
+  })
 })

@@ -807,7 +807,10 @@ export const makeGitHub = (
         }),
 
         branchExists: Effect.fn('github.branchExists')(function* (name: string) {
-          return yield* send<unknown>('GET', `${repoPath}/git/ref/heads/${name}`).pipe(
+          return yield* send<unknown>(
+            'GET',
+            `${repoPath}/git/ref/heads/${name.split('/').map(encodeURIComponent).join('/')}`,
+          ).pipe(
             Effect.map(() => true),
             Effect.catchIf(
               (err) => err.status === 404,

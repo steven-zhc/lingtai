@@ -268,7 +268,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       const given = at.flags['login'] ?? null
       let login = given ?? team.knownLogin
       if (login === null || login === '') {
-        const typed = yield* askLogin(askWorld, { given: null, kept: askKept })
+        const typed = yield* askLogin(world, { given: null, kept: askKept })
         if ('refused' in typed) return typed
         login = typed.login
       } else if (given !== null && !GITHUB_LOGIN.test(given)) {
