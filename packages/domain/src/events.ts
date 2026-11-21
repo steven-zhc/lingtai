@@ -2555,7 +2555,16 @@ export const PrInProgress = z.object({
 export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
 
 /** Why a PR waits on a person; each step's ticket extends the set with its own. */
-const PrWaitReason = z.enum(['denied', 'branch-moved', 'several-open', 'draft-unsupported'])
+const PrWaitReason = z.enum([
+  'denied',
+  'branch-moved',
+  'several-open',
+  'draft-unsupported',
+  'sync-conflict',
+  'sync-red',
+  'sync-unknown',
+  'sync-rewritten',
+])
 
 /**
  * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
@@ -2600,6 +2609,44 @@ export const PrOpened = z.object({
   host: z.enum(['github', 'none']),
   number: z.number().int().nullable(),
   url: z.string().nullable(),
+})
+
+/**
+ * `origin/<branch.main>` is in the PR's commit (0130 §6): `already` when it was an ancestor of `head` (the PR's start
+ * commit, nothing merged), `clean` when it was merged into a throwaway worktree and **the merge passed the recipe's
+ * `build`**, `resolved` when the conflict agent resolved it (#1313). `head` becomes the PR's `target`; nothing here
+ * pushes it — the `push` step does, in the lane's turn.
+ *
+ * @summary Main is in a PR's commit: it already was, or it was merged and built clean; the merge is the PR's target.
+ */
+export const BranchSynced = z.object({
+  mainCommit: z.string().min(1),
+  head: z.string().min(1),
+  how: z.enum(['already', 'clean', 'resolved']),
+})
+
+/**
+ * The PR branch at `prHead` was merged into `branch.personal`, built, and pushed as `mergeCommit` (0130 §6), so the
+ * person's next tickets are cut from a branch that holds `main` and every `lingtai:pr-fix` change.
+ *
+ * @summary A PR's branch was merged back into the personal branch, built and pushed.
+ */
+export const PrMergedBack = z.object({
+  prHead: z.string().min(1),
+  mergeCommit: z.string().min(1),
+  how: z.enum(['clean', 'resolved']),
+})
+
+/**
+ * The merge of a PR's branch back into `branch.personal` did not happen, and nothing was pushed. **The PR's own state
+ * does not change**: it is in review either way, and what conflicts is met at the next submit's sync.
+ *
+ * @summary Merging a PR's branch back into the personal branch failed; nothing was pushed and the PR is still in review.
+ */
+export const PrMergeBackFailed = z.object({
+  prHead: z.string().min(1),
+  why: z.enum(['conflict', 'red', 'unknown', 'lost-push']),
+  detail: z.string(),
 })
 
 /**
@@ -2920,6 +2967,9 @@ export const EVENTS = {
   PrPushed,
   PrDraftOpened,
   PrOpened,
+  BranchSynced,
+  PrMergedBack,
+  PrMergeBackFailed,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -3039,6 +3089,9 @@ export const EVENT_AT = {
   PrPushed: ['outside'],
   PrDraftOpened: ['outside'],
   PrOpened: ['outside'],
+  BranchSynced: ['outside'],
+  PrMergedBack: ['outside'],
+  PrMergeBackFailed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

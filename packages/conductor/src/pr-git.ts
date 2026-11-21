@@ -1,0 +1,23 @@
+/** What the PR steps read of git: shared by `pr.ts` and `pr-sync.ts`, which import each other's types and nothing else. */
+import { Effect } from 'effect'
+
+import type { PrGitAnswer, PrPorts } from './pr.ts'
+
+export const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
+
+/** `git` answered with a code other than the two it is expected to: the refusal's sentence. */
+export const gitSaid = (args: readonly string[], answer: PrGitAnswer): string =>
+  `git ${args.join(' ')} answered ${answer.code === null ? 'nothing' : `exit ${answer.code}`}`
+
+/** The sha a ref has on the remote, matched on the whole ref: `ls-remote` answers `<sha>\t<ref>` lines. Null: absent. */
+export const remoteSha = (ports: PrPorts, project: string, ref: string): Effect.Effect<string | null, Error> =>
+  Effect.gen(function* () {
+    const args = ['ls-remote', '--heads', 'origin', ref] as const
+    const answer = yield* ports.remote(project, args)
+    if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
+    for (const line of answer.stdout.split('\n')) {
+      const [sha, name] = line.trim().split('\t')
+      if (name === ref && sha !== undefined && sha !== '') return sha
+    }
+    return null
+  })

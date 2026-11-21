@@ -18,6 +18,7 @@ import {
   prDescription,
   prStream,
 } from '@lingtai/domain'
+import type { MergeInWorktreeResult } from '@lingtai/repo'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, PermissionDenied } from '@lingtai/github'
 import {
@@ -38,6 +39,8 @@ import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
 import { Effect, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
+import { asError, gitSaid, remoteSha } from './pr-git.ts'
+import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 
 /** `git`'s answer in the project's mirror: its exit code (null when it never ran to one) and its stdout, trimmed. */
 export interface PrGitAnswer {
@@ -72,12 +75,36 @@ export interface PrPorts {
    * order the push against nothing, and a pr-fix landing (#1341) and this push are the PR branch's two writers.
    */
   readonly lane?: LandingLane
+  /**
+   * `git merge --no-ff` of `theirs` into `at` in a throwaway worktree of the mirror (`pr-sync-…` / `pr-back-…`, never
+   * `integrator-…`): the merge commit, the unmerged paths, or git's text. Pushes nothing and never fails.
+   */
+  merge(
+    project: string,
+    options: { name: string; at: string; theirs: string; message: string },
+  ): Effect.Effect<MergeInWorktreeResult>
+  /** Removes every `pr-sync-*` and `pr-back-*` worktree of the project: none can be live when a step starts. */
+  sweep(project: string): Effect.Effect<void>
+  /**
+   * The recipe's `build` at one commit: one base check per `run:` action, as a pass asks (`baseCheckQuestion`).
+   * `base` is the PR branch, never `branch.personal`: the answer is recorded on `int-{project}-{base}`, whose newest
+   * `BaseChecked` is read as the state of that branch.
+   */
+  build(project: string, options: { sha: string; base: string; checkId: string }): Effect.Effect<PrBuildAnswer, Error>
+  /** Where `branch` is checked out in a local remote, or null — a push to that branch is refused by git. */
+  checkedOut(project: string, branch: string): Effect.Effect<string | null, Error>
   /** The projects to look at on a start. */
   projects(): Effect.Effect<readonly string[], Error>
   readonly log?: (line: string) => void
   /** How long the freeze waits between looks at a landing still in flight (default 1s); 0 in a test. */
   readonly landingWaitMs?: number
 }
+
+/** What a build of a commit came to: green, the first run that failed, or why it could not be told. */
+export type PrBuildAnswer =
+  | { readonly kind: 'green' }
+  | { readonly kind: 'red'; readonly command: string; readonly evidence: string }
+  | { readonly kind: 'unknown'; readonly why: string }
 
 /**
  * How many times the freeze looks again at a landing in flight before it gives up. The request stays `requested`, and
@@ -123,12 +150,6 @@ const permitOf = (project: string): Semaphore.Semaphore => {
   return made
 }
 
-const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
-
-/** `git` answered with a code other than the two it is expected to: the refusal's sentence. */
-const gitSaid = (args: readonly string[], answer: PrGitAnswer): string =>
-  `git ${args.join(' ')} answered ${answer.code === null ? 'nothing' : `exit ${answer.code}`}`
-
 /** Where a PR is pushed to: `github` where the recipe names no remote of its own, `none` for any other (0130 §5). */
 export const prHostOf = (recipe: Recipe): 'github' | 'none' => (remoteOf(recipe) === null ? 'github' : 'none')
 
@@ -136,19 +157,6 @@ const PUSHING_PRS = (state: PrState) => ({
   prBranch: state.prBranch,
   target: state.target ?? state.frozenSha,
 })
-
-/** The sha a ref has on the remote, matched on the whole ref: `ls-remote` answers `<sha>\t<ref>` lines. Null: absent. */
-const remoteSha = (ports: PrPorts, project: string, ref: string): Effect.Effect<string | null, Error> =>
-  Effect.gen(function* () {
-    const args = ['ls-remote', '--heads', 'origin', ref] as const
-    const answer = yield* ports.remote(project, args)
-    if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
-    for (const line of answer.stdout.split('\n')) {
-      const [sha, name] = line.trim().split('\t')
-      if (name === ref && sha !== undefined && sha !== '') return sha
-    }
-    return null
-  })
 
 type Turn = StepAnswer | { readonly kind: 'failed'; readonly error: Error }
 
@@ -332,11 +340,11 @@ const severalOpen = (pulls: readonly { number: number; url: string }[], target: 
 })
 
 /**
- * **In progress, as a fixed list.** `push` and `open` here; later tickets fill the rest in 0130 §5's order — `sync` and
- * `build` (#1312) before them, `ci` (#1339), `summary` (#1318) and `ready` (#1339) after.
+ * **In progress, as a fixed list.** `sync`, `build` (#1312), `push` and `open` here; later tickets fill the rest in
+ * 0130 §5's order — `ci` (#1339), `summary` (#1318) and `ready` (#1339) after.
  * Nothing else orders them, and the PR page draws its *What Lingtai did* rows from this list and the records.
  */
-export const IN_PROGRESS_STEPS: readonly PrStep[] = [pushStep, openStep]
+export const IN_PROGRESS_STEPS: readonly PrStep[] = [syncStep, buildStep, pushStep, openStep]
 
 /**
  * The freeze of a `requested` PR: `branch.personal` at one commit, and the tickets that commit holds. A read that
@@ -474,6 +482,8 @@ export const servePr = (
       if (state === null) return
       if (state.status === 'requested') yield* freezePr(ports, project, n)
       yield* walkPr(ports, project, n, steps)
+      // A PR that reached In review is merged back into `branch.personal`, once, in that branch's lane turn.
+      yield* mergePrBack(ports, project, n)
     }),
   )
 
@@ -491,7 +501,7 @@ export const servePendingPrs = (
         Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[]))),
       )
       for (const pr of prs) {
-        if ((pr.status === 'requested' || pr.status === 'in-progress') && pr.n !== null) {
+        if ((pr.status === 'requested' || pr.status === 'in-progress' || mergeBackOwed(pr)) && pr.n !== null) {
           yield* servePr(ports, project, pr.n, steps).pipe(
             Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
           )

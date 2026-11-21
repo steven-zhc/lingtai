@@ -46,6 +46,11 @@ export interface PrState {
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
+  /**
+   * What the merge back into `branch.personal` came to for the commit it was tried on (`PrMergedBack`,
+   * `PrMergeBackFailed`). Keyed by `prHead`, so a later In review on a new head is owed its own.
+   */
+  mergeBack: { readonly prHead: string; readonly outcome: 'merged' | 'failed' } | null
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
@@ -67,6 +72,7 @@ export const emptyPr: PrState = {
   lastPushed: null,
   host: null,
   steps: [],
+  mergeBack: null,
   wait: null,
   refusal: null,
   version: 0,
@@ -136,6 +142,22 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       const d = event.data as PayloadOf<'PrOpened'>
       const stepped = d.host === 'none' ? withStep(state, { step: 'open', headSha: state.target ?? '' }) : state
       return { ...stepped, ...at, status: 'in-review', wait: null }
+    }
+    case 'BranchSynced': {
+      const d = event.data as PayloadOf<'BranchSynced'>
+      // `already` is the sync step's own record; a merge is recorded by the build that passed it. The target is the
+      // commit the push step means to push, whichever it was.
+      const step = d.how === 'already' ? 'sync' : 'build'
+      return { ...withStep(state, { step, headSha: d.head }), ...at, target: d.head }
+    }
+    case 'PrMergedBack':
+    case 'PrMergeBackFailed': {
+      const d = event.data as { prHead: string }
+      return {
+        ...state,
+        ...at,
+        mergeBack: { prHead: d.prHead, outcome: event.type === 'PrMergedBack' ? 'merged' : 'failed' },
+      }
     }
     case 'PrWaiting': {
       const d = event.data as PayloadOf<'PrWaiting'>
@@ -260,6 +282,33 @@ export function pushedTransition(
   // A push of an earlier pass's target, recorded after a newer pass began, proves nothing about this one.
   if (pushed.headSha !== (state.target ?? state.frozenSha)) return null
   return { type: 'PrPushed', actor: 'conductor', data: pushed }
+}
+
+/**
+ * Main is in the PR's commit. A step already recorded since the latest `PrInProgress` appends nothing: `already` is the
+ * `sync` step's record and a merge that built is the `build` step's. A sync recorded after a newer pass began proves
+ * nothing about it, so it is held to the commit it was begun from.
+ */
+export function syncedTransition(
+  state: PrState,
+  synced: PayloadOf<'BranchSynced'>,
+): ToAppend<PayloadOf<'BranchSynced'>> | null {
+  if (!walking(state)) return null
+  const step = synced.how === 'already' ? 'sync' : 'build'
+  if (state.steps.some((s) => s.step === step)) return null
+  return { type: 'BranchSynced', actor: 'conductor', data: synced }
+}
+
+/** The merge back was done or failed for `prHead`; only a PR in review, once per head. */
+export function mergeBackTransition(
+  state: PrState,
+  outcome:
+    | { type: 'PrMergedBack'; data: PayloadOf<'PrMergedBack'> }
+    | { type: 'PrMergeBackFailed'; data: PayloadOf<'PrMergeBackFailed'> },
+): ToAppend<PayloadOf<'PrMergedBack'>> | ToAppend<PayloadOf<'PrMergeBackFailed'>> | null {
+  if (state.status !== 'in-review') return null
+  if (state.mergeBack?.prHead === outcome.data.prHead) return null
+  return { type: outcome.type, actor: 'conductor', data: outcome.data } as never
 }
 
 /** The draft pull request is open; a step already recorded since the latest `PrInProgress` appends nothing. */

@@ -4,16 +4,28 @@
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
-import type { PrPorts } from '@lingtai/conductor'
+import { type PrPorts, buildAt } from '@lingtai/conductor'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
-import { githubClientAuth } from '@lingtai/env'
+import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { remoteOf } from '@lingtai/recipe'
-import { RepoFailed, ensureMirrorEffect, gitEffect, mirrorPathFor } from '@lingtai/repo'
+import {
+  RepoFailed,
+  checkedOutAt,
+  ensureMirrorEffect,
+  gitEffect,
+  isLocalRemote,
+  mergeInWorktree,
+  mirrorPathFor,
+  sweepPrWorktrees,
+} from '@lingtai/repo'
 import { Effect } from 'effect'
+
+import { processSandbox } from './sandbox.ts'
+import { tracedPorts } from './tracing.ts'
 
 /** A window that covers every landed row: the board's two-day default would lose a ticket landed last week. */
 const EVERY_LANDED_ROW_DAYS = 36_500
@@ -94,6 +106,36 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
         return yield* answered(gitEffect([...args], { cwd: mirrorPathFor(project), token }))
       }),
     github: githubOf,
+    merge: (project, options) => mergeInWorktree({ project, ...options }),
+    sweep: (project) => sweepPrWorktrees({ project }),
+    build: (project, options) =>
+      Effect.gen(function* () {
+        const recipe = yield* recipeOf(project)
+        const token = yield* tokenOf(project)
+        return yield* buildAt({
+          store,
+          log,
+          home: stateDir(),
+          project,
+          recipe,
+          sha: options.sha,
+          base: options.base,
+          checkId: options.checkId,
+          sandbox: processSandbox,
+          token,
+        }).pipe(Effect.provide(tracedPorts))
+      }),
+    checkedOut: (project, branch) =>
+      Effect.gen(function* () {
+        const remote = remoteOf(yield* recipeOf(project))
+        if (remote === null || !isLocalRemote(remote)) return null
+        const listed = yield* gitEffect(['worktree', 'list', '--porcelain'], { cwd: remote }).pipe(
+          Effect.mapError(asError),
+        )
+        const found = checkedOutAt(listed, branch)
+        if (found === 'unreadable') return yield* Effect.fail(new Error(`could not read the worktrees of ${remote}`))
+        return found === null ? null : found.dir
+      }),
     facts: (project, tickets) =>
       Effect.gen(function* () {
         const github = yield* githubOf(project).pipe(Effect.orElseSucceed(() => null))
