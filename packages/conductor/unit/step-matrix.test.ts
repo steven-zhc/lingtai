@@ -1237,7 +1237,7 @@ describe('every step × kind cell runs or refuses', () => {
   it('hands that call to the pass as `actionsAt`', async () => {
     const wiring = await readFile(new URL('../src/conduct.ts', import.meta.url), 'utf8')
     expect(wiring).toMatch(/const actionsAt = \(step: Step, actions: readonly StepAction\[\]\)/)
-    expect(wiring).toMatch(/actionPortsFromRecipe\(step, actions, stepDeps\)/)
+    expect(wiring).toMatch(/actionPortsFromRecipe\(step, actions, \{ \.\.\.stepDeps, base: attemptBase\(\) \}\)/)
     expect(wiring).toMatch(/runAttemptEffect\(\{[\s\S]*actionsAt/)
   })
 })
