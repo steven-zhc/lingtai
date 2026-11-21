@@ -22,7 +22,6 @@ import {
   makeQueueAction,
   makeWorkAction,
   makeWorktreeAction,
-  commandEffect,
   redoParagraph,
   withRedoParagraph,
   rerunId,
@@ -279,7 +278,7 @@ import {
   releasedHeadOf,
   type ReleasedHead,
 } from './attempts.ts'
-import { baseCheckQuestion, createBaseCheck } from './base-check.ts'
+import { baseCheckFor, baseCheckQuestion } from './base-check.ts'
 import { proposeBaseFix } from './base-fix.ts'
 import { baseStateEffect, buildRunsOf } from './base-red.ts'
 import { agentBranch } from './branches.ts'
@@ -367,21 +366,6 @@ function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string)
 function wallOf(detail: string): RuntimeId | null {
   const said = classify({ platform: 'runtime', text: detail })
   return said?.kind === 'account-limit' ? said.runtime : null
-}
-
-const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
-function baseCheckFor(store: EventStore, log: (line: string) => void, home: string) {
-  let check = baseChecks.get(store)
-  if (check === undefined) {
-    check = createBaseCheck({
-      store,
-      run: commandEffect,
-      worktreePath: (project, sha7, runId) => worktreePath(home, project, `base-${sha7}-${runId}`),
-      note: log,
-    })
-    baseChecks.set(store, check)
-  }
-  return check
 }
 
 export function spentWords(costUsd: number | null): string {

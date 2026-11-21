@@ -317,6 +317,12 @@ const SAMPLES = {
   PrPushed: [{ headSha: 'a'.repeat(40), found: 'pushed' }],
   PrDraftOpened: [{ number: 7, nodeId: 'PR_x', url: 'https://github.com/o/r/pull/7', found: 'opened' }],
   PrOpened: [{ host: 'none', number: null, url: null }],
+  BranchSynced: [
+    { mainCommit: 'b'.repeat(40), head: 'a'.repeat(40), how: 'already' },
+    { mainCommit: 'b'.repeat(40), head: 'c'.repeat(40), how: 'clean' },
+  ],
+  PrMergedBack: [{ prHead: 'a'.repeat(40), mergeCommit: 'c'.repeat(40), how: 'clean' }],
+  PrMergeBackFailed: [{ prHead: 'a'.repeat(40), why: 'red', detail: 'pnpm test fails' }],
   PrMerged: [{ how: 'host', headSha: 'a'.repeat(40), mergeSha: null }],
   PrClosed: [{ headSha: 'a'.repeat(40) }],
   PrWaiting: [{ step: 'push', reason: 'denied', detail: 'the App lacks a permission', headSha: 'a'.repeat(40) }],

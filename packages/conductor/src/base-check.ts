@@ -49,13 +49,14 @@ import {
   type RunCommandOptions,
   type RunSandbox,
   boundedEvidence,
+  commandEffect,
   wrapRefusal,
 } from '@lingtai/actions'
 import { extensionEnv, productionPatterns, renderEnvFile, runnableEnv, type AgentEnv } from '@lingtai/agent-env'
 import { failingTestsOf, integrationStream, parsePayload } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store'
 import { parseDuration, submodulesOf, type ResolvedRecipe } from '@lingtai/recipe'
-import { mirrorPathFor, mirrorWrite, type TokenSource } from '@lingtai/repo'
+import { mirrorPathFor, mirrorWrite, worktreePath, type TokenSource } from '@lingtai/repo'
 import { Effect, Fiber, Result } from 'effect'
 
 import { Repo } from './ports.ts'
@@ -521,3 +522,23 @@ export const baseCheckQuestion = (input: BaseCheckQuestionInput): Effect.Effect<
     }
     return { question, observed }
   })
+
+const baseChecks = new WeakMap<EventStore, ReturnType<typeof createBaseCheck>>()
+
+/**
+ * **The one base check of a store in this process**: its in-flight map is what makes two asks about one commit one run
+ * (#744, 0122), so a pass and a PR's build share it.
+ */
+export function baseCheckFor(store: EventStore, log: (line: string) => void, home: string) {
+  let check = baseChecks.get(store)
+  if (check === undefined) {
+    check = createBaseCheck({
+      store,
+      run: commandEffect,
+      worktreePath: (project, sha7, runId) => worktreePath(home, project, `base-${sha7}-${runId}`),
+      note: log,
+    })
+    baseChecks.set(store, check)
+  }
+  return check
+}
