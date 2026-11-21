@@ -373,7 +373,7 @@ function selectModel(
     return Promise.reject(new Error(`${profile.name} offers no model option, so model ${requested} cannot be chosen`))
   }
   return ctx.request('session/set_config_option', { sessionId, configId: 'model', value: requested }).then(
-    (reply) => modelOf((reply as { configOptions?: ConfigOption[] }).configOptions) ?? requested,
+    (reply) => modelOf((reply as { configOptions?: ConfigOption[] }).configOptions),
     (error: unknown) => {
       throw new Error(
         `${profile.name} refused model ${requested}: ${error instanceof Error ? error.message : String(error)}`,
