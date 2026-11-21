@@ -12,7 +12,7 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
-import { isUnsandboxedAgent, SETUP_KINDS, verdictOf, type HostAnswer } from '@lingtai/recipe'
+import { isImplementOnlyAgent, SETUP_KINDS, verdictOf, type HostAnswer } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
@@ -101,8 +101,8 @@ function turnsFor(writer: string | null): number | 'unbounded' {
  * written twice.
  */
 export function defaultAgents(signedIn: readonly string[]): { writer: string | null; reviewer: string | null } {
-  // An agent that cannot run sandboxed (#1298) is never proposed, since the wizard proposes a sandbox: a recipe a person writes names it by hand.
-  const offered = signedIn.filter((id) => !isUnsandboxedAgent(id))
+  // An agent that runs only at `implement` (#1298) is never proposed: a recipe a person writes names it by hand.
+  const offered = signedIn.filter((id) => !isImplementOnlyAgent(id))
   const writer = RuntimeId.options.find((id) => offered.includes(id)) ?? null
   if (writer === null) return { writer: null, reviewer: null }
   return { writer, reviewer: offered.find((id) => id !== writer) ?? writer }
