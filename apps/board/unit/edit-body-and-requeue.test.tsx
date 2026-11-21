@@ -127,7 +127,7 @@ it('can submit a new answer after a successful wait while the editor stays mount
 
   control(render(first), 'textarea').props.onChange?.({ target: { value: 'First answer' } })
   control(render(first), 'button').props.onClick?.()
-  await vi.waitFor(() => expect(harness.values[4]).toBe(first))
+  await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(first))
   expect(harness.submit).toHaveBeenCalledTimes(1)
   expect(control(render(first), 'button').props.disabled).toBe(true)
 
@@ -135,7 +135,7 @@ it('can submit a new answer after a successful wait while the editor stays mount
   control(render(next), 'textarea').props.onChange?.({ target: { value: 'Second answer' } })
   expect(control(render(next), 'button').props.disabled).toBe(false)
   control(render(next), 'button').props.onClick?.()
-  await vi.waitFor(() => expect(harness.values[4]).toBe(next))
+  await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(next))
   expect(harness.submit).toHaveBeenCalledTimes(2)
   expect(harness.submit).toHaveBeenLastCalledWith({
     project: 'lingtai',
@@ -169,7 +169,7 @@ it('does not call a submitted answer an unsent draft after Follow ends the wait'
 
   control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My submitted answer' } })
   control(render(waitId), 'button').props.onClick?.()
-  await vi.waitFor(() => expect(harness.values[4]).toBe(waitId))
+  await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(waitId))
 
   const afterFollow = render(null)
   expect(control(afterFollow, 'textarea').props.value).toBe('My submitted answer')
@@ -474,6 +474,31 @@ it("draws what the agent asked as choices, and keeps the agent's picks apart fro
   expect(control(render(), 'textarea').props.value).toBe('- Which helper? — B')
   // Triage's picks are what `Start over` sends, and the agent's answer id is not one of its.
   expect(triage().picks).toEqual({})
+})
+
+it("draws the agent's choices and the answer button in the answer part, the textarea in the edit part (#1344)", async () => {
+  harness.values = []
+  harness.answer.mockClear()
+  const waitId = aWaitId()
+  const asked = [question('Which helper?', 'A')]
+  const reason = { _tag: 'AgentQuestion', run: { runId: 'pass-1' }, step: 'design', questions: asked } as WaitReason
+  const part = (which: 'answer' | 'edit') =>
+    mount(waitId, () => EditBodyAndRequeue({ project: 'lingtai', issue: 112, waitId, reason, part: which }), {
+      asked,
+      questions: [],
+    })
+  const answerHtml = renderToStaticMarkup(part('answer'))
+  expect(answerHtml).toContain('triage-choices')
+  expect(answerHtml).toContain('Answer and continue the step')
+  expect(answerHtml).not.toContain('<textarea')
+  const editHtml = renderToStaticMarkup(part('edit'))
+  expect(editHtml).not.toContain('triage-choices')
+  expect(editHtml).toContain('<textarea')
+
+  // One press disables the other card's button too: the sending state is the page's, not the part's.
+  control(part('answer'), 'button').props.onClick?.()
+  await vi.waitFor(() => expect(harness.answer).not.toHaveBeenCalled)
+  expect(control(part('edit'), 'button').props.disabled).toBe(true)
 })
 
 it('draws a question asked in prose as the paragraph it was', () => {
