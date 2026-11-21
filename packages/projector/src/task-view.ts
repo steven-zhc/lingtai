@@ -54,7 +54,6 @@ import {
   reduceAttemptEvent,
   reduceTicketEvent,
   emptyAttempt,
-  emptyTicket,
   encodeRun,
   encodeTicket,
   isAttemptStream,
