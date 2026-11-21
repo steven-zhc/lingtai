@@ -122,18 +122,16 @@ function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['re
           <span className="step-set-k">{line.label}</span> <span>{line.says}</span>
         </div>
       ))}
-      <div className="step-set">
-        <span className="step-set-k">PR</span>{' '}
-        {mode.pr === null ? (
-          <span>none — each ticket lands itself</span>
-        ) : (
+      {mode.pr === null ? null : (
+        <div className="step-set">
+          <span className="step-set-k">PR</span>{' '}
           <span>
             summary · <span className="mono">{mode.pr.agent}</span>
             {mode.pr.agentFromDefault ? ' ← runtime.agent' : ''} · {mode.pr.turns} turns · {mode.pr.wall}
             {mode.pr.fromDefault ? ' ← default' : ''}
           </span>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   )
 }

@@ -186,9 +186,8 @@ export function modeLines(recipe: Recipe): ModeReading {
     const takes =
       tickets === 'db'
         ? 'every ticket — local tickets are yours'
-        : rule?.take === 'mine' || rule?.take === undefined
-          ? `tickets assigned to ${rule?.login ?? 'you'}`
-          : `tickets by assignee (${rule.take})`
+        : // Team takes `mine` whatever the parsed `take` says: the schema's `all` is only a default (`assigneeSkip`).
+          `tickets assigned to ${rule?.login ?? 'you'}`
     const pr = recipe.pr
     return {
       mode,

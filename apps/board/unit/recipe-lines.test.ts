@@ -175,6 +175,14 @@ describe('modeLines (#1326)', () => {
     expect(text(m)).not.toMatch(/kept current|before each claim|in review/)
   })
 
+  it('names the login for a team recipe whose take is omitted', async () => {
+    const m = await read(
+      yaml(`mode: team\nbranch: { main: main, personal: me/work }\n${GH}`, 'assignee: { login: me }, '),
+    )
+    expect(text(m)).toContain('assigned to me')
+    expect(text(m)).not.toContain('(all)')
+  })
+
   it('reads a recipe naming no mode as solo', async () => {
     const m = await read(yaml(`branch: { main: main }\n${GH}`))
     expect(m.mode).toBe('solo')
