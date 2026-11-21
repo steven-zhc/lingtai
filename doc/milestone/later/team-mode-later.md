@@ -8,17 +8,15 @@ operator after the cold review of [0130](../../decisions/0130-a-project-is-solo-
 0.16 reads only whether the open PR was merged or closed, and links to the
 review on the code host. Showing the review's state (approved, changes asked)
 and its comments means reading them in the sweep — one request for the one open
-PR, stopped early when it has not changed — and drawing them on the PR page, the
-home page's in-review box and the task page (the mocks already do). A comment is
-shown and never acted on; *new ticket from this comment* opens a rework ticket
-only when a person presses it. CI checks would need the App's `checks` or
-`statuses` permission, which every installation must approve; leave them out
-unless asked.
+PR, stopped early when it has not changed — and drawing them on the PR page (an earlier
+mock showed *li-wei asked for a change*). A comment is shown and never acted on;
+*new pr-fix ticket from this comment* opens one only when a person presses it.
+(CI's checks are read in 0.16 itself — 0130 §5.)
 
-## A blocker in review that no longer blocks
+## A blocker landed on the branch that no longer blocks
 
-In 0.16 a ticket blocked by one in review waits until that one lands, as a
-team's ticket waits for its blocker's PR. A stacked rule — *a blocker in review
+In 0.16 a ticket blocked by one that has landed on `branch.personal` waits
+until that one is closed, when its PR merges. A stacked rule — *a blocker in review
 on the same personal branch does not block, since its code is already on the
 branch the next ticket is cut from* — needs to know *which* blockers are open:
 the GitHub listing carries only a count (`packages/conductor/src/discover.ts:57`,

@@ -147,9 +147,10 @@ PR is a person deciding a body of work is ready for the team.
 
    - **Only the person submits.** *Submit* (a button on the draft card, or
      `lingtai pr submit`) freezes `branch.personal` at one commit and moves the PR
-     to *In progress*: Lingtai brings `main` in, builds the result, resolves a
-     conflict with an agent, pushes the PR branch, **runs the project's CI**,
-     writes the summary — then it is *In review*. Anything it cannot finish moves
+     to *In progress*, whose steps run in this order: bring `main` in (§6),
+     build, resolve a conflict with an agent, push the PR branch, open it as a
+     draft pull request, **run the project's CI**, write the title and summary,
+     mark it ready — then it is *In review*. Anything it cannot finish moves
      it to *Waiting on you*, saying why, and nothing is offered for review.
      Lingtai never submits on its own and never merges.
    - **CI** (0.16: GitHub Actions; Jenkins next). The PR is opened on GitHub as a
@@ -157,10 +158,17 @@ PR is a person deciding a body of work is ready for the team.
      on it unchanged; when every check on its head has finished, green moves it
      to *In review* by marking it *ready for review*, and red moves it to
      *Waiting on you* with the failing checks named. Reading the checks needs the
-     App's `checks: read` and `statuses: read`, added to its permissions — every
-     installation is asked to approve them once. A project with no workflow on
-     pull requests has no CI step, and the PR page says so. A red run is the
-     person's in 0.16; an agent fixing it is later.
+     App's `checks: read` and `statuses: read`, added to its permissions for
+     every project, solo too — one list, as `workflows` was — and to 0114 §3's
+     table in the same change; every installation is asked to approve them once,
+     and a repository whose installation has not is refused when it is added, by
+     name. A project with no workflow on pull requests has no CI step, and the
+     PR page says so; no check started within 30 minutes of the push waits on
+     you. A red run is the person's in 0.16: they re-run it on the code host and
+     *check again*; Lingtai never re-runs a workflow (that would need
+     `actions: write`), and an agent fixing a red run is later. A repository
+     that cannot open draft pull requests waits on you rather than opening one
+     ready for review.
    - **A change the review asks for is a `lingtai:pr-fix` ticket.** Opened from
      the PR's page the label is put on for the person; on the tracker a person
      adds it. It is a kind of its own and **ranks ahead of every kind the recipe
@@ -192,8 +200,8 @@ PR is a person deciding a body of work is ready for the team.
      another would carry its refused tickets up, a squash merge below leaves the
      one above with duplicate commits, and every rework below ripples up.
    - **The code host**: GitHub in 0.16, through the GitHub App
-     (`pull_requests: write`, `packages/github/src/app.ts:269`; no new
-     permission). On any other remote — GitLab, or a local checkout — submitting
+     (`pull_requests: write`, `packages/github/src/app.ts:269`; opening a PR
+     needs no new permission — only CI's two above). On any other remote — GitLab, or a local checkout — submitting
      pushes the frozen branch and prints the description for the person to open
      by hand; the PR goes to *In review* unfollowed, and is *Merged* when git
      finds its head on `main`.
@@ -216,10 +224,12 @@ PR is a person deciding a body of work is ready for the team.
      `origin/<branch.main>`, **or** from the code host reporting it merged — a
      squash or rebase merge leaves nothing reachable, and it is merged all the
      same;
-   - **closed without merging**: read on the daemon's sweep (`SWEEP_MS`, five
-     minutes, `packages/daemon/src/work-loop.ts:167`), one request for the one
-     open PR, stopped early when it has not changed since the last read; the
-     same read gives a draft PR's checks;
+   - **closed without merging**: read on the daemon's sweep timer (`SWEEP_MS`,
+     five minutes, `packages/daemon/src/work-loop.ts:167`) — a read of its own on
+     that timer, not inside the pass, since today the sweep only kicks a pass and
+     a paused conductor skips the pass — one request for the one open PR, stopped
+     early when it has not changed since the last read; the same read gives a
+     draft PR's checks;
    - **the PR page asks the code host when it renders**, as the Queued column
      does, and links to the review there. Review state and comments are not read
      in 0.16 (`doc/milestone/later/`).
@@ -232,8 +242,9 @@ PR is a person deciding a body of work is ready for the team.
    reason — it spends outside any attempt: `{ agent, model, prompt, limits }`,
    the agent one that can run with no tools, as `discuss:`'s is, defaulting to
    `runtime.agent` where that one can, `limits` to 20 turns and `5m`, and
-   carrying no `usd` (0104 §6). One run at submit and one at each rework landing,
-   extending the current summary; both count against the day's ceiling. Where
+   carrying no `usd` (0104 §6). It writes the PR's title and summary; one run at
+   submit and one at each `lingtai:pr-fix` landing, extending the current summary
+   (with no run the title is the first ticket's); both count against the day's ceiling. Where
    the project is locked (paused, the day's ceiling, an account limit) the PR
    opens without a summary and says why.
 
@@ -264,7 +275,11 @@ PR is a person deciding a body of work is ready for the team.
      stops: tickets are still claimed and land on `branch.personal`. The person
      ends it from the PR page: *give the agent more rounds* (three), or resolve
      it by hand on the PR branch and *check again* (`lingtai pr retry`), which
-     checks that `main` is an ancestor, builds and goes on.
+     takes the head the person pushed — if it still holds the frozen commit —
+     brings in whatever of `main` it lacks, builds and goes on
+     (`lingtai pr rounds` gives the rounds from a terminal). An agent's round
+     runs outside the merge lane; only its push takes the lane's turn. The merge
+     back into `branch.personal` is built before it is pushed, as the sync is.
    - Findings the sync's review raises go to the backlog under the PR, not under
      a ticket.
 
