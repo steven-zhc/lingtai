@@ -139,5 +139,8 @@ export function widenStepsIfNeeded(
 
 export type SaveRecipeTextResult =
   | { ok: true; path: string; written: boolean; /** The bytes the file holds now. */ content: string }
-  /** `stale`: the file is not what the page loaded. `missing`: there is no file. `invalid`: the resolver refused. */
-  | { ok: false; reason: 'stale' | 'missing' | 'invalid'; message: string }
+  /**
+   * `stale`: the file is not what the page loaded. `missing`: there is no file. `invalid`: the resolver refused.
+   * `mode-switch`: team → solo while work on `branch.personal` has not reached `main`, or a PR is open (0130 §1).
+   */
+  | { ok: false; reason: 'stale' | 'missing' | 'invalid' | 'mode-switch'; message: string }

@@ -58,6 +58,7 @@ function ports(
     sweep: () => Effect.void,
     build: () => Effect.succeed({ kind: 'unknown', why: 'this test never builds' }),
     checkedOut: () => Effect.succeed(null),
+    tickets: () => Effect.fail(new Error('no ticket channel in this test')),
     remote: () => Effect.fail(new Error('the freeze never reaches the remote')),
     github: () => Effect.fail(new Error('the freeze never reaches GitHub')),
     facts: () => Effect.succeed([]),

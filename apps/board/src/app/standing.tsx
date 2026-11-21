@@ -1763,10 +1763,12 @@ export function Standing({
                                   </Gh>
                                 )
                               ) : null}
-                              {tag === 'EditBodyAndStartNewAttempt' ||
-                              (tag === 'AnswerQuestions' && !allowed.includes('EditBodyAndStartNewAttempt')) ? (
+                              {tag === 'EditBodyAndStartNewAttempt' || tag === 'AnswerQuestions' ? (
                                 <EditBodyAndRequeue
-                                  answerOnly={tag === 'AnswerQuestions'}
+                                  answerOnly={
+                                    tag === 'AnswerQuestions' && !allowed.includes('EditBodyAndStartNewAttempt')
+                                  }
+                                  part={tag === 'AnswerQuestions' ? 'answer' : 'edit'}
                                   project={project}
                                   issue={issue}
                                   waitId={visible ? waitId : null}

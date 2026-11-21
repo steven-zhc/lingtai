@@ -52,3 +52,15 @@ export function handledToday(handled: Report['handled']): HandledToday | null {
     ],
   }
 }
+
+/**
+ * `handledToday`, but only for a read that was made and is current: a failed or
+ * lagging `ticket_report` is null — never a zero (#1286, #1345).
+ */
+export function handledIfCurrent(
+  currency: { error?: unknown; lag: number | null },
+  handled: Report['handled'],
+): HandledToday | null {
+  if (currency.error !== undefined || currency.lag !== 0) return null
+  return handledToday(handled)
+}

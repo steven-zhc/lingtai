@@ -13,7 +13,7 @@ import type { Envelope, ToAppend } from './envelope.ts'
 import type { PayloadOf } from './events.ts'
 import { parsePrStream } from './streams.ts'
 
-export type PrStatus = 'requested' | 'in-progress' | 'waiting' | 'in-review' | 'refused'
+export type PrStatus = 'requested' | 'in-progress' | 'waiting' | 'in-review' | 'refused' | 'merged' | 'closed'
 
 /** One step's outcome as recorded: the step, and the commit it ran on. */
 export interface PrStepRecord {
@@ -59,6 +59,14 @@ export interface PrState {
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
+  /** How the PR ended, once it has (`PrMerged`, `PrClosed`); `how` is null for a close. `seq` is the ending event's. */
+  ended: {
+    readonly how: 'host' | 'git' | null
+    readonly headSha: string
+    readonly mergeSha: string | null
+    readonly seq: bigint
+    readonly at: Date
+  } | null
   version: number
   lastSeq: bigint | null
 }
@@ -80,6 +88,7 @@ export const emptyPr: PrState = {
   mergeBack: null,
   wait: null,
   refusal: null,
+  ended: null,
   version: 0,
   lastSeq: null,
 }
@@ -164,6 +173,16 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...at,
         mergeBack: { prHead: d.prHead, outcome: merged ? 'merged' : 'failed', why: merged ? null : (d.why ?? null) },
       }
+    }
+    case 'PrMerged': {
+      const d = event.data as PayloadOf<'PrMerged'>
+      const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
+      return { ...state, ...at, status: 'merged', wait: null, ended }
+    }
+    case 'PrClosed': {
+      const d = event.data as PayloadOf<'PrClosed'>
+      const ended = { how: null, headSha: d.headSha, mergeSha: null, seq: event.seq, at: event.at }
+      return { ...state, ...at, status: 'closed', wait: null, ended }
     }
     case 'PrWaiting': {
       const d = event.data as PayloadOf<'PrWaiting'>
@@ -343,6 +362,27 @@ export function openedTransition(
 ): ToAppend<PayloadOf<'PrOpened'>> | null {
   if (!walking(state)) return null
   return { type: 'PrOpened', actor: 'conductor', data: opened }
+}
+
+/**
+ * The PR was found merged. Only an open PR that has begun its walk can be: a `requested` one has nothing on the remote.
+ * One already merged or closed appends nothing, so two readers finding it in one sweep append once.
+ */
+export function mergedTransition(
+  state: PrState,
+  merged: PayloadOf<'PrMerged'>,
+): ToAppend<PayloadOf<'PrMerged'>> | null {
+  if (!isOpen(state) || state.status === 'requested') return null
+  return { type: 'PrMerged', actor: 'conductor', data: merged }
+}
+
+/** The PR was found closed without a merge. Only the code host can say so, so a PR with no host number cannot be. */
+export function closedTransition(
+  state: PrState,
+  closed: PayloadOf<'PrClosed'>,
+): ToAppend<PayloadOf<'PrClosed'>> | null {
+  if (!isOpen(state) || state.status === 'requested' || state.host === null) return null
+  return { type: 'PrClosed', actor: 'conductor', data: closed }
 }
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */

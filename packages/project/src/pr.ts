@@ -26,6 +26,8 @@ import {
   restartTransition,
   draftOpenedTransition,
   openedTransition,
+  mergedTransition,
+  closedTransition,
   waitTransition,
   syncedTransition,
   mergedBackTransition,
@@ -238,6 +240,26 @@ export const recordPrMergeBackFailed = (
     (_state, appended) => appended,
   )
 
+/** The PR was found merged. A PR already merged or closed appends nothing. */
+export const recordPrMerged = (project: string, n: number, merged: PayloadOf<'PrMerged'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergedTransition(state, merged),
+    (_state, appended) => appended,
+  )
+
+/** The PR was found closed without merging; it holds no tickets from here on. */
+export const recordPrClosed = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => closedTransition(state, closed),
+    (_state, appended) => appended,
+  )
+
 /** A step needs a person. The same wait twice appends nothing. */
 export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrWaiting'>, store: EventStore) =>
   transitionPr(
@@ -290,7 +312,7 @@ export interface PrDraftTicket {
 }
 
 /** Whether a recorded recipe text says `mode: team`. Text that does not parse is not team: it can only shrink the draft. */
-function isTeamSource(source: string): boolean {
+export function isTeamSource(source: string): boolean {
   try {
     const raw: unknown = parseYaml(source)
     return typeof raw === 'object' && raw !== null && (raw as { mode?: unknown }).mode === 'team'
@@ -316,12 +338,23 @@ export function readPrDraft(
 ): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     if (modeOf(recipe) !== 'team') return []
-    const personal = recipe.branch.personal ?? recipe.branch.main
+    return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store)
+  })
+}
+
+/** The draft against a named personal branch: `readPrDraft` without the recipe, for a caller that holds only text. */
+export function readDraftOn(
+  project: string,
+  personal: string,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<PrDraftTicket[], Error> {
+  return Effect.gen(function* () {
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
     for (const pr of yield* listPrs(project, store)) {
-      if (pr.status === 'refused') continue
+      if (pr.status === 'refused' || pr.status === 'closed') continue
       for (const t of pr.tickets) held.add(t.ticket)
     }
 

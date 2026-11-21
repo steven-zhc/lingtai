@@ -504,6 +504,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrMergedBack: (d) =>
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
+  PrMerged: (d) =>
+    d['how'] === 'host'
+      ? 'The PR was merged, as the code host reports'
+      : 'The PR was merged: its head is on the main branch',
+  PrClosed: () => 'The PR was closed without merging; its tickets are back in Draft',
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,

@@ -42,6 +42,7 @@ export {
   type GitHubClient,
   type Issue,
   type OpenPull,
+  type PullState,
   type Label,
   type RateLimitAnswer,
   type RateLimitedPort,

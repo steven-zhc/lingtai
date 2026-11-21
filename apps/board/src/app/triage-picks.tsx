@@ -55,7 +55,12 @@ type TriageDraft = {
   setOwn: (index: number, text: string, source?: AnswerSource) => void
   /** The text last written as an own answer. */
   ownText: (index: number, source?: AnswerSource) => string
+  /** A button on this page has sent and not yet been answered, or was answered for `doneWaitId`; shared by every card that sends. */
+  sending: Sending
+  setSending: (next: Sending) => void
 }
+
+export type Sending = { pending: boolean; doneWaitId: WaitId | null }
 
 /** Whose question a choice answers: triage's advice, or the agent's own question on the wait. */
 export type AnswerSource = 'triage' | 'asked'
@@ -103,6 +108,7 @@ export function TriagePicks({
     answer: null,
     own: null,
   })
+  const [sending, setSending] = useState<Sending>({ pending: false, doneWaitId: null })
   const askedList = asked ?? []
   const selected = (index: number, question: TriageQuestion, source: AnswerSource = 'triage') =>
     (source === 'asked' ? askedAnswers : answers)[index] ?? question.recommended
@@ -217,6 +223,8 @@ export function TriagePicks({
         pickOwn,
         setOwn,
         ownText,
+        sending,
+        setSending,
       }}
     >
       {children}

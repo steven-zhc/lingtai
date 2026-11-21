@@ -68,7 +68,7 @@ added there and merged stays invisible, and says nothing — and that copy still
 says three kinds for exactly that reason. The other labels in this repo
 (`enhancement`, `question`, …) are invisible to the conductor.
 
-Add **`agent:hold`** unless you mean an agent to take it now. Self-hosting runs
+Add **`lingtai:hold`** unless you mean an agent to take it now. Self-hosting runs
 one unheld ticket at a time, so an unheld ticket is one you are asking the next
 queue pass to claim.
 

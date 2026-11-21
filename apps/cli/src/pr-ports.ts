@@ -5,12 +5,15 @@
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
 import { type PrPorts, buildAt } from '@lingtai/conductor'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { githubClientAuth, stateDir } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
+import { EVERY_LANDED_ROW_DAYS } from '@lingtai/projector/task-view'
 import { remoteOf } from '@lingtai/recipe'
 import {
   RepoFailed,
@@ -28,8 +31,8 @@ import { Effect } from 'effect'
 import { processSandbox } from './sandbox.ts'
 import { tracedPorts } from './tracing.ts'
 
-/** A window that covers every landed row: the board's two-day default would lose a ticket landed last week. */
-const EVERY_LANDED_ROW_DAYS = 36_500
+/** How long the installation token may take: a read inside a write the drain waits for. */
+const TOKEN_MS = 60_000
 
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -59,11 +62,20 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     Effect.gen(function* () {
       const slug = yield* slugOf(project)
       if (slug === null) return undefined
-      const client = yield* Effect.tryPromise({
-        try: () => createGitHubClient({ auth: githubClientAuth(), ...slug }),
-        catch: asError,
-      })
-      return () => client.token()
+      // Building the client and asking for its token are requests: bounded, so a stalled one cannot hold a push the
+      // drain waits for. The token is resolved here (an installation's lasts an hour), never inside `git`.
+      return yield* Effect.gen(function* () {
+        const client = yield* Effect.tryPromise({
+          try: () => createGitHubClient({ auth: githubClientAuth(), ...slug }),
+          catch: asError,
+        })
+        return yield* Effect.tryPromise({ try: () => client.token(), catch: asError })
+      }).pipe(
+        Effect.timeoutOrElse({
+          duration: TOKEN_MS,
+          orElse: () => Effect.fail(new Error(`the installation token did not arrive in ${TOKEN_MS}ms`)),
+        }),
+      )
     })
   const answered = (run: Effect.Effect<string, RepoFailed>) =>
     run.pipe(
@@ -139,6 +151,16 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
         if (found === 'unreadable') return yield* Effect.fail(new Error(`could not read the worktrees of ${remote}`))
         return found === null ? null : found.dir
       }),
+    // The project's own channel, never the raw GitHub client: a `db` project's ticket numbers are not issues there.
+    tickets: (project) =>
+      Effect.gen(function* () {
+        const state = yield* readProjectStateEffect(project, store).pipe(Effect.mapError(asError))
+        if (state.owner === null) {
+          const recipe = (yield* currentRecipeEffect(state)).recipe
+          return (yield* ownerlessClientEffect(state, recipe)).client
+        }
+        return (yield* projectClientEffect(state)).client
+      }).pipe(Effect.mapError(asError)),
     facts: (project, tickets) =>
       Effect.gen(function* () {
         const github = yield* githubOf(project).pipe(Effect.orElseSucceed(() => null))

@@ -87,6 +87,13 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
         : `draft: ${draft.length} ticket(s) landed on ${recipe.branch.personal ?? recipe.branch.main}`,
       ...draft.map((t) => `  #${t.ticket} ${t.title}`),
     ]
+    const ended = latest !== null && (latest.status === 'merged' || latest.status === 'closed') ? latest : null
+    if (ended !== null && ended.n !== null && ended.ended !== null) {
+      const by = ended.ended.how === null ? '' : ended.ended.how === 'host' ? ' as the host reports' : ' by git'
+      lines.push(
+        `PR ${ended.n}: ${ended.status}${ended.host === null ? '' : ` (pull request #${ended.host.number})`}${by} at ${ended.ended.at.toISOString()}`,
+      )
+    }
     if (open !== null && open.n !== null) {
       lines.push(
         `PR ${open.n}: ${open.status}${open.prBranch === null ? '' : ` — ${open.prBranch}`}`,
@@ -112,6 +119,16 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       lines,
       json: {
         project,
+        ended:
+          ended === null || ended.ended === null
+            ? null
+            : {
+                n: ended.n,
+                status: ended.status,
+                how: ended.ended.how,
+                host: ended.host,
+                at: ended.ended.at.toISOString(),
+              },
         draft: draft.map((t) => ({ ticket: t.ticket, title: t.title, mergeCommit: t.mergeCommit })),
         pr:
           open === null

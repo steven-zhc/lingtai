@@ -112,6 +112,14 @@
     "reason": "Reads the base's records of one command, to see whether a failing test failed there before; one event type, nothing reduced (0108 §17)."
   },
   {
+    "file": "packages/conductor/src/pr.ts",
+    "function": "closeMergedTickets",
+    "type": "IssueUpdated",
+    "count": 2,
+    "class": "select",
+    "reason": "Finds whether a ticket's stream already has a close after the PrMerged, so a sweep closes each ticket once; reduces nothing (#1317)."
+  },
+  {
     "file": "packages/conductor/src/prompt-refs.ts",
     "function": "fetchStepValue",
     "type": "StepEnded",

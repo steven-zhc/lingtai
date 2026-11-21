@@ -303,7 +303,17 @@ export interface WorkLoopOptions {
    * `SUBSCRIBER_TIMEOUT_MS` is never recorded as a failed plugin. `resume` serves every PR a request or a restart
    * left unfinished, once, at the end of `start()`.
    */
-  pr?: { serve: (event: Envelope) => Effect.Effect<void>; resume: () => Effect.Effect<void> }
+  pr?: {
+    serve: (event: Envelope) => Effect.Effect<void>
+    resume: () => Effect.Effect<void>
+    /**
+     * What a PR came to (#1317): run at the end of `start()` beside `resume`,
+     * and on the sweep timer, **whether or not the conductor is paused** — it records a fact and takes no work, so
+     * it never goes through `drain` and never asks `paused` or `shutdown`. Not waited for by `stop()`, which interrupts it; a tick
+     * that finds the last one still running starts nothing.
+     */
+    sweep?: () => Effect.Effect<void>
+  }
   /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
@@ -438,6 +448,46 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       tell(`pr failed on ${event.type}: ${reason}`)
       void Effect.runPromiseWith(services)(recorder.record('pr', event, reason, undefined))
     })
+  }
+
+  let sweepingPrs = false
+  let walkingPrs = false
+  const sweepAbort = new AbortController()
+  /** The walks a request or a restart left unfinished, tracked so `stop()` waits for the step in flight; one at a time. */
+  function resumePrs(): void {
+    const handlers = options.pr
+    if (handlers === undefined || walkingPrs || stopped) return
+    walkingPrs = true
+    const run = Effect.runPromiseWith(services)(handlers.resume())
+    passesInFlight.track(run)
+    void run.then(
+      () => void (walkingPrs = false),
+      (err: unknown) => {
+        walkingPrs = false
+        tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`)
+      },
+    )
+  }
+  /**
+   * One read of what each open PR came to, and the walks still owed. The read is **not** tracked: `stop()` never waits
+   * on it, since its requests (the host, a fetch) have no bound; it is interrupted instead. A tick that finds the last
+   * one still running starts none.
+   */
+  function sweepPrs(withWalks: boolean): void {
+    // The owed walks are tracked, so the drain waits for a push in flight; their reads are bounded by the handlers,
+    // so a read that stalls cannot hold it. A tick resumes them too: a step that answered `again` is retried here.
+    if (withWalks) resumePrs()
+    const handlers = options.pr
+    if (handlers?.sweep === undefined || sweepingPrs || stopped) return
+    sweepingPrs = true
+    const run = Effect.runPromiseWith(services)(handlers.sweep(), { signal: sweepAbort.signal })
+    void run.then(
+      () => void (sweepingPrs = false),
+      (err: unknown) => {
+        sweepingPrs = false
+        if (!stopped) tell(`pr sweep failed: ${String(err instanceof Error ? err.message : err)}`)
+      },
+    )
   }
 
   // ------------------------------------------------ the subscriber boundary --
@@ -661,12 +711,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // A request made while the daemon was down is waiting in the stream rather than lost, and a walk a restart
         // cut off is resumed at its first unrecorded step. Tracked, so the drain that follows waits for it.
         if (options.pr) {
-          const resume = options.pr.resume()
-          const run = Effect.runPromiseWith(services)(resume)
-          passesInFlight.track(run)
-          void run.catch((err: unknown) =>
-            tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`),
-          )
+          sweepPrs(true)
         }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
@@ -674,7 +719,16 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         const every = options.sweepMs ?? SWEEP_MS
         if (every > 0) {
           yield* Effect.forkIn(
-            Effect.forever(Effect.sleep(every).pipe(Effect.andThen(Effect.sync(() => void kick('sweep'))))),
+            Effect.forever(
+              Effect.sleep(every).pipe(
+                Effect.andThen(
+                  Effect.sync(() => {
+                    void kick('sweep')
+                    sweepPrs(true)
+                  }),
+                ),
+              ),
+            ),
             scope,
           )
         }
@@ -683,6 +737,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
     stop: () =>
       Effect.gen(function* () {
         stopped = true
+        sweepAbort.abort()
         // The subscription is closed first so nothing new arrives to set
         // `again` while this waits — though it would lapse on
         // `if (stopped) break` if it did.
