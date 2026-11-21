@@ -7,7 +7,13 @@ import { findingsRaisedOf, prStream, reducePr, ticketStream } from '@lingtai/dom
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub } from '@lingtai/github'
-import { recordPrOpened, recordPrPushed, recordSyncRoundStarted, requestPrSubmit } from '@lingtai/project'
+import {
+  recordPrOpened,
+  recordPrPushed,
+  recordSyncRoundRefused,
+  recordSyncRoundStarted,
+  requestPrSubmit,
+} from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -372,6 +378,98 @@ describe('resolveRounds', () => {
     const end = await resolve(store, w)
     expect(end).toMatchObject({ kind: 'spent', end: { roundsUsed: 0 } })
     expect(w.dispatched).toEqual([])
+  })
+})
+
+describe('resolveRounds, the sequences a review refused', () => {
+  it('a refusal on the log survives a restart: the spent end names it, and round 2 is briefed with it', async () => {
+    const store = await inProgress()
+    await Effect.runPromise(
+      recordSyncRoundStarted('lingtai', 1, { merging: 'main', commit: MAIN, start: FROZEN, round: 1 }, store),
+    )
+    await Effect.runPromise(
+      recordSyncRoundRefused(
+        'lingtai',
+        1,
+        { merging: 'main', commit: MAIN, round: 1, step: 'review', said: 'drops byTitle' },
+        store,
+      ),
+    )
+    const spentW = aWorld()
+    spentW.recipe = recipeWith(1)
+    const end = await resolve(store, spentW)
+    expect(end.kind === 'spent' && end.end.last).toEqual({ step: 'review', said: 'drops byTitle' })
+
+    const w = aWorld()
+    await resolve(store, w)
+    expect(w.dispatched[0]!.prompt).toContain('drops byTitle')
+  })
+
+  it('a PR merged or closed meanwhile stops the rounds: no read-and-retry, no dispatch', async () => {
+    const store = await inProgress()
+    const v = (await state(store)).version
+    await store.append(prStream('lingtai', 1), v, [
+      { type: 'PrMerged', actor: 'conductor', data: { how: 'git', headSha: FROZEN, mergeSha: null } },
+    ])
+    const w = aWorld()
+    const end = await resolve(store, w)
+    expect(end.kind).toBe('unknown')
+    expect(w.dispatched).toEqual([])
+  })
+
+  it('a lock that comes up during the first of two reviewers stops the second', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = {
+      ...recipeWith(6),
+      steps: {
+        implement: [{ agent: 'claude-code', name: 'write' }],
+        review: [
+          { agent: 'claude-code', name: 'one' },
+          { agent: 'claude-code', name: 'two' },
+        ],
+        build: [],
+      },
+    } as unknown as Recipe
+    w.review = () => {
+      w.lock = 'the day’s ceiling is reached'
+      return CLEAN
+    }
+    const end = await resolve(store, w)
+    expect(end.kind).toBe('locked')
+    expect(w.dispatched.filter((d) => d.runId.includes(':review:'))).toHaveLength(1)
+  })
+
+  it('a recipe that sandboxes its runs gets no conflict agent', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = { ...recipeWith(6), sandbox: { enabled: true } } as unknown as Recipe
+    const end = await resolve(store, w)
+    expect(end.kind).toBe('unknown')
+    expect(w.dispatched).toEqual([])
+    expect((await state(store)).rounds).toEqual([])
+  })
+
+  it('an append whose acknowledgement was lost is not appended a second time', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    const real = store.append.bind(store)
+    let lost = false
+    const flaky = {
+      ...store,
+      read: store.read.bind(store),
+      append: async (stream: string, version: number, events: Parameters<typeof real>[2]) => {
+        const done = await real(stream, version, events)
+        if (!lost && events[0]!.type === 'RunSpent') {
+          lost = true
+          throw new Error('connection reset after commit')
+        }
+        return done
+      },
+    } as EventStore
+    await Effect.runPromise(resolveRounds(ports(flaky, w), resolverFor(flaky, w), askSync())).catch(() => undefined)
+    const spent = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'RunSpent')
+    expect(spent).toHaveLength(1)
   })
 })
 

@@ -48,6 +48,22 @@
     "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan §1.6)."
   },
   {
+    "file": "apps/cli/src/pr-ports.ts",
+    "function": "ticketBody",
+    "type": "TicketClaimed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the body recorded when the ticket was claimed, for the conflict agent's brief: the issue on GitHub may have been edited since."
+  },
+  {
+    "file": "apps/cli/src/pr-ports.ts",
+    "function": "ticketBody",
+    "type": "TicketContinued",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the body recorded when the ticket was claimed, for the conflict agent's brief: the issue on GitHub may have been edited since."
+  },
+  {
     "file": "apps/cli/src/split-run.ts",
     "function": "onSplitStarted",
     "type": "SplitStarted",
