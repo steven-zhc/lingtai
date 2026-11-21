@@ -316,6 +316,14 @@ const SAMPLES = {
   PrStepDone: [{ step: 'build', headSha: 'a'.repeat(40) }],
   PrPushed: [{ headSha: 'a'.repeat(40), found: 'pushed' }],
   PrDraftOpened: [{ number: 7, nodeId: 'PR_x', url: 'https://github.com/o/r/pull/7', found: 'opened' }],
+  PrCiSkipped: [{ headSha: 'a'.repeat(40), why: 'no workflow runs on pull requests' }],
+  PrChecked: [
+    {
+      headSha: 'a'.repeat(40),
+      verdict: 'red',
+      checks: [{ name: 'e2e / chromium', state: 'failure', url: 'https://github.com/o/r/runs/1' }],
+    },
+  ],
   PrOpened: [{ host: 'none', number: null, url: null }],
   PrMerged: [{ how: 'host', headSha: 'a'.repeat(40), mergeSha: null }],
   PrClosed: [{ headSha: 'a'.repeat(40) }],
