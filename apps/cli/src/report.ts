@@ -172,7 +172,12 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
   const placed = r.counts.landed + r.counts.closed + r.counts.open
   const spent = r.spend.total
   // Survival is its own cohort (first review in the window), so a window with no placed ticket can still have it.
-  if (placed === 0 && r.survival.length === 0 && spent.reportedCents + spent.estimatedCents + spent.unknown === 0) {
+  if (
+    placed === 0 &&
+    r.survival.length === 0 &&
+    r.unread.length === 0 &&
+    spent.reportedCents + spent.estimatedCents + spent.unknown === 0
+  ) {
     return [`no tickets and no spend in ${label}`]
   }
 
@@ -260,6 +265,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
         'most fix rounds',
         top.flatMap((t) => [
           `${t.ticket}  ${kindName(t.kind)}  ${t.outcome}  ${moneyText(t.cost)}`,
+          ...(t.title === null ? [] : [`  ${t.title}`]),
           `  ${t.sentence}`,
           ...(t.purposeShares.length > 0
             ? [
@@ -271,6 +277,15 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
               `  waited for ${reasonWords(w.reason)}${w.cause === null ? '' : ` · triage: ${causeWords(w.cause)}`} · ${resolutionWords(w.resolution)}`,
           ),
         ]),
+      ),
+    )
+  }
+  if (r.unread.length > 0) {
+    out.push(
+      '',
+      section(
+        'tickets that could not be read',
+        r.unread.map((u) => `${u.ticket}  could not read this ticket's state: ${u.unread}`),
       ),
     )
   }
