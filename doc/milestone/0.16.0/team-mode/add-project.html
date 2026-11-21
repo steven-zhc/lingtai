@@ -111,7 +111,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
       </svg>
       <ul>
         <li><b>Takes</b><span>tickets assigned to you</span></li>
-        <li><b>Works on</b><span>your branch, kept up to date with main</span></li>
+        <li><b>Works on</b><span>your branch; main comes in when you submit a PR</span></li>
         <li><b>Reaches main</b><span>only through a PR you submit</span></li>
       </ul>
     </button>
@@ -149,13 +149,13 @@ body{margin:0;background:var(--ground);color:var(--ink);font:15px/1.55 var(--san
     <ul class="facts">
       <li><b>Made from</b><span><code>origin/main</code>, now</span></li>
       <li><b>Default name</b><span>your GitHub login and this machine (<code>foundry</code>)</span></li>
-      <li><b>Kept current</b><span>Lingtai brings <code>main</code> in before each ticket</span></li>
+      <li><b>Main</b><span>brought into each PR at submit, and the PR merged back into your branch</span></li>
       <li><b>Never</b><span>pushes <code>main</code></span></li>
       <li><b>Takes</b><span>issues assigned to <b>steven-zhc</b> on GitHub</span></li>
     </ul>
   </div>
 
-  <div class="foot"><span class="later" id="hint">You can switch modes later in the recipe; a switch applies from the next ticket.</span><span><button class="btn">Back</button> <button class="btn go" id="next">Next</button></span></div>
+  <div class="foot"><span class="later" id="hint">You can switch to solo later, once everything on your branch has reached main and no PR is open.</span><span><button class="btn">Back</button> <button class="btn go" id="next">Next</button></span></div>
 
   <p class="flab">Then · the project's page after adding (the <i>added</i> step)</p>
   <div class="sumcard" id="sum">
@@ -190,7 +190,7 @@ function check(v){
   if(/[\/.]$/.test(t)||/\.lock(\/|$)/.test(t)) why.push('an ending git refuses');
   if(/[^\x20-\x7e]/.test(t)) why.push('a character outside plain ASCII');
   if(why.length){const parts=t.split('/');const fix=(parts.length>1?slug(parts[0])+'/':'steven/')+slug(parts.slice(-1)[0]);return {bad:`git refuses a branch name with ${why.join(', ')}`,fix}}
-  if(t==='steven/lingtai-base') return {ok:'exists already — Lingtai will use it as it is, and bring main into it first'};
+  if(t==='steven/lingtai-base') return {ok:'exists already — Lingtai will use it as it is; main comes in at your first submit'};
   return {ok:'a new branch, made from <code>main</code> and pushed when you finish'};
 }
 function validate(){
