@@ -22,17 +22,6 @@ runtime:
 
 const resolve = (head: string) => resolveSource(`version: 2\n${head}${TAIL}`, 'main', 'recipe.yml')
 
-const refusal = (head: string): RecipeRefusedError => {
-  try {
-    resolve(head)
-  } catch (err) {
-    expect(err).toBeInstanceOf(RecipeRefusedError)
-    expect(err).toBeInstanceOf(RecipeInvalidError)
-    return err as RecipeRefusedError
-  }
-  throw new Error('resolved')
-}
-
 describe('mode, branch and pr', () => {
   it('resolves a team recipe, and answers solo for one that names no mode', () => {
     const team = resolve('mode: team\nbranch: { main: main, personal: steven/box }\npr: {}\n').recipe
