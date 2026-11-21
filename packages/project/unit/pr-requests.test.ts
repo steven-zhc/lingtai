@@ -204,6 +204,17 @@ describe('what a waiting PR shows', () => {
     ])
   })
 
+  it('quotes a checkout path with a space, and a grant for an older commit is refused once another is resolving', async () => {
+    const store = await waiting()
+    const view = prWaitOf(await state(store), { ...facts, checkout: '/work/chapter garden' })
+    expect(view?.commands[0]).toContain("git -C '/work/chapter garden' switch")
+    await run(grantPrRounds(ref, { by: 'human:x', merging: 'main', commit: M }, store))
+    await run(recordSyncRoundStarted('lingtai', 1, { merging: 'main', commit: N, start: A, round: 1 }, store))
+    expect(await run(grantPrRounds(ref, { by: 'human:x', merging: 'main', commit: M }, store))).toMatchObject({
+      kind: 'refused',
+    })
+  })
+
   it('says unknown, never empty, for a side that could not be read or a wait that predates the field', async () => {
     const unread = await waiting({ conflict: conflict(M, { ours: [], unread: { ours: 'no channel', theirs: null } }) })
     expect(prWaitOf(await state(unread), facts)).toMatchObject({ ours: null, theirs: [expect.anything()] })

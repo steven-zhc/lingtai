@@ -643,21 +643,20 @@ const serveBack = (ports: PrPorts, project: string, n: number): Effect.Effect<vo
         return
       }
       if (before.state === 'open') {
-        const refused = yield* github.closePull(number).pipe(
-          Effect.as(false),
-          Effect.catch((err: unknown) =>
-            err instanceof GitHubFailed && err.status === 422 && /closed/i.test(err.detail)
-              ? Effect.succeed(true)
-              : Effect.fail(asError(err)),
-          ),
-        )
-        // Closed under us (422): it may have been merged after the read above, so the host says which.
-        if (refused) {
-          const after = yield* github.getPull(number).pipe(Effect.mapError(asError))
-          if (after.merged) {
-            yield* merged(after)
-            return
-          }
+        yield* github
+          .closePull(number)
+          .pipe(
+            Effect.catch((err: unknown) =>
+              err instanceof GitHubFailed && err.status === 422 && /closed/i.test(err.detail)
+                ? Effect.void
+                : Effect.fail(asError(err)),
+            ),
+          )
+        // The close's answer says nothing of how it ended: it may have been merged after the read above, so the host says.
+        const after = yield* github.getPull(number).pipe(Effect.mapError(asError))
+        if (after.merged) {
+          yield* merged(after)
+          return
         }
       }
     }

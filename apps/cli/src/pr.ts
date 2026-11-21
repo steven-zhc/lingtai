@@ -345,6 +345,9 @@ export const prRequestVerdict = (
     for (;;) {
       const state = yield* readPr(project, n, world.store)
       if (state !== null) {
+        if (ask === 'back' && state.status === 'merged') {
+          return refusal(1, 'merged', 'the host had merged it: recorded as merged, not taken back', { subject })
+        }
         if (ask === 'back' && state.status === 'closed') {
           return accepted('closed; its tickets are back in Draft, still on the personal branch', state.status)
         }

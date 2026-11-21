@@ -225,8 +225,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'SyncRoundRefused':
       return { ...state, ...at, refusals: [...state.refusals, event.data as PayloadOf<'SyncRoundRefused'>] }
-    case 'SyncRoundStarted':
-      return { ...state, ...at, rounds: [...state.rounds, event.data as PayloadOf<'SyncRoundStarted'>] }
+    case 'SyncRoundStarted': {
+      const d = event.data as PayloadOf<'SyncRoundStarted'>
+      // The PR is resolving another commit than the one a grant was for: that grant's page is stale now.
+      const same = state.granting !== null && state.granting.merging === d.merging && state.granting.commit === d.commit
+      return { ...state, ...at, rounds: [...state.rounds, d], granting: same ? state.granting : null }
+    }
     case 'PrMergedBack':
     case 'PrMergeBackFailed': {
       const d = event.data as { prHead: string; why?: string }

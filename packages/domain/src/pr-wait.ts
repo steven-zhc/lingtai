@@ -46,9 +46,16 @@ export type PrWaitView = PrConflictWait | PrPlainWait
 
 const short = (sha: string): string => sha.slice(0, 7)
 
+/** A path as a shell reads it: quoted unless plain, keeping a leading `~/` live. */
+const shellPath = (path: string): string => {
+  if (/^[A-Za-z0-9_@%+=:,./~-]+$/.test(path)) return path
+  const quote = (p: string) => `'${p.replace(/'/g, `'\\''`)}'`
+  return path.startsWith('~/') ? `~/${quote(path.slice(2))}` : quote(path)
+}
+
 /** The mock's four lines (0130 §6): switch to the PR branch, merge `main`, push, and check again. */
 function commandsFor(state: PrState, facts: PrWaitFacts): string[] {
-  const git = facts.checkout === null ? 'git' : `git -C ${facts.checkout}`
+  const git = facts.checkout === null ? 'git' : `git -C ${shellPath(facts.checkout)}`
   const prBranch = state.prBranch ?? '<pr-branch>'
   const main = state.main ?? 'main'
   const never = state.lastPushed === null

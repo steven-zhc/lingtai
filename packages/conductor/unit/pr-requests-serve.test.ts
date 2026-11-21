@@ -241,6 +241,24 @@ describe('a back, served', () => {
     expect((await state(store)).status).toBe('merged')
   })
 
+  it('a close that succeeds on a pull request merged meanwhile is recorded merged', async () => {
+    const store = await drafted(true)
+    const w = aWorld()
+    const gh = ports(store, w)
+    const base = await Effect.runPromise(gh.github('lingtai'))
+    let reads = 0
+    const flip = {
+      ...base,
+      getPull: (n: number) =>
+        reads++ === 0
+          ? base.getPull(n)
+          : Effect.succeed({ state: 'closed', merged: true, mergeCommitSha: null, headSha: FROZEN, updatedAt: 't' }),
+    }
+    await run(requestPrBack(ref, { by: 'human:steven' }, store))
+    await run(servePr({ ...gh, github: () => Effect.succeed(flip as unknown as GitHub) } as PrPorts, 'lingtai', 1, []))
+    expect((await state(store)).status).toBe('merged')
+  })
+
   it('before the draft was opened there is nothing to close: PrClosed alone', async () => {
     const store = await waiting()
     const w = aWorld()
