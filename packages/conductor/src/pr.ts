@@ -36,6 +36,9 @@ import {
   recordPrPushed,
   recordPrRefused,
   recordPrRestart,
+  recordPrFixLanded,
+  recordPrFixRestart,
+  readUnheldFixLandings,
   recordPrStepDone,
   recordPrWaiting,
 } from '@lingtai/project'
@@ -445,7 +448,13 @@ export const walkPr = (
 ): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     for (;;) {
-      const state = yield* readPr(project, n, ports.store)
+      let state = yield* readPr(project, n, ports.store)
+      // A pr-fix landed on the PR's branch (#1341): In progress starts again from its first step, on the fix's head,
+      // before anything else — a walk already under way on the old pass is answered by the target having moved.
+      if (state !== null && state.fixOwed) {
+        yield* recordPrFixRestart(project, n, ports.store)
+        state = yield* readPr(project, n, ports.store)
+      }
       if (state === null || state.status !== 'in-progress') return
       const next = steps.find((s) => !state.steps.some((r) => r.step === s.name))
       if (next === undefined) return
@@ -520,7 +529,7 @@ export const servePendingPrs = (
         Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[]))),
       )
       for (const pr of prs) {
-        if ((pr.status === 'requested' || pr.status === 'in-progress' || mergeBackOwed(pr)) && pr.n !== null) {
+        if ((pr.status === 'requested' || pr.status === 'in-progress' || pr.fixOwed || mergeBackOwed(pr)) && pr.n !== null) {
           yield* servePr(ports, project, pr.n, steps).pipe(
             Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
           )
@@ -708,6 +717,14 @@ const closeMergedTickets = (
     if (all) memory.set(doneKey, 'done')
   })
 
+/** Each pr-fix landing on the open PR's branch that the PR does not hold gets its `PrFixLanded`, once (#1341). */
+const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if (pr.n === null) return
+    const landings = yield* readUnheldFixLandings(project, pr, yield* ports.candidates(project), ports.store)
+    for (const landed of landings) yield* recordPrFixLanded(project, pr.n, landed, ports.store)
+  })
+
 /**
  * The sweep's read (#1317): for each project, the latest PR if it is open, asked about once; then the tickets of the
  * merged PRs closed. One project's failure is that project's.
@@ -723,6 +740,10 @@ export const learnPrEnds = (
         const latest = yield* latestPr(project, ports.store)
         if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
           yield* learnOnePr(ports, memory, project, latest)
+          // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now.
+          yield* mendFixLandings(ports, project, latest).pipe(
+            Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
+          )
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {

@@ -42,6 +42,11 @@ export interface PrState {
    * steps again, and its push is a fast-forward from here.
    */
   lastPushed: string | null
+  /**
+   * A pr-fix landed on the PR branch and In progress has not yet started again for it (`PrFixLanded` sets it,
+   * `PrInProgress` clears it): the serve answers it before anything else (#1341).
+   */
+  fixOwed: boolean
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
@@ -83,6 +88,7 @@ export const emptyPr: PrState = {
   target: null,
   tickets: [],
   lastPushed: null,
+  fixOwed: false,
   host: null,
   steps: [],
   mergeBack: null,
@@ -130,8 +136,23 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         frozenSha: d.frozenSha,
         target: d.frozenSha,
         tickets: d.tickets,
+        fixOwed: false,
         steps: [],
         wait: null,
+      }
+    }
+    case 'PrFixLanded': {
+      const d = event.data as PayloadOf<'PrFixLanded'>
+      // The landing is the PR branch's new head: it is what In progress means to push, and what the push step finds there.
+      return {
+        ...state,
+        ...at,
+        lastPushed: d.mergeCommit,
+        target: d.mergeCommit,
+        fixOwed: true,
+        tickets: state.tickets.some((t) => t.ticket === d.ticket)
+          ? state.tickets
+          : [...state.tickets, { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '' }],
       }
     }
     case 'PrStepDone': {
@@ -272,6 +293,38 @@ export function restartTransition(state: PrState): ToAppend<PayloadOf<'PrInProgr
     branch: state.branch,
     main: state.main,
     frozenSha: state.frozenSha,
+    prBranch: state.prBranch,
+    tickets: state.tickets,
+  })
+}
+
+/**
+ * A pr-fix landed on the PR's branch (#1341): only an open PR that has begun its walk is owed In progress again, and a
+ * ticket the PR already holds appends nothing, so the in-lane append and the sweep's repair write it once.
+ */
+export function fixLandedTransition(
+  state: PrState,
+  landed: PayloadOf<'PrFixLanded'>,
+): ToAppend<PayloadOf<'PrFixLanded'>> | null {
+  if (!isOpen(state) || state.status === 'requested') return null
+  if (state.tickets.some((t) => t.ticket === landed.ticket)) return null
+  return { type: 'PrFixLanded', actor: 'conductor', data: landed }
+}
+
+/**
+ * Starts In progress again from its first step because a pr-fix landed: the target is the head the fix made, which is
+ * what the push step finds on the remote, and the tickets include the fix.
+ */
+export function fixRestartTransition(state: PrState): ToAppend<PayloadOf<'PrInProgress'>> | null {
+  if (!state.fixOwed || !isOpen(state) || state.status === 'requested') return null
+  if (state.branch === null || state.main === null || state.prBranch === null) return null
+  const head = state.lastPushed ?? state.target
+  if (head === null) return null
+  return inProgress({
+    because: 'pr-fix',
+    branch: state.branch,
+    main: state.main,
+    frozenSha: head,
     prBranch: state.prBranch,
     tickets: state.tickets,
   })

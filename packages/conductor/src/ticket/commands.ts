@@ -103,6 +103,8 @@ export interface ClaimOptions extends SnapshotReadOptions {
   kind?: string | null
   /** The ticket body the pass fetched; recorded on the claim as given, left off when absent. */
   body?: string
+  /** The branch this attempt is cut from, recorded by a team pr-fix claim only (#1341); left off when absent. */
+  cutFrom?: { branch: string; pr: number | null }
   /** Required: the owner opens no process store (the board imports it). */
   store: EventStore
   /**
@@ -196,6 +198,7 @@ export function claimTicketEffect(ticketId: string, options: ClaimOptions): Effe
       ...(options.title !== undefined ? { title: options.title } : {}),
       ...(options.kind !== undefined ? { kind: options.kind } : {}),
       ...(options.body !== undefined ? { body: options.body } : {}),
+      ...(options.cutFrom !== undefined ? { cutFrom: options.cutFrom } : {}),
       children,
     })
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const

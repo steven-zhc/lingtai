@@ -116,7 +116,7 @@ export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed', 'DayC
  * (`TicketLanded`, `TicketReleased`, `TicketClosed`), which serves that project's waiting PRs again. Delivered to `pr`, whose walk the loop tracks so a
  * drain waits for it — which `deliver` does not do, and arms a timer a walk of minutes would trip.
  */
-export const PR_EVENTS = ['PrSubmitRequested', 'TicketLanded', 'TicketReleased', 'TicketClosed'] as const
+export const PR_EVENTS = ['PrSubmitRequested', 'PrFixLanded', 'TicketLanded', 'TicketReleased', 'TicketClosed'] as const
 
 /**
  * The events triage is handed (#997): a new wait, and a resume that lifts what
