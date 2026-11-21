@@ -22,7 +22,7 @@ import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, prStream } from '@lingtai
 import { parsePayload } from '@lingtai/domain'
 import { conflictRoundsLeft } from '@lingtai/domain'
 import { readPr, readPrDraft, recordSyncRoundStarted } from '@lingtai/project'
-import { type Recipe, numericTurns, parseDuration } from '@lingtai/recipe'
+import { type Recipe, ceilingOf, numericTurns, parseDuration } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
 import { type OursTicket, type Read, type TheirsCommit, prConflictBrief, prReviewBrief } from './pr-conflict-brief.ts'
@@ -94,10 +94,12 @@ const appendOnPr = (
 ): Effect.Effect<void, Error> => {
   const stream = prStream(project, n)
   const once = Effect.tryPromise({
-    try: async () => {
-      const have = await ports.store.read(stream)
-      await ports.store.append(stream, have.length, [{ type, actor: 'conductor', data: parsePayload(type, data) }])
-    },
+    try: () =>
+      ports.store
+        .read(stream)
+        .then((have) =>
+          ports.store.append(stream, have.length, [{ type, actor: 'conductor', data: parsePayload(type, data) }]),
+        ),
     catch: asError,
   })
   return once.pipe(Effect.catch(() => once))
@@ -206,8 +208,9 @@ export const resolveRounds = (
     const recipe = yield* ports.recipe(project)
     const implement = agentsAt(recipe, 'implement')[0] ?? null
     const reviewers = agentsAt(recipe, 'review')
-    const bound = recipe.runtime.limits.attempt.conflictResolutions
-    const limits = recipe.runtime.limits.run
+    const ceiling = ceilingOf(recipe)
+    const bound = ceiling.attempt.conflictResolutions
+    const limits = ceiling.run
     const diffBytes = recipe.runtime.budget.diff
 
     let last: Refusal | null = null

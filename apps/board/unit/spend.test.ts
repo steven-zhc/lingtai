@@ -43,7 +43,7 @@ function row(over: Partial<SpendRow> = {}): SpendRow {
   }
 }
 
-describe('billOf sorts every row into exactly one of five purposes', () => {
+describe('billOf sorts every row into exactly one of six purposes', () => {
   it('puts an Action at round 0 in Work', () => {
     const bills = billOf([row({ round: 0, costUsd: 1.0 })])
     expect(bills.Work.reportedCents).toBe(100)
@@ -88,6 +88,17 @@ describe('billOf sorts every row into exactly one of five purposes', () => {
       row({ purpose: 'Judge', round: null, costUsd: 1 }),
       row({ purpose: 'Triage', round: null, costUsd: 1 }),
       row({ purpose: 'Discussion', round: null, costUsd: 1 }),
+      // A PR's conflict agent: no ticket, no pass (#1313), filed as `PR`.
+      row({
+        purpose: 'Pr',
+        streamId: 'pr-pin-1',
+        ticket: null,
+        pass: null,
+        step: null,
+        action: null,
+        round: null,
+        costUsd: 1,
+      }),
     ])
     for (const p of PURPOSES) expect(bills[p].reportedRuns).toBe(1)
   })
