@@ -2664,7 +2664,7 @@ export function unpricedRow(project: string, agent: RuntimeId, recipe: Recipe, k
     title: `${project}: ${agent} runs unpriced`,
     detail:
       (agent === 'antigravity'
-        ? `${agent} reports tokens and no cost, but names its model: run.usd and the day ceiling count its runs only where a fetched rate row prices that model · `
+        ? `${agent} reports tokens and no cost, but names its model: a fetched rate row lets the day ceiling count its spend, but run.usd never stops a run on it (an ACP run is bounded by turns and wall only) · `
         : `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · `) +
       `bounded by turns ${ceiling.turns === UNBOUNDED ? 'unbounded' : ceiling.turns} and wall ${ceiling.wall} · ` +
       `needed by ${keys.join(', ')}`,
