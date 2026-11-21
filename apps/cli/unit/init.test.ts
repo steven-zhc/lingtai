@@ -552,7 +552,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     // re-run needs nothing scripted beyond this one function.
     h.world.ask = async () => ''
 
-    const argv = ['--local', '/repo']
+    const argv = ['--local', '/repo', '--mode', 'solo']
     const first = await initCommand(flagsFromArgv(argv), h.world)
     expect(first).toBe(0)
 
