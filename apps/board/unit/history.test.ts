@@ -327,6 +327,10 @@ const SAMPLES = {
   PrMergeBackFailed: [{ prHead: 'a'.repeat(40), why: 'red', detail: 'pnpm test fails' }],
   PrMerged: [{ how: 'host', headSha: 'a'.repeat(40), mergeSha: null }],
   PrClosed: [{ headSha: 'a'.repeat(40) }],
+  PrRoundsGranted: [{ by: 'steven', merging: 'main', commit: 'b'.repeat(40), rounds: 3 }],
+  PrRetryRequested: [{ by: 'steven' }],
+  PrHeadAdopted: [{ head: 'a'.repeat(40), by: 'steven' }],
+  PrBackRequested: [{ by: 'steven' }],
   PrWaiting: [{ step: 'push', reason: 'denied', detail: 'the App lacks a permission', headSha: 'a'.repeat(40) }],
   AccountLimitReached: [
     { account: 'claude-code', until: '2026-11-11T05:00:00.000Z', untilFrom: 'message', said: 'resets at 5am' },

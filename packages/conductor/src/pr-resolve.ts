@@ -20,7 +20,7 @@ import { parseFindings, verdictFor } from '@lingtai/actions'
  */
 import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, type PrState, prStream } from '@lingtai/domain'
 import { parsePayload } from '@lingtai/domain'
-import { conflictOpen, conflictRoundsLeft, lastRefusalOf } from '@lingtai/domain'
+import { conflictOpen, conflictRoundsLeft, grantedFor, lastRefusalOf } from '@lingtai/domain'
 import { readPr, readPrDraft, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
 import { type Recipe, ceilingOf, numericTurns, parseDuration } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
@@ -531,7 +531,13 @@ export const resolveRounds = (
       if (yield* reconcileReviews(state)) continue
       // The refusal that bought this round is the log's, so a restarted conductor briefs round 2 with round 1's.
       last = lastRefusalOf(state, ask.merging, ask.commit)
-      const { used, left, next } = conflictRoundsLeft(state, ask.merging, ask.commit, bound)
+      const { used, left, next } = conflictRoundsLeft(
+        state,
+        ask.merging,
+        ask.commit,
+        bound,
+        grantedFor(state, ask.merging, ask.commit),
+      )
       if (implement === null || left === 0) return yield* spent(used)
 
       const lock = yield* resolver.locked(project)

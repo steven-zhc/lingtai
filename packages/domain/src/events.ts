@@ -2550,7 +2550,7 @@ export const PrSubmitRefused = z.object({ reason: PrRefusalReason, detail: z.str
  * @summary A PR's branch was frozen at one commit with the tickets it holds, and it is In progress.
  */
 export const PrInProgress = z.object({
-  because: z.enum(['submit', 'restart']),
+  because: z.enum(['submit', 'restart', 'retry']),
   branch: z.string(),
   main: z.string(),
   frozenSha: z.string(),
@@ -2734,6 +2734,42 @@ export const PrMerged = z.object({
  * @summary A PR was closed on the code host without merging; its tickets return to Draft.
  */
 export const PrClosed = z.object({ headSha: z.string().min(1) })
+
+/**
+ * A person gave the conflict agent three more rounds for one commit (#1314, 0130 §6). **A grant belongs to the commit it
+ * names**: the next `main` commit starts at the recipe's bound again.
+ *
+ * @summary A person gave the conflict agent three more rounds for one commit of main.
+ */
+export const PrRoundsGranted = z.object({
+  by: z.string(),
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  rounds: z.literal(3),
+})
+
+/**
+ * A person asked for a waiting PR to be checked again (#1314): the conductor takes the PR branch's head as pushed, if it
+ * still holds the frozen commit, and walks In progress again.
+ *
+ * @summary A person asked for a waiting PR to be checked again, after resolving it by hand or re-running a workflow.
+ */
+export const PrRetryRequested = z.object({ by: z.string() })
+
+/**
+ * The PR branch's head was pushed by a person, held the frozen commit, and became the PR's own (#1314): the one exception
+ * to *the branch must be what Lingtai last pushed*.
+ *
+ * @summary A head a person pushed to the PR branch was adopted as the PR's last pushed commit.
+ */
+export const PrHeadAdopted = z.object({ head: z.string().min(1), by: z.string() })
+
+/**
+ * A person asked for the PR to be taken back to Draft (#1314): the draft is closed on the code host and the tickets return.
+ *
+ * @summary A person asked to take a PR back: close the draft and return its tickets to Draft.
+ */
+export const PrBackRequested = z.object({ by: z.string() })
 
 /**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
@@ -3060,6 +3096,10 @@ export const EVENTS = {
   SyncRoundRefused,
   PrMerged,
   PrClosed,
+  PrRoundsGranted,
+  PrRetryRequested,
+  PrHeadAdopted,
+  PrBackRequested,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -3186,6 +3226,10 @@ export const EVENT_AT = {
   SyncRoundRefused: ['outside'],
   PrMerged: ['outside'],
   PrClosed: ['outside'],
+  PrRoundsGranted: ['outside'],
+  PrRetryRequested: ['outside'],
+  PrHeadAdopted: ['outside'],
+  PrBackRequested: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

@@ -515,6 +515,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       ? 'The PR was merged, as the code host reports'
       : 'The PR was merged: its head is on the main branch',
   PrClosed: () => 'The PR was closed without merging; its tickets are back in Draft',
+  PrRoundsGranted: (d) =>
+    `${need(d, 'by')} gave the conflict agent ${need(d, 'rounds')} more rounds for ${String(d['commit']).slice(0, 7)}`,
+  PrRetryRequested: (d) => `${need(d, 'by')} asked for the PR to be checked again`,
+  PrHeadAdopted: (d) => `The head ${sha(d, 'head')}, pushed by a person, was adopted as the PR's own`,
+  PrBackRequested: (d) => `${need(d, 'by')} asked to take the PR back to Draft`,
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,
