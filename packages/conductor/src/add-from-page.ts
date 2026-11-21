@@ -26,7 +26,7 @@ import type { ProjectState } from '@lingtai/domain'
 import { githubApp, githubClientAuth } from '@lingtai/env'
 import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import type { EventStore } from '@lingtai/event-store/store'
-import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
+import { GitHubFailed, ghStatusEffect, makeGitHub, type GitHub } from '@lingtai/github'
 import { HOST_FOR_SAVING, draftRecipe, loadAllProjects, loadProject, recipePath } from '@lingtai/project'
 import { branchOf, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
@@ -34,6 +34,8 @@ import {
   alreadyAdded,
   alreadyAddedSentence,
   applySetup,
+  personalFix,
+  personalRefusal,
   askRuntimesEffect,
   keptSentence,
   LINGTAI_BASE,
@@ -232,7 +234,10 @@ export function previewOf(
 function answersFor(form: SetupForm, ports: { home?: string }) {
   return draftRecipe(form.project, ports.home === undefined ? {} : { home: ports.home }).pipe(
     Effect.mapError((err) => new SetupWriteError(`could not read the recipe: ${reasonOf(err)}`)),
-    Effect.map((draft) => setupAnswers(form, draft.text() !== null)),
+    Effect.map((draft) => {
+      const claim = draft.get(['steps', 'claim'])
+      return setupAnswers(form, draft.text() !== null, Array.isArray(claim) ? claim : null)
+    }),
   )
 }
 
@@ -248,6 +253,11 @@ export interface AddPorts {
   locker?: Locker
   /** The registration that follows the write. Fails with the sentence to show. */
   register: (form: SetupForm) => Effect.Effect<void, Error>
+  /**
+   * Makes a team project's personal branch, or finds it there: `made` or `exists`. Called inside the lock, after
+   * *already added* and before the recipe is written, so a failure writes nothing. Absent where a test has no remote.
+   */
+  makePersonal?: (form: SetupForm) => Effect.Effect<'made' | 'exists', Error>
 }
 
 export type Added = { ok: true; project: string; path: string } | { ok: false; say: string }
@@ -303,7 +313,8 @@ function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.E
     Effect.flatMap((projects) =>
       alreadyAdded(projects, form.project) !== undefined
         ? Effect.succeed<Added>({ ok: false, say: alreadyAddedSentence(form.project, ports.home) })
-        : answersFor(form, ports).pipe(
+        : makeBranch(form, ports).pipe(
+            Effect.flatMap(() => answersFor(form, ports)),
             Effect.flatMap((answers) =>
               applySetup({ home: ports.home, by: ports.by, store: ports.store }, answers, ports.register(form)),
             ),
@@ -319,6 +330,88 @@ function checkAndWrite(form: SetupForm, ports: AddPorts, path: string): Effect.E
     Effect.catch((reason) =>
       Effect.succeed<Added>({ ok: false, say: `could not read the projects: ${reasonOf(reason)}` }),
     ),
+  )
+}
+
+/** A team project's branch, made before anything is written; a failure is a refusal that kept nothing. */
+function makeBranch(form: SetupForm, ports: AddPorts): Effect.Effect<void, SetupWriteError> {
+  if (form.mode !== 'team' || ports.makePersonal === undefined) return Effect.void
+  return ports.makePersonal(form).pipe(
+    Effect.asVoid,
+    Effect.mapError((err) => new SetupWriteError(err.message)),
+  )
+}
+
+/** The person this machine's `gh` is signed in as; `null` on an App machine, which acts for nobody, and where it cannot be read. */
+export const ghLoginHere: Effect.Effect<string | null> = Effect.try({
+  try: () => githubClientAuth(),
+  catch: asFailure,
+}).pipe(
+  Effect.flatMap((auth) =>
+    'kind' in auth && auth.kind === 'gh'
+      ? ghStatusEffect().pipe(Effect.map((status) => (status.ok && status.login !== '' ? status.login : null)))
+      : Effect.succeed(null),
+  ),
+  Effect.orElseSucceed((): string | null => null),
+)
+
+/** Whether `refs/heads/<name>` is a branch of the local directory; git's words where it cannot be told. */
+const localBranchExists = (dir: string, name: string) =>
+  gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}^{commit}`])
+
+/**
+ * The port that makes a team project's personal branch, for one target (0130 §2). **Read first, then made**: an
+ * existence read that fails makes nothing. GitHub's `createBranch` already reads *Reference already exists* as success.
+ */
+export function liveMakePersonal(target: SetupTarget): NonNullable<AddPorts['makePersonal']> {
+  if (target.kind === 'github') {
+    return (form) =>
+      Effect.gen(function* () {
+        const g = yield* githubFor(target.owner, target.repo)
+        const exists = yield* g
+          .branchExists(form.personal)
+          .pipe(
+            Effect.mapError(
+              (e) =>
+                new Error(
+                  `could not read whether ${form.personal} exists on GitHub — nothing was made: ${reasonOf(e)}`,
+                ),
+            ),
+          )
+        if (exists) return 'exists' as const
+        const sha = yield* g.refSha(form.base)
+        yield* g.createBranch(form.personal, sha)
+        return 'made' as const
+      }).pipe(Effect.mapError((e) => (e instanceof Error ? e : new Error(reasonOf(e)))))
+  }
+  return (form) =>
+    Effect.gen(function* () {
+      const found = yield* localBranchExists(target.path, form.personal)
+      if (found.ok) return 'exists' as const
+      const made = yield* gitIn(target.path, ['branch', form.personal, form.base])
+      if (!made.ok) {
+        return yield* Effect.fail(new Error(`could not make ${form.personal} from ${form.base} — ${made.out}`))
+      }
+      return 'made' as const
+    })
+}
+
+/** What the page's check as typed answers (advisory: `trusted` runs the refusal again at Add). */
+export type PersonalCheck =
+  | { ok: false; say: string; fix: string | null }
+  | { ok: true; exists: boolean | 'unreadable' }
+
+/** Reads only: git's rules, then the exact ref. A read that fails is `unreadable`, never absent. */
+export function checkPersonalEffect(target: SetupTarget, name: string, main: string): Effect.Effect<PersonalCheck> {
+  const why = personalRefusal(name, main)
+  if (why !== null) return Effect.succeed({ ok: false, say: why, fix: personalFix(name) })
+  if (target.kind === 'local') {
+    return localBranchExists(target.path, name).pipe(Effect.map((r) => ({ ok: true, exists: r.ok }) as const))
+  }
+  return githubFor(target.owner, target.repo).pipe(
+    Effect.flatMap((g) => g.branchExists(name)),
+    Effect.map((exists) => ({ ok: true, exists }) as const),
+    Effect.orElseSucceed((): PersonalCheck => ({ ok: true, exists: 'unreadable' })),
   )
 }
 
@@ -340,22 +433,23 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
   return (form) =>
     Effect.gen(function* () {
       const dir = target.path
-      // The branch is made here, after the recipe is written: a refused write leaves none, and a retry finds it.
-      const exists = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
-      if (!exists.ok && form.base === LINGTAI_BASE) {
+      // A team project works on its personal branch, made before the write; solo's `lingtai-base` is made here, after it.
+      const branch = form.mode === 'team' ? form.personal : form.base
+      const exists = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+      if (!exists.ok && form.mode === 'solo' && branch === LINGTAI_BASE) {
         const head = yield* gitIn(dir, ['symbolic-ref', '--short', '-q', 'HEAD'])
         if (!head.ok || head.out === '') {
           return yield* Effect.fail(
             new Error(`${dir} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is`),
           )
         }
-        const made = yield* gitIn(dir, ['branch', form.base, head.out])
-        if (!made.ok) return yield* Effect.fail(new Error(`could not make ${form.base} from ${head.out} — ${made.out}`))
+        const made = yield* gitIn(dir, ['branch', branch, head.out])
+        if (!made.ok) return yield* Effect.fail(new Error(`could not make ${branch} from ${head.out} — ${made.out}`))
       } else if (!exists.ok) {
-        return yield* Effect.fail(new Error(`${form.base} is not a branch in ${dir} — ${exists.out}`))
+        return yield* Effect.fail(new Error(`${branch} is not a branch in ${dir} — ${exists.out}`))
       }
-      const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${form.base}^{commit}`])
-      if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${form.base} in ${dir} — ${tip.out}`))
+      const tip = yield* gitIn(dir, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+      if (!tip.ok) return yield* Effect.fail(new Error(`could not read ${branch} in ${dir} — ${tip.out}`))
       const { recipe: resolved } = yield* loadProject(form.project, {
         home,
         signedIn: signedInHere,
@@ -375,7 +469,13 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
 
 /** The live ports for one target. */
 export function livePorts(target: SetupTarget, by: string, home?: string): AddPorts {
-  return { home, by, projects: () => loadAllProjects(), register: liveRegister(target, home) }
+  return {
+    home,
+    by,
+    projects: () => loadAllProjects(),
+    register: liveRegister(target, home),
+    makePersonal: liveMakePersonal(target),
+  }
 }
 
 /** The name a directory is added as: its top level's last segment (0104 §15). */

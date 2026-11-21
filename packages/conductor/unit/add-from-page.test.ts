@@ -33,6 +33,9 @@ const FORM: SetupForm = {
   personApprovesMerge: false,
   limits: { turns: 300, wall: '2h', refusalFixes: 2, conflictResolutions: 2, newAttempts: 0 },
   turnsUnbounded: false,
+  mode: 'solo',
+  personal: '',
+  login: null,
   sandbox: null,
 }
 

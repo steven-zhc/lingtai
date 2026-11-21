@@ -1,4 +1,5 @@
 import {
+  assigneeChanges,
   kindsChanges,
   landingChanges,
   landOnBranchChanges,
@@ -29,8 +30,12 @@ import {
 import { UNBOUNDED } from '@lingtai/recipe/duration'
 
 import type { Answers } from './apply-setup.ts'
+import { personalRefusal } from './personal-branch.ts'
 import type { SetupTarget, TicketsProposal } from './propose-setup.ts'
 import { hostsRefusal } from './sandbox-step.ts'
+
+/** A GitHub login: letters, digits and single dashes (the CLI's `GITHUB_LOGIN`). */
+export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
 
 /** The branch a directory with no GitHub base lands on: made from the checked-out one (0104 §15). */
 export const LINGTAI_BASE = 'lingtai-base'
@@ -112,6 +117,12 @@ export interface SetupForm {
    * `allow` is the extra hosts; `required` is never written here.
    */
   sandbox: { enabled: boolean; allow: string[] } | null
+  /** Does anyone else work on this repository (0130 §1): `team` works on `personal`, `solo` lands on `base`. */
+  mode: 'team' | 'solo'
+  /** The personal branch of a team project; ignored in solo. */
+  personal: string
+  /** Whose issues a GitHub team project takes; `null` where nobody is known. Never read from the page — `trusted` reads it again. */
+  login: string | null
 }
 
 /** What the form refuses before anything is written, by name; `null` where it can be written. */
@@ -126,6 +137,15 @@ export function refusalOf(form: SetupForm): string | null {
   }
   if (form.target.kind === 'local' && form.tickets === 'github') {
     return 'a project with no owner cannot take its tickets from GitHub — there is no repository to read issues from'
+  }
+  if (form.mode === 'team') {
+    const bad = personalRefusal(form.personal, form.base)
+    if (bad !== null) return bad
+    if (form.target.kind === 'github' && (form.login === null || !GITHUB_LOGIN.test(form.login))) {
+      return form.login === null || form.login === ''
+        ? 'a team project takes the issues assigned to you — give your GitHub login'
+        : `${form.login} is not a GitHub login (letters, digits and single -)`
+    }
   }
   return null
 }
@@ -164,7 +184,11 @@ export function sandboxChanges(answer: { enabled: boolean; allow: readonly strin
  * attempt's value standing: those are written explicitly then. On an absent
  * file they are still omitted, which is what `lingtai add` writes.
  */
-export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
+export function setupChanges(
+  form: SetupForm,
+  rewrite = false,
+  rawClaim: readonly unknown[] | null = null,
+): RecipeChange[] {
   const github = form.target.kind === 'github'
   const changes: RecipeChange[] = github
     ? [
@@ -177,10 +201,17 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
             : []),
       ]
     : [
+        // Solo lands on `lingtai-base`; a team project's `branch.main` is the branch the directory is on (0130 §2).
         ...landOnBranchChanges(form.base, []),
         { path: ['repo', 'remote'], value: form.remote },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       ]
+
+  if (form.mode === 'team') {
+    changes.push({ path: ['mode'], value: 'team' }, { path: ['branch', 'personal'], value: form.personal })
+    // A local store's *mine* is every ticket (0130 §3): no login, no assignee.
+    if (github && form.login !== null) changes.push(...assigneeChanges({ login: form.login, take: 'mine' }, rawClaim))
+  } else if (rewrite) changes.push({ path: ['mode'], value: 'solo' })
 
   changes.push({ path: ['runtime', 'agent'], value: form.writer })
   if (form.turnsUnbounded) changes.push(unboundedTurnsChange())
@@ -231,6 +262,6 @@ export function setupChanges(form: SetupForm, rewrite = false): RecipeChange[] {
 }
 
 /** The form as the `Answers` `applySetup` and `previewSetup` take. */
-export function setupAnswers(form: SetupForm, rewrite = false): Answers {
-  return { project: form.project, changes: setupChanges(form, rewrite), said: SAID }
+export function setupAnswers(form: SetupForm, rewrite = false, rawClaim: readonly unknown[] | null = null): Answers {
+  return { project: form.project, changes: setupChanges(form, rewrite, rawClaim), said: SAID }
 }

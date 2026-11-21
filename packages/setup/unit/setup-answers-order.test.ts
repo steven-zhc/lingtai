@@ -24,6 +24,9 @@ describe('the preview of a new GitHub recipe', () => {
       personApprovesMerge: true,
       limits: { turns: 50, wall: '1h', refusalFixes: 3, conflictResolutions: 3, newAttempts: 2 },
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox: null,
     }
     const files = { read: () => Promise.resolve(null), replace: () => Promise.resolve() }
