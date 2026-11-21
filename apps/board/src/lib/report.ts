@@ -333,7 +333,9 @@ export const PURPOSE_SERIES: Series[] = [
 export const purposeSeriesOf = (purpose: string): number =>
   Math.max(
     0,
-    PURPOSE_SERIES.findIndex((s) => s.key === (purpose === 'Triage' || purpose === 'Discussion' ? 'Other' : purpose)),
+    PURPOSE_SERIES.findIndex(
+      (s) => s.key === (purpose === 'Triage' || purpose === 'Discussion' || purpose === 'Pr' ? 'Other' : purpose),
+    ),
   )
 
 // --- geometry --------------------------------------------------------------------

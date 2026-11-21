@@ -31,9 +31,9 @@ import type { Granted } from './progress.ts'
 import { timed } from './timing.ts'
 
 /** `Action` splits by round into *Work* and *Answering*; the other three `RunSpent.for._tag` values are purposes of their own. */
-export type Purpose = 'Work' | 'Answering' | 'Judge' | 'Triage' | 'Discussion'
+export type Purpose = 'Work' | 'Answering' | 'Judge' | 'Triage' | 'Discussion' | 'PR'
 
-export const PURPOSES: readonly Purpose[] = ['Work', 'Answering', 'Judge', 'Triage', 'Discussion']
+export const PURPOSES: readonly Purpose[] = ['Work', 'Answering', 'Judge', 'Triage', 'Discussion', 'PR']
 
 /** What one purpose's rows add up to — facts, in three piles, never a price invented here. */
 export interface Bill {
@@ -76,7 +76,14 @@ export function totalBill(bills: Readonly<Record<Purpose, Bill>>): Bill {
 
 /** Five empty bills, one per purpose — `billOf`'s own starting point, and the running total. */
 export function emptyBills(): Record<Purpose, Bill> {
-  return { Work: emptyBill(), Answering: emptyBill(), Judge: emptyBill(), Triage: emptyBill(), Discussion: emptyBill() }
+  return {
+    Work: emptyBill(),
+    Answering: emptyBill(),
+    Judge: emptyBill(),
+    Triage: emptyBill(),
+    Discussion: emptyBill(),
+    PR: emptyBill(),
+  }
 }
 
 /** Two purpose-keyed bills, added purpose by purpose. */
@@ -125,6 +132,7 @@ export function withNoSpendFallback(
 
 /** `Action` at round 0 is the work; at round 1 or above it is answering a refusal (0039 §3). */
 function purposeOf(row: SpendRow): Purpose {
+  if (row.purpose === 'Pr') return 'PR'
   if (row.purpose !== 'Action') return row.purpose
   return row.round !== null && row.round > 0 ? 'Answering' : 'Work'
 }

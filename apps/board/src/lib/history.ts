@@ -251,7 +251,7 @@ const stepStarted: Formatter = (d) => {
 
 /** Who a `RunSpent` paid for, from its `for` — the same switch `who` reads. */
 function spentBy(d: Payload, r: Reading): string {
-  const spentFor = d['for'] as { _tag?: string; step?: string; name?: string } | undefined
+  const spentFor = d['for'] as { _tag?: string; step?: string; name?: string; purpose?: string } | undefined
   switch (spentFor?._tag) {
     case 'Action':
       return `${attemptAgent(r, r.streamId)} (${spentFor.name ?? spentFor.step})`
@@ -261,6 +261,8 @@ function spentBy(d: Payload, r: Reading): string {
       return 'triage'
     case 'Discussion':
       return 'a discussion'
+    case 'Pr':
+      return `the conflict agent (${spentFor.purpose})`
     default:
       throw new Error('no for')
   }
@@ -503,6 +505,10 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       : `Main (${sha(d, 'mainCommit')}) was merged into the PR branch as ${sha(d, 'head')} and built`,
   PrMergedBack: (d) =>
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
+  SyncRoundStarted: (d) =>
+    `Round ${need(d, 'round')} of the conflict agent: ${String(d['merging']) === 'back' ? 'the PR branch' : 'main'} at ${String(d['commit']).slice(0, 7)} into ${String(d['start']).slice(0, 7)}`,
+  SyncRoundRefused: (d) =>
+    `Round ${need(d, 'round')} of the conflict agent was refused at ${need(d, 'step')}: ${clip(d['said'])}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
   PrMerged: (d) =>
     d['how'] === 'host'
@@ -919,6 +925,8 @@ function whoOf(event: Envelope, ctx: LineContext): string {
         return 'triage'
       case 'Discussion':
         return 'a discussion'
+      case 'Pr':
+        return 'the conflict agent'
     }
   }
   return actor

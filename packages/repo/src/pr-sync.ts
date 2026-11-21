@@ -128,3 +128,54 @@ export const sweepPrWorktrees = (options: {
     }
     yield* mirrorWrite(mirror, at(['worktree', 'prune'], mirror)).pipe(Effect.ignore)
   })
+
+/** What standing a merge up came to: the worktree with the merge in progress, or git's text. */
+export type StandMergeResult =
+  | { readonly kind: 'standing'; readonly cwd: string; readonly paths: readonly string[] }
+  | { readonly kind: 'failed'; readonly text: string }
+
+/**
+ * **A merge left standing for an agent to resolve** (#1313): the same detached `pr-sync-…` / `pr-back-…` worktree as
+ * `mergeInWorktree`, and `git merge --no-commit --no-ff <theirs>` with its markers left in the files — what
+ * `mergeForConflict` does for an attempt (#1120). Unlike `mergeInWorktree` nothing is aborted and nothing is released:
+ * the worktree is the agent's workspace for the round, and `sweepPrWorktrees` — at the start of the next step or round —
+ * is the only thing that removes it, so the lane's own sweep (`integrator-`) never does.
+ *
+ * Never fails. A worktree that would not cut, or a merge that failed with no unmerged path, is `failed` with git's
+ * text and the worktree is removed. A merge that came out clean is `standing` with no paths: the caller says so.
+ */
+export const standMergeUp = (options: {
+  readonly project: string
+  readonly home?: string
+  readonly name: string
+  readonly at: string
+  readonly theirs: string
+  readonly git?: GitPort
+}): Effect.Effect<StandMergeResult> =>
+  Effect.gen(function* () {
+    const home = options.home ?? stateDir()
+    const mirror = mirrorPathFor(options.project, home)
+    const gitPort = options.git ?? gitEffect
+    const at = (args: string[], cwd: string) => gitPort(args, { cwd })
+    const cwd = worktreePath(home, options.project, options.name)
+    const release = mirrorWrite(mirror, at(['worktree', 'remove', '--force', cwd], mirror)).pipe(
+      Effect.ignore,
+      Effect.andThen(Effect.tryPromise(() => rm(cwd, { recursive: true, force: true })).pipe(Effect.ignore)),
+    )
+
+    yield* mirrorWrite(mirror, at(['worktree', 'add', '--force', '--detach', cwd, options.at], mirror))
+    const merged = yield* Effect.result(at(['merge', '--no-commit', '--no-ff', options.theirs], cwd))
+    // `-z`: a path with a non-ASCII or control character is C-quoted by the newline form.
+    const conflicts = yield* at(['diff', '--name-only', '--diff-filter=U', '-z'], cwd).pipe(
+      Effect.orElseSucceed(() => ''),
+    )
+    const paths = conflicts.split('\0').filter((p) => p.length > 0)
+    if (Result.isFailure(merged) && paths.length === 0) {
+      yield* release
+      return { kind: 'failed', text: merged.failure.detail } as StandMergeResult
+    }
+    return { kind: 'standing', cwd, paths } as StandMergeResult
+  }).pipe(
+    // A worktree that would not cut, or a read that failed, is git's text and never an exception.
+    Effect.catch((err: RepoFailed) => Effect.succeed({ kind: 'failed', text: err.detail } as StandMergeResult)),
+  )

@@ -30,6 +30,8 @@ import {
   closedTransition,
   waitTransition,
   syncedTransition,
+  syncRoundTransition,
+  syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
   ticketStream,
@@ -375,3 +377,37 @@ export function readDraftOn(
     return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
   })
 }
+
+/**
+ * A round of the conflict agent starts (#1313): appended **before** the agent is dispatched, and answers whether this call
+ * appended it. A round already counted for the commit (a second appender read the same head) appends nothing and answers
+ * false, so the agent is not started twice for one round.
+ */
+export const recordSyncRoundStarted = (
+  project: string,
+  n: number,
+  round: PayloadOf<'SyncRoundStarted'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRoundTransition(state, round),
+    (_state, appended) => appended,
+  )
+
+/** A started round was refused (#1313): on the log, so a restart and the end of the rounds read it and not memory. */
+export const recordSyncRoundRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'SyncRoundRefused'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRefusalTransition(state, refusal),
+    (_state, appended) => appended,
+  )

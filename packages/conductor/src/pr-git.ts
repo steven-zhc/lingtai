@@ -5,6 +5,8 @@ import type { PrGitAnswer, PrPorts } from './pr.ts'
 
 /** Refs of a PR's own in the mirror: never `refs/heads/*`, never `refs/lingtai/lane/` (the lane's sweep takes those by age). */
 export const targetRef = (n: number): string => `refs/lingtai/pr/${n}/target`
+/** Keeps a merge-back resolution alive in the mirror between the round that made it and the push in the lane's turn. */
+export const backRef = (n: number): string => `refs/lingtai/pr/${n}/back`
 export const fetchedRef = (n: number, name: 'main' | 'personal'): string => `refs/lingtai/pr/${n}/${name}`
 
 /** Deletes a ref of the PR's own; a ref that is not there, or a git that refuses, is not a reason to fail a step. */

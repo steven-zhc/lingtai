@@ -56,6 +56,14 @@ export interface PrState {
     /** Why it failed. `unknown` is a failure that proves nothing was pushed or not pushed: it is tried again. */
     readonly why: string | null
   } | null
+  /**
+   * The rounds of the conflict agent started on this PR, oldest first (`SyncRoundStarted`, #1313). **`PrInProgress`
+   * does not reset it** — 0108 §8: *no counter is reset inside its scope, not by a restart* — so the rounds used for a
+   * commit are always the count of what is here for it.
+   */
+  rounds: readonly PayloadOf<'SyncRoundStarted'>[]
+  /** The refusals of those rounds (`SyncRoundRefused`), oldest first; survives a restart the same way. */
+  refusals: readonly PayloadOf<'SyncRoundRefused'>[]
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
@@ -86,6 +94,8 @@ export const emptyPr: PrState = {
   host: null,
   steps: [],
   mergeBack: null,
+  rounds: [],
+  refusals: [],
   wait: null,
   refusal: null,
   ended: null,
@@ -159,11 +169,15 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'BranchSynced': {
       const d = event.data as PayloadOf<'BranchSynced'>
-      // `already` is the sync step's own record; a merge is recorded by the build that passed it. The target is the
-      // commit the push step means to push, whichever it was.
-      const step = d.how === 'already' ? 'sync' : 'build'
+      // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it); a
+      // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
+      const step = d.how === 'clean' ? 'build' : 'sync'
       return { ...withStep(state, { step, headSha: d.head }), ...at, target: d.head }
     }
+    case 'SyncRoundRefused':
+      return { ...state, ...at, refusals: [...state.refusals, event.data as PayloadOf<'SyncRoundRefused'>] }
+    case 'SyncRoundStarted':
+      return { ...state, ...at, rounds: [...state.rounds, event.data as PayloadOf<'SyncRoundStarted'>] }
     case 'PrMergedBack':
     case 'PrMergeBackFailed': {
       const d = event.data as { prHead: string; why?: string }
@@ -319,9 +333,25 @@ export function syncedTransition(
   synced: PayloadOf<'BranchSynced'>,
 ): ToAppend<PayloadOf<'BranchSynced'>> | null {
   if (!walking(state)) return null
-  const step = synced.how === 'already' ? 'sync' : 'build'
+  const step = synced.how === 'clean' ? 'build' : 'sync'
   if (state.steps.some((s) => s.step === step)) return null
   return { type: 'BranchSynced', actor: 'conductor', data: synced }
+}
+
+/**
+ * How many rounds of the conflict agent started for one commit being merged (`merging`), and how many are allowed:
+ * `bound` (`attempt.conflictResolutions`) plus `granted` — the rounds a person gave for this commit (#1314).
+ * Counted from the log's events and never from memory.
+ */
+export function conflictRoundsLeft(
+  state: PrState,
+  merging: 'main' | 'back',
+  commit: string,
+  bound: number,
+  granted = 0,
+): { readonly used: number; readonly left: number; readonly next: number } {
+  const used = state.rounds.filter((r) => r.merging === merging && r.commit === commit).length
+  return { used, left: Math.max(0, bound + granted - used), next: used + 1 }
 }
 
 /** The PR branch was merged back into `branch.personal` and pushed; only a PR in review, once per head. */
@@ -508,4 +538,47 @@ export function landingsStarted(
     }
   }
   return started
+}
+
+/**
+ * A round of the conflict agent is about to start (#1313). Only a PR that is walking, or In review for the merge back,
+ * has one; the number is the next for that commit, so two appenders of one round cannot both be counted.
+ */
+export function syncRoundTransition(
+  state: PrState,
+  round: PayloadOf<'SyncRoundStarted'>,
+): ToAppend<PayloadOf<'SyncRoundStarted'>> | null {
+  if (!conflictOpen(state)) return null
+  const used = state.rounds.filter((r) => r.merging === round.merging && r.commit === round.commit).length
+  if (round.round !== used + 1) return null
+  return { type: 'SyncRoundStarted', actor: 'conductor', data: round }
+}
+
+/**
+ * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back. A PR that was merged or
+ * closed meanwhile is not, and **that is a refusal that will never lift** — a caller must stop, not read and try again.
+ */
+export const conflictOpen = (state: PrState): boolean => walking(state) || state.status === 'in-review'
+
+/** A started round was refused (#1313): once per round, and only on a PR a round may still be counted on. */
+export function syncRefusalTransition(
+  state: PrState,
+  refusal: PayloadOf<'SyncRoundRefused'>,
+): ToAppend<PayloadOf<'SyncRoundRefused'>> | null {
+  if (!conflictOpen(state)) return null
+  const same = (r: { merging: string; commit: string; round: number }) =>
+    r.merging === refusal.merging && r.commit === refusal.commit && r.round === refusal.round
+  if (!state.rounds.some(same) || state.refusals.some(same)) return null
+  return { type: 'SyncRoundRefused', actor: 'conductor', data: refusal }
+}
+
+/** The refusal of the latest refused round for a commit, from the log: what buys the next round, and what a spent end says. */
+export const lastRefusalOf = (
+  state: PrState,
+  merging: 'main' | 'back',
+  commit: string,
+): { readonly step: 'build' | 'review' | 'answer'; readonly said: string } | null => {
+  const mine = state.refusals.filter((r) => r.merging === merging && r.commit === commit)
+  const latest = mine.at(-1)
+  return latest === undefined ? null : { step: latest.step, said: latest.said }
 }

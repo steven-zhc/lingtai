@@ -345,6 +345,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'PrMergeBackFailed',",
   },
   {
+    event: 'SyncRoundStarted',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'SyncRoundStarted',",
+  },
+  {
+    event: 'SyncRoundRefused',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'SyncRoundRefused',",
+  },
+  {
     event: 'PrMerged',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -467,7 +479,7 @@ export const STREAMS = {
   TicketClosed: ['ticket-'],
   DispatchRefused: ['ticket-'],
   RunStarted: ['pass-'],
-  RunPrompted: ['pass-'],
+  RunPrompted: ['pass-', 'pr-'],
   RunTouchedFile: ['pass-'],
   RunContextExhausted: ['pass-'],
   RunAwaitingInput: ['pass-'],
@@ -480,12 +492,12 @@ export const STREAMS = {
   SandboxBoundaryRecorded: ['pass-'],
   SandboxConnectionsRefused: ['pass-'],
   RunFailed: ['pass-'],
-  RunSpent: ['pass-', 'chat-', 'ticket-'],
+  RunSpent: ['pass-', 'chat-', 'ticket-', 'pr-'],
   StepsResolved: ['pass-'],
   RecipeRecorded: ['rcp-'],
   EndActionsResolved: ['ticket-'],
   StepStarted: ['pass-'],
-  StepEnded: ['pass-'],
+  StepEnded: ['pass-', 'pr-'],
   FindingAccepted: ['bkl-'],
   FindingProposed: ['bkl-'],
   FindingDeclined: ['bkl-'],
@@ -537,6 +549,8 @@ export const STREAMS = {
   BranchSynced: ['pr-'],
   PrMergedBack: ['pr-'],
   PrMergeBackFailed: ['pr-'],
+  SyncRoundStarted: ['pr-'],
+  SyncRoundRefused: ['pr-'],
   PrMerged: ['pr-'],
   PrClosed: ['pr-'],
   AccountLimitReached: ['acct-'],
@@ -576,8 +590,12 @@ export const PREFIXES = {
 
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
 export const MULTI: Partial<Record<EventType, string>> = {
+  RunPrompted:
+    'the prompt is recorded beside the `RunSpent` it belongs to: on an attempt (`pass-`) or on a PR whose conflict agent ran (`pr-`)',
+  StepEnded:
+    "a step's outcome is recorded on an attempt (`pass-`), or on a PR for the review of a conflict agent's resolution (`pr-`), so its minors are read the same way",
   RunSpent:
-    'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`)',
+    'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`), a ticket-level agent such as triage (`ticket-`) or a PR (`pr-`)',
 }
 
 export const STREAMS_BEGIN = '<!-- streams:begin -->'
