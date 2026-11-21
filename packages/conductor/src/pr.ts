@@ -88,10 +88,7 @@ const LANDING_LOOKS = 120
  * The event that proves a step, appended **in place of** `PrStepDone` — one append, so a kill between two cannot leave
  * a step recorded done without the fact that shows it. The reducer folds each into the PR's `steps`.
  */
-export type PrRecord =
-  | { readonly type: 'PrPushed'; readonly data: PayloadOf<'PrPushed'> }
-  | { readonly type: 'PrDraftOpened'; readonly data: PayloadOf<'PrDraftOpened'> }
-  | { readonly type: 'PrOpened'; readonly data: PayloadOf<'PrOpened'> }
+export type PrRecord = (project: string, n: number, store: EventStore) => Effect.Effect<unknown, Error>
 
 /** What a step answers. `again` records nothing: the next serve runs it again. */
 export type StepAnswer =
@@ -179,7 +176,7 @@ const pushStep: PrStep = {
         const pushed = (found: 'pushed' | 'existing'): StepAnswer => ({
           kind: 'done',
           headSha: target,
-          record: { type: 'PrPushed', data: { headSha: target, found } },
+          record: (project, n, store) => recordPrPushed(project, n, { headSha: target, found }, store),
         })
         const moved = (at: string | null): StepAnswer => ({
           kind: 'wait',
@@ -272,14 +269,15 @@ const openStep: PrStep = {
         return {
           kind: 'done',
           headSha: target,
-          record: { type: 'PrOpened', data: { host: 'none', number: null, url: null } },
+          record: (project, n, store) => recordPrOpened(project, n, { host: 'none', number: null, url: null }, store),
         } as StepAnswer
       }
       const existing = (found: 'opened' | 'existing', pull: { number: number; nodeId: string; url: string }) =>
         ({
           kind: 'done',
           headSha: target,
-          record: { type: 'PrDraftOpened', data: { ...pull, found } },
+          record: (project, n, store) =>
+            recordPrDraftOpened(project, n, { number: pull.number, nodeId: pull.nodeId, url: pull.url, found }, store),
         }) as StepAnswer
       // A PR opened on an earlier pass through In progress is answered from the state.
       if (state.host !== null) return existing('existing', state.host)
@@ -444,12 +442,8 @@ export const walkPr = (
       const record = answer.record
       if (record === undefined) {
         yield* recordPrStepDone(project, n, { step: next.name, headSha: answer.headSha }, ports.store)
-      } else if (record.type === 'PrPushed') {
-        yield* recordPrPushed(project, n, record.data, ports.store)
-      } else if (record.type === 'PrDraftOpened') {
-        yield* recordPrDraftOpened(project, n, record.data, ports.store)
       } else {
-        yield* recordPrOpened(project, n, record.data, ports.store)
+        yield* record(project, n, ports.store)
       }
     }
   })

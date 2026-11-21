@@ -314,7 +314,7 @@ describe('push and open', () => {
     const w = aWorld()
     const lane = createLandingLane()
     const key = integrationStream('lingtai', 'lingtai-team-pr-1')
-    const gate = Effect.runSync(Deferred.make<void>())
+    const hold = Effect.runSync(Deferred.make<void>())
     const waited: unknown[] = []
     const p = ports(store, w)
     const slow: PrPorts = {
@@ -322,7 +322,7 @@ describe('push and open', () => {
       lane,
       remote: (project, args) =>
         args[0] === 'push'
-          ? Deferred.await(gate).pipe(Effect.andThen(p.remote(project, args)))
+          ? Deferred.await(hold).pipe(Effect.andThen(p.remote(project, args)))
           : p.remote(project, args),
     }
     const walking = Effect.runPromise(servePr(slow, 'lingtai', 1, [IN_PROGRESS_STEPS[0]!]))
@@ -337,7 +337,7 @@ describe('push and open', () => {
     )
     await new Promise((r) => setTimeout(r, 20))
     expect(waited).toEqual([{ pr: prStream('lingtai', 1) }])
-    Effect.runSync(Deferred.succeed(gate, undefined))
+    Effect.runSync(Deferred.succeed(hold, undefined))
     await Promise.all([walking, pass])
   })
 })
