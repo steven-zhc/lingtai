@@ -14,10 +14,13 @@ import { useRef, type ReactNode } from 'react'
 export function FilterMenu({
   className,
   summary,
+  title,
   children,
 }: {
   className: string
   summary: ReactNode
+  /** The summary's tooltip, which names its key. */
+  title?: string
   children: ReactNode
 }) {
   const ref = useRef<HTMLDetailsElement>(null)
@@ -29,7 +32,7 @@ export function FilterMenu({
         if ((e.target as Element).closest('a')) ref.current?.removeAttribute('open')
       }}
     >
-      <summary>{summary}</summary>
+      <summary title={title}>{summary}</summary>
       {children}
     </details>
   )

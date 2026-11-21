@@ -64,7 +64,8 @@ import { LockRows, pauseSlot } from './lock-banner.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
-import { AddProject, filterSummary, ProjectRows } from './projects.tsx'
+import { PlaceLine, viewsFor } from './place-line.tsx'
+import { filterSummary, filterTitle, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
@@ -100,7 +101,7 @@ import { Skeleton } from './skeleton.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to filter, health,
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to place, health,
  * headline now that the reading has moved to the footer
  * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps the row small is stated at the
  * end of the bar below, where the next chip would be added.
@@ -784,11 +785,20 @@ async function FilterSlot({ ctx, app }: { ctx: Ctx; app: boolean }) {
     />
   )
   // Nothing configured is the one board with somewhere to go: the sentence is the link (#169).
-  if (m.filters.length === 0) return rows
+  if (m.filters.length === 0) return <PlaceLine views={[]} here="tickets" menu={rows} />
+  // The place line is built here, from the selection the read gave: a one-project board has no `?project=`
+  // and still has its Recipe (#993).
   return (
-    <FilterMenu className="filter" summary={filterSummary(m.only ?? 'all projects')}>
-      {rows}
-    </FilterMenu>
+    <PlaceLine
+      project={m.only}
+      views={viewsFor(m.only)}
+      here="tickets"
+      menu={
+        <FilterMenu className="filter" summary={filterSummary(m.only ?? 'all projects')} title={filterTitle(m.only)}>
+          {rows}
+        </FilterMenu>
+      }
+    />
   )
 }
 
@@ -796,7 +806,7 @@ async function ActionsPart({ ctx }: { ctx: Ctx }) {
   const [board, registered] = await Promise.all([ctx.reads.board, ctx.reads.registered])
   const { only } = shape(board, ctx.param)
   if (only === undefined || !registered.some((p) => p.project === only)) return null
-  return <BarActions project={only} pause={await pauseSlot(only)} />
+  return <BarActions project={only} pause={await pauseSlot(only)} recipe={false} />
 }
 
 /**
@@ -1130,35 +1140,41 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             </Suspense>
           }
         >
-          <span className="sep" />
-          {/* The projects, and the way to add one — `projects.tsx`, which is
-            where that argument is made. The filter is one of the objects the
-            rule below names, a list gaining an action at its end is that object
-            rather than a fifth one (#216). With a `project` in the URL the
-            summary is the shell's and only the rows stream; without one, the
-            selection needs `filters` (#993), so the whole slot waits and says
-            nothing it could have to take back. */}
+          {/* The place line — `projects.tsx` and `place-line.tsx` are where the argument is made. The place is one
+            of the objects the rule below names; the views after the project are part of it, and the way to add a
+            repository is the menu's last row (#216). With a `project` in the URL the crumb and views are the
+            shell's and only the rows stream; without one, the selection needs `filters` (#993), so the whole line
+            waits and says nothing it could have to take back. */}
           {param !== undefined ? (
-            <FilterMenu className="filter" summary={filterSummary(param)}>
-              <Suspense key={key('menu')} fallback={null}>
-                <MenuRows ctx={ctx} app={app} />
-              </Suspense>
-            </FilterMenu>
+            <PlaceLine
+              project={param}
+              views={viewsFor(param)}
+              here="tickets"
+              menu={
+                <FilterMenu className="filter" summary={filterSummary(param)} title={filterTitle(param)}>
+                  <Suspense key={key('menu')} fallback={null}>
+                    <MenuRows ctx={ctx} app={app} />
+                  </Suspense>
+                </FilterMenu>
+              }
+            />
           ) : (
             <Suspense
               key={key('filter')}
               fallback={
-                <FilterMenu className="filter" summary={filterSummary(<Pulse />)}>
-                  {null}
-                </FilterMenu>
+                <PlaceLine
+                  views={[]}
+                  menu={
+                    <FilterMenu className="filter" summary={filterSummary(<Pulse />)}>
+                      {null}
+                    </FilterMenu>
+                  }
+                />
               }
             >
               <FilterSlot ctx={ctx} app={app} />
             </Suspense>
           )}
-          {/* The `+` needs only `app`, so the shell draws it before any read. */}
-          <AddProject app={app} />
-          <span className="sep" />
           {/* Everything from here is the right rail, and it is a rail rather than
             more children of `.bar` so that a narrow window breaks between
             the filters and the rail rather than in the middle of the
@@ -1206,7 +1222,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               A bar carries what changes what you do next, and answers two
               questions and no third: *is anything waiting on me?* and *is the
               system doing what the code says?* Anything added here has to be
-              argued against the objects that are left — filter, health,
+              argued against the objects that are left — place, health,
               headline — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend is on the report
               and the pass limits are on the recipe page.

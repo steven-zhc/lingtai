@@ -207,10 +207,12 @@ describe('the boundaries', () => {
     )
   })
 
-  it('draw the `+` and the summary in the shell with every read pending, on a URL without a project too', async () => {
+  it('draw the place line and the summary in the shell with every read pending, on a URL without a project too', async () => {
     for (const project of [undefined, 'b']) {
       const html = renderToStaticMarkup((await render(project)) as never)
-      expect(html).toContain('class="addp"')
+      expect(html).toContain('class="place"')
+      expect(html).toContain('<summary')
+      expect(html).not.toContain('class="addp"')
     }
   })
 

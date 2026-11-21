@@ -19,12 +19,16 @@ describe('RecipeBar', () => {
   )
 
   it('holds the filter naming its project', () => {
-    expect(out).toContain('<summary>b ')
+    expect(out).toContain('<summary title="b · G S">b ')
     expect(out).toContain('class="filter"')
   })
 
-  it('presses Recipe, and says no recipe · ', () => {
-    expect(out).toMatch(/<a class="navlink on" aria-current="page" href="\/recipe\/b">Recipe</)
+  it('draws the place line with Recipe as the current view, and not in .topnav', () => {
+    expect(out).toMatch(/<a class="view on" aria-current="page" href="\/recipe\/b">Recipe</)
+    expect(out.indexOf('class="place"')).toBeLessThan(out.indexOf('class="filter"'))
+    expect(out.indexOf('class="filter"')).toBeLessThan(out.indexOf('>Tickets<'))
+    expect(out.indexOf('>Tickets<')).toBeLessThan(out.indexOf('>Recipe<'))
+    expect(out.slice(out.indexOf('class="topnav"'))).not.toContain('>Recipe<')
     // The menu's hover hint names the action (#995); nothing else on the bar says `recipe · `.
     expect(out.replace(/<span class="phint">[^<]*<\/span>/g, '')).not.toContain('recipe · ')
   })
