@@ -84,3 +84,12 @@ describe('an unreadable recipe (#1014)', () => {
     expect(read.triage).toBeNull()
   })
 })
+
+describe('faultOf (#1326)', () => {
+  it('answers refused by the tag alone, and recipe for a plain invalid', async () => {
+    const { RecipeInvalidError, RecipeRefusedError } = await import('@lingtai/recipe')
+    const { faultOf } = await import('../src/lib/recipe.ts')
+    expect(faultOf(new RecipeRefusedError('main', ['x']), '/r').fault).toBe('refused')
+    expect(faultOf(new RecipeInvalidError('main', ['x']), '/r').fault).toBe('recipe')
+  })
+})
