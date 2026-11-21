@@ -379,12 +379,11 @@ describe('the merge back', () => {
     expect(pushesOf(w)).toEqual([])
   })
 
-  it('a push that threw and a look that fails records nothing', async () => {
+  it('a push that threw and a look that fails is PrMergeBackFailed unknown, saying the push may have landed', async () => {
     const store = await inReview()
     const w = aWorld()
     w.ancestor = (a, b) => a === b
     const p = ports(store, w)
-    const before = (await store.read(prStream('lingtai', 1))).length
     await Effect.runPromise(
       mergePrBack(
         {
@@ -398,7 +397,11 @@ describe('the merge back', () => {
         1,
       ),
     )
-    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last).toMatchObject({ type: 'PrMergeBackFailed', data: { why: 'unknown' } })
+    expect((last.data as { detail: string }).detail).toContain('may have landed')
+    // Unknown stays owed: the next serve looks again.
+    expect((await state(store)).mergeBack).toMatchObject({ outcome: 'failed', why: 'unknown' })
   })
 
   it('a failed read before any push is PrMergeBackFailed unknown, on the stream', async () => {
@@ -422,32 +425,30 @@ describe('the merge back', () => {
     })
   })
 
-  it('a merge under our subject already on branch.personal is built before it is recorded, and a red one is not claimed', async () => {
-    for (const green of [true, false]) {
-      const store = await inReview()
-      const w = aWorld()
-      w.buildAnswer = () =>
-        Effect.succeed(green ? { kind: 'green' } : { kind: 'red', command: 'pnpm test', evidence: 'boom' })
-      const p = ports(store, w)
-      await Effect.runPromise(
-        mergePrBack(
-          {
-            ...p,
-            git: (project, args) =>
-              args[0] === 'log'
-                ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
-                : p.git(project, args),
-          },
-          'lingtai',
-          1,
-        ),
-      )
-      expect(w.builds).toEqual([{ sha: BACK, base: 'lingtai-team-pr-1', checkId: 'pr-1-back' }])
-      expect(pushesOf(w)).toEqual([])
-      expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe(green ? 'PrMergedBack' : 'PrMergeBackFailed')
-      // A merge already pushed is never ended by a terminal red: it stays owed.
-      if (!green) expect((await state(store)).mergeBack).toMatchObject({ outcome: 'failed', why: 'unknown' })
-    }
+  it('a merge under our subject already on branch.personal is recorded as found, with no build', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    // The recipe has changed since: a rebuild would be red, and it is never asked.
+    w.buildAnswer = () => Effect.succeed({ kind: 'red', command: 'pnpm test', evidence: 'boom' })
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(w.builds).toEqual([])
+    expect(pushesOf(w)).toEqual([])
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last.type).toBe('PrMergedBack')
+    expect(last.data).toEqual({ prHead: FROZEN, mergeCommit: BACK, how: 'clean' })
   })
 
   it('a push that landed whose PrMergedBack could not be appended is not recorded as a failure, and the next serve records it', async () => {

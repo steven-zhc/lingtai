@@ -14,6 +14,7 @@ import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { remoteOf } from '@lingtai/recipe'
 import {
   RepoFailed,
+  retryUnreachable,
   checkedOutAt,
   ensureMirrorEffect,
   gitEffect,
@@ -103,7 +104,9 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     remote: (project, args) =>
       Effect.gen(function* () {
         const token = yield* tokenOf(project)
-        return yield* answered(gitEffect([...args], { cwd: mirrorPathFor(project), token }))
+        const run = gitEffect([...args], { cwd: mirrorPathFor(project), token })
+        // A fetch that could not reach origin is tried again, as the lane's is; a push is never retried blind.
+        return yield* answered(args[0] === 'fetch' ? retryUnreachable(run) : run)
       }),
     github: githubOf,
     merge: (project, options) => mergeInWorktree({ project, ...options }),

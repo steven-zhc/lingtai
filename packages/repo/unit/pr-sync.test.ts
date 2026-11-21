@@ -83,11 +83,18 @@ describe('sweepPrWorktrees', () => {
         wt(`${WT}/pr-back-1-200`),
         wt(`${WT}/integrator-main-1-abc`),
         wt(`${WT}/base-abcdef0-r1`),
+        wt(`${WT}/base-abcdef0-pr-1-sync`),
+        wt(`${WT}/base-abcdef0-pr-12-back`),
       ].join('\n'),
     })
     await Effect.runPromise(sweepPrWorktrees({ project: 'p', home: HOME, git: port }))
     const removed = calls.filter((c) => c[0] === 'worktree' && c[1] === 'remove').map((c) => c[3])
-    expect(removed).toEqual([`${WT}/pr-sync-1-100`, `${WT}/pr-back-1-200`])
+    expect(removed).toEqual([
+      `${WT}/pr-sync-1-100`,
+      `${WT}/pr-back-1-200`,
+      `${WT}/base-abcdef0-pr-1-sync`,
+      `${WT}/base-abcdef0-pr-12-back`,
+    ])
     expect(calls.some((c) => c[0] === 'worktree' && c[1] === 'prune')).toBe(true)
   })
 })

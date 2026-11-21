@@ -3,6 +3,14 @@ import { Effect } from 'effect'
 
 import type { PrGitAnswer, PrPorts } from './pr.ts'
 
+/** Refs of a PR's own in the mirror: never `refs/heads/*`, never `refs/lingtai/lane/` (the lane's sweep takes those by age). */
+export const targetRef = (n: number): string => `refs/lingtai/pr/${n}/target`
+export const fetchedRef = (n: number, name: 'main' | 'personal'): string => `refs/lingtai/pr/${n}/${name}`
+
+/** Deletes a ref of the PR's own; a ref that is not there, or a git that refuses, is not a reason to fail a step. */
+export const dropRef = (ports: PrPorts, project: string, ref: string): Effect.Effect<void> =>
+  ports.git(project, ['update-ref', '-d', ref]).pipe(Effect.ignore)
+
 export const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 /** `git` answered with a code other than the two it is expected to: the refusal's sentence. */
@@ -41,6 +49,7 @@ export const fetchInto = (
       if (!/ENOENT/.test(asError(there.failure).message)) return yield* Effect.fail(asError(there.failure))
       yield* ports.fetch(project)
     } else if (there.success.code !== 0) yield* ports.fetch(project)
+    // The remote port retries a fetch that could not reach origin (`retryUnreachable`, in the live port), as the lane's does.
     const args = ['fetch', '--no-tags', 'origin', ...pairs.map(([from, to]) => `+${from}:${to}`)] as const
     const answer = yield* ports.remote(project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))

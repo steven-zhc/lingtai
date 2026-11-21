@@ -39,7 +39,7 @@ import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Effect, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
-import { asError, gitSaid, remoteSha } from './pr-git.ts'
+import { asError, dropRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
 import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 
 /** `git`'s answer in the project's mirror: its exit code (null when it never ran to one) and its stdout, trimmed. */
@@ -188,6 +188,8 @@ const pushStep: PrStep = {
         // record that came after would say this push proved that pass's.
         const pushed = (found: 'pushed' | 'existing') =>
           recordPrPushed(project, n, { headSha: target, found }, ports.store).pipe(
+            // `PrPushed` names the target now, and the remote holds it: the ref that kept an unpushed merge has nothing left to keep.
+            Effect.andThen(dropRef(ports, project, targetRef(n))),
             Effect.as<StepAnswer>({ kind: 'done', headSha: target, record: () => Effect.void }),
           )
         const moved = (at: string | null): StepAnswer => ({

@@ -2,7 +2,7 @@
  * A PR's `sync` and `build` steps, and its merge back (0130 §6, #1312).
  *
  * **`sync`** brings `origin/<branch.main>` into the PR's commit in a throwaway worktree and **pushes nothing**; the
- * merge is kept alive by `refs/lingtai/pr/<n>/target` and handed to `build` as `sync`'s record. **`build`** builds the
+ * merge is kept alive by `refs/lingtai/pr/<n>/target` (dropped once `PrPushed` names it) and handed to `build` as `sync`'s record. **`build`** builds the
  * merge with the recipe's `build` and only then makes it the PR's `target` (`BranchSynced`). The `push` step, next,
  * is the only writer of the PR branch, in the lane's turn.
  *
@@ -18,15 +18,10 @@ import { readPr, recordBranchSynced, recordPrMergeBackFailed, recordPrMergedBack
 import { Effect, Result } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
-import { asError, fetchInto, gitSaid, remoteSha } from './pr-git.ts'
+import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
 
 const short = (sha: string): string => sha.slice(0, 7)
-
-/** The one ref this ticket writes in the mirror: it keeps an unpushed merge's objects. */
-const targetRef = (n: number): string => `refs/lingtai/pr/${n}/target`
-/** Where a step fetches a branch of the remote to: a ref of its own, never `refs/heads/*`. */
-const fetchedRef = (n: number, name: 'main' | 'personal'): string => `refs/lingtai/pr/${n}/${name}`
 
 /** A failed read or write is the person's to hear of; a denied permission is the walk's own `denied` wait. */
 const orUnknown = <A>(
@@ -140,7 +135,7 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       const made = yield* ports.git(project, kept)
       if (made.code !== 0) return wait('sync-unknown', gitSaid(kept, made))
       return { kind: 'done', headSha: merged.sha } as StepAnswer
-    }),
+    }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'main')))),
     (message) => ({
       kind: 'wait',
       reason: 'sync-unknown',
@@ -179,6 +174,8 @@ export const buildStep: PrStep = {
         // `main`'s commit is the merge's second parent: what was merged, whatever `main` is now.
         const mainCommit = yield* resolve(ports, project, `${merge}^2`)
 
+        // A build a killed process left at this fixed worktree path would fail the cut: it is removed first.
+        yield* ports.sweep(project)
         const built = yield* ports.build(project, { sha: merge, base: prBranch, checkId: `pr-${n}-sync` })
         if (built.kind === 'red') {
           return wait(
@@ -213,7 +210,6 @@ export const mergeBackOwed = (state: PrState): boolean => {
 }
 
 type Back =
-  | { readonly kind: 'unsure' }
   | { readonly kind: 'merged'; readonly mergeCommit: string }
   | { readonly kind: 'nothing' }
   | { readonly kind: 'failed'; readonly why: 'conflict' | 'red' | 'unknown' | 'lost-push'; readonly detail: string }
@@ -267,17 +263,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         for (const line of logged.stdout.split('\n')) {
           const [sha, , second] = line.trim().split(' ')
           if (sha === undefined || sha === '' || second !== prHead) continue
-          // A commit message and a parent say who wrote a merge, not that it was built: anybody may have made and
-          // pushed one under our subject. It is built here, now, before it is claimed.
-          const checked = yield* ports.build(project, { sha, base: prBranch, checkId: `pr-${n}-back` })
-          if (checked.kind === 'green') return { kind: 'merged', mergeCommit: sha } as Back
-          if (checked.kind === 'red') {
-            // The merge is already pushed: a red here is not the merge back's refusal, and a terminal `red` would
-            // end what is owed of a push that landed. It stays `unknown`, looked at again.
-            const detail = `${short(sha)} is already on ${branch}; \`${checked.command}\` fails on it:\n${checked.evidence}`
-            return { kind: 'failed', why: 'unknown', detail } as Back
-          }
-          return { kind: 'failed', why: 'unknown', detail: checked.why } as Back
+          // A merge of this head under our subject is the push that landed whose record was lost: it is recorded as
+          // found, not rebuilt — the build that passed it is the one that pushed it, and a rebuild now would judge a
+          // merge that is already on the branch by a recipe or an environment that may have changed since.
+          return { kind: 'merged', mergeCommit: sha } as Back
         }
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
@@ -328,17 +317,32 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           : { code: null, stdout: asError(pushed.failure).message }
         if (answer.code === 0) return { kind: 'merged', mergeCommit: merged.sha } as Back
         // A lost push is one look, never a second blind push (#1125): the branch at the merge is the push having landed.
-        // A look that itself fails proves nothing either way: record nothing, and the next serve reconciles by ancestry.
+        // A look that itself fails proves nothing either way: it is said as unknown, which stays owed and is looked at again.
         const looked = yield* Effect.result(remoteSha(ports, project, ref))
-        if (Result.isFailure(looked)) return { kind: 'unsure' } as Back
+        if (Result.isFailure(looked)) {
+          const detail = `the push of ${short(merged.sha)} to ${branch} failed (${gitSaid(push, answer)}) and the look at the remote failed too (${asError(looked.failure).message}): the push may have landed`
+          return { kind: 'failed', why: 'unknown', detail } as Back
+        }
         if (looked.success === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
-      })
+      }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
 
     const turn = Effect.gen(function* () {
       // Re-read inside the turn: a landing that held the lane first may have changed what is owed.
-      const state = yield* readPr(project, n, ports.store).pipe(Effect.orElseSucceed(() => null))
+      const state = yield* readPr(project, n, ports.store).pipe(
+        Effect.catch((err: Error) =>
+          failed(
+            'unknown',
+            `the PR could not be read, so whether anything was pushed is not known: ${err.message}`,
+          ).pipe(
+            Effect.catch((again: Error) =>
+              Effect.sync(() => void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
+            ),
+            Effect.as(null),
+          ),
+        ),
+      )
       if (state === null || !mergeBackOwed(state) || state.lastPushed !== prHead) return
       // Only what is read and tried up to the push is caught here: a read that failed pushed nothing, and is said on
       // the PR's stream. What comes after the push is outside it — a record that fails then must never be turned into
@@ -358,7 +362,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           ),
         ),
       )
-      if (decided.kind === 'unsure' || decided.kind === 'lost' || decided.kind === 'nothing') return
+      if (decided.kind === 'lost' || decided.kind === 'nothing') return
       if (decided.kind === 'failed') {
         yield* failed(decided.why, decided.detail).pipe(
           Effect.catch((err: Error) =>
@@ -378,8 +382,6 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         )
         return
       }
-      // The merge is on `branch.personal` now; the ref that kept an unpushed sync alive has nothing left to keep.
-      yield* ports.git(project, ['update-ref', '-d', targetRef(n)]).pipe(Effect.ignore)
     })
 
     yield* (ports.lane ?? landingLane).through(

@@ -48,6 +48,13 @@ export interface MergeInWorktreeOptions {
 export const PR_WORKTREE_PREFIXES = ['pr-sync-', 'pr-back-'] as const
 
 /**
+ * The build worktree of a PR's own check (`base-<sha7>-pr-<n>-sync|back`, the fixed `checkId`s of #1312): a process
+ * killed mid-build leaves it, and the resumed build would fail to cut a worktree where one stands. A pass's base check
+ * is `base-<sha7>-<runId>` and is not matched.
+ */
+const PR_BUILD_WORKTREE = /^base-[0-9a-f]+-pr-\d+-(sync|back)$/
+
+/**
  * Cuts a detached worktree at `at`, merges `theirs` into it with `--no-ff`, and answers the merge commit. A conflict
  * is aborted before it is answered; the worktree is released on every ending. Never fails: a git that did not answer
  * is `failed` with its text.
@@ -92,7 +99,7 @@ export const mergeInWorktree = (options: MergeInWorktreeOptions): Effect.Effect<
   )
 
 /**
- * Removes every `pr-sync-*` and `pr-back-*` worktree of the project, then prunes the registrations with no directory.
+ * Removes every `pr-sync-*`, `pr-back-*` and PR build (`base-<sha7>-pr-<n>-sync|back`) worktree of the project, then prunes the registrations with no directory.
  * Each step swallows its own failure: a sweep that refused a merge would be a worse bug than the one it clears.
  */
 export const sweepPrWorktrees = (options: {
@@ -112,7 +119,8 @@ export const sweepPrWorktrees = (options: {
       if (!line.startsWith('worktree ')) continue
       const path = line.slice('worktree '.length).trim()
       if (dirname(path) !== managed) continue
-      if (!PR_WORKTREE_PREFIXES.some((prefix) => path.slice(managed.length + 1).startsWith(prefix))) continue
+      const name = path.slice(managed.length + 1)
+      if (!PR_WORKTREE_PREFIXES.some((prefix) => name.startsWith(prefix)) && !PR_BUILD_WORKTREE.test(name)) continue
       // Git refusing (a locked worktree) is the end of it: its files are not removed behind its back.
       const removed = yield* Effect.result(mirrorWrite(mirror, at(['worktree', 'remove', '--force', path], mirror)))
       if (Result.isFailure(removed)) continue
