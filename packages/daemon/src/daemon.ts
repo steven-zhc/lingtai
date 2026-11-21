@@ -286,7 +286,7 @@ export function startDaemonEffect(options: DaemonOptions): Effect.Effect<DaemonS
           if (phase !== 'handler') return
           recordStopped(projection.name, () => port, error)
         }
-        port = (options.runnerFor ?? defaultRunnerFor)(projection, onError)
+        port = (options.runnerFor ?? ((p, e) => defaultRunnerFor(p, e, { note: tell })))(projection, onError)
         // The port is handed to `onRunner` on both paths: a caller that keeps runners in a set looks them up by identity.
         runners.push(port)
         const outcome = yield* port.start().pipe(

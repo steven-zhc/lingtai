@@ -41,7 +41,7 @@ import { Deferred, Effect, Exit, Scope } from 'effect'
 
 import { openProjections, withStoreEffect } from './choose.ts'
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
-import type { Projection, ProjectionLag, ProjectionsPort } from './store.ts'
+import type { Projection, ProjectionLag, ProjectionLog, ProjectionsPort } from './store.ts'
 
 export type { Projection, ProjectionContext, ProjectionLag, ProjectionStore } from './store.ts'
 
@@ -128,6 +128,11 @@ export interface ProjectionRunnerOptions {
    */
   waker?: Waker
   batchSize?: number
+  /**
+   * Where a reduce's one-line notices go (#1348: a stored row of an older shape was re-reduced).
+   * Left out, stderr, as `listenForIdleErrors`' default write is.
+   */
+  note?: (line: string) => void
   onError?: (error: unknown, phase: 'connection' | 'handler') => void
 }
 
@@ -190,16 +195,26 @@ export function makeRunner(
       : null
   const landing: Effect.Effect<ProjectionsPort> = mine ? mine.get() : Effect.succeed(options.into!)
 
-  const commitBatch = Effect.fn('projector.commitBatch')(function* (events: readonly Envelope[]) {
-    const last = events[events.length - 1]
+  // Said once per stream in this process: a restart says it again only if the row was not written.
+  const noted = new Set<string>()
+  const noteOnce = (line: string): void => {
+    if (noted.has(line)) return
+    noted.add(line)
+    ;(options.note ?? ((l: string) => console.error(l)))(line)
+  }
+
+  const commitBatch = Effect.fn('projector.commitBatch')(function* (batch: readonly Envelope[]) {
+    const last = batch[batch.length - 1]
     if (!last) return
     const p = yield* landing
+    const events = yield* eventsPort
+    const log: ProjectionLog = { read: (streamId) => events.read(streamId), note: noteOnce }
     // The whole point: the advance is not a separate write. Fenced on `cursor`,
     // so a rebuild in any process that rewound the checkpoint refuses this batch
     // rather than have it carried to the head past unfolded history.
     yield* p.transact((ctx) =>
       Effect.gen(function* () {
-        yield* projection.reduce(events, ctx)
+        yield* projection.reduce(batch, ctx, log)
         yield* p.advance(ctx, projection.name, last.seq, state.cursor)
       }),
     )

@@ -58,7 +58,7 @@ import { Effect } from 'effect'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import { columnOf } from './store.ts'
 import type { Projection, ProjectionContextPort } from './store.ts'
-import { reduceStoredTicket } from './ticket-row.ts'
+import { reduceStoredTicket, ticketBefore } from './ticket-row.ts'
 
 export const TICKET_REPORT_TABLE = 'ticket_report'
 
@@ -216,6 +216,7 @@ const orNull = <T>(value: unknown): T | null => (value === null || value === und
 const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value))
 
 /** Both stores' one mapper: SQLite hands JSON back as text and Postgres as a value, `json` takes either. */
+// The writer re-reduces a row of an older shape (#1348); this read has no log and does not, so it still throws.
 export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow {
   const ticket = String(row.ticket)
   const state = decodeTicket(columnOf(row, TICKET_REPORT_TABLE, 'ticket_state'), TICKET_REPORT_TABLE, ticket)
@@ -510,7 +511,7 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
     }).pipe(Effect.withSpan('projector.ticket_report.reset'))
   },
 
-  reduce(events, ctx) {
+  reduce(events, ctx, log) {
     return Effect.gen(function* () {
       let snapshot: readonly RateRow[] | null = null
 
@@ -698,8 +699,14 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
           ticket = yield* ticketOf(ctx, event.streamId)
           if (ticket !== null) {
             const { s, stored } = yield* load(ctx, ticket)
-            if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
-            if (signOfLife(s, event, event.streamId)) {
+            let reReduced = false
+            if (stored !== undefined) {
+              const before = yield* ticketBefore(stored, ticket, event.seq, TICKET_REPORT_TABLE, log)
+              s.ticketState = before.state
+              reReduced = before.reReduced
+            }
+            // A row re-reduced is written back whether or not this event was a sign of life.
+            if (signOfLife(s, event, event.streamId) || reReduced) {
               yield* save(ctx, s)
             }
           }
@@ -711,8 +718,10 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         const { s, stored } = yield* load(ctx, ticket)
         let after: TicketState | null = null
         if (onTicketStream) {
-          after = s.ticketState = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE).after
-        } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
+          after = s.ticketState = (yield* reduceStoredTicket(stored, event, TICKET_REPORT_TABLE, log)).after
+        } else if (stored !== undefined) {
+          s.ticketState = (yield* ticketBefore(stored, ticket, event.seq, TICKET_REPORT_TABLE, log)).state
+        }
         change?.(s, after)
         // A pass-stream event is also a sign of life, whatever else it did.
         if (isAttemptStream(event.streamId)) signOfLife(s, event, event.streamId)
