@@ -202,7 +202,7 @@ function harness(
   }
 }
 
-const LOCAL_ARGS = ['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']
+const LOCAL_ARGS = ['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']
 
 describe('lingtai init ends by printing the recipe, doctor, and the board line (#434)', () => {
   const GIT_PLAN: Record<string, GitResult> = {
@@ -221,7 +221,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
     expect(code).toBe(0)
@@ -259,7 +259,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
         doctor: async () => ({ text: 'doctor: 3 ok', failed: false }),
       })
       const code = await initCommand(
-        flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+        flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']),
         world,
       )
       expect(code).toBe(0)
@@ -332,7 +332,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
 
@@ -374,7 +374,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('re-running init on a machine with a project ends the same way, once', async () => {
     const { world, logged } = harness({ gitPlan: GIT_PLAN, answers: [''] })
     world.projects = liftPort(async () => [{ name: 'repo' }] as never)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     // The directory is not a git repository here (no git plan for it): `lingtai add` asks which.
     expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
@@ -384,7 +384,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     const { world, calls } = harness({ gitPlan: GIT_PLAN, answers: [''] })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
     expect(code).toBe(0)
@@ -395,7 +395,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     const { world, logged, calls } = harness({ gitPlan: GIT_PLAN, answers: [''], boardAt: 'http://127.0.0.1:17820' })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
     expect(code).toBe(0)
@@ -411,7 +411,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       answers: [''],
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
-    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     const text = logged.join('\n')
     expect(text).not.toContain('GitHub App')
     expect(text).not.toContain('it answered')
@@ -433,7 +433,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
     world.projects = liftPort(async () => [{ name: 'repo' }] as never)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     const text = logged.join('\n')
     expect(text).toMatch(/github\s+the App lingtai-me/)
     expect(text.match(/the App lingtai-me/g)).toHaveLength(1)
@@ -500,7 +500,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('a re-run with a configured App and projects closes on the directory block', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
     world.projects = liftPort(async () => [{ name: 'repo' }] as never)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     expectClosesOn(logged, hereSteps({ kind: 'outside' }).steps)
   })
 })
@@ -522,7 +522,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     const { world, files, machineFiles, logged } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
 
@@ -537,7 +537,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     const { world, asked } = harness({ gitPlan: GIT_PLAN })
 
     const code = await initCommand(
-      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--install', 'none']),
+      flagsFromArgv(['--local', '/repo', '--store', 'sqlite', '--main', 'main', '--defaults', '--mode', 'solo', '--install', 'none']),
       world,
     )
 
@@ -633,7 +633,7 @@ describe('init on a machine that already has projects names the directory it was
     const { world, logged, files: store } = harness({ gitPlan: plan, cwd })
     for (const [k, v] of Object.entries(files)) store.set(k, v)
     world.projects = liftPort(async () => [{ project: 'widgets', owner: 'acme' }] as never)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     return logged
   }
 
@@ -688,7 +688,7 @@ describe('init on a machine that already has projects names the directory it was
       doctorNext: 'lingtai init',
     })
     world.projects = liftPort(async () => [{ project: 'widgets', owner: 'acme' }] as never)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--defaults', '--mode', 'solo']), world)).toBe(0)
     expectClosesOnLine(logged, 'lingtai init')
     expect(lines(logged).join('\n')).not.toContain('is not a project here')
   })

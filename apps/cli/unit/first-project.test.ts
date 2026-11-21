@@ -228,7 +228,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({
       ok: true,
@@ -395,7 +395,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', main: 'develop', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', main: 'develop', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafefee' })
@@ -458,7 +458,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       add: async () => (calls.push('add'), { ok: false as const }),
     })
 
-    const result = await chooseFirstProject(world, { defaults: '' })
+    const result = await chooseFirstProject(world, { defaults: '', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('pass --project github, or --project local') })
     expect(calls).toEqual([])
@@ -473,7 +473,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       return fail('no')
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toEqual({ refused: expect.stringContaining('pass --main <branch>') })
     expect(logged.join('\n')).toContain('/repo has no branch checked out')
@@ -499,7 +499,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const reader = world.setupReader
     world.setupReader = (top) => (order.push('recipe flow'), reader(top))
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, remote: '/repo', base: 'lingtai-base' })
     expect(order.indexOf('branch lingtai-base main')).toBeGreaterThan(-1)
@@ -522,7 +522,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       throw new Error(`unplanned git call: ${key}`)
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(made).toBe(true)
@@ -537,7 +537,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const git = world.git
     world.git = (dir, args) => (calls.push(args.join(' ')), git(dir, args))
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(calls.some((c) => c.startsWith('branch '))).toBe(false)
@@ -552,7 +552,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toMatchObject({ ok: true })
 
     const path = recipePath('repo', HOME)
@@ -624,7 +624,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' }, [
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' }, [
       'pnpm lint',
       'pnpm test',
     ])
@@ -1372,7 +1372,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
   })
   const run = (options: Parameters<typeof harness>[0], flags: Record<string, string> = {}) => {
     const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD }, ...options })
-    return { h, result: chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none', ...flags }) }
+    return { h, result: chooseFirstProject(h.world, { local: '/repo', defaults: '', mode: 'solo', install: 'none', ...flags }) }
   }
   const moved = `lands: ${ORIGIN} main → this checkout, lingtai-base`
 
@@ -1443,7 +1443,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       files: { [path]: OLD },
     })
     h.world.inFlight = () => Effect.die(new Error('store down'))
-    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toEqual({ refused: unreadable })
     expect(h.files.replaced).toEqual({})
     expect(h.removed).toEqual([])
@@ -1630,7 +1630,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
   it('without the ports (lingtai init) an old origin remote is still refused by the name guard', async () => {
     const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD } })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toEqual({ refused: expect.stringContaining(ORIGIN) })
     expect(h.files.replaced).toEqual({})
   })
