@@ -45,3 +45,52 @@ describe('the loop holds a PR walk for the drain', () => {
     expect(interrupted).toBe(false)
   })
 })
+
+describe('the PR sweep runs on its own timer (#1317)', () => {
+  it('is called at startup and on every tick while the conductor is paused, and never twice at once', async () => {
+    let calls = 0
+    let running = 0
+    let overlapped = false
+    const sweep = Effect.gen(function* () {
+      calls++
+      running++
+      if (running > 1) overlapped = true
+      yield* Effect.sleep(15)
+      running--
+    })
+    const port = makeWorkLoop({
+      sweepMs: 10,
+      eventLog: log(),
+      daemonStore,
+      pass: () => Effect.void,
+      paused: Effect.succeed('a person paused it'),
+      pr: { serve: () => Effect.void, resume: () => Effect.void, sweep: () => sweep },
+    })
+    await Effect.runPromise(port.start())
+    await new Promise((r) => setTimeout(r, 120))
+    await Effect.runPromise(port.stop())
+    expect(calls).toBeGreaterThan(2)
+    expect(overlapped).toBe(false)
+  })
+})
+
+describe('a stalled read does not hold the drain (#1317)', () => {
+  it('stop() returns while a sweep is hung, and a timer tick resumes the owed walks', async () => {
+    let resumes = 0
+    const port = makeWorkLoop({
+      sweepMs: 10,
+      eventLog: log(),
+      daemonStore,
+      pass: () => Effect.void,
+      pr: {
+        serve: () => Effect.void,
+        resume: () => Effect.sync(() => void resumes++),
+        sweep: () => Effect.never,
+      },
+    })
+    await Effect.runPromise(port.start())
+    await new Promise((r) => setTimeout(r, 60))
+    await Effect.runPromise(port.stop())
+    expect(resumes).toBeGreaterThan(1)
+  })
+})

@@ -497,6 +497,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     d['host'] === 'github'
       ? `The PR is in review on GitHub as #${need(d, 'number')}`
       : 'The PR is in review: open it by hand, it is not followed',
+  PrMerged: (d) =>
+    d['how'] === 'host'
+      ? 'The PR was merged, as the code host reports'
+      : 'The PR was merged: its head is on the main branch',
+  PrClosed: () => 'The PR was closed without merging; its tickets are back in Draft',
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,

@@ -13,16 +13,21 @@ import {
   type PayloadOf,
   type PrState,
   integrationStream,
+  isOpen,
   parsePrStream,
   parseTicketStream,
   prDescription,
   prStream,
+  ticketStream,
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
-import { type GitHub, GitHubFailed, PermissionDenied } from '@lingtai/github'
+import { type GitHub, GitHubFailed, PermissionDenied, type PullState } from '@lingtai/github'
 import {
   landingsInFlight,
   listPrs,
+  latestPr,
+  recordPrClosed,
+  recordPrMerged,
   readPr,
   readPrDraft,
   recordPrDraftOpened,
@@ -38,6 +43,7 @@ import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
 import { Effect, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
+import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 
 /** `git`'s answer in the project's mirror: its exit code (null when it never ran to one) and its stdout, trimmed. */
 export interface PrGitAnswer {
@@ -60,6 +66,12 @@ export interface PrPorts {
    * non-zero exit is an answer, not a failure. `git` stays for what is local (`merge-base`, `cat-file`).
    */
   remote(project: string, args: readonly string[]): Effect.Effect<PrGitAnswer, Error>
+  /**
+   * The project's own ticket channel: the one its tickets are read and closed through (GitHub's issues, or its own
+   * store). **Never the raw GitHub client** — a `db` project's ticket numbers are not GitHub issues, and closing
+   * one there would close an unrelated issue that shares the number.
+   */
+  tickets(project: string): Effect.Effect<IssueChannel, Error>
   /** The project's GitHub, as the Effect face. Fails where the project has no owner on record. */
   github(project: string): Effect.Effect<GitHub, Error>
   /** What the description reads of each ticket: whether it is still open on GitHub, and what it cost. Null is unknown. */
@@ -500,30 +512,254 @@ export const servePendingPrs = (
     }
   })
 
+/** How long a read (a fetch, a request to the host) may take before it is a failed read: the drain waits on the walk. */
+const READ_MS = 60_000
+
+/**
+ * The ports with every **read** bounded, so a walk the loop tracks for the drain (0030) can never be held by a fetch or
+ * a request that does not answer. A read that times out fails like any failed read — a step answers `again` and the
+ * next sweep asks again. A push is not bounded: it is a write, and the drain waits for it on purpose.
+ */
+const bounded = (ports: PrPorts, ms: number): PrPorts => {
+  const within = <A, E>(what: string, e: Effect.Effect<A, E>, fail: () => E): Effect.Effect<A, E> =>
+    e.pipe(
+      Effect.timeoutOrElse({
+        duration: ms,
+        // Only the timeout is logged as one: an answer that failed is its own error, said by whoever reads it.
+        orElse: () =>
+          Effect.sync(() => void ports.log?.(`pr: ${what} did not answer in ${ms}ms`)).pipe(
+            Effect.andThen(Effect.fail(fail())),
+          ),
+      }),
+    )
+  return {
+    ...ports,
+    fetch: (project) => within('fetch', ports.fetch(project), () => new Error('the fetch timed out')),
+    // `facts` cannot fail: null is *unknown*, which is what a read that never answered is.
+    facts: (project, tickets) =>
+      ports.facts(project, tickets).pipe(
+        Effect.timeoutOrElse({
+          duration: ms,
+          orElse: () => Effect.succeed(tickets.map((ticket) => ({ ticket, open: null, spend: null }))),
+        }),
+      ),
+    // A push is a write and is waited for; every other `git` against the remote is a read (`ls-remote`).
+    remote: (project, args) =>
+      args[0] === 'push'
+        ? ports.remote(project, args)
+        : within('remote', ports.remote(project, args), () => new Error('the remote read timed out')),
+    tickets: (project) => within('tickets', ports.tickets(project), () => new Error('the ticket channel timed out')),
+    // Building the client is itself a request (the installation read), so it is bounded as well as the calls on it.
+    github: (project) =>
+      within('github', ports.github(project), () => new Error('the GitHub client timed out')).pipe(
+        Effect.map((github): GitHub => ({
+          ...github,
+          findOpenPull: (head) =>
+            within('findOpenPull', github.findOpenPull(head), () => new GitHubFailed(0, 'pulls', 'timed out')),
+          getPull: (number) =>
+            within('getPull', github.getPull(number), () => new GitHubFailed(0, `pulls/${number}`, 'timed out')),
+        })),
+      ),
+  }
+}
+
+/** What the sweep last saw of each open PR on the host (`updated_at` and head), so a read that changed nothing ends early. */
+type SweepMemory = Map<string, string>
+
+/**
+ * Whether the PR's last pushed head is in `refs/heads/<main>` of the mirror: `yes` / `no` by git's exit code, `unknown`
+ * for anything else (a failed read, never *no*).
+ */
+const reachable = (
+  ports: PrPorts,
+  project: string,
+  state: PrState,
+): Effect.Effect<'yes' | 'no' | 'unknown' | 'none', Error> =>
+  Effect.gen(function* () {
+    if (state.lastPushed === null || state.main === null) return 'none' as const
+    const ask = ['merge-base', '--is-ancestor', state.lastPushed, `refs/heads/${state.main}`] as const
+    const answer = yield* ports.git(project, ask)
+    if (answer.code === 0) return 'yes' as const
+    if (answer.code === 1) return 'no' as const
+    ports.log?.(`pr sweep ${project}: ${gitSaid(ask, answer)}`)
+    return 'unknown' as const
+  })
+
+/**
+ * Asks about one open PR and appends **the transition**, never the state: merged (the host says so, or its head is on
+ * `branch.main`) or closed without merging (the host says so, and git does not find it). Anything else — open, a failed
+ * read, a 404 — appends nothing and the next sweep asks again. Answers whether this call appended `PrMerged`.
+ */
+const learnOnePr = (
+  ports: PrPorts,
+  memory: SweepMemory,
+  project: string,
+  state: PrState,
+): Effect.Effect<boolean, Error> =>
+  Effect.gen(function* () {
+    const n = state.n
+    if (n === null) return false
+    const say = (line: string) => ports.log?.(`pr sweep ${project} PR ${n}: ${line}`)
+    const recipe = yield* ports.recipe(project)
+    const onGitHub = prHostOf(recipe) === 'github'
+
+    let host: PullState | null = null
+    let key: string | null = null
+    if (onGitHub && state.host !== null) {
+      const number = state.host.number
+      host = yield* ports.github(project).pipe(
+        Effect.flatMap((github) => github.getPull(number)),
+        Effect.catch((err: unknown) =>
+          Effect.sync(() => (say(`read of #${number} failed: ${asError(err).message}`), null)),
+        ),
+      )
+      if (host !== null) {
+        key = `${host.state} ${host.merged} ${host.updatedAt} ${host.headSha}`
+        // An answer equal to the last one ends the host's part here; git is still asked, it costs nothing.
+        if (memory.get(prStream(project, n)) === key) host = null
+      }
+    } else if (!onGitHub) {
+      yield* ports.fetch(project)
+    }
+
+    const git = yield* reachable(ports, project, state)
+    const pushed = state.lastPushed
+
+    if (host !== null && host.merged) {
+      yield* recordPrMerged(
+        project,
+        n,
+        { how: 'host', headSha: host.headSha, mergeSha: host.mergeCommitSha },
+        ports.store,
+      )
+      return true
+    }
+    if (git === 'yes' && pushed !== null) {
+      return yield* recordPrMerged(project, n, { how: 'git', headSha: pushed, mergeSha: null }, ports.store)
+    }
+    if (host !== null && host.state === 'closed' && (git === 'no' || git === 'none')) {
+      yield* recordPrClosed(project, n, { headSha: host.headSha }, ports.store)
+      return false
+    }
+    if (host !== null && key !== null && host.state === 'open') memory.set(prStream(project, n), key)
+    return false
+  })
+
+/**
+ * Closes every ticket a merged PR held, keyed by its `PrMerged`: a ticket whose stream already has
+ * `IssueUpdated { change: 'closed' }` after it is skipped, so a second sweep closes none and a restart in the middle
+ * finishes the rest. Every merged PR is visited, so a close that failed under an earlier PR is retried after later
+ * ones merge; `memory` remembers a PR whose tickets are all closed, so the reads stop once it is done.
+ */
+const closeMergedTickets = (
+  ports: PrPorts,
+  memory: SweepMemory,
+  project: string,
+  state: PrState,
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if (state.status !== 'merged' || state.ended === null || state.n === null) return
+    const doneKey = `closed ${prStream(project, state.n)}`
+    if (memory.get(doneKey) === 'done') return
+    const after = state.ended.seq
+    let channel: IssueChannel | null = null
+    for (const t of state.tickets) {
+      const ticketId = ticketStream(project, t.ticket)
+      const events = yield* Effect.tryPromise({ try: () => ports.store.read(ticketId), catch: asError })
+      const closed = events.some(
+        (e) => e.type === 'IssueUpdated' && e.seq > after && (e.data as PayloadOf<'IssueUpdated'>).change === 'closed',
+      )
+      if (closed) continue
+      channel ??= yield* ports.tickets(project)
+      yield* tellGitHubEffect({ store: ports.store, github: channel, ticketId, change: { kind: 'closed' } })
+    }
+    // Only a pass that found every ticket with a recorded close is done (a failed close is `IssueUpdateFailed`).
+    let all = true
+    for (const t of state.tickets) {
+      const events = yield* Effect.tryPromise({
+        try: () => ports.store.read(ticketStream(project, t.ticket)),
+        catch: asError,
+      })
+      if (
+        !events.some(
+          (e) =>
+            e.type === 'IssueUpdated' && e.seq > after && (e.data as PayloadOf<'IssueUpdated'>).change === 'closed',
+        )
+      )
+        all = false
+    }
+    if (all) memory.set(doneKey, 'done')
+  })
+
+/**
+ * The sweep's read (#1317): for each project, the latest PR if it is open, asked about once; then the tickets of the
+ * merged PRs closed. One project's failure is that project's.
+ */
+export const learnPrEnds = (
+  ports: PrPorts,
+  projects: readonly string[],
+  memory: SweepMemory = new Map(),
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (const project of projects) {
+      yield* Effect.gen(function* () {
+        const latest = yield* latestPr(project, ports.store)
+        if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
+          yield* learnOnePr(ports, memory, project, latest)
+        }
+        const prs = yield* listPrs(project, ports.store)
+        for (const merged of prs.filter((p) => p.status === 'merged')) {
+          yield* closeMergedTickets(ports, memory, project, merged).pipe(
+            Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
+          )
+        }
+      }).pipe(Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))))
+    }
+  })
+
 /**
  * The handlers the loop's `pr` option takes. `serve` answers the event's own stream — or, for a ticket's event (a
  * landing that ended, a release, a close), the PRs of that ticket's project, since a freeze that gave up waiting on a
  * landing is served again by what ends it. `resume` serves every PR of every project that is `requested` or
  * `in-progress`.
  */
-export const makePrHandlers = (ports: PrPorts, steps: readonly PrStep[] = IN_PROGRESS_STEPS) => ({
-  serve: (event: Envelope): Effect.Effect<void> => {
-    const named = parsePrStream(event.streamId)
-    if (named !== null) return servePr(ports, named.project, named.n, steps).pipe(Effect.orDie)
-    const ticket = parseTicketStream(event.streamId)
-    if (ticket === null) return Effect.void
-    return servePendingPrs(ports, [ticket.project], steps)
-  },
-  resume: (): Effect.Effect<void> =>
-    Effect.gen(function* () {
-      const projects = yield* ports.projects().pipe(
-        Effect.catch((err: Error) =>
-          Effect.sync(() => {
-            ports.log?.(`pr resume: ${err.message}`)
-            return [] as readonly string[]
-          }),
-        ),
-      )
-      yield* servePendingPrs(ports, projects, steps)
-    }),
-})
+export const makePrHandlers = (
+  raw: PrPorts,
+  steps: readonly PrStep[] = IN_PROGRESS_STEPS,
+  readMs: number = READ_MS,
+) => {
+  const ports = bounded(raw, readMs)
+  const memory: SweepMemory = new Map()
+  const projectsOf = (label: string) =>
+    ports.projects().pipe(
+      Effect.catch((err: Error) =>
+        Effect.sync(() => {
+          ports.log?.(`${label}: ${err.message}`)
+          return [] as readonly string[]
+        }),
+      ),
+    )
+  return {
+    serve: (event: Envelope): Effect.Effect<void> => {
+      const named = parsePrStream(event.streamId)
+      if (named !== null) return servePr(ports, named.project, named.n, steps).pipe(Effect.orDie)
+      const ticket = parseTicketStream(event.streamId)
+      if (ticket === null) return Effect.void
+      return servePendingPrs(ports, [ticket.project], steps)
+    },
+    resume: (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        yield* servePendingPrs(ports, yield* projectsOf('pr resume'), steps)
+      }),
+    /**
+     * What the daemon runs at startup and on its sweep timer, **paused or not** — learning that a PR merged records a
+     * fact and takes no work: what each open PR came to, and the tickets of a merged one closed. It pushes nothing, so it
+     * can be interrupted; the walks owed are `resume`'s.
+     */
+    sweep: (): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        const projects = yield* projectsOf('pr sweep')
+        yield* learnPrEnds(ports, projects, memory)
+      }),
+  }
+}

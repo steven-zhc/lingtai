@@ -54,6 +54,7 @@ function ports(
     candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.sync(() => void calls.push('fetch')),
     projects: () => Effect.succeed(['lingtai']),
+    tickets: () => Effect.fail(new Error('no ticket channel in this test')),
     remote: () => Effect.fail(new Error('the freeze never reaches the remote')),
     github: () => Effect.fail(new Error('the freeze never reaches GitHub')),
     facts: () => Effect.succeed([]),
