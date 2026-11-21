@@ -251,3 +251,25 @@ export function landedSeq(events: readonly Envelope[], base: string): bigint | n
   }
   return seq
 }
+
+/**
+ * A lane's landings that have begun and are not over: per ticket, its last integration event. An attempt with no
+ * terminal is `mergeCommit: null` (the push may or may not have happened); a success carries the commit it pushed.
+ * A refusal pushed nothing. The caller checks each success against its ticket's own `TicketLanded`.
+ */
+export function landingsStarted(laneEvents: readonly Envelope[]): { ticketId: string; mergeCommit: string | null }[] {
+  const last = new Map<string, Envelope>()
+  for (const e of laneEvents) {
+    if (e.type === 'IntegrationAttempted' || e.type === 'IntegrationRefused' || e.type === 'IntegrationSucceeded') {
+      last.set((e.data as { ticketId: string }).ticketId, e)
+    }
+  }
+  const started: { ticketId: string; mergeCommit: string | null }[] = []
+  for (const [ticketId, e] of last) {
+    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null })
+    if (e.type === 'IntegrationSucceeded') {
+      started.push({ ticketId, mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit })
+    }
+  }
+  return started
+}

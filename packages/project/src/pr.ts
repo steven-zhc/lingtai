@@ -18,6 +18,7 @@ import {
   requestSubmit,
   freezeTransition,
   landedSeq,
+  landingsStarted,
   teamSince,
   refuseTransition,
   stepDoneTransition,
@@ -168,26 +169,14 @@ export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrW
 export function landingsInFlight(project: string, base: string, store: EventStore): Effect.Effect<string[], Error> {
   return Effect.gen(function* () {
     const events = yield* Effect.tryPromise({ try: () => store.read(integrationStream(project, base)), catch: failed })
-    const last = new Map<string, Envelope>()
-    for (const e of events) {
-      if (e.type !== 'IntegrationAttempted' && e.type !== 'IntegrationRefused' && e.type !== 'IntegrationSucceeded') {
-        continue
-      }
-      last.set((e.data as { ticketId: string }).ticketId, e)
-    }
     const pending: string[] = []
-    for (const [ticketId, e] of last) {
-      if (e.type === 'IntegrationRefused') continue
-      if (e.type === 'IntegrationAttempted') {
-        pending.push(ticketId)
+    for (const started of landingsStarted(events)) {
+      if (started.mergeCommit === null) {
+        pending.push(started.ticketId)
         continue
       }
-      const mergeCommit = (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit
-      const ticket = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: failed })
-      const recorded = ticket.some(
-        (t) => t.type === 'TicketLanded' && (t.data as PayloadOf<'TicketLanded'>).mergeCommit === mergeCommit,
-      )
-      if (!recorded) pending.push(ticketId)
+      const ticket = yield* Effect.tryPromise({ try: () => store.read(started.ticketId), catch: failed })
+      if (reduceTicket(ticket).landed?.mergeCommit !== started.mergeCommit) pending.push(started.ticketId)
     }
     return pending
   })
