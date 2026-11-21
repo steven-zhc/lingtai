@@ -77,6 +77,7 @@ const GitHubWrite = z.strictObject({ outcome: z.enum(['updated', 'failed']), tex
 const StoredTicket = z.strictObject({
   lifecycle: Lifecycle,
   landed: z.strictObject({ mergeCommit: z.string(), base: z.string() }).nullable(),
+  cutFrom: z.strictObject({ branch: z.string(), pr: z.number().nullable() }).nullable(),
   project: z.string().nullable(),
   source: z.enum(['github-issue', 'manual', 'agent-followup']).nullable(),
   externalRef: z.string().nullable(),
