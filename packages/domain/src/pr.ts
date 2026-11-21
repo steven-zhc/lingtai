@@ -120,7 +120,13 @@ export function reducePr(events: readonly Envelope[]): PrState {
 
 /** A PR that has not ended: requested, in progress, waiting on a person, or in review. */
 export function isOpen(state: PrState | null): boolean {
-  return state !== null && (state.status === 'requested' || state.status === 'in-progress' || state.status === 'waiting' || state.status === 'in-review')
+  return (
+    state !== null &&
+    (state.status === 'requested' ||
+      state.status === 'in-progress' ||
+      state.status === 'waiting' ||
+      state.status === 'in-review')
+  )
 }
 
 /** What a PR is called in a sentence. */
@@ -193,10 +199,7 @@ export function stepDoneTransition(
 }
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */
-export function waitTransition(
-  state: PrState,
-  wait: PayloadOf<'PrWaiting'>,
-): ToAppend<PayloadOf<'PrWaiting'>> | null {
+export function waitTransition(state: PrState, wait: PayloadOf<'PrWaiting'>): ToAppend<PayloadOf<'PrWaiting'>> | null {
   if (state.status !== 'in-progress' && state.status !== 'waiting') return null
   if (state.status === 'waiting' && state.wait?.step === wait.step && state.wait.reason === wait.reason) return null
   return { type: 'PrWaiting', actor: 'conductor', data: wait }

@@ -39,9 +39,7 @@ export function readPrEvents(project: string, n: number, store: EventStore): Eff
 
 /** One PR reduced, or null when `n` has no events. A failed read is an error, never *no such PR*. */
 export function readPr(project: string, n: number, store: EventStore): Effect.Effect<PrState | null, Error> {
-  return readPrEvents(project, n, store).pipe(
-    Effect.map((events) => (events.length === 0 ? null : reducePr(events))),
-  )
+  return readPrEvents(project, n, store).pipe(Effect.map((events) => (events.length === 0 ? null : reducePr(events))))
 }
 
 /**
@@ -79,7 +77,10 @@ const transitionPr = <A>(
       const state = reducePr(yield* readPrEvents(project, n, store))
       const next = transition(state)
       if (next === null) return answer(state, false)
-      yield* Effect.tryPromise({ try: () => store.append(prStream(project, n), state.version, [next]), catch: (e) => e })
+      yield* Effect.tryPromise({
+        try: () => store.append(prStream(project, n), state.version, [next]),
+        catch: (e) => e,
+      })
       return answer(state, true)
     }),
   )
@@ -230,4 +231,3 @@ export function readPrDraft(
     return draft
   })
 }
-

@@ -8,12 +8,7 @@
  *
  * The git side is a port, so the freeze is tested against a fake that answers by exit code, as git does.
  */
-import {
-  type Envelope,
-  type PayloadOf,
-  type PrState,
-  parsePrStream,
-} from '@lingtai/domain'
+import { type Envelope, type PayloadOf, type PrState, parsePrStream } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { PermissionDenied } from '@lingtai/github'
 import {
@@ -52,7 +47,12 @@ export interface PrPorts {
 /** What a step answers. `again` records nothing: the next serve runs it again. */
 export type StepAnswer =
   | { readonly kind: 'done'; readonly headSha: string }
-  | { readonly kind: 'wait'; readonly reason: PayloadOf<'PrWaiting'>['reason']; readonly detail: string; readonly headSha: string }
+  | {
+      readonly kind: 'wait'
+      readonly reason: PayloadOf<'PrWaiting'>['reason']
+      readonly detail: string
+      readonly headSha: string
+    }
   | { readonly kind: 'again' }
 
 export interface PrStep {

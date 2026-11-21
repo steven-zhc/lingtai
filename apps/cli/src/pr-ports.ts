@@ -4,8 +4,8 @@
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
-import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import type { PrPorts } from '@lingtai/conductor'
+import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { githubClientAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient } from '@lingtai/github'

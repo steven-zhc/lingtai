@@ -1,3 +1,4 @@
+import { inProgressStepNames } from '@lingtai/conductor'
 /**
  * `lingtai pr [<project>]` and `lingtai pr submit [<project>]` (0130 §5).
  *
@@ -12,7 +13,6 @@ import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type PrDraftTicket, latestPr, readPr, readPrDraft, requestPrSubmit } from '@lingtai/project'
 import { type Recipe, modeOf } from '@lingtai/recipe'
-import { inProgressStepNames } from '@lingtai/conductor'
 import { Effect } from 'effect'
 
 import { livePrPorts } from './pr-ports.ts'
@@ -56,7 +56,8 @@ export interface PrReport {
 
 const stepLines = (state: PrState): string[] =>
   prStepRows(inProgressStepNames(), state).map(
-    (row) => `  ${row.status === 'done' ? '✓' : row.status === 'waiting' ? '!' : '·'} ${row.step}${row.headSha === null ? '' : ` @ ${row.headSha.slice(0, 7)}`}`,
+    (row) =>
+      `  ${row.status === 'done' ? '✓' : row.status === 'waiting' ? '!' : '·'} ${row.step}${row.headSha === null ? '' : ` @ ${row.headSha.slice(0, 7)}`}`,
   )
 
 /** The draft and the open PR, read from the log. Solo is refused by name; a failed read fails. */

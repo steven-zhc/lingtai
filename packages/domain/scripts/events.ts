@@ -33,7 +33,18 @@ export const APPEND_CALLEES: ReadonlySet<string> = new Set([
   'appendFrom',
 ])
 
-export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'pr-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-' | 'acct-'
+export type StreamPrefix =
+  | 'ticket-'
+  | 'pass-'
+  | 'int-'
+  | 'prj-'
+  | 'pr-'
+  | 'ctl-'
+  | 'chat-'
+  | 'ext-'
+  | 'bkl-'
+  | 'rcp-'
+  | 'acct-'
 
 /**
  * Appends the finder cannot see, one row per site. A row finds its line by
@@ -275,31 +286,31 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   },
   {
     event: 'PrSubmitRequested',
-    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrSubmitRequested',",
   },
   {
     event: 'PrSubmitRefused',
-    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrSubmitRefused',",
   },
   {
     event: 'PrInProgress',
-    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrInProgress',",
   },
   {
     event: 'PrStepDone',
-    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrStepDone',",
   },
   {
     event: 'PrWaiting',
-    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrWaiting',",
   },

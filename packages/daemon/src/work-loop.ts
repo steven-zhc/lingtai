@@ -602,7 +602,10 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
     }
     if ((PR_EVENTS as readonly string[]).includes(event.type) && options.pr) {
       const pr = options.pr
-      trackWalk(event, Effect.suspend(() => pr.serve(event)))
+      trackWalk(
+        event,
+        Effect.suspend(() => pr.serve(event)),
+      )
     }
     if (!triggers.has(event.type)) return
     void kick('completion')
@@ -660,7 +663,9 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
           const resume = options.pr.resume()
           const run = Effect.runPromiseWith(services)(resume)
           passesInFlight.track(run)
-          void run.catch((err: unknown) => tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`))
+          void run.catch((err: unknown) =>
+            tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`),
+          )
         }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
