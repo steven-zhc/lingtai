@@ -345,6 +345,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'PrMergeBackFailed',",
   },
   {
+    event: 'SyncRoundStarted',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'SyncRoundStarted',",
+  },
+  {
     event: 'PrMerged',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -467,7 +473,7 @@ export const STREAMS = {
   TicketClosed: ['ticket-'],
   DispatchRefused: ['ticket-'],
   RunStarted: ['pass-'],
-  RunPrompted: ['pass-'],
+  RunPrompted: ['pass-', 'pr-'],
   RunTouchedFile: ['pass-'],
   RunContextExhausted: ['pass-'],
   RunAwaitingInput: ['pass-'],
@@ -480,12 +486,12 @@ export const STREAMS = {
   SandboxBoundaryRecorded: ['pass-'],
   SandboxConnectionsRefused: ['pass-'],
   RunFailed: ['pass-'],
-  RunSpent: ['pass-', 'chat-', 'ticket-'],
+  RunSpent: ['pass-', 'chat-', 'ticket-', 'pr-'],
   StepsResolved: ['pass-'],
   RecipeRecorded: ['rcp-'],
   EndActionsResolved: ['ticket-'],
   StepStarted: ['pass-'],
-  StepEnded: ['pass-'],
+  StepEnded: ['pass-', 'pr-'],
   FindingAccepted: ['bkl-'],
   FindingProposed: ['bkl-'],
   FindingDeclined: ['bkl-'],
@@ -537,6 +543,7 @@ export const STREAMS = {
   BranchSynced: ['pr-'],
   PrMergedBack: ['pr-'],
   PrMergeBackFailed: ['pr-'],
+  SyncRoundStarted: ['pr-'],
   PrMerged: ['pr-'],
   PrClosed: ['pr-'],
   AccountLimitReached: ['acct-'],
@@ -577,7 +584,7 @@ export const PREFIXES = {
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
 export const MULTI: Partial<Record<EventType, string>> = {
   RunSpent:
-    'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`) or a ticket-level agent such as triage (`ticket-`)',
+    'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`), a ticket-level agent such as triage (`ticket-`) or a PR (`pr-`)',
 }
 
 export const STREAMS_BEGIN = '<!-- streams:begin -->'

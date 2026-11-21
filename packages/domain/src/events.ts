@@ -695,6 +695,18 @@ export const SpentFor = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('Judge'), when: StoredJudgeWhen }),
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),
+  /**
+   * An agent run on a PR's own stream (#1313, 0130 §6): the conflict agent (`resolve`) and the reviewer of its
+   * resolution (`review`), one per round. `merging` and `commit` name what was being merged and `round` which try this
+   * was. #1318's summary agent files under the same member with `purpose: 'summary'`.
+   */
+  z.object({
+    _tag: z.literal('Pr'),
+    purpose: z.enum(['resolve', 'review']),
+    merging: z.enum(['main', 'back']),
+    commit: z.string().min(1),
+    round: z.number().int().positive(),
+  }),
 ])
 export type SpentFor = z.infer<typeof SpentFor>
 
@@ -2564,7 +2576,23 @@ const PrWaitReason = z.enum([
   'sync-red',
   'sync-unknown',
   'sync-rewritten',
+  'sync-locked',
 ])
+
+/**
+ * What a conflict the agent did not resolve came to, for the person who must (#1313): what was merged, where it
+ * conflicted, what each side meant, how many rounds were spent and what refused the last. #1314 reads this and never git.
+ */
+export const ConflictEnd = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  paths: z.array(z.string()),
+  ours: z.array(z.object({ number: z.string(), title: z.string(), mergeCommit: z.string() })),
+  theirs: z.array(z.object({ sha: z.string(), author: z.string(), subject: z.string() })),
+  roundsUsed: z.number().int().nonnegative(),
+  last: z.object({ step: z.enum(['build', 'review', 'answer']), said: z.string() }).nullable(),
+})
+export type ConflictEnd = z.infer<typeof ConflictEnd>
 
 /**
  * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
@@ -2576,6 +2604,8 @@ export const PrWaiting = z.object({
   reason: PrWaitReason,
   detail: z.string(),
   headSha: z.string().min(1),
+  /** Set when the wait is a conflict the agent did not resolve (#1313); absent on every other wait. */
+  conflict: ConflictEnd.nullable().optional(),
 })
 
 /**
@@ -2645,8 +2675,25 @@ export const PrMergedBack = z.object({
  */
 export const PrMergeBackFailed = z.object({
   prHead: z.string().min(1),
-  why: z.enum(['conflict', 'red', 'unknown', 'lost-push']),
+  why: z.enum(['conflict', 'red', 'unknown', 'lost-push', 'locked']),
   detail: z.string(),
+  /** Set when the merge back conflicted and the agent did not resolve it (#1313). */
+  conflict: ConflictEnd.nullable().optional(),
+})
+
+/**
+ * One round of the conflict agent on a PR (#1313, 0130 §6): `commit` is being merged into `start` — a `main` commit
+ * into the PR branch (`main`), or the PR's head into `branch.personal` (`back`). **Appended before the agent is
+ * dispatched, and never refunded**: 0108 §8 resets no counter on a restart, so the rounds used for a commit are the
+ * count of these events for it.
+ *
+ * @summary A round of the conflict agent started on a PR: one commit merged into another, round n.
+ */
+export const SyncRoundStarted = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  start: z.string().min(1),
+  round: z.number().int().positive(),
 })
 
 /**
@@ -2989,6 +3036,7 @@ export const EVENTS = {
   BranchSynced,
   PrMergedBack,
   PrMergeBackFailed,
+  SyncRoundStarted,
   PrMerged,
   PrClosed,
   AccountLimitReached,
@@ -3113,6 +3161,7 @@ export const EVENT_AT = {
   BranchSynced: ['outside'],
   PrMergedBack: ['outside'],
   PrMergeBackFailed: ['outside'],
+  SyncRoundStarted: ['outside'],
   PrMerged: ['outside'],
   PrClosed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
