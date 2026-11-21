@@ -94,6 +94,8 @@ runtime: { agent: claude-code }
 const MACHINE = `
 board:
   port: 17820
+database:
+  store: sqlite
 `
 
 const PAGE = new URL('../src/app/recipe/[project]/page.tsx', import.meta.url)
@@ -249,7 +251,7 @@ describe("what a project's recipe says today", () => {
 
     expect(html).toContain('repo.base')
     expect(html).toContain('env.required')
-    expect(html).toContain('runtime.limits.newAttempts')
+    expect(html).toContain('runtime.limits.ticket.newAttempts')
   })
 })
 
