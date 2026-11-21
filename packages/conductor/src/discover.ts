@@ -277,13 +277,13 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
  * still rendered, and it says *somebody's Lingtai is running this now* — which
  * is information, and nothing in selection reads it (0046 §2).
  *
- * Absent is `both`: every issue is offered whoever it is assigned to, which is
+ * Absent is `all`: every issue is offered whoever it is assigned to, which is
  * what the queue did before it read an assignee. Logins compare
  * case-insensitively, because GitHub's do.
  */
 export function assigneeSkip(issue: TicketListing, rule: AssigneeRule | undefined): SkipReason | null {
-  const take = rule?.take ?? 'both'
-  if (take === 'both') return null
+  const take = rule?.take ?? 'all'
+  if (take === 'all') return null
   const me = rule?.login?.toLowerCase()
   const assignees = issue.assignees.map((a) => a.toLowerCase())
   const mine = me !== undefined && assignees.includes(me)

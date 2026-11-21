@@ -7,7 +7,7 @@ import { basename } from 'node:path'
 
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
-import { type Recipe, baseOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import { type Recipe, branchOf, kindsOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
@@ -79,7 +79,7 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
   const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[] | undefined>
   return {
     code,
-    base: baseOf(recipe),
+    base: branchOf(recipe),
     remote: remoteOf(recipe),
     tickets: ticketSourceOf(recipe),
     kinds: kindsOf(recipe),

@@ -570,10 +570,10 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
   ]
 }
 
-/** `queue:`'s `assignee` as a person reads it. Absent is `both`, and says so. */
+/** `queue:`'s `assignee` as a person reads it. Absent is `all`, and says so. */
 export function describeAssignee(rule: AssigneeRule | undefined): string {
   const as = rule?.login ? ` (this machine is ${rule.login})` : ''
-  switch (rule?.take ?? 'both') {
+  switch (rule?.take ?? 'all') {
     case 'mine':
       return `only issues assigned to ${rule?.login}`
     case 'unassigned':

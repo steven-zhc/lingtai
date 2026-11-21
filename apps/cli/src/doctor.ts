@@ -151,8 +151,8 @@ import type { HostAnswer, HostFactsEffect, HostVerdict, ResolvedRecipe, SignedIn
 import {
   UNBOUNDED,
   baseDivergence,
-  baseOf,
-  baseWrittenAt,
+  branchOf,
+  branchKeyOf,
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
@@ -3320,7 +3320,7 @@ export function declaredEnvironment(
  * `runOnce` refuses this at `stage: "recipe"` and `lingtai add` refuses to
  * record it, so a project onboarded from here on cannot be in this state. A
  * project registered *before* those existed can be, and nothing else would say
- * so: the divergence is invisible until a run merges into `repo.base` under
+ * so: the divergence is invisible until a run merges into `branch.main` under
  * gates it read from somewhere else, and every event that run writes is
  * internally consistent — `StepsResolved` carries the hash of the recipe it
  * obeyed, so `steps: end ran on what landed` compares a plan against itself and
@@ -3341,7 +3341,7 @@ export function recipeGovernsItsBase(
     const name = 'recipe: the rules and the merge target are one branch'
     // No App is needed to compare them: the recipe is this machine's file (#180).
     // No owner either (#357): the comparison is `state.base` against the
-    // recipe's own `repo.base`, read straight from the recorded registration —
+    // recipe's own `branch.main`, read straight from the recorded registration —
     // no fetch, no GitHub call, nothing beyond what registration already wrote.
 
     const projects = yield* recovering(load(), () => null)
@@ -3391,7 +3391,7 @@ export function recipeGovernsItsBase(
                   // The refusal `runOnce` and `add` share, its command on a line of its own.
                   detail: divergence.replace('. Re-register:', '.\nRe-register:'),
                   // A `--local` or owner-less slug is a placeholder; a command with one would not run.
-                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
+                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --main ${branchOf(resolved.recipe)}` } : {}),
                 }
               : {
                   name: label,
@@ -3401,7 +3401,7 @@ export function recipeGovernsItsBase(
                   // row that sends a reader to something nothing reads.
                   detail:
                     `read from ${resolved.ref}, and ` +
-                    `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
+                    `${branchKeyOf(resolved.recipe)} says ${branchOf(resolved.recipe)}`,
                 },
           )
         }),

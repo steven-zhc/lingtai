@@ -34,7 +34,7 @@ import { type EventStore, eventStore, log, readThroughSnapshot, type SnapshotSto
  * starts fresh, which is what you want after a fix.
  */
 import { parseDuration, type Recipe } from '@lingtai/recipe'
-import { backoffOf, baseOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { backoffOf, branchOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -245,12 +245,12 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               {
                 store: options.store ?? eventStore,
                 project: name,
-                base: baseOf(options.recipe),
+                base: branchOf(options.recipe),
                 recipe: options.recipe,
               },
               fetchedHead({
                 project: name,
-                base: baseOf(options.recipe),
+                base: branchOf(options.recipe),
                 owner: options.client.owner ?? '',
                 repo: options.client.repo,
                 ...(options.token === undefined ? {} : { token: options.token }),

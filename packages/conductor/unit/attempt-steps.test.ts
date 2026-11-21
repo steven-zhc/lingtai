@@ -81,7 +81,7 @@ const QUEUE: QueueSettings = {
   kinds: ['bug', 'feature'],
   exclude: ['agent:hold'],
   backoff: '1h',
-  assignee: { take: 'both' },
+  assignee: { take: 'all' },
 }
 
 const TREE: Worktree = {
@@ -736,7 +736,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
       },
     )
     const { result } = await pass({
-      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: true } }] },
+      steps: { admit: [{ name: 'cut the branch', worktree: { submodules: true } }] },
       actions: { admit: [declared] },
     })
 

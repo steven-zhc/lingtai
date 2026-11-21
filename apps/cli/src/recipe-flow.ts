@@ -28,7 +28,7 @@ import { delimiter, join } from 'node:path'
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { baseOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { branchOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import type { Proposal, RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -82,8 +82,8 @@ export interface RecipeAt {
   /** `ticket-<project>-*` streams already in the log for this project — #396's `askTickets`. */
   history: (project: string) => Promise<readonly string[]>
   /**
-   * The caller's own first-run answers — `repo.base`/`repo.remote`/`env.plantAt`
-   * for a local project, `repo.base`/`env.plantAt` for a GitHub one. Written as
+   * The caller's own first-run answers — `branch.main`/`repo.remote`/`env.plantAt`
+   * for a local project, `branch.main`/`env.plantAt` for a GitHub one. Written as
    * their own `setRecipe` call when the file already exists; reduced into the
    * one creation write, alongside this function's own four sections' answers,
    * when it does not (#432).
@@ -169,7 +169,7 @@ export function summariseRecipe(
       checks,
       review: reviewer === undefined ? null : String(reviewer['agent']),
       landsUnattended: !(steps['proposed'] ?? []).some((a) => 'human' in a),
-      base: baseOf(recipe),
+      base: branchOf(recipe),
     }
   } catch (err) {
     return { refused: (err as Error).message }

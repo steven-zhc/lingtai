@@ -125,7 +125,7 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 /**
  * `repo.base: main` but the branch a pass actually cuts from and lands on is
  * `steps.admit`'s `worktree.base: release` (`#268`'s v2 spelling) — the
- * shape `baseOf`/`baseWrittenAt` (`settings.ts:222-245`) exist to read
+ * shape `branchOf` (`settings.ts`) exist to read
  * correctly instead of assuming `repo.base`.
  */
 const WORKTREE_ADMIT = `version: 2
@@ -136,20 +136,6 @@ steps:
   admit:
     - name: cut the tree
       worktree: {base: release, submodules: false}
-runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
-`
-
-/**
- * `repo.base: ""` already on disk — the shape a bare `--land` with no value
- * used to write before this fix, and the one case `baseOf` can actually
- * produce that answers nothing, so `current` must read as null and
- * `defaultBranch` must get its turn.
- */
-const EMPTY_BASE = `version: 2
-repo: {base: "", submodules: false}
-source: {kinds: [bug], exclude: []}
-env: {required: [], plantAt: .env.local}
-steps: {}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}
 `
 
@@ -177,25 +163,7 @@ describe('askLanding', () => {
     expect(result).toMatchObject({ refused: expect.any(String) })
     expect(files.replaced).toEqual([])
     const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
-    expect(resolved.repo.base).toBe('main')
-  })
-
-  it('an empty repo.base already on disk answers nothing, so the default branch is fetched and offered', async () => {
-    const files = mapFiles({ [PATH]: EMPTY_BASE })
-    const draft = await draftOver(PROJECT, { home: HOME, files })
-    const { world: w } = world(['land it without asking'])
-    let calls = 0
-    const result = await askLanding(w, PROJECT, null, {
-      home: HOME,
-      draft,
-      defaultBranch: async () => {
-        calls++
-        return 'trunk'
-      },
-    })
-    expect(result).toEqual({ ok: true })
-    expect(calls).toBe(1)
-    expect(resolveSource(draft.text()!, PATH, PATH).recipe.repo.base).toBe('trunk')
+    expect(resolved.branch.main).toBe('main')
   })
 
   it('--land hold on a file with its own terse steps.proposed entry leaves that entry exactly as written', async () => {
@@ -297,7 +265,7 @@ describe('askLanding', () => {
     expect(written).not.toContain('human:')
     expect(written).toContain('judge: claude-code')
     const resolved = resolveSource(written, PATH, PATH).recipe
-    expect(resolved.repo.base).toBe('release')
+    expect(resolved.branch.main).toBe('release')
   })
 
   it('--land hold on a file inheriting its steps from a preset keeps the preset build and adds only the hold', async () => {
@@ -374,7 +342,7 @@ describe('askLanding', () => {
     expect(result).toEqual({ ok: true })
     const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
-    expect(resolved.repo.base).toBe('main')
+    expect(resolved.branch.main).toBe('main')
   })
 
   it('land with no hold to remove leaves the file byte for byte', async () => {
@@ -389,20 +357,6 @@ describe('askLanding', () => {
     expect(files.replaced).toEqual([])
   })
 
-  it('land on a blank base whose default branch is named hold writes it as the base, not as a hold', async () => {
-    const files = mapFiles({ [PATH]: EMPTY_BASE })
-    const draft = await draftOver(PROJECT, { home: HOME, files })
-    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
-      home: HOME,
-      draft,
-      defaultBranch: async () => 'hold',
-    })
-    expect(result).toEqual({ ok: true })
-    const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
-    expect(resolved.repo.base).toBe('hold')
-    expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
-  })
-
   it('land on a base named hold removes the hold and keeps the base', async () => {
     const files = mapFiles({ [PATH]: HOLDING.replace('base: main', 'base: hold') })
     const draft = await draftOver(PROJECT, { home: HOME, files })
@@ -413,24 +367,11 @@ describe('askLanding', () => {
     })
     expect(result).toEqual({ ok: true })
     const resolved = resolveSource(draft.text()!, PATH, PATH).recipe
-    expect(resolved.repo.base).toBe('hold')
+    expect(resolved.branch.main).toBe('hold')
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
 
-  it('land on a blank base with no readable default branch is refused and writes nothing', async () => {
-    const blank = FIXTURE.replace('base: main', 'base: ""')
-    const files = mapFiles({ [PATH]: blank })
-    const draft = await draftOver(PROJECT, { home: HOME, files })
-    const result = await askLanding(world(['land it without asking']).world, PROJECT, null, {
-      home: HOME,
-      draft,
-      defaultBranch: async () => null,
-    })
-    expect(result).toMatchObject({ refused: expect.stringContaining('no base branch to land on') })
-    expect(files.replaced).toEqual([])
-  })
-
-  it("--land develop on a recipe cutting from steps.admit's worktree.base writes it there, and leaves repo.base untouched", async () => {
+  it("--land develop on a recipe cutting from steps.admit's worktree.base writes branch.main and takes the old worktree.base out", async () => {
     const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()
@@ -443,8 +384,8 @@ describe('askLanding', () => {
 
     const written = draft.text()!
     const resolved = resolveSource(written, PATH, PATH).recipe
-    expect(resolved.repo.base).toBe('main')
-    expect(resolved.steps.admit).toEqual([{ name: 'cut the tree', worktree: { base: 'develop', submodules: false } }])
+    expect(resolved.branch.main).toBe('develop')
+    expect(resolved.steps.admit).toEqual([{ name: 'cut the tree', worktree: { submodules: false } }])
   })
 
   it('with no terminal and no flag, refuses naming --land, and replace is never called', async () => {

@@ -309,7 +309,7 @@ export function Recipe({
           {view.ok ? (
             /* `lingtai doctor`'s own block, which has printed since #180 and
                which no surface with a screen had shown. Folded: exhaustive
-               where it is grouped — `repo.base` and `env.required` are here
+               where it is grouped — `branch.main` and `env.required` are here
                and in no line above — and longer than anyone reads. */
             <details>
               <summary>Where every value came from</summary>

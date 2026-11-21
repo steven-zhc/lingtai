@@ -10,7 +10,8 @@ import { codexProbeEnv, readRecipe, withTriageReadiness } from '../src/lib/recip
 
 const BASE = {
   version: 2,
-  repo: { base: 'main', submodules: false },
+  branch: { main: 'main' },
+  repo: { submodules: false },
   source: { kinds: ['bug'], exclude: [] },
   env: { required: [], plantAt: '.env.local' },
   runtime: { agent: 'claude-code' },

@@ -891,14 +891,14 @@ export const refsPlugin = definePlugin('refs', {
  * [`the-v2-recipe.md`](../../../doc/design/the-v2-recipe.md) §1 writes, and
  * that file is the target T3 is checked against.
  *
- * **`base` is written here, and `repo.base` is the same setting's v1
- * spelling** (`#268`). This is the home 0061 §4 gives it; `baseOf` in
- * [`settings.ts`](settings.ts) is the one place that knows a file may still
- * write the other, and every reader — the merge lane, `lingtai doctor`,
- * `lingtai add`, the board, the wizard — asks that one question. So the two are
- * not two homes for one setting, and a declaration here cannot disagree with
- * what the merge lane lands on: the lane goes on being *handed* the base rather
- * than declaring one of its own (§4).
+ * **`worktree:` carries `submodules` only** (0104 §5): the branch is
+ * `branch.main`/`branch.personal`, read through `branchOf` in
+ * [`settings.ts`](settings.ts) by every reader — the merge lane, `lingtai
+ * doctor`, `lingtai add`, the board, the wizard — and handed to this action as
+ * `deps.base`. A declaration here cannot disagree with what the merge lane
+ * lands on: the lane goes on being *handed* the base rather than declaring one
+ * of its own (§4). The v1 spellings (`repo.base`, `worktree.base`) are
+ * rewritten to `branch.main` before the parse (`readOldSpellings`).
  *
  * **`submodules` is required and is not defaulted**, which is the one way this
  * declaration differs from the `repo:` block it replaces. `git worktree add`
@@ -912,8 +912,6 @@ export const worktreePlugin = definePlugin('worktree', {
   replay: 'safe',
   fields: {
     worktree: z.strictObject({
-      /** The branch the agent's work is cut from and lands on. `origin/<base>`, never local state. */
-      base: z.string(),
       /** Whether the tree gets them. Written out on purpose — see above. */
       submodules: z.boolean(),
     }),
@@ -924,7 +922,7 @@ export const worktreePlugin = definePlugin('worktree', {
    *
    * What runs is `createWorktreeAction` in `@lingtai/actions`, over the cut
    * `conduct.ts` hands it — and a recipe that declares nothing at `admit` runs
-   * the same action off `baseOf`/`submodulesOf`, because 0065 §2 makes the
+   * the same action off `branchOf`/`submodulesOf`, because 0065 §2 makes the
    * default an entry in the plugin system rather than a body beside it. So
    * `CALLED_DIRECTLY.worktree` is gone with this key, in the one diff its own
    * comment asked for.
@@ -1158,9 +1156,9 @@ const SOURCE_FIELDS = {
 
 /**
  * `mine`: only issues assigned to `login`. `unassigned`: only issues assigned
- * to nobody. `both`: every issue, whoever it is assigned to — today's queue.
+ * to nobody. `all`: every issue, whoever it is assigned to — today's queue.
  */
-export const AssigneeTake = z.enum(['mine', 'unassigned', 'both'])
+export const AssigneeTake = z.enum(['all', 'mine', 'unassigned'])
 export type AssigneeTake = z.infer<typeof AssigneeTake>
 
 /**
@@ -1173,7 +1171,7 @@ export type AssigneeTake = z.infer<typeof AssigneeTake>
 export const AssigneeRule = z
   .strictObject({
     login: z.string().min(1).optional(),
-    take: AssigneeTake.default('both'),
+    take: AssigneeTake.default('all'),
   })
   // `mine` with nobody named would match no issue at all, and an empty queue
   // reads exactly like a repository with nothing to do.
@@ -1806,9 +1804,10 @@ const ONLY_ADMIT_CUTS =
   'move the ground under a change already written, and one before `admit` would ask for a tree while ' +
   'the item is still in the queue. Written at `admit` it is read — `createWorktreeAction` in ' +
   '`packages/actions/src/worktree-action.ts` provisions it, and a recipe that declares nothing there ' +
-  'runs that same action off `baseOf`/`submodulesOf` (0065 §2) — and **`base:` is written here and ' +
-  'nowhere else** (0061 §4): the base is one value that flows to the merge lane rather than a setting ' +
-  'with two homes, so what an attempt lands cannot disagree with what it was cut from'
+  'runs that same action off `branchOf`/`submodulesOf` (0065 §2) — and **the branch is `branch.main` ' +
+  '(`branch.personal` in team mode) and nowhere else** (0104 §5): the base is one value that flows to ' +
+  'the merge lane rather than a setting with two homes, so what an attempt lands cannot disagree with ' +
+  'what it was cut from'
 
 /**
  * **Why a `queue:` belongs at `claim` and nowhere else** — `ONLY_ADMIT_CUTS`'s
@@ -2577,7 +2576,7 @@ function actionsAt(step: Step) {
        * (`#268`).
        *
        * Every declared action at a step runs (0065 §2), so two of these would
-       * cut the same path twice — and `baseOf` would have to pick one, leaving
+       * cut the same path twice — and the accessors would have to pick one, leaving
        * the other displayed on the board, hashed into `configHash` and recorded
        * in `StepsResolved` while something else is what ran. That is `#61`'s
        * shape reached through a duplicate rather than through a missing call
@@ -2996,6 +2995,29 @@ export const Discuss = z.strictObject({
 export type Discuss = z.infer<typeof Discuss>
 
 /**
+ * **`pr:`, a top-level block beside `discuss:`** (0130 §5), shaped as `Discuss`
+ * is and for its reason: a summary runs outside every pass, so `limits` has
+ * defaults of its own. **No `usd`**: a block that spends outside an attempt
+ * carries none (0104 §6), and `strictObject` refuses one. An absent `agent`
+ * means `runtime.agent` where that runtime is one of `DiscussAgent`'s.
+ */
+export const Pr = z.strictObject({
+  agent: DiscussAgent.optional(),
+  model: DISPATCH.model,
+  prompt: DISPATCH.prompt.optional(),
+  limits: z
+    .strictObject({
+      turns: z.number().int().positive().default(20),
+      wall: z
+        .string()
+        .default('5m')
+        .refine((text) => positiveDuration(text), { message: 'must be a positive duration, like 5m' }),
+    })
+    .default({ turns: 20, wall: '5m' }),
+})
+export type Pr = z.infer<typeof Pr>
+
+/**
  * What a recipe that says nothing about `discuss:` gets — `apps/cli/src/discuss.ts`'s
  * fallback for a project nothing has registered, and `Recipe`'s own default
  * below, the same way `LIMIT_DEFAULTS` is `runtime.limits`'s.
@@ -3092,46 +3114,64 @@ export const Recipe = z
      */
     extends: z.string().optional(),
 
-    repo: z.object({
-      base: z.string(),
-      /** `git worktree add` does not populate submodules; not doing so breaks every
-       *  test that imports one, and reads as "the agent broke the tests". */
-      submodules: z.boolean().default(false),
-      /**
-       * The repository's own `origin` — where a mirror fetches from and the merge
-       * lane pushes to. `remoteOf` in `settings.ts` returns `recipe.repo.remote ??
-       * null`, and null means `worktree.ts:102`'s GitHub default,
-       * `https://github.com/<owner>/<repo>.git`.
-       *
-       * **No `.default(...)`, for `source.tickets`'s reason above**: a schema
-       * default would put the key into every recipe's parsed body and change every
-       * project's `configHash` the moment a restarted daemon loaded this code, with
-       * no edit to any recipe file. A recipe that does not write the key hashes
-       * exactly as it did before this field existed.
-       *
-       * **Not parsed as a URL.** Git accepts a URL, an scp-style `git@host:path`
-       * and a plain path, and it is the only reader that needs to understand any
-       * of them — a directory project (#394) writes an absolute path here, which
-       * `z.url()` would refuse. `min(1)` refuses the one value that is certainly
-       * wrong.
-       *
-       * **_Code, restart, paste_** ([the-plugin-body.md](../../../doc/design/the-plugin-body.md)):
-       * `repo:` is `z.object`, not `z.strictObject`, so an older daemon handed
-       * `remote: <url>` does not refuse it — it silently drops the key and keeps
-       * pushing to the GitHub default. There is no refusal to notice that by.
-       *
-       * Written by `init`/`add` (#394, #391) from the repository's own `origin`;
-       * no bare repository is made for it to point at.
-       *
-       * **Not where tickets live.** That is `source.tickets` (#381) — an
-       * independent axis, and a project may set either, both, or neither.
-       *
-       * **`repo:` was never only about what `admit` cuts.** `base` and
-       * `submodules` are; this field makes `repo:` a section about the repository
-       * itself again.
-       */
-      remote: z.string().min(1).optional(),
+    /**
+     * Whether this recipe lands on `branch.main` (`solo`) or on `branch.personal`
+     * (`team`) — 0130 §1. **Optional, never defaulted**: a default would put the
+     * key into every parsed recipe and move every project's `configHash` with no
+     * edit to any file. `modeOf` in `settings.ts` answers `solo` for an absent one.
+     */
+    mode: z.enum(['solo', 'team']).optional(),
+
+    /**
+     * The branches (0130 §2, 0104 §5). `branchOf` in `settings.ts` is the one
+     * reader: `branch.personal` in team mode, `branch.main` in solo.
+     */
+    branch: z.strictObject({
+      main: z.string().min(1),
+      personal: z.string().min(1).optional(),
     }),
+
+    repo: z
+      .object({
+        /** `git worktree add` does not populate submodules; not doing so breaks every
+         *  test that imports one, and reads as "the agent broke the tests". */
+        submodules: z.boolean().default(false),
+        /**
+         * The repository's own `origin` — where a mirror fetches from and the merge
+         * lane pushes to. `remoteOf` in `settings.ts` returns `recipe.repo.remote ??
+         * null`, and null means `worktree.ts:102`'s GitHub default,
+         * `https://github.com/<owner>/<repo>.git`.
+         *
+         * **No `.default(...)`, for `source.tickets`'s reason above**: a schema
+         * default would put the key into every recipe's parsed body and change every
+         * project's `configHash` the moment a restarted daemon loaded this code, with
+         * no edit to any recipe file. A recipe that does not write the key hashes
+         * exactly as it did before this field existed.
+         *
+         * **Not parsed as a URL.** Git accepts a URL, an scp-style `git@host:path`
+         * and a plain path, and it is the only reader that needs to understand any
+         * of them — a directory project (#394) writes an absolute path here, which
+         * `z.url()` would refuse. `min(1)` refuses the one value that is certainly
+         * wrong.
+         *
+         * **_Code, restart, paste_** ([the-plugin-body.md](../../../doc/design/the-plugin-body.md)):
+         * `repo:` is `z.object`, not `z.strictObject`, so an older daemon handed
+         * `remote: <url>` does not refuse it — it silently drops the key and keeps
+         * pushing to the GitHub default. There is no refusal to notice that by.
+         *
+         * Written by `init`/`add` (#394, #391) from the repository's own `origin`;
+         * no bare repository is made for it to point at.
+         *
+         * **Not where tickets live.** That is `source.tickets` (#381) — an
+         * independent axis, and a project may set either, both, or neither.
+         *
+         * **`repo:` was never only about what `admit` cuts.** `base` and
+         * `submodules` are; this field makes `repo:` a section about the repository
+         * itself again.
+         */
+        remote: z.string().min(1).optional(),
+      })
+      .optional(),
 
     /**
      * Getting the worktree workable before the agent starts. Ordered, and the
@@ -3279,6 +3319,14 @@ export const Recipe = z
      * code, with no edit to any recipe file.
      */
     triage: Triage.optional(),
+
+    /**
+     * `pr:` — the summary agent a team recipe's pull request is written by
+     * (0130 §5). **Optional with no default**, for `triage:`'s reason: a default
+     * would move every project's `configHash` with no edit. Read only in team mode
+     * (refused in solo when the recipe resolves).
+     */
+    pr: Pr.optional(),
 
     /**
      * Who is told what happened, and about which events.

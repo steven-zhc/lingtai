@@ -313,7 +313,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
 
     expect(row?.name).toBe('base: esctest')
     expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('lingtai add --local <dir> --base main')
+    expect(row?.detail).toContain('lingtai add --local <dir> --main main')
   })
 
   it('fails, naming <owner>/project, for an owner-less project with no remote', async () => {
@@ -323,7 +323,7 @@ describe('recipeGovernsItsBase, a project with no owner', () => {
     const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
 
     expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('lingtai add <owner>/esctest --base main')
+    expect(row?.detail).toContain('lingtai add <owner>/esctest --main main')
   })
 
   it('skips rather than continuing past a project with no name recorded', async () => {

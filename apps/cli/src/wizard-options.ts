@@ -14,6 +14,8 @@ const text = (name: string) => Flag.String(name).pipe(Flag.optional)
 
 /** The recipe flags `init` and `add` both take. */
 export const recipeOptions = {
+  main: text('main'),
+  // Declared only to be refused by name: `--base` became `--main` (0130 §2).
   base: text('base'),
   tickets: text('tickets'),
   kinds: text('kinds'),

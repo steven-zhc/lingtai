@@ -15,7 +15,7 @@ import { z } from 'zod'
 
 import { type RecipeChange, editRecipe } from './emit.ts'
 import { RECIPE_VERSION } from './recipe.ts'
-import { RecipeInvalidError, resolveSource } from './resolve.ts'
+import { RecipeInvalidError, readOldSpellings, resolveSource } from './resolve.ts'
 
 /** The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. */
 export interface RecipeFiles {
@@ -36,12 +36,12 @@ export interface SetRecipeResult {
   written: boolean
 }
 
-/** What a refusal names: the file's own `repo.base` where the text parses that far, else `path`. */
+/** What a refusal names: the file's own `branch.main` (or the old spelling of it) where the text parses that far, else `path`. */
 export function refFor(text: string, path: string): string {
   try {
-    const raw = parseYaml(text) as unknown
-    const base = (raw as { repo?: { base?: unknown } } | null)?.repo?.base
-    return typeof base === 'string' ? base : path
+    const raw = readOldSpellings(parseYaml(text) as unknown).recipe
+    const main = (raw as { branch?: { main?: unknown } } | null)?.branch?.main
+    return typeof main === 'string' ? main : path
   } catch {
     return path
   }

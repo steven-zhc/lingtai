@@ -312,6 +312,36 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
   })
 
   /**
+   * **A team recipe resolves and a pass refuses it, by name** (#1306, 0130 §4): it would take every
+   * teammate's ticket and let `end` close the issue as though its code were on `main`. Nothing is claimed.
+   */
+  it('refuses a `mode: team` recipe at stage `recipe`, and claims nothing', async () => {
+    const store = memoryStore()
+    const did: string[] = []
+    const team = HUMAN_BEFORE_THE_LANE.replace(
+      'branch: { main: main }',
+      'mode: team\nbranch: { main: main, personal: me/box }',
+    )
+    const result = await once(
+      {
+        project,
+        client: fakeGitHub([], team),
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        merge: true,
+        home: '/tmp/fake-home',
+        store,
+      },
+      fakePorts(did, store, true),
+    )
+    expect(result).toMatchObject({ ok: false, stage: 'recipe', ticketId: null, runId: null })
+    expect(result.ok === false && result.detail).toContain('mode: solo')
+    expect(did).toEqual([])
+  })
+
+  /**
    * **A person the recipe declared holds the merge, with no `--no-merge`
    * anywhere** — `#58`, and the claim `CLAUDE.md` rests on when it says this
    * repository merges its own work unattended *by configuration rather than by a

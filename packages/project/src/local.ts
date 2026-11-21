@@ -16,7 +16,7 @@ import {
   asRecord,
   assigneeOf,
   backoffOf,
-  baseOf,
+  branchOf,
   ceilingOf,
   checkMachineConfig,
   checkSandboxBlock,
@@ -28,6 +28,7 @@ import {
   namedIn,
   originIn,
   plainWhen,
+  readOldSpellings,
   recipeFileIn,
   resolveAgent,
   resolveSource,
@@ -53,7 +54,7 @@ export interface LocalRecipeOptions extends SandboxHostOptions {
   signedIn: SignedIn
   /**
    * The branch this project was registered against, which becomes `ref`. The
-   * file has no branch of its own, so the recipe's `repo.base` stands in when
+   * file has no branch of its own, so the recipe's `branch.main` stands in when
    * nothing was recorded — and `baseDivergence` still compares the two.
    */
   base?: string | null
@@ -144,7 +145,7 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   const resolved = yield* plainWhen(
     () =>
       resolveSource(source, options.base ?? path, path, (raw) => {
-        wrote = structuredClone(raw)
+        wrote = readOldSpellings(structuredClone(raw)).recipe
         const own = asRecord(raw['runtime']) ?? {}
         if (agent !== null && !('agent' in own)) raw['runtime'] = { ...own, agent: agent.agent }
         return []
@@ -198,7 +199,8 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
 
   const list = (items: readonly string[]) => (items.length > 0 ? items.join(', ') : '(none)')
   const recipeValues: Record<string, string> = {
-    'repo.base': baseOf(recipe),
+    'branch.main': recipe.branch.main,
+    ...(recipe.branch.personal === undefined ? {} : { 'branch.personal': recipe.branch.personal }),
     'source.kinds': kindsOf(recipe).join(' > '),
     'source.exclude': list(excludeOf(recipe)),
     // Said out loud by a reading, and not carried here until now — so that
@@ -241,13 +243,13 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   // fact `originIn` only has an answer for afterwards. A `claim` `queue:`
   // that names it is the source for both halves, whichever one it wrote;
   // otherwise each half asks `runtime.assignee.<key>` on its own, so a file
-  // that wrote only `login` still reads `take: both ← default`.
+  // that wrote only `login` still reads `take: all ← default`.
   const rule = assigneeOf(recipe)
   const atStep = recipe.steps.claim.some((action) => 'queue' in action) ? from('steps.claim') : null
   provenance['runtime.assignee.take'] =
-    `${rule?.take ?? 'both'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
+    `${rule?.take ?? 'all'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
   provenance['runtime.assignee.login'] =
     `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
 
-  return { ...resolved, ref: options.base ?? baseOf(resolved.recipe), provenance }
+  return { ...resolved, ref: options.base ?? branchOf(resolved.recipe), provenance }
 })

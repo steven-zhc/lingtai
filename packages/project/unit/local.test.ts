@@ -77,7 +77,7 @@ describe('resolveLocalRecipe', () => {
     expect(resolved.provenance?.['steps']).toBe(
       `claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
     )
-    expect(resolved.provenance?.['repo.base']).toBe(`main ← ${HOME}/app/recipe.yml`)
+    expect(resolved.provenance?.['branch.main']).toBe(`main ← ${HOME}/app/recipe.yml`)
   })
 
   /**
@@ -378,7 +378,7 @@ steps:
     it('is absent when neither file says anything — `both`, and the hash is unchanged', async () => {
       const resolved = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
       expect(resolved.recipe.runtime).not.toHaveProperty('assignee')
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe('both ← default')
+      expect(resolved.provenance?.['runtime.assignee.take']).toBe('all ← default')
       expect(resolved.provenance?.['runtime.assignee.login']).toBe('(none) ← default')
 
       // Built by hand with the same `agent`/`limits` merge and no `assignee`
@@ -411,8 +411,8 @@ steps:
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'both' })
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe('both ← default')
+      expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'all' })
+      expect(resolved.provenance?.['runtime.assignee.take']).toBe('all ← default')
       expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
     })
 

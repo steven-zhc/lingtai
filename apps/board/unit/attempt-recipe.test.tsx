@@ -21,7 +21,8 @@ import { Attempt } from '../test/attempt-tab.tsx'
 
 const RECIPE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [blocked] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -444,7 +445,7 @@ describe('what the page may render of an action', () => {
   const payingRun: PluginSecrets = { key: 'run', secrets: ['token'] }
   const base = Recipe.parse({
     version: 2,
-    repo: { base: 'main' },
+    branch: { main: 'main' },
     source: { kinds: ['bug'] },
     env: { plantAt: '.env.local' },
     runtime: {},
@@ -532,11 +533,11 @@ describe('describeAction, over the closed set', () => {
     close: { name: 'close', close: true, when: 'landed' },
     labels: { name: 'label', labels: ['shipped'], when: 'any' },
     refs: { name: 'sweep', refs: true, branch: false, when: 'landed' },
-    worktree: { name: 'cut', worktree: { base: 'main', submodules: false } },
+    worktree: { name: 'cut', worktree: { submodules: false } },
     merge: { name: 'land', merge: { strategy: 'merge-commit' } },
     queue: {
       name: 'queue',
-      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } },
+      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'all' } },
     },
     judge: { name: 'judge', judge: 'claude-code', when: 'findings' },
     backlog: { name: 'minors', backlog: 'minor' },

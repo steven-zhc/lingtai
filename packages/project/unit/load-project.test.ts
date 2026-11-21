@@ -48,7 +48,7 @@ describe('loadProject', () => {
     const { state, recipe } = await Effect.runPromise(load(store, files))
     expect(await events(store)).toEqual(['ProjectRecipeChanged'])
     expect(state.recipe?.sourceHash).toBe(sourceHashOf(A))
-    expect(recipe.recipe.repo.base).toBe('main')
+    expect(recipe.recipe.branch.main).toBe('main')
     expect(writes).toEqual([])
   })
 

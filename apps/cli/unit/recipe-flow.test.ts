@@ -97,7 +97,7 @@ describe('askRecipe — an absent file (#432)', () => {
       project: 'widget',
       local: true,
       seeds: [
-        { path: ['repo', 'base'], value: 'main' },
+        { path: ['branch', 'main'], value: 'main' },
         { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       ],
@@ -115,7 +115,7 @@ describe('askRecipe — an absent file (#432)', () => {
     const files = mapFiles()
     const world = defaultsWorld()
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
@@ -137,8 +137,8 @@ describe('askRecipe — an absent file (#432)', () => {
     const path = recipePath('widget', HOME)
     const text = files.replaced[0]!.text
     const resolved = resolveSource(text, path, path).recipe
-    expect(resolved.repo.base).toBe('main')
-    expect(resolved.repo.remote).toBe('https://github.com/acme/widget.git')
+    expect(resolved.branch.main).toBe('main')
+    expect(resolved.repo?.remote).toBe('https://github.com/acme/widget.git')
     expect(resolved.env.plantAt).toBe(ENV_PLANT_AT)
     expect(resolved.source.tickets).toBe('db')
     expect(resolved.source.kinds).toEqual(['bug', 'feature', 'tech-debt', 'documentation'])
@@ -176,7 +176,7 @@ describe('askRecipe — an absent file (#432)', () => {
     const files = mapFiles()
     const world = defaultsWorld()
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
@@ -274,7 +274,7 @@ describe('askRecipe — --defaults (#433)', () => {
       log: () => {},
     }
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
@@ -301,7 +301,7 @@ describe('askRecipe — --defaults (#433)', () => {
   })
 
   const SEEDS = [
-    { path: ['repo', 'base'], value: 'main' },
+    { path: ['branch', 'main'], value: 'main' },
     { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
     { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
   ]
@@ -416,7 +416,7 @@ describe('askRecipe — --defaults (#433)', () => {
       log: () => {},
     }
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
@@ -447,7 +447,7 @@ describe('askRecipe — --defaults (#433)', () => {
     const world: QuestionWorld = { ask: async () => null, log: () => {} }
     const { kinds: _omitted, ...withoutKinds } = FULLY_FLAGGED
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
 
@@ -478,7 +478,7 @@ describe('askRecipe — the trial run (#436)', () => {
       flags: { install: 'none', ...flags },
       buildFlags: ['pnpm test'],
       seeds: [
-        { path: ['repo', 'base'], value: 'main' },
+        { path: ['branch', 'main'], value: 'main' },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       ],
       kept: 'kept',
@@ -555,7 +555,7 @@ describe('askRecipe — the trial run (#436)', () => {
           flags: { install: 'none', 'check-build': 'yes' },
           buildFlags: ['pnpm test'],
           seeds: [
-            { path: ['repo', 'base'], value: 'main' },
+            { path: ['branch', 'main'], value: 'main' },
             { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
           ],
           kept: 'kept',
@@ -593,7 +593,7 @@ describe('askRecipe — a draft, never a write (#1182)', () => {
       project: 'widget',
       local: true,
       seeds: [
-        { path: ['repo', 'base'], value: 'main' },
+        { path: ['branch', 'main'], value: 'main' },
         { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
         { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       ],

@@ -233,7 +233,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
           blocks: 'a failing block',
         }))
     }
-    const argv = ['acme/widgets', '--base', 'main', '--install', 'none', '--build', 'none']
+    const argv = ['acme/widgets', '--main', 'main', '--install', 'none', '--build', 'none']
     return { ...h, argv }
   }
 

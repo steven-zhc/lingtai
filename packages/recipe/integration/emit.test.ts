@@ -12,6 +12,10 @@ import { describe, expect, it } from 'vitest'
 import { parse, parseDocument, isMap, isScalar, type Node, type YAMLMap } from 'yaml'
 
 import { Recipe, editRecipe, emitRecipe, type RecipeChange } from '../src/index.ts'
+import { readOldSpellings } from '../src/resolve.ts'
+
+/** `Recipe.parse` over a file that may still be in the old spelling, as every resolver reads it. */
+const parseRecipe = (raw: unknown) => Recipe.parse(readOldSpellings(raw).recipe)
 
 const OWN = readFileSync(new URL('../../../.lingtai/config.yaml', import.meta.url), 'utf8')
 type Step = Record<string, unknown>
@@ -46,7 +50,7 @@ describe("editRecipe, on this repository's own recipe", () => {
   it('round-trips it with one field changed, and git diff shows only that line', () => {
     const out = editRecipe(OWN, [{ path: ['runtime', 'limits', 'run', 'turns'], value: 200 }])
     expect(gitDiff(OWN, out)).toEqual({ removed: ['      turns: 150'], added: ['      turns: 200'] })
-    expect(Recipe.parse(parse(out)).runtime.limits.run.turns).toBe(200)
+    expect(parseRecipe(parse(out)).runtime.limits.run.turns).toBe(200)
   })
 
   it('changes nothing when nothing is changed, byte for byte', () => {
@@ -113,7 +117,7 @@ describe("editRecipe, on this repository's own recipe", () => {
     expect(commentCount(out)).toBe(commentCount(OWN))
     const doc = parseDocument(OWN)
     doc.setIn(change.path, change.value)
-    expect(Recipe.parse(parse(out))).toEqual(Recipe.parse(doc.toJS()))
+    expect(parseRecipe(parse(out))).toEqual(parseRecipe(doc.toJS()))
   })
 
   it('makes several changes at once and moves only their lines', () => {
@@ -395,7 +399,7 @@ describe('emitRecipe', () => {
 
   const recipe = Recipe.parse({
     version: 2,
-    repo: { base: 'develop' },
+    branch: { main: 'develop' },
     source: { kinds: ['bug', 'feature'], exclude: ['agent:hold'] },
     env: { required: ['DATABASE_URL'], plantAt: '.env.local' },
     steps: {
@@ -414,12 +418,12 @@ describe('emitRecipe', () => {
 
   it('passes Recipe.parse, and re-reading it gives back what went in', () => {
     const text = emitRecipe(recipe, said)
-    expect(Recipe.parse(parse(text))).toEqual(recipe)
+    expect(parseRecipe(parse(text))).toEqual(recipe)
   })
 
   it("re-reads this repository's own recipe exactly, multi-line prompt and all", () => {
-    const recipe = Recipe.parse(parse(OWN))
-    expect(Recipe.parse(parse(emitRecipe(recipe)))).toEqual(recipe)
+    const recipe = parseRecipe(parse(OWN))
+    expect(parseRecipe(parse(emitRecipe(recipe)))).toEqual(recipe)
   })
 
   it("carries the wizard's own sentence above every block it asked about", () => {

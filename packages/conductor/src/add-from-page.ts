@@ -28,7 +28,7 @@ import { createFileLocker, type Locker } from '@lingtai/env/lock'
 import type { EventStore } from '@lingtai/event-store/store'
 import { GitHubFailed, makeGitHub, type GitHub } from '@lingtai/github'
 import { HOST_FOR_SAVING, draftRecipe, loadAllProjects, loadProject, recipePath } from '@lingtai/project'
-import { baseOf, resolveSource } from '@lingtai/recipe'
+import { branchOf, resolveSource } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import {
   alreadyAdded,
@@ -364,7 +364,7 @@ export function liveRegister(target: SetupTarget, home?: string): AddPorts['regi
       yield* addLocalEffect(
         {
           project: form.project,
-          base: baseOf(resolved.recipe),
+          base: branchOf(resolved.recipe),
           configHash: resolved.configHash,
           fromSha: tip.out,
         },

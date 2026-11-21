@@ -700,9 +700,9 @@ export function describeAction(
     // so the set is what this answers, and a reading with no case for a kind is a
     // `switch` that returns `undefined` on a page nobody would think to re-test.
     case 'worktree': {
-      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>
+      const a = action as Extract<StepAction, { worktree: { submodules: boolean } }>
       return {
-        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ', submodules and all' : ''}`,
+        does: `cuts the branch from origin/<the landing branch>${a.worktree.submodules ? ', submodules and all' : ''}`,
         bound: 'no clock — it is the directory the work happens in',
       }
     }
@@ -863,7 +863,7 @@ export interface Provenance {
 /**
  * Every value the resolve knows the origin of, as three columns (#218).
  *
- * **The whole map and not the rows' keys.** `repo.base` and `env.required` are
+ * **The whole map and not the rows' keys.** `branch.main` and `env.required` are
  * in it and in no reading, and a page whose exhaustive list was assembled from
  * what the reading above already showed would be exhaustive of the wrong thing.
  * This is `provenanceLines`' block, which `lingtai doctor` has printed since

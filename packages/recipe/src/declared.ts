@@ -9,7 +9,15 @@ import { parse as parseYaml } from 'yaml'
 import { SCHEMA_PROBE_AGENT, asRecord } from './local.ts'
 import { applyPreset } from './presets.ts'
 import { Recipe } from './recipe.ts'
-import { RecipeInvalidError, retiredLimits, retiredTier, unknownKeys } from './resolve.ts'
+import {
+  RecipeInvalidError,
+  RecipeRefusedError,
+  readOldSpellings,
+  refuseOnMeaning,
+  retiredLimits,
+  retiredTier,
+  unknownKeys,
+} from './resolve.ts'
 import { SandboxBlock } from './sandbox-block.ts'
 import { refFor } from './write.ts'
 
@@ -44,6 +52,10 @@ export function checkDeclared(text: string, where: string): void {
     // unknown `extends:` — left to the resolve
   }
 
+  const old = readOldSpellings(applied)
+  if (old.twoHomes.length > 0) throw new RecipeRefusedError(ref, old.twoHomes, where)
+  applied = asRecord(old.recipe) ?? applied
+
   const unknown = unknownKeys(applied)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
   const retired = [...retiredTier(applied), ...retiredLimits(applied)]
@@ -62,6 +74,9 @@ export function checkDeclared(text: string, where: string): void {
       where,
     )
   }
+  // The probe agent is not the file's, so a refusal about the agent is asked only of a file that wrote one.
+  const refused = refuseOnMeaning(parsed.data, runtime !== null && 'agent' in runtime)
+  if (refused.length > 0) throw new RecipeRefusedError(ref, refused, where)
 }
 
 /**

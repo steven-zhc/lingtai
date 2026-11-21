@@ -11,7 +11,7 @@ import { limitsRow, unpricedRow } from '../src/doctor.ts'
 const recipe = (agent: string, limits: Record<string, unknown>, steps?: unknown) =>
   Recipe.parse({
     version: 2,
-    repo: { base: 'main' },
+    branch: { main: 'main' },
     source: { kinds: ['bug'] },
     env: { plantAt: '.env.local' },
     runtime: { agent, limits },

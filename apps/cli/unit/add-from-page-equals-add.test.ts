@@ -157,7 +157,7 @@ const LIMITS = {
 describe('the page writes what lingtai add writes (#971)', () => {
   it('a GitHub repository, every default', async () => {
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       {
         path: ['steps', 'end'],
@@ -192,7 +192,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
 
   it('a local directory, every default', async () => {
     const seeds = [
-      { path: ['repo', 'base'], value: LINGTAI_BASE },
+      { path: ['branch', 'main'], value: LINGTAI_BASE },
       { path: ['repo', 'remote'], value: '/work/chapter-garden' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
@@ -221,7 +221,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
 
 describe('the sandbox step, new recipe (#1160)', () => {
   const GH_SEEDS = [
-    { path: ['repo', 'base'], value: 'main' },
+    { path: ['branch', 'main'], value: 'main' },
     { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
   ]
   const form =

@@ -293,7 +293,7 @@ describe('base: <project>', () => {
     const local = { project: 'alpha', owner: null, base: 'develop' } as ProjectState
     const [a] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([owned]), { recipe }))
     const [b] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([local]), { recipe }))
-    expect(a).toMatchObject({ name: 'base: alpha', status: 'fail', fix: 'lingtai add acme/alpha --base main' })
+    expect(a).toMatchObject({ name: 'base: alpha', status: 'fail', fix: 'lingtai add acme/alpha --main main' })
     expect(b).toMatchObject({ name: 'base: alpha', status: 'fail' })
     expect(b!.fix).toBeUndefined()
     for (const row of [a!, b!]) {

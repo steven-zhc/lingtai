@@ -48,7 +48,7 @@ import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import { loadProjectsEffect, recordTurn } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
-import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { branchOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -256,12 +256,12 @@ export function conductWork(
 
       if (project.owner === null) {
         // A local registration always records `base` (`first-project.ts`). If it
-        // did not, the fallback is the recipe's own `repo.base` — never
+        // did not, the fallback is the recipe's own `branch.main` — never
         // `client.defaultBranch()`, which there is no client to ask.
         where.ref = project.base
         resolved = yield* Effect.promise(() => world.currentRecipe(project, undefined, where.ref ?? undefined))
         options.onRecipe?.(name, resolved.recipe)
-        if (where.ref === null) where.ref = baseOf(resolved.recipe)
+        if (where.ref === null) where.ref = branchOf(resolved.recipe)
 
         // Both before `where.looked()`: a refusal here — no `source.tickets:
         // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
@@ -533,7 +533,7 @@ export function conductWork(
         store,
         project: name,
         recipe: resolved.recipe,
-        base: baseOf(resolved.recipe),
+        base: branchOf(resolved.recipe),
         owner: common.client.owner ?? '',
         repo: common.client.repo,
         offered,

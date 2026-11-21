@@ -17,7 +17,7 @@ describe('emitRecipe', () => {
   it('states every limit key, defaults included, for a recipe that named none', () => {
     const recipe = Recipe.parse({
       version: 2,
-      repo: { base: 'main' },
+      branch: { main: 'main' },
       source: { kinds: ['bug'] },
       env: { plantAt: '.env' },
       runtime: {},

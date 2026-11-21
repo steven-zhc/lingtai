@@ -89,7 +89,7 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
     process.env['LINGTAI_GITHUB_APP_ID'] = '1'
     process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY'] = 'x'
     const { deps, calls } = depsFor({})
-    const code = await askBeforeGithubAdd(SLUG, { base: 'main', install: 'none' }, deps, ['none'])
+    const code = await askBeforeGithubAdd(SLUG, { main: 'main', install: 'none' }, deps, ['none'])
     expect(typeof code).toBe('object')
     expect(calls.check).toBe(0)
     expect(calls.picker).toBe(0)

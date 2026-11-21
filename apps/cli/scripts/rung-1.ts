@@ -30,7 +30,7 @@ import { createGitHubClient } from '@lingtai/github'
  *
  *   node --experimental-strip-types apps/cli/scripts/rung-1.ts <owner>/<repo>
  */
-import { baseOf, resolveRecipe, submodulesOf } from '@lingtai/recipe'
+import { branchOf, resolveRecipe, submodulesOf } from '@lingtai/recipe'
 import { provisionWorktreeEffect, removeWorktreeEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -95,8 +95,8 @@ const resolved = await resolveRecipe((p, r) => client.fileAt(p, r), base)
 const recipe = resolved.recipe
 done(`${resolved.configHash.slice(0, 16)} from ${base}, ${recipe.prepare.length} prepare step(s)`)
 
-if (baseOf(recipe) !== base) {
-  console.log(`  !!  the recipe says its base is ${baseOf(recipe)}, read from ${base}`)
+if (branchOf(recipe) !== base) {
+  console.log(`  !!  the recipe says its base is ${branchOf(recipe)}, read from ${base}`)
 }
 
 // ---- seams 2 and 3: clone and submodules, over https, with the token -------
@@ -119,7 +119,7 @@ const worktree = await Effect.runPromise(
     project: repo,
     owner,
     repo,
-    base: baseOf(recipe),
+    base: branchOf(recipe),
     branch: `rung1/${runId}`,
     runId,
     submodules: submodulesOf(recipe),
