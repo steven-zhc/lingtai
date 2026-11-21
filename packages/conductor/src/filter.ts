@@ -117,6 +117,8 @@ export type ProjectFilter =
        * where.
        */
       ref: string
+      /** `ResolvedRecipe.oldSpellings`: what `lingtai doctor` names and `--fix` rewrites (#1307). */
+      oldSpellings: readonly string[]
       /**
        * Where each value came from — the recipe file, the machine file,
        * detection or a default — keyed by its path in the recipe. What
@@ -439,6 +441,7 @@ export function projectFilterEffect(
       ok: true,
       configHash: resolved.configHash,
       ref: resolved.ref,
+      oldSpellings: resolved.oldSpellings,
       provenance: resolved.provenance ?? {},
       kinds: kindsOf(resolved.recipe),
       exclude: excludeOf(resolved.recipe),

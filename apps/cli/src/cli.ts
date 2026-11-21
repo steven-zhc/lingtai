@@ -86,12 +86,29 @@ const eventsCommand = Command.make(
 
 const doctor = Command.make(
   'doctor',
-  { json, noColor, verbose: Flag.Boolean('verbose').pipe(Flag.withDefault(false)) },
+  {
+    json,
+    noColor,
+    verbose: Flag.Boolean('verbose').pipe(Flag.withDefault(false)),
+    fix: Flag.Boolean('fix').pipe(Flag.withDefault(false)),
+  },
   (args) =>
     Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives.
-      const { doctorReportEffect, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
+      const { doctorReportEffect, doctorJson, renderDoctor, tally, fixRefusal, fixOldSpellings, renderSpellingFixes } =
+        yield* lift(() => import('./doctor.ts'))
+      // Before anything is read or written: no script reads a report that wrote something.
+      const refused = fixRefusal(args)
+      if (refused !== null) return yield* Effect.fail(new Error(refused))
+      let fixFailed = false
+      if (args.fix) {
+        const { userInfo } = yield* lift(() => import('node:os'))
+        const { loadProjectsEffect } = yield* lift(() => import('@lingtai/project'))
+        const fixes = yield* fixOldSpellings(() => loadProjectsEffect(), {}, { by: `human:${userInfo().username}` })
+        for (const line of renderSpellingFixes(fixes)) console.log(line)
+        fixFailed = fixes === null || fixes.some((f) => f.outcome === 'failed')
+      }
       const { releaseCheck } = yield* lift(() => import('./install.ts'))
       const { doctorProgress } = yield* lift(() => import('./steps.ts'))
       const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
@@ -113,7 +130,7 @@ const doctor = Command.make(
       // does not refuse on the same number: a failure marked `restartAnswers` exits
       // this 1 and lets a restart through — see `gatingFailures`. A deferred check
       // is not a failure; a missing one would be.
-      yield* exitWith(report.failed === 0 ? 0 : 1)
+      yield* exitWith(report.failed === 0 && !fixFailed ? 0 : 1)
     }).pipe(orFailed('doctor', args.json)),
 ).pipe(Command.withDescription(definitionOf('doctor').task))
 
