@@ -39,6 +39,9 @@ interface World {
   pullHead: string
   pushOnMark?: string
   failGetAfterMark?: boolean
+  failGetOn?: number
+  convertFails?: boolean
+  gets?: number
   pullHeads?: string[]
   marked: string[]
   reverted: string[]
@@ -98,17 +101,22 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         },
       ]),
     getPull: () =>
-      w.failGetAfterMark === true && w.marked.length > 0
+      (w.gets = (w.gets ?? 0) + 1) === w.failGetOn
         ? Effect.fail(new GitHubFailed(0, 'pulls/7', 'down'))
-        : Effect.succeed({
-            state: 'open',
-            merged: false,
-            mergeCommitSha: null,
-            headSha: w.pullHeads?.shift() ?? w.pullHead,
-            updatedAt: 'x',
-            draft: w.draft,
-          } satisfies PullState),
-    convertToDraft: (id: string) => Effect.sync(() => void w.reverted.push(id)),
+        : w.failGetAfterMark === true && w.marked.length > 0
+          ? Effect.fail(new GitHubFailed(0, 'pulls/7', 'down'))
+          : Effect.succeed({
+              state: 'open',
+              merged: false,
+              mergeCommitSha: null,
+              headSha: w.pullHeads?.shift() ?? w.pullHead,
+              updatedAt: 'x',
+              draft: w.draft,
+            } satisfies PullState),
+    convertToDraft: (id: string) =>
+      w.convertFails
+        ? Effect.fail(new GitHubFailed(0, '/graphql', 'down'))
+        : Effect.sync(() => void w.reverted.push(id)),
     markReadyForReview: (id: string) =>
       w.markFails
         ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom'))
@@ -314,6 +322,18 @@ describe('the ci and ready steps', () => {
     w.pullHeads = [FROZEN, FROZEN, FROZEN, 'b'.repeat(40)]
     await serve(ports(store, w, recipeWith()))
     expect(w.reverted).toEqual(['PR_7'])
+    const s = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(s.status).toBe('waiting')
+    expect(s.wait).toMatchObject({ reason: 'branch-moved' })
+  })
+
+  it('a failed settling read and a failed conversion still leave the log out of In review', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    // getPull calls: ready's look, after the mutation, next to the append, then the settling look (fails).
+    w.failGetOn = 4
+    w.convertFails = true
+    await serve(ports(store, w, recipeWith())).catch(() => undefined)
     const s = reducePr(await store.read(prStream('lingtai', 1)))
     expect(s.status).toBe('waiting')
     expect(s.wait).toMatchObject({ reason: 'branch-moved' })

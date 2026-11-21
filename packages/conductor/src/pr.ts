@@ -543,20 +543,27 @@ const readyStep: PrStep = {
         record: (project, n, store) =>
           Effect.gen(function* () {
             const opened = { host: 'github' as const, number: host.number, url: host.url }
+            // The log leaves In review **first**, so a compensation that fails halfway leaves the log on the safe side: a
+            // Waiting PR is re-walked, and `ready` converts a ready head it never read back to a draft. Both halves are
+            // tried either way; a failure of either is raised afterwards.
             const revert = (why: string) =>
-              github
-                .convertToDraft(host.nodeId)
-                .pipe(
-                  Effect.mapError(asError),
-                  Effect.andThen(
-                    recordPrWaiting(
-                      project,
-                      n,
-                      { step: 'ready', reason: 'branch-moved', detail: why, headSha: target },
-                      store,
-                    ),
-                  ),
+              Effect.gen(function* () {
+                const waited = yield* recordPrWaiting(
+                  project,
+                  n,
+                  { step: 'ready', reason: 'branch-moved', detail: why, headSha: target },
+                  store,
+                ).pipe(
+                  Effect.as(null as Error | null),
+                  Effect.catch((e: unknown) => Effect.succeed(asError(e))),
                 )
+                const converted = yield* github.convertToDraft(host.nodeId).pipe(
+                  Effect.as(null as Error | null),
+                  Effect.catch((e: unknown) => Effect.succeed(asError(e))),
+                )
+                const failed = waited ?? converted
+                if (failed !== null) return yield* Effect.fail(failed)
+              })
             // The store is read first and the pull request last, so the look is the thing next to the append: no read sits
             // between them for a push to land in. A head that moved, or a look that failed, is never recorded as In review.
             const events = yield* readPrEvents(project, n, store)
