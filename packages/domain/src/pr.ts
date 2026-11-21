@@ -119,8 +119,12 @@ function withStep(state: PrState, record: PrStepRecord): PrState {
 
 /** How many tickets a commit holds: what was recorded for it, else all if it is the PR's head, else those it was frozen with. */
 function heldAt(state: PrState, sha: string): number {
-  // A head never recorded is somebody's commit on top of the PR branch, so it holds every fix the branch had landed.
-  return state.covers[sha] ?? state.tickets.length
+  // A head never recorded has no ancestry evidence here, so it is held to the fewest tickets any recorded head held: a
+  // ticket left open for want of proof is found again, one closed without it is not (#1341).
+  const known = state.covers[sha]
+  if (known !== undefined) return known
+  const all = Object.values(state.covers)
+  return all.length === 0 ? state.tickets.length : Math.min(...all)
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -205,7 +209,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       // `already` is the sync step's own record; a merge is recorded by the build that passed it. The target is the
       // commit the push step means to push, whichever it was.
       const step = d.how === 'already' ? 'sync' : 'build'
-      const held = heldAt(state, state.target ?? '')
+      // The sync started from `target` or from the newer `lastPushed` (a descendant of it, else no sync happens): the
+      // merge holds what the later of the two held.
+      const held = Math.max(
+        heldAt(state, state.target ?? ''),
+        state.lastPushed === null ? 0 : heldAt(state, state.lastPushed),
+      )
       return {
         ...withStep(state, { step, headSha: d.head }),
         ...at,

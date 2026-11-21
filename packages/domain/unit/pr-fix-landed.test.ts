@@ -96,8 +96,18 @@ describe('what an ending and a merge back cover is per ticket (#1341)', () => {
     expect(merged.mergedTickets).toEqual(['10'])
   })
 
-  it('a head nobody recorded, on top of the fix, holds every ticket', () => {
+  it('a head nobody recorded holds only what every recorded head held, so a reset PR closes no fix it lacks', () => {
     const merged = reducePrEvent(landed, event('PrMerged', { how: 'host', headSha: 'd'.repeat(40), mergeSha: null }))
+    expect(merged.mergedTickets).toEqual(['10'])
+  })
+
+  it('a sync that starts from the newer pushed head covers what that head held', () => {
+    const stale = { ...landed, target: head, lastPushed: fixHead }
+    const synced = reducePrEvent(
+      stale,
+      event('BranchSynced', { mainCommit: 'b'.repeat(40), head: 'c'.repeat(40), how: 'clean' }),
+    )
+    const merged = reducePrEvent(synced, event('PrMerged', { how: 'git', headSha: 'c'.repeat(40), mergeSha: null }))
     expect(merged.mergedTickets).toEqual(['10', '11'])
   })
 })
