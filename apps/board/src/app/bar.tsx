@@ -50,6 +50,15 @@ export function Bar({
       </Link>
       {children}
       <nav className="topnav">
+        {/* Search is a visible field (0.16); `Palette` opens on a click anywhere in `[data-palette]`. The key hint draws
+          both labels and CSS shows one, so the server's guess is never written. */}
+        <button type="button" className="search" data-palette title="Search · ⌘K / Ctrl K">
+          Search
+          <span className="keys" aria-hidden="true">
+            <kbd className="k-mac">⌘K</kbd>
+            <kbd className="k-pc">Ctrl K</kbd>
+          </span>
+        </button>
         {actions !== undefined ? (
           actions
         ) : project !== undefined && registered ? (
@@ -72,21 +81,26 @@ export function BarActions({
   project,
   here,
   pause,
+  recipe = true,
 }: {
   project: string
   here?: 'report' | 'recipe'
   pause?: ReactNode
+  /** `Recipe` is a view on the place line on the two pages that draw one, and not here. */
+  recipe?: boolean
 }) {
   return (
     <>
       <span className="pacts">
-        <Link
-          className={here === 'recipe' ? 'navlink on' : 'navlink'}
-          href={`/recipe/${encodeURIComponent(project)}`}
-          aria-current={here === 'recipe' ? 'page' : undefined}
-        >
-          Recipe
-        </Link>
+        {recipe ? (
+          <Link
+            className={here === 'recipe' ? 'navlink on' : 'navlink'}
+            href={`/recipe/${encodeURIComponent(project)}`}
+            aria-current={here === 'recipe' ? 'page' : undefined}
+          >
+            Recipe
+          </Link>
+        ) : null}
         {pause}
       </span>
       <span className="vsep" aria-hidden="true" />

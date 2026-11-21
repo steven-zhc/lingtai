@@ -234,6 +234,7 @@ describe("the bar's amber", () => {
       // own, and a component the bar mounts is the bar's whether or not its
       // markup is still in this slice — which is the `.btn.pri` lesson again.
       read('projects.tsx'),
+      read('place-line.tsx'),
       // The banner's rows and the Pause button (#994): held, never `--signal`.
       read('lock-banner.tsx'),
       read('pause-button.tsx'),
@@ -295,7 +296,9 @@ describe("the bar's amber", () => {
       'tab',
       'prj',
       'phint',
-      'addp',
+      'place',
+      'badge',
+      'search',
       'pacts',
       'vsep',
     ]) {

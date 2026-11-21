@@ -7,8 +7,9 @@ import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { type ReactNode } from 'react'
 
-import { Bar } from '@/app/bar.tsx'
+import { Bar, BarActions } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { PlaceLine, viewsFor } from '@/app/place-line.tsx'
 import { ModeGraph } from '@/components/mode-graph.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
@@ -105,7 +106,7 @@ function Action({ action }: { action: StepActionLine }) {
 }
 
 /** The mode, first (#1326): a reading of the resolved recipe, never of the log. */
-function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['recipe'] }) {
+export function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['recipe'] }) {
   const mode = modeLines(recipe)
   return (
     <section className="rcard" id="mode">
@@ -129,6 +130,20 @@ function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true }>['re
             summary · <span className="mono">{mode.pr.agent}</span>
             {mode.pr.agentFromDefault ? ' ← runtime.agent' : ''} · {mode.pr.turns} turns · {mode.pr.wall}
             {mode.pr.fromDefault ? ' ← default' : ''}
+          </span>
+        </div>
+      )}
+      {mode.pr === null ? null : (
+        <div className="step-set">
+          <span className="step-set-k">CI</span>{' '}
+          <span>
+            {mode.pr.ci.provider === 'detect'
+              ? 'detect (a pull_request workflow means GitHub Actions)'
+              : mode.pr.ci.provider}
+            {mode.pr.ci.from.provider === 'default' ? ' ← default' : ' ← recipe.yml'} ·{' '}
+            {mode.pr.ci.required === 'all' ? 'every check' : mode.pr.ci.required.join(', ')}
+            {mode.pr.ci.from.required === 'default' ? ' ← default' : ' ← recipe.yml'} · {mode.pr.ci.timeout}
+            {mode.pr.ci.from.timeout === 'default' ? ' ← default' : ' ← recipe.yml'}
           </span>
         </div>
       )}
@@ -270,7 +285,13 @@ export function Recipe({
     <>
       <main className="detail">
         {bar === undefined ? (
-          <Bar project={view.project} registered here="recipe" pause={pause} />
+          <Bar
+            project={view.project}
+            here="recipe"
+            actions={<BarActions project={view.project} here="recipe" pause={pause} recipe={false} />}
+          >
+            <PlaceLine project={view.project} views={viewsFor(view.project)} here="recipe" />
+          </Bar>
         ) : (
           <RecipeBar project={view.project} {...bar} pause={pause} />
         )}
@@ -398,7 +419,9 @@ export default async function RecipePage({
   } catch {
     return (
       <main className="detail">
-        <Bar project={name} here="recipe" />
+        <Bar project={name} here="recipe">
+          <PlaceLine project={name} views={viewsFor(name)} here="recipe" />
+        </Bar>
         <LockBanner project={name} />
       </main>
     )

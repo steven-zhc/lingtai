@@ -302,6 +302,40 @@ body {
   border: 1px solid var(--rule); border-radius: 3px;
 }
 .addp:hover { border-color: var(--accent); color: var(--ink); }
+/* The place line (0.16): `Lingtai / project ▾ / Tickets · Recipe`. One object, the place; the views are part of it. */
+.bar .place { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
+.place .slash { color: var(--rule-2); font-family: var(--mono); font-size: 12px; }
+.place .crumb { font-family: var(--mono); font-size: 10.5px; color: var(--muted); padding: 2px 7px; }
+.place .views { display: inline-flex; align-items: center; gap: 2px; }
+.place .view {
+  font-size: 13px; color: var(--muted); text-decoration: none; padding: 3px 8px;
+  border-bottom: 2px solid transparent; display: inline-flex; gap: 5px; align-items: center;
+}
+.place .view:hover { color: var(--ink); }
+.place .view.on { color: var(--ink); border-bottom-color: var(--accent); }
+.place .badge {
+  font-family: var(--mono); font-size: 10.5px; padding: 0 6px; border-radius: 8px;
+  color: var(--fail); border: 1px solid var(--fail);
+}
+.place .more { position: relative; }
+.place .more > summary { font-size: 13px; color: var(--muted); padding: 3px 8px; cursor: pointer; }
+.place .more .menu {
+  position: absolute; top: 100%; right: 0; z-index: 10; display: flex; flex-direction: column;
+  padding: 4px; background: var(--surface); border: 1px solid var(--rule); white-space: nowrap;
+}
+/* The visible search field, #908's key made findable. The key hint is a fixed-width slot, and CSS picks
+   the label once `Palette` has set `data-os` on <html>: until then the Mac one. */
+.bar .search {
+  font: inherit; font-size: 13px; color: var(--muted); cursor: pointer;
+  display: inline-flex; align-items: center; gap: 10px; min-width: 150px; justify-content: space-between;
+  padding: 5px 10px; border: 1px solid var(--rule); border-radius: 4px; background: var(--surface, transparent);
+}
+.bar .search:hover { border-color: var(--accent); color: var(--ink); }
+.bar .search .keys { display: inline-block; min-width: 3.6em; text-align: right; }
+.bar .search kbd { font-family: var(--mono); font-size: 10.5px; }
+.bar .search .k-pc { display: none; }
+html[data-os="pc"] .bar .search .k-pc { display: inline; }
+html[data-os="pc"] .bar .search .k-mac { display: none; }
 /* A selected project's actions, a separator, then Report (#993). */
 .pacts { display: inline-flex; gap: 4px; }
 .vsep { width: 1px; align-self: stretch; background: var(--rule-2); margin: 2px 8px; }

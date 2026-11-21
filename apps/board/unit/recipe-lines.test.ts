@@ -175,6 +175,29 @@ describe('modeLines (#1326)', () => {
     expect(text(m)).not.toMatch(/kept current|before each claim|in review/)
   })
 
+  it('reads pr.ci through ciOf, with where each value came from (#1338)', async () => {
+    const head = `mode: team\nbranch: { main: main, personal: me/work }\n${GH}\n`
+    const dflt = await read(yaml(head, 'assignee: { login: me }, '))
+    expect(dflt.pr?.ci).toEqual({
+      provider: 'detect',
+      required: 'all',
+      timeout: '60m',
+      from: { provider: 'default', required: 'default', timeout: 'default' },
+    })
+    const wrote = await read(
+      yaml(
+        `${head}pr: { ci: { provider: github-actions, required: [test], timeout: 30m } }`,
+        'assignee: { login: me }, ',
+      ),
+    )
+    expect(wrote.pr?.ci).toEqual({
+      provider: 'github-actions',
+      required: ['test'],
+      timeout: '30m',
+      from: { provider: 'recipe', required: 'recipe', timeout: 'recipe' },
+    })
+  })
+
   it('names the login for a team recipe whose take is omitted', async () => {
     const m = await read(
       yaml(`mode: team\nbranch: { main: main, personal: me/work }\n${GH}`, 'assignee: { login: me }, '),
