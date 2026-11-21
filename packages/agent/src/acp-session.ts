@@ -122,15 +122,16 @@ const PROBE_MS = 20_000
 /**
  * Whether the agent will open a session: `initialize` and `session/new`, no
  * prompt sent (so nothing is billed). The process group is ended before it
- * answers either way.
+ * answers either way. A promise, because `Runtime.checkAuth` is one and must
+ * not need an `Effect.run*` to be (the ratchet, 0101 §6).
  */
-export const probeSession = (
+export const probeSessionPromise = (
   profile: AcpProfile,
   binary: string,
   env: Record<string, string>,
   spawn: SpawnAgent = nodeSpawn,
-): Effect.Effect<SessionProbe> =>
-  Effect.callback<SessionProbe>((resume) => {
+): Promise<SessionProbe> =>
+  new Promise<SessionProbe>((resolve) => {
     const child = spawnAgent(spawn, binary, profile.args, { cwd: tmpdir(), env })
     let done = false
     const finish = (result: SessionProbe) => {
@@ -138,7 +139,7 @@ export const probeSession = (
       done = true
       clearTimeout(timer)
       signalGroup(child, 'SIGKILL')
-      resume(Effect.succeed(result))
+      resolve(result)
     }
     const timer = setTimeout(() => finish({ kind: 'timeout' }), PROBE_MS)
     child.on('error', (error: NodeJS.ErrnoException) =>
@@ -156,9 +157,11 @@ export const probeSession = (
               : { kind: 'failed', message: error instanceof Error ? error.message : String(error) },
           ),
       )
-    return Effect.sync(() => {
-      done = true
-      clearTimeout(timer)
-      signalGroup(child, 'SIGKILL')
-    })
   })
+
+export const probeSession = (
+  profile: AcpProfile,
+  binary: string,
+  env: Record<string, string>,
+  spawn: SpawnAgent = nodeSpawn,
+): Effect.Effect<SessionProbe> => Effect.promise(() => probeSessionPromise(profile, binary, env, spawn))

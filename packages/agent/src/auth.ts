@@ -17,7 +17,13 @@ import { join } from 'node:path'
 import { RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
 
-import { COPILOT_PROFILE, probeSession, type AcpProfile, type SessionProbe } from './acp-session.ts'
+import {
+  COPILOT_PROFILE,
+  probeSession,
+  probeSessionPromise,
+  type AcpProfile,
+  type SessionProbe,
+} from './acp-session.ts'
 import type { AuthState, AuthStatus } from './runtime.ts'
 
 /**
@@ -318,9 +324,9 @@ export const copilotAuthEffect = Effect.fn('agent.auth')(function* (binary: stri
   return classifyAcpSession(COPILOT_PROFILE, yield* probeSession(COPILOT_PROFILE, binary, env))
 })
 
-/** The Effect above, as the promise `Runtime.checkAuth` still awaits (a listed face, #790). */
+/** The same probe as the promise `Runtime.checkAuth` awaits — no `Effect.run*`, so no listed face. */
 export function copilotAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
-  return Effect.runPromise(copilotAuthEffect(binary, env))
+  return probeSessionPromise(COPILOT_PROFILE, binary, env).then((probe) => classifyAcpSession(COPILOT_PROFILE, probe))
 }
 
 /**

@@ -185,7 +185,8 @@ export interface TurnEnd {
  * the wall's to name, not this function's.
  */
 export function acpFailure(profile: AcpProfile, end: TurnEnd): { kind: 'crash'; detail: string } | null {
-  if (end.stopReason === undefined) return { kind: 'crash', detail: `${profile.name} ended the turn with no stopReason` }
+  if (end.stopReason === undefined)
+    return { kind: 'crash', detail: `${profile.name} ended the turn with no stopReason` }
   if (end.stopReason === 'end_turn' && profile.failedTurn.test(end.text.trimStart())) {
     return { kind: 'crash', detail: end.text.trim() }
   }
@@ -219,6 +220,8 @@ export interface AcpOptions {
   signalGroup?: typeof killGroup
   /** How long `session/cancel` is given before the group is signalled. */
   cancelWaitMs?: number
+  /** How long after `SIGTERM` before `SIGKILL`. */
+  killWaitMs?: number
 }
 
 export function createAcpRuntime(options: AcpOptions = {}): Runtime {
@@ -254,6 +257,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
   const send = options.hook ?? sendToHookSocket
   const signalGroup = options.signalGroup ?? killGroup
   const cancelWaitMs = options.cancelWaitMs ?? CANCEL_WAIT_MS
+  const killWaitMs = options.killWaitMs ?? TERM_TO_KILL_MS
   const started = Date.now()
   const socketPath = request.env['LINGTAI_HOOK_SOCKET']
   const hookRunId = request.env['LINGTAI_HOOK_RUN_ID']
@@ -346,7 +350,10 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
         setTimeout(() => {
           signalGroup(child, 'SIGTERM')
           timers.push(
-            setTimeout(() => finish({ kind: 'timeout', detail: 'the wall was reached; the group was killed' }), TERM_TO_KILL_MS),
+            setTimeout(
+              () => finish({ kind: 'timeout', detail: 'the wall was reached; the group was killed' }),
+              killWaitMs,
+            ),
           )
         }, cancelWaitMs),
       )
@@ -355,15 +362,14 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     child.stderr?.on('data', (chunk: Buffer) => {
       stderrTail = (stderrTail + chunk.toString('utf8')).slice(-STDERR_TAIL)
     })
-    child.on('error', (error) => finish({ kind: 'crash', detail: withStderr(`could not start ${binary}: ${error.message}`) }))
+    child.on('error', (error) =>
+      finish({ kind: 'crash', detail: withStderr(`could not start ${binary}: ${error.message}`) }),
+    )
     child.on('exit', (code, signal) => {
       exited = true
       if (finished) return
       if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached' }, code)
-      finish(
-        { kind: 'crash', detail: withStderr(`${binary} exited (${signal ?? code}) before the turn ended`) },
-        code,
-      )
+      finish({ kind: 'crash', detail: withStderr(`${binary} exited (${signal ?? code}) before the turn ended`) }, code)
     })
 
     timers.push(setTimeout(onWall, request.limits.wallMs))
@@ -375,7 +381,10 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
         // *Allow once*, never a reject and never an auto mode (0.16.md): Lingtai
         // refuses no tool call, it writes down that one was asked.
         const allow = params.options.find((o) => o.kind === 'allow_once')
-        note('permission', `asked ${params.toolCall.title ?? params.toolCall.toolCallId}: ${allow ? 'allowed' : 'no allow-once offered'}`)
+        note(
+          'permission',
+          `asked ${params.toolCall.title ?? params.toolCall.toolCallId}: ${allow ? 'allowed' : 'no allow-once offered'}`,
+        )
         return allow
           ? { outcome: { outcome: 'selected' as const, optionId: allow.optionId } }
           : { outcome: { outcome: 'cancelled' as const } }
@@ -414,7 +423,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       })
       .then(
         (response) =>
-          Promise.allSettled([...pending]).then(() => {
+          Promise.allSettled(pending).then(() => {
             if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached; the turn was cancelled' })
             const text = chunks.join('')
             finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))

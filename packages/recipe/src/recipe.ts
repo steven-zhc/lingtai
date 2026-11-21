@@ -1390,7 +1390,8 @@ import { BUILT_IN_JUDGES, isBuiltInJudge } from './judges.ts'
  * The recipe refuses each by name when it resolves, and the setup wizard never proposes one.
  */
 export const IMPLEMENT_ONLY_AGENTS: readonly RuntimeId[] = ['copilot']
-export const isImplementOnlyAgent = (agent: string): boolean => (IMPLEMENT_ONLY_AGENTS as readonly string[]).includes(agent)
+export const isImplementOnlyAgent = (agent: string): boolean =>
+  (IMPLEMENT_ONLY_AGENTS as readonly string[]).includes(agent)
 
 export const JudgeName = z.enum([...BUILT_IN_JUDGES, ...RuntimeId.options])
 export type JudgeName = z.infer<typeof JudgeName>

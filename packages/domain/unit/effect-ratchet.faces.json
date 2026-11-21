@@ -7,12 +7,6 @@
   },
   {
     "file": "packages/agent/src/auth.ts",
-    "fn": "copilotAuth",
-    "until": "0101 §7",
-    "why": "Runtime.checkAuth, through the signed-in probe, as codexAuth"
-  },
-  {
-    "file": "packages/agent/src/auth.ts",
     "fn": "codexAuth",
     "until": "0101 §7",
     "why": "apps/board/src/lib/recipe.ts, and apps/board/src/app/actions.ts through the signed-in probe"
