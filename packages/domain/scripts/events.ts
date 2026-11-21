@@ -274,6 +274,36 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'ProjectResumed',",
   },
   {
+    event: 'PrSubmitRequested',
+    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrSubmitRequested',",
+  },
+  {
+    event: 'PrSubmitRefused',
+    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrSubmitRefused',",
+  },
+  {
+    event: 'PrInProgress',
+    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrInProgress',",
+  },
+  {
+    event: 'PrStepDone',
+    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrStepDone',",
+  },
+  {
+    event: 'PrWaiting',
+    why: 'returned from a transition; `@lingtai/project`\'s `transitionPr` appends it',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrWaiting',",
+  },
+  {
     event: 'AccountLimitReached',
     why: 'returned from a function; the caller appends it (`reachAccountLimit`)',
     file: 'packages/domain/src/account.ts',
