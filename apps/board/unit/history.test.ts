@@ -322,6 +322,7 @@ const SAMPLES = {
     { mainCommit: 'b'.repeat(40), head: 'c'.repeat(40), how: 'clean' },
   ],
   PrMergedBack: [{ prHead: 'a'.repeat(40), mergeCommit: 'c'.repeat(40), how: 'clean' }],
+  SyncRoundStarted: [{ merging: 'main', commit: 'b'.repeat(40), start: 'a'.repeat(40), round: 1 }],
   PrMergeBackFailed: [{ prHead: 'a'.repeat(40), why: 'red', detail: 'pnpm test fails' }],
   PrMerged: [{ how: 'host', headSha: 'a'.repeat(40), mergeSha: null }],
   PrClosed: [{ headSha: 'a'.repeat(40) }],
