@@ -37,7 +37,7 @@ import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
-import { ceilingOf, modeOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
 
@@ -341,7 +341,7 @@ export async function queuedFor(input: {
       project,
       offered: offered.runnable,
       kinds: filter.kinds,
-      mode: modeOf(filter.recipe),
+      mode: selectionOf(filter.recipe).mode,
       backoffMs: filter.backoffMs,
     })
 
