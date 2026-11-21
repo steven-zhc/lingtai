@@ -365,7 +365,7 @@ export function mergedBackTransition(
   return { type: 'PrMergedBack', actor: 'conductor', data: merged }
 }
 
-/** The merge back did not happen; the PR's own state does not change. Once per head, like the success. */
+/** The merge back did not complete (with `unknown`, not known whether the push landed; the head stays owed); the PR's own state does not change. Once per head, like the success. */
 export function mergeBackFailedTransition(
   state: PrState,
   failed: PayloadOf<'PrMergeBackFailed'>,

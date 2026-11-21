@@ -54,6 +54,8 @@ import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 export interface PrGitAnswer {
   readonly code: number | null
   readonly stdout: string
+  /** git's own explanation on a failure; empty on success or where git said nothing. */
+  readonly stderr: string
 }
 
 export interface PrPorts {

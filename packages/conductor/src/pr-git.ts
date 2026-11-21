@@ -16,8 +16,14 @@ export const dropRef = (ports: PrPorts, project: string, ref: string): Effect.Ef
 export const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 /** `git` answered with a code other than the two it is expected to: the refusal's sentence. */
-export const gitSaid = (args: readonly string[], answer: PrGitAnswer): string =>
-  `git ${args.join(' ')} answered ${answer.code === null ? 'nothing' : `exit ${answer.code}`}`
+export const gitSaid = (args: readonly string[], answer: PrGitAnswer): string => {
+  const line = answer.stderr
+    .split('\n')
+    .map((l) => l.trim())
+    .find((l) => l !== '')
+  const why = line === undefined ? '' : `: ${line.length > 300 ? line.slice(0, 300) : line}`
+  return `git ${args.join(' ')} answered ${answer.code === null ? 'nothing' : `exit ${answer.code}`}${why}`
+}
 
 /** The sha a ref has on the remote, matched on the whole ref: `ls-remote` answers `<sha>\t<ref>` lines. Null: absent. */
 export const remoteSha = (ports: PrPorts, project: string, ref: string): Effect.Effect<string | null, Error> =>

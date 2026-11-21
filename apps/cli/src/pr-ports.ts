@@ -104,10 +104,10 @@ export function livePrPorts(
     })
   const answered = (run: Effect.Effect<string, RepoFailed>) =>
     run.pipe(
-      Effect.map((stdout) => ({ code: 0, stdout })),
+      Effect.map((stdout) => ({ code: 0, stdout, stderr: '' })),
       Effect.catch((err: RepoFailed) =>
         typeof err.exitCode === 'number'
-          ? Effect.succeed({ code: err.exitCode, stdout: err.stdout ?? '' })
+          ? Effect.succeed({ code: err.exitCode, stdout: err.stdout ?? '', stderr: err.stderr ?? '' })
           : Effect.fail(asError(err)),
       ),
     )

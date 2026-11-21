@@ -102,12 +102,12 @@ function resolverFor(store: EventStore, w: World): ConflictResolver {
       Effect.sync(() => {
         w.gitCalls.push([...args])
         if (args[0] === 'rev-parse' && args[1] === '-q') {
-          return { code: w.mergeInProgress ? 0 : 1, stdout: '' }
+          return { code: w.mergeInProgress ? 0 : 1, stdout: '', stderr: '' }
         }
-        if (args[0] === 'rev-list') return { code: 0, stdout: `${RESOLVED} ${w.parents.join(' ')}\n` }
-        if (args[0] === 'rev-parse') return { code: 0, stdout: `${RESOLVED}\n` }
-        if (args[0] === 'show') return { code: 0, stdout: '-old\n+new\n' }
-        return { code: 0, stdout: '' }
+        if (args[0] === 'rev-list') return { code: 0, stdout: `${RESOLVED} ${w.parents.join(' ')}\n`, stderr: '' }
+        if (args[0] === 'rev-parse') return { code: 0, stdout: `${RESOLVED}\n`, stderr: '' }
+        if (args[0] === 'show') return { code: 0, stdout: '-old\n+new\n', stderr: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
     dispatch: (_project, request) =>
       Effect.promise(async (): Promise<PrDispatched> => {
@@ -149,32 +149,32 @@ function ports(store: EventStore, w: World): PrPorts {
     git: (_project, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse' && args[1] === '--git-dir') return { code: 0, stdout: '.' }
+        if (args[0] === 'rev-parse' && args[1] === '--git-dir') return { code: 0, stdout: '.', stderr: '' }
         if (args[0] === 'rev-parse') {
           const sha = resolved[args[3]!.replace(/\^\{commit\}$/, '')]
-          return sha === undefined ? { code: 1, stdout: '' } : { code: 0, stdout: `${sha}\n` }
+          return sha === undefined ? { code: 1, stdout: '', stderr: '' } : { code: 0, stdout: `${sha}\n`, stderr: '' }
         }
         // Only a commit is in itself, and the personal branch's head is in the resolution made on it.
         if (args[0] === 'merge-base') {
           const [a, b] = [args[2]!, args[3]!]
-          return { code: a === b || (a === PERSONAL && b === RESOLVED) ? 0 : 1, stdout: '' }
+          return { code: a === b || (a === PERSONAL && b === RESOLVED) ? 0 : 1, stdout: '', stderr: '' }
         }
         // The ticket's own merge touched `shelf.ts`.
-        if (args[0] === 'diff') return { code: 0, stdout: 'shelf.ts\0' }
-        if (args[0] === 'log') return { code: 0, stdout: `${'e'.repeat(40)}\0Ann\0main renamed byTitle\0` }
-        return { code: 0, stdout: '' }
+        if (args[0] === 'diff') return { code: 0, stdout: 'shelf.ts\0', stderr: '' }
+        if (args[0] === 'log') return { code: 0, stdout: `${'e'.repeat(40)}\0Ann\0main renamed byTitle\0`, stderr: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
     remote: (_project, args) =>
       Effect.sync(() => {
-        if (args[0] === 'fetch') return { code: 0, stdout: '' }
+        if (args[0] === 'fetch') return { code: 0, stdout: '', stderr: '' }
         if (args[0] === 'ls-remote') {
           const lines = [...w.remote].filter(([ref]) => ref === args[3]).map(([ref, sha]) => `${sha}\t${ref}`)
-          return { code: 0, stdout: lines.join('\n') }
+          return { code: 0, stdout: lines.join('\n'), stderr: '' }
         }
         w.pushes.push([...args])
         const [sha, ref] = args[2]!.split(':')
         w.remote.set(ref!, sha!)
-        return { code: 0, stdout: '' }
+        return { code: 0, stdout: '', stderr: '' }
       }),
     resolver: resolverFor(store, w),
   }
@@ -662,7 +662,7 @@ describe('the merge back with a resolver', () => {
       git: (project, args) => {
         if (args[0] === 'rev-parse' && args[3]?.startsWith('refs/lingtai/pr/1/personal')) {
           fetched++
-          return Effect.succeed({ code: 0, stdout: `${fetched >= 2 ? '3'.repeat(40) : PERSONAL}\n` })
+          return Effect.succeed({ code: 0, stdout: `${fetched >= 2 ? '3'.repeat(40) : PERSONAL}\n`, stderr: '' })
         }
         return p.git(project, args)
       },
