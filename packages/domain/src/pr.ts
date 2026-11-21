@@ -225,3 +225,29 @@ export function prStepRows(names: readonly string[], state: PrState): PrStepRow[
     return { step, status: 'pending', headSha: null }
   })
 }
+
+/**
+ * The seq of the `ProjectRecipeChanged` after which the project has been team ever since, or 0 when no recorded recipe
+ * says otherwise. A landing before it was a solo project's, even on a branch of the same name (0130 §3). `isTeam`
+ * reads one recorded recipe text: the domain imports nothing, so it cannot parse one.
+ */
+export function teamSince(events: readonly Envelope[], isTeam: (source: string) => boolean): bigint {
+  let since = 0n
+  let team = false
+  for (const e of events) {
+    if (e.type !== 'ProjectRecipeChanged') continue
+    const now = isTeam((e.data as PayloadOf<'ProjectRecipeChanged'>).source)
+    if (now && !team) since = e.seq
+    team = now
+  }
+  return since
+}
+
+/** The seq of a ticket's last `TicketLanded` on `base`, or null if it never landed there. */
+export function landedSeq(events: readonly Envelope[], base: string): bigint | null {
+  let seq: bigint | null = null
+  for (const e of events) {
+    if (e.type === 'TicketLanded' && (e.data as PayloadOf<'TicketLanded'>).base === base) seq = e.seq
+  }
+  return seq
+}

@@ -17,6 +17,8 @@ import {
   reduceTicket,
   requestSubmit,
   freezeTransition,
+  landedSeq,
+  teamSince,
   refuseTransition,
   stepDoneTransition,
   waitTransition,
@@ -175,22 +177,6 @@ function isTeamSource(source: string): boolean {
 }
 
 /**
- * The seq of the `ProjectRecipeChanged` after which the project has been team ever since, or 0 when no recorded
- * recipe says otherwise. A landing before it was a solo project's, even on a branch of the same name.
- */
-export function teamSince(events: readonly Envelope[]): bigint {
-  let since = 0n
-  let team = false
-  for (const e of events) {
-    if (e.type !== 'ProjectRecipeChanged') continue
-    const now = isTeamSource((e.data as PayloadOf<'ProjectRecipeChanged'>).source)
-    if (now && !team) since = e.seq
-    team = now
-  }
-  return since
-}
-
-/**
  * **The draft**: the project's tickets landed on `branch.personal` since it became a team project and held by no PR
  * that is still going. Empty in solo mode.
  *
@@ -208,7 +194,7 @@ export function readPrDraft(
   return Effect.gen(function* () {
     if (modeOf(recipe) !== 'team') return []
     const personal = recipe.branch.personal ?? recipe.branch.main
-    const since = teamSince(yield* readProjectEvents(project, store))
+    const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
     for (const pr of yield* listPrs(project, store)) {
@@ -222,9 +208,7 @@ export function readPrDraft(
       const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
       const state = reduceTicket(events)
       if (state.landed === null || state.landed.base !== personal) continue
-      const landedAt = events
-        .filter((e) => e.type === 'TicketLanded' && (e.data as PayloadOf<'TicketLanded'>).base === personal)
-        .reduce<bigint | null>((_last, e) => e.seq, null)
+      const landedAt = landedSeq(events, personal)
       if (landedAt === null || landedAt <= since) continue
       draft.push({ ticket: issue, mergeCommit: state.landed.mergeCommit, title: state.title ?? `#${issue}` })
     }
