@@ -272,8 +272,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           const checked = yield* ports.build(project, { sha, base: prBranch, checkId: `pr-${n}-back` })
           if (checked.kind === 'green') return { kind: 'merged', mergeCommit: sha } as Back
           if (checked.kind === 'red') {
-            const detail = `\`${checked.command}\` fails on ${short(sha)}, already on ${branch}:\n${checked.evidence}`
-            return { kind: 'failed', why: 'red', detail } as Back
+            // The merge is already pushed: a red here is not the merge back's refusal, and a terminal `red` would
+            // end what is owed of a push that landed. It stays `unknown`, looked at again.
+            const detail = `${short(sha)} is already on ${branch}; \`${checked.command}\` fails on it:\n${checked.evidence}`
+            return { kind: 'failed', why: 'unknown', detail } as Back
           }
           return { kind: 'failed', why: 'unknown', detail: checked.why } as Back
         }
@@ -348,7 +350,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         return outcome
       }).pipe(
         Effect.catch((err: Error) =>
-          failed('unknown', err.message).pipe(
+          failed('unknown', `a read failed, so whether anything was pushed is not known: ${err.message}`).pipe(
             Effect.catch((again: Error) =>
               Effect.sync(() => void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
             ),

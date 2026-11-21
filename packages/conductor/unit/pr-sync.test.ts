@@ -445,6 +445,8 @@ describe('the merge back', () => {
       expect(w.builds).toEqual([{ sha: BACK, base: 'lingtai-team-pr-1', checkId: 'pr-1-back' }])
       expect(pushesOf(w)).toEqual([])
       expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe(green ? 'PrMergedBack' : 'PrMergeBackFailed')
+      // A merge already pushed is never ended by a terminal red: it stays owed.
+      if (!green) expect((await state(store)).mergeBack).toMatchObject({ outcome: 'failed', why: 'unknown' })
     }
   })
 
