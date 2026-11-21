@@ -343,6 +343,19 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     expect((await pr(store)).fixOwed).toBe(false)
   })
 
+  it('a PR merged on the host before the repair still holds the fix it was not told of', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    await sweep({
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    })
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+  })
+
   it('on a merged PR the landing is refused and nothing is appended', async () => {
     const { store, w } = await inReview()
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }

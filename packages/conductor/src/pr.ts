@@ -742,11 +742,12 @@ export const learnPrEnds = (
       yield* Effect.gen(function* () {
         const latest = yield* latestPr(project, ports.store)
         if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
-          yield* learnOnePr(ports, memory, project, latest)
-          // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now.
+          // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now,
+          // **before** the PR's end is learned — a PR merged meanwhile would refuse the request and lose the fix for good.
           yield* mendFixLandings(ports, project, latest).pipe(
             Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
           )
+          yield* learnOnePr(ports, memory, project, latest)
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {
