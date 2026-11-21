@@ -115,7 +115,7 @@
     "file": "packages/conductor/src/pr.ts",
     "function": "closeMergedTickets",
     "type": "IssueUpdated",
-    "count": 1,
+    "count": 2,
     "class": "select",
     "reason": "Finds whether a ticket's stream already has a close after the PrMerged, so a sweep closes each ticket once; reduces nothing (#1317)."
   },
