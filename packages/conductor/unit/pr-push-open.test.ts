@@ -370,3 +370,21 @@ describe('the description', () => {
     expect(base.body).toContain('Made with Lingtai')
   })
 })
+
+describe('a step answers about the pass it began on', () => {
+  it('a missing target object (git exits 128) starts In progress again, and a stale push record is not folded', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    w.object = 128
+    await serve(ports(store, w), [IN_PROGRESS_STEPS[0]!])
+    const events = await store.read(prStream('lingtai', 1))
+    expect(events.at(-1)!.type).toBe('PrInProgress')
+    expect(events.at(-1)!.data).toMatchObject({ because: 'restart' })
+    expect(w.remoteCalls.some((a) => a[0] === 'push')).toBe(false)
+
+    // A push of an older target recorded after a newer pass began appends nothing.
+    const s = reducePr(events)
+    const stale = (await import('@lingtai/domain')).pushedTransition(s, { headSha: OTHER, found: 'pushed' })
+    expect(stale).toBeNull()
+  })
+})

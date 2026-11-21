@@ -23,6 +23,7 @@ import {
   refuseTransition,
   stepDoneTransition,
   pushedTransition,
+  restartTransition,
   draftOpenedTransition,
   openedTransition,
   waitTransition,
@@ -141,6 +142,16 @@ export const recordPrInProgress = (
     project,
     n,
     (state) => freezeTransition(state, frozen),
+    (_state, appended) => appended,
+  )
+
+/** In progress starts again from its first step, on the same freeze. */
+export const recordPrRestart = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => restartTransition(state),
     (_state, appended) => appended,
   )
 
@@ -276,6 +287,7 @@ export function readPrDraft(
       for (const t of pr.tickets) held.add(t.ticket)
     }
 
+    const landedAtTime = new Map<string, number>()
     const draft: PrDraftTicket[] = []
     for (const { issue } of candidates) {
       if (held.has(issue)) continue
@@ -284,8 +296,11 @@ export function readPrDraft(
       if (state.landed === null || state.landed.base !== personal) continue
       const landedAt = landedSeq(events, personal)
       if (landedAt === null || landedAt <= since) continue
+      const landing = events.find((e) => e.seq === landedAt)
+      landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())
       draft.push({ ticket: issue, mergeCommit: state.landed.mergeCommit, title: state.title ?? `#${issue}` })
     }
-    return draft
+    // In the order they landed, not the order of their numbers; a tie keeps the candidates' order.
+    return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
   })
 }

@@ -30,6 +30,7 @@ import {
   recordPrOpened,
   recordPrPushed,
   recordPrRefused,
+  recordPrRestart,
   recordPrStepDone,
   recordPrWaiting,
 } from '@lingtai/project'
@@ -100,6 +101,8 @@ export type StepAnswer =
       readonly headSha: string
     }
   | { readonly kind: 'again' }
+  /** An earlier step's work is gone: In progress starts again from its first step. */
+  | { readonly kind: 'restart' }
 
 export interface PrStep {
   readonly name: string
@@ -173,11 +176,12 @@ const pushStep: PrStep = {
         }
         const { target } = PUSHING_PRS(state)
         if (target === null) return { kind: 'again' } as StepAnswer
-        const pushed = (found: 'pushed' | 'existing'): StepAnswer => ({
-          kind: 'done',
-          headSha: target,
-          record: (project, n, store) => recordPrPushed(project, n, { headSha: target, found }, store),
-        })
+        // Recorded **inside** the lane's turn: once the lane is released a pr-fix pass may move the target, and a
+        // record that came after would say this push proved that pass's.
+        const pushed = (found: 'pushed' | 'existing') =>
+          recordPrPushed(project, n, { headSha: target, found }, ports.store).pipe(
+            Effect.as<StepAnswer>({ kind: 'done', headSha: target, record: () => Effect.void }),
+          )
         const moved = (at: string | null): StepAnswer => ({
           kind: 'wait',
           reason: 'branch-moved',
@@ -189,13 +193,14 @@ const pushStep: PrStep = {
         })
 
         const at = yield* remoteSha(ports, project, ref)
-        if (at === target) return pushed('existing')
+        if (at === target) return yield* pushed('existing')
         if (at === null && state.lastPushed !== null) return moved(null)
         if (at !== null && at !== state.lastPushed) return moved(at)
 
         // The commit has to be in the mirror to be pushed from it; a re-cloned mirror loses it, and the walk is run again.
+        // git exits 1 or 128 for an object it does not have; the steps that made it are done again.
         const have = yield* ports.git(project, ['cat-file', '-e', `${target}^{commit}`])
-        if (have.code === 1) return { kind: 'again' } as StepAnswer
+        if (have.code === 1 || have.code === 128) return { kind: 'restart' } as StepAnswer
         if (have.code !== 0) return yield* Effect.fail(new Error(gitSaid(['cat-file', '-e', target], have)))
         if (at !== null) {
           const ask = ['merge-base', '--is-ancestor', at, target] as const
@@ -207,10 +212,10 @@ const pushStep: PrStep = {
         // The refspec is built from `prBranch` alone: nothing here can name `branch.main` (0130 §7).
         const push = ['push', 'origin', `${target}:${ref}`] as const
         const answer = yield* ports.remote(project, push)
-        if (answer.code === 0) return pushed('pushed')
+        if (answer.code === 0) return yield* pushed('pushed')
         // A lost push is one look, never a second blind push (#1125): the branch at `target` is the push having landed.
         const after = yield* remoteSha(ports, project, ref)
-        if (after === target) return pushed('pushed')
+        if (after === target) return yield* pushed('pushed')
         return yield* Effect.fail(new Error(gitSaid(push, answer)))
       })
 
@@ -430,6 +435,14 @@ export const walkPr = (
         ),
       )
       if (answer.kind === 'again') return
+      // The answer is about the pass the step began on: a newer pass through In progress (a pr-fix landing) moved the
+      // target meanwhile, so nothing is recorded and the walk begins again on it.
+      const now = yield* readPr(project, n, ports.store)
+      if (now === null || now.status !== 'in-progress' || now.target !== state.target) continue
+      if (answer.kind === 'restart') {
+        yield* recordPrRestart(project, n, ports.store)
+        return
+      }
       if (answer.kind === 'wait') {
         yield* recordPrWaiting(
           project,

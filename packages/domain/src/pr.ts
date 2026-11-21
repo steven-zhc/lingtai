@@ -191,24 +191,43 @@ export function requestSubmit(
   return { kind: 'request', event: { type: 'PrSubmitRequested', actor: by, data: { by } } }
 }
 
+const inProgress = (data: PayloadOf<'PrInProgress'>): ToAppend<PayloadOf<'PrInProgress'>> => ({
+  type: 'PrInProgress',
+  actor: 'conductor',
+  data,
+})
+
 /** The freeze: only a `requested` PR is frozen; anything else decides nothing. */
 export function freezeTransition(
   state: PrState,
   frozen: { branch: string; main: string; frozenSha: string; tickets: PayloadOf<'PrInProgress'>['tickets'] },
 ): ToAppend<PayloadOf<'PrInProgress'>> | null {
   if (state.status !== 'requested' || state.n === null) return null
-  return {
-    type: 'PrInProgress',
-    actor: 'conductor',
-    data: {
-      because: 'submit',
-      branch: frozen.branch,
-      main: frozen.main,
-      frozenSha: frozen.frozenSha,
-      prBranch: `${frozen.branch}-pr-${state.n}`,
-      tickets: frozen.tickets,
-    },
-  }
+  return inProgress({
+    because: 'submit',
+    branch: frozen.branch,
+    main: frozen.main,
+    frozenSha: frozen.frozenSha,
+    prBranch: `${frozen.branch}-pr-${state.n}`,
+    tickets: frozen.tickets,
+  })
+}
+
+/**
+ * Starts In progress again from its first step, on the same freeze: what a step found out is that an earlier one has to
+ * be done again (a re-cloned mirror lost the target). Only a PR that is walking restarts.
+ */
+export function restartTransition(state: PrState): ToAppend<PayloadOf<'PrInProgress'>> | null {
+  if (state.status !== 'in-progress') return null
+  if (state.branch === null || state.main === null || state.frozenSha === null || state.prBranch === null) return null
+  return inProgress({
+    because: 'restart',
+    branch: state.branch,
+    main: state.main,
+    frozenSha: state.frozenSha,
+    prBranch: state.prBranch,
+    tickets: state.tickets,
+  })
 }
 
 /** A refused submit: only a `requested` PR can be refused. */
@@ -238,6 +257,8 @@ export function pushedTransition(
   pushed: PayloadOf<'PrPushed'>,
 ): ToAppend<PayloadOf<'PrPushed'>> | null {
   if (!walking(state) || state.steps.some((s) => s.step === 'push')) return null
+  // A push of an earlier pass's target, recorded after a newer pass began, proves nothing about this one.
+  if (pushed.headSha !== (state.target ?? state.frozenSha)) return null
   return { type: 'PrPushed', actor: 'conductor', data: pushed }
 }
 

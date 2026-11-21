@@ -730,6 +730,14 @@ export const makeGitHub = (
           (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
         )
 
+      /** A 403 that is a missing `pull_requests` permission is `PermissionDenied`; a rate limit is passed on. */
+      const asPullCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
+        Effect.catchIf(
+          call,
+          (err) => err.status === 403 && !isRateLimited(err),
+          (err) => Effect.fail(new PermissionDenied(err, 'pull_requests', level, isGh(auth) ? 'gh' : 'app')),
+        )
+
       const listLinked = (path: string): E<LinkedIssue[]> =>
         asLinkCall(
           'read',
@@ -980,9 +988,12 @@ export const makeGitHub = (
         }),
 
         findOpenPull: Effect.fn('github.findOpenPull')(function* (head: string) {
-          const raw = yield* send<RawPull[]>(
-            'GET',
-            `${repoPath}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${owner}:${head}`)}`,
+          const raw = yield* asPullCall(
+            'read',
+            send<RawPull[]>(
+              'GET',
+              `${repoPath}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${owner}:${head}`)}`,
+            ),
           )
           return raw.map(toPull).filter((p) => p.headRef === head)
         }),
@@ -993,7 +1004,9 @@ export const makeGitHub = (
           base: string
           body: string
         }) {
-          return toPull(yield* send<RawPull>('POST', `${repoPath}/pulls`, { ...input, draft: true }))
+          return toPull(
+            yield* asPullCall('write', send<RawPull>('POST', `${repoPath}/pulls`, { ...input, draft: true })),
+          )
         }),
       }
       return github

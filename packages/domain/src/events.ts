@@ -2538,7 +2538,7 @@ export const PrSubmitRefused = z.object({ reason: PrRefusalReason, detail: z.str
  * @summary A PR's branch was frozen at one commit with the tickets it holds, and it is In progress.
  */
 export const PrInProgress = z.object({
-  because: z.enum(['submit']),
+  because: z.enum(['submit', 'restart']),
   branch: z.string(),
   main: z.string(),
   frozenSha: z.string(),
