@@ -59,7 +59,7 @@ import { Cause, Effect } from 'effect'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import { columnOf } from './store.ts'
 import type { Projection, ProjectionContextPort } from './store.ts'
-import { reduceStoredTicket, ticketBefore } from './ticket-row.ts'
+import { backfillStateRows, reduceStoredTicket, ticketBefore } from './ticket-row.ts'
 
 export const TICKET_REPORT_TABLE = 'ticket_report'
 
@@ -575,6 +575,18 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
       yield* ctx.query('drop table if exists ticket_report')
       yield* ctx.query('drop table if exists ticket_report_stream')
     }).pipe(Effect.withSpan('projector.ticket_report.reset'))
+  },
+
+  backfill(ctx, log, beforeSeq, after, limit) {
+    return backfillStateRows(
+      [{ table: TICKET_REPORT_TABLE, key: 'ticket', column: 'ticket_state', shape: 'ticket' }],
+      TICKET_REPORT_TABLE,
+      ctx,
+      log,
+      beforeSeq,
+      after,
+      limit,
+    )
   },
 
   reduce(events, ctx, log) {

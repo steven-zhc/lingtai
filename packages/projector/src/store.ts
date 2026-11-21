@@ -199,6 +199,21 @@ export interface Projection {
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
   reduce(events: readonly Envelope[], ctx: ProjectionContextPort, log: ProjectionLog): Effect.Effect<void>
+
+  /**
+   * Rewrites stored ticket (and run) states of an older shape, one page (#1349): up to `limit` rows after the
+   * cursor `after` (null starts), each re-reduced from its stream's events below `beforeSeq` and written back —
+   * the state column only. Returns the cursor to pass back, null when the scan is done. The runner calls it
+   * inside a transaction of its own, holding the lane no batch commits through, with `beforeSeq` one past
+   * its checkpoint: a row is never given an event the projection has not yet applied.
+   */
+  backfill?(
+    ctx: ProjectionContextPort,
+    log: ProjectionLog,
+    beforeSeq: bigint,
+    after: string | null,
+    limit: number,
+  ): Effect.Effect<{ rewritten: number; next: string | null }>
 }
 
 /**

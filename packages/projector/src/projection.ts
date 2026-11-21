@@ -37,7 +37,7 @@ import type { Log } from '@lingtai/event-store/log'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { FollowCell } from '@lingtai/event-store/subscribe'
 import type { Waker, WakerPort } from '@lingtai/event-store/wake'
-import { Deferred, Effect, Exit, Scope } from 'effect'
+import { Cause, Deferred, Effect, Exit, Scope, Semaphore } from 'effect'
 
 import { openProjections, withStoreEffect } from './choose.ts'
 import { ProjectionShapeError, type ProjectionShape, shapeIn } from './shape.ts'
@@ -173,6 +173,9 @@ interface RunnerState {
   scope: Scope.Closeable | null
 }
 
+/** Rows a backfill page rewrites in one transaction. */
+const BACKFILL_PAGE = 50
+
 export function makeRunner(
   options: ProjectionRunnerOptions,
   { detached = false }: { detached?: boolean } = {},
@@ -203,6 +206,14 @@ export function makeRunner(
     ;(options.note ?? ((l: string) => console.error(l)))(line)
   }
 
+  /**
+   * One transaction against this projection's rows at a time (#1349): a batch and a backfill page each hold it
+   * for the whole of their transaction. The fenced `advance` refuses only a rewind, so a batch that committed
+   * forward under a backfill page would pass it and the page would write an older state over the newer row.
+   * While the permit is held, `state.cursor` is exactly the checkpoint: this runner is the only writer (0100 §13).
+   */
+  const lane = Semaphore.makeUnsafe(1)
+
   const commitBatch = Effect.fn('projector.commitBatch')(function* (batch: readonly Envelope[]) {
     const last = batch[batch.length - 1]
     if (!last) return
@@ -212,13 +223,51 @@ export function makeRunner(
     // The whole point: the advance is not a separate write. Fenced on `cursor`,
     // so a rebuild in any process that rewound the checkpoint refuses this batch
     // rather than have it carried to the head past unfolded history.
-    yield* p.transact((ctx) =>
+    yield* lane.withPermits(1)(
       Effect.gen(function* () {
-        yield* projection.reduce(batch, ctx, log)
-        yield* p.advance(ctx, projection.name, last.seq, state.cursor)
+        yield* p.transact((ctx) =>
+          Effect.gen(function* () {
+            yield* projection.reduce(batch, ctx, log)
+            yield* p.advance(ctx, projection.name, last.seq, state.cursor)
+          }),
+        )
+        state.cursor = last.seq
       }),
     )
-    state.cursor = last.seq
+  })
+
+  /**
+   * Rewrites every stored ticket state of an older shape, a page to a transaction, after the projection has
+   * caught up (#1349). One scan over the keys is the whole job: a row a batch writes meanwhile is written in
+   * the current shape. A failure is said and ends the scan; it is never `state.failure`, which means the
+   * projection stopped. The next start scans again.
+   */
+  const backfill = Effect.fn('projector.backfill')(function* () {
+    const backfillPage = projection.backfill
+    if (backfillPage === undefined) return
+    const p = yield* landing
+    const events = yield* eventsPort
+    const log: ProjectionLog = { read: (streamId) => events.read(streamId), note: noteOnce }
+    let after: string | null = null
+    let rewritten = 0
+    while (true) {
+      const page: { rewritten: number; next: string | null } = yield* lane.withPermits(1)(
+        p.transact((ctx) =>
+          Effect.gen(function* () {
+            // `+ 1n`: the checkpoint's own event is applied, and `ticketBefore` keeps what is strictly before.
+            const r = yield* backfillPage.call(projection, ctx, log, state.cursor + 1n, after, BACKFILL_PAGE)
+            // Moves nothing. It is the fence a batch's advance has: a rebuild in another process refuses this page.
+            yield* p.advance(ctx, projection.name, state.cursor, state.cursor)
+            return r
+          }),
+        ),
+      )
+      rewritten += page.rewritten
+      if (page.next === null) break
+      after = page.next
+      yield* Effect.yieldNow
+    }
+    if (rewritten > 0) noteOnce(`${projection.name}: rewrote ${rewritten} ticket rows of an older shape`)
   })
 
   // The store and the waker come off one log unless the caller named them, and
@@ -284,6 +333,20 @@ export function makeRunner(
           return Scope.close(scope, Exit.void)
         }),
       ),
+    )
+    // After catch-up, in the runner's own scope: `stop`, a drain and a rebuild close it, and the permit is
+    // held only inside one page's transaction, so an interrupt between pages leaves nothing half done.
+    yield* Effect.forkIn(
+      backfill().pipe(
+        Effect.catchCause((cause) =>
+          Cause.hasInterrupts(cause)
+            ? Effect.void
+            : Effect.sync(() =>
+                noteOnce(`${projection.name}: the backfill of older ticket rows stopped: ${Cause.pretty(cause)}`),
+              ),
+        ),
+      ),
+      scope,
     )
   })
 

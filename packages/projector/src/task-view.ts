@@ -68,7 +68,7 @@ import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
 import type { Projection, ProjectionContextPort, ProjectionLog } from './store.ts'
-import { runBefore, ticketBefore } from './ticket-row.ts'
+import { backfillStateRows, runBefore, ticketBefore } from './ticket-row.ts'
 
 /**
  * Where a task is.
@@ -248,6 +248,22 @@ export const taskViewProjection: Projection = {
       yield* ctx.query('drop table if exists task_view_run')
       yield* ctx.query('drop table if exists task_view_ticket')
     }).pipe(Effect.withSpan('projector.task_view.reset'))
+  },
+
+  backfill(ctx, log, beforeSeq, after, limit) {
+    return backfillStateRows(
+      [
+        { table: 'task_view', key: 'task_id', column: 'ticket', shape: 'ticket' },
+        { table: 'task_view_ticket', key: 'task_id', column: 'ticket', shape: 'ticket' },
+        { table: 'task_view_run', key: 'run_id', column: 'run', shape: 'run' },
+      ],
+      'task_view',
+      ctx,
+      log,
+      beforeSeq,
+      after,
+      limit,
+    )
   },
 
   reduce(events, ctx, log) {
