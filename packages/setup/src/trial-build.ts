@@ -130,23 +130,15 @@ const cutOf = (at: TrialAt): Effect.Effect<{ base: string; submodules: boolean }
           | { worktree?: unknown }
           | undefined)
       : undefined
-    const wt = (declared?.worktree ?? {}) as { base?: unknown; submodules?: unknown }
+    const wt = (declared?.worktree ?? {}) as { submodules?: unknown }
     const repoSubmodules = yield* recipeKey(at, ['repo', 'submodules'])
-    // `branch.main`, or `branch.personal` in team mode, as `branchOf` says; the old spellings still stand in
-    // for a file `doctor --fix` has not rewritten yet.
+    // `branch.main`, or `branch.personal` in team mode, as `branchOf` says. The old spellings are refused
+    // when the recipe resolves (#1308), so none stands in here.
     const mode = yield* recipeKey(at, ['mode'])
     const personal = yield* recipeKey(at, ['branch', 'personal'])
     const main = yield* recipeKey(at, ['branch', 'main'])
-    const repoBase = yield* recipeKey(at, ['repo', 'base'])
     const written = mode === 'team' && typeof personal === 'string' ? personal : main
-    const base =
-      typeof written === 'string'
-        ? written
-        : typeof wt.base === 'string'
-          ? wt.base
-          : typeof repoBase === 'string'
-            ? repoBase
-            : at.base
+    const base = typeof written === 'string' ? written : at.base
     const submodules = typeof wt.submodules === 'boolean' ? wt.submodules : repoSubmodules === true
     return { base, submodules }
   })

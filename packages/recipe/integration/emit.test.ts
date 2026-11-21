@@ -122,7 +122,7 @@ describe("editRecipe, on this repository's own recipe", () => {
     const out = editRecipe(OWN, [
       { path: ['runtime', 'limits', 'attempt', 'refusalFixes'], value: 2 },
       { path: ['runtime', 'limits', 'ticket', 'newAttempts'], value: 0 },
-      { path: ['repo', 'base'], value: 'develop' },
+      { path: ['branch', 'main'], value: 'develop' },
     ])
     expect(gitDiff(OWN, out)).toEqual({
       removed: ['  base: main', '      refusalFixes: 3', '      newAttempts: 1'],

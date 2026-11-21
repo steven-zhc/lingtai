@@ -43,7 +43,7 @@ const open = (files: RecipeFiles, said?: Record<string, string>) =>
     ),
   )
 
-const BASE: RecipeChange = { path: ['repo', 'base'], value: 'trunk' }
+const BASE: RecipeChange = { path: ['branch', 'main'], value: 'trunk' }
 
 describe('draftRecipe', () => {
   it('reads the file once, and set edits in memory without writing', async () => {
@@ -53,7 +53,7 @@ describe('draftRecipe', () => {
     await Effect.runPromise(draft.set([{ path: ['source', 'kinds'], value: ['bug', 'feature'] }]))
 
     expect(result).toMatchObject({ path: PATH, written: true })
-    expect(draft.text()).toContain('base: trunk')
+    expect(draft.text()).toContain('main: trunk')
     expect(files.reads).toBe(1)
     expect(files.replaced).toEqual([])
   })
@@ -61,9 +61,9 @@ describe('draftRecipe', () => {
   it('get reads the draft, not the file, and an absent key is null', async () => {
     const files = port({ [PATH]: FIXTURE })
     const draft = await open(files)
-    expect(draft.get(['repo', 'base'])).toBe('main')
+    expect(draft.get(['branch', 'main'])).toBe('main')
     await Effect.runPromise(draft.set([BASE]))
-    expect(draft.get(['repo', 'base'])).toBe('trunk')
+    expect(draft.get(['branch', 'main'])).toBe('trunk')
     expect(draft.get(['runtime', 'agent'])).toBeNull()
     expect(await files.read(PATH)).toBe(FIXTURE)
   })
@@ -80,7 +80,7 @@ describe('draftRecipe', () => {
 
   it('a set that changes nothing reports written: false and records nothing', async () => {
     const draft = await open(port({ [PATH]: FIXTURE }))
-    const result = await Effect.runPromise(draft.set([{ path: ['repo', 'base'], value: 'main' }]))
+    const result = await Effect.runPromise(draft.set([{ path: ['branch', 'main'], value: 'main' }]))
     expect(result.written).toBe(false)
     expect(draft.text()).toBe(FIXTURE)
     expect(draft.changes()).toEqual([])
@@ -96,10 +96,10 @@ describe('draftRecipe', () => {
 
   it('an absent file starts an empty draft that the first set creates, with `said` once', async () => {
     const files = port()
-    const said = { repo: 'the branch every pass cuts from' }
+    const said = { branch: 'the branch every pass cuts from' }
     const draft = await open(files, said)
     expect(draft.text()).toBeNull()
-    expect(draft.get(['repo', 'base'])).toBeNull()
+    expect(draft.get(['branch', 'main'])).toBeNull()
 
     await Effect.runPromise(
       draft.set([
@@ -118,7 +118,7 @@ describe('draftRecipe', () => {
   })
 
   it('an existing file ignores `said`', async () => {
-    const draft = await open(port({ [PATH]: FIXTURE }), { repo: 'the branch every pass cuts from' })
+    const draft = await open(port({ [PATH]: FIXTURE }), { branch: 'the branch every pass cuts from' })
     await Effect.runPromise(draft.set([BASE]))
     expect(draft.text()).not.toContain('the branch every pass cuts from')
   })

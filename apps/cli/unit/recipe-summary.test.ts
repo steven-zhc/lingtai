@@ -56,7 +56,7 @@ const at = (over: Partial<TestAt>): TestAt => ({
   defaultBranch: async () => 'main',
   history: async () => [],
   seeds: [
-    { path: ['repo', 'base'], value: 'main' },
+    { path: ['branch', 'main'], value: 'main' },
     { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
     { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
   ],

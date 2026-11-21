@@ -444,7 +444,7 @@ env:
 
     const bundle = [
       { path: ['extends'], value: 'pnpm-workspace' },
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['env', 'plantAt'], value: '.env.local' },
       ...result.changes,
