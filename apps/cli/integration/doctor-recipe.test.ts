@@ -19,7 +19,7 @@ import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase, recipeRow }
 
 const RECIPE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 runtime: { agent: claude-code }

@@ -21,8 +21,8 @@ const HOME = '/home/me/.lingtai'
 
 const RECIPE = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -136,7 +136,7 @@ discuss:
   it('names the preset for what the preset decided, and never this file', async () => {
     const bare = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 `
@@ -183,7 +183,7 @@ env: { plantAt: .env.local }
         read(`
 version: 2
 extends: pnpm-workspace
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug], exclude: [blocked] }
 env: { plantAt: .env.local, required: [DATABASE_URL] }
 steps:
@@ -448,7 +448,7 @@ steps:
 
     it('is refused in the machine file by name, machine-wide and per project', async () => {
       await expect(
-        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  assignee:\n    take: both\n'))),
+        Effect.runPromise(resolveLocalRecipeEffect('app', withMachine('runtime:\n  assignee:\n    take: all\n'))),
       ).rejects.toThrow(MOVED)
       await expect(
         Effect.runPromise(

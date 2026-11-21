@@ -899,7 +899,7 @@ export const refsPlugin = definePlugin('refs', {
  * `deps.base`. A declaration here cannot disagree with what the merge lane
  * lands on: the lane goes on being *handed* the base rather than declaring one
  * of its own (§4). The v1 spellings (`repo.base`, `worktree.base`) are
- * rewritten to `branch.main` before the parse (`readOldSpellings`).
+ * refused by name before the parse (`oldSpellingsIn`, #1308).
  *
  * **`submodules` is required and is not defaulted**, which is the one way this
  * declaration differs from the `repo:` block it replaces. `git worktree add`
@@ -1205,9 +1205,9 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>
  * `submodules`' rule on `worktree:` kept rather than restated (`#268`, `#269`).
  * A block is *the four values this step selects on*, so a person who writes one
  * to narrow the kinds cannot silently lose the hold list to a `[]`, the backoff
- * to an hour, or `runtime.assignee` to `both`: the three that would have been
+ * to an hour, or `runtime.assignee` to `all`: the three that would have been
  * quiet are refused by name instead, and the refusal names the key to add.
- * `assignee: { take: both }` is how a machine with nobody named writes what an
+ * `assignee: { take: all }` is how a machine with nobody named writes what an
  * absent `runtime.assignee` has always meant — spelled out, because the whole
  * failure this step can have is being quietly wrong about which ticket it took.
  */

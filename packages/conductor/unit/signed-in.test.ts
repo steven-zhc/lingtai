@@ -32,7 +32,7 @@ function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => bo
 const HOME = '/home/me/.lingtai'
 const RECIPE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 steps: {}

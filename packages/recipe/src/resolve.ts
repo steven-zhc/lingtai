@@ -77,6 +77,25 @@ export class RecipeRefusedError extends RecipeInvalidError {
   }
 }
 
+/**
+ * A recipe refused for writing an old spelling of the base or of `take: both`
+ * (#1308, 0130 §2–3). Carries what it found, so `lingtai doctor` names and
+ * `--fix` rewrites the same keys without reading the file again.
+ */
+export class OldSpellingRefusedError extends RecipeRefusedError {
+  override readonly name: string = 'OldSpellingRefusedError'
+  readonly spellings: readonly OldSpelling[]
+
+  constructor(ref: string, spellings: readonly OldSpelling[], where = `${RECIPE_PATH} on ${ref}`) {
+    super(
+      ref,
+      spellings.map((s) => s.sentence),
+      where,
+    )
+    this.spellings = spellings
+  }
+}
+
 export interface ResolvedRecipe {
   recipe: Recipe
   /**
@@ -92,13 +111,6 @@ export interface ResolvedRecipe {
   ref: string
   /** The raw file, kept so a diff against a later version is possible. */
   source: string
-  /**
-   * The old spellings this file used and `readOldSpellings` read as their new
-   * keys (`repo.base`, `steps.admit`'s `worktree.base`, `take: both`), so that
-   * `doctor` can name each without parsing again. `[]` for a file already in the
-   * new spelling.
-   */
-  oldSpellings: readonly string[]
   /** Which preset it extended, if any. Provenance; not part of the hash. */
   preset: string | null
   /**
@@ -268,9 +280,8 @@ export function resolveSource(
     throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where)
   }
 
-  const old = readOldSpellings(applied.recipe)
-  if (old.twoHomes.length > 0) throw new RecipeRefusedError(ref, old.twoHomes, where)
-  applied = { ...applied, recipe: old.recipe }
+  const old = oldSpellingsIn(applied.recipe)
+  if (old.length > 0) throw new OldSpellingRefusedError(ref, old, where)
 
   const unknown = unknownKeys(applied.recipe)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
@@ -307,92 +318,94 @@ export function resolveSource(
     ref,
     source,
     preset: applied.preset,
-    oldSpellings: old.found,
   }
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
 
+/** One old spelling a file wrote: where, the sentence that refuses it, and the edit that ends it. */
+export interface OldSpelling {
+  /** `repo.base`, `steps.admit[0].worktree.base`, `runtime.assignee.take: both`. */
+  readonly at: string
+  /** The refusal's sentence, naming the key, the fix and `lingtai doctor --fix`. */
+  readonly sentence: string
+  /** What `editRecipe` applies to end it. A base spelling carries the `branch.main` write. */
+  readonly changes: readonly RecipeChange[]
+}
+
+const DOCTOR_FIX = 'or run `lingtai doctor --fix`'
+
 /**
- * The three old spellings, read as the new keys **before the parse** (#1306,
- * 0130 §2–3), and which of them the file used:
+ * The old spellings a raw recipe writes (#1308, 0130 §2–3), found on the raw
+ * object **before the parse**, like `retiredLimits`, so the `Recipe` type never
+ * holds the old names:
  *
- * - `steps.admit[*].worktree.base` → `branch.main` (it wins over `repo.base`, as
- *   the old accessor did);
- * - `repo.base` → `branch.main`;
+ * - `repo.base` and `steps.admit[*].worktree.base` → `branch.main`;
  * - `take: both` at `runtime.assignee` or `steps.claim[*].queue.assignee` → `all`.
  *
- * Done on the raw object, like `retiredLimits`, so the `Recipe` type never holds
- * the old names. **Deletes the key and drops a `repo:` the deletion emptied**,
- * never leaving an `undefined` in place, so a file in the old spelling and its
- * hand-written twin hash alike. A recipe already in the new spelling is returned
- * untouched with `found: []`. `twoHomes` is non-empty when the file writes
- * `branch:` *and* an old base: two homes for one setting (0104 §5).
- *
- * Shared by `resolveSource`, `checkDeclared` and `editRecipe`, which each parse
- * a recipe and must agree on what a file in the old spelling means.
+ * Pure. `[]` for a file in the new spelling or one that is not a mapping. The one
+ * reader the refusal, `lingtai doctor`'s row and `--fix` all stand on, so the
+ * three name exactly the same keys. A base spelling's change writes the file's
+ * own `branch.main` where it has one (a file with two homes), else admit's
+ * `worktree.base`, then `repo.base` — the precedence the old accessor had.
  */
-export function readOldSpellings(raw: unknown): { recipe: unknown; found: string[]; twoHomes: string[] } {
-  if (!isRecord(raw)) return { recipe: raw, found: [], twoHomes: [] }
-  const found: string[] = []
-  const out: Record<string, unknown> = { ...raw }
+export function oldSpellingsIn(raw: unknown): OldSpelling[] {
+  if (!isRecord(raw)) return []
+  const out: OldSpelling[] = []
+  const bases: { at: string; sentence: string }[] = []
   let main: unknown
+  let wroteMain = false
+  if (isRecord(raw['branch']) && 'main' in raw['branch']) {
+    main = raw['branch']['main']
+    wroteMain = true
+  }
 
-  const steps = isRecord(out['steps']) ? { ...out['steps'] } : null
+  const steps = isRecord(raw['steps']) ? raw['steps'] : null
   if (steps !== null && Array.isArray(steps['admit'])) {
-    steps['admit'] = (steps['admit'] as unknown[]).map((action, i) => {
-      if (!isRecord(action) || !isRecord(action['worktree']) || !('base' in action['worktree'])) return action
-      const { base, ...worktree } = action['worktree']
-      found.push(`steps.admit[${i}].worktree.base`)
-      main = base
-      return { ...action, worktree }
+    ;(steps['admit'] as unknown[]).forEach((action, i) => {
+      if (!isRecord(action) || !isRecord(action['worktree']) || !('base' in action['worktree'])) return
+      if (!wroteMain) {
+        main = action['worktree']['base']
+        wroteMain = true
+      }
+      const at = `steps.admit[${i}].worktree.base`
+      bases.push({
+        at,
+        sentence: `${at}: move the branch to \`branch.main\`; \`worktree:\` carries \`submodules\` only (0104 §5), ${DOCTOR_FIX}`,
+      })
     })
-    out['steps'] = steps
   }
-  if (isRecord(out['repo']) && 'base' in out['repo']) {
-    const { base, ...repo } = out['repo']
-    found.push('repo.base')
-    if (main === undefined) main = base
-    if (Object.keys(repo).length > 0) out['repo'] = repo
-    else delete out['repo']
+  if (isRecord(raw['repo']) && 'base' in raw['repo']) {
+    if (!wroteMain) {
+      main = raw['repo']['base']
+      wroteMain = true
+    }
+    bases.push({
+      at: 'repo.base',
+      sentence: `repo.base: write \`branch: { main: <value> }\` (0130 §2), ${DOCTOR_FIX}`,
+    })
   }
-  const wroteBase = found.length > 0
-  const twoHomes: string[] = []
-  if (wroteBase && 'branch' in raw) {
-    twoHomes.push(
-      `branch: the file writes \`branch\` and also an old spelling of the base (${found.join(', ')}): ` +
-        'two homes for one setting. Keep `branch.main` and delete the old one',
-    )
-  } else if (wroteBase) {
-    out['branch'] = { main }
-  }
+  for (const b of bases) out.push({ ...b, changes: [{ path: ['branch', 'main'], value: main }] })
 
-  const takeBoth = (holder: unknown, at: string, rewrite: (assignee: Record<string, unknown>) => void) => {
+  const takeBoth = (holder: unknown, at: string, path: (string | number)[]) => {
     if (isRecord(holder) && isRecord(holder['assignee']) && holder['assignee']['take'] === 'both') {
-      found.push(`${at}.assignee.take: both`)
-      rewrite({ ...holder['assignee'], take: 'all' })
+      const where = `${at}.assignee.take: both`
+      out.push({
+        at: where,
+        sentence: `${where}: write \`take: all\` (0130 §3), ${DOCTOR_FIX}`,
+        changes: [{ path: [...path, 'assignee', 'take'], value: 'all' }],
+      })
     }
   }
-  if (isRecord(out['runtime'])) {
-    const runtime = { ...out['runtime'] }
-    takeBoth(runtime, 'runtime', (assignee) => {
-      runtime['assignee'] = assignee
-      out['runtime'] = runtime
+  takeBoth(raw['runtime'], 'runtime', ['runtime'])
+  if (steps !== null && Array.isArray(steps['claim'])) {
+    ;(steps['claim'] as unknown[]).forEach((action, i) => {
+      if (isRecord(action)) {
+        takeBoth(action['queue'], `steps.claim[${i}].queue`, ['steps', 'claim', i, 'queue'])
+      }
     })
   }
-  const stepsNow = isRecord(out['steps']) ? { ...out['steps'] } : null
-  if (stepsNow !== null && Array.isArray(stepsNow['claim'])) {
-    stepsNow['claim'] = (stepsNow['claim'] as unknown[]).map((action, i) => {
-      if (!isRecord(action) || !isRecord(action['queue'])) return action
-      let queue = action['queue']
-      takeBoth(queue, `steps.claim[${i}].queue`, (assignee) => {
-        queue = { ...queue, assignee }
-      })
-      return queue === action['queue'] ? action : { ...action, queue }
-    })
-    out['steps'] = stepsNow
-  }
-  return { recipe: found.length === 0 ? raw : out, found, twoHomes }
+  return out
 }
 
 /**
@@ -568,38 +581,4 @@ export function baseDivergence(resolved: ResolvedRecipe, slug: string): string |
     'the rules and the merge target are different branches. ' +
     `Re-register: lingtai add ${slug} --main ${declared}`
   )
-}
-
-/**
- * What `lingtai doctor` says about a file in the old spelling, and the edit that
- * ends it: the `lines` for the row's detail, and the `changes` `editRecipe`
- * applies. `oldSpellings` is `ResolvedRecipe.oldSpellings` — the three shapes
- * `readOldSpellings` pushes — and `main` is the recipe's resolved `branch.main`,
- * the value those spellings were read as.
- *
- * **The base is one change, not one per spelling**: a write of `branch.main`
- * takes `repo.base` and every admit `worktree.base` out in the same edit
- * (`editRecipe`), so no removal is listed here. A string this does not
- * recognise is ignored rather than guessed at.
- */
-export function oldSpellingFixes(
-  oldSpellings: readonly string[],
-  main: string,
-): { lines: string[]; changes: RecipeChange[] } {
-  const lines: string[] = []
-  const changes: RecipeChange[] = []
-  let base = false
-  for (const spelling of oldSpellings) {
-    const take = /^(runtime|steps\.claim\[(\d+)\]\.queue)\.assignee\.take: both$/.exec(spelling)
-    if (take !== null) {
-      const at = take[2] === undefined ? ['runtime'] : ['steps', 'claim', Number(take[2]), 'queue']
-      lines.push(`${spelling} → take: all`)
-      changes.push({ path: [...at, 'assignee', 'take'], value: 'all' })
-    } else if (spelling === 'repo.base' || /^steps\.admit\[\d+\]\.worktree\.base$/.test(spelling)) {
-      lines.push(`${spelling}: ${main} → branch.main: ${main}`)
-      base = true
-    }
-  }
-  if (base) changes.unshift({ path: ['branch', 'main'], value: main })
-  return { lines, changes }
 }

@@ -44,7 +44,7 @@ import { projectRecipe, sourceOf, type ProjectRecipe } from '../src/lib/recipe.t
 
 const RECIPE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug, tech-debt], exclude: ["blocked", "agent:hold"] }
 env: { plantAt: .env.local }
 runtime:
@@ -62,7 +62,7 @@ steps:
  */
 const SPEAKS = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug], exclude: ["blocked"], backoff: 30m }
 env: { plantAt: .env.local }
 steps:
@@ -81,7 +81,7 @@ runtime:
 const EXTENDS = `
 version: 2
 extends: pnpm-workspace
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 runtime: { agent: claude-code }
@@ -318,7 +318,7 @@ describe('a recipe that cannot be read', () => {
   it("names the recipe's file for a wall that is not a duration, and never the machine", async () => {
     await writeFile(
       join(home, 'app', 'recipe.yml'),
-      'version: 2\nrepo: { base: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  agent: claude-code\n  limits: { run: { wall: "90" } }\nsteps:\n  proposed: []\n',
+      'version: 2\nbranch: { main: main }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\nruntime:\n  agent: claude-code\n  limits: { run: { wall: "90" } }\nsteps:\n  proposed: []\n',
     )
     const view = await projectRecipe(state)
     const html = render(view)

@@ -96,8 +96,8 @@ async function input(
 }
 
 const BASE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -141,8 +141,8 @@ describe('askInstallAndBuild', () => {
 
   it('--install none and --build none remove the run: actions that were there', async () => {
     const FIXTURE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -217,8 +217,8 @@ steps:
 
   it('pressing enter on a re-run (current answers equal the defaults) writes nothing', async () => {
     const FIXTURE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -248,8 +248,8 @@ steps:
   it('a file that extends: pnpm-workspace gets the answered build in place of the preset’s, and nothing at steps.proposed', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -278,8 +278,8 @@ env:
   it('declining an install the preset supplies writes the decline, not the preset default', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -317,8 +317,8 @@ env:
 
   it('removing an earlier command keeps the timeout and env of the one that is kept', async () => {
     const FIXTURE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -349,8 +349,8 @@ steps:
 
   it('adding a build command keeps the timeout and env of the ones already there', async () => {
     const FIXTURE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -411,8 +411,8 @@ steps:
   it('declining the build on a file that extends a preset logs it and keeps none of the preset’s checks', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -444,7 +444,7 @@ env:
 
     const bundle = [
       { path: ['extends'], value: 'pnpm-workspace' },
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['env', 'plantAt'], value: '.env.local' },
       ...result.changes,
@@ -459,8 +459,8 @@ env:
   it('a file that already writes its own steps.prepared/build gets no steps.proposed change', async () => {
     const FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

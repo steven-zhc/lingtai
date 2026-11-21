@@ -58,8 +58,10 @@ placeholder). It is a whole recipe, and you can paste it:
 ```yaml
 version: 2
 
+branch:
+  main: main
+
 repo:
-  base: main
   remote: git@github.com:you/chapter-garden.git
 
 env:

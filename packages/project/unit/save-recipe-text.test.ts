@@ -31,8 +31,8 @@ const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)
 const GOOD = `# mine
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]   # priority
 env:

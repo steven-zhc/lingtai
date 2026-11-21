@@ -46,7 +46,6 @@ import {
 } from 'yaml'
 
 import { Recipe } from './recipe.ts'
-import { readOldSpellings } from './resolve.ts'
 
 /**
  * The sentences the wizard showed, by the dotted path of the block each one is
@@ -191,7 +190,7 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
   // A recipe need not write `runtime` at all — its agent may be on each step or
   // detected (#372), and `limits` is optional and schema-defaulted (#375) — so
   // an absent one is the schema's.
-  Recipe.parse({ runtime: {}, ...(readOldSpellings(doc.toJS()).recipe as object) })
+  Recipe.parse({ runtime: {}, ...(doc.toJS() as object) })
   const after = doc.toString(RENDER)
   if (after === before) return existing
 

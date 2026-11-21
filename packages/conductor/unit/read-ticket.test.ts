@@ -18,7 +18,8 @@ const state = { project: 'garden', owner: 'someone', base: 'main' } as ProjectSt
 
 const recipe = (tickets: string) => `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [], ${tickets} }
 env: { required: [], plantAt: .env.local }
 steps: {}

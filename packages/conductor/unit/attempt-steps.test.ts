@@ -75,7 +75,7 @@ const ITEM: Claimed = {
  * builds them off `queueOf(recipe)` where a recipe declares nothing (`#269`).
  *
  * All four, because a block is all four: the schema requires them, and `queueOf`
- * writes `take: both` where the machine file names nobody.
+ * writes `take: all` where the machine file names nobody.
  */
 const QUEUE: QueueSettings = {
   kinds: ['bug', 'feature'],

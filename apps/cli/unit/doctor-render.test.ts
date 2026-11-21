@@ -452,8 +452,8 @@ describe('lingtai doctor through @effect/cli', () => {
 describe('the rows that carry a fix (#717)', () => {
   const recipeWith = (subscribers: string, scanner = ''): string => `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

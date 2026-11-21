@@ -188,8 +188,9 @@ describe('cardRecipe', () => {
     const text = `version: 2
 env:
   plantAt: .env.local
+branch:
+  main: main
 repo:
-  base: main
   remote: /tmp/code
 source:
   kinds: [bug]

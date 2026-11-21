@@ -15,7 +15,7 @@ import { z } from 'zod'
 
 import { type RecipeChange, editRecipe } from './emit.ts'
 import { RECIPE_VERSION } from './recipe.ts'
-import { RecipeInvalidError, readOldSpellings, resolveSource } from './resolve.ts'
+import { RecipeInvalidError, resolveSource } from './resolve.ts'
 
 /** The file seam: a `Map`-backed one for tests, `diskFiles` for the real thing. */
 export interface RecipeFiles {
@@ -39,7 +39,7 @@ export interface SetRecipeResult {
 /** What a refusal names: the file's own `branch.main` (or the old spelling of it) where the text parses that far, else `path`. */
 export function refFor(text: string, path: string): string {
   try {
-    const raw = readOldSpellings(parseYaml(text) as unknown).recipe
+    const raw = parseYaml(text) as unknown
     const main = (raw as { branch?: { main?: unknown } } | null)?.branch?.main
     return typeof main === 'string' ? main : path
   } catch {
@@ -111,10 +111,12 @@ export function widenStepsIfNeeded(
   if (stepChanges.length === 0 || stepChanges.some((c) => c.path.length === 1)) return changes
 
   const nonStepChanges = changes.filter((c) => c.path[0] !== 'steps')
-  const beforeText = editedText(existing, nonStepChanges, path)
-
   let before
+  let beforeText
   try {
+    // Inside the try: with only the non-step changes applied, a file still holding an old spelling
+    // (`take: both` at a claim queue) is refused by the parse, and that means "cannot widen", not "failed".
+    beforeText = editedText(existing, nonStepChanges, path)
     before = resolveSource(beforeText, refFor(beforeText, path), path)
   } catch {
     return changes

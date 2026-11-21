@@ -9,8 +9,8 @@ import { recipePath, resolveLocalRecipeEffect } from '../src/index.ts'
 const STATE = '/home/me/.lingtai'
 
 const RECIPE = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

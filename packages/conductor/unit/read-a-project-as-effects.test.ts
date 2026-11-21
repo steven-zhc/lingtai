@@ -55,7 +55,7 @@ describe('currentRecipeEffect', () => {
 
 describe('currentRecipeEffect records through loadProject (#1176)', () => {
   const HOME = '/h'
-  const V1 = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+  const V1 = 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
   const V2 = `${V1}# edited by hand\n`
 
   it('records a file edited between two reads once, by file, and nothing on a third', async () => {

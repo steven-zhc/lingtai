@@ -27,8 +27,8 @@ async function recipeFrom(yaml: string): Promise<ResolvedRecipe> {
 
 const COMMON = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

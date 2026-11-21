@@ -15,7 +15,7 @@ const HOME = '/h'
 const P = 'app'
 const PATH = recipePath(P, HOME)
 const SEED = [
-  { path: ['repo', 'base'], value: 'main' },
+  { path: ['branch', 'main'], value: 'main' },
   { path: ['env', 'plantAt'], value: '.env.local' },
   { path: ['source', 'kinds'], value: ['bug'] },
 ]
