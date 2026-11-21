@@ -55,10 +55,10 @@ pre{font:12.5px/1.65 var(--mono);background:#fbfcfc;border:1px solid var(--rule)
 </style>
 </head>
 <body>
-<p class="note">Mock 4 · keeping your branch current with main, and what a conflict does — PR work, shown on the PR page (0130 §6). Sample project. Pick an outcome to play it.</p>
+<p class="note">Mock 4 · bringing main into a PR, and what a conflict does — a step of the PR's <i>In progress</i>, at submit and at each pr-fix (0130 §6). Sample project. Pick an outcome to play it.</p>
 <div class="wrap">
-  <h1>Bringing main into your branch</h1>
-  <p class="lede">Before each ticket, and when you prepare a PR, Lingtai checks whether the team's <b>main</b> has moved. If it has, main's new work comes <b>down</b> into your branch, so the next ticket is written on today's code.</p>
+  <h1>Bringing main into your PR</h1>
+  <p class="lede">When you submit a PR, and when a pr-fix lands on it, Lingtai checks whether the team's <b>main</b> has moved. If it has, main's new work comes <b>down</b> into the PR's branch, so the team reviews it on today's code — and the PR branch is then merged back into your own branch. Nothing else waits for it: tickets go on being taken the whole time.</p>
 
   <div class="stage">
     <svg viewBox="0 0 1100 380" aria-label="main above, your branch below, main's new work coming down">
@@ -111,13 +111,12 @@ pre{font:12.5px/1.65 var(--mono);background:#fbfcfc;border:1px solid var(--rule)
       </svg>
       <div class="meta">Claude Code · 4 min · $0.21 · <a>run log</a></div>
     </div>
-    <p style="margin:0;color:var(--ink-2);font-size:14px;align-self:center">The card is the same small graph: main's new work coming down, the node amber while an agent resolves, the round it is on. It lives on the PR page, never on the ticket board; while it holds, the home page's banner says claiming is paused.</p>
+    <p style="margin:0;color:var(--ink-2);font-size:14px;align-self:center">The card is the same small graph: main's new work coming down, the node amber while an agent resolves, the round it is on. It lives on the PR page, never on the ticket board, and it stops nothing else; while it waits, only the PRs view's count says so.</p>
   </div>
 
   <p class="flab">C · when the agent can't — a card in the PR page's <i>Waiting on you</i></p>
-  <div class="banner"><b>chapter-garden: claiming paused</b> — your branch conflicts with main.</div>
   <div class="card wait">
-    <div class="t" style="font-size:16px"><code>steven-zhc/foundry</code> conflicts with main</div>
+    <div class="t" style="font-size:16px">PR #91 (<code>steven-zhc/foundry-pr-9</code>) conflicts with main</div>
     <div class="meta">since 12:14 · main moved 2 · shelf.ts · 6 rounds spent · $1.35</div>
     <div class="row" style="margin-top:10px">
       <svg viewBox="0 0 360 150" style="background:#f6f9f9;border-radius:3px">
@@ -141,10 +140,10 @@ pre{font:12.5px/1.65 var(--mono);background:#fbfcfc;border:1px solid var(--rule)
       </div>
     </div>
     <p style="margin:12px 0 2px;font-size:14px"><b>Or resolve it yourself</b>, then tell Lingtai:</p>
-<pre>git -C ~/code/chapter-garden switch steven-zhc/foundry
+<pre>git -C ~/code/chapter-garden switch steven-zhc/foundry-pr-9
 git -C ~/code/chapter-garden merge origin/main     # resolve, commit
 git -C ~/code/chapter-garden push
-lingtai sync chapter-garden                         # checks it, builds it, resumes claiming</pre>
+lingtai pr retry chapter-garden                     # checks it, builds it, goes on to CI</pre>
     <div class="btns"><button class="btn go">I resolved it — check again</button></div>
   </div>
 </div>
@@ -155,7 +154,7 @@ const $=id=>document.getElementById(id);
 const show=(id,on=true)=>{const e=$(id);e.classList.remove('pop');e.classList.toggle('hide',!on);if(on){void e.getBBox();e.classList.add('pop')}};
 const draw=id=>{const p=$(id);p.classList.remove('hide','draw');p.style.setProperty('--len',p.getTotalLength());void p.getBBox();p.classList.add('draw')};
 const wait=ms=>new Promise(r=>setTimeout(r,ms));
-const NAMES=['main moved?','merge','resolve','build + review','push · claim'];
+const NAMES=['main moved?','merge','resolve','build + review','push · CI'];
 let run=0;
 function steps(states,sub){ $('steps').innerHTML=NAMES.map((n,i)=>`<div class="${states[i]||''}"><b>${n}</b>${sub[i]||''}</div>`).join('') }
 function node(stroke,txt,fill='#fff'){ $('sc').setAttribute('stroke',stroke);$('sc').setAttribute('fill',fill);$('st').setAttribute('fill',stroke);$('st').textContent=txt }
@@ -166,20 +165,20 @@ async function play(o){
   const moved=o!=='same';['t1','t2'].forEach(i=>show(i,moved));
   steps([],[]);$('out').textContent='';
   await wait(500);if(me!==run)return;
-  if(!moved){show('same');steps(['ok','skip','skip','skip','ok'],['no','','','','#48 starts']);show('nxt');$('nxtl').textContent='next ticket starts here';
-    $('out').innerHTML='main is already in your branch. Nothing is merged, no commit is made, and the next ticket is claimed at once.';return}
+  if(!moved){show('same');steps(['ok','skip','skip','skip','ok'],['no','','','','CI next']);show('nxt');$('nxtl').textContent='the PR goes on to CI';
+    $('out').innerHTML='main is already in the PR's branch. Nothing is merged, no commit is made, and the PR goes straight on to CI.';return}
   steps(['ok','run'],['yes · 2 commits','bringing it down']);draw('arc');await wait(900);if(me!==run)return;show('snode');node('#9c5a08','sync');
-  if(o==='clean'){await wait(600);node('#2c7a4c','✓');steps(['ok','ok','skip','ok','ok'],['yes · 2 commits','clean','not needed','build ✓ before the push','pushed · #48 starts']);show('nxt');
+  if(o==='clean'){await wait(600);node('#2c7a4c','✓');steps(['ok','ok','skip','ok','ok'],['yes · 2 commits','clean','not needed','build ✓ before the push','pushed · CI next']);show('nxt');
     $('out').innerHTML='No file changed on both sides, so git merged it by itself; the result was built before it was pushed, so a red main never becomes the base your tickets are cut from.';return}
   show('hit');node('#9c5a08','!');$('snode').classList.add('pulse');
   steps(['ok','no','run'],['yes · 2 commits','conflict in shelf.ts','an agent · round 1 of 6']);
   $('out').innerHTML='li-wei and #43 both changed <code>shelf.ts</code>. An agent is handed both sides — what #43 meant, and what li-wei’s commit meant — and resolves it.';
   await wait(1800);if(me!==run)return;
   $('snode').classList.remove('pulse');
-  if(o==='fixed'){node('#2c7a4c','✓');steps(['ok','no','ok','ok','ok'],['yes · 2 commits','conflict in shelf.ts','resolved · round 1','build ✓ · review ✓','pushed · #48 starts']);show('nxt');
-    $('out').innerHTML='Resolved, then checked like any change: the build passed and the reviewer read the resolution. It goes into your next PR, where the team sees it too.';return}
-  node('#a33029','✕','#f6e1de');steps(['ok','no','no','no',''],['yes · 2 commits','conflict in shelf.ts','6 rounds spent','build refused round 6','paused']);
-  $('out').innerHTML='<b style="color:#a33029">Waiting on you.</b> The agent’s six rounds did not pass the build. Claiming is paused for this project — nothing is built on a branch that does not merge. See C below.';
+  if(o==='fixed'){node('#2c7a4c','✓');steps(['ok','no','ok','ok','ok'],['yes · 2 commits','conflict in shelf.ts','resolved · round 1','build ✓ · review ✓','pushed · CI next']);show('nxt');
+    $('out').innerHTML='Resolved, then checked like any change: the build passed and the reviewer read the resolution. It is part of this PR, where the team sees it too.';return}
+  node('#a33029','✕','#f6e1de');steps(['ok','no','no','no',''],['yes · 2 commits','conflict in shelf.ts','6 rounds spent','build refused round 6','PR waits on you']);
+  $('out').innerHTML='<b style="color:#a33029">Waiting on you.</b> The agent’s six rounds did not pass the build. The PR waits on you on the PR page; tickets go on being taken and landing on your branch. See C below.';
 }
 document.querySelectorAll('#picks button').forEach(b=>b.onclick=()=>play(b.dataset.o));
 play('fixed');

@@ -49,7 +49,7 @@ textarea.sum{width:100%;min-height:150px;border:1px solid var(--rule-2);border-r
 <body>
 <p class="mocknote"><b>Mock · one PR's page</b> (ADR 0130 §5–6) — what a card on the PR page (<a href="pr-board.html">pr-board.html</a>) opens, at <code>/pr/chapter-garden/7</code>. It is drawn like the task page: the PR's header, <i>where it is</i> as a poster and the five states it moves through, then the work Lingtai did on it in order, its tickets on the branch's rail, the summary you can edit, its facts and its history from the <code>pr-</code> stream. Every action the PR can take lives here, and only the ones its state allows are shown.</p>
 
-<p class="frame-label">A · in review — two PRs stacked, this one the lower</p>
+<p class="frame-label">A · in review — the one PR open</p>
 <div class="frame">
   <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><a>PRs</a><span class="muted" style="margin:0 6px">/</span><span class="mono">PR #88</span><span class="sp"></span><a class="btn">Tickets</a><a class="btn" style="border-color:var(--accent);color:var(--accent-ink)">PRs</a></div>
   <div class="page">
@@ -67,8 +67,7 @@ textarea.sum{width:100%;min-height:150px;border:1px solid var(--rule-2);border-r
       <g fill="#fff" stroke="#2f3d63" stroke-width="3"><circle cx="170" cy="74" r="7"/><circle cx="230" cy="74" r="7"/><circle cx="290" cy="74" r="7"/></g><circle cx="370" cy="74" r="7" fill="#fff" stroke="#9c5a08" stroke-width="3"/>
       <g font-size="11" font-family="IBM Plex Mono" fill="#2f3d63" text-anchor="middle"><text x="170" y="98">#41</text><text x="230" y="98">#43</text><text x="290" y="98">#44</text><text x="370" y="98" fill="#9c5a08">#47 rework</text></g>
       <text x="130" y="62" font-size="11.5" font-family="IBM Plex Mono" font-weight="600" fill="#2f3d63">this PR · steven-zhc/foundry-pr-7</text>
-      <path d="M420 74 C450 74 440 48 480 48 H640" fill="none" stroke="#6c7aa3" stroke-width="3" stroke-dasharray="6 4"/><text x="490" y="40" font-size="11" font-family="IBM Plex Mono" fill="#4a5d8a">PR #90 stacked on it →</text>
-      <path d="M420 74 C440 74 440 120 470 120" fill="none" stroke="#2f3d63" stroke-width="2" stroke-dasharray="3 3"/><text x="476" y="112" font-size="10.5" font-family="IBM Plex Mono" fill="#2f3d63">merged forward</text>
+      <path d="M420 74 C440 74 440 120 470 120" fill="none" stroke="#2f3d63" stroke-width="2" stroke-dasharray="3 3"/><text x="476" y="112" font-size="10.5" font-family="IBM Plex Mono" fill="#2f3d63">merged back after each fix</text>
     </svg>
 
     <div class="grid2">
@@ -92,7 +91,7 @@ textarea.sum{width:100%;min-height:150px;border:1px solid var(--rule-2);border-r
             <div class="t"><span class="n"><a>#41</a></span><span>Chapter 9 of <i>The Sun's Ninth Minute</i></span><span class="k">feature</span><span class="k">$1.84</span></div>
             <div class="t"><span class="n"><a>#43</a></span><span>The bookshelf sorts stories by their latest chapter</span><span class="k">feature</span><span class="k">$0.92</span></div>
             <div class="t"><span class="n"><a>#44</a></span><span>Shelf empty state says so</span><span class="k">bug</span><span class="k">$0.41</span></div>
-            <div class="t rw"><span class="n"><a>#47</a></span><span>Shelf ties break by title <span class="tag">rework · li-wei asked</span></span><span class="k">bug</span><span class="k">$0.38</span></div>
+            <div class="t rw"><span class="n"><a>#47</a></span><span>Shelf ties break by title <span class="tag">pr-fix · li-wei asked</span></span><span class="k">bug</span><span class="k">$0.38</span></div>
           </div>
           <p class="muted" style="font-size:12px;margin:10px 0 0">A ticket opens its task page. Each is closed on the tracker when this PR merges. With many tickets the list scrolls here; the card on the PR page shows three.</p>
         </div>
@@ -103,7 +102,7 @@ textarea.sum{width:100%;min-height:150px;border:1px solid var(--rule-2);border-r
 
 While bringing main in, a conflict in shelf.ts was resolved: main renamed byTitle; kept it.
 
-Rework: ties on the shelf now break by title (li-wei).
+Fix from review: ties on the shelf now break by title (li-wei).
 
 ---
 Closes #41 · Closes #43 · Closes #44 · Closes #47
@@ -115,17 +114,16 @@ Made with Lingtai · $4.02</textarea>
       <div>
         <div class="panel">
           <h2>Do</h2>
-          <div class="acts"><a class="btn small solid">New rework ticket for #88</a><a class="btn small">Review on GitHub ↗</a></div>
-          <p class="muted" style="font-size:12px;margin:10px 0 0">A rework ticket is cut from this PR's branch and lands on it; then it goes through build and CI again and is merged forward into PR #90 and your branch. Merging is the team's, on GitHub.</p>
+          <div class="acts"><a class="btn small solid">New pr-fix ticket</a><a class="btn small">Review on GitHub ↗</a></div>
+          <p class="muted" style="font-size:12px;margin:10px 0 0">A <code>lingtai:pr-fix</code> ticket ranks ahead of every other, is cut from this PR's branch and lands on it; then the PR goes through build and CI again and is merged back once into your branch. Merging is the team's, on GitHub.</p>
         </div>
         <div class="panel">
           <h2>Facts</h2>
           <dl class="kv">
             <dt>Branch</dt><dd><code>steven-zhc/foundry-pr-7</code></dd>
             <dt>Base</dt><dd><code>main</code></dd>
-            <dt>Stacked on it</dt><dd><a>PR #90</a> · in review</dd>
-            <dt>Head</dt><dd><code>c55e01b</code> · pushed by Lingtai</dd>
-            <dt>Main</dt><dd>2 commits ahead since the sync · brought in at the next rework</dd>
+                        <dt>Head</dt><dd><code>c55e01b</code> · pushed by Lingtai</dd>
+            <dt>Main</dt><dd>2 commits ahead since the sync · brought in at the next fix, or by the next PR</dd>
             <dt>Spend</dt><dd>$4.02 · tickets $3.55 · sync $0.41 · summary $0.06</dd>
           </dl>
         </div>
@@ -136,7 +134,7 @@ Made with Lingtai · $4.02</textarea>
         <div class="panel">
           <h2>History</h2>
           <div class="hist">
-            <div><span class="when">11-20 13:05</span><span>#47 rework landed on this branch · CI ✓ · back in review</span></div>
+            <div><span class="when">11-20 13:05</span><span>#47 pr-fix landed on this branch · CI ✓ · back in review</span></div>
             <div><span class="when">11-20 12:20</span><span>li-wei asked for a change on GitHub · you opened <a>#47</a></span></div>
             <div><span class="when">11-20 11:31</span><span>ready for review</span></div>
             <div><span class="when">11-20 11:24</span><span>submitted by you · 3 tickets · frozen at <code>c55e01b</code></span></div>
@@ -168,8 +166,8 @@ Made with Lingtai · $4.02</textarea>
       </div>
       <div class="panel">
         <h2>Do</h2>
-        <div class="acts"><a class="btn small solid">Run CI again</a><a class="btn small">New rework ticket for #91</a><a class="btn small">Open the run ↗</a></div>
-        <p class="muted" style="font-size:12px;margin:10px 0 0">A flaky check: run it again. A real failure: a rework ticket fixes it on this PR's branch, and the PR goes through CI again by itself. It stays a draft on GitHub — nobody was asked to review it.</p>
+        <div class="acts"><a class="btn small solid">Run CI again</a><a class="btn small">New pr-fix ticket</a><a class="btn small">Open the run ↗</a></div>
+        <p class="muted" style="font-size:12px;margin:10px 0 0">A flaky check: run it again. A real failure: a pr-fix ticket fixes it on this PR's branch, and the PR goes through CI again by itself. It stays a draft on GitHub — nobody was asked to review it.</p>
       </div>
     </div>
   </div>
@@ -184,7 +182,7 @@ Made with Lingtai · $4.02</textarea>
     <div class="life"><span class="on draft">Draft</span><span>In progress</span><span>Waiting on you</span><span>In review</span><span>Merged</span></div>
     <div class="grid2">
       <div class="panel">
-        <h2>Its tickets · 2 landed on steven-zhc/foundry since PR #90</h2>
+        <h2>Its tickets · 2 landed on steven-zhc/foundry since the last PR</h2>
         <div class="tix">
           <div class="t"><span class="n"><a>#50</a></span><span>Footer shows the story count</span><span class="k">feature</span><span class="k">$0.52</span></div>
           <div class="t"><span class="n"><a>#51</a></span><span>Chapter list paginates</span><span class="k">feature</span><span class="k">$1.10</span></div>
@@ -193,7 +191,7 @@ Made with Lingtai · $4.02</textarea>
       <div class="panel">
         <h2>Do</h2>
         <div class="acts"><a class="btn small solid">Submit PR</a></div>
-        <p class="muted" style="font-size:12px;margin:10px 0 0">Submit freezes your branch here and takes it through In progress: bring main in, build, resolve a conflict, push, CI, summary. It will stack on PR #90. Lingtai never submits on its own.</p>
+        <p class="muted" style="font-size:12px;margin:10px 0 0">Open only when no other PR is. Submit freezes your branch here and takes it through In progress: bring main in, build, resolve a conflict, push, CI, summary. Lingtai never submits on its own.</p>
       </div>
     </div>
   </div>

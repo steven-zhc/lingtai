@@ -68,50 +68,42 @@
 </style>
 </head>
 <body>
-<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). <b>A PR card is drawn as a branch, never as a ticket</b>: a ticket card is a flat white sheet with a title; a PR card has a coloured header (the state's colour, a branch mark, its number) and its tickets as slips strung on a rail, one commit dot each — so which board you are on is seen before anything is read. The board itself is tinted. A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens that PR's own page (<a href="pr-detail.html">pr-detail.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>Several PRs at once, stacked</b>: work goes on while the team reviews, and the next PR's base is the one under it, so the team reads only what is new. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
+<p class="mocknote"><b>Mock · the PR page — a PR's own board</b> (ADR 0130 §5–6). <b>A PR card is drawn as a branch, never as a ticket</b>: a ticket card is a flat white sheet with a title; a PR card has a coloured header (the state's colour, a branch mark, its number) and its tickets as slips strung on a rail, one commit dot each — so which board you are on is seen before anything is read. The board itself is tinted. A team's tickets land on your branch as any ticket lands; this page is where that branch becomes a PR. Five columns, one per PR state, as the home page draws tickets: <i>Draft · In progress · Waiting on you · In review · Merged</i>. A card opens that PR's own page (<a href="pr-detail.html">pr-detail.html</a>). The sync with <code>main</code> is PR work and shows here, never on the ticket board. <b>One PR at a time</b>: work goes on while the team reviews, gathering in the next draft; a change the team asks for is a <code>lingtai:pr-fix</code> ticket, done on the PR's own branch. <b>A PR reaches <i>In review</i> only after the project's CI passed</b> — it waits as a GitHub draft PR until then.</p>
 
-<p class="frame-label">A · two PRs open, stacked: #88 back in progress for a rework on its own branch, #90 on top of it in review; the next draft growing</p>
+<p class="frame-label">A · one PR open — #88 back in progress for a pr-fix on its own branch; the next draft growing, its Submit waiting</p>
 <div class="frame">
   <div class="bar"><span class="brand">Lingtai</span><span class="sep"></span><span class="proj">chapter-garden ▾</span><span class="sep"></span><span class="dot"></span><span class="sp"></span><a class="btn">Tickets</a><a class="btn" style="border-color:var(--accent);color:var(--accent-ink)">PRs</a><a class="btn">Report</a></div>
-  <div class="strip"><span><b>steven-zhc/foundry</b> → <b>main</b></span><span>5 tickets on your branch not on main</span><span>main moved 2 since your last sync</span></div>
+  <div class="strip"><span><b>steven-zhc/foundry</b> → <b>main</b></span><span>2 tickets not in a PR yet</span><span>main is brought in at the next submit</span></div>
   <div class="pcols">
     <div class="pcol">
       <h3>Draft <span class="n">1</span></h3>
       <div class="pr draft">
         <div class="top"><a class="t" href="pr-detail.html">Next PR</a><span class="m" style="margin:0">2 tickets</span></div>
-        <div class="sub2">landed on steven-zhc/foundry since PR #90</div>
+        <div class="sub2">landed on steven-zhc/foundry since PR #88 was submitted</div>
         <div class="chips"><span class="chip">#50</span><span class="chip">#51</span></div>
-        <div class="act"><a class="btn small solid">Submit PR</a></div>
-        <div class="m">will stack on PR #90</div>
+        <div class="act"><a class="btn small" style="opacity:.5;cursor:not-allowed">Submit PR</a></div>
+        <div class="m">one PR at a time — submit opens once PR #88 is merged or closed</div>
       </div>
-      <p class="muted" style="font-size:12px">Lingtai keeps taking tickets while PRs wait for review; they gather here.</p>
+      <p class="muted" style="font-size:12px">Lingtai keeps taking tickets while a PR is open; they gather here.</p>
     </div>
     <div class="pcol hot">
       <h3>In progress <span class="n">1</span></h3>
       <div class="pr prog">
-        <div class="top"><a class="t" href="pr-detail.html">PR #88 · rework</a><span class="pill sig"><span class="d pulse"></span>CI</span></div>
+        <div class="top"><a class="t" href="pr-detail.html">PR #88 · pr-fix</a><span class="pill sig"><span class="d pulse"></span>CI</span></div>
         <div class="sub2">li-wei asked for a change; #47 landed on PR #88's own branch</div>
-        <div class="chips"><span class="chip">#47 rework</span></div>
-        <div class="ci"><span>sync ✓</span><span>build ✓</span><span class="run">CI 3/5 running</span><span style="background:#eef1f1;color:var(--muted)">→ #90, your branch</span></div>
-        <div class="m">then merged forward into PR #90 and steven-zhc/foundry</div>
+        <div class="chips"><span class="chip">#47 pr-fix</span></div>
+        <div class="ci"><span>sync ✓</span><span>build ✓</span><span class="run">CI 3/5 running</span></div>
+        <div class="m">then merged back once into steven-zhc/foundry</div>
       </div>
-      <p class="muted" style="font-size:12px">The order every PR goes through: sync with main · build · conflict agent · push · <b>CI</b> · summary.</p>
+      <p class="muted" style="font-size:12px">The order every PR goes through: bring main in · build · conflict agent · push · <b>CI</b> · summary.</p>
     </div>
     <div class="pcol fail">
       <h3>Waiting on you <span class="n">0</span></h3>
       <p class="muted" style="font-size:13px">Nothing is waiting on you.</p>
     </div>
     <div class="pcol gh">
-      <h3>In review <span class="n">1</span></h3>
-      <div class="pr rev">
-        <div class="top"><a class="t" href="pr-detail.html">PR #90</a><span class="pill rev"><span class="d"></span>open on GitHub</span></div>
-        <div class="sub2">Reading time and dark mode</div>
-        <div class="chips"><span class="chip">#48</span><span class="chip">#49</span></div>
-        <span class="stack">stacked on #88 · base steven-zhc/foundry-pr-7</span>
-        <div class="ci"><span>CI ✓ 5/5</span></div>
-        <div class="act"><a class="btn small">Review on GitHub ↗</a><a class="btn small">Rework ticket for #90</a><a class="btn small">Edit summary</a></div>
-      </div>
-      <p class="muted" style="font-size:12px">PR #88 left this column while its rework runs, and comes back when CI is green. It stays open on GitHub throughout.</p>
+      <h3>In review <span class="n">0</span></h3>
+      <p class="muted" style="font-size:12px">PR #88 left this column while its pr-fix runs, and comes back when CI is green. It stays open on GitHub throughout.</p>
     </div>
     <div class="pcol">
       <h3>Merged <span class="n">2</span></h3>
@@ -136,25 +128,25 @@
   </div>
 </div>
 
-<p class="frame-label">C · Waiting on you — CI red, and a conflict the agent could not resolve (claiming is paused)</p>
+<p class="frame-label">C · Waiting on you — two examples (only one PR is open at a time): CI red; a conflict with main the agent could not resolve. Tickets go on being taken either way.</p>
 <div class="frame" style="max-width:520px;margin-left:auto;margin-right:auto">
   <div class="pcol fail" style="border:0">
-    <h3>Waiting on you <span class="n">2</span></h3>
+    <h3>Waiting on you</h3>
     <div class="pr wait">
       <div class="top"><a class="t" href="pr-detail.html">PR #91 · CI failed</a></div>
       <div class="sub2">still a GitHub draft — nobody was asked to review it</div>
       <div class="chips"><span class="chip">#52</span><span class="chip">#53</span></div>
       <div class="ci"><span>sync ✓</span><span>build ✓</span><span class="red">CI ✕ e2e / chromium</span></div>
-      <div class="act"><a class="btn small">Open the run ↗</a><a class="btn small">Rework ticket for #91</a><a class="btn small solid">Run CI again</a></div>
+      <div class="act"><a class="btn small">Open the run ↗</a><a class="btn small">New pr-fix ticket</a><a class="btn small solid">Run CI again</a></div>
       <div class="m">an agent fixing a red CI run is later; 0.16 hands it to you</div>
     </div>
     <div class="pr wait">
-      <div class="top"><span class="t">steven-zhc/foundry conflicts with main</span></div>
-      <div class="m">shelf.ts · 6 rounds spent · $1.35 · claiming paused</div>
+      <div class="top"><a class="t" href="pr-detail.html">PR #91 · conflicts with main</a></div>
+      <div class="m">at submit · shelf.ts · 6 rounds spent · $1.35</div>
       <svg viewBox="0 0 300 80"><path d="M10 16 H290" stroke="#4a5d8a" stroke-width="4" stroke-linecap="round"/><path d="M16 16 C28 16 24 62 38 62 H290" fill="none" stroke="#0b6a70" stroke-width="4"/><circle cx="90" cy="62" r="7" fill="#0b6a70"/><circle cx="190" cy="16" r="7" fill="#e5e9f3" stroke="#4a5d8a"/><path d="M190 23 C180 40 120 48 96 56" fill="none" stroke="#a33029" stroke-width="2" stroke-dasharray="3 3"/><circle cx="232" cy="62" r="9" fill="#f6e1de" stroke="#a33029" stroke-width="2.5"/><text x="232" y="66" text-anchor="middle" font-size="10" font-weight="800" fill="#a33029">✕</text></svg>
       <div class="m">ours #43 sorts the shelf · theirs a90d2ce li-wei · last refusal: build</div>
       <div class="act"><a class="btn small">Give the agent 3 more rounds</a><a class="btn small solid">I resolved it — check again</a></div>
-      <div class="m">by hand: merge origin/main into steven-zhc/foundry, push, then <code>lingtai sync</code> — <a href="sync-conflict.html">the steps</a></div>
+      <div class="m">by hand: merge origin/main into steven-zhc/foundry-pr-9, push, then <code>lingtai pr retry</code> — <a href="sync-conflict.html">the steps</a></div>
     </div>
   </div>
 </div>
@@ -187,7 +179,7 @@
     <div><h4>opened — on the PR's detail, not the card</h4><div class="pb">
       <div class="pr rev"><div class="top"><a class="t" href="pr-detail.html">PR #95</a><span class="cnt">14 tickets</span><span class="pill rev"><span class="d"></span>in review</span></div>
         <div class="chips" style="margin-top:10px;margin-left:12px;padding:3px 4px 3px 18px;flex-wrap:nowrap;max-height:236px;overflow-y:auto;overflow-x:hidden">
-          <span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="chip">#64 Empty search says so</span><span class="chip">#65 Shelf groups by series</span><span class="chip">#66 Series page</span><span class="chip">#67 Reading time</span><span class="chip">#68 Dark mode</span><span class="chip">#69 Chapter list paginates</span><span class="chip">#70 Last read chapter</span><span class="chip">#71 Bookmark a page</span><span class="chip">#72 Bookmarks page</span><span class="chip">#73 Footer count</span><span class="chip">#74 rework: ties by title</span>
+          <span class="chip">#61 Search by title</span><span class="chip">#62 Search by author</span><span class="chip">#63 Results page keeps the query</span><span class="chip">#64 Empty search says so</span><span class="chip">#65 Shelf groups by series</span><span class="chip">#66 Series page</span><span class="chip">#67 Reading time</span><span class="chip">#68 Dark mode</span><span class="chip">#69 Chapter list paginates</span><span class="chip">#70 Last read chapter</span><span class="chip">#71 Bookmark a page</span><span class="chip">#72 Bookmarks page</span><span class="chip">#73 Footer count</span><span class="chip">#74 pr-fix: ties by title</span>
         </div></div>
     </div><p class="muted" style="font-size:12px">"+ 11 more" opens the PR's detail, where every ticket is listed and scrolls; the board's card never grows.</p></div>
   </div>
