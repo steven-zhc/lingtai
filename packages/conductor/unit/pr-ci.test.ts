@@ -301,3 +301,20 @@ describe('the ci and ready steps', () => {
     expect(iface).not.toMatch(/ci-github-actions/)
   })
 })
+
+describe('check identity', () => {
+  it('a successful check sharing a failing check’s name is not flagged failing', async () => {
+    const store = await frozen()
+    const w = aWorld([
+      { name: 'test', state: 'success', url: 'https://ci/ok' },
+      { name: 'test', state: 'failure', url: 'https://ci/bad' },
+    ])
+    await serve(ports(store, w, recipeWith()))
+    const e = (await store.read(prStream('lingtai', 1))).find((x) => x.type === 'PrChecked')!
+    const rows = (e.data as { checks: { url: string; failing?: boolean }[] }).checks
+    expect(rows.map((r) => [r.url, r.failing === true])).toEqual([
+      ['https://ci/ok', false],
+      ['https://ci/bad', true],
+    ])
+  })
+})

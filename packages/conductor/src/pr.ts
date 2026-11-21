@@ -359,12 +359,15 @@ const cwdSha = (state: PrState): string | null => state.target ?? state.frozenSh
 const failingLine = (f: { name: string; state: string; url: string }): string =>
   `${f.name} (${f.state})${f.url === '' ? '' : ` ${f.url}`}`
 
-const checkRows = (checks: readonly CiCheck[], failing?: readonly string[]) =>
+const checkKey = (c: { name: string; state: string; url: string }): string => JSON.stringify([c.name, c.state, c.url])
+
+/** `failing` is matched by name, state and link together: two checks may share a name and only one of them failed. */
+const checkRows = (checks: readonly CiCheck[], failing?: readonly { name: string; state: string; url: string }[]) =>
   checks.map((c) => ({
     name: c.name,
     state: c.state,
     url: c.url,
-    ...(failing?.includes(c.name) ? { failing: true } : {}),
+    ...(failing?.some((f) => checkKey(f) === checkKey(c)) ? { failing: true } : {}),
     ...(c.artifacts !== undefined && c.artifacts.length > 0 ? { artifacts: [...c.artifacts] } : {}),
   }))
 
@@ -434,10 +437,7 @@ const ciStep: PrStep = {
               {
                 headSha: target,
                 verdict: 'red',
-                checks: checkRows(
-                  checks,
-                  verdict.failing.map((f) => f.name),
-                ),
+                checks: checkRows(checks, verdict.failing),
               },
               ports.store,
             )
@@ -500,6 +500,8 @@ const readyStep: PrStep = {
       if (pull === null) return { kind: 'again' } as StepAnswer
       // CI's verdict is about `target`; a head pushed since is a different commit and was never read.
       if (pull.headSha !== target) {
+        // A head pushed while an earlier attempt was promoting it may already be ready, unread: back to a draft.
+        if (!pull.draft) yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
         return {
           kind: 'wait',
           reason: 'branch-moved',
@@ -513,7 +515,15 @@ const readyStep: PrStep = {
         marked = true
         // The mutation takes no expected head, so the head is read again after it. A push that landed in between has
         // been promoted unread: it is put back to a draft, and `PrOpened` is never appended for a commit CI did not read.
-        const after = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
+        const after = yield* github.getPull(host.number).pipe(
+          Effect.catch((err: unknown) =>
+            // Cannot tell whether a push landed: back to a draft rather than leave an unread head ready.
+            github.convertToDraft(host.nodeId).pipe(
+              Effect.mapError(asError),
+              Effect.flatMap(() => Effect.fail(asError(err))),
+            ),
+          ),
+        )
         if (after.headSha !== target) {
           yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
           return {
@@ -537,7 +547,18 @@ const readyStep: PrStep = {
                 new Error(`the pull request moved to ${last.headSha.slice(0, 7)} before In review was recorded`),
               )
             }
-            return yield* recordPrOpened(project, n, { host: 'github', number: host.number, url: host.url }, store)
+            const opened = yield* recordPrOpened(
+              project,
+              n,
+              { host: 'github', number: host.number, url: host.url },
+              store,
+            )
+            // The append read the store, and a push may have landed during it: look once more, and never leave it ready.
+            const settled = yield* github.getPull(host.number).pipe(Effect.mapError(asError))
+            if (settled.headSha !== target && !settled.draft) {
+              yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
+            }
+            return opened
           }),
       } as StepAnswer
     }),
