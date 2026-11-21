@@ -53,10 +53,7 @@ import {
   agentBranchOf,
   reduceAttemptEvent,
   reduceTicketEvent,
-  decodeRun,
-  decodeTicket,
   emptyAttempt,
-  emptyTicket,
   encodeRun,
   encodeTicket,
   isAttemptStream,
@@ -70,7 +67,8 @@ import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
-import type { Projection, ProjectionContextPort } from './store.ts'
+import type { Projection, ProjectionContextPort, ProjectionLog } from './store.ts'
+import { runBefore, ticketBefore } from './ticket-row.ts'
 
 /**
  * Where a task is.
@@ -252,11 +250,12 @@ export const taskViewProjection: Projection = {
     }).pipe(Effect.withSpan('projector.task_view.reset'))
   },
 
-  reduce(events, ctx) {
+  reduce(events, ctx, log) {
     return Effect.gen(function* () {
       // One cache per call (#844): every read goes through it, every touched row is written once at the end.
-      const cache = new Cache(ctx)
+      const cache = new Cache(ctx, log)
       for (const event of events) {
+        cache.seq = event.seq
         if (isTicketStream(event.streamId)) yield* projectTicketEvent(cache, event)
         else if (isAttemptStream(event.streamId)) yield* projectRunEvent(cache, event)
       }
@@ -503,10 +502,14 @@ class Cache {
   private readonly missing = new Set<string>()
 
   private readonly ctx: ProjectionContextPort
+  private readonly log: ProjectionLog
+  /** The event being applied: a stored row of an older shape is re-reduced from the events before it (#1348). */
+  seq = 0n
 
   // Not a parameter property: Node's strip-only TypeScript loader refuses that syntax.
-  constructor(ctx: ProjectionContextPort) {
+  constructor(ctx: ProjectionContextPort, log: ProjectionLog) {
     this.ctx = ctx
+    this.log = log
   }
 
   task(taskId: string): Effect.Effect<TaskEntry> {
@@ -519,28 +522,30 @@ class Cache {
       )
       let entry: TaskEntry
       if (row) {
+        const before = yield* ticketBefore(row.ticket, taskId, this.seq, 'task_view', this.log)
         entry = {
           where: 'row',
-          ticket: decodeTicket(row.ticket, 'task_view', taskId),
+          ticket: before.state,
           note: (row.note as string | null) ?? null,
           updatedAt: new Date(row.updated_at as string | Date),
           updatedSeq: BigInt(String(row.updated_seq)),
           wasStaged: false,
-          dirty: false,
+          dirty: before.reReduced,
         }
       } else {
         const [staged] = yield* this.ctx.query<{ ticket: unknown }>(
           'select ticket from task_view_ticket where task_id = $1',
           [taskId],
         )
+        const before = yield* ticketBefore(staged?.ticket, taskId, this.seq, 'task_view', this.log)
         entry = {
           where: staged ? 'staged' : 'none',
-          ticket: staged ? decodeTicket(staged.ticket, 'task_view', taskId) : emptyTicket,
+          ticket: before.state,
           note: null,
           updatedAt: new Date(0),
           updatedSeq: 0n,
           wasStaged: false,
-          dirty: false,
+          dirty: before.reReduced,
         }
       }
       this.tasks.set(taskId, entry)
@@ -563,7 +568,8 @@ class Cache {
           [runId],
         )
         if (row) {
-          const entry = { taskId: row.task_id, run: decodeRun(row.run, 'task_view', runId), dirty: false }
+          const before = yield* runBefore(row.run, runId, this.seq, 'task_view', this.log)
+          const entry = { taskId: row.task_id, run: before.state, dirty: before.reReduced }
           this.runs.set(runId, entry)
           return entry
         }

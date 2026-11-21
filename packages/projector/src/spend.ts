@@ -71,7 +71,6 @@
 import type { PayloadOf, Usage } from '@lingtai/domain'
 import {
   chatStream,
-  decodeTicket,
   encodeTicket,
   isAttemptStream,
   isTicketStream,
@@ -85,7 +84,7 @@ import { Effect } from 'effect'
 import { withStoreEffect } from './choose.ts'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
-import { reduceStoredTicket } from './ticket-row.ts'
+import { reduceStoredTicket, ticketBefore } from './ticket-row.ts'
 
 export const SPEND_TABLE = 'spend'
 
@@ -157,7 +156,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
     }).pipe(Effect.withSpan('projector.spend.reset'))
   },
 
-  reduce(events, ctx) {
+  reduce(events, ctx, log) {
     return Effect.gen(function* () {
       let snapshot: readonly RateRow[] | null = null
       for (const event of events) {
@@ -227,7 +226,18 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
                 'select state from spend_ticket where ticket = $1',
                 [ticket],
               )
-              kind = latest ? decodeTicket(latest.state, SPEND_TABLE, ticket).kind : null
+              if (latest) {
+                const before = yield* ticketBefore(latest.state, ticket, event.seq, SPEND_TABLE, log)
+                kind = before.state.kind
+                // Written back at once: a `RunSpent` on a pass or chat stream does not reach the reduce below.
+                if (before.reReduced) {
+                  yield* ctx.query(
+                    `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
+                   on conflict (ticket) do update set state = excluded.state`,
+                    [ticket, encodeTicket(before.state)],
+                  )
+                }
+              } else kind = null
             }
             let estimate: { usd: number; fetched: boolean } | null = null
             if (d.costUsd === null) {
@@ -289,7 +299,7 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
           const [row] = yield* ctx.query<{ state: unknown }>('select state from spend_ticket where ticket = $1', [
             event.streamId,
           ])
-          const reduced = reduceStoredTicket(row?.state, event, SPEND_TABLE)
+          const reduced = yield* reduceStoredTicket(row?.state, event, SPEND_TABLE, log)
           yield* ctx.query(
             `insert into spend_ticket (ticket, state) values ($1, $2::jsonb)
            on conflict (ticket) do update set state = excluded.state`,

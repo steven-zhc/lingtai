@@ -198,7 +198,19 @@ export interface Projection {
    * before the runner noticed will re-read the same events, and so will a
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
-  reduce(events: readonly Envelope[], ctx: ProjectionContextPort): Effect.Effect<void>
+  reduce(events: readonly Envelope[], ctx: ProjectionContextPort, log: ProjectionLog): Effect.Effect<void>
+}
+
+/**
+ * What a reduce may ask of the log beyond its own events (#1348): one stream, to
+ * re-reduce a stored row that is of an older shape. Not on the context, which
+ * both stores build inside a transaction and which has no business holding a log.
+ */
+export interface ProjectionLog {
+  /** The stream, every event: `EventsPort.read`. A failure is a defect, as every log read is. */
+  read(streamId: string): Effect.Effect<Envelope[]>
+  /** A line a person should see, said at most once per projection and stream. */
+  note(line: string): void
 }
 
 export interface ProjectionLag {
