@@ -225,7 +225,10 @@ export function modeLines(recipe: Recipe): ModeReading {
         turns: pr?.limits.turns ?? 20,
         wall: pr?.limits.wall ?? '5m',
         fromDefault: pr === undefined,
-        ci: (({ timeoutMs, ...rest }) => ({ ...rest, timeout: formatDuration(timeoutMs) }))(ciOf(recipe)),
+        ci: (({ timeoutMs, ...rest }) => ({
+          ...rest,
+          timeout: timeoutMs % 60_000 === 0 ? `${timeoutMs / 60_000}m` : formatDuration(timeoutMs),
+        }))(ciOf(recipe)),
       },
     }
   }
