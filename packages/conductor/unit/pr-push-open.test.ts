@@ -308,14 +308,8 @@ describe('push and open', () => {
     const store = await frozen()
     const w = aWorld()
     await serve(ports(store, w, elsewhere))
-    // The merge back runs once in review; this file's fake merge never merges, so it is recorded as failed.
-    expect(await types(store)).toEqual([
-      'PrSubmitRequested',
-      'PrInProgress',
-      'PrPushed',
-      'PrOpened',
-      'PrMergeBackFailed',
-    ])
+    // The merge back runs once in review; this file's fake merge never merges, so the pushed head is found already in the personal branch and recorded.
+    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrOpened', 'PrMergedBack'])
     const s = await state(store)
     expect(s.status).toBe('in-review')
     expect(w.posts).toEqual([])
