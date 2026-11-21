@@ -1307,7 +1307,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   it('12. a declared `human:` at `proposed` (`Human`)', async () => {
     const HUMAN_BEFORE_THE_LANE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

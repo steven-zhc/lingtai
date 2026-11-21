@@ -125,7 +125,7 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 /**
  * `repo.base: main` but the branch a pass actually cuts from and lands on is
  * `steps.admit`'s `worktree.base: release` (`#268`'s v2 spelling) — the
- * shape `baseOf`/`baseWrittenAt` (`settings.ts:222-245`) exist to read
+ * shape `branchOf`/`baseWrittenAt` (`settings.ts:222-245`) exist to read
  * correctly instead of assuming `repo.base`.
  */
 const WORKTREE_ADMIT = `version: 2
@@ -141,7 +141,7 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 
 /**
  * `repo.base: ""` already on disk — the shape a bare `--land` with no value
- * used to write before this fix, and the one case `baseOf` can actually
+ * used to write before this fix, and the one case `branchOf` can actually
  * produce that answers nothing, so `current` must read as null and
  * `defaultBranch` must get its turn.
  */

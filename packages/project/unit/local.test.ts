@@ -77,7 +77,7 @@ describe('resolveLocalRecipe', () => {
     expect(resolved.provenance?.['steps']).toBe(
       `claim 0, admit 0, prepared 0, design 0, implement 0, build 0, review 0, proposed 1, merge 0, end 0 ← ${HOME}/app/recipe.yml`,
     )
-    expect(resolved.provenance?.['repo.base']).toBe(`main ← ${HOME}/app/recipe.yml`)
+    expect(resolved.provenance?.['branch.main']).toBe(`main ← ${HOME}/app/recipe.yml`)
   })
 
   /**

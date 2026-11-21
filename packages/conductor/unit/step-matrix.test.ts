@@ -157,7 +157,7 @@ const ACTION: Record<ActionKind, StepAction> = {
   close: { name: 'close the ticket', close: true, when: 'landed' },
   labels: { name: 'label it', labels: ['shipped'], when: 'any' },
   refs: { name: 'delete the arms', refs: true, branch: false, when: 'landed' },
-  worktree: { name: 'cut the branch', worktree: { base: 'main', submodules: false } },
+  worktree: { name: 'cut the branch', worktree: { submodules: false } },
   merge: { name: 'land the branch', merge: { strategy: 'merge-commit' } },
   queue: {
     name: 'what this machine works on',
@@ -214,6 +214,7 @@ const EVERY_DEP: ActionDeps = {
   agent: {} as unknown as AgentActionDeps,
   watch: { changedFiles: async () => [] },
   worktree: { cut: async () => ({ head: '0'.repeat(40), where: '/nowhere' }) },
+  base: 'main',
   merge: { land: async () => ({ merged: '0'.repeat(40) }) },
   queue: { take: async () => ({ taken: { ticketId: 'ticket-nowhere-1', kind: 'bug' } }) },
   work: { work: async () => ({ committed: '0'.repeat(40) }) },

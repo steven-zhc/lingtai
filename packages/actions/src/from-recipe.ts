@@ -103,6 +103,8 @@ export interface ActionDeps {
    * `admit` is a pass that briefs an agent on a directory that does not exist.
    */
   worktree?: WorktreeActionDeps
+  /** The branch a `worktree:` action cuts from: `branchOf`'s answer, never the block's own (0104 §5). */
+  base?: string
   /**
    * The lane a `merge:` action runs — `integrate`, as the conductor already
    * calls it (0065 §2, `#270`).
@@ -232,6 +234,7 @@ export const actionPortDepsFrom = (deps: ActionDeps): ActionPortDeps => {
     work: deps.work === undefined ? undefined : workPortDepsFrom(deps.work),
     watch: deps.watch === undefined ? undefined : watchPortDepsFrom(deps.watch),
     worktree: deps.worktree === undefined ? undefined : worktreePortDepsFrom(deps.worktree),
+    base: deps.base,
     merge: deps.merge === undefined ? undefined : mergePortDepsFrom(deps.merge),
     queue: deps.queue === undefined ? undefined : queuePortDepsFrom(deps.queue),
     file: deps.file === undefined ? undefined : filePortDepsFrom(deps.file),

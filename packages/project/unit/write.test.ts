@@ -96,7 +96,7 @@ steps:
   it('creates an absent file with only the keys set, and it resolves', async () => {
     const files = mapFiles()
     const changes = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['env', 'plantAt'], value: '.env.local' },
       { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
@@ -111,7 +111,7 @@ steps:
     expect(files.replaced).toEqual([{ path: PATH, text: result.text }])
 
     const resolved = resolveSource(result.text, 'main', PATH)
-    expect(resolved.recipe.repo.base).toBe('main')
+    expect(resolved.recipe.branch.main).toBe('main')
     expect(resolved.recipe.source.kinds).toEqual(['bug'])
     expect(resolved.recipe.env.plantAt).toBe('.env.local')
   })
@@ -238,7 +238,7 @@ repo:
         'app',
         [
           { path: ['extends'], value: 'pnpm-workspace' },
-          { path: ['repo', 'base'], value: 'main' },
+          { path: ['branch', 'main'], value: 'main' },
           { path: ['source', 'kinds'], value: ['bug'] },
           { path: ['env', 'plantAt'], value: '.env.local' },
           { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
@@ -259,7 +259,7 @@ repo:
   it('is a no-op when a change sets the value the file already has', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const result = await Effect.runPromise(
-      seedRecipe('app', [{ path: ['repo', 'base'], value: 'main' }], { home: HOME, files }),
+      seedRecipe('app', [{ path: ['source', 'backoff'], value: '2h' }], { home: HOME, files }),
     )
 
     expect(result).toEqual({ path: PATH, text: FIXTURE, written: false })
@@ -307,7 +307,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
   it('writes the keys in the order the loop reaches them, each comment above its own key', async () => {
     const files = mapFiles()
     const changes = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: '.env.local' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['steps', 'build'], value: run },

@@ -10,7 +10,7 @@ import { alreadyAdded, alreadyAddedSentence, applySetup, previewSetup } from '..
 const HOME = '/home/me/.lingtai'
 const path = recipePath('repo', HOME)
 const CHANGES: RecipeChange[] = [
-  { path: ['repo', 'base'], value: 'main' },
+  { path: ['branch', 'main'], value: 'main' },
   { path: ['repo', 'remote'], value: '/repo' },
   { path: ['env', 'plantAt'], value: '.env.local' },
   { path: ['source', 'kinds'], value: ['bug'] },
@@ -47,7 +47,7 @@ describe('applySetup (#968)', () => {
     expect(events).toEqual(['replace', 'register'])
     expect(done.registered).toBe('registered')
     const resolved = resolveSource(store.get(path)!, path, path).recipe
-    expect(resolved.repo.base).toBe('main')
+    expect(resolved.branch.main).toBe('main')
     expect(resolved.env.plantAt).toBe('.env.local')
   })
 
@@ -60,7 +60,7 @@ describe('applySetup (#968)', () => {
       Effect.runPromise(
         applySetup(
           { home: HOME, ...WHO() },
-          { project: 'repo', changes: [{ path: ['repo', 'base'], value: 'main' }] },
+          { project: 'repo', changes: [{ path: ['branch', 'main'], value: 'main' }] },
           register,
         ).pipe(Effect.provideService(ProjectFiles, files)),
       ),
@@ -167,6 +167,6 @@ describe('applySetup — the registration fails (#968)', () => {
         ).pipe(Effect.provideService(ProjectFiles, files)),
       ),
     ).rejects.toThrow('refused')
-    expect(store.get(path)).toContain('base: main')
+    expect(store.get(path)).toContain('main: main')
   })
 })
