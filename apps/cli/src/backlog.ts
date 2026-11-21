@@ -18,7 +18,7 @@ import { HOLD_LABEL, acceptFindingEffect, declineFindingEffect, githubTicketStor
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { hasGitHubAuth } from '@lingtai/env'
 import { readProjectEffect } from '@lingtai/project'
-import { type BacklogEntry, readBacklogEffect, readLagEffect, readTasksEffect } from '@lingtai/projector'
+import { type BacklogEntry, readBacklogEffect, readLagEffect, readTasksEffect, subjectOf } from '@lingtai/projector'
 import { kindsOf } from '@lingtai/recipe/settings'
 import { Cause, Effect } from 'effect'
 
@@ -80,7 +80,15 @@ function oneLine(text: string, n = 120): string {
  */
 export function describeEntry(e: BacklogEntry, title: string | null = null): string[] {
   const where = e.line === null ? e.file : `${e.file}:${e.line}`
-  const ticket = title === null ? `raised while working #${e.issue}` : `#${e.issue} ${oneLine(title, 60)}`
+  const subject = subjectOf(e)
+  const ticket =
+    subject.kind === 'pr'
+      ? `raised resolving PR ${subject.n}'s merge with main`
+      : subject.kind === 'unknown'
+        ? 'unknown subject'
+        : title === null
+          ? `raised while working #${subject.issue}`
+          : `#${subject.issue} ${oneLine(title, 60)}`
   const lines = [
     `${e.key}  ${ticket}  ${e.step}:${e.action}  ${where}`,
     `    ${oneLine(e.claim)}`,
@@ -176,7 +184,10 @@ export const readBacklogListing = (
     const titles = new Map(tasks.map((t) => [`${t.project}#${t.issue}`, t.title] as const))
     return {
       ...base,
-      entries: entries.map((entry) => ({ entry, title: titles.get(`${entry.project}#${entry.issue}`) ?? null })),
+      entries: entries.map((entry) => ({
+        entry,
+        title: entry.issue === null ? null : (titles.get(`${entry.project}#${entry.issue}`) ?? null),
+      })),
     }
   })
 

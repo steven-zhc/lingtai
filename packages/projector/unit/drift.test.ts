@@ -301,6 +301,7 @@ describe('a backlog entry read back out of the table that holds it', () => {
         project: RAISED.project,
         issue: RAISED.issue,
         taskId: RAISED.task_id,
+        pr: null,
         runId: RAISED.run_id,
         step: RAISED.step,
         action: RAISED.action,
