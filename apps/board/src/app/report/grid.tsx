@@ -67,6 +67,21 @@ export function ReportGrid({ report, query }: { report: Report; query: ReportQue
       >
         <WaitsPanel cells={report.waitCauses} />
       </Panel>
+      {report.unread.length > 0 && (
+        <Panel
+          title="Tickets that could not be read"
+          sub="their stored state is of an older shape and the log would not give it"
+          wide
+        >
+          <ul>
+            {report.unread.map((u) => (
+              <li key={u.ticket}>
+                {u.ticket} — could not read this ticket&apos;s state: {u.unread}
+              </li>
+            ))}
+          </ul>
+        </Panel>
+      )}
     </section>
   )
 }

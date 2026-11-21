@@ -84,6 +84,7 @@ export {
   type ReportReview,
   type ReportWait,
   type TicketReportRow,
+  fillStale,
 } from './ticket-report.ts'
 export { readTicketReport, readTicketReportEffect, type ReadTicketReportOptions } from './read-ticket-report.ts'
 export { readLanded, readLandedEffect, type ReadLandedOptions } from './read-landed.ts'

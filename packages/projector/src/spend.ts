@@ -84,7 +84,7 @@ import { Effect } from 'effect'
 import { withStoreEffect } from './choose.ts'
 import { readRateSnapshot } from './rate-snapshot.ts'
 import type { Projection, SpendQuery } from './store.ts'
-import { reduceStoredTicket, ticketBefore } from './ticket-row.ts'
+import { backfillStateRows, reduceStoredTicket, ticketBefore } from './ticket-row.ts'
 
 export const SPEND_TABLE = 'spend'
 
@@ -154,6 +154,18 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
       // The table this projection kept before the ticket reduce; a rebuild removes it.
       yield* ctx.query('drop table if exists spend_kind')
     }).pipe(Effect.withSpan('projector.spend.reset'))
+  },
+
+  backfill(ctx, log, beforeSeq, after, limit) {
+    return backfillStateRows(
+      [{ table: 'spend_ticket', key: 'ticket', column: 'state', shape: 'ticket' }],
+      SPEND_TABLE,
+      ctx,
+      log,
+      beforeSeq,
+      after,
+      limit,
+    )
   },
 
   reduce(events, ctx, log) {

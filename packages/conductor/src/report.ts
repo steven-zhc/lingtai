@@ -35,6 +35,12 @@ export interface ReportTicketRow {
   /** What a step raised and who finally answered it (0123 §2, #1284). */
   problems: Problem[]
   cost: Record<string, PurposeCost>
+  /** The ticket's title; absent where the reader has none (#1349). */
+  title?: string | null
+  /** Why `title` is not the ticket's: its stored state could not be read (#1349). Null or absent: it is real. */
+  unread?: string | null
+  /** The title was recovered from the log on this read, so the report names the ticket (#1349). */
+  recovered?: boolean
 }
 
 export type ReportSpendRow = Pick<
@@ -152,6 +158,8 @@ export interface TopTicket {
   ticket: string
   kind: string | null
   outcome: ReportTicketRow['outcome']
+  /** Null where the row carries none, or could not be read. */
+  title?: string | null
   passes: number
   fixRounds: number
   cost: Money
@@ -159,6 +167,18 @@ export interface TopTicket {
   purposeShares: { purpose: string; share: number }[]
   waits: { reason: string; cause: string | null; resolution: string | null }[]
   sentence: string
+}
+
+/** A ticket whose stored state could not be read (#1349): said, never dropped. */
+export interface UnreadTicket {
+  ticket: string
+  unread: string
+}
+
+/** A placed ticket whose title was recovered from the log (#1349): named even with no fix rounds. */
+export interface RecoveredTicket {
+  ticket: string
+  title: string
 }
 
 export interface Report {
@@ -183,6 +203,10 @@ export interface Report {
   costliest: TopTicket[]
   /** *Handled for you* (#1284): the problems steps raised in the window, by who finally answered them. */
   handled: Handled
+  /** Tickets in scope (project and kind, any window) whose state could not be read; their figures are the row's own. */
+  unread: UnreadTicket[]
+  /** Placed tickets whose title was recovered from the log. */
+  recovered: RecoveredTicket[]
 }
 
 export interface HandledCount {
@@ -486,6 +510,7 @@ function topTicket(row: ReportTicketRow): TopTicket {
     ticket: row.ticket,
     kind: row.kind,
     outcome: row.outcome,
+    title: row.unread === null || row.unread === undefined ? (row.title ?? null) : null,
     passes: row.passes,
     fixRounds: row.fixRounds,
     cost,
@@ -649,5 +674,13 @@ export function report(input: ReportInput): Report {
     top: ranked.slice(0, 8).map((r) => topTicket(r.t)),
     costliest: costliest.slice(0, 8).map((r) => topTicket(r.t)),
     handled,
+    recovered: placed
+      .filter((t) => t.recovered === true && t.title !== null && t.title !== undefined)
+      .map((t) => ({ ticket: t.ticket, title: t.title! }))
+      .sort((a, b) => a.ticket.localeCompare(b.ticket)),
+    unread: filtered
+      .filter((t) => t.unread !== null && t.unread !== undefined)
+      .map((t) => ({ ticket: t.ticket, unread: t.unread! }))
+      .sort((a, b) => a.ticket.localeCompare(b.ticket)),
   }
 }

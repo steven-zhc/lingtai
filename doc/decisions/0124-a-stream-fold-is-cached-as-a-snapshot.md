@@ -134,6 +134,8 @@ warm, 538 ms cold and up to 3.3 s on a busy machine.
    repairs a snapshot by hand.
    A projection row that stores a reducer's state and no longer decodes is re-reduced from that
    one stream, by the same `reduceEvent`, when the projection next touches it.
+   A stored ticket row of an older shape is also re-reduced from its stream on read, and the writer
+   rewrites such rows after start, so a reducer version bump needs no rebuild.
 
 10. **Who reads through a snapshot, in order.** First the board and the CLI's
     read-only commands, for the control stream. The daemon's own reads are a
