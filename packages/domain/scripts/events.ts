@@ -583,6 +583,10 @@ export const PREFIXES = {
 
 /** Why a type is on more than one prefix. A type on several with no row here fails the generator. */
 export const MULTI: Partial<Record<EventType, string>> = {
+  RunPrompted:
+    'the prompt is recorded beside the `RunSpent` it belongs to: on an attempt (`pass-`) or on a PR whose conflict agent ran (`pr-`)',
+  StepEnded:
+    "a step's outcome is recorded on an attempt (`pass-`), or on a PR for the review of a conflict agent's resolution (`pr-`), so its minors are read the same way",
   RunSpent:
     'spend is recorded on the stream of whatever spent it: an attempt (`pass-`), a discussion (`chat-`), a ticket-level agent such as triage (`ticket-`) or a PR (`pr-`)',
 }
