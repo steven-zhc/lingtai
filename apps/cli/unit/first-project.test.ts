@@ -822,7 +822,7 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
       refused: expect.stringContaining(
         'The App can see acme/widget, but its installation on acme is missing permissions.\n' +
           'the installation is missing permissions:\n' +
-          '  issues: have read, need write — reading work items, writing agent:* labels and comments\n' +
+          '  issues: have read, need write — reading work items, writing lingtai:* labels and comments\n' +
           "1. If the App does not ask for them yet, add them at the App's permissions page" +
           " (github.com/settings/apps, or the organisation's equivalent).\n" +
           '2. Then accept the new permissions on the installation: https://github.com/settings/installations/7.',

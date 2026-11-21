@@ -110,7 +110,7 @@ export interface ProposedTicket {
   body: string
   /** The recipe's word for what this is — one of `source.kinds`. */
   kind: string
-  /** Anything else the ticket should carry, verbatim — `agent:hold`, usually. */
+  /** Anything else the ticket should carry, verbatim — `lingtai:hold`, usually. */
   labels: readonly string[]
 }
 

@@ -520,7 +520,7 @@ export function splitTicketHoldingEffect(
         }) as Effect.Effect<StepOutcome, unknown>,
       },
       // Only now, with every child, link and blocked-by read back, is the label lifted: one DELETE per
-      // child, never `setLabels`, so an `agent:hold` a person added survives. Idempotent on a retry.
+      // child, never `setLabels`, so a `lingtai:hold` a person added survives. Idempotent on a retry.
       ...plan.children.map((child) => ({
         name: `publish ${child.key}`,
         run: Effect.gen(function* () {

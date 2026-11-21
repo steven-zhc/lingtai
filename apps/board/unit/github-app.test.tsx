@@ -21,7 +21,7 @@ import { describe, expect, it } from 'vitest'
 import { GitHubAppScreen } from '../src/app/setup/github-app/page.tsx'
 
 const PERMISSIONS = [
-  { name: 'issues', level: 'write' as const, why: 'reading work items, writing agent:* labels and comments' },
+  { name: 'issues', level: 'write' as const, why: 'reading work items, writing lingtai:* labels and comments' },
   { name: 'metadata', level: 'read' as const, why: 'required by GitHub for any App' },
 ]
 

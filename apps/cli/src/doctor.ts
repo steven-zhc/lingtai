@@ -40,6 +40,7 @@ import {
 import { extensionEnv, productionPatterns, resolveAgentEnv, runnableEnv } from '@lingtai/agent-env'
 import {
   type AgentRefusal,
+  HOLD_LABEL,
   type ProjectFilter,
   agentRefusal,
   endedWithoutEndActionsEffect,
@@ -2476,7 +2477,11 @@ function projectRecipes(
     // cached probe for the whole report rather than one per project: the answer is
     // about the machine, and `signedInProbe` remembers it for a minute anyway.
     const signedIn = yield* lift(() => probe())
-    return filters.map((f) => recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn))
+    return filters.flatMap((f) => {
+      const hold = holdLabelRow(f)
+      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn)
+      return hold === null ? [recipe] : [recipe, hold]
+    })
   })
 }
 
@@ -2509,6 +2514,31 @@ function agentRemedy(refused: AgentRefusal, project: string, dispatched: string)
     ? `Name runtime.agent: ${dispatched} in ${recipePath(project)}; it is what this conductor was asked to dispatch`
     : `Sign in to it, or name a runtime this machine has as that action's ${refused.key}: in ` +
         `${recipePath(project)} — see the runtime: signed in row above`
+}
+
+/** The hold's old name, spelled so that no source file names it as a label Lingtai writes. */
+const OLD_HOLD_LABEL = `agent:${'hold'}`
+
+/**
+ * One `warn` per project whose `exclude` still lists only the old hold label:
+ * every hold Lingtai writes is now `HOLD_LABEL`, which that recipe does not
+ * exclude, so a finding accepted after the upgrade would be claimed. `null`
+ * where the recipe did not resolve (`recipeRow` already says so), and where it
+ * excludes both or neither. No fix: the recipe is the person's to edit.
+ */
+export function holdLabelRow(f: ProjectFilter): CheckResult | null {
+  if (!f.ok) return null
+  const names = f.exclude.map((x) => x.toLowerCase())
+  if (!names.includes(OLD_HOLD_LABEL) || names.includes(HOLD_LABEL)) return null
+  return {
+    name: `hold label: ${f.project}`,
+    status: 'warn',
+    title: `every hold Lingtai writes is now \`${HOLD_LABEL}\`; add it to \`exclude\``,
+    detail:
+      `${f.project}'s recipe excludes \`${OLD_HOLD_LABEL}\` but not \`${HOLD_LABEL}\`, so a ticket held with the new label ` +
+      `is taken on the next pass. Add \`${HOLD_LABEL}\` beside \`${OLD_HOLD_LABEL}\` in \`source.exclude\`; ` +
+      `nothing changes until the recipe is edited by hand.`,
+  }
 }
 
 /**

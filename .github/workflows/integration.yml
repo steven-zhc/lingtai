@@ -16,7 +16,7 @@
 # push, never a pull request (see check.yml).
 #
 # A red run is reported by the `report` job alone, so two legs cannot each
-# open an issue. The issue is `bug` + `agent:hold`: a person reads it first.
+# open an issue. The issue is `bug` + `lingtai:hold`: a person reads it first.
 name: integration
 
 on:
@@ -176,5 +176,5 @@ jobs:
           if [ -n "$open" ]; then
             gh issue comment "$open" --body "$body"
           else
-            gh issue create --title "$TITLE" --label bug --label agent:hold --body "$body"
+            gh issue create --title "$TITLE" --label bug --label lingtai:hold --body "$body"
           fi

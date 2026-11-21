@@ -1043,7 +1043,7 @@ const KINDS = z.array(z.string()).min(1)
  * **This is the only reason an issue is passed over for its labels.** There
  * was a rule in `discover.ts` too, skipping anything labelled `agent:*` as
  * belonging to another system; it is gone. A namespace is not a meaning —
- * `agent:hold` and `agent:followup` share a prefix and mean opposite
+ * `lingtai:hold` and `lingtai:followup` share a prefix and mean opposite
  * things — and which of a repository's labels are holds is a fact that
  * repository has and this schema does not.
  *
@@ -1053,7 +1053,7 @@ const KINDS = z.array(z.string()).min(1)
  *
  * **Declared without its default**, which `SOURCE_FIELDS` adds and
  * `QUEUE_FIELDS` does not: a `queue:` block that named only its kinds would
- * take `[]` here and drop the hold list, which is an `agent:hold` ticket
+ * take `[]` here and drop the hold list, which is a `lingtai:hold` ticket
  * claimed and an agent dispatched on work a person was holding.
  */
 const EXCLUDE = z.array(z.string())

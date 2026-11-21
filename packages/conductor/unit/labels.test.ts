@@ -3,7 +3,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { OWN_LABELS, foreignLabels, labelsFor } from '../src/labels.ts'
+import { FOLLOWUP_LABEL, HOLD_LABEL, OWN_LABELS, foreignLabels, labelsFor } from '../src/labels.ts'
 import { type IssueChannel, tellGitHubEffect } from '../src/tell.ts'
 
 describe('foreignLabels', () => {
@@ -25,6 +25,11 @@ describe('OWN_LABELS', () => {
   it('is exactly what labelsFor produces over LABEL_STATES', () => {
     expect(OWN_LABELS).toEqual(new Set(LABEL_STATES.flatMap((s) => labelsFor(s))))
     expect([...OWN_LABELS].sort()).toEqual(['lingtai:waiting', 'lingtai:working'])
+  })
+
+  it('holds neither label a person sets', () => {
+    expect(OWN_LABELS.has(HOLD_LABEL)).toBe(false)
+    expect(OWN_LABELS.has(FOLLOWUP_LABEL)).toBe(false)
   })
 })
 

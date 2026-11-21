@@ -36,6 +36,39 @@ async function columns(sql: TicketSql, table: string): Promise<TicketColumn[]> {
   return rows.map(({ name, type, notnull, dflt_value, pk }) => ({ name, type, notnull, dflt_value, pk }))
 }
 
+describe('the hold-label migration on SQLite', () => {
+  it('adds the new label beside the old, skips bad rows, and is idempotent', async () => {
+    const sql = freshStore()
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
+    const rows: [number, string][] = [
+      [1, '["bug","agent:hold"]'],
+      [2, '["agent:followup"]'],
+      [3, '["bug","agent:hold","lingtai:hold"]'],
+      [4, 'not json'],
+      [5, '["Agent:Hold"]'],
+    ]
+    for (const [n, labels] of rows) {
+      await sql.query(
+        `INSERT INTO tickets (project, number, title, labels, created_at, updated_at) VALUES ($1, $2, 't', $3, 'x', 'x')`,
+        ['p', n, labels],
+      )
+    }
+    const read = () =>
+      sql.query<{ number: number; labels: string }>(`SELECT number, labels FROM tickets ORDER BY number`)
+    const expected = [
+      { number: 1, labels: '["bug","agent:hold","lingtai:hold"]' },
+      { number: 2, labels: '["agent:followup","lingtai:followup"]' },
+      { number: 3, labels: '["bug","agent:hold","lingtai:hold"]' },
+      { number: 4, labels: 'not json' },
+      { number: 5, labels: '["Agent:Hold"]' },
+    ]
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
+    expect(await read()).toEqual(expected)
+    await Effect.runPromise(ensureTicketTablesEffect(sql))
+    expect(await read()).toEqual(expected)
+  })
+})
+
 describe('ensureTicketTables on SQLite', () => {
   it('creates both tables, with the columns, types, defaults and primary key the ticket asks for', async () => {
     const sql = freshStore()

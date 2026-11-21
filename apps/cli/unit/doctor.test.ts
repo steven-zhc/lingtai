@@ -33,6 +33,7 @@ import {
   ghLogin,
   nodeRow,
   postgresOnlyRows,
+  holdLabelRow,
   recipeRow,
   runDoctor as runDoctorEffect,
   schemaChecks,
@@ -284,6 +285,23 @@ describe('unconvergedRow, a divergence whose project reconcile has dropped', () 
     const row = unconvergedRow(rows, new Map(), unresolved)
     expect(row.status).toBe('fail')
     expect(row.detail).toContain('The next reconcile recomputes the rest')
+  })
+})
+
+describe('holdLabelRow', () => {
+  const excluding = (...exclude: string[]) => ({ project: 'p', ok: true, exclude }) as unknown as ProjectFilter
+
+  it('warns, naming both labels, when only the old hold is excluded', () => {
+    const row = holdLabelRow(excluding('agent:hold', 'agent:blocked'))
+    expect(row?.status).toBe('warn')
+    expect(`${row?.title} ${row?.detail}`).toContain('agent:hold')
+    expect(`${row?.title} ${row?.detail}`).toContain('lingtai:hold')
+  })
+
+  it('says nothing when both are excluded, or neither, or the recipe did not resolve', () => {
+    expect(holdLabelRow(excluding('agent:hold', 'Lingtai:Hold'))).toBeNull()
+    expect(holdLabelRow(excluding('agent:blocked'))).toBeNull()
+    expect(holdLabelRow(UNRESOLVED_PROJECT)).toBeNull()
   })
 })
 

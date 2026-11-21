@@ -172,7 +172,7 @@ export type SkipReason =
    * row is unimplemented (`#61`), so configuring it would render `resolved` and
    * execute nothing — the shape of `#58`. And 0015 lets `admit` refuse but not
    * reorder: a refused item is still first in line next pass, refused again,
-   * forever. `agent:hold` already works the way this does, one line above.
+   * forever. `lingtai:hold` already works the way this does, one line above.
    */
   | 'blocked-by'
   /** A split's child still carries `lingtai:publishing`: the split has not read everything back yet (#1261). Comes back on its own. */
@@ -238,9 +238,9 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   // about a namespace, made in the core, about a repository it cannot see —
   // exactly the shape of thing 0016 §7 removed everywhere else.
   //
-  // It was also wrong in the direction that costs the most. `agent:followup`
+  // It was also wrong in the direction that costs the most. `lingtai:followup`
   // means "an agent opened this as out-of-scope work" — ready work, 24 issues
-  // of it in `nextloom-ai-admin` — and it was skipped alongside `agent:hold`,
+  // of it in `nextloom-ai-admin` — and it was skipped alongside `lingtai:hold`,
   // which means the opposite. A repository knows which of its labels are holds;
   // this file cannot.
   const held = queue.exclude.find((x) => labels.includes(x.toLowerCase()))
@@ -249,7 +249,7 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings): Consi
   if (kindOf(issue, queue.kinds) === null) return { issue, skip: 'no-kind', label: null }
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
-  // `agent:hold` is one a person is holding and a ticket of no kind is one this
+  // `lingtai:hold` is one a person is holding and a ticket of no kind is one this
   // recipe never takes; a blocked one is ordinary work whose turn has not come,
   // and it comes back on its own.
   //
@@ -329,7 +329,7 @@ export interface Offered {
    * issues this call already read, which is why asking for it costs nothing.
    *
    * Gathered from every issue that carries one of the recipe's labels, not only
-   * the runnable ones: an issue held back by `agent:hold` still says what
+   * the runnable ones: an issue held back by `lingtai:hold` still says what
    * colour `bug` is, and a board that only learned from runnable issues would
    * lose the colour of a kind the moment its last queued item was claimed.
    *
@@ -366,7 +366,7 @@ export interface Offered {
  *
  * It names the consequence rather than the endpoint, because the consequence is
  * the thing to act on: nothing is being held, so a chain here is still ordered
- * by kind and number and still needs `agent:hold` by hand.
+ * by kind and number and still needs `lingtai:hold` by hand.
  */
 export const DEPENDENCIES_UNREAD =
   'GitHub reported no issue dependencies for this repository — nothing is held by a blocker'
