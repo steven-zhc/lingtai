@@ -138,8 +138,10 @@ const LABEL_RENAMES: readonly (readonly [string, string])[] = [
 function migrateHoldLabelsEffect(port: ReturnType<typeof fromPromiseLogSql>): Effect.Effect<void> {
   return Effect.gen(function* () {
     const rows = yield* port.query<{ project: string; number: number; labels: string }>(
-      `SELECT project, number, labels FROM tickets WHERE labels LIKE $1 OR labels LIKE $2`,
-      LABEL_RENAMES.map(([old]) => `%"${old}"%`),
+      // No text filter on the names: JSON may spell them with escapes (`agent\u003ahold`), so
+      // only the decoded array can say. `[]` is the one spelling cheap to leave out.
+      `SELECT project, number, labels FROM tickets WHERE labels <> $1`,
+      ['[]'],
     )
     for (const row of rows) {
       const next = withRenamedLabels(row.labels)

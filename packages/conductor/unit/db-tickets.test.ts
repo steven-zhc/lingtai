@@ -46,6 +46,7 @@ describe('the hold-label migration on SQLite', () => {
       [3, '["bug","agent:hold","lingtai:hold"]'],
       [4, 'not json'],
       [5, '["Agent:Hold"]'],
+      [6, '["bug","agent\\u003ahold"]'],
     ]
     for (const [n, labels] of rows) {
       await sql.query(
@@ -61,6 +62,7 @@ describe('the hold-label migration on SQLite', () => {
       { number: 3, labels: '["bug","agent:hold","lingtai:hold"]' },
       { number: 4, labels: 'not json' },
       { number: 5, labels: '["Agent:Hold"]' },
+      { number: 6, labels: '["bug","agent:hold","lingtai:hold"]' },
     ]
     await Effect.runPromise(ensureTicketTablesEffect(sql))
     expect(await read()).toEqual(expected)
