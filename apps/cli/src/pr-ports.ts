@@ -1,12 +1,23 @@
+import { homedir } from 'node:os'
+import { join } from 'node:path'
+
 /**
  * The daemon's ports for serving a PR (0130 §5): the log, the project's recipe, the tickets that may be in the draft,
  * and the project's mirror — fetched, and asked about by exit code.
  *
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
+import type { RunSandbox } from '@lingtai/agent'
 import { NO_RUN_LOG, createRuntime, runtimeVersionOfEffect, writeUnhookedSettingsEffect } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
-import { type ConflictResolver, type PrPorts, buildAt } from '@lingtai/conductor'
+import {
+  type ConflictResolver,
+  type PrPorts,
+  buildAt,
+  claudeConfigDirFor,
+  decidePassSandbox,
+  runtimesOf,
+} from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
@@ -17,7 +28,7 @@ import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS } from '@lingtai/projector/task-view'
-import { remoteOf } from '@lingtai/recipe'
+import { invocationDecision, remoteOf } from '@lingtai/recipe'
 import {
   RepoFailed,
   retryUnreachable,
@@ -113,7 +124,37 @@ export function livePrPorts(
               const settingsPath = yield* writeUnhookedSettingsEffect(request.runId, 'pr', stateDir(), false).pipe(
                 Effect.mapError(asError),
               )
+              // **The recipe's own sandbox decision, as a pass makes it** (0127): sandboxed where the host can, refused by name
+              // where it must and cannot, and unwrapped where the recipe turned it off or the runtime cannot be wrapped.
+              const recipe = yield* recipeOf(project)
+              const pass = yield* decidePassSandbox(recipe.sandbox, processSandbox)
+              const decision = invocationDecision(pass.decision, request.runtime)
+              const home = stateDir()
+              const service = pass.service
+              const sandbox: RunSandbox | undefined =
+                decision.kind === 'unsandboxed'
+                  ? undefined
+                  : {
+                      decision:
+                        decision.kind === 'sandboxed'
+                          ? { kind: 'sandboxed', project_additions: decision.project_additions }
+                          : { kind: 'refused', why: decision.why },
+                      project,
+                      mirror: mirrorPathFor(project, home),
+                      cache: join(home, 'cache', project),
+                      worktree: request.cwd,
+                      runDir: claudeConfigDirFor(home, request.runId),
+                      operatorClaudeDir: join(homedir(), '.claude'),
+                      hostHome: homedir(),
+                      codexNamed: runtimesOf(recipe).includes('codex'),
+                      read: [],
+                      wrap: (input) =>
+                        service === undefined
+                          ? Effect.fail({ message: 'no sandbox service in this process' })
+                          : service.wrap(input).pipe(Effect.mapError((e) => ({ message: String(e) }))),
+                    }
               const outcome = yield* runtime.run({
+                ...(sandbox === undefined ? {} : { sandbox }),
                 runId: request.runId,
                 cwd: request.cwd,
                 prompt: request.prompt,
@@ -124,7 +165,6 @@ export function livePrPorts(
                 log: NO_RUN_LOG,
                 traceTools: true,
               })
-              void project
               return {
                 turns: outcome.turns,
                 durationMs: outcome.durationMs,

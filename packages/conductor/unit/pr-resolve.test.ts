@@ -440,14 +440,73 @@ describe('resolveRounds, the sequences a review refused', () => {
     expect(w.dispatched.filter((d) => d.runId.includes(':review:'))).toHaveLength(1)
   })
 
-  it('a recipe that sandboxes its runs gets no conflict agent', async () => {
+  it('a recipe that sandboxes its runs still gets its conflict agent: the sandbox is the dispatch’s to apply', async () => {
     const store = await inProgress()
     const w = aWorld()
     w.recipe = { ...recipeWith(6), sandbox: { enabled: true } } as unknown as Recipe
     const end = await resolve(store, w)
-    expect(end.kind).toBe('unknown')
-    expect(w.dispatched).toEqual([])
-    expect((await state(store)).rounds).toEqual([])
+    expect(end.kind).toBe('resolved')
+    expect(w.dispatched.length).toBeGreaterThan(0)
+  })
+
+  it('a lock between two reviewers keeps the first one’s findings: its StepEnded and its refusal are on the log', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = {
+      ...recipeWith(6),
+      steps: {
+        implement: [{ agent: 'claude-code', name: 'write' }],
+        review: [
+          { agent: 'claude-code', name: 'one' },
+          { agent: 'claude-code', name: 'two' },
+        ],
+        build: [],
+      },
+    } as unknown as Recipe
+    w.review = () => {
+      w.lock = 'paused by human:steven'
+      return JSON.stringify({
+        findings: [
+          { severity: 'major', file: 'shelf.ts', line: 4, claim: 'drops byTitle', failureScenario: 'empty' },
+          { severity: 'minor', file: 'shelf.ts', line: 9, claim: 'a stale comment', failureScenario: 'none' },
+        ],
+      })
+    }
+    const end = await resolve(store, w)
+    expect(end.kind === 'locked' && end.end.last).toMatchObject({ step: 'review' })
+    const events = await store.read(prStream('lingtai', 1))
+    const ended = events.find((e) => e.type === 'StepEnded')!
+    expect((ended.data as { outcome: { actions: unknown[] } }).outcome.actions).toHaveLength(1)
+    expect((await state(store)).refusals.map((r) => r.step)).toEqual(['review'])
+  })
+
+  it('a StepEnded whose refusal was never written is refused on restart, and briefs the next round', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.review = (round) =>
+      round === 1
+        ? JSON.stringify({
+            findings: [
+              { severity: 'major', file: 'shelf.ts', line: 4, claim: 'drops byTitle', failureScenario: 'empty' },
+            ],
+          })
+        : CLEAN
+    // The refusal's own write is lost; the review's StepEnded committed.
+    const real = store.append.bind(store)
+    const flaky = {
+      ...store,
+      read: store.read.bind(store),
+      append: async (stream: string, version: number, events: Parameters<typeof real>[2]) => {
+        if (events[0]!.type === 'SyncRoundRefused') throw new Error('stopped before the refusal')
+        return real(stream, version, events)
+      },
+    } as EventStore
+    await Effect.runPromise(resolveRounds(ports(flaky, w), resolverFor(flaky, w), askSync())).catch(() => undefined)
+    expect((await state(store)).refusals).toEqual([])
+
+    await resolve(store, w)
+    const second = w.dispatched.filter((d) => d.runId.includes(':resolve:')).at(-1)!
+    expect(second.prompt).toContain('drops byTitle')
   })
 
   it('an append whose acknowledgement was lost is not appended a second time', async () => {

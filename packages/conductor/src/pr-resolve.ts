@@ -18,7 +18,7 @@ import { parseFindings, verdictFor } from '@lingtai/actions'
  * - **The answer is the graph**: `HEAD`'s parents are exactly `[start, commit]` and no merge is in progress. Prose is
  *   never read.
  */
-import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, prStream } from '@lingtai/domain'
+import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, type PrState, prStream } from '@lingtai/domain'
 import { parsePayload } from '@lingtai/domain'
 import { conflictOpen, conflictRoundsLeft, lastRefusalOf } from '@lingtai/domain'
 import { readPr, readPrDraft, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
@@ -110,6 +110,19 @@ const appendOnPr = (
   const attempt = (left: number): Effect.Effect<void, Error> =>
     once.pipe(Effect.catch((err: Error) => (left > 0 && notCommitted(err) ? attempt(left - 1) : Effect.fail(err))))
   return attempt(2).pipe(Effect.asVoid)
+}
+
+/** What an accepted review action blocks on, said as the next round's evidence; `[]` when it passed. */
+type ReviewAction = PayloadOf<'StepEnded'>['outcome']['actions'][number]
+const blockingOf = (action: ReviewAction): string[] => {
+  const r = action.result
+  if (r._tag === 'Interrupted') return [`the reviewer did not finish (${r.cause}): ${action.evidence}`]
+  if (r._tag === 'AnswerUnreadable')
+    return ['the reviewer’s answer could not be read, so the resolution is not reviewed']
+  if (r._tag !== 'Completed' || !('assessment' in r)) return []
+  return r.assessment.findings
+    .filter((f) => f.severity !== 'minor')
+    .map((f) => `${f.file}${f.line === null ? '' : `:${f.line}`} [${f.severity}] ${f.claim} — ${f.failureScenario}`)
 }
 
 /** What a failed read is told to the agent as: *could not be read*, with the cause. */
@@ -223,16 +236,6 @@ export const resolveRounds = (
     const bound = ceiling.attempt.conflictResolutions
     const limits = ceiling.run
     const diffBytes = recipe.runtime.budget.diff
-
-    // **The recipe's sandbox is not carried to a PR's agent**: the wrap is built per pass (`makeRunSandbox`) and a round has no
-    // pass. An agent started without it would reach what the recipe forbids, so a recipe that sandboxes its runs gets no
-    // conflict agent — the person is asked, as before, and nothing is paid.
-    if (recipe.sandbox?.enabled === true) {
-      return {
-        kind: 'unknown',
-        why: 'the recipe sandboxes its runs, and a PR’s conflict agent is not run under that sandbox — none was started',
-      } as const
-    }
 
     let last: Refusal | null = null
     let paths: readonly string[] = ask.paths
@@ -389,11 +392,31 @@ export const resolveRounds = (
         const clipped = shown.stdout.length > diffBytes
         const diff = clipped ? shown.stdout.slice(0, diffBytes) : shown.stdout
         const actions: PayloadOf<'StepEnded'>['outcome']['actions'] = []
+        // On the PR's stream with the run id the review's spend names, so `findingsRaisedOf` reads its minors unchanged.
+        const recordReview = () =>
+          appendOnPr(ports, project, n, 'StepEnded', {
+            runId: runId('review'),
+            outcome: { step: 'review', round, actions },
+          })
         const blocking: string[] = []
         for (const reviewer of reviewers) {
           // Checked before **each** paid review: an admission is not good for the next call (0126 §6).
           const stopped = yield* stoppedNow
-          if (stopped !== null) return stopped
+          if (stopped !== null) {
+            // The reviews already paid for are on the log before the round is left: their findings are not lost with it.
+            if (actions.length > 0) yield* recordReview()
+            if (blocking.length > 0) {
+              const said = blocking.join('\n')
+              yield* recordSyncRoundRefused(
+                project,
+                n,
+                { merging: ask.merging, commit: ask.commit, round, step: 'review', said },
+                ports.store,
+              )
+              return { ...stopped, end: { ...stopped.end, last: { step: 'review', said } } }
+            }
+            return stopped
+          }
           const reviewed = yield* paid('review', reviewer, prReviewBrief(brief, diff, clipped))
           const parsed = reviewed.failure === null ? parseFindings(reviewed.text) : null
           const base = { plugin: 'agent', name: reviewer.name, onSha: sha, evidence: '', yields: 'verdict' } as const
@@ -419,24 +442,44 @@ export const resolveRounds = (
                 assessment: { verdict: verdict === 'passed' ? 'accepted' : 'refused', findings: [...parsed.findings] },
               },
             })
-            if (verdict === 'failed') {
-              for (const f of parsed.findings.filter((f) => f.severity !== 'minor')) {
-                blocking.push(
-                  `${f.file}${f.line === null ? '' : `:${f.line}`} [${f.severity}] ${f.claim} — ${f.failureScenario}`,
-                )
-              }
-            }
+            if (verdict === 'failed') blocking.push(...blockingOf(actions[actions.length - 1]!))
           }
         }
-        if (reviewers.length > 0) {
-          // On the PR's stream with the run id the review's spend names, so `findingsRaisedOf` reads its minors unchanged.
-          yield* appendOnPr(ports, project, n, 'StepEnded', {
-            runId: runId('review'),
-            outcome: { step: 'review', round, actions },
-          })
-        }
+        if (reviewers.length > 0) yield* recordReview()
         if (blocking.length > 0) return refuse('review', blocking.join('\n'))
         return { kind: 'passed', sha } as const
+      })
+
+    /** Whether a refusal was written for a round whose review's `StepEnded` is on the log without it. */
+    const reconcileReviews = (state: PrState): Effect.Effect<boolean, Error> =>
+      Effect.gen(function* () {
+        const owed = state.rounds.filter(
+          (r) =>
+            r.merging === ask.merging &&
+            r.commit === ask.commit &&
+            !state.refusals.some((f) => f.merging === r.merging && f.commit === r.commit && f.round === r.round),
+        )
+        if (owed.length === 0) return false
+        const events = yield* Effect.tryPromise({ try: () => ports.store.read(stream), catch: asError })
+        let wrote = false
+        for (const r of owed) {
+          const id = `pr-${project}-${n}:review:${ask.merging}:${short(ask.commit)}:${r.round}`
+          // A review's record is the one carrying this run's id and an outcome; no branch on the event's type is made here.
+          const ended = events
+            .map((e) => e.data as Partial<PayloadOf<'StepEnded'>>)
+            .find((d) => d.runId === id && d.outcome !== undefined)
+          if (ended === undefined) continue
+          const said = ended.outcome!.actions.flatMap(blockingOf).join('\n')
+          if (said === '') continue
+          wrote =
+            (yield* recordSyncRoundRefused(
+              project,
+              n,
+              { merging: ask.merging, commit: ask.commit, round: r.round, step: 'review', said },
+              ports.store,
+            )) || wrote
+        }
+        return wrote
       })
 
     for (;;) {
@@ -446,6 +489,9 @@ export const resolveRounds = (
       if (!conflictOpen(state)) {
         return { kind: 'unknown', why: `the PR is ${state.status} now: no more rounds are counted on it` } as const
       }
+      // A review whose `StepEnded` committed and whose refusal did not (a stop between the two writes) is refused here, from
+      // what the review itself recorded, so it is briefed and counted as if both had landed.
+      if (yield* reconcileReviews(state)) continue
       // The refusal that bought this round is the log's, so a restarted conductor briefs round 2 with round 1's.
       last = lastRefusalOf(state, ask.merging, ask.commit)
       const { used, left, next } = conflictRoundsLeft(state, ask.merging, ask.commit, bound)
