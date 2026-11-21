@@ -379,45 +379,73 @@ describe('the merge back', () => {
     expect(pushesOf(w)).toEqual([])
   })
 
-  it('a push that threw and a look that fails records nothing; the next serve finds our merge on the branch and records it', async () => {
+  it('a push that threw and a look that fails records nothing', async () => {
     const store = await inReview()
     const w = aWorld()
     w.ancestor = (a, b) => a === b
-    let logged = ''
     const p = ports(store, w)
-    const withRefs = (flaky: boolean): PrPorts => ({
-      ...p,
-      git: (project, args) => (args[0] === 'log' ? Effect.succeed({ code: 0, stdout: logged }) : p.git(project, args)),
-      remote: (project, args) =>
-        flaky && (args[0] === 'push' || args[0] === 'ls-remote')
-          ? Effect.fail(new Error('connection reset'))
-          : p.remote(project, args),
-    })
     const before = (await store.read(prStream('lingtai', 1))).length
-    await Effect.runPromise(mergePrBack(withRefs(true), 'lingtai', 1))
-    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
-    // Next serve: the fetch fails too, and that is still not a failure while our push may have landed.
-    const down = withRefs(false)
     await Effect.runPromise(
       mergePrBack(
         {
-          ...down,
-          remote: (pr, args) => (args[0] === 'fetch' ? Effect.fail(new Error('offline')) : down.remote(pr, args)),
-          fetch: () => Effect.fail(new Error('offline')),
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'push' || args[0] === 'ls-remote'
+              ? Effect.fail(new Error('connection reset'))
+              : p.remote(project, args),
         },
         'lingtai',
         1,
       ),
     )
     expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
-    // The fetch works and the merge we made is on the branch: found in its history, with no ref of the mirror kept.
-    logged = `${BACK} ${PERSONAL} ${FROZEN}\n`
-    await Effect.runPromise(mergePrBack(withRefs(false), 'lingtai', 1))
-    expect((await store.read(prStream('lingtai', 1))).at(-1)!.data).toEqual({
-      prHead: FROZEN,
-      mergeCommit: BACK,
-      how: 'clean',
+  })
+
+  it('a failed read before any push is PrMergeBackFailed unknown, on the stream', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    const p = ports(store, w)
+    await Effect.runPromise(
+      mergePrBack(
+        {
+          ...p,
+          remote: (pr, args) => (args[0] === 'fetch' ? Effect.fail(new Error('offline')) : p.remote(pr, args)),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrMergeBackFailed',
+      data: { why: 'unknown' },
     })
+  })
+
+  it('a merge under our subject already on branch.personal is built before it is recorded, and a red one is not claimed', async () => {
+    for (const green of [true, false]) {
+      const store = await inReview()
+      const w = aWorld()
+      w.buildAnswer = () =>
+        Effect.succeed(green ? { kind: 'green' } : { kind: 'red', command: 'pnpm test', evidence: 'boom' })
+      const p = ports(store, w)
+      await Effect.runPromise(
+        mergePrBack(
+          {
+            ...p,
+            git: (project, args) =>
+              args[0] === 'log'
+                ? Effect.succeed({ code: 0, stdout: `${BACK} ${PERSONAL} ${FROZEN}\n` })
+                : p.git(project, args),
+          },
+          'lingtai',
+          1,
+        ),
+      )
+      expect(w.builds).toEqual([{ sha: BACK, base: 'lingtai-team-pr-1', checkId: 'pr-1-back' }])
+      expect(pushesOf(w)).toEqual([])
+      expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe(green ? 'PrMergedBack' : 'PrMergeBackFailed')
+    }
   })
 
   it('a stranger’s descendant on branch.personal is not recorded as our merge', async () => {

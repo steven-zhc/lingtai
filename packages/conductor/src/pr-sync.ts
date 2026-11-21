@@ -262,7 +262,16 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         if (logged.code !== 0) return yield* Effect.fail(new Error(gitSaid(found, logged)))
         for (const line of logged.stdout.split('\n')) {
           const [sha, , second] = line.trim().split(' ')
-          if (sha !== undefined && sha !== '' && second === prHead) return { kind: 'merged', mergeCommit: sha } as Back
+          if (sha === undefined || sha === '' || second !== prHead) continue
+          // A commit message and a parent say who wrote a merge, not that it was built: anybody may have made and
+          // pushed one under our subject. It is built here, now, before it is claimed.
+          const checked = yield* ports.build(project, { sha, base: prBranch, checkId: `pr-${n}-back` })
+          if (checked.kind === 'green') return { kind: 'merged', mergeCommit: sha } as Back
+          if (checked.kind === 'red') {
+            const detail = `\`${checked.command}\` fails on ${short(sha)}, already on ${branch}:\n${checked.evidence}`
+            return { kind: 'failed', why: 'red', detail } as Back
+          }
+          return { kind: 'failed', why: 'unknown', detail: checked.why } as Back
         }
         const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
         if (have.code !== 0) {
@@ -319,16 +328,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         if (looked.success === merged.sha) return { kind: 'merged', mergeCommit: merged.sha } as Back
         if (tries === 0) return { kind: 'lost' } as Back
         return { kind: 'failed', why: 'lost-push', detail: gitSaid(push, answer) } as Back
-      }).pipe(
-        // A read or write that failed proves nothing about a push of an earlier serve: nothing is recorded, and the
-        // merge back stays owed, so the next serve looks again.
-        Effect.catch((err: unknown) =>
-          Effect.sync(() => {
-            ports.log?.(`pr ${n} merge back: ${asError(err).message}`)
-            return { kind: 'unsure' } as Back
-          }),
-        ),
-      )
+      })
 
     const turn = Effect.gen(function* () {
       // Re-read inside the turn: a landing that held the lane first may have changed what is owed.
@@ -345,7 +345,18 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       yield* recordPrMergedBack(project, n, { prHead, mergeCommit: outcome.mergeCommit, how: 'clean' }, ports.store)
       // The merge is on `branch.personal` now; the ref that kept an unpushed sync alive has nothing left to keep.
       yield* ports.git(project, ['update-ref', '-d', targetRef(n)]).pipe(Effect.ignore)
-    }).pipe(Effect.catch((err: Error) => Effect.succeed(void ports.log?.(`pr ${n} merge back: ${err.message}`))))
+    }).pipe(
+      // A read or write that failed before any push was tried pushed nothing: it is said on the PR's stream, once per
+      // head, rather than only in a log. (A push whose outcome cannot be told is `unsure` above and records nothing.)
+      Effect.catch((err: Error) =>
+        failed('unknown', err.message).pipe(
+          Effect.catch((again: Error) =>
+            Effect.succeed(void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
+          ),
+          Effect.asVoid,
+        ),
+      ),
+    )
 
     yield* (ports.lane ?? landingLane).through(
       integrationStream(project, branch),

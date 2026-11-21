@@ -35,7 +35,12 @@ export const fetchInto = (
     // The mirror is made if it is not there (a daemon restarted onto a PR whose disposable mirror was removed). One
     // that is there is left alone: `ports.fetch` fetches `refs/heads/*`, which a checked-out branch would refuse.
     const there = yield* Effect.result(ports.git(project, ['rev-parse', '--git-dir']))
-    if (there._tag === 'Failure' || there.success.code !== 0) yield* ports.fetch(project)
+    // Absent is only what git says of a directory that is not there (not a repository, or the spawn's ENOENT); a read
+    // that failed any other way (EAGAIN, a killed spawn) proves nothing about the mirror and is never read as absence.
+    if (there._tag === 'Failure') {
+      if (!/ENOENT/.test(asError(there.failure).message)) return yield* Effect.fail(asError(there.failure))
+      yield* ports.fetch(project)
+    } else if (there.success.code !== 0) yield* ports.fetch(project)
     const args = ['fetch', '--no-tags', 'origin', ...pairs.map(([from, to]) => `+${from}:${to}`)] as const
     const answer = yield* ports.remote(project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
