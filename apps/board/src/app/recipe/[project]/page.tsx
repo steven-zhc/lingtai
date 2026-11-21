@@ -2,7 +2,7 @@ import { homedir } from 'node:os'
 
 import { hasGitHubAuth, stateDir } from '@lingtai/env'
 import { builtInSandboxEffect } from '@lingtai/project'
-import { branchOf } from '@lingtai/recipe'
+import { branchOf, runtimesOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { notFound } from 'next/navigation'
 import { type ReactNode } from 'react'
@@ -438,6 +438,7 @@ export default async function RecipePage({
           stamp={stamp}
           own={view.ok ? view.recipe.sandbox : undefined}
           recipeError={!view.ok}
+          runtimes={view.ok ? runtimesOf(view.recipe) : []}
           builtIn={builtIn}
           at={underHome(view.at)}
           roots={{ home: homedir(), lingtaiHome: stateDir(), project: name }}

@@ -821,3 +821,32 @@ describe('the twin and the fold (#1237)', () => {
     expect(foldChips(chipsOf([`${base}/a`, `${base}/b`], ROOTS), ROOTS)).toHaveLength(2)
   })
 })
+
+describe('agentsInSandbox (#1329)', () => {
+  const on = { enabled: true }
+  it('puts three inside and antigravity outside; off answers null', async () => {
+    const { agentsInSandbox } = await import('@/lib/sandbox-view')
+    const r = agentsInSandbox(['claude-code', 'codex', 'copilot', 'antigravity'], on, '/home/me')
+    expect(r?.inside.map((a) => a.id)).toEqual(['claude-code', 'codex', 'copilot'])
+    expect(r?.outside.map((a) => a.id)).toEqual(['antigravity'])
+    expect(r?.outside[0]?.why).toContain('keychain')
+    expect(r?.inside[2]?.adds).toEqual({ hosts: ['*.githubcopilot.com'], writes: ['/home/me/.copilot'] })
+    expect(agentsInSandbox(['codex'], { enabled: false }, '/h')).toBeNull()
+    expect(agentsInSandbox(['codex'], undefined, '/h')).toBeNull()
+  })
+  it('lists an unknown id as unknown, never inside', async () => {
+    const { agentsInSandbox } = await import('@/lib/sandbox-view')
+    expect(agentsInSandbox(['newer'], on, '/h')?.unknown.map((a) => a.id)).toEqual(['newer'])
+  })
+  it('every RuntimeId has sandbox facts', async () => {
+    const { RuntimeId } = await import('@lingtai/domain')
+    const { sandboxFactsOf } = await import('@lingtai/agent/sandbox-facts')
+    for (const id of RuntimeId.options) expect(sandboxFactsOf(id)).toBeDefined()
+  })
+  it('the facts module imports neither @lingtai/env nor node:*', async () => {
+    const { readFileSync } = await import('node:fs')
+    const src = readFileSync(new URL('../../../packages/agent/src/sandbox-facts.ts', import.meta.url), 'utf8')
+    const imports = src.split('\n').filter((l) => l.startsWith('import '))
+    expect(imports.join('\n')).not.toMatch(/@lingtai\/env|node:/)
+  })
+})
