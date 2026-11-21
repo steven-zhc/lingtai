@@ -112,10 +112,11 @@ import type { DaemonStore } from './store.ts'
 export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed', 'DayCeilingLifted'] as const
 
 /**
- * The events a PR is served on (0130 §5): a person's Submit. Delivered to `pr`, whose walk the loop tracks so a
+ * The events a PR is served on (0130 §5): a person's Submit, and what ends a landing the freeze was waiting on
+ * (`TicketLanded`, `TicketReleased`, `TicketClosed`), which serves that project's waiting PRs again. Delivered to `pr`, whose walk the loop tracks so a
  * drain waits for it — which `deliver` does not do, and arms a timer a walk of minutes would trip.
  */
-export const PR_EVENTS = ['PrSubmitRequested'] as const
+export const PR_EVENTS = ['PrSubmitRequested', 'TicketLanded', 'TicketReleased', 'TicketClosed'] as const
 
 /**
  * The events triage is handed (#997): a new wait, and a resume that lifts what

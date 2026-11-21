@@ -17,6 +17,7 @@ import {
   type RunOnceResult,
   githubLimitPort,
   readAccount,
+  servePendingPrs,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
@@ -43,6 +44,7 @@ import { stillOwed } from './continuing.ts'
 import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
 import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
+import { livePrPorts } from './pr-ports.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
 /**
@@ -673,6 +675,9 @@ export function run(
           ran: [...first.ran, ...(queued?.ran ?? []), ...again.ran],
           stopped: again.stopped !== null ? 'paused' : (queued?.stopped ?? (first.stopped !== null ? 'paused' : 'max')),
         }
+
+        // A PR a person asked for is served by whoever conducts (0130 §5): with no daemon, this command is it.
+        yield* servePendingPrs(livePrPorts(options.store ?? eventStore, log), [options.project])
 
         // Read back, not counted up. An item this pass held and somebody approved
         // while the pass carried on has landed, and the log says so — see

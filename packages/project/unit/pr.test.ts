@@ -1,7 +1,7 @@
 /**
  * The PR's commands and the draft (0130 §5, #1316), on the memory store.
  */
-import { prStream, projectStream, reducePr, ticketStream } from '@lingtai/domain'
+import { integrationStream, prStream, projectStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { Recipe } from '@lingtai/recipe'
@@ -9,6 +9,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
+  landingsInFlight,
   latestPr,
   listPrs,
   readPrDraft,
@@ -176,5 +177,51 @@ describe('the draft', () => {
     await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
     await run(recordPrRefused('lingtai', 1, { reason: 'git', detail: 'x' }, store))
     expect((await run(readPrDraft('lingtai', team, [{ issue: '1' }], store))).map((t) => t.ticket)).toEqual(['1'])
+  })
+})
+
+describe('landings in flight', () => {
+  const lane = integrationStream('lingtai', 'lingtai-team')
+  const discovered = (store: EventStore, issue: string) =>
+    store.append(ticketStream('lingtai', issue), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'conductor',
+        data: { project: 'lingtai', source: 'github-issue', externalRef: issue, title: 't', kind: 'bug', labels: [] },
+      },
+    ])
+  const attempted = (store: EventStore, issue: string, version: number) =>
+    store.append(lane, version, [
+      {
+        type: 'IntegrationAttempted',
+        actor: 'conductor',
+        data: { ticketId: ticketStream('lingtai', issue), branch: 'b', headSha: 'h' },
+      },
+    ])
+
+  it('an unexpected refusal may be a push whose record failed: it stays owed until the ticket lands or closes', async () => {
+    const store = createMemoryEventStore()
+    await discovered(store, '2')
+    await attempted(store, '2', 0)
+    await store.append(lane, 1, [
+      {
+        type: 'IntegrationRefused',
+        actor: 'conductor',
+        data: { ticketId: ticketStream('lingtai', '2'), branch: 'b', reason: 'unexpected', detail: 'log down' },
+      },
+    ])
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([ticketStream('lingtai', '2')])
+    await store.append(ticketStream('lingtai', '2'), 1, [
+      { type: 'TicketClosed', actor: 'human:steven', data: { by: 'human:steven', reason: 'done' } },
+    ])
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([])
+  })
+
+  it('an attempt nobody finished is history once its ticket is no longer claimed', async () => {
+    const store = createMemoryEventStore()
+    await discovered(store, '3')
+    await attempted(store, '3', 0)
+    // Backlog: never claimed (or released after a restart).
+    expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([])
   })
 })

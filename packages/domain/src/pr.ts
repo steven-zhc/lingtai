@@ -255,20 +255,32 @@ export function landedSeq(events: readonly Envelope[], base: string): bigint | n
 /**
  * A lane's landings that have begun and are not over: per ticket, its last integration event. An attempt with no
  * terminal is `mergeCommit: null` (the push may or may not have happened); a success carries the commit it pushed.
- * A refusal pushed nothing. The caller checks each success against its ticket's own `TicketLanded`.
+ * **A refusal is proof of nothing pushed only when it names a reason git gave**: `unexpected` is what the integrator
+ * records when appending its own `IntegrationSucceeded` failed after the push, so it is `mergeCommit: null` too — the
+ * push may have happened. The caller checks each success against its ticket's own `TicketLanded`, and each `null`
+ * against whether the ticket is still being worked at all.
  */
-export function landingsStarted(laneEvents: readonly Envelope[]): { ticketId: string; mergeCommit: string | null }[] {
+export function landingsStarted(
+  laneEvents: readonly Envelope[],
+): { ticketId: string; mergeCommit: string | null; unexpected: boolean }[] {
   const last = new Map<string, Envelope>()
   for (const e of laneEvents) {
     if (e.type === 'IntegrationAttempted' || e.type === 'IntegrationRefused' || e.type === 'IntegrationSucceeded') {
       last.set((e.data as { ticketId: string }).ticketId, e)
     }
   }
-  const started: { ticketId: string; mergeCommit: string | null }[] = []
+  const started: { ticketId: string; mergeCommit: string | null; unexpected: boolean }[] = []
   for (const [ticketId, e] of last) {
-    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null })
+    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null, unexpected: false })
     if (e.type === 'IntegrationSucceeded') {
-      started.push({ ticketId, mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit })
+      started.push({
+        ticketId,
+        mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit,
+        unexpected: false,
+      })
+    }
+    if (e.type === 'IntegrationRefused' && (e.data as { reason?: string }).reason === 'unexpected') {
+      started.push({ ticketId, mergeCommit: null, unexpected: true })
     }
   }
   return started

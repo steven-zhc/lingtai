@@ -8,7 +8,7 @@
  *
  * The git side is a port, so the freeze is tested against a fake that answers by exit code, as git does.
  */
-import { type Envelope, type PayloadOf, type PrState, parsePrStream } from '@lingtai/domain'
+import { type Envelope, type PayloadOf, type PrState, parsePrStream, parseTicketStream } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { PermissionDenied } from '@lingtai/github'
 import {
@@ -47,7 +47,10 @@ export interface PrPorts {
   readonly landingWaitMs?: number
 }
 
-/** How many times the freeze looks again at a landing in flight before it gives up and is served again later. */
+/**
+ * How many times the freeze looks again at a landing in flight before it gives up. The request stays `requested`, and
+ * what ends that landing — a `TicketLanded`, `TicketReleased` or `TicketClosed` — is in `PR_EVENTS`, so it is served again.
+ */
 const LANDING_LOOKS = 120
 
 /** What a step answers. `again` records nothing: the next serve runs it again. */
@@ -203,38 +206,53 @@ export const servePr = (
     }),
   )
 
+/** Serves every `requested` or `in-progress` PR of the given projects. One PR's failure is that PR's. */
+export const servePendingPrs = (
+  ports: PrPorts,
+  projects: readonly string[],
+  steps: readonly PrStep[] = IN_PROGRESS_STEPS,
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    const say = (line: string) => ports.log?.(line)
+    // One PR's failure is that PR's: the others are still owed their serve, and nothing sweeps for them later.
+    for (const project of projects) {
+      const prs = yield* listPrs(project, ports.store).pipe(
+        Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[]))),
+      )
+      for (const pr of prs) {
+        if ((pr.status === 'requested' || pr.status === 'in-progress') && pr.n !== null) {
+          yield* servePr(ports, project, pr.n, steps).pipe(
+            Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
+          )
+        }
+      }
+    }
+  })
+
 /**
- * The handlers the loop's `pr` option takes. `serve` answers the event's own stream; `resume` serves every PR of
- * every project that is `requested` or `in-progress`.
+ * The handlers the loop's `pr` option takes. `serve` answers the event's own stream — or, for a ticket's event (a
+ * landing that ended, a release, a close), the PRs of that ticket's project, since a freeze that gave up waiting on a
+ * landing is served again by what ends it. `resume` serves every PR of every project that is `requested` or
+ * `in-progress`.
  */
 export const makePrHandlers = (ports: PrPorts, steps: readonly PrStep[] = IN_PROGRESS_STEPS) => ({
   serve: (event: Envelope): Effect.Effect<void> => {
     const named = parsePrStream(event.streamId)
-    if (named === null) return Effect.void
-    return servePr(ports, named.project, named.n, steps).pipe(Effect.orDie)
+    if (named !== null) return servePr(ports, named.project, named.n, steps).pipe(Effect.orDie)
+    const ticket = parseTicketStream(event.streamId)
+    if (ticket === null) return Effect.void
+    return servePendingPrs(ports, [ticket.project], steps)
   },
   resume: (): Effect.Effect<void> =>
     Effect.gen(function* () {
-      const say = (line: string) => ports.log?.(line)
-      const projects = yield* ports
-        .projects()
-        .pipe(
-          Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume: ${err.message}`), [] as readonly string[]))),
-        )
-      // One PR's failure is that PR's: the others are still owed their serve, and nothing sweeps for them later.
-      for (const project of projects) {
-        const prs = yield* listPrs(project, ports.store).pipe(
-          Effect.catch((err: Error) =>
-            Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[])),
-          ),
-        )
-        for (const pr of prs) {
-          if ((pr.status === 'requested' || pr.status === 'in-progress') && pr.n !== null) {
-            yield* servePr(ports, project, pr.n, steps).pipe(
-              Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
-            )
-          }
-        }
-      }
-    }).pipe(Effect.orDie),
+      const projects = yield* ports.projects().pipe(
+        Effect.catch((err: Error) =>
+          Effect.sync(() => {
+            ports.log?.(`pr resume: ${err.message}`)
+            return [] as readonly string[]
+          }),
+        ),
+      )
+      yield* servePendingPrs(ports, projects, steps)
+    }),
 })

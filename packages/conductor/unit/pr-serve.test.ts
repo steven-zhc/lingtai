@@ -279,3 +279,15 @@ describe('the walk', () => {
     expect(prStepRows(['dummy'], pr)).toEqual([{ step: 'dummy', status: 'pending', headSha: null }])
   })
 })
+
+describe('a ticket that ends a landing serves the PR again', () => {
+  it('a TicketLanded on the project serves its requested PR, and a ticket of no PR stream is ignored', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    const handlers = makePrHandlers(ports(store, { reachable: ['m1'] }))
+    const event = (await store.read(ticketStream('lingtai', '1')))[1]!
+    await Effect.runPromise(handlers.serve(event))
+    expect((await state(store)).status).toBe('in-progress')
+  })
+})

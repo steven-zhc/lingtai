@@ -155,7 +155,7 @@ export const prSubmitVerdict = (
     )
     const detail =
       holder === null
-        ? 'it is served when a conductor runs: lingtai start'
+        ? 'it is served when a conductor runs: lingtai start, or lingtai run'
         : holder === 'unknown'
           ? 'could not tell whether a conductor is running; lingtai doctor says'
           : `${holder} is freezing it; lingtai pr says when`

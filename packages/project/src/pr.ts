@@ -171,12 +171,18 @@ export function landingsInFlight(project: string, base: string, store: EventStor
     const events = yield* Effect.tryPromise({ try: () => store.read(integrationStream(project, base)), catch: failed })
     const pending: string[] = []
     for (const started of landingsStarted(events)) {
+      const ticket = reduceTicket(yield* Effect.tryPromise({ try: () => store.read(started.ticketId), catch: failed }))
       if (started.mergeCommit === null) {
-        pending.push(started.ticketId)
+        // An attempt nobody finished is running only while its ticket is still claimed: a daemon killed before the push
+        // releases the ticket on restart (or a person closes it), and that integration is history, not live.
+        // An `unexpected` refusal may be a push whose record failed: it stays owed until the ticket lands or ends.
+        const live = started.unexpected
+          ? ticket.landed === null && ticket.lifecycle.status !== 'closed'
+          : ticket.lifecycle.status === 'claimed'
+        if (live) pending.push(started.ticketId)
         continue
       }
-      const ticket = yield* Effect.tryPromise({ try: () => store.read(started.ticketId), catch: failed })
-      if (reduceTicket(ticket).landed?.mergeCommit !== started.mergeCommit) pending.push(started.ticketId)
+      if (ticket.landed?.mergeCommit !== started.mergeCommit) pending.push(started.ticketId)
     }
     return pending
   })
