@@ -17,6 +17,7 @@ import type { TicketSource } from '@lingtai/recipe/settings'
 
 import { queueFilters } from './board.ts'
 import { dateText, kindSeries, moneyText, OTHER, type ReportChip, projectionChip, type Series } from './report.ts'
+import { rereadTicket } from './snapshot-writer.ts'
 
 export type LandedParams = Record<string, string | string[] | undefined>
 
@@ -257,6 +258,7 @@ export async function currentLanded(q: LandedQuery): Promise<LandedData> {
     ...(q.kind === null ? {} : { kind: q.kind }),
     ...(q.before === null ? {} : { before: q.before }),
     limit: PAGE_SIZE + 1,
+    reread: rereadTicket,
   })
   const rows = read.slice(0, PAGE_SIZE)
   const last = rows.at(-1)

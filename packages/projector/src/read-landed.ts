@@ -1,11 +1,14 @@
+import type { TicketState } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
 import type { TicketReportLandedQuery } from './store.ts'
-import type { TicketReportRow } from './ticket-report.ts'
+import { fillStale, type TicketReportRow } from './ticket-report.ts'
 
 export interface ReadLandedOptions extends TicketReportLandedQuery {
   url?: string
+  /** One ticket's state off the log, for a row stored in an older shape (#1349). */
+  reread?: (ticket: string) => Effect.Effect<TicketState, unknown>
 }
 
 /**
@@ -14,8 +17,9 @@ export interface ReadLandedOptions extends TicketReportLandedQuery {
  * names the rebuild; a database with no table is no rows.
  */
 export const readLandedEffect = Effect.fn('projector.readLanded')(function* (options: ReadLandedOptions) {
-  const { url, ...query } = options
-  return yield* withStoreEffect({ url, max: 1 }, (p) => p.landed(query))
+  const { url, reread, ...query } = options
+  const rows = yield* withStoreEffect({ url, max: 1 }, (p) => p.landed(query))
+  return yield* fillStale(rows, reread)
 })
 
 /** The promise face (0101 §7): the board reads `/landed` as a promise. */

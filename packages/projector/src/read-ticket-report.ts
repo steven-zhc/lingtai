@@ -1,11 +1,14 @@
+import type { TicketState } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
 import type { TicketReportQuery } from './store.ts'
-import type { TicketReportRow } from './ticket-report.ts'
+import { fillStale, type TicketReportRow } from './ticket-report.ts'
 
 export interface ReadTicketReportOptions extends TicketReportQuery {
   url?: string
+  /** One ticket's state off the log, for a row stored in an older shape (#1349). Without it such a row is shown unread. */
+  reread?: (ticket: string) => Effect.Effect<TicketState, unknown>
 }
 
 /**
@@ -16,9 +19,10 @@ export interface ReadTicketReportOptions extends TicketReportQuery {
 export const readTicketReportEffect = Effect.fn('projector.readTicketReport')(function* (
   options: ReadTicketReportOptions = {},
 ) {
-  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+  const rows = yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
     p.ticketReport(options.project === undefined ? {} : { project: options.project }),
   )
+  return yield* fillStale(rows, options.reread)
 })
 
 /** The promise face (0101 §7). */

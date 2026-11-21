@@ -23,6 +23,8 @@ import {
   reasonWords,
   resolutionWords,
 } from '@lingtai/conductor/report'
+import { ticketReducer, type TicketState } from '@lingtai/domain'
+import { eventStore, readThroughSnapshot } from '@lingtai/event-store'
 import {
   projectionLagEffect,
   readSpendEffect,
@@ -33,6 +35,13 @@ import {
 import { Cause, Effect } from 'effect'
 
 import { jsonDocument, keyValues, section, table } from './output.ts'
+
+/**
+ * One ticket's state off the log for a row stored in an older shape (#1349). No snapshots and no writer:
+ * only a long-lived process writes them (0124), so this is one full read and nothing left behind.
+ */
+const rereadTicket = (ticket: string): Effect.Effect<TicketState, unknown> =>
+  readThroughSnapshot(eventStore, ticketReducer, ticket, 'all')
 
 /** The projections the report's figures come from, in the order they are named. */
 export const REPORT_PROJECTIONS = ['ticket_report', 'spend'] as const
@@ -328,7 +337,7 @@ export const runReport = (
 
     const now = (ports.now ?? (() => new Date()))()
     const window = resolveWindow(query.spec, now)
-    const tickets = yield* (ports.tickets ?? ((q) => readTicketReportEffect(q)))(
+    const tickets = yield* (ports.tickets ?? ((q) => readTicketReportEffect({ ...q, reread: rereadTicket })))(
       query.project === null ? {} : { project: query.project },
     )
     // Not narrowed by project here: `report()` does it, and a run with no ticket belongs to no project.
