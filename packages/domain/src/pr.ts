@@ -66,6 +66,25 @@ export interface PrState {
   refusals: readonly PayloadOf<'SyncRoundRefused'>[]
   /** The last wait, while the PR is waiting. */
   wait: PayloadOf<'PrWaiting'> | null
+  /** When the current wait was recorded (`PrWaiting`'s `at`); null while the PR is not waiting. */
+  waitSince: Date | null
+  /**
+   * A person's retry or back that the conductor has not answered yet (#1314). **One slot**: a second request is refused
+   * while it is set. Cleared by what answers it — `PrInProgress`, `PrWaiting`, `PrClosed`, `PrMerged`.
+   */
+  pending: { readonly kind: 'retry' | 'back'; readonly by: string; readonly seq: bigint } | null
+  /** The rounds people gave (`PrRoundsGranted`), oldest first; each belongs to its commit and nothing resets them. */
+  grants: readonly PayloadOf<'PrRoundsGranted'>[]
+  /**
+   * A head a person pushed and a retry adopted (`PrHeadAdopted`), until a build of it is recorded. **A commit Lingtai did not
+   * make was not built by Lingtai**, so the build step builds it rather than take the sync's word.
+   */
+  adopted: string | null
+  /**
+   * The conflict a grant sent back to the agent, until the PR waits again or moves past it (#1314): a second grant for the
+   * same commit, read against the state the first one left, is still a person's decision and adds to it.
+   */
+  granting: { readonly merging: 'main' | 'back'; readonly commit: string } | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
   /** How the PR ended, once it has (`PrMerged`, `PrClosed`); `how` is null for a close. `seq` is the ending event's. */
   ended: {
@@ -97,6 +116,11 @@ export const emptyPr: PrState = {
   rounds: [],
   refusals: [],
   wait: null,
+  waitSince: null,
+  pending: null,
+  grants: [],
+  adopted: null,
+  granting: null,
   refusal: null,
   ended: null,
   version: 0,
@@ -106,7 +130,13 @@ export const emptyPr: PrState = {
 /** A step recorded once; a step that finished after a wait is the person's answer taking effect. */
 function withStep(state: PrState, record: PrStepRecord): PrState {
   const steps = state.steps.some((r) => r.step === record.step) ? state.steps : [...state.steps, record]
-  return { ...state, status: state.status === 'waiting' ? 'in-progress' : state.status, steps, wait: null }
+  return {
+    ...state,
+    status: state.status === 'waiting' ? 'in-progress' : state.status,
+    steps,
+    wait: null,
+    waitSince: null,
+  }
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -142,13 +172,27 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         tickets: d.tickets,
         steps: [],
         wait: null,
+        waitSince: null,
+        pending: null,
+        granting: null,
       }
     }
     case 'PrStepDone': {
       const d = event.data as PayloadOf<'PrStepDone'>
       const steps = state.steps.some((s) => s.step === d.step) ? state.steps : [...state.steps, d]
+      const adopted = d.step === 'build' && d.headSha === state.adopted ? null : state.adopted
       // A step that finished after a wait is the person's answer taking effect: the PR is walking again.
-      return { ...state, ...at, status: state.status === 'waiting' ? 'in-progress' : state.status, steps, wait: null }
+      return {
+        ...state,
+        ...at,
+        status: state.status === 'waiting' ? 'in-progress' : state.status,
+        steps,
+        wait: null,
+        waitSince: null,
+        pending: state.status === 'waiting' ? null : state.pending,
+        granting: null,
+        adopted,
+      }
     }
     case 'PrPushed': {
       const d = event.data as PayloadOf<'PrPushed'>
@@ -172,12 +216,21 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
       const step = d.how === 'clean' ? 'build' : 'sync'
-      return { ...withStep(state, { step, headSha: d.head }), ...at, target: d.head }
+      return {
+        ...withStep(state, { step, headSha: d.head }),
+        ...at,
+        target: d.head,
+        adopted: d.how === 'clean' ? null : state.adopted,
+      }
     }
     case 'SyncRoundRefused':
       return { ...state, ...at, refusals: [...state.refusals, event.data as PayloadOf<'SyncRoundRefused'>] }
-    case 'SyncRoundStarted':
-      return { ...state, ...at, rounds: [...state.rounds, event.data as PayloadOf<'SyncRoundStarted'>] }
+    case 'SyncRoundStarted': {
+      const d = event.data as PayloadOf<'SyncRoundStarted'>
+      // The PR is resolving another commit than the one a grant was for: that grant's page is stale now.
+      const same = state.granting !== null && state.granting.merging === d.merging && state.granting.commit === d.commit
+      return { ...state, ...at, rounds: [...state.rounds, d], granting: same ? state.granting : null }
+    }
     case 'PrMergedBack':
     case 'PrMergeBackFailed': {
       const d = event.data as { prHead: string; why?: string }
@@ -191,16 +244,43 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'merged', wait: null, ended }
+      return { ...state, ...at, status: 'merged', wait: null, waitSince: null, pending: null, granting: null, ended }
     }
     case 'PrClosed': {
       const d = event.data as PayloadOf<'PrClosed'>
       const ended = { how: null, headSha: d.headSha, mergeSha: null, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'closed', wait: null, ended }
+      return { ...state, ...at, status: 'closed', wait: null, waitSince: null, pending: null, granting: null, ended }
     }
     case 'PrWaiting': {
       const d = event.data as PayloadOf<'PrWaiting'>
-      return { ...state, ...at, status: 'waiting', wait: d }
+      const since = state.status === 'waiting' && state.wait?.reason === d.reason ? state.waitSince : event.at
+      return { ...state, ...at, status: 'waiting', wait: d, waitSince: since, pending: null, granting: null }
+    }
+    case 'PrRoundsGranted': {
+      // The grant is the person's answer taking effect: the PR walks again from the step it waited at, which counts the rounds.
+      const d = event.data as PayloadOf<'PrRoundsGranted'>
+      const walks = state.status === 'waiting'
+      return {
+        ...state,
+        ...at,
+        grants: [...state.grants, d],
+        status: walks ? 'in-progress' : state.status,
+        wait: walks ? null : state.wait,
+        waitSince: walks ? null : state.waitSince,
+        granting: walks && state.wait?.conflict ? { merging: d.merging, commit: d.commit } : state.granting,
+      }
+    }
+    case 'PrRetryRequested': {
+      const d = event.data as PayloadOf<'PrRetryRequested'>
+      return { ...state, ...at, pending: { kind: 'retry', by: d.by, seq: event.seq } }
+    }
+    case 'PrBackRequested': {
+      const d = event.data as PayloadOf<'PrBackRequested'>
+      return { ...state, ...at, pending: { kind: 'back', by: d.by, seq: event.seq } }
+    }
+    case 'PrHeadAdopted': {
+      const d = event.data as PayloadOf<'PrHeadAdopted'>
+      return { ...state, ...at, lastPushed: d.head, target: d.head, adopted: d.head }
     }
     default:
       return { ...state, ...at }
@@ -406,19 +486,45 @@ export function mergedTransition(
   return { type: 'PrMerged', actor: 'conductor', data: merged }
 }
 
+const closeEvent = (closed: PayloadOf<'PrClosed'>): ToAppend<PayloadOf<'PrClosed'>> => ({
+  type: 'PrClosed',
+  actor: 'conductor',
+  data: closed,
+})
+
 /** The PR was found closed without a merge. Only the code host can say so, so a PR with no host number cannot be. */
 export function closedTransition(
   state: PrState,
   closed: PayloadOf<'PrClosed'>,
 ): ToAppend<PayloadOf<'PrClosed'>> | null {
   if (!isOpen(state) || state.status === 'requested' || state.host === null) return null
-  return { type: 'PrClosed', actor: 'conductor', data: closed }
+  return closeEvent(closed)
+}
+
+/**
+ * A person took the PR back (#1314): it is closed **by Lingtai, on the code host or where there is none**, which is the one
+ * close a PR with no host number can have. Only a pending back records it.
+ */
+export function backClosedTransition(
+  state: PrState,
+  closed: PayloadOf<'PrClosed'>,
+): ToAppend<PayloadOf<'PrClosed'>> | null {
+  if (state.pending?.kind !== 'back' || !isOpen(state) || state.status === 'requested') return null
+  return closeEvent(closed)
 }
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */
 export function waitTransition(state: PrState, wait: PayloadOf<'PrWaiting'>): ToAppend<PayloadOf<'PrWaiting'>> | null {
   if (state.status !== 'in-progress' && state.status !== 'waiting') return null
-  if (state.status === 'waiting' && state.wait?.step === wait.step && state.wait.reason === wait.reason) return null
+  // A request a person made is answered by this wait, even when it is the wait they were already in: it clears `pending`.
+  if (
+    state.pending === null &&
+    state.status === 'waiting' &&
+    state.wait?.step === wait.step &&
+    state.wait.reason === wait.reason
+  ) {
+    return null
+  }
   return { type: 'PrWaiting', actor: 'conductor', data: wait }
 }
 
@@ -581,4 +687,141 @@ export const lastRefusalOf = (
   const mine = state.refusals.filter((r) => r.merging === merging && r.commit === commit)
   const latest = mine.at(-1)
   return latest === undefined ? null : { step: latest.step, said: latest.said }
+}
+
+/** What a person's request came to when asked: the event to append, or the sentence that says why not. */
+export type PrRequest<E> = { kind: 'request'; event: ToAppend<E> } | { kind: 'refused'; detail: string }
+
+const refused = (detail: string): { kind: 'refused'; detail: string } => ({ kind: 'refused', detail })
+
+/** The refusals every request shares: a solo project, no PR, a PR that ended, a request already waiting to be served. */
+function notAskable(
+  state: PrState | null,
+  mode: 'solo' | 'team',
+  project: string,
+): { kind: 'refused'; detail: string } | null {
+  if (mode === 'solo') return refused(`${project} lands on its main branch itself; there is no PR`)
+  if (state === null || !isOpen(state) || state.n === null) return refused(`${project} has no PR open`)
+  if (state.pending !== null) {
+    return refused(
+      `${prName(project, state.n)} already has a ${state.pending.kind} asked for by ${state.pending.by}; lingtai pr says when it is served`,
+    )
+  }
+  return null
+}
+
+/** The rounds a person gave for one commit: the sum of the grants that name it. */
+export const grantedFor = (state: PrState, merging: 'main' | 'back', commit: string): number =>
+  state.grants.filter((g) => g.merging === merging && g.commit === commit).reduce((sum, g) => sum + g.rounds, 0)
+
+/**
+ * *Give the agent 3 more rounds* (#1314). Refused by name, appending nothing, on a solo project, with no PR open, on a PR
+ * that is not waiting, on a wait that is not a conflict the agent was asked about, and for a commit other than the one the wait
+ * is about (a stale page: the wait is about another one now).
+ */
+export function grantTransition(
+  state: PrState | null,
+  mode: 'solo' | 'team',
+  project: string,
+  grant: { by: string; merging: 'main' | 'back'; commit: string },
+): PrRequest<PayloadOf<'PrRoundsGranted'>> {
+  const no = notAskable(state, mode, project)
+  if (no !== null) return no
+  if (state === null || state.n === null) return refused(`${project} has no PR open`)
+  const name = prName(project, state.n)
+  const granted: PrRequest<PayloadOf<'PrRoundsGranted'>> = {
+    kind: 'request',
+    event: {
+      type: 'PrRoundsGranted',
+      actor: grant.by,
+      data: { by: grant.by, merging: grant.merging, commit: grant.commit, rounds: 3 },
+    },
+  }
+  // Two people granting against one wait: the first moved the PR on, and the second still adds to the same commit.
+  if (
+    state.status === 'in-progress' &&
+    state.granting !== null &&
+    state.granting.merging === grant.merging &&
+    state.granting.commit === grant.commit
+  ) {
+    return granted
+  }
+  if (state.status !== 'waiting' || state.wait === null)
+    return refused(`${name} is ${state.status}, not waiting on you`)
+  if (state.wait.reason !== 'sync-conflict') {
+    return refused(
+      `rounds buy an agent only for a conflict — ${name} waits on ${state.wait.reason}: fix it by hand, then lingtai pr retry`,
+    )
+  }
+  const conflict = state.wait.conflict ?? null
+  if (conflict === null) {
+    return refused('no agent resolves conflicts for this project — fix it by hand, then lingtai pr retry')
+  }
+  if (conflict.merging !== grant.merging || conflict.commit !== grant.commit) {
+    return refused(
+      `${name} now waits on ${conflict.merging === 'main' ? 'main' : 'the merge back'} at ${conflict.commit.slice(0, 7)}, not ${grant.commit.slice(0, 7)}: read it again`,
+    )
+  }
+  return granted
+}
+
+/** *Check again* (#1314): refused by name on a solo project, with no PR open, and on a PR that is not waiting. */
+export function retryRequestTransition(
+  state: PrState | null,
+  mode: 'solo' | 'team',
+  project: string,
+  by: string,
+): PrRequest<PayloadOf<'PrRetryRequested'>> {
+  const no = notAskable(state, mode, project)
+  if (no !== null) return no
+  if (state === null || state.n === null) return refused(`${project} has no PR open`)
+  if (state.status !== 'waiting') {
+    return refused(
+      `${prName(project, state.n)} is ${state.status}, not waiting on you; there is nothing to check again`,
+    )
+  }
+  return { kind: 'request', event: { type: 'PrRetryRequested', actor: by, data: { by } } }
+}
+
+/** *Back* (#1314): refused while a step is running, and on a PR that has not begun or has ended. */
+export function backRequestTransition(
+  state: PrState | null,
+  mode: 'solo' | 'team',
+  project: string,
+  by: string,
+): PrRequest<PayloadOf<'PrBackRequested'>> {
+  const no = notAskable(state, mode, project)
+  if (no !== null) return no
+  if (state === null || state.n === null) return refused(`${project} has no PR open`)
+  if (state.status === 'requested' || state.status === 'in-progress') {
+    return refused(`${prName(project, state.n)} is ${state.status}: wait for it, or for it to wait on you`)
+  }
+  return { kind: 'request', event: { type: 'PrBackRequested', actor: by, data: { by } } }
+}
+
+/**
+ * The conductor serves a retry that changed nothing on the branch, or whose head it has adopted: the PR walks again from its
+ * first step on the same freeze. Only a waiting PR with a retry pending does.
+ */
+export function retryTransition(state: PrState): ToAppend<PayloadOf<'PrInProgress'>> | null {
+  if (state.status !== 'waiting' || state.pending?.kind !== 'retry') return null
+  if (state.branch === null || state.main === null || state.frozenSha === null || state.prBranch === null) return null
+  return inProgress({
+    because: 'retry',
+    branch: state.branch,
+    main: state.main,
+    frozenSha: state.frozenSha,
+    prBranch: state.prBranch,
+    tickets: state.tickets,
+  })
+}
+
+/** A head a person pushed, adopted: only for a pending retry, and only a head that is not already the last pushed. */
+export function adoptTransition(
+  state: PrState,
+  adopted: PayloadOf<'PrHeadAdopted'>,
+): ToAppend<PayloadOf<'PrHeadAdopted'>> | null {
+  if (state.status !== 'waiting' || state.pending?.kind !== 'retry') return null
+  if (state.lastPushed === adopted.head) return null
+  return { type: 'PrHeadAdopted', actor: 'conductor', data: adopted }
 }

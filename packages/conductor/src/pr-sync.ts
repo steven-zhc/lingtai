@@ -199,8 +199,11 @@ export const buildStep: PrStep = {
         const prBranch = state.prBranch
         const synced = state.steps.find((s) => s.step === 'sync')
         if (target === null || prBranch === null || synced === undefined) return { kind: 'again' } as StepAnswer
-        // Nothing was merged: the sync's commit is the target, and it was built when it was made.
-        if (synced.headSha === target) return { kind: 'done', headSha: target } as StepAnswer
+        // Nothing was merged: the sync's commit is the target, and it was built when it was made — **by Lingtai**. A head a
+        // person pushed and a retry adopted (#1314) was not, so it is built here, and recorded as the build step's own.
+        if (synced.headSha === target && target !== state.adopted)
+          return { kind: 'done', headSha: target } as StepAnswer
+        const adopted = synced.headSha === target
         const merge = synced.headSha
         const wait = (reason: 'sync-red' | 'sync-unknown', detail: string): StepAnswer => ({
           kind: 'wait',
@@ -213,8 +216,8 @@ export const buildStep: PrStep = {
         const have = yield* ports.git(project, ['cat-file', '-e', `${merge}^{commit}`])
         if (have.code === 1 || have.code === 128) return { kind: 'restart' } as StepAnswer
         if (have.code !== 0) return wait('sync-unknown', gitSaid(['cat-file', '-e', merge], have))
-        // `main`'s commit is the merge's second parent: what was merged, whatever `main` is now.
-        const mainCommit = yield* resolve(ports, project, `${merge}^2`)
+        // `main`'s commit is the merge's second parent: what was merged, whatever `main` is now. An adopted head is not a merge.
+        const mainCommit = adopted ? merge : yield* resolve(ports, project, `${merge}^2`)
 
         // A build a killed process left at this fixed worktree path would fail the cut: it is removed first.
         yield* ports.sweep(project)
@@ -227,6 +230,7 @@ export const buildStep: PrStep = {
         }
         if (built.kind === 'unknown')
           return wait('sync-unknown', `the build of ${short(merge)} could not be told: ${built.why}`)
+        if (adopted) return { kind: 'done', headSha: merge } as StepAnswer
         return {
           kind: 'done',
           headSha: merge,
