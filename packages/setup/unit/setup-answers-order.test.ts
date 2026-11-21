@@ -87,6 +87,15 @@ describe('the team form (#1325)', () => {
     expect(paths).toEqual(expect.arrayContaining(['mode', 'branch.personal', 'runtime.assignee']))
   })
 
+  it('a retry as solo removes branch.personal rather than leaving it', () => {
+    const solo = setupChanges({ ...base, mode: 'solo' }, true)
+    expect(solo.find((c) => c.path.join('.') === 'branch.personal')).toEqual({
+      path: ['branch', 'personal'],
+      value: undefined,
+    })
+    expect(solo.find((c) => c.path.join('.') === 'mode')?.value).toBe('solo')
+  })
+
   it('suggests a fix for a name git refuses', () => {
     expect(personalFix("Steven's MacBook Pro")).toBe('steven-s-macbook-pro')
     expect(personalFix('steven-zhc/foundry')).toBeNull()

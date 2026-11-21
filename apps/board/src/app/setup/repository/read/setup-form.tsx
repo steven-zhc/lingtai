@@ -55,7 +55,9 @@ function Line(props: {
 }
 
 /** The answer to the check as typed, as the message line shows it. */
-type Checked = { state: 'checking' } | { state: 'done'; check: Awaited<ReturnType<typeof checkPersonal>> }
+type Checked =
+  | { state: 'checking' }
+  | { state: 'done'; asked: string; check: Awaited<ReturnType<typeof checkPersonal>> }
 
 export function SetupForm({ view }: { view: ReadView }) {
   const [mode, setMode] = useState<'team' | 'solo'>('team')
@@ -143,15 +145,16 @@ export function SetupForm({ view }: { view: ReadView }) {
   useEffect(() => {
     if (mode !== 'team') return
     const mine = ++checkedFor.current
+    const asked = `${personal}\n${mainBranch}`
     setChecked({ state: 'checking' })
     const timer = setTimeout(() => {
       checkPersonal(view.target, personal, mainBranch).then(
         (check) => {
-          if (checkedFor.current === mine) setChecked({ state: 'done', check })
+          if (checkedFor.current === mine) setChecked({ state: 'done', asked, check })
         },
         (e: unknown) => {
           if (checkedFor.current === mine) {
-            setChecked({ state: 'done', check: { ok: true, exists: 'unreadable' } })
+            setChecked({ state: 'done', asked, check: { ok: true, exists: 'unreadable' } })
             void e
           }
         },
@@ -164,6 +167,9 @@ export function SetupForm({ view }: { view: ReadView }) {
     setTypedLogin(value)
     if (!personalTouched && value.trim() !== '') setPersonal(`${value.trim()}/${view.team.host}`)
   }
+
+  // Add waits for the message that explains the remote write: it is enabled only once the answer is for the name now in the field.
+  const confirming = mode === 'team' && (checked.state !== 'done' || checked.asked !== `${personal}\n${mainBranch}`)
 
   const toggle = (name: string) => () => setOpen(open === name ? null : name)
   const text = (value: string, set: (v: string) => void, mono = true) => (
@@ -646,7 +652,7 @@ export function SetupForm({ view }: { view: ReadView }) {
           <a className="btn" href="/setup/repository">
             Back
           </a>
-          <button type="button" className="btn go" disabled={adding} onClick={add}>
+          <button type="button" className="btn go" disabled={adding || confirming} onClick={add}>
             {adding ? 'Adding…' : 'Add'}
           </button>
         </p>

@@ -211,7 +211,10 @@ export function setupChanges(
     changes.push({ path: ['mode'], value: 'team' }, { path: ['branch', 'personal'], value: form.personal })
     // A local store's *mine* is every ticket (0130 §3): no login, no assignee.
     if (github && form.login !== null) changes.push(...assigneeChanges({ login: form.login, take: 'mine' }, rawClaim))
-  } else if (rewrite) changes.push({ path: ['mode'], value: 'solo' })
+  } else if (rewrite) {
+    // A retry from team to solo: `branch.personal` is refused in solo, so a failed team attempt's value is removed.
+    changes.push({ path: ['mode'], value: 'solo' }, { path: ['branch', 'personal'], value: undefined })
+  }
 
   changes.push({ path: ['runtime', 'agent'], value: form.writer })
   if (form.turnsUnbounded) changes.push(unboundedTurnsChange())

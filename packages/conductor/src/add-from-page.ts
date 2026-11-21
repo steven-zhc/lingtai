@@ -355,9 +355,20 @@ export const ghLoginHere: Effect.Effect<string | null> = Effect.try({
   Effect.orElseSucceed((): string | null => null),
 )
 
-/** Whether `refs/heads/<name>` is a branch of the local directory; git's words where it cannot be told. */
-const localBranchExists = (dir: string, name: string) =>
-  gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}^{commit}`])
+/**
+ * Whether `refs/heads/<name>` is a branch of the local directory: `absent` only where git lists no such ref, and
+ * `unreadable` — with git's words — where the listing or the commit it names cannot be read. A failed read is never absence.
+ */
+const localBranchState = (dir: string, name: string) =>
+  Effect.gen(function* () {
+    const listed = yield* gitIn(dir, ['for-each-ref', '--format=%(refname)', `refs/heads/${name}`])
+    if (!listed.ok) return { state: 'unreadable' as const, why: listed.out }
+    if (!listed.out.split('\n').includes(`refs/heads/${name}`)) return { state: 'absent' as const }
+    const tip = yield* gitIn(dir, ['rev-parse', '--verify', '--quiet', `refs/heads/${name}^{commit}`])
+    return tip.ok
+      ? { state: 'exists' as const }
+      : { state: 'unreadable' as const, why: tip.out || 'its commit is missing' }
+  })
 
 /**
  * The port that makes a team project's personal branch, for one target (0130 §2). **Read first, then made**: an
@@ -386,8 +397,13 @@ export function liveMakePersonal(target: SetupTarget): NonNullable<AddPorts['mak
   }
   return (form) =>
     Effect.gen(function* () {
-      const found = yield* localBranchExists(target.path, form.personal)
-      if (found.ok) return 'exists' as const
+      const found = yield* localBranchState(target.path, form.personal)
+      if (found.state === 'exists') return 'exists' as const
+      if (found.state === 'unreadable') {
+        return yield* Effect.fail(
+          new Error(`could not read whether ${form.personal} exists — nothing was made: ${found.why}`),
+        )
+      }
       const made = yield* gitIn(target.path, ['branch', form.personal, form.base])
       if (!made.ok) {
         return yield* Effect.fail(new Error(`could not make ${form.personal} from ${form.base} — ${made.out}`))
@@ -406,7 +422,12 @@ export function checkPersonalEffect(target: SetupTarget, name: string, main: str
   const why = personalRefusal(name, main)
   if (why !== null) return Effect.succeed({ ok: false, say: why, fix: personalFix(name) })
   if (target.kind === 'local') {
-    return localBranchExists(target.path, name).pipe(Effect.map((r) => ({ ok: true, exists: r.ok }) as const))
+    return localBranchState(target.path, name).pipe(
+      Effect.map((r): PersonalCheck => ({
+        ok: true,
+        exists: r.state === 'unreadable' ? 'unreadable' : r.state === 'exists',
+      })),
+    )
   }
   return githubFor(target.owner, target.repo).pipe(
     Effect.flatMap((g) => g.branchExists(name)),
