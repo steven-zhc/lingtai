@@ -397,7 +397,7 @@ opens directly, as #364 was. It runs `pnpm typecheck` and
 `workflow_dispatch`; it is the unit half only, never `pnpm test:integration`,
 for the same reason nobody runs that half as part of a ticket. It carries no
 `LINGTAI_*` secret. **It is deliberately not a required status check on
-`main`**: the merge lane is `git merge --no-edit` into the base and a push
+`main`**: the merge lane is `git merge --no-ff` into the base and a push
 (`packages/actions/src/merge-action.ts:47`), never a pull request, so a
 required check here would refuse every landing the conductor makes.
 

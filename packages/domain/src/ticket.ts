@@ -297,6 +297,8 @@ export interface GitHubLedger {
 
 export interface TicketState {
   lifecycle: TicketLifecycle
+  /** Where the ticket landed, kept after a `TicketClosed` replaces `lifecycle`; null if it never landed (0130 §4). */
+  landed: { mergeCommit: string; base: string } | null
 
   /** From the stream id (D4); null only on a stream that is not a ticket's. */
   project: string | null
@@ -432,6 +434,7 @@ export interface TicketState {
 
 export const emptyTicket: TicketState = {
   lifecycle: { status: 'backlog' },
+  landed: null,
   project: null,
   source: null,
   externalRef: null,
@@ -818,6 +821,7 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         ...at,
         since: event.at,
         lifecycle: { status: 'landed', mergeCommit: d.mergeCommit, base: d.base },
+        landed: { mergeCommit: d.mergeCommit, base: d.base },
       }
     }
 

@@ -23,6 +23,9 @@ import { LABEL_STATES, type LabelState } from '@lingtai/domain'
 /** The prefix of Lingtai's own label names — and of the ones a person sets to steer it, which are not Lingtai's to drop. */
 export const LINGTAI_LABEL_PREFIX = 'lingtai:'
 
+/** The label a ticket wears once it landed on a branch that is not `branch.main` (0130 §4). Computed, in `OWN_LABELS`. */
+export const LANDED_LABEL = `${LINGTAI_LABEL_PREFIX}landed`
+
 /** The label a person sets to keep agents off a ticket — also what Lingtai writes on an accepted finding. Not in `OWN_LABELS`: it is never computed. */
 export const HOLD_LABEL = `${LINGTAI_LABEL_PREFIX}hold`
 
@@ -37,21 +40,31 @@ export const FOLLOWUP_LABEL = `${LINGTAI_LABEL_PREFIX}followup`
  * `agent:review` at the same time with nothing able to notice; a state that is
  * computed and then assigned whole cannot hold two contradictory values.
  */
-export function labelsFor(state: LabelState): string[] {
+export function labelsFor(state: LabelState, landing?: { base: string; main: string }): string[] {
+  const labels: string[] = []
   switch (state) {
     case 'running':
     case 'verifying':
     case 'approved':
-      return [`${LINGTAI_LABEL_PREFIX}working`]
+      labels.push(`${LINGTAI_LABEL_PREFIX}working`)
+      break
     case 'waiting':
-      return [`${LINGTAI_LABEL_PREFIX}waiting`]
+      labels.push(`${LINGTAI_LABEL_PREFIX}waiting`)
+      break
     default:
-      return []
+      break
   }
+  // A ticket that landed on a branch that is not `main` wears this, whatever
+  // state it is in now (0130 §4).
+  if (landing && landing.base !== landing.main) labels.push(LANDED_LABEL)
+  return labels
 }
 
 /** Every label `labelsFor` can produce, derived so it cannot drift from it. */
-export const OWN_LABELS: ReadonlySet<string> = new Set(LABEL_STATES.flatMap((s) => labelsFor(s)))
+export const OWN_LABELS: ReadonlySet<string> = new Set([
+  ...LABEL_STATES.flatMap((s) => labelsFor(s)),
+  ...labelsFor('landed', { base: '\0', main: '' }),
+])
 
 /** Somebody else's labels — anything not in `OWN_LABELS` — which a whole-set write must not drop. */
 export function foreignLabels(current: readonly string[]): string[] {

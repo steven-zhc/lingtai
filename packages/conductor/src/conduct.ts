@@ -557,6 +557,11 @@ export type TurnClient = Tickets &
   }
 
 export interface RunOnceOptions {
+  /**
+   * Lets a `mode: team` pass past #1306's refusal. Exists only until #1310 deletes the refusal and this
+   * with it; nothing in `apps/` passes it, so every real pass is still refused.
+   */
+  landTeamTickets?: true
   /** The lane landings queue on — the process's own unless a test shares one between passes. */
   lane?: LandingLane
   project: ProjectState
@@ -1113,7 +1118,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     // readers can still read a team recipe. #1310 deletes this refusal, once a team pass leaves a landed
     // ticket open (#1309) and takes only the person's own tickets (#1310). Before the divergence check:
     // a team recipe's landing branch is one a registration made on `main` never recorded.
-    if (modeOf(recipe) === 'team') {
+    if (modeOf(recipe) === 'team' && options.landTeamTickets !== true) {
       return {
         ok: false,
         ticketId: null,
@@ -3876,7 +3881,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * judged. Every other ending publishes from the finalizer.
        *
        * **`strategy` is carried and not branched on, because there is one value.**
-       * `integrate` offers `git merge --no-edit` and a fast-forward push, which is
+       * `integrate` offers `git merge --no-ff` and a fast-forward push, which is
        * `merge-commit`. What keeps a second value from resolving is `mergePlugin`'s
        * own `z.enum` in `packages/recipe/src/recipe.ts` — not a check here, and
        * this signature has none: it carries the field so the lane is told what it
@@ -5706,6 +5711,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const ports: AttemptPorts = {
         onStream: () => onStream,
         readEnd,
+        mode: modeOf(recipe),
         recordEnd,
       }
 
@@ -6201,7 +6207,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           ...ticketSnapshots,
-          labels: labelsFor('landed'),
+          labels: labelsFor('landed', { base, main: recipe.branch.main }),
           editEnded: true,
           appended: endResolved,
           landed: { mergeCommit: merged, base, attempt, summary },
