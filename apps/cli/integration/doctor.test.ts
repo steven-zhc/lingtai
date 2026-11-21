@@ -733,7 +733,7 @@ subscribers:
     const withUsd = await resolveRecipe(
       async (path, ref) =>
         ref === 'main' && path === RECIPE_PATH
-          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    usd: 12')
+          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    run:\n      usd: 12')
           : null,
       'main',
     )
@@ -748,7 +748,7 @@ subscribers:
     const withUsd = await resolveRecipe(
       async (path, ref) =>
         ref === 'main' && path === RECIPE_PATH
-          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    usd: 12')
+          ? RECIPE.replace('  agent: claude-code', '  agent: claude-code\n  limits:\n    run:\n      usd: 12')
           : null,
       'main',
     )
