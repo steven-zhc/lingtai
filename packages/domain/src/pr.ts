@@ -37,6 +37,13 @@ export interface PrState {
    */
   target: string | null
   tickets: PayloadOf<'PrInProgress'>['tickets']
+  /**
+   * The commit last put on the PR branch (`PrPushed`). **`PrInProgress` does not reset it**: a pr-fix pass starts its
+   * steps again, and its push is a fast-forward from here.
+   */
+  lastPushed: string | null
+  /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
+  host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
   /** The last wait, while the PR is waiting. */
@@ -57,11 +64,19 @@ export const emptyPr: PrState = {
   frozenSha: null,
   target: null,
   tickets: [],
+  lastPushed: null,
+  host: null,
   steps: [],
   wait: null,
   refusal: null,
   version: 0,
   lastSeq: null,
+}
+
+/** A step recorded once; a step that finished after a wait is the person's answer taking effect. */
+function withStep(state: PrState, record: PrStepRecord): PrState {
+  const steps = state.steps.some((r) => r.step === record.step) ? state.steps : [...state.steps, record]
+  return { ...state, status: state.status === 'waiting' ? 'in-progress' : state.status, steps, wait: null }
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -104,6 +119,23 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       const steps = state.steps.some((s) => s.step === d.step) ? state.steps : [...state.steps, d]
       // A step that finished after a wait is the person's answer taking effect: the PR is walking again.
       return { ...state, ...at, status: state.status === 'waiting' ? 'in-progress' : state.status, steps, wait: null }
+    }
+    case 'PrPushed': {
+      const d = event.data as PayloadOf<'PrPushed'>
+      return { ...withStep(state, { step: 'push', headSha: d.headSha }), ...at, lastPushed: d.headSha }
+    }
+    case 'PrDraftOpened': {
+      const d = event.data as PayloadOf<'PrDraftOpened'>
+      return {
+        ...withStep(state, { step: 'open', headSha: state.target ?? state.frozenSha ?? '' }),
+        ...at,
+        host: { number: d.number, nodeId: d.nodeId, url: d.url },
+      }
+    }
+    case 'PrOpened': {
+      const d = event.data as PayloadOf<'PrOpened'>
+      const stepped = d.host === 'none' ? withStep(state, { step: 'open', headSha: state.target ?? '' }) : state
+      return { ...stepped, ...at, status: 'in-review', wait: null }
     }
     case 'PrWaiting': {
       const d = event.data as PayloadOf<'PrWaiting'>
@@ -196,6 +228,35 @@ export function stepDoneTransition(
   if (state.status !== 'in-progress' && state.status !== 'waiting') return null
   if (state.steps.some((s) => s.step === done.step)) return null
   return { type: 'PrStepDone', actor: 'conductor', data: done }
+}
+
+const walking = (state: PrState): boolean => state.status === 'in-progress' || state.status === 'waiting'
+
+/** The PR branch is on the remote at `headSha`; a step already recorded since the latest `PrInProgress` appends nothing. */
+export function pushedTransition(
+  state: PrState,
+  pushed: PayloadOf<'PrPushed'>,
+): ToAppend<PayloadOf<'PrPushed'>> | null {
+  if (!walking(state) || state.steps.some((s) => s.step === 'push')) return null
+  return { type: 'PrPushed', actor: 'conductor', data: pushed }
+}
+
+/** The draft pull request is open; a step already recorded since the latest `PrInProgress` appends nothing. */
+export function draftOpenedTransition(
+  state: PrState,
+  opened: PayloadOf<'PrDraftOpened'>,
+): ToAppend<PayloadOf<'PrDraftOpened'>> | null {
+  if (!walking(state) || state.steps.some((s) => s.step === 'open')) return null
+  return { type: 'PrDraftOpened', actor: 'conductor', data: opened }
+}
+
+/** The PR is In review. Only a PR that is walking goes there. */
+export function openedTransition(
+  state: PrState,
+  opened: PayloadOf<'PrOpened'>,
+): ToAppend<PayloadOf<'PrOpened'>> | null {
+  if (!walking(state)) return null
+  return { type: 'PrOpened', actor: 'conductor', data: opened }
 }
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */

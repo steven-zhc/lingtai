@@ -3974,7 +3974,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   type: 'MergeLaneWaited',
                   actor: 'conductor',
                   data: parsePayload('MergeLaneWaited', {
-                    behind: { runId: behind.runId, issue: String(behind.issue) },
+                    behind: 'pr' in behind ? { pr: behind.pr } : { runId: behind.runId, issue: String(behind.issue) },
                   }),
                 },
               ]).pipe(Effect.asVoid),

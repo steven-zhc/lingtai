@@ -1571,7 +1571,9 @@ export const FindingDeclined = z.object({
  *
  * @summary A run was ready to merge but waited, because another run was landing.
  */
-export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
+export const MergeLaneWaited = z.object({
+  behind: z.union([z.object({ runId: z.string(), issue: z.string() }), z.object({ pr: z.string() })]),
+})
 
 /** @summary The conductor tried to merge a run's branch into the base branch. */
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
@@ -2553,7 +2555,7 @@ export const PrInProgress = z.object({
 export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
 
 /** Why a PR waits on a person; each step's ticket extends the set with its own. */
-const PrWaitReason = z.enum(['denied'])
+const PrWaitReason = z.enum(['denied', 'branch-moved', 'several-open', 'draft-unsupported'])
 
 /**
  * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
@@ -2565,6 +2567,39 @@ export const PrWaiting = z.object({
   reason: PrWaitReason,
   detail: z.string(),
   headSha: z.string().min(1),
+})
+
+/**
+ * The PR branch `<branch.personal>-pr-<n>` is on the remote at `headSha` (0130 §5). `found` says whether the look took
+ * the place of the push: `existing` is a branch already there at that commit (a push whose record was lost).
+ *
+ * @summary A PR's branch is on the remote at one commit, pushed now or found already there.
+ */
+export const PrPushed = z.object({ headSha: z.string().min(1), found: z.enum(['pushed', 'existing']) })
+
+/**
+ * The PR is open on GitHub as a draft (0130 §5). `found` says whether the look took the place of the `POST`:
+ * `existing` is a pull request already open from the branch.
+ *
+ * @summary A PR is open on GitHub as a draft pull request, opened now or found already there.
+ */
+export const PrDraftOpened = z.object({
+  number: z.number().int(),
+  nodeId: z.string(),
+  url: z.string(),
+  found: z.enum(['opened', 'existing']),
+})
+
+/**
+ * The PR is In review. `host` is `github` where it has a pull request and `none` on a remote Lingtai does not follow,
+ * where `number` and `url` are null and the person opens it by hand.
+ *
+ * @summary A PR is In review: on GitHub with a pull request, or on another remote, unfollowed.
+ */
+export const PrOpened = z.object({
+  host: z.enum(['github', 'none']),
+  number: z.number().int().nullable(),
+  url: z.string().nullable(),
 })
 
 /**
@@ -2882,6 +2917,9 @@ export const EVENTS = {
   PrInProgress,
   PrStepDone,
   PrWaiting,
+  PrPushed,
+  PrDraftOpened,
+  PrOpened,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -2998,6 +3036,9 @@ export const EVENT_AT = {
   PrInProgress: ['outside'],
   PrStepDone: ['outside'],
   PrWaiting: ['outside'],
+  PrPushed: ['outside'],
+  PrDraftOpened: ['outside'],
+  PrOpened: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

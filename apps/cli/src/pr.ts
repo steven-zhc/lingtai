@@ -1,4 +1,4 @@
-import { inProgressStepNames } from '@lingtai/conductor'
+import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 /**
  * `lingtai pr [<project>]` and `lingtai pr submit [<project>]` (0130 §5).
  *
@@ -26,6 +26,8 @@ export interface PrWorld {
   readonly store: EventStore
   recipe(project: string): Effect.Effect<Recipe, Error>
   candidates(project: string): Effect.Effect<readonly { readonly issue: string }[], Error>
+  /** The PR's generated description — what a person opens by hand where Lingtai does not follow the remote. */
+  describe(project: string, n: number): Effect.Effect<{ title: string; body: string }, Error>
   /** `conductorLockHolder`: who conducts, null for nobody. */
   holder(): Promise<string | null>
   now(): number
@@ -38,6 +40,7 @@ export function livePrWorld(): PrWorld {
     store: eventStore,
     recipe: ports.recipe,
     candidates: ports.candidates,
+    describe: (project, n) => describePr(ports, project, n),
     holder: () => conductorLockHolder(),
     now: Date.now,
     sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
@@ -77,6 +80,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       world.store,
     )
 
+    let description: { title: string; body: string } | null = null
     const lines: string[] = [
       draft.length === 0
         ? `draft: nothing has landed on ${recipe.branch.personal ?? recipe.branch.main} that a PR does not hold`
@@ -89,6 +93,19 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
         ...(open.wait === null ? [] : [`  waiting on you at ${open.wait.step}: ${open.wait.detail}`]),
         ...stepLines(open),
       )
+      if (open.host !== null) lines.push(`  pull request #${open.host.number}: ${open.host.url}`)
+      // On a remote Lingtai does not follow, the person opens the PR by hand: the description is theirs to paste.
+      if (open.status === 'in-review' && prHostOf(recipe) === 'none') {
+        const described = yield* world.describe(project, open.n)
+        lines.push(
+          `  ${open.prBranch ?? 'the branch'} is pushed; open the pull request by hand with:`,
+          '',
+          described.title,
+          '',
+          described.body,
+        )
+        description = described
+      }
     }
     return {
       code: 0,
@@ -105,6 +122,8 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
                 prBranch: open.prBranch,
                 frozenSha: open.frozenSha,
                 wait: open.wait,
+                host: open.host,
+                description,
                 steps: prStepRows(inProgressStepNames(), open),
               },
       },

@@ -44,6 +44,7 @@ import {
   waitWords,
 } from '@lingtai/domain'
 import type { SystemLine } from '@lingtai/domain'
+import { parsePrStream } from '@lingtai/domain'
 import type { ClaimShape } from '@lingtai/domain'
 import { adviceResolution } from '@lingtai/domain/wait'
 
@@ -463,7 +464,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     `Finding ${need(d, 'key')} accepted by ${byName(r, need(d, 'by'))} as a ${need(d, 'kind')}`,
   FindingDeclined: (d, r) => `Finding ${need(d, 'key')} declined by ${byName(r, need(d, 'by'))}: ${clip(d['reason'])}`,
   MergeLaneWaited: (d) => {
-    const behind = d['behind'] as { issue?: string } | undefined
+    const behind = d['behind'] as { issue?: string; pr?: string } | undefined
+    if (typeof behind?.pr === 'string') {
+      const named = parsePrStream(behind.pr)
+      return `Merge waited behind PR ${named === null ? behind.pr : named.n}`
+    }
     if (!behind?.issue) throw new Error('no behind')
     return `Merge waited behind ${behind.issue}`
   },
@@ -485,6 +490,13 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrSubmitRefused: (d) => `The PR was not started (${need(d, 'reason')}): ${clip(d['detail'])}`,
   PrInProgress: (d) =>
     `${need(d, 'prBranch')} was frozen at ${sha(d, 'frozenSha')} with ${Array.isArray(d['tickets']) ? d['tickets'].length : 0} ticket(s)`,
+  PrPushed: (d) => `The PR branch was ${d['found'] === 'existing' ? 'found' : 'pushed'} at ${sha(d, 'headSha')}`,
+  PrDraftOpened: (d) =>
+    `Draft pull request #${need(d, 'number')} was ${d['found'] === 'existing' ? 'found' : 'opened'}: ${need(d, 'url')}`,
+  PrOpened: (d) =>
+    d['host'] === 'github'
+      ? `The PR is in review on GitHub as #${need(d, 'number')}`
+      : 'The PR is in review: open it by hand, it is not followed',
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,

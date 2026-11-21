@@ -22,6 +22,9 @@ import {
   teamSince,
   refuseTransition,
   stepDoneTransition,
+  pushedTransition,
+  draftOpenedTransition,
+  openedTransition,
   waitTransition,
   ticketStream,
   integrationStream,
@@ -148,6 +151,41 @@ export const recordPrStepDone = (project: string, n: number, done: PayloadOf<'Pr
     project,
     n,
     (state) => stepDoneTransition(state, done),
+    (_state, appended) => appended,
+  )
+
+/** The PR branch is on the remote. A push already recorded since the latest `PrInProgress` appends nothing. */
+export const recordPrPushed = (project: string, n: number, pushed: PayloadOf<'PrPushed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => pushedTransition(state, pushed),
+    (_state, appended) => appended,
+  )
+
+/** The draft pull request is open on GitHub. Recorded once per pass through In progress. */
+export const recordPrDraftOpened = (
+  project: string,
+  n: number,
+  opened: PayloadOf<'PrDraftOpened'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => draftOpenedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** The PR is In review. */
+export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'PrOpened'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => openedTransition(state, opened),
     (_state, appended) => appended,
   )
 
