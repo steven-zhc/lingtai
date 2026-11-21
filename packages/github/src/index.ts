@@ -43,6 +43,8 @@ export {
   type Issue,
   type OpenPull,
   type PullState,
+  type CheckRun,
+  type CombinedStatus,
   type Label,
   type RateLimitAnswer,
   type RateLimitedPort,

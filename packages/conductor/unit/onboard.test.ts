@@ -271,7 +271,15 @@ describe('Recheck', () => {
 describe('checkInstallation', () => {
   const INSTALLED: Installation = {
     id: 7,
-    permissions: { issues: 'read', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' },
+    permissions: {
+      issues: 'read',
+      contents: 'write',
+      pull_requests: 'write',
+      workflows: 'write',
+      checks: 'read',
+      statuses: 'read',
+      metadata: 'read',
+    },
     account: 'steven-zhc',
     repositorySelection: 'selected',
     htmlUrl: null,

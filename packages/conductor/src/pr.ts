@@ -9,6 +9,7 @@
  * The git side is a port, so the freeze is tested against a fake that answers by exit code, as git does.
  */
 import {
+  type CiCheck,
   type Envelope,
   type PayloadOf,
   type PrState,
@@ -18,6 +19,7 @@ import {
   parseTicketStream,
   prDescription,
   prStream,
+  ciVerdict,
   ticketStream,
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -30,6 +32,8 @@ import {
   recordPrMerged,
   readPr,
   readPrDraft,
+  recordPrCiSkipped,
+  recordPrChecked,
   recordPrDraftOpened,
   recordPrInProgress,
   recordPrOpened,
@@ -39,9 +43,10 @@ import {
   recordPrStepDone,
   recordPrWaiting,
 } from '@lingtai/project'
-import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
-import { Effect, Semaphore } from 'effect'
+import { type Recipe, ciOf, modeOf, remoteOf } from '@lingtai/recipe'
+import { Clock, Effect, Semaphore } from 'effect'
 
+import { CiProvider, type CiProviderShape } from './ci.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 
@@ -74,6 +79,11 @@ export interface PrPorts {
   tickets(project: string): Effect.Effect<IssueChannel, Error>
   /** The project's GitHub, as the Effect face. Fails where the project has no owner on record. */
   github(project: string): Effect.Effect<GitHub, Error>
+  /**
+   * The project's CI provider, built over its GitHub and its mirror (#1339). Null is *none declared* (`pr.ci.provider:
+   * none`). **Absent, the `ci` step answers `again`**: a host that has not wired one reads nothing and decides nothing.
+   */
+  readonly ci?: (project: string) => Effect.Effect<CiProviderShape | null, Error>
   /** What the description reads of each ticket: whether it is still open on GitHub, and what it cost. Null is unknown. */
   facts(
     project: string,
@@ -343,12 +353,157 @@ const severalOpen = (pulls: readonly { number: number; url: string }[], target: 
   headSha: target,
 })
 
+const cwdSha = (state: PrState): string | null => state.target ?? state.frozenSha
+
+/** How a failing check is named in a wait: its name, how it ended, and where to open it. */
+const failingLine = (f: { name: string; state: string; url: string }): string =>
+  `${f.name} (${f.state})${f.url === '' ? '' : ` ${f.url}`}`
+
+const checkRows = (checks: readonly CiCheck[]) =>
+  checks.map((c) => ({
+    name: c.name,
+    state: c.state,
+    url: c.url,
+    ...(c.artifacts !== undefined && c.artifacts.length > 0 ? { artifacts: [...c.artifacts] } : {}),
+  }))
+
+/**
+ * Reads the project's CI on the PR's head and decides **nothing itself**: `ciVerdict` does (#1339). It runs each time the
+ * PR is served — the sweep's `resume` serves every PR In progress on its timer — and answers `again` while the checks
+ * run, so there is one append path and one fence (`walkPr`'s target check). A read that fails appends nothing and is
+ * read again; a missing permission is `PermissionDenied`, which `walkPr` turns into a wait `denied`.
+ * Every CI wait is ended by *check again* (`lingtai pr retry`, #1314): Lingtai never re-runs a workflow.
+ */
+const ciStep: PrStep = {
+  name: 'ci',
+  run: ({ project, n, state, ports }) =>
+    Effect.gen(function* () {
+      const target = cwdSha(state)
+      if (target === null || state.prBranch === null) return { kind: 'again' } as StepAnswer
+      const recipe = yield* ports.recipe(project)
+      const settings = ciOf(recipe)
+      const skipped = (why: string): StepAnswer => ({
+        kind: 'done',
+        headSha: target,
+        record: (project, n, store) => recordPrCiSkipped(project, n, { headSha: target, why }, store),
+      })
+      if (settings.provider === 'none') return skipped('the recipe says pr.ci.provider: none')
+      if (ports.ci === undefined) return { kind: 'again' } as StepAnswer
+      const provider = yield* ports.ci(project)
+      if (provider === null) return skipped('the recipe says pr.ci.provider: none')
+
+      const head = {
+        sha: target,
+        branch: state.prBranch,
+        ...(state.host === null ? {} : { pr: { number: state.host.number } }),
+      }
+      const read = Effect.gen(function* () {
+        const ci = yield* CiProvider
+        if (settings.provider === 'detect' && (yield* ci.detect(head)) === 'none') {
+          return skipped('no workflow runs on pull requests')
+        }
+        const { checks } = yield* ci.observe(target)
+        // An `api` provider is started by Lingtai; an on-push one is started by the push, and `start` is a no-op.
+        if (ci.capabilities.trigger === 'api' && checks.length === 0) yield* ci.start(head)
+        const now = yield* Clock.currentTimeMillis
+        const verdict = ciVerdict({
+          checks,
+          required: settings.required,
+          pushedAt: state.pushedAt ?? new Date(now),
+          now: new Date(now),
+          timeoutMs: settings.timeoutMs,
+        })
+        switch (verdict.kind) {
+          case 'running':
+            return { kind: 'again' } as StepAnswer
+          case 'green':
+            return {
+              kind: 'done',
+              headSha: target,
+              record: (project, n, store) =>
+                recordPrChecked(project, n, { headSha: target, verdict: 'green', checks: checkRows(checks) }, store),
+            } as StepAnswer
+          case 'red': {
+            // The verdict is recorded once per head; the wait that follows is `walkPr`'s own record.
+            yield* recordPrChecked(
+              project,
+              n,
+              { headSha: target, verdict: 'red', checks: checkRows(checks) },
+              ports.store,
+            )
+            return {
+              kind: 'wait',
+              reason: 'ci-red',
+              detail: `CI failed on ${target.slice(0, 7)}: ${verdict.failing.map(failingLine).join('; ')}`,
+              headSha: target,
+            } as StepAnswer
+          }
+          case 'none-started':
+            return {
+              kind: 'wait',
+              reason: 'ci-none-started',
+              detail: `no check started on ${target.slice(0, 7)} within 30 minutes of the push`,
+              headSha: target,
+            } as StepAnswer
+          case 'timed-out':
+            return {
+              kind: 'wait',
+              reason: 'ci-timeout',
+              detail: `the checks on ${target.slice(0, 7)} did not finish within the recipe's timeout`,
+              headSha: target,
+            } as StepAnswer
+        }
+      }).pipe(Effect.provideService(CiProvider, provider))
+      return yield* read.pipe(
+        Effect.catch((err: unknown): Effect.Effect<StepAnswer, Error> => {
+          if (err instanceof PermissionDenied) return Effect.fail(err)
+          // Any other failed read is no verdict: nothing is appended and the next sweep reads again.
+          ports.log?.(`pr ${project} PR ${n}: the CI read failed: ${asError(err).message}`)
+          return Effect.succeed({ kind: 'again' })
+        }),
+      )
+    }),
+}
+
+/**
+ * Marks the draft ready for review and records **In review** (`PrOpened`). It looks first (`getPull`): a pull request
+ * already not a draft — marked by hand, or by a run that died before recording, or a pr-fix pass's, which is already
+ * ready — is not marked again. A host `none` never reaches here: `openStep` appended `PrOpened` and the walk ended.
+ */
+const readyStep: PrStep = {
+  name: 'ready',
+  run: ({ project, state, ports }) =>
+    Effect.gen(function* () {
+      const target = cwdSha(state)
+      if (target === null || state.host === null) return { kind: 'again' } as StepAnswer
+      const host = state.host
+      const github = yield* ports.github(project)
+      const pull = yield* github
+        .getPull(host.number)
+        .pipe(
+          Effect.catch((err: unknown) =>
+            err instanceof GitHubFailed && !(err instanceof PermissionDenied) && notThePersons(err)
+              ? Effect.succeed(null)
+              : Effect.fail(asError(err)),
+          ),
+        )
+      if (pull === null) return { kind: 'again' } as StepAnswer
+      if (pull.draft) yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
+      return {
+        kind: 'done',
+        headSha: target,
+        record: (project, n, store) =>
+          recordPrOpened(project, n, { host: 'github', number: host.number, url: host.url }, store),
+      } as StepAnswer
+    }),
+}
+
 /**
  * **In progress, as a fixed list.** `push` and `open` here; later tickets fill the rest in 0130 §5's order — `sync` and
- * `build` (#1312) before them, `ci` (#1339), `summary` (#1318) and `ready` (#1339) after.
+ * `build` (#1312) before them, `summary` (#1318) between `ci` and `ready` (#1339).
  * Nothing else orders them, and the PR page draws its *What Lingtai did* rows from this list and the records.
  */
-export const IN_PROGRESS_STEPS: readonly PrStep[] = [pushStep, openStep]
+export const IN_PROGRESS_STEPS: readonly PrStep[] = [pushStep, openStep, ciStep, readyStep]
 
 /**
  * The freeze of a `requested` PR: `branch.personal` at one commit, and the tickets that commit holds. A read that
@@ -558,6 +713,18 @@ const bounded = (ports: PrPorts, ms: number): PrPorts => {
             within('findOpenPull', github.findOpenPull(head), () => new GitHubFailed(0, 'pulls', 'timed out')),
           getPull: (number) =>
             within('getPull', github.getPull(number), () => new GitHubFailed(0, `pulls/${number}`, 'timed out')),
+          checkRunsAt: (sha) =>
+            within(
+              'checkRunsAt',
+              github.checkRunsAt(sha),
+              () => new GitHubFailed(0, `commits/${sha}/check-runs`, 'timed out'),
+            ),
+          combinedStatusAt: (sha) =>
+            within(
+              'combinedStatusAt',
+              github.combinedStatusAt(sha),
+              () => new GitHubFailed(0, `commits/${sha}/status`, 'timed out'),
+            ),
         })),
       ),
   }

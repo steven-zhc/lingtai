@@ -13,7 +13,15 @@ import { describe, expect, it } from 'vitest'
 
 import { alreadyOnboarded, choose, setupReturn, verifiedInstallationEffect } from '../src/pick-repository.ts'
 
-const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }
+const WRITE = {
+  issues: 'write',
+  contents: 'write',
+  pull_requests: 'write',
+  workflows: 'write',
+  checks: 'read',
+  statuses: 'read',
+  metadata: 'read',
+}
 
 interface FakeInstallation {
   id: number

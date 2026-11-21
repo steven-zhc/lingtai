@@ -321,6 +321,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'PrDraftOpened',",
   },
   {
+    event: 'PrCiSkipped',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrCiSkipped',",
+  },
+  {
+    event: 'PrChecked',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrChecked',",
+  },
+  {
     event: 'PrOpened',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -515,6 +527,8 @@ export const STREAMS = {
   PrWaiting: ['pr-'],
   PrPushed: ['pr-'],
   PrDraftOpened: ['pr-'],
+  PrCiSkipped: ['pr-'],
+  PrChecked: ['pr-'],
   PrOpened: ['pr-'],
   PrMerged: ['pr-'],
   PrClosed: ['pr-'],

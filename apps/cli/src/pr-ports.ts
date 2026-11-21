@@ -5,6 +5,7 @@
  * Every IO is an `Effect` (0101 §6). `packages/conductor/src/pr.ts` is the serve; this is only what it is handed.
  */
 import type { PrPorts } from '@lingtai/conductor'
+import { ciProviderFor } from '@lingtai/conductor/ci-providers'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
@@ -106,6 +107,16 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
         return yield* answered(gitEffect([...args], { cwd: mirrorPathFor(project), token }))
       }),
     github: githubOf,
+    // The CI provider the recipe names, over this project's GitHub and mirror (#1339).
+    ci: (project) =>
+      Effect.gen(function* () {
+        const recipe = yield* recipeOf(project)
+        const github = yield* githubOf(project)
+        return ciProviderFor(recipe, {
+          github,
+          git: (args) => answered(gitEffect([...args], { cwd: mirrorPathFor(project) })),
+        })
+      }),
     // The project's own channel, never the raw GitHub client: a `db` project's ticket numbers are not issues there.
     tickets: (project) =>
       Effect.gen(function* () {

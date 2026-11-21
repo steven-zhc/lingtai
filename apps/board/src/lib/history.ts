@@ -219,6 +219,18 @@ function need(d: Payload, key: string): string {
 }
 
 /** The words for the account a limit event names; throws, like `need`, on a value that is none. */
+/** The names of the checks that did not pass, off a `PrChecked`'s `checks`. */
+function failingChecks(checks: unknown): string {
+  if (!Array.isArray(checks)) return ''
+  const passing = ['success', 'neutral', 'skipped']
+  return checks
+    .flatMap((c: unknown) => {
+      const row = c as { name?: unknown; state?: unknown } | null
+      return typeof row?.name === 'string' && !passing.includes(String(row.state)) ? [row.name] : []
+    })
+    .join(', ')
+}
+
 function accountOf(d: Payload): { name: string; limit: string } {
   return accountWords(Account.parse(need(d, 'account')))
 }
@@ -493,6 +505,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrPushed: (d) => `The PR branch was ${d['found'] === 'existing' ? 'found' : 'pushed'} at ${sha(d, 'headSha')}`,
   PrDraftOpened: (d) =>
     `Draft pull request #${need(d, 'number')} was ${d['found'] === 'existing' ? 'found' : 'opened'}: ${need(d, 'url')}`,
+  PrCiSkipped: (d) => `The PR has no CI step: ${clip(d['why'])}`,
+  PrChecked: (d) =>
+    d['verdict'] === 'green'
+      ? `CI is green on ${sha(d, 'headSha')}`
+      : `CI is red on ${sha(d, 'headSha')}: ${failingChecks(d['checks'])}`,
   PrOpened: (d) =>
     d['host'] === 'github'
       ? `The PR is in review on GitHub as #${need(d, 'number')}`

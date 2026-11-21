@@ -68,7 +68,15 @@ const SLUG = 'steven-zhc/nextloom-ai-admin'
 
 const FULLY_PERMISSIONED: Installation = {
   id: 7,
-  permissions: { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' },
+  permissions: {
+    issues: 'write',
+    contents: 'write',
+    pull_requests: 'write',
+    workflows: 'write',
+    checks: 'read',
+    statuses: 'read',
+    metadata: 'read',
+  },
   account: 'steven-zhc',
   repositorySelection: 'selected',
   htmlUrl: null,
@@ -77,7 +85,15 @@ const FULLY_PERMISSIONED: Installation = {
 
 const GAPPY: Installation = {
   id: 7,
-  permissions: { issues: 'read', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' },
+  permissions: {
+    issues: 'read',
+    contents: 'write',
+    pull_requests: 'write',
+    workflows: 'write',
+    checks: 'read',
+    statuses: 'read',
+    metadata: 'read',
+  },
   account: 'steven-zhc',
   repositorySelection: 'selected',
   htmlUrl: null,
@@ -177,7 +193,15 @@ describe('askBeforeGithubAdd (#402)', () => {
   it('names the repository and the installation page, through choose(), when the App is installed on the owner but not this repository (#402 fix round 3)', async () => {
     const installation: Installation = {
       id: 7,
-      permissions: { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' },
+      permissions: {
+        issues: 'write',
+        contents: 'write',
+        pull_requests: 'write',
+        workflows: 'write',
+        checks: 'read',
+        statuses: 'read',
+        metadata: 'read',
+      },
       account: 'someowner',
       repositorySelection: 'selected',
       htmlUrl: 'https://github.com/organizations/someowner/settings/installations/7',

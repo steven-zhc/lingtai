@@ -44,6 +44,13 @@ export interface PrState {
   lastPushed: string | null
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
+  /** When the PR branch was last pushed (`PrPushed`'s own time): the 30-minute none-started rule counts from here. */
+  pushedAt: Date | null
+  /**
+   * The latest verdict recorded on a head (`PrChecked`). **Not a step**: a red one must not make a retry skip `ci`; it
+   * only keeps the same verdict on the same head from being appended twice.
+   */
+  checked: { readonly headSha: string; readonly verdict: 'green' | 'red' } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
   /** The last wait, while the PR is waiting. */
@@ -74,6 +81,8 @@ export const emptyPr: PrState = {
   tickets: [],
   lastPushed: null,
   host: null,
+  pushedAt: null,
+  checked: null,
   steps: [],
   wait: null,
   refusal: null,
@@ -131,7 +140,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrPushed': {
       const d = event.data as PayloadOf<'PrPushed'>
-      return { ...withStep(state, { step: 'push', headSha: d.headSha }), ...at, lastPushed: d.headSha }
+      return {
+        ...withStep(state, { step: 'push', headSha: d.headSha }),
+        ...at,
+        lastPushed: d.headSha,
+        pushedAt: event.at,
+      }
     }
     case 'PrDraftOpened': {
       const d = event.data as PayloadOf<'PrDraftOpened'>
@@ -140,6 +154,17 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...at,
         host: { number: d.number, nodeId: d.nodeId, url: d.url },
       }
+    }
+    case 'PrCiSkipped': {
+      const d = event.data as PayloadOf<'PrCiSkipped'>
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at }
+    }
+    case 'PrChecked': {
+      const d = event.data as PayloadOf<'PrChecked'>
+      const checked = { headSha: d.headSha, verdict: d.verdict }
+      // Green is the `ci` step's record; red is a fact about the head and records no step.
+      if (d.verdict === 'red') return { ...state, ...at, checked }
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, checked }
     }
     case 'PrOpened': {
       const d = event.data as PayloadOf<'PrOpened'>
@@ -288,6 +313,35 @@ export function draftOpenedTransition(
 ): ToAppend<PayloadOf<'PrDraftOpened'>> | null {
   if (!walking(state) || state.steps.some((s) => s.step === 'open')) return null
   return { type: 'PrDraftOpened', actor: 'conductor', data: opened }
+}
+
+/** The step `ci` is passed over: the project has none. Recorded once per pass through In progress. */
+export function ciSkippedTransition(
+  state: PrState,
+  skipped: PayloadOf<'PrCiSkipped'>,
+): ToAppend<PayloadOf<'PrCiSkipped'>> | null {
+  if (!walking(state) || state.steps.some((s) => s.step === 'ci')) return null
+  if (skipped.headSha !== (state.target ?? state.frozenSha)) return null
+  return { type: 'PrCiSkipped', actor: 'conductor', data: skipped }
+}
+
+/**
+ * A verdict on a head. **The same verdict on the same head appends nothing**, so a sweep that reads the same red twice
+ * says it once; a pr-fix landing's new head is a new read. A verdict about an earlier pass's head proves nothing.
+ */
+export function checkedTransition(
+  state: PrState,
+  checked: PayloadOf<'PrChecked'>,
+): ToAppend<PayloadOf<'PrChecked'>> | null {
+  if (!walking(state)) return null
+  if (checked.headSha !== (state.target ?? state.frozenSha)) return null
+  // Green is the step's record, so it is appended while the step is not recorded (a retry's new pass starts empty).
+  if (checked.verdict === 'green') {
+    if (state.steps.some((s) => s.step === 'ci')) return null
+  } else if (state.checked?.headSha === checked.headSha && state.checked.verdict === 'red') {
+    return null
+  }
+  return { type: 'PrChecked', actor: 'conductor', data: checked }
 }
 
 /** The PR is In review. Only a PR that is walking goes there. */

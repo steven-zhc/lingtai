@@ -2555,7 +2555,15 @@ export const PrInProgress = z.object({
 export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
 
 /** Why a PR waits on a person; each step's ticket extends the set with its own. */
-const PrWaitReason = z.enum(['denied', 'branch-moved', 'several-open', 'draft-unsupported'])
+const PrWaitReason = z.enum([
+  'denied',
+  'branch-moved',
+  'several-open',
+  'draft-unsupported',
+  'ci-red',
+  'ci-none-started',
+  'ci-timeout',
+])
 
 /**
  * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
@@ -2588,6 +2596,45 @@ export const PrDraftOpened = z.object({
   nodeId: z.string(),
   url: z.string(),
   found: z.enum(['opened', 'existing']),
+})
+
+/**
+ * The project has no CI to read on this PR (`pr.ci.provider: none`, or `detect` found no workflow on pull requests), so
+ * the `ci` step is passed over and the PR page says so (0130 §5).
+ *
+ * @summary A PR has no CI step: the project's CI was declared none or no workflow runs on pull requests.
+ */
+export const PrCiSkipped = z.object({ headSha: z.string().min(1), why: z.string() })
+
+/**
+ * The project's CI finished on the PR's head: `green` (the `ci` step is done) or `red` (the PR then waits on a person).
+ * `checks` are the ones read, by name, state and link; a check's `artifacts` are links to what it left on the CI platform.
+ *
+ * @summary A PR's checks on its head finished: green moves the PR on, red names the failing checks.
+ */
+export const PrChecked = z.object({
+  headSha: z.string().min(1),
+  verdict: z.enum(['green', 'red']),
+  checks: z.array(
+    z.object({
+      name: z.string(),
+      state: z.enum([
+        'queued',
+        'running',
+        'success',
+        'failure',
+        'neutral',
+        'skipped',
+        'cancelled',
+        'timed-out',
+        'unknown',
+      ]),
+      url: z.string(),
+      artifacts: z
+        .array(z.object({ kind: z.enum(['log', 'screenshot', 'video', 'other']), name: z.string(), url: z.string() }))
+        .optional(),
+    }),
+  ),
 })
 
 /**
@@ -2938,6 +2985,8 @@ export const EVENTS = {
   PrWaiting,
   PrPushed,
   PrDraftOpened,
+  PrCiSkipped,
+  PrChecked,
   PrOpened,
   PrMerged,
   PrClosed,
@@ -3059,6 +3108,8 @@ export const EVENT_AT = {
   PrWaiting: ['outside'],
   PrPushed: ['outside'],
   PrDraftOpened: ['outside'],
+  PrCiSkipped: ['outside'],
+  PrChecked: ['outside'],
   PrOpened: ['outside'],
   PrMerged: ['outside'],
   PrClosed: ['outside'],

@@ -25,6 +25,8 @@ import {
   pushedTransition,
   restartTransition,
   draftOpenedTransition,
+  ciSkippedTransition,
+  checkedTransition,
   openedTransition,
   mergedTransition,
   closedTransition,
@@ -189,6 +191,26 @@ export const recordPrDraftOpened = (
     project,
     n,
     (state) => draftOpenedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** The `ci` step is passed over: the project has no CI on this PR. */
+export const recordPrCiSkipped = (project: string, n: number, skipped: PayloadOf<'PrCiSkipped'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => ciSkippedTransition(state, skipped),
+    (_state, appended) => appended,
+  )
+
+/** A verdict on the PR's head. The same one on the same head appends nothing. */
+export const recordPrChecked = (project: string, n: number, checked: PayloadOf<'PrChecked'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => checkedTransition(state, checked),
     (_state, appended) => appended,
   )
 
