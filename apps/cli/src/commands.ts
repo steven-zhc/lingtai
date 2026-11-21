@@ -666,7 +666,7 @@ export const COMMANDS = [
   define({
     name: 'token',
     group: 'install and upkeep',
-    task: 'set the token a sandboxed Claude Code run holds',
+    task: 'set the token a sandboxed Claude Code or Copilot run holds',
     effect: 'changes',
     usage: [
       'lingtai token claude',
@@ -677,8 +677,15 @@ export const COMMANDS = [
       '  or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.',
       '  Needs a terminal. The token is never printed, logged or put on a',
       '  command line.',
+      'lingtai token copilot',
+      '  Asks, at a hidden prompt, for a fine-grained personal access token',
+      '  (github_pat_…) with the Copilot Requests permission and writes it to',
+      '  copilot.github_token in ~/.lingtai/config.yml (0600), keeping every other',
+      '  key. A classic ghp_ token, which Copilot ignores, is refused by name.',
+      '  LINGTAI_COPILOT_GITHUB_TOKEN, when exported, wins over the file. Needs a',
+      '  terminal. The token is never printed, logged or put on a command line.',
     ],
-    examples: ['lingtai token claude'],
+    examples: ['lingtai token claude', 'lingtai token copilot'],
   }),
 ] as const
 

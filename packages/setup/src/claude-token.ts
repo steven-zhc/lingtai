@@ -96,6 +96,48 @@ export function validateClaudeToken(
 }
 
 /**
+ * One document edit for both tokens: sets `section.key` to the secret, keeping every other key and
+ * comment. Fails with a sentence that names the path and never the value or the parser's message.
+ * The secret is unwrapped here and nowhere else.
+ */
+export const setMachineKey = (
+  file: MachineText,
+  path: string,
+  section: string,
+  key: string,
+  token: Redacted.Redacted<string>,
+): Effect.Effect<void, string> =>
+  Effect.gen(function* () {
+    const text = yield* Effect.try({
+      try: () => file.read(path),
+      catch: () => `${path} could not be read — nothing was written`,
+    })
+    const doc = parseDocument(text ?? '')
+    if (doc.errors.length > 0) return yield* Effect.fail(`${path} does not parse as YAML — fix it and run this again`)
+    if (doc.contents !== null && !isMap(doc.contents)) {
+      return yield* Effect.fail(`${path} is not a mapping — fix it and run this again`)
+    }
+    // The section may be present and not a mapping (`null`, `[]`); `setIn` throws on that, which is a defect, not a refusal.
+    const current = doc.get(section)
+    if (current !== undefined && current !== null && !isMap(current)) {
+      return yield* Effect.fail(`${section} in ${path} is not a mapping — fix it and run this again`)
+    }
+    const out = yield* Effect.try({
+      try: () => {
+        if (current === null || current === undefined)
+          doc.set(section, doc.createNode({ [key]: Redacted.value(token) }))
+        else doc.setIn([section, key], Redacted.value(token))
+        return doc.toString()
+      },
+      catch: () => `${path} could not be edited — nothing was written`,
+    })
+    yield* Effect.try({
+      try: () => file.write(path, out),
+      catch: () => `${path} could not be written — nothing was changed`,
+    })
+  })
+
+/**
  * Sets `claude.oauth_token` in the file through a document edit, so every other
  * key and comment stays where it was. Refuses a file that does not parse or is
  * not a mapping, writing nothing. `environmentWins` says whether
@@ -110,37 +152,9 @@ export const setClaudeTokenEffect = (
   Effect.gen(function* () {
     const checked = validateClaudeToken(token)
     if (!checked.ok) return yield* Effect.fail(new ClaudeTokenRefused(checked.say))
-    const text = yield* Effect.try({
-      try: () => file.read(path),
-      catch: () => new ClaudeTokenRefused(`${path} could not be read — nothing was written`),
-    })
-    const doc = parseDocument(text ?? '')
-    if (doc.errors.length > 0) {
-      return yield* Effect.fail(new ClaudeTokenRefused(`${path} does not parse as YAML — fix it and run this again`))
-    }
-    if (doc.contents !== null && !isMap(doc.contents)) {
-      return yield* Effect.fail(new ClaudeTokenRefused(`${path} is not a mapping — fix it and run this again`))
-    }
-    // `claude:` may be present and not a mapping (`null`, `[]`); `setIn` throws on that, which is a defect, not a refusal.
-    const claude = doc.get('claude')
-    if (claude !== undefined && claude !== null && !isMap(claude)) {
-      return yield* Effect.fail(
-        new ClaudeTokenRefused(`claude in ${path} is not a mapping — fix it and run this again`),
-      )
-    }
-    const out = yield* Effect.try({
-      try: () => {
-        if (claude === null || claude === undefined)
-          doc.set('claude', doc.createNode({ oauth_token: Redacted.value(checked.token) }))
-        else doc.setIn(['claude', 'oauth_token'], Redacted.value(checked.token))
-        return doc.toString()
-      },
-      catch: () => new ClaudeTokenRefused(`${path} could not be edited — nothing was written`),
-    })
-    yield* Effect.try({
-      try: () => file.write(path, out),
-      catch: () => new ClaudeTokenRefused(`${path} could not be written — nothing was changed`),
-    })
+    yield* setMachineKey(file, path, 'claude', 'oauth_token', checked.token).pipe(
+      Effect.mapError((say) => new ClaudeTokenRefused(say)),
+    )
     const raw = env['LINGTAI_CLAUDE_OAUTH_TOKEN']
     // The reader takes any non-empty value as the environment's, whitespace included, and never reaches the file then.
     return { saved: true as const, environmentWins: raw !== undefined && raw !== '' }

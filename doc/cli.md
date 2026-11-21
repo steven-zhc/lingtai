@@ -655,7 +655,7 @@ lingtai account lift github
 | check everything that can be checked | [lingtai doctor](#lingtai-doctor) |
 | how far projections lag, and rebuild one | [lingtai projection](#lingtai-projection) |
 | the events this version writes, by step | [lingtai events](#lingtai-events) |
-| set the token a sandboxed Claude Code run holds | [lingtai token](#lingtai-token) |
+| set the token a sandboxed Claude Code or Copilot run holds | [lingtai token](#lingtai-token) |
 
 ### lingtai init
 
@@ -848,7 +848,7 @@ lingtai events TicketReleased --json
 
 ### lingtai token
 
-Set the token a sandboxed Claude Code run holds.
+Set the token a sandboxed Claude Code or Copilot run holds.
 
 Changes state.
 
@@ -861,8 +861,16 @@ lingtai token claude
   or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.
   Needs a terminal. The token is never printed, logged or put on a
   command line.
+lingtai token copilot
+  Asks, at a hidden prompt, for a fine-grained personal access token
+  (github_pat_…) with the Copilot Requests permission and writes it to
+  copilot.github_token in ~/.lingtai/config.yml (0600), keeping every other
+  key. A classic ghp_ token, which Copilot ignores, is refused by name.
+  LINGTAI_COPILOT_GITHUB_TOKEN, when exported, wins over the file. Needs a
+  terminal. The token is never printed, logged or put on a command line.
 ```
 
 ```sh
 lingtai token claude
+lingtai token copilot
 ```
