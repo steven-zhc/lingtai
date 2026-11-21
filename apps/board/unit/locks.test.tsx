@@ -232,6 +232,9 @@ describe('liftAccountWith', () => {
     expect(again.detail).toContain('not at its usage limit')
     expect((await store.read('acct-claude-code')).filter((e) => e.type === 'AccountLimitLifted')).toHaveLength(1)
     const refused = await Effect.runPromise(liftAccountWith(store, 'claude', 'human:steven'))
-    expect(refused).toEqual({ ok: false, detail: 'unknown account "claude" — accounts: claude-code, codex, github' })
+    expect(refused).toEqual({
+      ok: false,
+      detail: 'unknown account "claude" — accounts: claude-code, codex, copilot, github',
+    })
   })
 })

@@ -1,7 +1,8 @@
 /**
  * Whether a runtime is signed in, asked of the runtime itself.
  *
- * Its own file, importing nothing but Node built-ins, because
+ * Its own file, importing nothing but Node built-ins (and the ACP SDK, through
+ * `acp-session.ts`, which imports no more), because
  * `lingtai init` asks before there is a log (#186): the package's barrel loads
  * `hook-socket.ts`, which loads `@lingtai/event-store`, whose client is built at
  * module scope and throws without a database URL. So a machine that has only
@@ -16,6 +17,13 @@ import { join } from 'node:path'
 import { RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
 
+import {
+  COPILOT_PROFILE,
+  probeSession,
+  probeSessionPromise,
+  type AcpProfile,
+  type SessionProbe,
+} from './acp-session.ts'
 import type { AuthState, AuthStatus } from './runtime.ts'
 
 /**
@@ -292,6 +300,36 @@ export function codexAuth(binary: string, env: Record<string, string>): Promise<
 }
 
 /**
+ * What an ACP agent's `session/new` said, as a sign-in answer. `-32000` is
+ * ACP's own *Authentication required*; an opened session is the proof, and no
+ * prompt was sent to get it (019 E6).
+ */
+export function classifyAcpSession(profile: AcpProfile, probe: SessionProbe): AuthStatus {
+  switch (probe.kind) {
+    case 'opened':
+      return status('signed-in', `${profile.name} opened a session`, profile.name)
+    case 'auth-required':
+      return status('signed-out', `${profile.name} wants a sign-in: run \`${profile.loginCommand}\``)
+    case 'not-installed':
+      return status('not-installed', probe.message)
+    case 'timeout':
+      return status('did-not-start', `${profile.name} did not answer in 20s`)
+    case 'failed':
+      return status('did-not-start', probe.message)
+  }
+}
+
+/** `initialize` + `session/new` against Copilot's ACP agent, nothing prompted. */
+export const copilotAuthEffect = Effect.fn('agent.auth')(function* (binary: string, env: Record<string, string>) {
+  return classifyAcpSession(COPILOT_PROFILE, yield* probeSession(COPILOT_PROFILE, binary, env))
+})
+
+/** The same probe as the promise `Runtime.checkAuth` awaits — no `Effect.run*`, so no listed face. */
+export function copilotAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
+  return probeSessionPromise(COPILOT_PROFILE, binary, env).then((probe) => classifyAcpSession(COPILOT_PROFILE, probe))
+}
+
+/**
  * Every runtime asked whether it is signed in, **before there is a log**.
  *
  * The second exhaustive table over `RuntimeId`, and the duplication is forced
@@ -315,6 +353,7 @@ export function codexAuth(binary: string, env: Record<string, string>): Promise<
 export const AUTH_PROBES: Record<RuntimeId, (env: Record<string, string>) => Effect.Effect<AuthStatus>> = {
   'claude-code': (env) => claudeCodeAuthEffect('claude', env),
   codex: (env) => codexAuthEffect('codex', env),
+  copilot: (env) => copilotAuthEffect('copilot', env),
 }
 
 /** In the enum's own order, so a caller's list is never written by hand. */

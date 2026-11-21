@@ -6,7 +6,7 @@ import { CLAUDE_CODE_CAPABILITIES, CODEX_CAPABILITIES } from '@lingtai/agent'
 import { Recipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { limitsRow } from '../src/doctor.ts'
+import { limitsRow, unpricedRow } from '../src/doctor.ts'
 
 const recipe = (agent: string, limits: Record<string, unknown>, steps?: unknown) =>
   Recipe.parse({
@@ -46,5 +46,15 @@ describe('limitsRow', () => {
 
   it('passes claude-code on its enforced number', () => {
     expect(limitsRow('app', recipe('claude-code', { run: { turns: 300 } }), CLAUDE_CODE_CAPABILITIES).status).toBe('ok')
+  })
+})
+
+describe('unpricedRow', () => {
+  it('says copilot runs unpriced, as info, with the bounds that do hold it', () => {
+    const row = unpricedRow('app', 'copilot', recipe('claude-code', { run: { turns: 40 } }), ['steps.implement.agent'])
+    expect(row.name).toBe('runtime: app copilot unpriced')
+    expect(row.status).toBe('info')
+    expect(row.detail).toContain('run.usd and the day ceiling do not count')
+    expect(row.detail).toContain('turns 40')
   })
 })

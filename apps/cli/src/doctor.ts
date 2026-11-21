@@ -5,6 +5,7 @@ import { basename, join } from 'node:path'
 import { isSea } from 'node:sea'
 
 import {
+  ACP_PROFILES,
   RUN_LIMITS,
   ToolsCannotBeDenied,
   type AuthStatus,
@@ -2648,6 +2649,25 @@ export function recipeRow(f: ProjectFilter, dispatched: string, signedIn: readon
  * recipe *and* the adapter, which a field's parse cannot see. A `fail` is how the
  * schema's acceptance stops being silent.
  */
+/**
+ * An ACP agent runs unpriced: it reports tokens and no dollars, and names no
+ * model, so `run.usd` and the day's ceiling do not see its runs. `info`, since
+ * nothing a person does on the day makes it otherwise (a rate row plus a model
+ * the agent never reports).
+ */
+export function unpricedRow(project: string, agent: RuntimeId, recipe: Recipe, keys: readonly string[]): CheckResult {
+  const ceiling = ceilingOf(recipe).run
+  return {
+    name: `runtime: ${project} ${agent} unpriced`,
+    status: 'info',
+    title: `${project}: ${agent} runs unpriced`,
+    detail:
+      `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · ` +
+      `bounded by turns ${ceiling.turns === UNBOUNDED ? 'unbounded' : ceiling.turns} and wall ${ceiling.wall} · ` +
+      `needed by ${keys.join(', ')}`,
+  }
+}
+
 export function limitsRow(project: string, recipe: Recipe, capabilities: RuntimeCapabilities): CheckResult {
   const name = `runtime: ${project} limits`
   // `usd` has no default (recipe.ts), so unlike `turns` and `wall` it can be
@@ -3229,6 +3249,8 @@ export function declaredEnvironment(
                   ? `${row.detail}${row.status === 'fail' ? '\n' : ' · '}needed by ${keys.join(', ')}`
                   : row.detail,
             })
+            if (ACP_PROFILES[agent] !== undefined)
+              results.push(unpricedRow(project.project!, agent, resolved.recipe, keys))
           }
           for (const role of ['discuss', 'triage'] as const) {
             const selected = resolved.recipe[role]

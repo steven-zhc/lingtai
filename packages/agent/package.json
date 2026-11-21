@@ -13,6 +13,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "~2.8.0",
     "@lingtai/domain": "workspace:*",
     "@lingtai/env": "workspace:*",
     "@lingtai/event-store": "workspace:*",

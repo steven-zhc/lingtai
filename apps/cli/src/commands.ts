@@ -33,7 +33,7 @@ export type CommandDefinition = {
 export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend', 'ticket_report'] as const
 
 /** The accounts `lingtai account` knows; `account-lift.test.ts` holds this to `Account`. */
-export const ACCOUNT_NAMES = ['claude-code', 'codex', 'github'] as const
+export const ACCOUNT_NAMES = ['claude-code', 'codex', 'copilot', 'github'] as const
 
 const define = <const N extends string>(
   definition: CommandDefinition & { readonly name: N },
