@@ -337,8 +337,8 @@ const RUN_1: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -909,8 +909,8 @@ const RUN_2: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -1784,8 +1784,8 @@ const RUN_4: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -2492,8 +2492,8 @@ const RUN_5: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -3254,8 +3254,8 @@ const RUN_6: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -3773,8 +3773,8 @@ const RUN_7: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -4570,8 +4570,8 @@ const RUN_9: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -5362,8 +5362,8 @@ const RUN_10a: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -6074,8 +6074,8 @@ const RUN_10b: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -7137,8 +7137,8 @@ const RUN_12: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -7751,8 +7751,8 @@ const RUN_13: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -8503,8 +8503,8 @@ const RUN_13b: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -9182,8 +9182,8 @@ const RUN_14a: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -9733,8 +9733,8 @@ const RUN_14b: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -10225,8 +10225,8 @@ const RUN_14c: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -11030,8 +11030,8 @@ const RUN_14d: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {
@@ -11739,8 +11739,8 @@ const RUN_16: EventSpec[] = [
           refuseHosts: [],
           required: [],
         },
-        branch: { main: 'main' }
-        repo: { submodules: false, },
+        branch: { main: 'main' },
+        repo: { submodules: false },
         runtime: {
           agent: 'claude-code',
           budget: {

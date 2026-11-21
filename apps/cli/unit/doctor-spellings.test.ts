@@ -2,7 +2,7 @@
 import { projectStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ProjectFiles, recipePath } from '@lingtai/project'
-import { resolveSource, type RecipeFiles } from '@lingtai/recipe'
+import { OldSpellingRefusedError, resolveSource, type RecipeFiles } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -41,7 +41,10 @@ function world(initial: Record<string, string>, failFor?: string) {
         () => Effect.succeed(projects.map((project) => ({ project }) as ProjectState)),
         {
           recipe: (state) =>
-            Effect.sync(() => resolveSource(disk.get(recipePath(state.project!, HOME)) ?? '', 'main', 'recipe.yml')),
+            Effect.try({
+              try: () => resolveSource(disk.get(recipePath(state.project!, HOME)) ?? '', 'main', 'recipe.yml'),
+              catch: (err) => err as Error,
+            }),
         },
         { by: 'human:me', store, home: HOME },
       ).pipe(Effect.provideService(ProjectFiles, files)),
@@ -50,20 +53,29 @@ function world(initial: Record<string, string>, failFor?: string) {
   return { disk, store, fix, events }
 }
 
-describe('recipeSpellings', () => {
-  const resolved = resolveSource(OLD, 'main', 'recipe.yml')
-  const filter = (project: string, oldSpellings: readonly string[]) =>
-    ({ project, ok: true, oldSpellings, recipe: resolved.recipe }) as never
+const refused = (): OldSpellingRefusedError => {
+  try {
+    resolveSource(OLD, 'main', 'recipe.yml')
+  } catch (err) {
+    return err as OldSpellingRefusedError
+  }
+  throw new Error('resolved')
+}
 
-  it('warns, naming each old key and the command', () => {
-    const [row] = recipeSpellings([filter('app', resolved.oldSpellings)])
-    expect(row).toMatchObject({ name: 'recipe: app spelling', status: 'warn', fix: 'lingtai doctor --fix' })
-    expect(row!.detail).toContain('repo.base: develop → branch.main: develop')
-    expect(row!.detail).toContain('runtime.assignee.take: both → take: all')
+describe('recipeSpellings', () => {
+  const failed = (project: string, err: OldSpellingRefusedError) =>
+    ({ project, ok: false, problem: err.message, oldSpellings: err.spellings }) as never
+
+  it('fails, naming each old key and the command', () => {
+    const [row] = recipeSpellings([failed('app', refused())])
+    expect(row).toMatchObject({ name: 'recipe: app spelling', status: 'fail', fix: 'lingtai doctor --fix' })
+    expect(row!.detail).toContain('repo.base: write `branch: { main: <value> }`')
+    expect(row!.detail).toContain('runtime.assignee.take: both: write `take: all`')
+    expect(row!.detail).toContain('lingtai doctor --fix')
   })
 
-  it('is ok with none, and a skip for a recipe that does not resolve or streams that cannot be read', () => {
-    expect(recipeSpellings([filter('app', [])])[0]!.status).toBe('ok')
+  it('is ok for a recipe that resolves, and a skip for another refusal or streams that cannot be read', () => {
+    expect(recipeSpellings([{ project: 'a', ok: true } as never])[0]!.status).toBe('ok')
     expect(recipeSpellings([{ project: 'x', ok: false, problem: 'bad' }])[0]!.status).toBe('skip')
     expect(recipeSpellings(null)[0]!.status).toBe('skip')
   })
@@ -72,7 +84,6 @@ describe('recipeSpellings', () => {
 describe('fixOldSpellings', () => {
   it('rewrites the file, keeps unrelated comments, appends one change, and a second run does nothing', async () => {
     const w = world({ [recipePath('app', HOME)]: OLD })
-    const before = resolveSource(OLD, 'main', 'recipe.yml')
     const [first] = (await w.fix(['app']))!
     expect(first).toMatchObject({ project: 'app', outcome: 'written' })
     const text = w.disk.get(recipePath('app', HOME))!
@@ -81,8 +92,8 @@ describe('fixOldSpellings', () => {
     expect(text).toContain('# on the take')
     expect(text).not.toContain('# goes')
     const after = resolveSource(text, 'main', 'recipe.yml')
-    expect(after.oldSpellings).toEqual([])
-    expect(after.configHash).toBe(before.configHash)
+    expect(after.recipe.branch.main).toBe('develop')
+    expect(after.recipe.runtime.assignee?.take).toBe('all')
     expect(await w.events('app')).toEqual([expect.objectContaining({ by: 'human:me' })])
 
     const appended = (await w.store.read(projectStream('app'))).length
