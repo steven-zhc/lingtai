@@ -347,6 +347,27 @@ describe('a run whose record or protocol failed is not a success', () => {
     expect(outcome.failure?.detail).toContain('toolCallId')
   })
 
+  it('a tool_call with no title, which the SDK rejects, is a crash though the turn ended', async () => {
+    const h = harness((message, agent) => {
+      if (message['method'] !== 'session/prompt') return
+      agent.notify('session/update', {
+        sessionId: 's1',
+        update: {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'e1',
+          kind: 'edit',
+          status: 'completed',
+          locations: [{ path: '/a' }],
+        },
+      })
+      agent.respond(message['id'], { stopReason: 'end_turn' })
+      return true
+    })
+    const outcome = await run(h)
+    expect(outcome.failure?.kind).toBe('crash')
+    expect(outcome.failure?.detail).toContain('title')
+  })
+
   it('a wall reached while session/new is pending cancels the session and never prompts', async () => {
     const h = harness((message, agent) => {
       if (message['method'] !== 'session/new') return

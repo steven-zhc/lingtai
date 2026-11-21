@@ -224,6 +224,7 @@ export function invalidUpdate(update: unknown): string | undefined {
   if (typeof u['sessionUpdate'] !== 'string') return 'sessionUpdate is not a string'
   if (u['sessionUpdate'] === 'tool_call' || u['sessionUpdate'] === 'tool_call_update') {
     if (typeof u['toolCallId'] !== 'string') return 'toolCallId is not a string'
+    if (u['sessionUpdate'] === 'tool_call' && typeof u['title'] !== 'string') return 'title is not a string'
     for (const key of ['kind', 'title', 'status']) {
       const v = u[key]
       if (v !== undefined && v !== null && typeof v !== 'string') return `${key} is not a string`
@@ -242,6 +243,12 @@ export function invalidUpdate(update: unknown): string | undefined {
     if (c?.type === 'text' && typeof c.text !== 'string') return 'message text is not a string'
   }
   return undefined
+}
+
+/** Waits, briefly, for a condition the SDK's own handling of a message makes true. */
+function settled(done: () => boolean, tries = 20): Promise<void> {
+  if (done() || tries === 0) return Promise.resolve()
+  return new Promise<void>((resolve) => setTimeout(resolve, 5)).then(() => settled(done, tries - 1))
 }
 
 class HookRefused extends Error {
@@ -325,6 +332,9 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     const chunks: string[] = []
     const pending = new Set<Promise<unknown>>()
     let calls = 0
+    // Updates the agent sent, and updates the SDK accepted and handed on: a difference is one it rejected.
+    let seen = 0
+    let delivered = 0
     let sessionId = ''
     let phase: 'opening' | 'prompting' = 'opening'
     let ctxRef: ClientContext | undefined
@@ -383,6 +393,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     const tap = (message: unknown) => {
       const m = message as { method?: unknown; params?: { update?: unknown } } | null
       if (m?.method !== 'session/update') return
+      seen += 1
       const invalid = invalidUpdate(m.params?.update)
       if (invalid === undefined) return
       protocolError = `${profile.name} sent a session/update that does not parse: ${invalid}`
@@ -456,6 +467,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
           : { outcome: { outcome: 'cancelled' as const } }
       })
       .onNotification('session/update', ({ params }) => {
+        delivered += 1
         onUpdate(params.update as unknown as SessionUpdate)
       })
       .connectWith(tapped(streamOf(child), tap), (ctx) => {
@@ -503,18 +515,24 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
       })
       .then(
         (response) =>
-          Promise.allSettled(pending).then(() => {
-            if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached; the turn was cancelled' })
-            if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
-            if (recordFailures.length > 0) {
-              return finish({
-                kind: 'crash',
-                detail: `the run's record is incomplete — ${recordFailures.join('; ')}`,
-              })
-            }
-            const text = chunks.join('')
-            finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
-          }),
+          settled(() => delivered >= seen)
+            .then(() => Promise.allSettled(pending))
+            .then(() => {
+              if (delivered < seen && !wallHit && protocolError === undefined) {
+                protocolError = `${profile.name} sent ${seen - delivered} session/update the SDK rejected`
+                note('protocol', protocolError)
+              }
+              if (wallHit) return finish({ kind: 'timeout', detail: 'the wall was reached; the turn was cancelled' })
+              if (protocolError !== undefined) return finish({ kind: 'crash', detail: protocolError })
+              if (recordFailures.length > 0) {
+                return finish({
+                  kind: 'crash',
+                  detail: `the run's record is incomplete — ${recordFailures.join('; ')}`,
+                })
+              }
+              const text = chunks.join('')
+              finish(acpFailure(profile, { stopReason: (response as { stopReason?: string }).stopReason, text }))
+            }),
         (error: unknown) => {
           if (finished) return
           const message = error instanceof Error ? error.message : String(error)
