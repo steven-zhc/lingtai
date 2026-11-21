@@ -80,6 +80,7 @@ export const VERBS = {
   ask: { accepted: 'asked', refused: 'not asked' },
   answer: { accepted: 'answered', refused: 'not answered' },
   now: { accepted: 'requested', refused: 'not requested' },
+  'pr submit': { accepted: 'submitted', refused: 'not submitted' },
 } as const
 
 /** A refusal the CLI itself made, before the conductor was asked. */

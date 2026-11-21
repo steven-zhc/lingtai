@@ -142,6 +142,23 @@ export const COMMANDS = [
     examples: ['lingtai now lingtai --issue <n>'],
   }),
   define({
+    name: 'pr',
+    group: 'everyday',
+    task: 'what a team project’s draft holds, and where its open PR is',
+    effect: 'changes',
+    usage: [
+      'lingtai pr [<project>] [--json] [--no-color]',
+      '  The tickets landed on branch.personal that no PR holds, and the',
+      '  open PR: its number, its state and the steps it has been through.',
+      '  A solo project has no PR page: it lands on branch.main itself.',
+      'lingtai pr submit [<project>] [--json] [--no-color]',
+      '  Freezes branch.personal at one commit and starts the PR. Refused',
+      '  while another PR is open, saying which, and in a solo project.',
+      '  It is served by a running conductor: lingtai start, or lingtai run.',
+    ],
+    examples: ['lingtai pr', 'lingtai pr submit lingtai'],
+  }),
+  define({
     name: 'attach',
     group: 'everyday',
     task: 'follow a run’s log, from the beginning',

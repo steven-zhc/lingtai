@@ -481,6 +481,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
   ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,
   ProjectResumed: (d) => `${personName(need(d, 'by'))} resumed ${need(d, 'project')}`,
+  PrSubmitRequested: (d) => `${personName(need(d, 'by'))} asked to submit the personal branch as a PR`,
+  PrSubmitRefused: (d) => `The PR was not started (${need(d, 'reason')}): ${clip(d['detail'])}`,
+  PrInProgress: (d) =>
+    `${need(d, 'prBranch')} was frozen at ${sha(d, 'frozenSha')} with ${Array.isArray(d['tickets']) ? d['tickets'].length : 0} ticket(s)`,
+  PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
+  PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,
   AccountLimitLifted: (d) =>
     typeof d['by'] === 'string'

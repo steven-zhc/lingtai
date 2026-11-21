@@ -301,6 +301,20 @@ const SAMPLES = {
   ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
   ProjectPaused: [{ project: 'lingtai', by: 'human:steven' }],
   ProjectResumed: [{ project: 'lingtai', by: 'human:steven' }],
+  PrSubmitRequested: [{ by: 'human:steven' }],
+  PrSubmitRefused: [{ reason: 'nothing-landed', detail: 'no ticket has landed' }],
+  PrInProgress: [
+    {
+      because: 'submit',
+      branch: 'lingtai-team',
+      main: 'main',
+      frozenSha: 'a'.repeat(40),
+      prBranch: 'lingtai-team-pr-1',
+      tickets: [{ ticket: '12', mergeCommit: 'b'.repeat(40), title: 'a landed ticket' }],
+    },
+  ],
+  PrStepDone: [{ step: 'build', headSha: 'a'.repeat(40) }],
+  PrWaiting: [{ step: 'push', reason: 'denied', detail: 'the App lacks a permission', headSha: 'a'.repeat(40) }],
   AccountLimitReached: [
     { account: 'claude-code', until: '2026-11-11T05:00:00.000Z', untilFrom: 'message', said: 'resets at 5am' },
   ],

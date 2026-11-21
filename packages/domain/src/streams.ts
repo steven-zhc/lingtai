@@ -110,6 +110,37 @@ export function projectStream(project: string): string {
   return `${PROJECT_STREAM_PREFIX}${project}`
 }
 
+/**
+ * `pr-` — **not `prj-`**: the two share two letters, so a reader that tests `startsWith('pr')` takes every project
+ * stream for a PR. List `pr-{project}-` (`prStreamsOf`) and keep what `parsePrStream` answers.
+ */
+export const PR_STREAM_PREFIX = 'pr-'
+
+/** `pr-{project}-`, every PR stream of one project. */
+export function prStreamsOf(project: string): string {
+  return `${PR_STREAM_PREFIX}${project}-`
+}
+
+/** `pr-{project}-{n}` — one PR, numbered per project from 1 (0130 §5). */
+export function prStream(project: string, n: number): string {
+  return `${prStreamsOf(project)}${n}`
+}
+
+/**
+ * The inverse of `prStream`: cut at the *last* `-` (a project name may contain one), and `n` must be a positive
+ * integer. Null for anything else — `prj-chapter-garden` included, which does not start with `pr-`.
+ */
+export function parsePrStream(id: string): { project: string; n: number } | null {
+  if (!id.startsWith(PR_STREAM_PREFIX)) return null
+  const body = id.slice(PR_STREAM_PREFIX.length)
+  const cut = body.lastIndexOf('-')
+  if (cut <= 0) return null
+  const project = body.slice(0, cut)
+  const tail = body.slice(cut + 1)
+  if (!/^[1-9]\d*$/.test(tail)) return null
+  return { project, n: Number(tail) }
+}
+
 export const ACCOUNT_STREAM_PREFIX = 'acct-'
 
 /** `acct-{account}` — whether a platform's account is at its limit (0126 §2). */
