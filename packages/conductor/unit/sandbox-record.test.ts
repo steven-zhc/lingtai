@@ -205,3 +205,12 @@ describe('observedKindOf (#1180)', () => {
     expect(observedKindOfDecision({ kind: 'refused', why: 'x' }, false)).toBeNull()
   })
 })
+
+describe('a runtime that cannot be sandboxed (#1302)', () => {
+  it('is recorded as unsandboxed for that reason, and is no state of the project', async () => {
+    const { boundaryOfDecision, observedKindOf } = await import('../src/sandbox-record.ts')
+    const boundary = boundaryOfDecision({ kind: 'unsandboxed', reason: 'runtime cannot' })
+    expect(boundary).toEqual({ kind: 'unsandboxed', reason: 'runtime cannot' })
+    expect(observedKindOf(boundary)).toBeNull()
+  })
+})

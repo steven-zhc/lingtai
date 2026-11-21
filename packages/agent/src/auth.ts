@@ -18,6 +18,7 @@ import { RuntimeId } from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import {
+  ANTIGRAVITY_PROFILE,
   COPILOT_PROFILE,
   probeSession,
   probeSessionPromise,
@@ -309,7 +310,7 @@ export function classifyAcpSession(profile: AcpProfile, probe: SessionProbe): Au
     case 'opened':
       return status('signed-in', `${profile.name} opened a session`, profile.name)
     case 'auth-required':
-      return status('signed-out', `${profile.name} wants a sign-in: run \`${profile.loginCommand}\``)
+      return status('signed-out', profile.signedOut)
     case 'not-installed':
       return status('not-installed', probe.message)
     case 'timeout':
@@ -319,14 +320,18 @@ export function classifyAcpSession(profile: AcpProfile, probe: SessionProbe): Au
   }
 }
 
-/** `initialize` + `session/new` against Copilot's ACP agent, nothing prompted. */
-export const copilotAuthEffect = Effect.fn('agent.auth')(function* (binary: string, env: Record<string, string>) {
-  return classifyAcpSession(COPILOT_PROFILE, yield* probeSession(COPILOT_PROFILE, binary, env))
+/** `initialize` + `session/new` against an ACP agent, nothing prompted. */
+export const acpAuthEffect = Effect.fn('agent.auth')(function* (
+  profile: AcpProfile,
+  binary: string,
+  env: Record<string, string>,
+) {
+  return classifyAcpSession(profile, yield* probeSession(profile, binary, env))
 })
 
 /** The same probe as the promise `Runtime.checkAuth` awaits — no `Effect.run*`, so no listed face. */
-export function copilotAuth(binary: string, env: Record<string, string>): Promise<AuthStatus> {
-  return probeSessionPromise(COPILOT_PROFILE, binary, env).then((probe) => classifyAcpSession(COPILOT_PROFILE, probe))
+export function acpAuth(profile: AcpProfile, binary: string, env: Record<string, string>): Promise<AuthStatus> {
+  return probeSessionPromise(profile, binary, env).then((probe) => classifyAcpSession(profile, probe))
 }
 
 /**
@@ -353,7 +358,8 @@ export function copilotAuth(binary: string, env: Record<string, string>): Promis
 export const AUTH_PROBES: Record<RuntimeId, (env: Record<string, string>) => Effect.Effect<AuthStatus>> = {
   'claude-code': (env) => claudeCodeAuthEffect('claude', env),
   codex: (env) => codexAuthEffect('codex', env),
-  copilot: (env) => copilotAuthEffect('copilot', env),
+  copilot: (env) => acpAuthEffect(COPILOT_PROFILE, 'copilot', env),
+  antigravity: (env) => acpAuthEffect(ANTIGRAVITY_PROFILE, 'agy', env),
 }
 
 /** In the enum's own order, so a caller's list is never written by hand. */

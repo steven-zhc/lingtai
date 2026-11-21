@@ -83,6 +83,7 @@ import {
   type RecordedRefusal,
   REDUCERS,
   RuntimeId,
+  isUnsandboxableRuntime,
   ceilingFacts,
   isEventType,
   locksOn,
@@ -2662,9 +2663,28 @@ export function unpricedRow(project: string, agent: RuntimeId, recipe: Recipe, k
     status: 'info',
     title: `${project}: ${agent} runs unpriced`,
     detail:
-      `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · ` +
+      (agent === 'antigravity'
+        ? `${agent} reports tokens and no cost, but names its model: a fetched rate row lets the day ceiling count its spend, but run.usd never stops a run on it (an ACP run is bounded by turns and wall only) · `
+        : `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · `) +
       `bounded by turns ${ceiling.turns === UNBOUNDED ? 'unbounded' : ceiling.turns} and wall ${ceiling.wall} · ` +
       `needed by ${keys.join(', ')}`,
+  }
+}
+
+/** An agent that cannot run inside the sandbox runs without it, and `doctor` says so and why. */
+export function unsandboxedRow(project: string, agent: RuntimeId, recipe: Recipe): CheckResult {
+  const on = recipe.sandbox?.enabled === true
+  return {
+    name: `runtime: ${project} ${agent} unsandboxed`,
+    status: 'info',
+    title: `${project}: ${agent} runs unsandboxed`,
+    detail: on
+      ? `${agent} cannot run inside srt in this release (it binds a local port and reads the keychain), so its ` +
+        'invocations run unsandboxed, recorded as `runtime cannot` while the sandbox is available; where the host cannot ' +
+        'sandbox, they are recorded as the pass records them · ' +
+        'its login is in the keychain, which only a process in your GUI login session can read'
+      : `${agent} runs unsandboxed: off by choice, like every run here · its login is in the keychain, which only a ` +
+        'process in your GUI login session can read',
   }
 }
 
@@ -3020,7 +3040,10 @@ function authRow(
     status: 'fail',
     title: `${project}'s ${label} agent, ${agent}, ${stateTitle(status.state)}`,
     detail:
-      `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n` +
+      (agent === 'antigravity' && signedOut
+        ? `${agent} reports ${status.detail}. This probe answers for the session doctor runs in; if the conductor runs ` +
+          `in another (a GUI LaunchAgent, say, rather than this ssh shell), its next ${label} call may still authenticate\n`
+        : `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n`) +
       `${project}'s recipe names it at ${keys.join(', ')}, so that is what its next call constructs and spawns. ` +
       `${capitalise(remedyFor(status.state))}, or name a runtime this ` +
       `machine has at ${keys.join(', ')} in ${recipePath(project)}.` +
@@ -3251,6 +3274,7 @@ export function declaredEnvironment(
             })
             if (ACP_PROFILES[agent] !== undefined)
               results.push(unpricedRow(project.project!, agent, resolved.recipe, keys))
+            if (isUnsandboxableRuntime(agent)) results.push(unsandboxedRow(project.project!, agent, resolved.recipe))
           }
           for (const role of ['discuss', 'triage'] as const) {
             const selected = resolved.recipe[role]

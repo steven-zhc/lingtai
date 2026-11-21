@@ -234,7 +234,7 @@ describe('liftAccountWith', () => {
     const refused = await Effect.runPromise(liftAccountWith(store, 'claude', 'human:steven'))
     expect(refused).toEqual({
       ok: false,
-      detail: 'unknown account "claude" — accounts: claude-code, codex, copilot, github',
+      detail: 'unknown account "claude" — accounts: claude-code, codex, copilot, antigravity, github',
     })
   })
 })
