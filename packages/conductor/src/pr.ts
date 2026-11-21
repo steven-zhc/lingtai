@@ -529,7 +529,10 @@ export const servePendingPrs = (
         Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[]))),
       )
       for (const pr of prs) {
-        if ((pr.status === 'requested' || pr.status === 'in-progress' || pr.fixOwed || mergeBackOwed(pr)) && pr.n !== null) {
+        if (
+          (pr.status === 'requested' || pr.status === 'in-progress' || pr.fixOwed || mergeBackOwed(pr)) &&
+          pr.n !== null
+        ) {
           yield* servePr(ports, project, pr.n, steps).pipe(
             Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
           )

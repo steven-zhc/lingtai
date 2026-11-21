@@ -13,7 +13,8 @@ import { Effect, Result } from 'effect'
 export interface FlakyReads {
   /** The project's integration stream, where `BaseChecked` is appended. */
   readonly store: Pick<EventStore, 'read'>
-  readonly stream: string
+  /** A function where the stream is only known once the attempt's branch is (#1341): asked when the check asks. */
+  readonly stream: string | (() => string)
   /** The paths this ticket's diff changes; null (or a failure) when it could not be read. */
   readonly diffPaths: () => Effect.Effect<readonly string[] | null, unknown>
   /** Every backlog row of the project, in every status. */
@@ -35,7 +36,10 @@ export function flakyPortOf(reads: FlakyReads): FlakyPort {
       const records = named
         ? yield* orNull(
             Effect.map(
-              Effect.tryPromise({ try: () => reads.store.read(reads.stream), catch: (e) => e }),
+              Effect.tryPromise({
+                try: () => reads.store.read(typeof reads.stream === 'function' ? reads.stream() : reads.stream),
+                catch: (e) => e,
+              }),
               (events): BaseRecord[] =>
                 events.flatMap((event) => {
                   if (event.type !== 'BaseChecked') return []
