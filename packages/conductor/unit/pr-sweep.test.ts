@@ -402,6 +402,28 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     expect(w.closed.sort()).toEqual([1, 2, 93])
   })
 
+  it('a host head the mirror lacks is fetched before ancestry is asked, on every sweep', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const candidates = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
+    await sweep({ ...base, candidates })
+    w.pull = { ...open, state: 'closed', merged: true, headSha: 'd'.repeat(40), mergeCommitSha: 'e'.repeat(40) }
+    let fetched = false
+    const p: PrPorts = {
+      ...base,
+      candidates,
+      fetch: () => Effect.sync(() => void (fetched = true)),
+      // The mirror knows the unknown head only once it has been fetched; before that git answers 128.
+      git: (project, args) =>
+        args[0] === 'merge-base'
+          ? Effect.succeed({ code: fetched && args[2] === FIX ? 0 : 128, stdout: '', stderr: '' })
+          : base.git(project, args),
+    }
+    await sweep(p)
+    expect(w.closed.sort()).toEqual([1, 2, 93])
+  })
+
   it('on a merged PR the landing is refused and nothing is appended', async () => {
     const { store, w } = await inReview()
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }

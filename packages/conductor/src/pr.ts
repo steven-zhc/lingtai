@@ -44,7 +44,7 @@ import {
 } from '@lingtai/project'
 import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
-import { Effect, Semaphore } from 'effect'
+import { Effect, Result, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { asError, dropRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
@@ -698,7 +698,12 @@ const closeMergedTickets = (
     // ticket the floor left out is closed when git proves its commit is in what merged, and asked again until it is.
     let unproven = 0
     if (!state.mergedExact) {
-      for (const t of state.tickets.filter((x) => !state.mergedTickets.includes(x.ticket))) {
+      const left = state.tickets.filter((x) => !state.mergedTickets.includes(x.ticket))
+      // The merged head is one nobody here recorded: the mirror may not hold it yet, and an ancestry check against a
+      // commit it lacks proves nothing. Fetched before asking, on every sweep; a fetch that fails leaves them unproven.
+      const fetched = left.length === 0 ? null : yield* Effect.result(ports.fetch(project))
+      if (fetched !== null && Result.isFailure(fetched)) unproven += left.length
+      for (const t of fetched !== null && Result.isFailure(fetched) ? [] : left) {
         let held = false
         for (const into of [state.ended.headSha, state.main === null ? null : `refs/heads/${state.main}`]) {
           if (into === null || held) continue
