@@ -1206,12 +1206,35 @@ const tokenClaude = Command.make('claude', { noColor }, (args) =>
   ),
 )
 
+const tokenCopilot = Command.make('copilot', { noColor }, (args) =>
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const token = yield* lift(() => import('./copilot-token.ts'))
+      const { liveAsk } = yield* lift(() => import('./prompt.ts'))
+      const { liveMachineText } = yield* lift(() => import('@lingtai/setup'))
+      return yield* token.copilotTokenCommand(
+        token.liveCopilotTokenWorld({
+          ask: liveAsk,
+          log: (line) => console.log(line),
+          machine: liveMachineText(),
+          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+        }),
+      )
+    }).pipe(
+      printedBy((err) => {
+        console.error(err instanceof Error ? err.message : 'could not set the token')
+        return 1
+      }),
+    ),
+  ),
+)
+
 const tokenCommand = Command.make('token', {}, () =>
   Effect.suspend(() => {
     console.error(commandHelp('token'))
     return exitWith(2)
   }),
-).pipe(Command.withDescription(definitionOf('token').task), Command.withSubcommands([tokenClaude]))
+).pipe(Command.withDescription(definitionOf('token').task), Command.withSubcommands([tokenClaude, tokenCopilot]))
 
 const ceilingCommand = Command.make('ceiling', {}, () =>
   Effect.suspend(() => {
