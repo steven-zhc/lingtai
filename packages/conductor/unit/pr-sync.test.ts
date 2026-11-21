@@ -368,46 +368,72 @@ describe('the merge back', () => {
     })
   })
 
-  it('a head already in branch.personal (a push whose record was lost) is recorded as found, with no merge and no push', async () => {
+  it('a head already in branch.personal with no merge of ours is nothing: no merge, no push, no record', async () => {
     const store = await inReview()
     const w = aWorld()
+    const before = (await store.read(prStream('lingtai', 1))).length
     await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
-    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
-      type: 'PrMergedBack',
-      data: { prHead: FROZEN, mergeCommit: PERSONAL },
-    })
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
     expect(w.merges).toEqual([])
     expect(pushesOf(w)).toEqual([])
-    expect((await state(store)).mergeBack).toEqual({ prHead: FROZEN, outcome: 'merged' })
   })
 
-  it('a push whose response is lost and whose look fails records nothing, and the next serve reconciles it', async () => {
+  it('a push that threw and a look that fails records nothing; the next serve finds our merge on the branch and records it', async () => {
     const store = await inReview()
     const w = aWorld()
     w.ancestor = (a, b) => a === b
+    const refs = new Map<string, string>()
     const p = ports(store, w)
+    const withRefs = (flaky: boolean): PrPorts => ({
+      ...p,
+      git: (project, args) => {
+        if (args[0] === 'update-ref' && args[1] !== '-d') refs.set(args[1]!, args[2]!)
+        if (args[0] === 'rev-parse' && args[3]!.startsWith('refs/lingtai/pr/1/back')) {
+          const sha = refs.get('refs/lingtai/pr/1/back')
+          return Effect.succeed(sha === undefined ? { code: 1, stdout: '' } : { code: 0, stdout: `${sha}\n` })
+        }
+        if (args[0] === 'rev-parse' && args[3] === `${BACK}^2^{commit}`)
+          return Effect.succeed({ code: 0, stdout: `${FROZEN}\n` })
+        return p.git(project, args)
+      },
+      remote: (project, args) =>
+        flaky && (args[0] === 'push' || args[0] === 'ls-remote')
+          ? Effect.fail(new Error('connection reset'))
+          : p.remote(project, args),
+    })
     const before = (await store.read(prStream('lingtai', 1))).length
+    await Effect.runPromise(mergePrBack(withRefs(true), 'lingtai', 1))
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    // Next serve: the fetch fails too, and that is still not a failure while our push may have landed.
+    const down = withRefs(false)
     await Effect.runPromise(
       mergePrBack(
         {
-          ...p,
-          remote: (project, args) =>
-            args[0] === 'push'
-              ? Effect.sync(() => (w.remote.set(`refs/heads/lingtai-team`, BACK), { code: 1, stdout: '' }))
-              : args[0] === 'ls-remote'
-                ? Effect.succeed({ code: 128, stdout: '' })
-                : p.remote(project, args),
+          ...down,
+          remote: (pr, args) => (args[0] === 'fetch' ? Effect.fail(new Error('offline')) : down.remote(pr, args)),
+          fetch: () => Effect.fail(new Error('offline')),
         },
         'lingtai',
         1,
       ),
     )
     expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
-    expect((await state(store)).mergeBack).toBeNull()
-    // The merge is on branch.personal now: the next serve finds the head an ancestor and records it.
-    w.ancestor = () => true
+    // The fetch works and the merge we made is on the branch.
+    w.ancestor = (a, b) => a === b || (a === BACK && b === PERSONAL)
+    await Effect.runPromise(mergePrBack(withRefs(false), 'lingtai', 1))
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.data).toEqual({
+      prHead: FROZEN,
+      mergeCommit: BACK,
+      how: 'clean',
+    })
+  })
+
+  it('a stranger’s descendant on branch.personal is not recorded as our merge', async () => {
+    const store = await inReview()
+    const w = aWorld()
+    const before = (await store.read(prStream('lingtai', 1))).length
     await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
-    expect((await state(store)).mergeBack).toEqual({ prHead: FROZEN, outcome: 'merged' })
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
   })
 
   it('a branch checked out in the person’s own checkout is refused before anything is merged', async () => {

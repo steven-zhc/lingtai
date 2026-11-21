@@ -107,7 +107,9 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     git: (_project, args) =>
       Effect.succeed(
         args[0] === 'rev-parse'
-          ? { code: 0, stdout: `${FROZEN}\n` }
+          ? args[3]?.startsWith('refs/lingtai/pr/1/back')
+            ? { code: 1, stdout: '' }
+            : { code: 0, stdout: `${FROZEN}\n` }
           : args[0] === 'cat-file'
             ? { code: w.object, stdout: '' }
             : {
@@ -308,8 +310,8 @@ describe('push and open', () => {
     const store = await frozen()
     const w = aWorld()
     await serve(ports(store, w, elsewhere))
-    // The merge back runs once in review; this file's fake merge never merges, so the pushed head is found already in the personal branch and recorded.
-    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrOpened', 'PrMergedBack'])
+    // The merge back runs once in review; this file's fake merge never merges, so it records nothing.
+    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrOpened'])
     const s = await state(store)
     expect(s.status).toBe('in-review')
     expect(w.posts).toEqual([])

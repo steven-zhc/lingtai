@@ -32,6 +32,8 @@ export const fetchInto = (
   pairs: readonly (readonly [from: string, to: string])[],
 ): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
+    // The mirror is made if it is not there (a daemon restarted onto a PR whose disposable mirror was removed).
+    yield* ports.fetch(project)
     const args = ['fetch', '--no-tags', 'origin', ...pairs.map(([from, to]) => `+${from}:${to}`)] as const
     const answer = yield* ports.remote(project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
