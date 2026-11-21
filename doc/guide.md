@@ -102,6 +102,28 @@ unclassified issues at the front of the queue.
 
 ## Choose a model for each role
 
+### Copilot or Antigravity at `implement`
+
+GitHub Copilot and Antigravity can be named as the `agent:` of an action at
+`implement`, and nowhere else (#1300 is the follow-up for review and judges).
+Read what each cannot do before choosing one:
+
+- **Implement only.** Not `runtime.agent`, not `discuss`, not triage, not
+  `design`, `review` or any `judge:`; the recipe is refused by name.
+- **Unpriced.** Neither reports a cost, so `run.usd` never stops a run. Only
+  `turns` and `wall` bound one. The day's ceiling cannot see Copilot; for
+  Antigravity it counts an estimate where a rate for its model has been fetched.
+- **Antigravity runs unsandboxed**, and a recipe with `sandbox.required: true`
+  cannot name it.
+
+Install and sign in: for Copilot, `copilot login` (or `gh`'s login) when the
+project is unsandboxed, and `lingtai token copilot` when it is sandboxed
+([safety](safety.md#the-copilot-token)). For Antigravity, `agy acp --login`, and
+Lingtai must run in your GUI login session, not over ssh, because the sign-in
+lives in the keychain (019 E10). Versions measured on 2026-11-19: Copilot CLI
+1.0.112, Antigravity CLI 1.5.9. The full table is in
+[the reference](reference.md#where-each-agent-may-be-named).
+
 **The rule.** A recipe names a runtime and a model per action, not once:
 `agent:` and `model:` sit beside each step's action
 (`packages/recipe/src/recipe.ts:225-234`), and `runtime.agent` is only the
