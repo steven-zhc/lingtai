@@ -262,8 +262,8 @@ describe('the walk', () => {
     run: ({ state }) => Effect.succeed({ kind: 'done', headSha: state.target ?? 'x' }),
   })
 
-  it('is empty in this ticket: a PR stays in progress', () => {
-    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['push', 'open'])
+  it('has push, open, ci and ready in this ticket', () => {
+    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['push', 'open', 'ci', 'ready'])
   })
 
   it('records each step with the head sha it ran on, and a second serve runs none of them again', async () => {

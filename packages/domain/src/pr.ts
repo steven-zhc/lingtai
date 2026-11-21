@@ -51,6 +51,10 @@ export interface PrState {
    * only keeps the same verdict on the same head from being appended twice.
    */
   checked: { readonly headSha: string; readonly verdict: 'green' | 'red' } | null
+  /** The latest `PrChecked`, whole: what the PR page and `lingtai pr` draw the CI line and the failing checks from. */
+  checks: PayloadOf<'PrChecked'> | null
+  /** The latest `PrCiSkipped`: *no CI step*, and why. */
+  ciSkipped: PayloadOf<'PrCiSkipped'> | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
   /** The last wait, while the PR is waiting. */
@@ -83,6 +87,8 @@ export const emptyPr: PrState = {
   host: null,
   pushedAt: null,
   checked: null,
+  checks: null,
+  ciSkipped: null,
   steps: [],
   wait: null,
   refusal: null,
@@ -157,14 +163,14 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrCiSkipped': {
       const d = event.data as PayloadOf<'PrCiSkipped'>
-      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at }
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, ciSkipped: d }
     }
     case 'PrChecked': {
       const d = event.data as PayloadOf<'PrChecked'>
       const checked = { headSha: d.headSha, verdict: d.verdict }
       // Green is the `ci` step's record; red is a fact about the head and records no step.
-      if (d.verdict === 'red') return { ...state, ...at, checked }
-      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, checked }
+      if (d.verdict === 'red') return { ...state, ...at, checked, checks: d }
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, checked, checks: d }
     }
     case 'PrOpened': {
       const d = event.data as PayloadOf<'PrOpened'>

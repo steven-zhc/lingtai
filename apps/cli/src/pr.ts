@@ -18,6 +18,24 @@ import { Effect } from 'effect'
 import { livePrPorts } from './pr-ports.ts'
 import { type Answered, refusal } from './verdict.ts'
 
+/** The CI line (`CI 5/5 green`, `CI ✕ e2e / chromium`, `CI none: …`), the failing checks' links, and any artifacts. */
+export function ciLines(pr: PrState): string[] {
+  if (pr.ciSkipped !== null && pr.checks === null) return [`  CI none: ${pr.ciSkipped.why}`]
+  const read = pr.checks
+  if (read === null) return []
+  const passing = new Set(['success', 'neutral', 'skipped'])
+  const failing = read.checks.filter((c) => !passing.has(c.state))
+  const head =
+    failing.length === 0
+      ? `  CI ${read.checks.length}/${read.checks.length} green`
+      : `  CI ✕ ${failing.map((c) => c.name).join(', ')} · ${read.checks.length - failing.length} of ${read.checks.length} green`
+  return [
+    head,
+    ...failing.map((c) => `    ${c.name}: ${c.url}`),
+    ...read.checks.flatMap((c) => (c.artifacts ?? []).map((a) => `    ${c.name} ${a.kind}: ${a.url}`)),
+  ]
+}
+
 /** How long a Submit waits for the freeze before it says what it is waiting on. */
 export const SUBMIT_WAIT_MS = 60_000
 const POLL_MS = 500
@@ -101,6 +119,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
         ...stepLines(open),
       )
       if (open.host !== null) lines.push(`  pull request #${open.host.number}: ${open.host.url}`)
+      lines.push(...ciLines(open))
       // On a remote Lingtai does not follow, the person opens the PR by hand: the description is theirs to paste.
       if (open.status === 'in-review' && prHostOf(recipe) === 'none') {
         const described = yield* world.describe(project, open.n)

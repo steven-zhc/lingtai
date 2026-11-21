@@ -207,13 +207,22 @@ describe('choose over the App list', () => {
       'contents',
       'pull_requests',
       'workflows',
+      'checks',
+      'statuses',
     ])
     const choice = choose(picker, 'steven-zhc/lingtai')
     expect(choice).toMatchObject({
       ok: false,
       fix: { href: 'https://github.com/settings/installations/7' },
     })
-    expect(!choice.ok && choice.gaps.map((g) => g.name)).toEqual(['issues', 'contents', 'pull_requests', 'workflows'])
+    expect(!choice.ok && choice.gaps.map((g) => g.name)).toEqual([
+      'issues',
+      'contents',
+      'pull_requests',
+      'workflows',
+      'checks',
+      'statuses',
+    ])
   })
 })
 

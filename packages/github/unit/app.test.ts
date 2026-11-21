@@ -117,7 +117,7 @@ describe('permissionGaps', () => {
   it('names each missing permission, what it has, and what it is for', () => {
     const gaps = permissionGaps(installed({ issues: 'read', contents: 'write', metadata: 'read' }))
 
-    expect(gaps.map((g) => g.name).sort()).toEqual(['issues', 'pull_requests', 'workflows'])
+    expect(gaps.map((g) => g.name).sort()).toEqual(['checks', 'issues', 'pull_requests', 'statuses', 'workflows'])
     const issues = gaps.find((g) => g.name === 'issues')!
     expect(issues.have).toBe('read')
     expect(issues.need).toBe('write')
@@ -133,6 +133,8 @@ describe('permissionGaps', () => {
           contents: 'write',
           pull_requests: 'write',
           workflows: 'write',
+          checks: 'write',
+          statuses: 'write',
           metadata: 'write',
         }),
       ),
