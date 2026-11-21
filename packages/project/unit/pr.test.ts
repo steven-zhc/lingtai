@@ -246,4 +246,26 @@ describe('landings in flight', () => {
     ])
     expect(await run(landingsInFlight('lingtai', 'lingtai-team', store))).toEqual([{ ticketId, headSha: 'h' }])
   })
+
+  it('two earlier pushes both stay owed when a later attempt fails unexpectedly', async () => {
+    const store = createMemoryEventStore()
+    await discovered(store, '5')
+    const ticketId = ticketStream('lingtai', '5')
+    const attempt = (headSha: string) => ({
+      type: 'IntegrationAttempted',
+      actor: 'conductor',
+      data: { ticketId, branch: 'b', headSha },
+    })
+    await store.append(lane, 0, [
+      attempt('h1'),
+      attempt('h2'),
+      {
+        type: 'IntegrationRefused',
+        actor: 'conductor',
+        data: { ticketId, branch: 'b', reason: 'unexpected', detail: 'x' },
+      },
+    ])
+    const owed = await run(landingsInFlight('lingtai', 'lingtai-team', store))
+    expect(owed.map((o) => o.headSha).sort()).toEqual(['h1', 'h2'])
+  })
 })

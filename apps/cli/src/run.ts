@@ -455,10 +455,13 @@ export function run(
     const work = Effect.gen(function* () {
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
-      yield* Projector
+      const projector = yield* Projector
       // A PR a person asked for is served by whoever conducts (0130 §5): with no daemon, this command is it. Before
       // the project's lock is heeded and in both branches, since the freeze spends nothing and is served under a pause.
-      yield* servePrs
+      // **Only on a projector that caught up**: the draft reads `task_view`, so a stale one would freeze a PR naming
+      // fewer tickets than its commit holds. The request stays owed and the next conductor serves it.
+      if (projector.following) yield* servePrs
+      else log('a PR is not served: the board did not catch up, so the draft cannot be read')
       // The first the guard is asked: it appends the ceiling's transitions, and
       // only the lock's holder may (0126 §4). After the projector is up, so a
       // `spend` that trails the log is caught up rather than refused forever.
@@ -772,8 +775,9 @@ export function run(
             ? Effect.scoped(
                 // The draft reads `task_view`, so the projector catches it up first, as on the unpaused path.
                 Effect.gen(function* () {
-                  yield* Projector
-                  yield* servePrs
+                  const projector = yield* Projector
+                  if (projector.following) yield* servePrs
+                  else log('a PR is not served: the board did not catch up, so the draft cannot be read')
                 }).pipe(Effect.provide(world.projector), Effect.provide(world.ports), Effect.provide(world.lock)),
               )
             : Effect.void,
