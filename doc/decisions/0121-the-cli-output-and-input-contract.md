@@ -181,7 +181,7 @@ using them in a terminal.
 
    | group              | commands                                                                            |
    | ------------------ | ----------------------------------------------------------------------------------- |
-   | everyday           | `add`, `run`, `status`, `now`, `attach`, `backlog`, `report`, `ticket`, `board`, `env`, `end` |
+   | everyday           | `add`, `run`, `status`, `now`, `pr`, `attach`, `backlog`, `report`, `ticket`, `board`, `env`, `end` |
    | waiting on you     | `approve`, `answer`, `ask`, `fix-refusal`, `redo-step`, `start-new-attempt`, `close`                 |
    | daemon             | `start`, `daemon`, `service`, `restart`, `shutdown`, `pause`, `resume`              |
    | install and upkeep | `init`, `version`, `upgrade`, `rollback`, `uninstall`, `doctor`, `projection`       |
