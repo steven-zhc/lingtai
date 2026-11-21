@@ -24,6 +24,8 @@ import {
   stepDoneTransition,
   pushedTransition,
   restartTransition,
+  fixLandedTransition,
+  fixRestartTransition,
   draftOpenedTransition,
   openedTransition,
   mergedTransition,
@@ -157,6 +159,29 @@ export const recordPrRestart = (project: string, n: number, store: EventStore) =
     project,
     n,
     (state) => restartTransition(state),
+    (_state, appended) => appended,
+  )
+
+/**
+ * A pr-fix ticket landed on the PR's branch (#1341): the PR is owed In progress again. Appends nothing for a PR that is
+ * no longer open or one that already holds the ticket, so the in-lane append and the sweep's repair write it once.
+ */
+export const recordPrFixLanded = (project: string, n: number, landed: PayloadOf<'PrFixLanded'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixLandedTransition(state, landed),
+    (_state, appended) => appended,
+  )
+
+/** In progress starts again because a pr-fix landed: from the head the fix made, tickets including it. */
+export const recordPrFixRestart = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixRestartTransition(state),
     (_state, appended) => appended,
   )
 
@@ -373,5 +398,34 @@ export function readDraftOn(
     }
     // In the order they landed, not the order of their numbers; a tie keeps the candidates' order.
     return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
+  })
+}
+
+/**
+ * The pr-fix landings on an open PR's branch that the PR does not hold (#1341): tickets whose latest landing is on
+ * `prBranch` and are not among the PR's tickets, so a process that died between `TicketLanded` and `PrFixLanded` is
+ * mended on the next sweep. A PR's branch is named for it alone, so nothing landed there is anything but its fix.
+ */
+export function readUnheldFixLandings(
+  project: string,
+  pr: PrState,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<PayloadOf<'PrFixLanded'>[], Error> {
+  return Effect.gen(function* () {
+    const unheld: PayloadOf<'PrFixLanded'>[] = []
+    if (pr.prBranch === null) return unheld
+    for (const { issue } of candidates) {
+      if (pr.tickets.some((t) => t.ticket === issue)) continue
+      const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
+      const state = reduceTicket(events)
+      if (state.landed === null || state.landed.base !== pr.prBranch) continue
+      unheld.push({
+        ticket: issue,
+        mergeCommit: state.landed.mergeCommit,
+        ...(state.title === null ? {} : { title: state.title }),
+      })
+    }
+    return unheld
   })
 }

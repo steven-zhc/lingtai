@@ -203,7 +203,8 @@ export const buildStep: PrStep = {
 
 /** A PR in review whose last pushed commit has not been through the merge back, or is not known to have. */
 export const mergeBackOwed = (state: PrState): boolean => {
-  if (state.status !== 'in-review' || state.lastPushed === null) return false
+  // A fix owed is built and pushed before anything merges back: the branch the merge would take is not the PR's yet.
+  if (state.status !== 'in-review' || state.lastPushed === null || state.fixOwed) return false
   const was = state.mergeBack
   // A failure of `unknown` could not tell whether a push landed, so it is looked at again; any other is the head's answer.
   return was?.prHead !== state.lastPushed || (was.outcome === 'failed' && was.why === 'unknown')

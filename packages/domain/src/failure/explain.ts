@@ -202,6 +202,8 @@ const INTEGRATION_OWNER: Record<RefusalReason, FailureOwner> = {
   'dirty-base': 'lingtai',
   /** A person must switch the remote's checkout to another branch; nothing Lingtai or an agent can do. */
   'base-checked-out': 'person',
+  /** Somebody pushed to the PR branch on the code host; only a person says whether their commits are wanted. */
+  'pr-branch-moved': 'person',
   /** origin did not answer; a network fault, not a verdict on the branch or on a person. */
   unreachable: 'lingtai',
   /** GitHub answered a push with a server error; a fault on its side, not a verdict on the branch. */
@@ -385,6 +387,14 @@ const REFUSAL_READING: Record<
       action: 'approve',
       why: 'once the remote has another branch checked out, approving re-runs only the land — a requeue would pay for the work again',
     },
+  },
+  'pr-branch-moved': {
+    says: ({ base, detail }) => {
+      const shas = /expected (\S+) found (\S+)/.exec(detail)
+      const which = shas === null ? '' : ` (Lingtai last pushed ${shas[1]}; origin holds ${shas[2]})`
+      return `${base} is the PR's branch and somebody else pushed to it${which}, so the fix was not landed on it; \`lingtai pr retry\` takes a head a person pushed.`
+    },
+    move: null,
   },
   'head-moved': {
     says: ({ branch, base, detail }) => {
