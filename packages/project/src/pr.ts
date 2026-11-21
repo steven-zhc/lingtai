@@ -378,8 +378,16 @@ export function readDraftOn(
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
+    // A pr-fix landed on a PR's branch, which was merged back into the personal branch and whose PR then closed
+    // unmerged: its code is on the personal branch, so it is a draft ticket like the PR's own (#1341).
+    const mergedBack = new Set<string>()
     for (const pr of yield* listPrs(project, store)) {
-      if (pr.status === 'refused' || pr.status === 'closed') continue
+      if (pr.status === 'closed') {
+        if (pr.prBranch !== null && pr.mergeBack?.outcome === 'merged' && pr.mergeBack.prHead === pr.lastPushed)
+          mergedBack.add(pr.prBranch)
+        continue
+      }
+      if (pr.status === 'refused') continue
       for (const t of pr.tickets) held.add(t.ticket)
     }
 
@@ -389,8 +397,10 @@ export function readDraftOn(
       if (held.has(issue)) continue
       const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
       const state = reduceTicket(events)
-      if (state.landed === null || state.landed.base !== personal) continue
-      const landedAt = landedSeq(events, personal)
+      if (state.landed === null) continue
+      const onBase = state.landed.base
+      if (onBase !== personal && !mergedBack.has(onBase)) continue
+      const landedAt = landedSeq(events, onBase)
       if (landedAt === null || landedAt <= since) continue
       const landing = events.find((e) => e.seq === landedAt)
       landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())

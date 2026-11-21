@@ -747,7 +747,9 @@ export const learnPrEnds = (
           yield* mendFixLandings(ports, project, latest).pipe(
             Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
           )
-          yield* learnOnePr(ports, memory, project, latest)
+          // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
+          const mended = yield* latestPr(project, ports.store)
+          if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {

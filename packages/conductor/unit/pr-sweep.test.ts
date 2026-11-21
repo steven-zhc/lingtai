@@ -356,6 +356,27 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     expect(state.tickets.map((t) => t.ticket)).toContain('93')
   })
 
+  it('a fix just told is judged by its own head, not the head the PR had before it', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const p: PrPorts = {
+      ...base,
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+      // Only the old head reaches main; the fix's commit does not.
+      git: (project, args) =>
+        args[0] === 'merge-base' && args.includes(FROZEN)
+          ? Effect.succeed({ code: 0, stdout: '', stderr: '' })
+          : args[0] === 'merge-base'
+            ? Effect.succeed({ code: 1, stdout: '', stderr: '' })
+            : base.git(project, args),
+    }
+    await sweep(p)
+    const state = await pr(store)
+    expect(state.status).not.toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+  })
+
   it('on a merged PR the landing is refused and nothing is appended', async () => {
     const { store, w } = await inReview()
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
