@@ -341,13 +341,20 @@ const open = (
   Effect.gen(function* () {
     const streamId = backlogStream(options.project, options.key)
     // A PR's branch and code-host number are read now, not stored: the host's number may
-    // arrive after the review. A failed read only leaves them out.
-    const pr = entry.pr
-      ? yield* Effect.tryPromise(() => events.read(prStream(entry.project, entry.pr!.n))).pipe(
-          Effect.map((evs) => (evs.length === 0 ? null : reducePr(evs))),
-          Effect.catch(() => Effect.succeed(null)),
-        )
-      : null
+    // arrive after the review. A stream with no events is null; a read that FAILS is not
+    // absence: it refuses before any ticket opens, so a retry cites the real branch.
+    let pr: ReturnType<typeof reducePr> | null = null
+    if (entry.pr) {
+      const prn = entry.pr.n
+      const read = yield* caught(Effect.tryPromise(() => events.read(prStream(entry.project, prn))))
+      if (!read.ok) {
+        return {
+          ok: false,
+          detail: `${options.key} is accepted, but PR ${prn}'s stream could not be read: ${read.message}. ${again(options)}`,
+        }
+      }
+      pr = read.value.length === 0 ? null : reducePr(read.value)
+    }
     const proposed = yield* caught(
       Effect.suspend(() => options.tickets.propose(proposalFor(entry, decision, since, pr))),
     )

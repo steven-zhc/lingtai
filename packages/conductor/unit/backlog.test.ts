@@ -429,6 +429,22 @@ describe('acceptFinding', () => {
     expect(mine.withdrawn).toEqual(['300->301'])
   })
 
+  it('refuses a PR entry, opening nothing, when the PR stream read fails', async () => {
+    const log = fakeLog()
+    const gh = fakeGitHub()
+    const read = log.store.read.bind(log.store)
+    ;(log.store as { read: EventStore['read'] }).read = async (s: string) => {
+      if (s.startsWith('pr-')) throw new Error('db blip')
+      return read(s)
+    }
+    const prEntry: BacklogEntry = { ...entry, issue: null, taskId: null, pr: { stream: 'pr-lingtai-7', n: 7 } }
+    const r = await accept(log, githubTicketStore(gh.client), { entry: async () => prEntry })
+    expect(r.ok).toBe(false)
+    expect(r.detail).toContain('db blip')
+    expect(gh.issues).toEqual([])
+    expect(log.typesOn(stream)).toEqual([])
+  })
+
   it('opens nothing when a decline landed first', async () => {
     const log = fakeLog()
     const gh = fakeGitHub()
