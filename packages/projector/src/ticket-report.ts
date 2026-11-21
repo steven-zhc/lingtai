@@ -170,6 +170,8 @@ export interface TicketReportRow {
    * shape and has not (or could not) be re-reduced from the log (#1349). Null or absent: they are real.
    */
   unread?: string | null
+  /** The title, merge commit and satisfied-at were re-reduced from the log on this read (#1349). */
+  recovered?: boolean
   /** The ticket's title, off the stored `ticket_state`. */
   title: string | null
   /** The merge commit, for a landed ticket. */
@@ -298,6 +300,7 @@ export function fillStale(
         return {
           ...row,
           unread: null,
+          recovered: true,
           title: state.title,
           mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
           satisfiedAt: state.lifecycle.status === 'satisfied' ? state.lifecycle.baseSha : null,

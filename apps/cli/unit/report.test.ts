@@ -266,6 +266,17 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('the recovered title')
   })
 
+  it('names a recovered ticket with zero fix rounds (#1349)', async () => {
+    const r = await run(
+      {},
+      {
+        tickets: () =>
+          Effect.succeed([row({ fixRounds: 0, title: 'zero rounds title', unread: null, recovered: true })]),
+      },
+    )
+    expect(r.out).toContain('zero rounds title')
+  })
+
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {
     const r = await run({}, { tickets: () => Effect.succeed([row({ outcome: 'closed', kind: null })]) })
     expect(r.out).toContain('(unclassified)')

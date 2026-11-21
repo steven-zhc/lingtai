@@ -176,6 +176,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
     placed === 0 &&
     r.survival.length === 0 &&
     r.unread.length === 0 &&
+    r.recovered.length === 0 &&
     spent.reportedCents + spent.estimatedCents + spent.unknown === 0
   ) {
     return [`no tickets and no spend in ${label}`]
@@ -277,6 +278,15 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
               `  waited for ${reasonWords(w.reason)}${w.cause === null ? '' : ` · triage: ${causeWords(w.cause)}`} · ${resolutionWords(w.resolution)}`,
           ),
         ]),
+      ),
+    )
+  }
+  if (r.recovered.length > 0) {
+    out.push(
+      '',
+      section(
+        'titles recovered from the log',
+        r.recovered.map((t) => `${t.ticket}  ${t.title}`),
       ),
     )
   }
