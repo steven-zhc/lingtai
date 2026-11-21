@@ -48,6 +48,7 @@ import {
   agentRefusal,
   endedWithoutEndActionsEffect,
   attemptCeiling,
+  copilotTokenSignedIn,
   readAccount,
   runtimesOf,
   signedInHere,
@@ -1262,6 +1263,8 @@ export interface DoctorReach {
   gh?: GhRun
   /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
   signedIn?: SignedIn
+  /** Whether the machine's Copilot token signs Copilot in, for a sandboxed project's `recipe:` row (#1301). */
+  copilotSignedIn?: () => Promise<boolean>
   /**
    * Whether this host can provide the sandbox (#1147, #1159): **required**, the one answer the `sandbox: host`
    * row, the canary's gate and every recipe row share, so they cannot disagree about *can*. `runDoctor` takes it
@@ -2460,6 +2463,7 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 function projectRecipes(
   filters: readonly ProjectFilter[] | null,
   probe: SignedIn = signedInHere,
+  copilotProbe: () => Promise<boolean> = () => copilotTokenSignedIn(),
 ): Effect.Effect<CheckResult[], unknown> {
   return Effect.gen(function* () {
     const name = 'recipe: resolves for every project'
@@ -2483,9 +2487,21 @@ function projectRecipes(
     // cached probe for the whole report rather than one per project: the answer is
     // about the machine, and `signedInProbe` remembers it for a minute anyway.
     const signedIn = yield* lift(() => probe())
+    // A sandboxed run is handed the machine's Copilot token, so for such a recipe the token signs Copilot in too —
+    // as `runOnce` admits it (#1301). Asked once, and only if some project needs it.
+    const needsToken = filters.some(
+      (f) =>
+        f.ok &&
+        f.recipe.sandbox?.enabled === true &&
+        runtimesOf(f.recipe).includes('copilot') &&
+        !signedIn.includes('copilot'),
+    )
+    const tokenSigns = needsToken ? yield* lift(() => copilotProbe()) : false
     return filters.flatMap((f) => {
       const hold = holdLabelRow(f)
-      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn)
+      const viaToken =
+        tokenSigns && f.ok && f.recipe.sandbox?.enabled === true && runtimesOf(f.recipe).includes('copilot')
+      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', viaToken ? [...signedIn, 'copilot'] : signedIn)
       return hold === null ? [recipe] : [recipe, hold]
     })
   })
@@ -4055,7 +4071,10 @@ export function runDoctor(
     )
     yield* step(
       'project recipes',
-      projectRecipes(filters, reach.signedIn ?? signedInHere).pipe(Effect.orDie, Effect.map(pushAll)),
+      projectRecipes(filters, reach.signedIn ?? signedInHere, reach.copilotSignedIn).pipe(
+        Effect.orDie,
+        Effect.map(pushAll),
+      ),
     )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
