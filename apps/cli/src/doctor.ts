@@ -2994,29 +2994,32 @@ function dispatchedAuthRow(
   // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
   // triage checkout is given, which the caller adds and keeps its own cache for.
   env: Record<string, string> = runnableEnv({}),
+  // The project is sandboxed, so a Copilot run is handed the machine's token and that token signs it in.
+  viaToken: boolean = false,
 ): Effect.Effect<CheckResult, unknown> {
   return Effect.gen(function* () {
     if (!asked.has(agent)) {
       const runtime = runtimes.find((r) => r.capabilities.id === agent)
-      let status: AuthStatus | null = runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null
-      // Copilot is signed in by its own login, or by the token a sandboxed run is handed (#1301): either admits it,
-      // as the conductor's probe does. A token that cannot be read adds nothing; `copilot: token` says so.
-      if (agent === 'copilot' && runtime?.checkAuth && status?.loggedIn !== true) {
-        let token: string | undefined
-        try {
-          const read = copilotGithubToken()
-          token = read === undefined ? undefined : Redacted.value(read)
-        } catch {
-          token = undefined
-        }
-        if (token !== undefined) {
-          const withToken = yield* lift(() => runtime.checkAuth!({ ...env, COPILOT_GITHUB_TOKEN: token }))
-          if (withToken.loggedIn) status = withToken
-        }
-      }
-      asked.set(agent, status)
+      asked.set(agent, runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null)
     }
-    return authRow(project, agent, asked.get(agent) ?? null, label, keys)
+    let status = asked.get(agent) ?? null
+    // Copilot is signed in by its own login, or — for a sandboxed project only, the one launch that is handed the
+    // token (#1301) — by the token. The shared `asked` stays token-free, since another project may be unsandboxed.
+    if (viaToken && agent === 'copilot' && status?.loggedIn !== true) {
+      const runtime = runtimes.find((r) => r.capabilities.id === agent)
+      let token: string | undefined
+      try {
+        const read = copilotGithubToken()
+        token = read === undefined ? undefined : Redacted.value(read)
+      } catch {
+        token = undefined
+      }
+      if (token !== undefined && runtime?.checkAuth) {
+        const withToken = yield* lift(() => runtime.checkAuth!({ ...env, COPILOT_GITHUB_TOKEN: token }))
+        if (withToken.loggedIn) status = withToken
+      }
+    }
+    return authRow(project, agent, status, label, keys)
   })
 }
 
@@ -3308,7 +3311,16 @@ export function declaredEnvironment(
             }
           }
           for (const [agent, keys] of needed) {
-            const row = yield* dispatchedAuthRow(project.project!, agent, asked, runtimes, 'runtime', keys)
+            const row = yield* dispatchedAuthRow(
+              project.project!,
+              agent,
+              asked,
+              runtimes,
+              'runtime',
+              keys,
+              runnableEnv({}),
+              resolved.recipe.sandbox?.enabled === true,
+            )
             const onRuntime = agent === resolved.recipe.runtime.agent
             results.push({
               ...row,

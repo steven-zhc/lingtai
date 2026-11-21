@@ -12,7 +12,7 @@ import { Effect } from 'effect'
  */
 import { describe, expect, it } from 'vitest'
 
-import { signedInProbe } from '../src/projects.ts'
+import { copilotTokenSignedIn, signedInProbe } from '../src/projects.ts'
 
 function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => boolean) {
   const asked = { n: 0 }
@@ -85,37 +85,29 @@ describe('signedInProbe', () => {
   })
 })
 
-describe('the probe admits Copilot by its login or by the token a sandboxed run is handed (#1301)', () => {
+describe('the shared probe never signs Copilot in by the machine token (#1301)', () => {
   const copilot = { ...CLAUDE_CODE_CAPABILITIES, id: 'copilot' as const }
-  const withToken = async (value: string, run: () => Promise<void>) => {
+  it('a token-only machine is not signed in for an unsandboxed project', async () => {
     const prior = process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
-    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = value
+    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = 'github_pat_FAKE_probe'
     try {
-      await run()
+      const runtime = {
+        capabilities: copilot,
+        checkAuth: async (env: Record<string, string>) => {
+          const ok = env['COPILOT_GITHUB_TOKEN'] === 'github_pat_FAKE_probe'
+          return {
+            state: ok ? ('signed-in' as const) : ('signed-out' as const),
+            loggedIn: ok,
+            method: null,
+            detail: '',
+          }
+        },
+      }
+      expect(await signedInProbe([runtime])()).toEqual([])
+      expect(await copilotTokenSignedIn([runtime])).toBe(true)
     } finally {
       if (prior === undefined) delete process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
       else process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = prior
     }
-  }
-  const fake = (works: (env: Record<string, string>) => boolean) => ({
-    capabilities: copilot,
-    checkAuth: async (env: Record<string, string>) => {
-      const ok = works(env)
-      return { state: ok ? ('signed-in' as const) : ('signed-out' as const), loggedIn: ok, method: null, detail: '' }
-    },
-  })
-
-  it('a token-only machine is signed in', async () => {
-    await withToken('github_pat_FAKE_probe', async () => {
-      const runtime = fake((env) => env['COPILOT_GITHUB_TOKEN'] === 'github_pat_FAKE_probe')
-      expect(await signedInProbe([runtime])()).toEqual(['copilot'])
-    })
-  })
-
-  it('an expired token does not reject a working ordinary login', async () => {
-    await withToken('github_pat_EXPIRED', async () => {
-      const runtime = fake((env) => env['COPILOT_GITHUB_TOKEN'] === undefined)
-      expect(await signedInProbe([runtime])()).toEqual(['copilot'])
-    })
   })
 })

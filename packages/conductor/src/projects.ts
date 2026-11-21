@@ -37,6 +37,28 @@ export function signedInIdsEffect(
  * append. A minute is short enough that signing in, or out, is seen on a
  * later pass without anybody restarting anything.
  */
+/**
+ * Whether the machine's Copilot token signs Copilot in (#1301). Asked only for a sandboxed project, the one launch
+ * that is handed the token; the shared probe above stays token-free, since an unsandboxed launch never receives it.
+ * An unreadable file or no token answers false.
+ */
+export function copilotTokenSignedIn(
+  runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[] = everyRuntime(),
+): Promise<boolean> {
+  const runtime = runtimes.find((r) => r.capabilities.id === 'copilot')
+  let token: string | undefined
+  try {
+    const read = copilotGithubToken()
+    token = read === undefined ? undefined : Redacted.value(read)
+  } catch {
+    token = undefined
+  }
+  if (token === undefined || runtime?.checkAuth === undefined) return Promise.resolve(false)
+  return Promise.resolve(runtime.checkAuth({ ...runnableEnv({}), COPILOT_GITHUB_TOKEN: token })).then(
+    (auth) => auth.loggedIn,
+  )
+}
+
 export function signedInProbe(
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
   ttlMs = 60_000,
@@ -46,26 +68,10 @@ export function signedInProbe(
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
       const env = runnableEnv({})
-      // Copilot is signed in by its own login or by the token a sandboxed run is handed (#1301): either admits it,
-      // so an expired machine token cannot reject an unsandboxed project's working login. An unreadable file adds
-      // nothing; the run and doctor's token row say so by name.
-      let token: string | undefined
-      try {
-        const read = copilotGithubToken()
-        token = read === undefined ? undefined : Redacted.value(read)
-      } catch {
-        token = undefined
-      }
       // `SignedIn` is `@lingtai/recipe`'s promise port, so this stays a promise; `signedInIdsEffect` is the same question as an Effect.
       const ids = Promise.all(
         runtimes.map((r) =>
-          Promise.resolve(r.checkAuth?.(env))
-            .then((auth) =>
-              auth?.loggedIn || token === undefined || r.capabilities.id !== 'copilot'
-                ? auth
-                : Promise.resolve(r.checkAuth?.({ ...env, COPILOT_GITHUB_TOKEN: token })),
-            )
-            .then((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
+          Promise.resolve(r.checkAuth?.(env)).then((auth) => (auth?.loggedIn ? [r.capabilities.id] : [])),
         ),
       ).then((found) => found.flat())
       kept = { at: now(), ids }
