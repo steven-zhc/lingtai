@@ -34,7 +34,7 @@ import {
 } from '@/lib/board'
 import { nearCeiling, readDayReading } from '@/lib/day-spend'
 import { footerLags } from '@/lib/footer'
-import { handledToday } from '@/lib/handled-today'
+import { handledIfCurrent } from '@/lib/handled-today'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
@@ -57,7 +57,7 @@ import { Close, TriageMove } from './decide.tsx'
 import { Draining } from './draining.tsx'
 import { FilterMenu } from './filter-menu.tsx'
 import { Footer, FooterPending, landedCount } from './footer.tsx'
-import { HandledCard } from './handled-card.tsx'
+import { HandledCard, HandledFootnote } from './handled-card.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
 import { LockRows, pauseSlot } from './lock-banner.tsx'
@@ -918,16 +918,14 @@ async function CountPart({
  * to be empty, since the read takes the project's whole `ticket_report`. A read
  * that fails or whose lag is unknown shows the note, never a zero.
  */
-async function HandledPart({ only, note }: { only: string | undefined; note: string }) {
+async function readHandled(only: string | undefined) {
   const now = new Date()
   const today = reportQuery({ project: only, window: 'today' }, now)
   const week = reportQuery({ project: only }, now)
-  const empty = <p className="empty">{note}</p>
   try {
     const data = await currentReport(today.project, today.window.from)
-    const cur = data.currency.ticketReport
-    if (cur.error !== undefined || cur.lag !== 0) return empty
-    const handled = handledToday(
+    const handled = handledIfCurrent(
+      data.currency.ticketReport,
       buildReport({
         tickets: data.tickets,
         spend: data.spend,
@@ -936,11 +934,24 @@ async function HandledPart({ only, note }: { only: string | undefined; note: str
         kinds: null,
       }).handled,
     )
-    if (handled === null) return empty
-    return <HandledCard today={handled} todayHref={reportHref(today)} weekHref={reportHref(week)} />
+    if (handled === null) return null
+    return { handled, todayHref: reportHref(today), weekHref: reportHref(week) }
   } catch {
-    return empty
+    return null
   }
+}
+
+async function HandledPart({ only, note }: { only: string | undefined; note: string }) {
+  const r = await readHandled(only)
+  if (r === null) return <p className="empty">{note}</p>
+  return <HandledCard today={r.handled} todayHref={r.todayHref} weekHref={r.weekHref} />
+}
+
+/** The footnote under waiting cards (#1345): silent when there is nothing to say. */
+async function HandledFootPart({ only }: { only: string | undefined }) {
+  const r = await readHandled(only)
+  if (r === null) return null
+  return <HandledFootnote today={r.handled} todayHref={r.todayHref} />
 }
 
 async function CardsPart({
@@ -1061,6 +1072,11 @@ async function CardsPart({
           projectLocks={projectLocks.get(card.project) ?? []}
         />
       ))}
+      {id === 'waiting' ? (
+        <Suspense key={`handled-foot:${projectKey}`} fallback={null}>
+          <HandledFootPart only={only} />
+        </Suspense>
+      ) : null}
     </>
   )
 }
