@@ -28,7 +28,6 @@ import {
   namedIn,
   originIn,
   plainWhen,
-  readOldSpellings,
   recipeFileIn,
   resolveAgent,
   resolveSource,
@@ -145,7 +144,7 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   const resolved = yield* plainWhen(
     () =>
       resolveSource(source, options.base ?? path, path, (raw) => {
-        wrote = readOldSpellings(structuredClone(raw)).recipe
+        wrote = structuredClone(raw)
         const own = asRecord(raw['runtime']) ?? {}
         if (agent !== null && !('agent' in own)) raw['runtime'] = { ...own, agent: agent.agent }
         return []

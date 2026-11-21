@@ -19,7 +19,15 @@
 import { STEPS, type Step, type ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { createGitHubClient, type GhRun, type GitHubClient } from '@lingtai/github'
-import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe, type TurnLimit } from '@lingtai/recipe'
+import {
+  type AssigneeRule,
+  OldSpellingRefusedError,
+  type OldSpelling,
+  parseDuration,
+  type Recipe,
+  type ResolvedRecipe,
+  type TurnLimit,
+} from '@lingtai/recipe'
 import {
   assigneeOf,
   backoffOf,
@@ -117,8 +125,6 @@ export type ProjectFilter =
        * where.
        */
       ref: string
-      /** `ResolvedRecipe.oldSpellings`: what `lingtai doctor` names and `--fix` rewrites (#1307). */
-      oldSpellings: readonly string[]
       /**
        * Where each value came from — the recipe file, the machine file,
        * detection or a default — keyed by its path in the recipe. What
@@ -210,7 +216,13 @@ export type ProjectFilter =
        */
       links: TicketLinks
     }
-  | { project: string; ok: false; problem: string }
+  | {
+      project: string
+      ok: false
+      problem: string
+      /** Set when the recipe was refused for an old spelling (#1308): what `lingtai doctor` names and `--fix` rewrites. */
+      oldSpellings?: readonly OldSpelling[]
+    }
 
 /** What the board asks for a ticket's blockers: the repository its numbers belong to, and the read. */
 export type TicketLinks = {
@@ -441,7 +453,6 @@ export function projectFilterEffect(
       ok: true,
       configHash: resolved.configHash,
       ref: resolved.ref,
-      oldSpellings: resolved.oldSpellings,
       provenance: resolved.provenance ?? {},
       kinds: kindsOf(resolved.recipe),
       exclude: excludeOf(resolved.recipe),
@@ -470,13 +481,15 @@ export function projectFilterEffect(
   }).pipe(
     // **The cause, not only the failure**: a throw in the store, the recipe
     // seam or `parseDuration` is a defect, and it is still an answer (#64, #134).
-    Effect.catchCause((cause) =>
-      Effect.succeed<ProjectFilter>({
+    Effect.catchCause((cause) => {
+      const err = Cause.squash(cause) as Error
+      return Effect.succeed<ProjectFilter>({
         project,
         ok: false,
-        problem: oneLine((Cause.squash(cause) as Error).message),
-      }),
-    ),
+        problem: oneLine(err.message),
+        ...(err instanceof OldSpellingRefusedError ? { oldSpellings: err.spellings } : {}),
+      })
+    }),
   )
 }
 

@@ -28,8 +28,8 @@
  * **`branchOf` and `submodulesOf` are the first two to have actually moved, and
  * they are still one question each** (`#268`, 0065). `branchOf` reads
  * `branch.personal` in team mode and `branch.main` in solo; the v1 spellings
- * of the base (`repo.base`, `worktree.base`) are rewritten into `branch.main`
- * before the parse (`readOldSpellings`) and never reach it. `submodulesOf`
+ * of the base (`repo.base`, `worktree.base`) are refused by name
+ * before the parse (`oldSpellingsIn`) and never reach it. `submodulesOf`
  * reads `worktree:` at `admit` first and `repo:` second, a **spelling** rather
  * than a fallback. Every reader asks the accessor, so the merge lane lands on
  * what the tree was cut from, and there is no place for the two to disagree.
@@ -259,8 +259,8 @@ export function modeOf(recipe: Recipe): 'solo' | 'team' {
 /**
  * The branch a pass cuts from and lands on: `branch.personal` in team mode and
  * `branch.main` in solo (0104 §5, 0130 §2). **The one reader**; the old
- * spellings (`repo.base`, `worktree.base`) are rewritten into `branch.main`
- * before the parse (`readOldSpellings`) and never reach the `Recipe` type.
+ * spellings (`repo.base`, `worktree.base`) are refused by name
+ * before the parse (`oldSpellingsIn`) and never reach the `Recipe` type.
  */
 export function branchOf(recipe: Recipe): string {
   return modeOf(recipe) === 'team' ? (recipe.branch.personal ?? recipe.branch.main) : recipe.branch.main
@@ -391,7 +391,7 @@ export function remoteOf(recipe: Recipe): string | null {
  * `describeFilter` and the board's reading — each reaching in by hand, which
  * is why they now ask here instead.
  *
- * Absent is `both`, and it is returned absent rather than filled in: what an
+ * Absent is `all`, and it is returned absent rather than filled in: what an
  * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
  * say it in their own words, and 0046 §2's *a wrong login shows itself* wants
  * the reading to be able to say *nothing was written* rather than *both*.
@@ -420,7 +420,7 @@ export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
  * **`assignee` is the one value this fills in, because the block requires it and
  * `runtime.assignee` is absent from some recipes.** `EVERYONE` is what an
  * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
- * `rule?.take ?? "both"` — so writing it here selects identically and says out
+ * `rule?.take ?? "all"` — so writing it here selects identically and says out
  * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
  * still `assigneeOf`'s, which returns it absent: *nothing was written* and
  * *everyone* are one filter and two sentences, and only the filter is here.

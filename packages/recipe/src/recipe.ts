@@ -899,7 +899,7 @@ export const refsPlugin = definePlugin('refs', {
  * `deps.base`. A declaration here cannot disagree with what the merge lane
  * lands on: the lane goes on being *handed* the base rather than declaring one
  * of its own (§4). The v1 spellings (`repo.base`, `worktree.base`) are
- * rewritten to `branch.main` before the parse (`readOldSpellings`).
+ * refused by name before the parse (`oldSpellingsIn`, #1308).
  *
  * **`submodules` is required and is not defaulted**, which is the one way this
  * declaration differs from the `repo:` block it replaces. `git worktree add`
