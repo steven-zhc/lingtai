@@ -9,6 +9,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub } from '@lingtai/github'
 import { recordBranchSynced, recordPrOpened, recordPrPushed, recordPrRestart, requestPrSubmit } from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
+import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -37,7 +38,7 @@ interface World {
   sweeps: number
   /** Whether `<a>` is an ancestor of `<b>`. */
   ancestor: (a: string, b: string) => boolean
-  mergeAnswer: (m: Merge) => Awaited<ReturnType<PrPorts['merge']>>
+  mergeAnswer: (m: Merge) => MergeInWorktreeResult
   buildAnswer: () => Effect.Effect<PrBuildAnswer>
   checkedOut: string | null
   lostPush: boolean
@@ -73,7 +74,7 @@ function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPor
     github: () => Effect.succeed({} as unknown as GitHub),
     facts: () => Effect.succeed([]),
     sweep: () => Effect.sync(() => void w.sweeps++),
-    merge: (_project, m) => Effect.sync(() => (w.merges.push(m), w.mergeAnswer(m))),
+    merge: (_project, m) => Effect.sync(() => void w.merges.push(m)).pipe(Effect.map(() => w.mergeAnswer(m))),
     build: (_project, b) => Effect.suspend(() => (w.builds.push(b), w.buildAnswer())),
     checkedOut: () => Effect.succeed(w.checkedOut),
     git: (_project, args) =>
