@@ -563,7 +563,7 @@ const learnOnePr = (
         ),
       )
       if (host !== null) {
-        key = `${host.updatedAt} ${host.headSha}`
+        key = `${host.state} ${host.merged} ${host.updatedAt} ${host.headSha}`
         // An answer equal to the last one ends the host's part here; git is still asked, it costs nothing.
         if (memory.get(prStream(project, n)) === key) host = null
       }
