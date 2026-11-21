@@ -8,7 +8,7 @@ import type { PrPorts } from '@lingtai/conductor'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { githubClientAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
-import { makeGitHub } from '@lingtai/github'
+import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { remoteOf } from '@lingtai/recipe'
@@ -46,8 +46,11 @@ export function livePrPorts(store: EventStore, log: (line: string) => void): PrP
     Effect.gen(function* () {
       const slug = yield* slugOf(project)
       if (slug === null) return undefined
-      const github = yield* makeGitHub({ auth: githubClientAuth(), ...slug }).pipe(Effect.mapError(asError))
-      return () => github.token
+      const client = yield* Effect.tryPromise({
+        try: () => createGitHubClient({ auth: githubClientAuth(), ...slug }),
+        catch: asError,
+      })
+      return () => client.token()
     })
   const answered = (run: Effect.Effect<string, RepoFailed>) =>
     run.pipe(
