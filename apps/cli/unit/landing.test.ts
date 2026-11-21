@@ -130,10 +130,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 `
 
 /**
- * `repo.base: main` but the branch a pass actually cuts from and lands on is
- * `steps.admit`'s `worktree.base: release` (`#268`'s v2 spelling) — the
- * shape `branchOf` (`settings.ts`) exist to read
- * correctly instead of assuming `repo.base`.
+ * `branch.main: release` with a `steps.admit` `worktree:` that carries `submodules` only (0104 §5) — the
+ * shape the old `worktree.base` spelling migrates to (#1308).
  */
 const WORKTREE_ADMIT = `version: 2
 branch:
@@ -382,7 +380,7 @@ describe('askLanding', () => {
     expect(resolved.steps.proposed.some((a) => 'human' in a)).toBe(false)
   })
 
-  it("--land develop on a recipe cutting from steps.admit's worktree.base writes branch.main and takes the old worktree.base out", async () => {
+  it("--land develop on a recipe with a steps.admit worktree writes branch.main and leaves the worktree's submodules alone", async () => {
     const files = mapFiles({ [PATH]: WORKTREE_ADMIT })
     const draft = await draftOver(PROJECT, { home: HOME, files })
     const { world: w } = world()

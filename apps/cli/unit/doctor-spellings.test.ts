@@ -103,6 +103,34 @@ describe('fixOldSpellings', () => {
     expect((await w.store.read(projectStream('app'))).length).toBe(appended)
   })
 
+  it('rewrites take: both at a claim queue, which the intermediate widening parse used to refuse', async () => {
+    const text = `version: 2
+branch:
+  main: develop
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+runtime:
+  agent: claude-code
+steps:
+  claim:
+    - name: take
+      queue:
+        kinds: [bug]
+        exclude: []
+        backoff: 1h
+        assignee:
+          take: both
+`
+    const w = world({ [recipePath('app', HOME)]: text })
+    const [out] = (await w.fix(['app']))!
+    expect(out).toMatchObject({ project: 'app', outcome: 'written' })
+    const after = w.disk.get(recipePath('app', HOME))!
+    expect(after).toContain('take: all')
+    expect(after).not.toContain('both')
+  })
+
   it("a worktree that held only admit's base is left as `worktree: {}`, and the fix says it failed", async () => {
     const text = `version: 2
 source:

@@ -1462,7 +1462,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
   const WITH_ADMIT = (repoBase = 'main') =>
     `version: 2\nbranch:\n  main: ${repoBase}\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        submodules: false\n`
 
-  it('a base declared at steps.admit is the one moved, so the registration lands where the flow said (#968)', async () => {
+  it('a recipe with a steps.admit worktree has branch.main moved, so the registration lands where the flow said (#968)', async () => {
     const { h, result } = run(
       {
         answers: ['yes'],
@@ -1475,7 +1475,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced[path]).toMatch(/branch:\s+main: dev/)
   })
 
-  it('a recipe whose steps.admit base already is the default is refused as added, not asked a base (#968)', async () => {
+  it('a recipe with a steps.admit worktree whose branch.main already is the default is refused as added, not asked a base (#968)', async () => {
     const { h, result } = run({
       files: { [path]: WITH_ADMIT('lingtai-base').replace(`remote: ${ORIGIN}`, 'remote: /repo') },
     })

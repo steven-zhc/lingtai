@@ -111,10 +111,12 @@ export function widenStepsIfNeeded(
   if (stepChanges.length === 0 || stepChanges.some((c) => c.path.length === 1)) return changes
 
   const nonStepChanges = changes.filter((c) => c.path[0] !== 'steps')
-  const beforeText = editedText(existing, nonStepChanges, path)
-
   let before
+  let beforeText
   try {
+    // Inside the try: with only the non-step changes applied, a file still holding an old spelling
+    // (`take: both` at a claim queue) is refused by the parse, and that means "cannot widen", not "failed".
+    beforeText = editedText(existing, nonStepChanges, path)
     before = resolveSource(beforeText, refFor(beforeText, path), path)
   } catch {
     return changes
