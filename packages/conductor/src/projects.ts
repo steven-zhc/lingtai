@@ -1,11 +1,12 @@
 import { type Runtime, everyRuntime } from '@lingtai/agent'
 import { runnableEnv } from '@lingtai/agent-env'
 import type { ProjectState, RuntimeId } from '@lingtai/domain'
+import { copilotGithubToken } from '@lingtai/env'
 import { type LoadProjectOptions, loadProject } from '@lingtai/project'
 import { type HostAnswer, type HostFactsEffect, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { BUILT_IN_DOMAINS, hostProgramsPresent, installFor } from '@lingtai/sandbox'
 import { readHost } from '@lingtai/sandbox/host'
-import { Effect } from 'effect'
+import { Effect, Redacted } from 'effect'
 
 export function signedInIdsEffect(
   runtimes: readonly Pick<Runtime, 'capabilities' | 'checkAuth'>[],
@@ -45,6 +46,14 @@ export function signedInProbe(
   return () => {
     if (kept === null || now() - kept.at >= ttlMs) {
       const env = runnableEnv({})
+      // A sandboxed Copilot run signs in with the machine's token, not a login (#1301): ask with the one it would be
+      // handed. An unreadable file adds nothing; the run and doctor's token row say so by name.
+      try {
+        const token = copilotGithubToken()
+        if (token !== undefined) env['COPILOT_GITHUB_TOKEN'] = Redacted.value(token)
+      } catch {
+        // see above
+      }
       // `SignedIn` is `@lingtai/recipe`'s promise port, so this stays a promise; `signedInIdsEffect` is the same question as an Effect.
       const ids = Promise.all(
         runtimes.map((r) =>

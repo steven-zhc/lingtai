@@ -84,3 +84,25 @@ describe('signedInProbe', () => {
     expect(await signedIn()).toEqual(['claude-code'])
   })
 })
+
+describe('the probe hands Copilot the token a sandboxed run would hold (#1301)', () => {
+  it('sets COPILOT_GITHUB_TOKEN in the probe env when the machine has one', async () => {
+    const prior = process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
+    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = 'github_pat_FAKE_probe'
+    try {
+      const seen: Array<string | undefined> = []
+      const runtime = {
+        capabilities: CLAUDE_CODE_CAPABILITIES,
+        checkAuth: async (env: Record<string, string>) => {
+          seen.push(env['COPILOT_GITHUB_TOKEN'])
+          return { state: 'signed-in' as const, loggedIn: true, method: null, detail: '' }
+        },
+      }
+      await signedInProbe([runtime])()
+      expect(seen).toEqual(['github_pat_FAKE_probe'])
+    } finally {
+      if (prior === undefined) delete process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
+      else process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = prior
+    }
+  })
+})
