@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { editRecipe } from '../src/emit.ts'
-import { RecipeInvalidError, RecipeRefusedError, resolveSource } from '../src/resolve.ts'
+import { RecipeInvalidError, RecipeRefusedError, oldSpellingFixes, resolveSource } from '../src/resolve.ts'
 import { branchOf, modeOf } from '../src/settings.ts'
 
 const TAIL = `
@@ -150,5 +150,47 @@ runtime:
     expect(resolved.oldSpellings).toEqual([])
     expect(branchOf(resolved.recipe)).toBe('develop')
     expect(resolved.recipe.repo?.submodules).toBe(true)
+  })
+})
+
+describe('oldSpellingFixes', () => {
+  const FILES = [
+    '# the base\nrepo:\n  base: develop # where it lands\n  submodules: true\n',
+    '# comment\nrepo:\n  base: other\n  submodules: true\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        base: develop\n        submodules: true\n',
+    '# runtime\nbranch:\n  main: develop\nruntime:\n  agent: claude-code\n  assignee:\n    take: both\nsteps:\n  claim:\n    - name: take\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: both\n',
+  ]
+  for (const [i, head] of FILES.entries()) {
+    it(`rewrites fixture ${i} to a file that resolves clean, to the same configHash`, () => {
+      const source = head.includes('agent: claude-code')
+        ? `version: 2\n${head}source: { kinds: [bug] }\nenv: { plantAt: .env.local }\n`
+        : `version: 2\n${head}${TAIL}`
+      const before = resolveSource(source, 'main', 'recipe.yml')
+      const { lines, changes } = oldSpellingFixes(before.oldSpellings, before.recipe.branch.main)
+      expect(lines.length).toBe(before.oldSpellings.length)
+      const after = resolveSource(editRecipe(source, changes), 'main', 'recipe.yml')
+      expect(after.oldSpellings).toEqual([])
+      expect(after.configHash).toBe(before.configHash)
+    })
+  }
+
+  it('says what each old key becomes, and writes the base once', () => {
+    const { lines, changes } = oldSpellingFixes(['steps.admit[0].worktree.base', 'repo.base'], 'develop')
+    expect(lines).toEqual([
+      'steps.admit[0].worktree.base: develop → branch.main: develop',
+      'repo.base: develop → branch.main: develop',
+    ])
+    expect(changes).toEqual([{ path: ['branch', 'main'], value: 'develop' }])
+    expect(oldSpellingFixes(['runtime.assignee.take: both'], 'main').lines).toEqual([
+      'runtime.assignee.take: both → take: all',
+    ])
+  })
+
+  it('keeps a comment that was not on a removed key', () => {
+    const source = `version: 2\n# keep me\nrepo:\n  base: develop # goes\n  submodules: true # stays\n${TAIL}`
+    const r = resolveSource(source, 'main', 'recipe.yml')
+    const out = editRecipe(source, oldSpellingFixes(r.oldSpellings, 'develop').changes)
+    expect(out).toContain('# keep me')
+    expect(out).toContain('# stays')
+    expect(out).not.toContain('# goes')
   })
 })

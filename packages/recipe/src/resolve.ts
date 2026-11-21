@@ -22,6 +22,7 @@ import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
 import { branchNameRefusal } from './branch-name.ts'
+import type { RecipeChange } from './emit.ts'
 import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
@@ -567,4 +568,38 @@ export function baseDivergence(resolved: ResolvedRecipe, slug: string): string |
     'the rules and the merge target are different branches. ' +
     `Re-register: lingtai add ${slug} --main ${declared}`
   )
+}
+
+/**
+ * What `lingtai doctor` says about a file in the old spelling, and the edit that
+ * ends it: the `lines` for the row's detail, and the `changes` `editRecipe`
+ * applies. `oldSpellings` is `ResolvedRecipe.oldSpellings` — the three shapes
+ * `readOldSpellings` pushes — and `main` is the recipe's resolved `branch.main`,
+ * the value those spellings were read as.
+ *
+ * **The base is one change, not one per spelling**: a write of `branch.main`
+ * takes `repo.base` and every admit `worktree.base` out in the same edit
+ * (`editRecipe`), so no removal is listed here. A string this does not
+ * recognise is ignored rather than guessed at.
+ */
+export function oldSpellingFixes(
+  oldSpellings: readonly string[],
+  main: string,
+): { lines: string[]; changes: RecipeChange[] } {
+  const lines: string[] = []
+  const changes: RecipeChange[] = []
+  let base = false
+  for (const spelling of oldSpellings) {
+    const take = /^(runtime|steps\.claim\[(\d+)\]\.queue)\.assignee\.take: both$/.exec(spelling)
+    if (take !== null) {
+      const at = take[2] === undefined ? ['runtime'] : ['steps', 'claim', Number(take[2]), 'queue']
+      lines.push(`${spelling} → take: all`)
+      changes.push({ path: [...at, 'assignee', 'take'], value: 'all' })
+    } else if (spelling === 'repo.base' || /^steps\.admit\[\d+\]\.worktree\.base$/.test(spelling)) {
+      lines.push(`${spelling}: ${main} → branch.main: ${main}`)
+      base = true
+    }
+  }
+  if (base) changes.unshift({ path: ['branch', 'main'], value: main })
+  return { lines, changes }
 }
