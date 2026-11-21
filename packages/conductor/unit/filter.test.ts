@@ -612,3 +612,40 @@ describe('describeAssignee', () => {
     )
   })
 })
+
+/**
+ * #1332: resolving a filter asks GitHub nothing. `doctor` hands in a client that
+ * throws on every read, and `links.repository` read `owner` while the filter
+ * was being built.
+ */
+describe('projectFilter, with a GitHub client nothing may read', () => {
+  const throwing = (): GitHubClient =>
+    new Proxy({} as GitHubClient, {
+      get(_target, key) {
+        if (key === 'then' || typeof key === 'symbol') return undefined
+        throw new Error(`GitHub was asked (${String(key)})`)
+      },
+    })
+
+  it('resolves ok, and reads owner/repo only when links.repository is read', async () => {
+    const gh = throwing()
+    const filter = await projectFilter(
+      project,
+      async () => gh,
+      recipeOf(RECIPE),
+      async (_state, _recipe, client) => client as never,
+    )
+    expect(filter.ok).toBe(true)
+    if (!filter.ok) return
+    expect(() => filter.links?.repository).toThrow('(owner)')
+
+    const ordinary = { owner: 'steven-zhc', repo: 'lingtai', listBlockedBy: async () => [] } as unknown as GitHubClient
+    const lazy = await projectFilter(
+      project,
+      async () => ordinary,
+      recipeOf(RECIPE),
+      async (_state, _recipe, client) => client as never,
+    )
+    expect(lazy.ok && lazy.links?.repository).toBe('steven-zhc/lingtai')
+  })
+})

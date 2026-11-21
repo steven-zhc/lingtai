@@ -221,7 +221,15 @@ export type { TicketLink }
 /** GitHub's client when it is the source, else the `db` store `ticketsFor` built (one store, one memo); else null. */
 function ticketLinksOf(project: string, tickets: TicketSource, gh: GitHubClient | null): TicketLinks {
   if (gh !== null && (tickets as unknown) === gh) {
-    return { repository: `${gh.owner}/${gh.repo}`, listBlockedBy: (n) => gh.listBlockedBy(n) }
+    return {
+      // A getter, so building the filter reads nothing from the client — doctor's
+      // offline one throws on any read ("any question it is asked is a bug, said
+      // so"). Never spread or serialise this object: that calls the getter.
+      get repository() {
+        return `${gh.owner}/${gh.repo}`
+      },
+      listBlockedBy: (n) => gh.listBlockedBy(n),
+    }
   }
   if (hasTicketLinks(tickets)) return { repository: project, listBlockedBy: (n) => tickets.listBlockedBy(n) }
   return null
