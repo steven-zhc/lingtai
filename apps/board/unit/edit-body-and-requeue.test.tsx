@@ -39,6 +39,7 @@ vi.mock('react', async (importOriginal) => {
 vi.mock('../src/app/actions.ts', () => ({
   editBodyAndRequeueCard: harness.submit,
   answerCard: harness.answer,
+  answerQuestionsCard: harness.answer,
   concludeChat: harness.conclude,
   continueFixingCard: harness.continueFixing,
   requeueCard: harness.requeue,
@@ -497,7 +498,7 @@ it("draws the agent's choices and the answer button in the answer part, the text
 
   // One press disables the other card's button too: the sending state is the page's, not the part's.
   control(part('answer'), 'button').props.onClick?.()
-  await vi.waitFor(() => expect(harness.answer).not.toHaveBeenCalled)
+  await vi.waitFor(() => expect(harness.answer).toHaveBeenCalled())
   expect(control(part('edit'), 'button').props.disabled).toBe(true)
 })
 
