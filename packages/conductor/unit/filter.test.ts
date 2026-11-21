@@ -180,6 +180,17 @@ describe('projectFilter', () => {
     expect(filter.problem).not.toContain('\n')
   })
 
+  it('carries the old spellings a refused recipe wrote, so doctor needs no second read (#1308)', async () => {
+    const old = RECIPE.replace('branch:\n  main: main', 'repo:\n  base: main')
+    expect(old).not.toBe(RECIPE)
+    const filter = await projectFilter(project, async () => client(old), fromFile)
+
+    expect(filter.ok).toBe(false)
+    if (filter.ok) return
+    expect(filter.oldSpellings?.map((s) => s.at)).toEqual(['repo.base'])
+    expect(filter.problem).toContain('lingtai doctor --fix')
+  })
+
   it('says so when there is no recipe at all', async () => {
     const filter = await projectFilter(project, async () => client(null), fromFile)
 

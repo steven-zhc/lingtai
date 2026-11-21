@@ -194,7 +194,7 @@ describe('runTrialEffect', () => {
   })
 
   it('cuts from the base and submodules the existing recipe declares, not the one handed in', async () => {
-    const yml = 'branch:\n  main: release\nrepo:\n    submodules: true\n'
+    const yml = 'branch:\n  main: release\nrepo:\n  submodules: true\n'
     const { deps, cuts } = fakes({})
     await Effect.runPromise(runTrialEffect({ ...AT, draft: await draftOf(yml) }, deps, null, ['x']))
     expect(cuts).toEqual([{ base: 'release', submodules: true }])

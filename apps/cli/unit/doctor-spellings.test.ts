@@ -103,6 +103,27 @@ describe('fixOldSpellings', () => {
     expect((await w.store.read(projectStream('app'))).length).toBe(appended)
   })
 
+  it("a worktree that held only admit's base is left as `worktree: {}`, and the fix says it failed", async () => {
+    const text = `version: 2
+source:
+  kinds: [bug]
+env:
+  plantAt: .env.local
+runtime:
+  agent: claude-code
+steps:
+  admit:
+    - name: cut
+      worktree:
+        base: develop
+`
+    const w = world({ [recipePath('app', HOME)]: text })
+    const [out] = (await w.fix(['app']))!
+    // `submodules` is required and has no default, so no value is guessed: the file stays as it was.
+    expect(out).toMatchObject({ project: 'app', outcome: 'failed' })
+    expect(w.disk.get(recipePath('app', HOME))).toBe(text)
+  })
+
   it('a project that fails does not stop the next, and the failure is named', async () => {
     const w = world({ [recipePath('a', HOME)]: OLD, [recipePath('b', HOME)]: OLD }, 'a')
     const out = (await w.fix(['a', 'b']))!

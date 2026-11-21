@@ -336,7 +336,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::remote get-url origin': fail('no origin'),
       },
       projects: [project('repo', null)],
-      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n    remote: https://github.com/other/thing.git\n' },
+      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n  remote: https://github.com/other/thing.git\n' },
     })
 
     const result = await chooseFirstProject(world, { local: '/repo' })
@@ -1363,7 +1363,7 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
 describe('chooseFirstProject — re-running add --local over an old recipe (#772)', () => {
   const path = `${HOME}/repo/recipe.yml`
   const ORIGIN = 'https://github.com/me/repo.git'
-  const OLD = `version: 2\nbranch:\n  main: main\nrepo:\n    remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`
+  const OLD = `version: 2\nbranch:\n  main: main\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`
   const git = (extra: GitPlan = {}): GitPlan => ({
     '/repo::rev-parse --show-toplevel': ok('/repo\n'),
     '/repo::remote get-url origin': ok(`${ORIGIN}\n`),
@@ -1459,14 +1459,14 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced[path]).toContain('main: dev')
   })
 
-  const SHADOWED = (admitBase: string, repoBase = 'main') =>
-    `version: 2\nbranch:\n  main: ${repoBase}\nrepo:\n    remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        base: ${admitBase}\n        submodules: false\n`
+  const WITH_ADMIT = (repoBase = 'main') =>
+    `version: 2\nbranch:\n  main: ${repoBase}\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        submodules: false\n`
 
   it('a base declared at steps.admit is the one moved, so the registration lands where the flow said (#968)', async () => {
     const { h, result } = run(
       {
         answers: ['yes'],
-        files: { [path]: SHADOWED('main') },
+        files: { [path]: WITH_ADMIT() },
         git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }),
       },
       { main: 'dev', land: 'dev' },
@@ -1477,7 +1477,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
 
   it('a recipe whose steps.admit base already is the default is refused as added, not asked a base (#968)', async () => {
     const { h, result } = run({
-      files: { [path]: SHADOWED('lingtai-base').replace(`remote: ${ORIGIN}`, 'remote: /repo') },
+      files: { [path]: WITH_ADMIT('lingtai-base').replace(`remote: ${ORIGIN}`, 'remote: /repo') },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
     expect(h.asked).toEqual([])
@@ -1487,7 +1487,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     const { h, result } = run({
       files: {
         [path]:
-          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n    remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
@@ -1508,7 +1508,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `${SHADOWED('main')}  prepared:\n    - name: install\n      run: npm ci\n`,
+          [path]: `${WITH_ADMIT()}  prepared:\n    - name: install\n      run: npm ci\n`,
         },
       },
       { install: 'none' },
@@ -1525,7 +1525,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
 
   it('a remote that is neither the checkout nor its origin is still refused by the name guard', async () => {
     const { h, result } = run({
-      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n    remote: https://github.com/other/thing.git\n' },
+      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n  remote: https://github.com/other/thing.git\n' },
     })
     expect(await result).toEqual({ refused: expect.stringContaining('https://github.com/other/thing.git') })
     expect(h.removed).toEqual([])
@@ -1537,7 +1537,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
       files: {
         [path]:
-          'version: 2\nbranch:\n  main: main\nrepo:\n    remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: main\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
@@ -1550,7 +1550,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `version: 2\nextends: pnpm-workspace\nbranch:\n  main: main\nrepo:\n    remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
+          [path]: `version: 2\nextends: pnpm-workspace\nbranch:\n  main: main\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
         },
       },
       { install: 'none' },
@@ -1579,7 +1579,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       projects: [project('repo', null)],
       files: {
         [path]:
-          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n    remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
@@ -1594,7 +1594,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `${SHADOWED('main')}  proposed:\n    - name: hold every attempt\n      human: wait\n`,
+          [path]: `${WITH_ADMIT()}  proposed:\n    - name: hold every attempt\n      human: wait\n`,
         },
         git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }),
       },

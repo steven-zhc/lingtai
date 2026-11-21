@@ -2503,6 +2503,10 @@ export type SpellingFix =
  * than reading a report: the changes are made from the recipe as it is now, and `changeRecipe` applies them to
  * the file as it is when written. A project that fails does not stop the others. A process dying between the
  * file and the event is `changeRecipe`'s known edge: the next load records the file `by: 'file'`.
+ *
+ * Two gaps, both named rather than fixed (#1308): the refusal is thrown before any other check, so a file with an
+ * old spelling *and* a second fault shows the second after `--fix`; and a `worktree:` that held only `base` is left
+ * `{}`, which the final resolve refuses (`submodules` has no default), so that project is `failed` and unchanged.
  */
 export function fixOldSpellings(
   load: LoadProjects,
