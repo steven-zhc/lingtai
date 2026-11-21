@@ -248,8 +248,8 @@ describe('the accessors', () => {
       ...WRITTEN,
       steps: {
         admit: [
-          { name: 'cut the branch', worktree: { base: 'main', submodules: false } },
-          { name: 'cut from release', worktree: { base: 'release', submodules: false } },
+          { name: 'cut the branch', worktree: { submodules: false } },
+          { name: 'cut from release', worktree: { submodules: false } },
         ],
       },
     })

@@ -81,7 +81,7 @@ const QUEUE: QueueSettings = {
   kinds: ['bug', 'feature'],
   exclude: ['agent:hold'],
   backoff: '1h',
-  assignee: { take: 'both' },
+  assignee: { take: 'all' },
 }
 
 const TREE: Worktree = {

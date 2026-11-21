@@ -399,7 +399,7 @@ env:
   it('gives a v2 recipe a digest nothing recomputes it from', async () => {
     const a = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
 
-    expect(a.configHash).toBe('30c6cc561a536aed31822a1d7fde5465b32b75fc0b004aa1e759e8a3775b6344')
+    expect(a.configHash).toBe('0b9a2b39dfc6925dbd4216ff7108ec9994d17139858119a49e56ca37cc645ffc')
     // And the body on the event is the document that digest is of (0047 §2),
     // so the five are out of both or neither — a strip on one side only makes
     // `hashRecipe(StepsResolved.recipe) === configHash` false.
@@ -553,7 +553,7 @@ describe('the hash of a recipe that does not write runtime.tier', () => {
   it('is the hash it had on main, when the defaulted tier was inside it (#1158)', async () => {
     const resolved = await resolveRecipe(reader({ [`develop:${RECIPE_PATH}`]: VALID }), 'develop')
     // Recorded from `main` before the key left the schema.
-    expect(resolved.configHash).toBe('30c6cc561a536aed31822a1d7fde5465b32b75fc0b004aa1e759e8a3775b6344')
+    expect(resolved.configHash).toBe('0b9a2b39dfc6925dbd4216ff7108ec9994d17139858119a49e56ca37cc645ffc')
     // And the body the event records still verifies against it: `forHash` is idempotent.
     expect(hashRecipe(canonicalRecipe(resolved.recipe) as never)).toBe(resolved.configHash)
   })

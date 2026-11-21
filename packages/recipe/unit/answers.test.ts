@@ -40,16 +40,16 @@ describe('landingChanges', () => {
     expect(landingChanges({ land: 'hold' }, [HOLD])).toEqual([])
   })
 
-  it('a branch sets repo.base and removes a hand-written hold', () => {
+  it('a branch sets branch.main and removes a hand-written hold', () => {
     expect(landingChanges({ land: 'release' }, [HAND_WRITTEN_HOLD])).toEqual([
-      { path: ['repo', 'base'], value: 'release' },
+      { path: ['branch', 'main'], value: 'release' },
       { path: ['steps', 'proposed'], value: [] },
     ])
   })
 
   it('a branch removes the hold beside a judge, and keeps the judge', () => {
     expect(landingChanges({ land: 'release' }, [JUDGE, HOLD])).toEqual([
-      { path: ['repo', 'base'], value: 'release' },
+      { path: ['branch', 'main'], value: 'release' },
       { path: ['steps', 'proposed'], value: [JUDGE] },
     ])
   })

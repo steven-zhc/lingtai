@@ -536,7 +536,7 @@ describe('describeAction, over the closed set', () => {
     merge: { name: 'land', merge: { strategy: 'merge-commit' } },
     queue: {
       name: 'queue',
-      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } },
+      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'all' } },
     },
     judge: { name: 'judge', judge: 'claude-code', when: 'findings' },
     backlog: { name: 'minors', backlog: 'minor' },

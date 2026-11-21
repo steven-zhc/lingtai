@@ -37,7 +37,7 @@ const queue: QueueSettings = {
   backoff: '1h',
   // Written out because the block requires it: `both` is what an unwritten
   // `runtime.assignee` has always selected, and `queueOf` is where that is said.
-  assignee: { take: 'both' },
+  assignee: { take: 'all' },
 }
 
 /**
@@ -233,7 +233,7 @@ describe('the assignee', () => {
 
   it("is not offered under `mine` when it is somebody else's, and is under `both`", () => {
     expect(considerIssue(alices, as({ login: 'bob', take: 'mine' })).skip).toBe('assigned-elsewhere')
-    expect(considerIssue(alices, as({ login: 'bob', take: 'both' })).skip).toBeNull()
+    expect(considerIssue(alices, as({ login: 'bob', take: 'all' })).skip).toBeNull()
   })
 
   /** Unassigned work is taken by default — what the queue did before, and what somebody alone expects. */
@@ -275,7 +275,7 @@ describe('the assignee', () => {
   /** A stale label misinforms and blocks nobody. */
   it('does not read `lingtai:working`, under any setting', () => {
     const working = issue({ number: 184, labels: ['bug', 'lingtai:working'] })
-    expect(considerIssue(working, as({ take: 'both' })).skip).toBeNull()
+    expect(considerIssue(working, as({ take: 'all' })).skip).toBeNull()
     expect(considerIssue(working, as({ take: 'unassigned' })).skip).toBeNull()
   })
 

@@ -11,7 +11,7 @@ import { ceilingOf, declaresTurnsOn, limitsFor } from '../src/settings.ts'
 const WITH = (runtime: unknown, steps: unknown = undefined) =>
   ({
     version: 2,
-    repo: { base: 'main' },
+    branch: { main: 'main' },
     source: { kinds: ['bug'] },
     env: { plantAt: '.env.local' },
     runtime,

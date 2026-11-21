@@ -607,7 +607,7 @@ describe('describeAssignee', () => {
     expect(describeAssignee({ login: 'alice', take: 'unassigned' })).toBe(
       'only issues assigned to nobody (this machine is alice)',
     )
-    expect(describeAssignee({ login: 'alice', take: 'both' })).toBe(
+    expect(describeAssignee({ login: 'alice', take: 'all' })).toBe(
       'any issue, whoever it is assigned to (this machine is alice)',
     )
   })
