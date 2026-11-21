@@ -1,3 +1,4 @@
+import { type PrState, isOpen } from '@lingtai/domain'
 /**
  * `changeRecipe` (0128 §6, #1177): the one write of a project's recipe. The file first, then the event naming who.
  *
@@ -21,11 +22,13 @@ import {
   sourceOf,
 } from '@lingtai/recipe'
 import { Cause, Effect } from 'effect'
+import { parse as parseYaml } from 'yaml'
 
 import { recordFileRecipe } from './commands.ts'
 import { draftRecipe } from './draft.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
+import { type PrDraftTicket, isTeamSource, listPrs, readDraftOn } from './pr.ts'
 import { defaultStore, readProjectStateEffect } from './state.ts'
 
 /** What to change: a draft's changes, or the text a person typed over the text their page loaded. */
@@ -49,6 +52,47 @@ export interface ChangeOptions {
   by: string
   store?: EventStore
   home?: string
+  /**
+   * The cards that may have landed on `branch.personal`, for a team → solo save to decide the draft from. Never the
+   * board's two-day window. Absent, such a save is refused: unknown is not empty.
+   */
+  candidates?: (project: string) => Effect.Effect<readonly { readonly issue: string }[], Error>
+}
+
+const SHOWN_TICKETS = 5
+
+/** The personal branch a team recipe's text names, falling back to its `branch.main` as `readPrDraft` does. */
+function personalOf(source: string): string {
+  try {
+    const raw = parseYaml(source) as { branch?: { personal?: unknown; main?: unknown } } | null
+    const b = raw?.branch
+    if (typeof b?.personal === 'string') return b.personal
+    if (typeof b?.main === 'string') return b.main
+  } catch {
+    // unreadable text names no branch
+  }
+  return 'main'
+}
+
+/** The refusal's sentence: the switch, what holds it, and the way out. Both halves when both hold. */
+export function modeSwitchMessage(personal: string, open: readonly PrState[], draft: readonly PrDraftTicket[]): string {
+  const parts: string[] = []
+  if (open.length > 0) {
+    const names = open.map(
+      (pr) => `PR #${pr.host?.number ?? pr.n} is open${pr.prBranch === null ? '' : ` on ${pr.prBranch}`}`,
+    )
+    parts.push(
+      `${names.join('; ')} — merge or close it first; if it merged on the code host, open its PR page so the merge is read`,
+    )
+  }
+  if (draft.length > 0) {
+    const shown = draft.slice(0, SHOWN_TICKETS).map((t) => `#${t.ticket}`)
+    const more = draft.length - shown.length
+    parts.push(
+      `${shown.join(', ')}${more > 0 ? ` and ${more} more` : ''} ${draft.length === 1 ? 'has' : 'have'} landed on ${personal} and not reached main — submit ${draft.length === 1 ? 'it' : 'them'} as a PR and merge it first`,
+    )
+  }
+  return `mode: team → solo is refused while ${parts.join(', and while ')} (0130 §1)`
 }
 
 /** The recipe is on disk and the log does not have it yet; the next read records it as `by: 'file'`. */
@@ -124,6 +168,29 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
       ),
     )
     if (refused !== null) return refused
+  }
+
+  // Only team → solo reads the log for tickets and PRs; every other save costs what it did.
+  if (current !== null && isTeamSource(current) && !isTeamSource(text)) {
+    const personal = personalOf(current)
+    if (options.candidates === undefined) {
+      return {
+        ok: false,
+        reason: 'mode-switch',
+        message: `mode: team → solo is refused here: this caller cannot read what has landed on ${personal} — switch the mode on /recipe`,
+      } as SaveRecipeTextResult
+    }
+    // A failed read fails the change: never *nothing open*.
+    const open = (yield* listPrs(project, store)).filter(isOpen)
+    const candidates = yield* options.candidates(project)
+    const draft = yield* readDraftOn(project, personal, candidates, store)
+    if (open.length > 0 || draft.length > 0) {
+      return {
+        ok: false,
+        reason: 'mode-switch',
+        message: modeSwitchMessage(personal, open, draft),
+      } as SaveRecipeTextResult
+    }
   }
 
   const written = text !== current

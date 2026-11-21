@@ -89,7 +89,7 @@ export function applySetup<A, E>(
 ): Effect.Effect<{ path: string; registered: A }, SetupWriteError | E> {
   return Effect.gen(function* () {
     const path = recipePath(answers.project, target.home)
-    yield* changeRecipe(
+    const changed = yield* changeRecipe(
       answers.project,
       { changes: answers.changes, ...(answers.said === undefined ? {} : { said: answers.said }) },
       {
@@ -104,6 +104,8 @@ export function applySetup<A, E>(
           : new SetupWriteError(`${path} was not written: ${(err as Error).message}`),
       ),
     )
+    // A refusal is passed up by name, never reported as written.
+    if (!changed.ok) return yield* Effect.fail(new SetupWriteError(`${path} was not written: ${changed.message}`))
     const registered = yield* register
     return { path, registered }
   })

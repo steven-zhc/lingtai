@@ -13,12 +13,10 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { createGitHubClient, makeGitHub } from '@lingtai/github'
 import { loadProjectsEffect, readProjectStateEffect } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
+import { EVERY_LANDED_ROW_DAYS } from '@lingtai/projector/task-view'
 import { remoteOf } from '@lingtai/recipe'
 import { RepoFailed, ensureMirrorEffect, gitEffect, mirrorPathFor } from '@lingtai/repo'
 import { Effect } from 'effect'
-
-/** A window that covers every landed row: the board's two-day default would lose a ticket landed last week. */
-const EVERY_LANDED_ROW_DAYS = 36_500
 
 /** How long the installation token may take: a read inside a write the drain waits for. */
 const TOKEN_MS = 60_000

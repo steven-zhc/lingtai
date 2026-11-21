@@ -274,7 +274,7 @@ export interface PrDraftTicket {
 }
 
 /** Whether a recorded recipe text says `mode: team`. Text that does not parse is not team: it can only shrink the draft. */
-function isTeamSource(source: string): boolean {
+export function isTeamSource(source: string): boolean {
   try {
     const raw: unknown = parseYaml(source)
     return typeof raw === 'object' && raw !== null && (raw as { mode?: unknown }).mode === 'team'
@@ -300,7 +300,18 @@ export function readPrDraft(
 ): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     if (modeOf(recipe) !== 'team') return []
-    const personal = recipe.branch.personal ?? recipe.branch.main
+    return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store)
+  })
+}
+
+/** The draft against a named personal branch: `readPrDraft` without the recipe, for a caller that holds only text. */
+export function readDraftOn(
+  project: string,
+  personal: string,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<PrDraftTicket[], Error> {
+  return Effect.gen(function* () {
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
