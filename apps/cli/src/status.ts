@@ -17,6 +17,7 @@ import {
   passOverBaseRed,
   type BaseHead,
   projectFilter,
+  rankedKinds,
   runnableNowEffect,
   type ClientFor,
   type RecipeFor,
@@ -64,7 +65,7 @@ import { paint, stateInk } from '@lingtai/env/colour'
 import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { loadProjectsEffect } from '@lingtai/project'
 import { describeArm, describeWaitLines, describeWait, readTasksEffect, type TaskCard } from '@lingtai/projector'
-import { branchOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -528,13 +529,19 @@ export const readStatus = (
       const backoffMs = filter.ok ? filter.backoffMs : 0
       // The ceiling `describeArm` says `of` against — `limits.restarts`, null where the recipe would not resolve (#504).
       const newAttemptsOf = filter.ok ? filter.limits.newAttempts : null
-      const runnable = yield* selectRunnableEffect({ project: name, offered, kinds, backoffMs })
+      const runnable = yield* selectRunnableEffect({
+        project: name,
+        offered,
+        kinds,
+        mode: filter.ok ? modeOf(filter.recipe) : 'solo',
+        backoffMs,
+      })
       const tasks = yield* readTasksEffect({ project: name })
       // **The arm comes from the row, because the offer cannot carry it** (#100):
       // a restarted ticket is queued, so it is listed from here and nowhere else.
       const newAttemptsByTask = new Map(tasks.map((t) => [t.taskId, t.newAttempts ?? 0]))
       const now = Date.now()
-      const offeredKinds = kinds.length > 0 ? kinds : ['bug']
+      const offeredKinds = rankedKinds(kinds.length > 0 ? kinds : ['bug'], filter.ok ? modeOf(filter.recipe) : 'solo')
       const offeredRefs = new Set(offered.filter((o) => offeredKinds.includes(o.kind)).map((o) => o.ref))
 
       const rowOf = (

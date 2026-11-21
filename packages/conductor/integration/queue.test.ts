@@ -58,7 +58,7 @@ describe('selectRunnable', () => {
     const kinds = ['bug', 'feature']
 
     // No rows at all: the log has no opinion about either, so both are runnable.
-    const before = await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR })
+    const before = await selectRunnable({ project: other, offered, kinds, mode: 'solo', backoffMs: HOUR })
     expect(before.map((r) => r.issue)).toEqual(['10', '11'])
     expect(before[0]).toEqual({ taskId: `ticket-${other}-10`, issue: '10', title: 'one', kind: 'bug' })
 
@@ -76,13 +76,19 @@ describe('selectRunnable', () => {
 
     // GitHub still lists 10. The log is the authority on what happened after
     // the claim, and it says the claim happened.
-    expect((await selectRunnable({ project: other, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual([
-      '11',
-    ])
+    expect(
+      (await selectRunnable({ project: other, offered, kinds, mode: 'solo', backoffMs: HOUR })).map((r) => r.issue),
+    ).toEqual(['11'])
 
     // GitHub stops listing 11 — closed by a person. Nothing has to be
     // invalidated, because nothing was stored: it is simply not in the offer.
-    const narrowed = await selectRunnable({ project: other, offered: [offered[0]!], kinds, backoffMs: HOUR })
+    const narrowed = await selectRunnable({
+      project: other,
+      offered: [offered[0]!],
+      kinds,
+      mode: 'solo',
+      backoffMs: HOUR,
+    })
     expect(narrowed).toEqual([])
   })
 
@@ -103,7 +109,7 @@ describe('selectRunnable', () => {
     )
     expect(asked.ok).toBe(true)
     await build()
-    expect(await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).toEqual([])
+    expect(await selectRunnable({ project, offered, kinds, mode: 'solo', backoffMs: HOUR })).toEqual([])
 
     // A second question is refused rather than replacing the first unanswered.
     expect(
@@ -139,7 +145,9 @@ describe('selectRunnable', () => {
     expect(answered.ok).toBe(true)
     await build()
     // Never attempted, so the backoff holds nothing: runnable at once.
-    expect((await selectRunnable({ project, offered, kinds, backoffMs: HOUR })).map((r) => r.issue)).toEqual(['51'])
+    expect(
+      (await selectRunnable({ project, offered, kinds, mode: 'solo', backoffMs: HOUR })).map((r) => r.issue),
+    ).toEqual(['51'])
   })
 
   /** Priority is the recipe's `kinds` order, and ties break numerically. */
@@ -153,6 +161,7 @@ describe('selectRunnable', () => {
         { ref: '20', title: 'b2', kind: 'bug' },
       ],
       kinds: ['feature', 'bug'],
+      mode: 'solo',
       backoffMs: HOUR,
     })
     // #100 beats both bugs on kind; #9 beats #20 numerically, not lexically.
@@ -166,6 +175,7 @@ describe('selectRunnable', () => {
       project: fresh,
       offered: [{ ref: '1', title: 'c', kind: 'chore' }],
       kinds: ['bug'],
+      mode: 'solo',
       backoffMs: HOUR,
     })
     expect(runnable).toEqual([])
@@ -219,6 +229,7 @@ describe('selectRunnable', () => {
         project,
         offered,
         kinds,
+        mode: 'solo',
         backoffMs: HOUR,
         now: new Date(attemptedAt.getTime() + 59 * 60_000),
       })
@@ -228,6 +239,7 @@ describe('selectRunnable', () => {
         project,
         offered,
         kinds,
+        mode: 'solo',
         backoffMs: HOUR,
         now: new Date(attemptedAt.getTime() + HOUR),
       })
@@ -239,6 +251,7 @@ describe('selectRunnable', () => {
         project,
         offered,
         kinds,
+        mode: 'solo',
         backoffMs: 60_000,
         now: new Date(attemptedAt.getTime() + 5 * 60_000),
       })

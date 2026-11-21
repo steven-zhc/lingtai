@@ -13,6 +13,7 @@ import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  rankedKinds,
   considerIssue,
   DEPENDENCIES_UNREAD,
   dependenciesUnread,
@@ -751,5 +752,22 @@ describe('team mode and the landed label (#1310)', () => {
   it('passes over lingtai:landed in solo mode only, even with nothing excluded', () => {
     expect(skip({ labels: ['bug', 'Lingtai:Landed'] }, SOLO)).toBe('landed-elsewhere')
     expect(skip({ labels: ['bug', 'lingtai:landed'], assignees: ['me'] }, TEAM)).toBeNull()
+  })
+
+  it('ranks lingtai:pr-fix first in team mode, once, and makes it a kind of its own', () => {
+    expect(rankedKinds(['bug', 'feature'], 'team')).toEqual(['lingtai:pr-fix', 'bug', 'feature'])
+    expect(rankedKinds(['bug', 'Lingtai:PR-Fix'], 'team')).toEqual(['lingtai:pr-fix', 'bug'])
+    expect(rankedKinds([], 'team')).toEqual(['lingtai:pr-fix'])
+    expect(rankedKinds(['bug'], 'solo')).toEqual(['bug'])
+    const mine = { assignees: ['me'] }
+    expect(skip({ labels: ['lingtai:pr-fix'], ...mine }, TEAM)).toBeNull()
+    expect(
+      considerIssue(issue({ number: 1, labels: ['lingtai:pr-fix'], ...mine }), { ...queue, kinds: [] }, TEAM).skip,
+    ).toBeNull()
+  })
+
+  it('passes over lingtai:pr-fix in solo mode, even with bug on it and nothing excluded', () => {
+    expect(skip({ labels: ['bug', 'Lingtai:PR-Fix'] }, SOLO)).toBe('pr-fix-elsewhere')
+    expect(skip({ labels: ['lingtai:pr-fix'] }, SOLO)).toBe('pr-fix-elsewhere')
   })
 })

@@ -311,7 +311,7 @@ describe('a conductor that replaces a dead one', () => {
     // Out of circulation: `task_view` reduces a claim as `running`, and the queue
     // offers nothing that is not `queued`. `backoffMs: 0` so the only thing
     // being tested is the claim — a blind retry is 0028's subject, not this one.
-    expect(await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).toEqual([])
+    expect(await selectRunnable({ project, offered, kinds: ['bug'], mode: 'solo', backoffMs: 0 })).toEqual([])
 
     // The new conductor starts. It holds the lock, so it is the only conductor,
     // so `local:22222` is dead — whatever any timestamp says.
@@ -334,9 +334,9 @@ describe('a conductor that replaces a dead one', () => {
     expect(types).toEqual(['TicketClaimed', 'TicketReleased'])
 
     await build()
-    expect((await selectRunnable({ project, offered, kinds: ['bug'], backoffMs: 0 })).map((r) => r.issue)).toEqual([
-      '87',
-    ])
+    expect(
+      (await selectRunnable({ project, offered, kinds: ['bug'], mode: 'solo', backoffMs: 0 })).map((r) => r.issue),
+    ).toEqual(['87'])
   })
 
   /** The other half of the proof: this conductor's own claims are not foreign. */

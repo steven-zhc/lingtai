@@ -32,7 +32,7 @@ import { Effect } from 'effect'
 
 // `ticketStream` and its inverse moved to `domain` (0022): the projector
 // needs them and must not depend on this package.
-import { LANDED_LABEL } from './labels.ts'
+import { LANDED_LABEL, PR_FIX_LABEL } from './labels.ts'
 import type { Tickets } from './ticket-store.ts'
 
 /**
@@ -142,6 +142,16 @@ export function kindLabelOf(
   return null
 }
 
+/**
+ * The kinds the queue matches and sorts by: in team mode `lingtai:pr-fix` first (0130 §5),
+ * once even if the recipe names it; in solo mode the recipe's own list.
+ */
+export function rankedKinds(kinds: readonly string[], mode: Selection['mode']): readonly string[] {
+  if (mode !== 'team') return kinds
+  const own = normaliseLabel(PR_FIX_LABEL)
+  return [PR_FIX_LABEL, ...kinds.filter((k) => normaliseLabel(k) !== own)]
+}
+
 function normaliseLabel(label: string): string {
   return label.toLowerCase().replace(/\s+/g, '-')
 }
@@ -160,6 +170,7 @@ export type SkipReason =
    * machine passes over `lingtai:landed` and no recipe can lift that (#1310).
    */
   | 'landed-elsewhere'
+  | 'pr-fix-elsewhere'
   /** It has open sub-issues, so it is a container of work and never work itself (#957). */
   | 'epic'
   | 'no-kind'
@@ -243,6 +254,11 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings, select
     return { issue, skip: 'landed-elsewhere', label: null }
   }
 
+  // A change asked for on somebody's PR, for their team machine. Checked like `publishing`.
+  if (selection.mode === 'solo' && labels.includes(PR_FIX_LABEL.toLowerCase())) {
+    return { issue, skip: 'pr-fix-elsewhere', label: null }
+  }
+
   // Every reason an issue is not this agent's comes from the recipe. There used
   // to be one more, hardcoded here: any label starting `agent:` meant the issue
   // was owned by the old shell loop, and Lingtai skipped it. That was a guess
@@ -257,7 +273,7 @@ export function considerIssue(issue: TicketListing, queue: QueueSettings, select
   const held = queue.exclude.find((x) => labels.includes(x.toLowerCase()))
   if (held !== undefined) return { issue, skip: 'excluded-label', label: held }
 
-  if (kindOf(issue, queue.kinds) === null) return { issue, skip: 'no-kind', label: null }
+  if (kindOf(issue, rankedKinds(queue.kinds, selection.mode)) === null) return { issue, skip: 'no-kind', label: null }
 
   // After the checks above, and deliberately the least permanent of them. A ticket carrying
   // `lingtai:hold` is one a person is holding and a ticket of no kind is one this
@@ -465,6 +481,7 @@ export function runnableNow(options: RunnableNowOptions): Promise<Offered> {
 export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Offered, unknown> {
   return Effect.gen(function* () {
     const { client, queue, selection } = options
+    const kinds = rankedKinds(queue.kinds, selection.mode)
 
     const issues = yield* Effect.tryPromise({
       try: () => (options.only ? Promise.all(options.only.map((n) => client.getIssue(n))) : client.listOpenIssues()),
@@ -478,7 +495,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
     for (const issue of issues) {
       if (issue.dependencies === null) unread.push(issue.number)
 
-      const matched = kindLabelOf(issue, queue.kinds)
+      const matched = kindLabelOf(issue, kinds)
       // Before the skip, deliberately: the colour of `bug` is the same whether or
       // not this particular bug can be run, and a held ticket is often the only
       // open issue a kind has.

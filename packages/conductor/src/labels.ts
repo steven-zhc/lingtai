@@ -26,6 +26,9 @@ export const LINGTAI_LABEL_PREFIX = 'lingtai:'
 /** The label a ticket wears once it landed on a branch that is not `branch.main` (0130 §4). Computed, in `OWN_LABELS`. */
 export const LANDED_LABEL = `${LINGTAI_LABEL_PREFIX}landed`
 
+/** The label a person sets on a change a review asked for (0130 §5): a kind of its own that ranks ahead of every recipe kind in team mode. Not in `OWN_LABELS`. */
+export const PR_FIX_LABEL = `${LINGTAI_LABEL_PREFIX}pr-fix`
+
 /** The label a person sets to keep agents off a ticket — also what Lingtai writes on an accepted finding. Not in `OWN_LABELS`: it is never computed. */
 export const HOLD_LABEL = `${LINGTAI_LABEL_PREFIX}hold`
 
