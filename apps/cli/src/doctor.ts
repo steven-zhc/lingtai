@@ -13,6 +13,8 @@ import {
   type RuntimeCapabilities,
   createRuntime,
   everyRuntime,
+  CLASSIC_COPILOT_TOKEN_SENTENCE,
+  NO_COPILOT_TOKEN_SENTENCE,
 } from '@lingtai/agent'
 /**
  * `lingtai doctor` — the old `preflight()`, generalised.
@@ -28,8 +30,10 @@ import {
  * the append-only rules by trying to break them, which means writing probe rows
  * to the event log. A diagnostic that appends to the system of record is the
  * wrong shape; every check below reads the catalogue instead. Bootstrap stays as
- * the write-side setup step. The one exception is `NOTIFY`, which is a
- * transient signal and touches no table.
+ * the write-side setup step. There are two exceptions. `NOTIFY` is a
+ * transient signal and touches no table. `--fix` (#1307) rewrites a recipe that
+ * uses an old spelling, and only through `changeRecipe` — 0128 §6's one write of
+ * a recipe — never by appending to the log itself.
  *
  * **A check that cannot run yet says so.** The checks for the repository, the
  * hook and GitHub are listed as `skip` rather than omitted — a
@@ -46,6 +50,7 @@ import {
   agentRefusal,
   endedWithoutEndActionsEffect,
   attemptCeiling,
+  copilotTokenSignedIn,
   readAccount,
   runtimesOf,
   signedInHere,
@@ -83,6 +88,7 @@ import {
   type RecordedRefusal,
   REDUCERS,
   RuntimeId,
+  isUnsandboxableRuntime,
   ceilingFacts,
   isEventType,
   locksOn,
@@ -101,6 +107,7 @@ import {
   hasGitHubAuth,
   machineDatabaseUrl,
   claudeOauthToken,
+  copilotGithubToken,
   codexTextConfig,
   type CodexTextConfig,
   postgresUrlIfSet,
@@ -133,7 +140,7 @@ import {
 } from '@lingtai/event-store/queries'
 import type { GhRun, GhStatus, GitHubClient } from '@lingtai/github'
 import { ghScopeGap, ghScopeRefresh, ghStatusEffect, REQUIRED_PERMISSIONS } from '@lingtai/github'
-import { listProjectStreamsEffect, loadProjects, loadProjectsEffect, recipePath } from '@lingtai/project'
+import { changeRecipe, listProjectStreamsEffect, loadProjects, loadProjectsEffect, recipePath } from '@lingtai/project'
 import {
   backlogProjection,
   describeShape,
@@ -151,20 +158,25 @@ import type { HostAnswer, HostFactsEffect, HostVerdict, ResolvedRecipe, SignedIn
 import {
   UNBOUNDED,
   baseDivergence,
-  baseOf,
-  baseWrittenAt,
+  branchOf,
+  branchKeyOf,
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
+  OldSpellingRefusedError,
+  type OldSpelling,
+  RecipeInvalidError,
+  RecipeMissingError,
   remoteOf,
   sandboxDecision,
+  sourceHashOf,
   verdictOf,
   type Recipe,
 } from '@lingtai/recipe'
 import { gitEffect } from '@lingtai/repo'
 import { installFor } from '@lingtai/sandbox'
 import { remedyFor } from '@lingtai/setup'
-import { Cause, Effect } from 'effect'
+import { Cause, Effect, Redacted } from 'effect'
 import pg from 'pg'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
@@ -1259,6 +1271,8 @@ export interface DoctorReach {
   gh?: GhRun
   /** What this machine is signed in to, for the `recipe:` row — injectable so a unit test spawns nothing. */
   signedIn?: SignedIn
+  /** Whether the machine's Copilot token signs Copilot in, for a sandboxed project's `recipe:` row (#1301). */
+  copilotSignedIn?: () => Promise<boolean>
   /**
    * Whether this host can provide the sandbox (#1147, #1159): **required**, the one answer the `sandbox: host`
    * row, the canary's gate and every recipe row share, so they cannot disagree about *can*. `runDoctor` takes it
@@ -1279,6 +1293,8 @@ export interface DoctorReach {
    * Injectable so a test reads no machine file.
    */
   claudeToken?: () => Effect.Effect<boolean, unknown>
+  /** `copilot: token`'s reader: a classification, never the value (#1301). */
+  copilotToken?: () => Effect.Effect<CopilotTokenKind, unknown>
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -2438,6 +2454,151 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 }
 
 /**
+ * The lines a person reads for a set of old spellings: each key and what it becomes.
+ * One entry per spelling, so a base written twice shows both.
+ */
+function spellingLines(spellings: readonly OldSpelling[]): string[] {
+  return spellings.map((s) => s.sentence)
+}
+
+/**
+ * Per project: does the recipe still write an old spelling (#1308)? A `fail`: the recipe no longer runs, and
+ * `lingtai restart` refuses on a red doctor before it drains, which is the safe side. The spellings are the
+ * refusal's own (`OldSpellingRefusedError`, via the filter), so the row names exactly the keys the resolver
+ * refused and the recipe is never read again. A file that resolves cannot hold one.
+ */
+export function recipeSpellings(filters: readonly ProjectFilter[] | null): CheckResult[] {
+  if (filters === null) {
+    return [{ name: 'recipe: spelling', status: 'skip', detail: 'the project streams could not be read' }]
+  }
+  return filters.map((f): CheckResult => {
+    const name = `recipe: ${f.project} spelling`
+    if (f.ok) return { name, status: 'ok', detail: 'no old spelling' }
+    if (f.oldSpellings === undefined || f.oldSpellings.length === 0) {
+      return {
+        name,
+        status: 'skip',
+        detail: 'the recipe does not resolve — `recipe: resolves for every project` says why',
+      }
+    }
+    return {
+      name,
+      status: 'fail',
+      title: `${f.project}: the recipe writes an old spelling`,
+      detail: spellingLines(f.oldSpellings).join('\n'),
+      fix: 'lingtai doctor --fix',
+    }
+  })
+}
+
+/** What `--fix` did to one project. */
+export type SpellingFix =
+  | { project: string; outcome: 'written'; sourceHash: string; lines: readonly string[] }
+  | { project: string; outcome: 'nothing'; detail?: string }
+  | { project: string; outcome: 'failed'; detail: string }
+
+/**
+ * `lingtai doctor --fix` (#1307): rewrites each project's recipe from its old spellings to `branch.main` and
+ * `take: all` as a new recipe change by `by`, through `changeRecipe` and nothing else. It resolves again rather
+ * than reading a report: the changes are made from the recipe as it is now, and `changeRecipe` applies them to
+ * the file as it is when written. A project that fails does not stop the others. A process dying between the
+ * file and the event is `changeRecipe`'s known edge: the next load records the file `by: 'file'`.
+ *
+ * Two gaps, both named rather than fixed (#1308): the refusal is thrown before any other check, so a file with an
+ * old spelling *and* a second fault shows the second after `--fix`; and a `worktree:` that held only `base` is left
+ * `{}`, which the final resolve refuses (`submodules` has no default), so that project is `failed` and unchanged.
+ */
+export function fixOldSpellings(
+  load: LoadProjects,
+  reach: LookupReach,
+  options: { by: string; store?: EventStore; home?: string },
+): Effect.Effect<SpellingFix[] | null> {
+  return Effect.gen(function* () {
+    const projects = yield* recovering(load(), () => null)
+    if (projects === null) return null
+    const recipeFor = recipeLookup(reach)
+    const out: SpellingFix[] = []
+    for (const state of projects) {
+      const project = state.project
+      if (!project) continue
+      const done = yield* recovering(
+        Effect.gen(function* () {
+          // A refusal for an old spelling carries what it found. Only another recipe that does not resolve is
+          // "nothing to fix"; any other failure (a log read, the disk) propagates to the project's `failed`
+          // below, never to a green no-op.
+          const refused = yield* recipeFor(state, undefined).pipe(
+            Effect.map((): readonly OldSpelling[] | null => null),
+            Effect.catch((err) =>
+              err instanceof OldSpellingRefusedError
+                ? Effect.succeed(err.spellings)
+                : err instanceof RecipeInvalidError || err instanceof RecipeMissingError
+                  ? Effect.succeed(null)
+                  : Effect.fail(err),
+            ),
+          )
+          if (refused === null) {
+            return {
+              project,
+              outcome: 'nothing',
+              detail: 'the recipe does not write an old spelling, or does not resolve',
+            } satisfies SpellingFix
+          }
+          const lines = spellingLines(refused)
+          const changes = refused.flatMap((s) => s.changes)
+          const result = yield* changeRecipe(
+            project,
+            { changes },
+            {
+              by: options.by,
+              ...(options.store === undefined ? {} : { store: options.store }),
+              ...(options.home === undefined ? {} : { home: options.home }),
+            },
+          )
+          if (!result.ok) return { project, outcome: 'failed', detail: result.message } satisfies SpellingFix
+          return {
+            project,
+            outcome: 'written',
+            sourceHash: sourceHashOf(result.content),
+            lines,
+          } satisfies SpellingFix
+        }),
+        (err): SpellingFix => ({ project, outcome: 'failed', detail: (err as Error).message }),
+      )
+      out.push(done)
+    }
+    return out
+  })
+}
+
+/** The lines `--fix` prints, one block per project that was written or failed. */
+export function renderSpellingFixes(fixes: readonly SpellingFix[] | null): string[] {
+  if (fixes === null) return ['the project streams could not be read — nothing was fixed']
+  const out: string[] = []
+  for (const f of fixes) {
+    if (f.outcome === 'written') {
+      out.push(
+        `${f.project}: rewrote the recipe (new hash ${f.sourceHash.slice(0, 12)})`,
+        ...f.lines.map((l) => `  ${l}`),
+      )
+    } else if (f.outcome === 'failed') out.push(`${f.project}: not fixed — ${f.detail}`)
+    else if (f.detail !== undefined) out.push(`${f.project}: skipped — ${f.detail}`)
+  }
+  if (!out.some((l) => !l.startsWith('  ') && !l.includes('skipped'))) out.push('nothing to fix')
+  else if (out.some((l) => l.includes('rewrote the recipe')))
+    out.push(
+      'if this stops between the file and the log, the next load records the file as `by: file` — the text is kept, only who saved it is lost',
+    )
+  return out
+}
+
+/** `--fix` with `--json` is refused by name: no script reads a report that wrote something. */
+export function fixRefusal(args: { fix: boolean; json: boolean }): string | null {
+  return args.fix && args.json
+    ? '--fix cannot be combined with --json: --fix writes, and a script must not read a report that wrote something'
+    : null
+}
+
+/**
  * Per project: does its recipe resolve at all, and what will it therefore take.
  *
  * **A fail, not a skip** (#76). This was in `DEFERRED`, on the argument that a
@@ -2455,6 +2616,7 @@ function unresolvedProblems(filters: readonly ProjectFilter[] | null): ReadonlyM
 function projectRecipes(
   filters: readonly ProjectFilter[] | null,
   probe: SignedIn = signedInHere,
+  copilotProbe: () => Promise<boolean> = () => copilotTokenSignedIn(),
 ): Effect.Effect<CheckResult[], unknown> {
   return Effect.gen(function* () {
     const name = 'recipe: resolves for every project'
@@ -2478,9 +2640,21 @@ function projectRecipes(
     // cached probe for the whole report rather than one per project: the answer is
     // about the machine, and `signedInProbe` remembers it for a minute anyway.
     const signedIn = yield* lift(() => probe())
+    // A sandboxed run is handed the machine's Copilot token, so for such a recipe the token signs Copilot in too —
+    // as `runOnce` admits it (#1301). Asked once, and only if some project needs it.
+    const needsToken = filters.some(
+      (f) =>
+        f.ok &&
+        f.recipe.sandbox?.enabled === true &&
+        runtimesOf(f.recipe).includes('copilot') &&
+        !signedIn.includes('copilot'),
+    )
+    const tokenSigns = needsToken ? yield* lift(() => copilotProbe()) : false
     return filters.flatMap((f) => {
       const hold = holdLabelRow(f)
-      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', signedIn)
+      const viaToken =
+        tokenSigns && f.ok && f.recipe.sandbox?.enabled === true && runtimesOf(f.recipe).includes('copilot')
+      const recipe = recipeRow(f, f.ok ? f.recipe.runtime.agent : '', viaToken ? [...signedIn, 'copilot'] : signedIn)
       return hold === null ? [recipe] : [recipe, hold]
     })
   })
@@ -2662,9 +2836,28 @@ export function unpricedRow(project: string, agent: RuntimeId, recipe: Recipe, k
     status: 'info',
     title: `${project}: ${agent} runs unpriced`,
     detail:
-      `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · ` +
+      (agent === 'antigravity'
+        ? `${agent} reports tokens and no cost, but names its model: a fetched rate row lets the day ceiling count its spend, but run.usd never stops a run on it (an ACP run is bounded by turns and wall only) · `
+        : `${agent} reports tokens and no cost, and names no model: run.usd and the day ceiling do not count its runs · `) +
       `bounded by turns ${ceiling.turns === UNBOUNDED ? 'unbounded' : ceiling.turns} and wall ${ceiling.wall} · ` +
       `needed by ${keys.join(', ')}`,
+  }
+}
+
+/** An agent that cannot run inside the sandbox runs without it, and `doctor` says so and why. */
+export function unsandboxedRow(project: string, agent: RuntimeId, recipe: Recipe): CheckResult {
+  const on = recipe.sandbox?.enabled === true
+  return {
+    name: `runtime: ${project} ${agent} unsandboxed`,
+    status: 'info',
+    title: `${project}: ${agent} runs unsandboxed`,
+    detail: on
+      ? `${agent} cannot run inside srt in this release (it binds a local port and reads the keychain), so its ` +
+        'invocations run unsandboxed, recorded as `runtime cannot` while the sandbox is available; where the host cannot ' +
+        'sandbox, they are recorded as the pass records them · ' +
+        'its login is in the keychain, which only a process in your GUI login session can read'
+      : `${agent} runs unsandboxed: off by choice, like every run here · its login is in the keychain, which only a ` +
+        'process in your GUI login session can read',
   }
 }
 
@@ -2989,13 +3182,32 @@ function dispatchedAuthRow(
   // Exactly what a run gets. Not `process.env` — except the `CODEX_HOME` a
   // triage checkout is given, which the caller adds and keeps its own cache for.
   env: Record<string, string> = runnableEnv({}),
+  // The project is sandboxed, so a Copilot run is handed the machine's token and that token signs it in.
+  viaToken: boolean = false,
 ): Effect.Effect<CheckResult, unknown> {
   return Effect.gen(function* () {
     if (!asked.has(agent)) {
       const runtime = runtimes.find((r) => r.capabilities.id === agent)
       asked.set(agent, runtime?.checkAuth ? yield* lift(() => runtime.checkAuth!(env)) : null)
     }
-    return authRow(project, agent, asked.get(agent) ?? null, label, keys)
+    let status = asked.get(agent) ?? null
+    // Copilot is signed in by its own login, or — for a sandboxed project only, the one launch that is handed the
+    // token (#1301) — by the token. The shared `asked` stays token-free, since another project may be unsandboxed.
+    if (viaToken && agent === 'copilot' && status?.loggedIn !== true) {
+      const runtime = runtimes.find((r) => r.capabilities.id === agent)
+      let token: string | undefined
+      try {
+        const read = copilotGithubToken()
+        token = read === undefined ? undefined : Redacted.value(read)
+      } catch {
+        token = undefined
+      }
+      if (token !== undefined && runtime?.checkAuth) {
+        const withToken = yield* lift(() => runtime.checkAuth!({ ...env, COPILOT_GITHUB_TOKEN: token }))
+        if (withToken.loggedIn) status = withToken
+      }
+    }
+    return authRow(project, agent, status, label, keys)
   })
 }
 
@@ -3020,7 +3232,10 @@ function authRow(
     status: 'fail',
     title: `${project}'s ${label} agent, ${agent}, ${stateTitle(status.state)}`,
     detail:
-      `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n` +
+      (agent === 'antigravity' && signedOut
+        ? `${agent} reports ${status.detail}. This probe answers for the session doctor runs in; if the conductor runs ` +
+          `in another (a GUI LaunchAgent, say, rather than this ssh shell), its next ${label} call may still authenticate\n`
+        : `${agent} reports ${status.detail}, so ${project}'s next ${label} call fails\n`) +
       `${project}'s recipe names it at ${keys.join(', ')}, so that is what its next call constructs and spawns. ` +
       `${capitalise(remedyFor(status.state))}, or name a runtime this ` +
       `machine has at ${keys.join(', ')} in ${recipePath(project)}.` +
@@ -3110,6 +3325,60 @@ export function claudeTokenRow(
               'not set — `lingtai token claude` (or `claude setup-token`, then `claude.oauth_token` in ~/.lingtai/config.yml)',
           },
     ),
+    // The reader's sentence names the path and quotes nothing; it is safe to show.
+    Effect.catch((err) =>
+      Effect.succeed<CheckResult>({ name, status: 'fail', detail: (err as Error).message ?? 'could not be read' }),
+    ),
+  )
+}
+
+/** What a sandboxed Copilot run would be handed, classified inside the reader so the value never leaves it. */
+export type CopilotTokenKind = 'set' | 'classic' | 'unset'
+
+/** `copilotGithubToken` as its classification, keeping the reader's own sentence. */
+export const readCopilotToken = (env?: NodeJS.ProcessEnv): Effect.Effect<CopilotTokenKind, Error> =>
+  Effect.try({
+    try: (): CopilotTokenKind => {
+      const token = copilotGithubToken(env)
+      if (token === undefined) return 'unset'
+      return Redacted.value(token).startsWith('ghp_') ? 'classic' : 'set'
+    },
+    catch: (err) => (err instanceof Error ? err : new Error('could not be read')),
+  })
+
+/**
+ * `copilot: token` (#1301, 0127 §8): the fine-grained token a sandboxed Copilot run is handed. A classic `ghp_` one
+ * fails, since Copilot ignores it without a word; unset fails only when a sandboxed project names `copilot`.
+ * The value is never read here — `read` answers a classification.
+ */
+export function copilotTokenRow(
+  read: () => Effect.Effect<CopilotTokenKind, unknown> = () => readCopilotToken(),
+  sandboxedNamed: () => Effect.Effect<boolean> = () => Effect.succeed(false),
+): Effect.Effect<CheckResult> {
+  const name = 'copilot: token'
+  return read().pipe(
+    Effect.flatMap((kind): Effect.Effect<CheckResult> => {
+      if (kind === 'set') return Effect.succeed({ name, status: 'ok', detail: 'set' })
+      if (kind === 'classic') {
+        return Effect.succeed({
+          name,
+          status: 'fail',
+          detail: `${CLASSIC_COPILOT_TOKEN_SENTENCE.replace(/^the Copilot token is /, 'the value is ')}`,
+        })
+      }
+      return sandboxedNamed().pipe(
+        Effect.map((named): CheckResult =>
+          named
+            ? { name, status: 'fail', detail: `not set — ${NO_COPILOT_TOKEN_SENTENCE}` }
+            : {
+                name,
+                status: 'ok',
+                detail:
+                  'not set — make a fine-grained token with Copilot Requests, then `copilot.github_token` in ~/.lingtai/config.yml',
+              },
+        ),
+      )
+    }),
     // The reader's sentence names the path and quotes nothing; it is safe to show.
     Effect.catch((err) =>
       Effect.succeed<CheckResult>({ name, status: 'fail', detail: (err as Error).message ?? 'could not be read' }),
@@ -3233,7 +3502,16 @@ export function declaredEnvironment(
             }
           }
           for (const [agent, keys] of needed) {
-            const row = yield* dispatchedAuthRow(project.project!, agent, asked, runtimes, 'runtime', keys)
+            const row = yield* dispatchedAuthRow(
+              project.project!,
+              agent,
+              asked,
+              runtimes,
+              'runtime',
+              keys,
+              runnableEnv({}),
+              resolved.recipe.sandbox?.enabled === true,
+            )
             const onRuntime = agent === resolved.recipe.runtime.agent
             results.push({
               ...row,
@@ -3251,6 +3529,7 @@ export function declaredEnvironment(
             })
             if (ACP_PROFILES[agent] !== undefined)
               results.push(unpricedRow(project.project!, agent, resolved.recipe, keys))
+            if (isUnsandboxableRuntime(agent)) results.push(unsandboxedRow(project.project!, agent, resolved.recipe))
           }
           for (const role of ['discuss', 'triage'] as const) {
             const selected = resolved.recipe[role]
@@ -3320,7 +3599,7 @@ export function declaredEnvironment(
  * `runOnce` refuses this at `stage: "recipe"` and `lingtai add` refuses to
  * record it, so a project onboarded from here on cannot be in this state. A
  * project registered *before* those existed can be, and nothing else would say
- * so: the divergence is invisible until a run merges into `repo.base` under
+ * so: the divergence is invisible until a run merges into `branch.main` under
  * gates it read from somewhere else, and every event that run writes is
  * internally consistent — `StepsResolved` carries the hash of the recipe it
  * obeyed, so `steps: end ran on what landed` compares a plan against itself and
@@ -3341,7 +3620,7 @@ export function recipeGovernsItsBase(
     const name = 'recipe: the rules and the merge target are one branch'
     // No App is needed to compare them: the recipe is this machine's file (#180).
     // No owner either (#357): the comparison is `state.base` against the
-    // recipe's own `repo.base`, read straight from the recorded registration —
+    // recipe's own `branch.main`, read straight from the recorded registration —
     // no fetch, no GitHub call, nothing beyond what registration already wrote.
 
     const projects = yield* recovering(load(), () => null)
@@ -3391,7 +3670,7 @@ export function recipeGovernsItsBase(
                   // The refusal `runOnce` and `add` share, its command on a line of its own.
                   detail: divergence.replace('. Re-register:', '.\nRe-register:'),
                   // A `--local` or owner-less slug is a placeholder; a command with one would not run.
-                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --base ${baseOf(resolved.recipe)}` } : {}),
+                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --main ${branchOf(resolved.recipe)}` } : {}),
                 }
               : {
                   name: label,
@@ -3401,7 +3680,7 @@ export function recipeGovernsItsBase(
                   // row that sends a reader to something nothing reads.
                   detail:
                     `read from ${resolved.ref}, and ` +
-                    `${baseWrittenAt(resolved.recipe)} says ${baseOf(resolved.recipe)}`,
+                    `${branchKeyOf(resolved.recipe)} says ${branchOf(resolved.recipe)}`,
                 },
           )
         }),
@@ -3968,7 +4247,14 @@ export function runDoctor(
     )
     yield* step(
       'project recipes',
-      projectRecipes(filters, reach.signedIn ?? signedInHere).pipe(Effect.orDie, Effect.map(pushAll)),
+      projectRecipes(filters, reach.signedIn ?? signedInHere, reach.copilotSignedIn).pipe(
+        Effect.orDie,
+        Effect.map(pushAll),
+      ),
+    )
+    yield* step(
+      'recipe spellings',
+      Effect.sync(() => pushAll(recipeSpellings(filters))),
     )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
@@ -3977,6 +4263,31 @@ export function runDoctor(
     yield* step(
       'claude token',
       claudeTokenRow(reach.claudeToken ?? (() => readClaudeToken(env))).pipe(Effect.map(push)),
+    )
+    yield* step(
+      'copilot token',
+      copilotTokenRow(reach.copilotToken ?? (() => readCopilotToken(env)), () => {
+        const recipeFor = recipeLookup({ ...reach, sandboxHost: 'skip' })
+        return recovering(
+          loadE().pipe(
+            Effect.flatMap((projects) =>
+              Effect.forEach(projects, (p) =>
+                recovering(
+                  recipeFor(p, undefined).pipe(
+                    Effect.map(
+                      (resolved) =>
+                        resolved.recipe.sandbox?.enabled === true && runtimesOf(resolved.recipe).includes('copilot'),
+                    ),
+                  ),
+                  () => false,
+                ),
+              ),
+            ),
+            Effect.map((named) => named.some(Boolean)),
+          ),
+          () => false,
+        )
+      }).pipe(Effect.map(push)),
     )
     yield* step(
       'deferred',
@@ -4075,7 +4386,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['Sandbox', ['sandbox']],
   ['GitHub', ['github']],
-  ['Runtimes', ['runtime', 'claude']],
+  ['Runtimes', ['runtime', 'claude', 'copilot']],
 ]
 
 /** The section of one check. A deferred row is *not implemented here* whatever its prefix; an unknown prefix is `Other`, never dropped. */

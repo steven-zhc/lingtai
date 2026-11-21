@@ -11,9 +11,10 @@ import type { SetupForm as Answers } from '@lingtai/setup'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { STEP_SAYS } from '../../../../lib/step-says.ts'
+import { ModeGraph } from '../../../mode-graph.tsx'
 import { FileView } from '../../../recipe/[project]/file-view.tsx'
 import { StepRow } from '../../../step-row.tsx'
-import { addRepository, previewAdd } from './actions.ts'
+import { addRepository, checkPersonal, previewAdd } from './actions.ts'
 import { KIND_DEFAULTS_NOTE, type CheckView, type Preview, type ReadView } from './read-model.ts'
 
 const kindsOf = (text: string): string[] =>
@@ -53,7 +54,18 @@ function Line(props: {
   )
 }
 
+/** The answer to the check as typed, as the message line shows it. */
+type Checked =
+  | { state: 'checking' }
+  | { state: 'done'; asked: string; check: Awaited<ReturnType<typeof checkPersonal>> }
+
 export function SetupForm({ view }: { view: ReadView }) {
+  const [mode, setMode] = useState<'team' | 'solo'>('team')
+  const [personal, setPersonal] = useState(view.team.personal)
+  const [personalTouched, setPersonalTouched] = useState(false)
+  const [typedLogin, setTypedLogin] = useState('')
+  const [checked, setChecked] = useState<Checked>({ state: 'checking' })
+  const checkedFor = useRef(0)
   const [base, setBase] = useState(view.base.value)
   const [install, setInstall] = useState(view.install.value)
   const [checks, setChecks] = useState<CheckView[]>(view.checks.value)
@@ -84,12 +96,16 @@ export function SetupForm({ view }: { view: ReadView }) {
     setTypedCheck('')
   }
 
+  const local = view.target.kind === 'local'
+  // A directory's team project governs the branch it is on; its solo one lands on `lingtai-base` (0130 §2).
+  const mainBranch = mode === 'team' && local ? (view.team.checkedOut ?? '') : base
+  const login = view.team.login ?? (typedLogin.trim() === '' ? null : typedLogin.trim())
   const runtime = view.runtimes.find((r) => r.id === writer)
   const unbounded = runtime?.noTurnCeiling === true
   const answers: Answers = {
     project: view.project,
     target: view.target,
-    base,
+    base: mainBranch,
     remote: view.remote,
     install,
     checks: checks.filter((c) => c.ticked).map((c) => ({ name: c.name, run: c.run })),
@@ -103,6 +119,9 @@ export function SetupForm({ view }: { view: ReadView }) {
     limits: unbounded ? { ...limits, turns: 'unbounded' } : limits,
     turnsUnbounded: unbounded,
     sandbox: view.sandbox === null ? null : { enabled: sandboxOn, allow: hostsOf(allowText) },
+    mode,
+    personal: mode === 'team' ? personal : '',
+    login: mode === 'team' && !local ? login : null,
   }
   const key = JSON.stringify(answers)
 
@@ -121,6 +140,36 @@ export function SetupForm({ view }: { view: ReadView }) {
     }, 200)
     return () => clearTimeout(timer)
   }, [key])
+
+  // The check as typed: debounced, and only the latest request's answer is kept (a server action cannot be aborted).
+  useEffect(() => {
+    if (mode !== 'team') return
+    const mine = ++checkedFor.current
+    const asked = `${personal}\n${mainBranch}`
+    setChecked({ state: 'checking' })
+    const timer = setTimeout(() => {
+      checkPersonal(view.target, personal, mainBranch).then(
+        (check) => {
+          if (checkedFor.current === mine) setChecked({ state: 'done', asked, check })
+        },
+        (e: unknown) => {
+          if (checkedFor.current === mine) {
+            setChecked({ state: 'done', asked, check: { ok: true, exists: 'unreadable' } })
+            void e
+          }
+        },
+      )
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [mode, personal, mainBranch, view.target])
+
+  const onLogin = (value: string) => {
+    setTypedLogin(value)
+    if (!personalTouched && value.trim() !== '') setPersonal(`${value.trim()}/${view.team.host}`)
+  }
+
+  // Add waits for the message that explains the remote write: it is enabled only once the answer is for the name now in the field.
+  const confirming = mode === 'team' && (checked.state !== 'done' || checked.asked !== `${personal}\n${mainBranch}`)
 
   const toggle = (name: string) => () => setOpen(open === name ? null : name)
   const text = (value: string, set: (v: string) => void, mono = true) => (
@@ -335,8 +384,8 @@ export function SetupForm({ view }: { view: ReadView }) {
           <label className="wiz-row">
             <input type="radio" checked={!approves} onChange={() => setApproves(false)} />
             <span>
-              <b>No</b> — an attempt that passes its checks lands on <span className="mono">{base || 'the base'}</span>{' '}
-              by itself
+              <b>No</b> — an attempt that passes its checks lands on{' '}
+              <span className="mono">{(mode === 'team' ? personal : base) || 'the base'}</span> by itself
             </span>
           </label>
           <label className="wiz-row">
@@ -373,9 +422,142 @@ export function SetupForm({ view }: { view: ReadView }) {
       ) : null,
   }
 
+  const messageOf = (c: Checked) => {
+    if (c.state === 'checking') return <span className="note">checking…</span>
+    const r = c.check
+    if (!r.ok) {
+      return (
+        <span className="note wiz-fail">
+          ✕ {r.say}
+          {r.fix !== null ? (
+            <>
+              {' '}
+              — use{' '}
+              <button
+                type="button"
+                className="s2-change mono"
+                onClick={() => {
+                  setPersonalTouched(true)
+                  setPersonal(r.fix ?? '')
+                }}
+              >
+                {r.fix}
+              </button>
+            </>
+          ) : null}
+        </span>
+      )
+    }
+    if (r.exists === 'unreadable') {
+      return <span className="note wiz-fail">could not check whether {personal} exists — Add is still possible</span>
+    }
+    return r.exists ? (
+      <span className="note">
+        exists already — Lingtai will use it as it is; main is brought in at your first submit
+      </span>
+    ) : (
+      <span className="note wiz-ok">
+        ✓ a new branch, made from {mainBranch || 'main'}
+        {local ? '' : ' and pushed'} when you finish
+      </span>
+    )
+  }
+
+  const modeCard = (value: 'team' | 'solo', title: string, lines: string[]) => (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={mode === value}
+      aria-pressed={mode === value}
+      className={mode === value ? 'mode on' : 'mode'}
+      onClick={() => setMode(value)}
+    >
+      <ModeGraph mode={value} />
+      <b>
+        {title}
+        {value === 'team' ? ' (recommended)' : ''}
+      </b>
+      {lines.map((l) => (
+        <span key={l} className="note">
+          {l}
+        </span>
+      ))}
+    </button>
+  )
+
   return (
     <div className="s2">
       <div className="s2-left">
+        <section className="rcard">
+          <h3 className="rcard-h">Does anyone else work on this repository?</h3>
+          <div className="mode-cards" role="radiogroup" aria-label="how you work">
+            {modeCard('team', 'Team', [
+              'Others push to this repository, or you review before main changes',
+              'Works on your branch; main is brought in when you submit a PR',
+              'Takes the issues assigned to you',
+            ])}
+            {modeCard('solo', 'Solo', [
+              'Only you work on this repository',
+              'Lands on one branch, by itself or when you approve',
+              'Takes every ticket',
+            ])}
+          </div>
+          {mode === 'team' ? (
+            <div className="mode-branch">
+              {!local && view.team.login === null ? (
+                <label className="wiz-row">
+                  <span>your GitHub login</span>
+                  <input
+                    className="wiz-input mono"
+                    value={typedLogin}
+                    onChange={(e) => onLogin(e.target.value)}
+                    placeholder="octocat"
+                  />
+                </label>
+              ) : null}
+              <label className="wiz-row">
+                <span>your personal branch</span>
+                <input
+                  className="wiz-input mono"
+                  value={personal}
+                  onChange={(e) => {
+                    setPersonalTouched(true)
+                    setPersonal(e.target.value)
+                  }}
+                />
+              </label>
+              <p className="mode-msg">{messageOf(checked)}</p>
+              <ul className="wiz-list mode-facts">
+                <li>
+                  <b>Made from</b> origin/{mainBranch || 'main'}
+                </li>
+                <li>
+                  <b>Default name</b> {local ? 'lingtai-base' : 'your GitHub login and this machine'}
+                </li>
+                <li>
+                  <b>Main brought in</b> when you submit a PR, never before
+                </li>
+                <li>
+                  <b>Never pushes</b> main
+                </li>
+                <li>
+                  <b>Takes</b>{' '}
+                  {local ? (
+                    'every ticket in this project'
+                  ) : (
+                    <>
+                      issues assigned to <span className="mono">{login ?? 'you'}</span>
+                    </>
+                  )}
+                </li>
+              </ul>
+            </div>
+          ) : null}
+          <p className="note">
+            You can switch to solo later, once everything on your branch has reached main and no PR is open.
+          </p>
+        </section>
+
         <section className="rcard">
           <h3 className="rcard-h">
             <span>What one attempt does, in order</span>
@@ -470,7 +652,7 @@ export function SetupForm({ view }: { view: ReadView }) {
           <a className="btn" href="/setup/repository">
             Back
           </a>
-          <button type="button" className="btn go" disabled={adding} onClick={add}>
+          <button type="button" className="btn go" disabled={adding || confirming} onClick={add}>
             {adding ? 'Adding…' : 'Add'}
           </button>
         </p>

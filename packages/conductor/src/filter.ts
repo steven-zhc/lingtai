@@ -19,7 +19,15 @@
 import { STEPS, type Step, type ProjectState } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { createGitHubClient, type GhRun, type GitHubClient } from '@lingtai/github'
-import { type AssigneeRule, parseDuration, type Recipe, type ResolvedRecipe, type TurnLimit } from '@lingtai/recipe'
+import {
+  type AssigneeRule,
+  OldSpellingRefusedError,
+  type OldSpelling,
+  parseDuration,
+  type Recipe,
+  type ResolvedRecipe,
+  type TurnLimit,
+} from '@lingtai/recipe'
 import {
   assigneeOf,
   backoffOf,
@@ -29,7 +37,9 @@ import {
   kindsOf,
   limitsFor,
   remoteOf,
+  selectionOf,
   ticketSourceOf,
+  type Selection,
   type StepBound,
 } from '@lingtai/recipe/settings'
 import { Cause, Effect } from 'effect'
@@ -208,7 +218,13 @@ export type ProjectFilter =
        */
       links: TicketLinks
     }
-  | { project: string; ok: false; problem: string }
+  | {
+      project: string
+      ok: false
+      problem: string
+      /** Set when the recipe was refused for an old spelling (#1308): what `lingtai doctor` names and `--fix` rewrites. */
+      oldSpellings?: readonly OldSpelling[]
+    }
 
 /** What the board asks for a ticket's blockers: the repository its numbers belong to, and the read. */
 export type TicketLinks = {
@@ -467,13 +483,15 @@ export function projectFilterEffect(
   }).pipe(
     // **The cause, not only the failure**: a throw in the store, the recipe
     // seam or `parseDuration` is a defect, and it is still an answer (#64, #134).
-    Effect.catchCause((cause) =>
-      Effect.succeed<ProjectFilter>({
+    Effect.catchCause((cause) => {
+      const err = Cause.squash(cause) as Error
+      return Effect.succeed<ProjectFilter>({
         project,
         ok: false,
-        problem: oneLine((Cause.squash(cause) as Error).message),
-      }),
-    ),
+        problem: oneLine(err.message),
+        ...(err instanceof OldSpellingRefusedError ? { oldSpellings: err.spellings } : {}),
+      })
+    }),
   )
 }
 
@@ -558,7 +576,7 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
     // With the login in it, because a wrong login is the mistake this setting
     // can have, and it should be readable before it hands over somebody else's
     // tickets rather than only after (0046 §2, #181).
-    ['assignee', describeAssignee(assigneeOf(filter.recipe))],
+    ['assignee', describeAssignee(assigneeOf(filter.recipe), selectionOf(filter.recipe))],
     // Printed whether it buys anything or not, like a `skipped` gate point: a
     // default that only appears when it is doing something is a default nobody
     // can audit, and this one spends money (0025 §2). **The product, not the
@@ -570,10 +588,16 @@ export function filterFacts(filter: ProjectFilter): readonly (readonly [string, 
   ]
 }
 
-/** `queue:`'s `assignee` as a person reads it. Absent is `both`, and says so. */
-export function describeAssignee(rule: AssigneeRule | undefined): string {
+/** `queue:`'s `assignee` as a person reads it. Absent is `all`, and says so. */
+export function describeAssignee(rule: AssigneeRule | undefined, selection?: Selection): string {
+  // Team mode takes `mine` and nothing else (0130 §3); on the local store *mine* is every ticket.
+  // The local store tracks no assignee, so on it any `take` selects every ticket (`assigneeSkip`).
+  if (selection?.tickets === 'db' && (selection.mode === 'team' || (rule?.take ?? 'all') !== 'all')) {
+    return 'every ticket — local tickets are yours'
+  }
+  if (selection?.mode === 'team') return `only issues assigned to ${rule?.login}`
   const as = rule?.login ? ` (this machine is ${rule.login})` : ''
-  switch (rule?.take ?? 'both') {
+  switch (rule?.take ?? 'all') {
     case 'mine':
       return `only issues assigned to ${rule?.login}`
     case 'unassigned':

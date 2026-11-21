@@ -20,7 +20,7 @@ import {
   type Recipe,
   type RecipeChange,
   type SetRecipeResult,
-  baseOf,
+  branchOf,
   budgetChange,
   ceilingOf,
   holdRemovalChanges,
@@ -97,7 +97,7 @@ function resolvedFile(
     recipe: resolved.recipe,
     proposed: resolved.recipe.steps.proposed,
     admit: resolved.recipe.steps.admit,
-    base: baseOf(resolved.recipe),
+    base: branchOf(resolved.recipe),
     limits: ceilingOf(resolved.recipe),
     agent: resolved.recipe.runtime.agent,
   }
@@ -122,7 +122,7 @@ const LAND = 'land it without asking'
  * the recipe's base and never changes it: only the hold is removed, and the
  * repository's default branch is asked only when the file's base is blank.
  * `--land <branch>|hold` bypasses the choice (a branch is not one of its
- * choices) and is written as `landingChanges` writes it, at `baseWrittenAt`.
+ * choices) and is written as `landingChanges` writes it, at `branch.main`.
  *
  * `landingChanges` is handed `steps.proposed`/`steps.admit` as the file
  * itself writes them (`readRecipeKey`), not the resolved, schema-defaulted
@@ -144,7 +144,6 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
 
   const currentlyHolds = file.proposed.some((action) => 'human' in action)
   const rawProposed = () => options.draft.get(['steps', 'proposed'])
-  const rawAdmit = () => options.draft.get(['steps', 'admit'])
 
   let changes: ReturnType<typeof landingChanges>
   if (land !== null) {
@@ -162,12 +161,7 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
     })
     if ('refused' in result) return result
     const proposed = rawProposed()
-    const admit = rawAdmit()
-    changes = landingChanges(
-      { land: result.answer },
-      Array.isArray(proposed) ? proposed : file.proposed,
-      Array.isArray(admit) ? admit : file.admit,
-    )
+    changes = landingChanges({ land: result.answer }, Array.isArray(proposed) ? proposed : file.proposed)
   } else {
     const result = yield* questionEffect(world, {
       name: 'the landing',
@@ -181,14 +175,12 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
     })
     if ('refused' in result) return result
     const proposed = rawProposed()
-    const admit = rawAdmit()
     const rawP = Array.isArray(proposed) ? proposed : file.proposed
-    const rawA = Array.isArray(admit) ? admit : file.admit
     if (result.answer === WAIT) {
-      changes = landingChanges({ land: 'hold' }, rawP, rawA)
+      changes = landingChanges({ land: 'hold' }, rawP)
     } else if (file.base !== '') {
       // Landing on the base the recipe resolves must not pin it: keep only the
-      // hold's removal, never a `repo.base` the file did not say.
+      // hold's removal, never a `branch.main` the file did not say.
       changes = holdRemovalChanges(rawP)
     } else {
       const base = yield* lift(() => deps.defaultBranch())
@@ -197,7 +189,7 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
           refused: `no base branch to land on — pass --land <branch>. ${deps.kept ?? 'Nothing was written'}`,
         }
       }
-      changes = landOnBranchChanges(base, rawP, rawA)
+      changes = landOnBranchChanges(base, rawP)
     }
   }
   const hadSteps = options.draft.get(['steps']) !== null

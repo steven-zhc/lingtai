@@ -172,7 +172,7 @@ export function baseProtectedRemedies(base: string): string {
   return (
     `Lingtai pushes a merge commit straight to ${base} and does not open pull requests. ` +
     `Either let the Lingtai App bypass the protection (add it to the ruleset's bypass list, or to the ` +
-    `classic rule's allowed actors and push restrictions), or set the recipe's repo.base to a branch that ` +
+    `classic rule's allowed actors and push restrictions), or set the recipe's branch.main to a branch that ` +
     `accepts direct pushes.`
   )
 }

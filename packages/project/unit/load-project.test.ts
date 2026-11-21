@@ -15,7 +15,7 @@ import { ProjectFiles, loadProject, recipePath, recordFileRecipe } from '../src/
 const HOME = '/h'
 const P = 'app'
 const PATH = recipePath(P, HOME)
-const A = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+const A = 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
 const B = `${A}# edited\n`
 
 function port(initial: Record<string, string>, failRead = false) {
@@ -48,7 +48,7 @@ describe('loadProject', () => {
     const { state, recipe } = await Effect.runPromise(load(store, files))
     expect(await events(store)).toEqual(['ProjectRecipeChanged'])
     expect(state.recipe?.sourceHash).toBe(sourceHashOf(A))
-    expect(recipe.recipe.repo.base).toBe('main')
+    expect(recipe.recipe.branch.main).toBe('main')
     expect(writes).toEqual([])
   })
 

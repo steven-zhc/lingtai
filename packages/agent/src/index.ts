@@ -30,6 +30,8 @@ export type { RunSandbox, RunSandboxDecision, SandboxPorts, WrapFailure } from '
 export { collidingDenies, SandboxRunRefused } from './claude-sandbox.ts'
 export type { UserPermissions } from './codex.ts'
 export { operatorCodexDenies } from './codex-sandbox.ts'
+export { CLASSIC_COPILOT_TOKEN_SENTENCE, NO_COPILOT_TOKEN_SENTENCE, copilotSandboxedLaunch } from './copilot-sandbox.ts'
+export type { CopilotSandboxPorts } from './copilot-sandbox.ts'
 export {
   CLAUDE_CODE_CAPABILITIES,
   PROMPT_ELIDED,

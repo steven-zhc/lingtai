@@ -17,6 +17,7 @@ import {
   type RunOnceResult,
   githubLimitPort,
   readAccount,
+  servePendingPrs,
 } from '@lingtai/conductor'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
@@ -24,7 +25,7 @@ import { accountWords, type ControlState, type ProjectState } from '@lingtai/dom
 import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
-import { readProject } from '@lingtai/project'
+import { listPrs, readProject } from '@lingtai/project'
 import {
   boundsBesides,
   dispatchingSteps,
@@ -43,6 +44,7 @@ import { stillOwed } from './continuing.ts'
 import { ceilingPort, type DayCeilingPorts } from './day-ceiling.ts'
 import { recovering } from './exit.ts'
 import { symbol } from './output.ts'
+import { livePrPorts } from './pr-ports.ts'
 import { Projector, ProjectorLive } from './projector.ts'
 import { startRates } from './rates.ts'
 /**
@@ -335,6 +337,12 @@ export function run(
   world: RunWorld = liveRunWorld(options, log),
 ): Effect.Effect<number> {
   const locked = lockedFor(options.store, options.dayCeiling)
+  const servePrs = servePendingPrs(livePrPorts(options.store ?? eventStore, log), [options.project])
+  /** Whether a PR of this project is waiting to be served; a failed read says no, and the next conductor serves it. */
+  const prOwed = listPrs(options.project, options.store ?? eventStore).pipe(
+    Effect.map((prs) => prs.some((pr) => pr.status === 'requested' || pr.status === 'in-progress')),
+    Effect.orElseSucceed(() => false),
+  )
   const program = Effect.gen(function* () {
     /**
      * **First, before anything is read and long before anything is claimed** —
@@ -447,7 +455,13 @@ export function run(
     const work = Effect.gen(function* () {
       // Asked for, not threaded through — and the release is the scope's, which
       // is the whole of why `run()` no longer has to remember it on four paths.
-      yield* Projector
+      const projector = yield* Projector
+      // A PR a person asked for is served by whoever conducts (0130 §5): with no daemon, this command is it. Before
+      // the project's lock is heeded and in both branches, since the freeze spends nothing and is served under a pause.
+      // **Only on a projector that caught up**: the draft reads `task_view`, so a stale one would freeze a PR naming
+      // fewer tickets than its commit holds. The request stays owed and the next conductor serves it.
+      if (projector.following) yield* servePrs
+      else log('a PR is not served: the board did not catch up, so the draft cannot be read')
       // The first the guard is asked: it appends the ceiling's transitions, and
       // only the lock's holder may (0126 §4). After the projector is up, so a
       // `spend` that trails the log is caught up rather than refused forever.
@@ -753,11 +767,27 @@ export function run(
     // this. Who and why, because a pause nobody remembers is the one this
     // line is for.
     Effect.catchTag('Paused', (p) =>
-      Effect.sync(() => {
-        log(saidPaused(p))
-        log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
-        return 0
-      }),
+      // A person's Submit is still served under a pause (0130 §5): it spends nothing, and the lock is taken for it —
+      // only when one is owed, so a pause with nothing to serve still never reaches the lock.
+      prOwed.pipe(
+        Effect.flatMap((owed) =>
+          owed
+            ? Effect.scoped(
+                // The draft reads `task_view`, so the projector catches it up first, as on the unpaused path.
+                Effect.gen(function* () {
+                  const projector = yield* Projector
+                  if (projector.following) yield* servePrs
+                  else log('a PR is not served: the board did not catch up, so the draft cannot be read')
+                }).pipe(Effect.provide(world.projector), Effect.provide(world.ports), Effect.provide(world.lock)),
+              )
+            : Effect.void,
+        ),
+        Effect.map(() => {
+          log(saidPaused(p))
+          log(`nothing was taken: ${RUN_UNDER_A_PAUSE}`)
+          return 0
+        }),
+      ),
     ),
     Effect.catchTag('ProjectLocked', (l) =>
       Effect.sync(() => {

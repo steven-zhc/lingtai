@@ -1,4 +1,4 @@
-import { runnableNow, type SkipReason } from '@lingtai/conductor/discover'
+import { rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { held as heldBy } from '@lingtai/daemon/control'
@@ -37,7 +37,7 @@ import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
-import { ceilingOf, queueOf } from '@lingtai/recipe/settings'
+import { ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
 
@@ -111,6 +111,8 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   // Said as the thing that has to change, not as a state it is in: the ticket
   // moves the moment the last blocker closes, with nothing to clear here (#131).
   'blocked-by': 'an issue it is blocked by is still open',
+  'pr-fix-elsewhere': "it is a change asked for on somebody's PR, for their team machine",
+  'landed-elsewhere': "somebody's team machine has landed it on their own branch, and it waits on their PR",
   publishing: 'it is a split child still being published, and comes back when the split is read back',
   // The board does not read the mirror, so it never draws this one; #1215 words it (#1208).
   'base-red': "the project's base is red and has not moved",
@@ -330,11 +332,16 @@ export async function queuedFor(input: {
   const until = backoffOf(input.own, filter.backoffMs)
 
   try {
-    const offered = await runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) })
+    const offered = await runnableNow({
+      client: filter.tickets,
+      queue: queueOf(filter.recipe),
+      selection: selectionOf(filter.recipe),
+    })
     const runnable = await selectRunnable({
       project,
       offered: offered.runnable,
       kinds: filter.kinds,
+      mode: selectionOf(filter.recipe).mode,
       backoffMs: filter.backoffMs,
     })
 
@@ -362,7 +369,7 @@ export async function queuedFor(input: {
       plan,
       kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
       // `selectRunnable`'s own fallback (`queue.ts`), so this describes the order it used.
-      kinds: filter.kinds.length > 0 ? [...filter.kinds] : ['bug'],
+      kinds: [...rankedKinds(filter.kinds.length > 0 ? filter.kinds : ['bug'], selectionOf(filter.recipe).mode)],
       behind: at >= 0 && runnable[at + 1] ? pickBehind(runnable[at + 1]!) : null,
       problem: null,
     }

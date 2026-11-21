@@ -23,8 +23,8 @@ import {
 
 const recipe = (base: string) => `
 version: 2
-repo:
-  base: ${base}
+branch:
+  main: ${base}
 source:
   kinds: [bug]
 env:
@@ -46,7 +46,7 @@ describe('the base lingtai add records', () => {
 
     expect(found.ok).toBe(true)
     if (!found.ok) return
-    expect(found.resolved.recipe.repo.base).toBe('develop')
+    expect(found.resolved.recipe.branch.main).toBe('develop')
     expect(found.adoptedFrom).toBeNull()
   })
 
@@ -69,7 +69,7 @@ describe('the base lingtai add records', () => {
 
     expect(found.ok).toBe(true)
     if (!found.ok) return
-    expect(found.resolved.recipe.repo.base).toBe('develop')
+    expect(found.resolved.recipe.branch.main).toBe('develop')
     expect(found.resolved.ref).toBe('develop')
     expect(found.adoptedFrom).toBe('main')
     // Read again at the branch it governs, not carried over from `main`.
@@ -93,7 +93,7 @@ describe('the base lingtai add records', () => {
     expect(found.refusal).toContain('main')
     expect(found.refusal).toContain('develop')
     // And it says which of the two is the decision, rather than picking one.
-    expect(found.refusal).toContain('repo.base')
+    expect(found.refusal).toContain('branch.main')
   })
 
   it('refuses when the branch the recipe names has no recipe on it', async () => {
@@ -167,7 +167,7 @@ describe('finishing an onboarding the wizard recorded', () => {
 
     expect(found.ok).toBe(true)
     if (!found.ok) return
-    expect(found.resolved.recipe.repo.base).toBe('develop')
+    expect(found.resolved.recipe.branch.main).toBe('develop')
     expect(found.adoptedFrom).toBe('main')
   })
 })
@@ -388,7 +388,7 @@ describe('warnIfProtected', () => {
     expect(said).toContain('main is protected')
     expect(said).toContain('does not open pull requests')
     expect(said).toContain('bypass')
-    expect(said).toContain('repo.base')
+    expect(said).toContain('branch.main')
   })
 
   it('warns for a ruleset that refuses a push, and not for deletion or non_fast_forward alone', async () => {

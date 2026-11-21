@@ -21,11 +21,13 @@ import { createHash } from 'node:crypto'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
+import { branchNameRefusal } from './branch-name.ts'
+import type { RecipeChange } from './emit.ts'
 import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
-import { PLUGINS, Recipe, discloseSteps } from './recipe.ts'
-import { baseOf, baseWrittenAt } from './settings.ts'
+import { DiscussAgent, PLUGINS, Recipe, discloseSteps } from './recipe.ts'
+import { assigneeOf, branchKeyOf, branchOf, modeOf, ticketSourceOf } from './settings.ts'
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = '.lingtai/config.yaml'
@@ -48,13 +50,49 @@ export class RecipeMissingError extends Error {
 }
 
 export class RecipeInvalidError extends Error {
-  override readonly name = 'RecipeInvalidError'
+  // Widened from the literal so `RecipeRefusedError` can carry a name of its own.
+  override readonly name: string = 'RecipeInvalidError'
   /** Each problem as `path: message`, so a fix does not need a schema reading. */
   readonly problems: readonly string[]
 
   constructor(ref: string, problems: readonly string[], where = `${RECIPE_PATH} on ${ref}`) {
     super(`${where} is not valid:\n  ${problems.join('\n  ')}`)
     this.problems = problems
+  }
+}
+
+/**
+ * A recipe **refused on its meaning** — it parsed, and says something the
+ * system will not do (0130 §2, §3). A reader tells this from *could not be
+ * parsed*, which stays a plain `RecipeInvalidError`, by `_tag` and never by the
+ * sentence. Still an `instanceof RecipeInvalidError`, so every existing catch
+ * takes both.
+ */
+export class RecipeRefusedError extends RecipeInvalidError {
+  override readonly name: string = 'RecipeRefusedError'
+  readonly _tag = 'RecipeRefused' as const
+
+  constructor(ref: string, problems: readonly string[], where = `${RECIPE_PATH} on ${ref}`) {
+    super(ref, problems, where)
+  }
+}
+
+/**
+ * A recipe refused for writing an old spelling of the base or of `take: both`
+ * (#1308, 0130 §2–3). Carries what it found, so `lingtai doctor` names and
+ * `--fix` rewrites the same keys without reading the file again.
+ */
+export class OldSpellingRefusedError extends RecipeRefusedError {
+  override readonly name: string = 'OldSpellingRefusedError'
+  readonly spellings: readonly OldSpelling[]
+
+  constructor(ref: string, spellings: readonly OldSpelling[], where = `${RECIPE_PATH} on ${ref}`) {
+    super(
+      ref,
+      spellings.map((s) => s.sentence),
+      where,
+    )
+    this.spellings = spellings
   }
 }
 
@@ -235,18 +273,24 @@ export function resolveSource(
 
   // Preset first, then validation: a preset can satisfy a required field the
   // recipe omits, which is the point of having one.
-  let applied
+  let applied: ReturnType<typeof applyPreset>
   try {
     applied = applyPreset(raw)
   } catch (err) {
     throw new RecipeInvalidError(ref, [`extends: ${(err as Error).message}`], where)
   }
 
+  const old = oldSpellingsIn(applied.recipe)
+  if (old.length > 0) throw new OldSpellingRefusedError(ref, old, where)
+
   const unknown = unknownKeys(applied.recipe)
   if (unknown.length > 0) throw new RecipeInvalidError(ref, unknown, where)
 
   const retired = [...retiredTier(applied.recipe), ...retiredLimits(applied.recipe)]
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
+
+  const credentials = jenkinsCredentials(applied.recipe)
+  if (credentials.length > 0) throw new RecipeRefusedError(ref, credentials, where)
 
   // A recipe may write no `runtime:` at all — its agent on each step or
   // detected (#372), and every field inside defaulted — so an absent one is
@@ -266,6 +310,9 @@ export function resolveSource(
     )
   }
 
+  const refusedOnMeaning = refuseOnMeaning(parsed.data, true, applied.recipe)
+  if (refusedOnMeaning.length > 0) throw new RecipeRefusedError(ref, refusedOnMeaning, where)
+
   // The resolved form is what gets hashed, so the preset is inside the hash and
   // a preset change is a configuration change.
   return {
@@ -275,6 +322,243 @@ export function resolveSource(
     source,
     preset: applied.preset,
   }
+}
+
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** One old spelling a file wrote: where, the sentence that refuses it, and the edit that ends it. */
+export interface OldSpelling {
+  /** `repo.base`, `steps.admit[0].worktree.base`, `runtime.assignee.take: both`. */
+  readonly at: string
+  /** The refusal's sentence, naming the key, the fix and `lingtai doctor --fix`. */
+  readonly sentence: string
+  /** What `editRecipe` applies to end it. A base spelling carries the `branch.main` write. */
+  readonly changes: readonly RecipeChange[]
+}
+
+const DOCTOR_FIX = 'or run `lingtai doctor --fix`'
+
+/**
+ * The old spellings a raw recipe writes (#1308, 0130 §2–3), found on the raw
+ * object **before the parse**, like `retiredLimits`, so the `Recipe` type never
+ * holds the old names:
+ *
+ * - `repo.base` and `steps.admit[*].worktree.base` → `branch.main`;
+ * - `take: both` at `runtime.assignee` or `steps.claim[*].queue.assignee` → `all`.
+ *
+ * Pure. `[]` for a file in the new spelling or one that is not a mapping. The one
+ * reader the refusal, `lingtai doctor`'s row and `--fix` all stand on, so the
+ * three name exactly the same keys. A base spelling's change writes the file's
+ * own `branch.main` where it has one (a file with two homes), else admit's
+ * `worktree.base`, then `repo.base` — the precedence the old accessor had.
+ */
+export function oldSpellingsIn(raw: unknown): OldSpelling[] {
+  if (!isRecord(raw)) return []
+  const out: OldSpelling[] = []
+  const bases: { at: string; sentence: string }[] = []
+  let main: unknown
+  let wroteMain = false
+  if (isRecord(raw['branch']) && 'main' in raw['branch']) {
+    main = raw['branch']['main']
+    wroteMain = true
+  }
+
+  const steps = isRecord(raw['steps']) ? raw['steps'] : null
+  if (steps !== null && Array.isArray(steps['admit'])) {
+    ;(steps['admit'] as unknown[]).forEach((action, i) => {
+      if (!isRecord(action) || !isRecord(action['worktree']) || !('base' in action['worktree'])) return
+      if (!wroteMain) {
+        main = action['worktree']['base']
+        wroteMain = true
+      }
+      const at = `steps.admit[${i}].worktree.base`
+      bases.push({
+        at,
+        sentence: `${at}: move the branch to \`branch.main\`; \`worktree:\` carries \`submodules\` only (0104 §5), ${DOCTOR_FIX}`,
+      })
+    })
+  }
+  if (isRecord(raw['repo']) && 'base' in raw['repo']) {
+    if (!wroteMain) {
+      main = raw['repo']['base']
+      wroteMain = true
+    }
+    bases.push({
+      at: 'repo.base',
+      sentence: `repo.base: write \`branch: { main: <value> }\` (0130 §2), ${DOCTOR_FIX}`,
+    })
+  }
+  for (const b of bases) out.push({ ...b, changes: [{ path: ['branch', 'main'], value: main }] })
+
+  const takeBoth = (holder: unknown, at: string, path: (string | number)[]) => {
+    if (isRecord(holder) && isRecord(holder['assignee']) && holder['assignee']['take'] === 'both') {
+      const where = `${at}.assignee.take: both`
+      out.push({
+        at: where,
+        sentence: `${where}: write \`take: all\` (0130 §3), ${DOCTOR_FIX}`,
+        changes: [{ path: [...path, 'assignee', 'take'], value: 'all' }],
+      })
+    }
+  }
+  takeBoth(raw['runtime'], 'runtime', ['runtime'])
+  if (steps !== null && Array.isArray(steps['claim'])) {
+    ;(steps['claim'] as unknown[]).forEach((action, i) => {
+      if (isRecord(action)) {
+        takeBoth(action['queue'], `steps.claim[${i}].queue`, ['steps', 'claim', i, 'queue'])
+      }
+    })
+  }
+  return out
+}
+
+/**
+ * The two places a recipe can write `assignee`, as the file wrote them — `runtime.assignee` and each
+ * `steps.claim[i].queue.assignee` — with the parsed rule beside it.
+ */
+function assigneeHolders(raw: unknown): { at: string; assignee: Record<string, unknown> }[] {
+  const out: { at: string; assignee: Record<string, unknown> }[] = []
+  if (!isRecord(raw)) return out
+  const runtime = raw['runtime']
+  if (isRecord(runtime) && isRecord(runtime['assignee'])) {
+    out.push({ at: 'runtime.assignee', assignee: runtime['assignee'] })
+  }
+  const steps = raw['steps']
+  if (isRecord(steps) && Array.isArray(steps['claim'])) {
+    steps['claim'].forEach((action: unknown, i: number) => {
+      if (isRecord(action) && isRecord(action['queue']) && isRecord(action['queue']['assignee'])) {
+        out.push({ at: `steps.claim[${i}].queue.assignee`, assignee: action['queue']['assignee'] })
+      }
+    })
+  }
+  return out
+}
+
+/**
+ * Whose tickets a recipe may take, refused on its meaning (0130 §3, #1310).
+ *
+ * **Read from the raw mapping, not the parse**: `take` defaults to `all`, so afterwards a written
+ * `take: all` and an absent one are the same value, and only the first is refused in team mode. A
+ * `mine` needs no raw reading — it is never a default, so a parsed one was written.
+ */
+function assigneeRefusals(recipe: Recipe, raw: unknown): string[] {
+  const out: string[] = []
+  const team = modeOf(recipe) === 'team'
+  const github = ticketSourceOf(recipe) === 'github'
+  if (team) {
+    for (const { at, assignee } of assigneeHolders(raw)) {
+      const take = assignee['take']
+      if (take === 'all' || take === 'unassigned') {
+        out.push(
+          `${at}.take: ${take} — mode: team takes your own tickets; take: ${take} would take ${
+            take === 'all' ? "everyone's" : "nobody's"
+          }. Remove take, or use mode: solo.`,
+        )
+      }
+    }
+    if (github && assigneeOf(recipe)?.login === undefined) {
+      // The key that governs is the declared `queue:`'s when there is one (`assigneeOf`), and writing
+      // `runtime.assignee.login` beside it would change nothing.
+      const at = recipe.steps.claim.findIndex((action) => 'queue' in action)
+      const key = at === -1 ? 'runtime.assignee.login' : `steps.claim[${at}].queue.assignee.login`
+      out.push(`${key}: mode: team on GitHub takes the issues assigned to this machine's login; write \`${key}\``)
+    }
+    return out
+  }
+  if (github) {
+    const { runtime } = recipe
+    const rules: { at: string; login: string | undefined; take: string }[] = [
+      { at: 'runtime.assignee', login: runtime.assignee?.login, take: runtime.assignee?.take ?? 'all' },
+    ]
+    recipe.steps.claim.forEach((action, i) => {
+      if ('queue' in action) {
+        rules.push({
+          at: `steps.claim[${i}].queue.assignee`,
+          login: action.queue.assignee.login,
+          take: action.queue.assignee.take,
+        })
+      }
+    })
+    for (const r of rules) {
+      if (r.take === 'mine' && r.login === undefined) {
+        out.push(`${r.at}.login: take: mine needs a login — the GitHub login this machine's issues are assigned to`)
+      }
+    }
+  }
+  return out
+}
+
+/**
+ * The refusals a recipe earns **on its meaning** once it has parsed (0130 §2,
+ * §3), each naming the key and the fix. Pure and synchronous: the branch-name
+ * check is `branchNameRefusal`, a copy of git's rules, never a process.
+ *
+ * `wroteAgent` is whether `runtime.agent` is the file's own: `checkDeclared`
+ * fills an absent one with a probe, and a probe must not decide a refusal.
+ */
+export function refuseOnMeaning(recipe: Recipe, wroteAgent: boolean, raw: unknown): string[] {
+  const out: string[] = []
+  const team = modeOf(recipe) === 'team'
+  out.push(...assigneeRefusals(recipe, raw))
+  const personal = recipe.branch.personal
+  if (team && personal === undefined) {
+    out.push('branch.personal: `mode: team` lands on a personal branch; write `branch.personal`, or use `mode: solo`')
+  }
+  if (!team && personal !== undefined) {
+    out.push('branch.personal: is read only in team mode; delete it, or write `mode: team`')
+  }
+  if (personal !== undefined) {
+    const why = branchNameRefusal(personal)
+    if (why !== null)
+      out.push(`branch.personal: ${JSON.stringify(personal)} is not a branch name git accepts: it ${why}`)
+    else if (personal.toLowerCase() === recipe.branch.main.toLowerCase()) {
+      out.push(
+        `branch.personal: ${JSON.stringify(personal)} is the same branch as branch.main, ignoring case; name a different one`,
+      )
+    }
+  }
+  if (recipe.pr !== undefined && !team) {
+    out.push('pr: `pr:` is read only in team mode; delete it, or write `mode: team`')
+  }
+  if (team && wroteAgent && recipe.pr?.agent === undefined && !DiscussAgent.safeParse(recipe.runtime.agent).success) {
+    out.push('pr.agent: `pr:` needs an agent that can run with no tools; name a `pr.agent`')
+  }
+  const ci = recipe.pr?.ci
+  if (ci !== undefined) {
+    if (ci.provider === 'jenkins') {
+      out.push(
+        'pr.ci.provider: the Jenkins CI adapter is next release; use `provider: github-actions`, `none`, or leave it out to detect',
+      )
+    } else if (ci.jenkins !== undefined) {
+      out.push('pr.ci.jenkins: `pr.ci.jenkins` is read only with `provider: jenkins`')
+    }
+    if (ci.required !== undefined && ci.required.length === 0) {
+      out.push('pr.ci.required: `required: []` names no check; leave `required` out to require every check')
+    }
+  }
+  return out
+}
+
+/**
+ * Credentials never go in the recipe (0117): a `pr.ci.jenkins.user` or
+ * `.token` is refused **by name before the parse**, because `jenkins` is a
+ * strict object and an unknown key would otherwise fail as a plain
+ * `RecipeInvalidError` with no sentence about where it goes. Any other unknown
+ * key in `jenkins:` is still the schema's.
+ */
+export function jenkinsCredentials(raw: unknown): string[] {
+  if (typeof raw !== 'object' || raw === null) return []
+  const pr = (raw as Record<string, unknown>)['pr']
+  if (typeof pr !== 'object' || pr === null) return []
+  const ci = (pr as Record<string, unknown>)['ci']
+  if (typeof ci !== 'object' || ci === null) return []
+  const jenkins = (ci as Record<string, unknown>)['jenkins']
+  if (typeof jenkins !== 'object' || jenkins === null) return []
+  return ['user', 'token']
+    .filter((key) => key in jenkins)
+    .map(
+      (key) =>
+        `pr.ci.jenkins.${key}: credentials are never in the recipe — they go in \`~/.lingtai/config.yml\` as \`jenkins.user\` and \`jenkins.token\` (ADR 0117)`,
+    )
 }
 
 /**
@@ -387,10 +671,10 @@ export function unknownKeys(raw: unknown): string[] {
  * same ref as the branch it governs?
  *
  * Two different branches were both called "the base". `resolveRecipe` reads from
- * one — the branch recorded at `lingtai add` — and `repo.base` inside the file
+ * one — the branch recorded at `lingtai add` — and `branchOf` inside the file
  * it returns names another, which is what the worktree is cut from and what the
  * merge goes back into. When they disagree the run is right about everything
- * except the rules: it merges into `repo.base` under steps read from somewhere
+ * except the rules: it merges into `branchOf`'s branch under steps read from somewhere
  * else. A `human:` action at `merge` declared on one branch and not the other is
  * then a control that is declared and does not run.
  *
@@ -405,14 +689,12 @@ export function unknownKeys(raw: unknown): string[] {
  * doctor check — and none of them may pick a winner between the two branches.
  */
 export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
-  const declared = baseOf(resolved.recipe)
+  const declared = branchOf(resolved.recipe)
   if (declared === resolved.ref) return null
   return (
-    // The key as this recipe writes it, not as v1 wrote it: a refusal that names
-    // `repo.base` at a recipe declaring `worktree:` at `admit` sends a person to
-    // the line nothing reads (`#268`).
-    `recipe read from ${resolved.ref} declares ${baseWrittenAt(resolved.recipe)}: ${declared} — ` +
+    // The key `branchOf` reads, by mode: `branch.personal` in team, `branch.main` in solo.
+    `recipe read from ${resolved.ref} declares ${branchKeyOf(resolved.recipe)}: ${declared} — ` +
     'the rules and the merge target are different branches. ' +
-    `Re-register: lingtai add ${slug} --base ${declared}`
+    `Re-register: lingtai add ${slug} --main ${declared}`
   )
 }

@@ -13,7 +13,7 @@ import { conductorLockHolder, lastBeat } from '@lingtai/daemon'
 import { readStatusEffect } from '@lingtai/daemon/control'
 import { eventStore } from '@lingtai/event-store'
 import { readTasksEffect } from '@lingtai/projector'
-import { baseOf } from '@lingtai/recipe/settings'
+import { branchOf } from '@lingtai/recipe/settings'
 import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -43,8 +43,8 @@ const problemOf = (err: unknown): string => (err instanceof Error ? err.message 
 export const readWhy: Explain = {
   look: (filter) =>
     lookAtBase(
-      { store: eventStore, project: filter.project, base: baseOf(filter.recipe), recipe: filter.recipe },
-      mirrorBranchShaEffect({ project: filter.project, ref: `refs/heads/${baseOf(filter.recipe)}` }).pipe(
+      { store: eventStore, project: filter.project, base: branchOf(filter.recipe), recipe: filter.recipe },
+      mirrorBranchShaEffect({ project: filter.project, ref: `refs/heads/${branchOf(filter.recipe)}` }).pipe(
         Effect.map((head): BaseHead => ('at' in head ? head : { unreadable: 'the mirror has no such branch' })),
       ),
     ),

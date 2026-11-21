@@ -135,6 +135,20 @@ gets the token as `CLAUDE_CODE_OAUTH_TOKEN`, and a configuration directory of it
 own with the hook settings and copies of your user-level `CLAUDE.md`, `skills/`
 and `agents/`, but no MCP servers, plugins, `settings.json` or login.
 
+## The Copilot token
+
+A sandboxed Copilot run is handed a token you make once: a fine-grained personal
+access token (`github_pat_…`) with the *Copilot Requests* account permission. A
+classic `ghp_` token is silently ignored by Copilot, so the command refuses it by
+name:
+
+    lingtai token copilot
+
+This asks for the token at a hidden prompt and saves it as `copilot.github_token`
+in `~/.lingtai/config.yml` (`apps/cli/src/copilot-token.ts`). The variable
+`LINGTAI_COPILOT_GITHUB_TOKEN` is read first, and wins over the file. Only the
+token's shape is checked, not its permission or expiry.
+
 ## Checking the host
 
 `lingtai doctor` reports two kinds of sandbox row (`apps/cli/src/doctor.ts`):

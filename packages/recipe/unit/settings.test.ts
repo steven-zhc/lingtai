@@ -49,8 +49,10 @@ import { Recipe } from '../src/recipe.ts'
 import {
   assigneeOf,
   backoffOf,
-  baseOf,
-  baseWrittenAt,
+  branchKeyOf,
+  branchOf,
+  ciOf,
+  modeOf,
   boundsBesides,
   ceilingOf,
   concurrencyOf,
@@ -65,7 +67,8 @@ import {
 
 const WRITTEN = {
   version: 2,
-  repo: { base: 'develop', submodules: true },
+  branch: { main: 'develop' },
+  repo: { submodules: true },
   source: { kinds: ['bug', 'tech-debt'], exclude: ['agent:hold'], backoff: '45m' },
   env: { plantAt: '.env.local' },
   runtime: {},
@@ -74,7 +77,7 @@ const RECIPE: Recipe = Recipe.parse(WRITTEN)
 
 describe('the accessors', () => {
   it('read what the recipe holds today', () => {
-    expect(baseOf(RECIPE)).toBe('develop')
+    expect(branchOf(RECIPE)).toBe('develop')
     expect(kindsOf(RECIPE)).toEqual(['bug', 'tech-debt'])
     // By identity, and that is the cheap proof of *a recipe nobody edited
     // resolves to the same values*: nothing at `implement` narrows, so the
@@ -181,19 +184,19 @@ describe('the accessors', () => {
    * the board, the wizard — asks the accessor, so there is nowhere for the two
    * spellings to disagree.
    */
-  it('read the base and the submodules off `admit` where the recipe declares them', () => {
+  it('read the submodules off `admit` where the recipe declares them, and the base off `branch`', () => {
     const declared = Recipe.parse({
       ...WRITTEN,
-      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: false } }] },
+      steps: { admit: [{ name: 'cut the branch', worktree: { submodules: false } }] },
     })
 
-    expect(baseOf(declared)).toBe('1.0')
+    expect(branchOf(declared)).toBe('develop')
     // `repo.submodules` is `true` in `WRITTEN`, and the declaration is what runs:
     // a step that says is not overridden by the block it replaces.
     expect(submodulesOf(declared)).toBe(false)
     // And the `repo:` block is still there, untouched — one setting, two
     // spellings, and the accessor is the only thing that knows.
-    expect(declared.repo).toEqual({ base: 'develop', submodules: true })
+    expect(declared.repo).toEqual({ submodules: true })
   })
 
   /**
@@ -209,7 +212,7 @@ describe('the accessors', () => {
   it('refuses a `worktree:` that leaves `submodules` out, rather than defaulting it', () => {
     const silent = Recipe.safeParse({
       ...WRITTEN,
-      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0' } }] },
+      steps: { admit: [{ name: 'cut the branch', worktree: {} }] },
     })
     expect(silent.success).toBe(false)
     expect(JSON.stringify(silent.error?.issues)).toContain('submodules')
@@ -225,18 +228,19 @@ describe('the accessors', () => {
    * conductor does not read, which is the reader-drift this file's guard is about
    * arriving through a sentence instead.
    */
-  it('names the key the recipe actually wrote the base at', () => {
-    expect(baseWrittenAt(RECIPE)).toBe('repo.base')
+  it('names the key the recipe actually reads the base from, by mode', () => {
+    expect(branchKeyOf(RECIPE)).toBe('branch.main')
     expect(
-      baseWrittenAt(
-        Recipe.parse({
-          ...WRITTEN,
-          steps: {
-            admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: false } }],
-          },
-        }),
-      ),
-    ).toContain('worktree.base')
+      branchKeyOf(Recipe.parse({ ...WRITTEN, mode: 'team', branch: { main: 'develop', personal: 'me/box' } })),
+    ).toBe('branch.personal')
+  })
+
+  it('answers solo for a recipe with no mode, and the personal branch in team mode', () => {
+    expect(modeOf(RECIPE)).toBe('solo')
+    expect(RECIPE.mode).toBeUndefined()
+    const team = Recipe.parse({ ...WRITTEN, mode: 'team', branch: { main: 'develop', personal: 'me/box' } })
+    expect(modeOf(team)).toBe('team')
+    expect(branchOf(team)).toBe('me/box')
   })
 
   /** One cut per step, so *the first* and *the only* are the same entry. */
@@ -245,8 +249,8 @@ describe('the accessors', () => {
       ...WRITTEN,
       steps: {
         admit: [
-          { name: 'cut the branch', worktree: { base: 'main', submodules: false } },
-          { name: 'cut from release', worktree: { base: 'release', submodules: false } },
+          { name: 'cut the branch', worktree: { submodules: false } },
+          { name: 'cut from release', worktree: { submodules: false } },
         ],
       },
     })
@@ -584,5 +588,38 @@ describe('nothing reaches past them', () => {
         'steps, ' +
         'and a reader that reaches past the accessor is a file that ticket has to edit',
     ).toEqual([])
+  })
+})
+
+describe('ciOf and pr.ci (#1338)', () => {
+  const TEAM = { ...WRITTEN, mode: 'team', branch: { main: 'main', personal: 'me/work' } }
+
+  it('answers the written values from the recipe', () => {
+    const r = Recipe.parse({
+      ...TEAM,
+      pr: { ci: { provider: 'github-actions', required: ['test', 'lint'], timeout: '30m' } },
+    })
+    expect(ciOf(r)).toEqual({
+      provider: 'github-actions',
+      required: ['test', 'lint'],
+      timeoutMs: 1_800_000,
+      from: { provider: 'recipe', required: 'recipe', timeout: 'recipe' },
+    })
+  })
+
+  it('answers detect, all and 60m from the default, and hashes as if ci were never there', () => {
+    const r = Recipe.parse({ ...TEAM, pr: {} })
+    expect(ciOf(r)).toEqual({
+      provider: 'detect',
+      required: 'all',
+      timeoutMs: 3_600_000,
+      from: { provider: 'default', required: 'default', timeout: 'default' },
+    })
+    expect('ci' in (r.pr ?? {})).toBe(false)
+    expect(ciOf(Recipe.parse(TEAM)).provider).toBe('detect')
+  })
+
+  it('refuses an unresolved jenkins provider', () => {
+    expect(() => ciOf(Recipe.parse({ ...TEAM, pr: { ci: { provider: 'jenkins' } } }))).toThrow(/never resolved/)
   })
 })

@@ -68,8 +68,9 @@ const GITHUB_PROJECT: ProjectState = { ...OWNERLESS_PROJECT, owner: 'steven-zhc'
 
 const OWNERLESS_RECIPE_YAML = `
 version: 2
+branch:
+  main: main
 repo:
-  base: main
   remote: https://example.invalid/demo.git
 source:
   kinds: [bug]

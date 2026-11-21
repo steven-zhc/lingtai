@@ -230,17 +230,19 @@ import { readBacklogEffect } from '@lingtai/projector'
 import {
   backoffOf,
   baseDivergence,
-  baseOf,
+  branchOf,
   ceilingOf,
+  modeOf,
   numericTurns,
   parseDuration,
   queueOf,
+  selectionOf,
   submodulesOf,
   type QueueSettings,
   type ResolvedRecipe,
   type StepAction,
 } from '@lingtai/recipe'
-import { DEFAULT_ACTION, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
+import { DEFAULT_ACTION, invocationDecision, isBuiltInJudge, type SandboxDecision } from '@lingtai/recipe'
 import {
   mirrorPathFor,
   mirrorWrite,
@@ -299,7 +301,7 @@ import { labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
-import { signedInHere } from './projects.ts'
+import { copilotTokenSignedIn, signedInHere } from './projects.ts'
 import { resolvePromptRefs } from './prompt-refs.ts'
 // The one composer, shared with the board. See `prompt.ts` for why it is not
 // here any more.
@@ -1055,12 +1057,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     const recipe = resolved.recipe
     /** The request's `sandbox` for a decision: absent unless it is *sandboxed* or *refused*. */
     const sandboxOf = (
-      decision: SandboxDecision | undefined,
+      passDecision: SandboxDecision | undefined,
       run: { runId: string; worktree: string | undefined },
       /** The pass's stream, and what names this invocation on it (#1164). `runId` above is the dispatch's own. */
       record: { stream: string; step: Step; action: string; runtime: string },
     ): Effect.Effect<{ sandbox: RunSandbox } | Record<string, never>> => {
-      if (decision === undefined) return Effect.succeed({})
+      if (passDecision === undefined) return Effect.succeed({})
+      // The pass decided once; a runtime that cannot be sandboxed narrows it for its own invocation.
+      const decision = invocationDecision(passDecision, record.runtime)
       const keys = { step: record.step, action: record.action, runtime: record.runtime, runId: run.runId }
       const appends = invocationAppends(record.stream)
       // Not wrapped, so nothing else will say which boundary this one ran under: record it before the child starts.
@@ -1141,7 +1145,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       secondRuntimes.size === 0 || recipe.runtime.agent !== ownRuntime
         ? []
         : yield* Effect.promise<readonly RuntimeId[]>(() => (options.signedIn ?? signedInHere)())
-    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchable)
+    // A sandboxed run is handed the machine's Copilot token, so for such a recipe the token signs Copilot in too;
+    // an unsandboxed one never receives it, and the token-free probe above is the whole answer.
+    const dispatchableNow: readonly string[] =
+      recipe.sandbox?.enabled === true &&
+      secondRuntimes.has('copilot') &&
+      recipe.runtime.agent === ownRuntime &&
+      !dispatchable.includes('copilot') &&
+      (yield* Effect.promise(() => copilotTokenSignedIn()))
+        ? [...dispatchable, 'copilot']
+        : dispatchable
+    const wrongAgent = agentRefusal(resolved, options.runtime.capabilities.id, dispatchableNow)
     if (wrongAgent !== null) {
       return {
         ok: false,
@@ -1191,7 +1205,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       log(`sandbox: running unsandboxed — ${sandboxDecision.why}`)
     }
     // Safe now, and only now: past the refusal these two are the same branch.
-    const base = baseOf(recipe)
+    const base = branchOf(recipe)
     /**
      * **`runtime.limits` — the ceiling, and the default under every dispatch**
      * (`#314`, 0070 §5).
@@ -3243,7 +3257,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const tickets: TicketSource = options.client
           // A read that rejects is a defect here, which the pipeline turns into
           // `queue:`'s `failed` verdict as a rejection did.
-          const found = yield* runnableNowEffect({ client: tickets, queue, only: [options.issue] }).pipe(Effect.orDie)
+          const found = yield* runnableNowEffect({
+            client: tickets,
+            queue,
+            selection: selectionOf(recipe),
+            only: [options.issue],
+          }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {
             return {
@@ -3845,7 +3864,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * judged. Every other ending publishes from the finalizer.
        *
        * **`strategy` is carried and not branched on, because there is one value.**
-       * `integrate` offers `git merge --no-edit` and a fast-forward push, which is
+       * `integrate` offers `git merge --no-ff` and a fast-forward push, which is
        * `merge-commit`. What keeps a second value from resolving is `mergePlugin`'s
        * own `z.enum` in `packages/recipe/src/recipe.ts` — not a check here, and
        * this signature has none: it carries the field so the lane is told what it
@@ -3955,7 +3974,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                   type: 'MergeLaneWaited',
                   actor: 'conductor',
                   data: parsePayload('MergeLaneWaited', {
-                    behind: { runId: behind.runId, issue: String(behind.issue) },
+                    behind: 'pr' in behind ? { pr: behind.pr } : { runId: behind.runId, issue: String(behind.issue) },
                   }),
                 },
               ]).pipe(Effect.asVoid),
@@ -4512,6 +4531,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * §2b it is the caller's and not the pass's.
        */
       const stepDeps: ActionPortDeps = {
+        base,
         env: envForExtension,
         // 0108 §17 (#1222): a refusing `run:` that goes red then green asks these reads. The base is worked out when
         // the check asks, not here: `worktree` is assigned after this object is built.
@@ -4681,17 +4701,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * here by name and is replaceable by writing one line in the file.
        *
        * **`admit` is the first row, and `#268` is what put it here.** `admit`
-       * used to cut the worktree in its body, from `repo.base` and
+       * used to cut the worktree in its body, from `branch.main` and
        * `repo.submodules`, where no recipe could see, name or replace it. Now the
        * body is empty and this is what an unconfigured `admit` runs — the same
        * action a declared `worktree:` builds, over the same values, because
-       * `baseOf` and `submodulesOf` are the one place that knows which spelling a
-       * file used. So *the default cut* and *a pasted block that says what the
+       * `branchOf` and `submodulesOf` are the one place that knows where each is
+       * written. So *the default cut* and *a pasted block that says what the
        * default did* are the same pass, which is what makes the block safe to
        * paste.
        *
        * **`merge` is the second row, and `#270` is what put it here.** It landed
-       * the branch in its body, from `repo.base`, where no recipe could see, name
+       * the branch in its body, from `branch.main`, where no recipe could see, name
        * or replace it. Now the body is empty and this is what an unconfigured
        * `merge` runs — the same `integrate` call a declared `merge:` builds, over
        * the same base, because `land` above is handed the base by the pass rather
@@ -5674,6 +5694,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       const ports: AttemptPorts = {
         onStream: () => onStream,
         readEnd,
+        mode: modeOf(recipe),
         recordEnd,
       }
 
@@ -6169,7 +6190,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           ...ticketSnapshots,
-          labels: labelsFor('landed'),
+          labels: labelsFor('landed', { base, main: recipe.branch.main }),
           editEnded: true,
           appended: endResolved,
           landed: { mergeCommit: merged, base, attempt, summary },

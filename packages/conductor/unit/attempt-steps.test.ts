@@ -75,13 +75,13 @@ const ITEM: Claimed = {
  * builds them off `queueOf(recipe)` where a recipe declares nothing (`#269`).
  *
  * All four, because a block is all four: the schema requires them, and `queueOf`
- * writes `take: both` where the machine file names nobody.
+ * writes `take: all` where the machine file names nobody.
  */
 const QUEUE: QueueSettings = {
   kinds: ['bug', 'feature'],
   exclude: ['agent:hold'],
   backoff: '1h',
-  assignee: { take: 'both' },
+  assignee: { take: 'all' },
 }
 
 const TREE: Worktree = {
@@ -736,7 +736,7 @@ describe('admit runs the `worktree:` plugin, and that is where the head comes fr
       },
     )
     const { result } = await pass({
-      steps: { admit: [{ name: 'cut the branch', worktree: { base: '1.0', submodules: true } }] },
+      steps: { admit: [{ name: 'cut the branch', worktree: { submodules: true } }] },
       actions: { admit: [declared] },
     })
 

@@ -57,7 +57,8 @@ function world(answers: (string | null)[] = []): { world: QuestionWorld; lines: 
 }
 
 const GITHUB_FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 env: {required: [], plantAt: .env.local}
 steps: {}
@@ -65,7 +66,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 `
 
 const DB_FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: [], tickets: db}
 env: {required: [], plantAt: .env.local}
 steps: {}
@@ -76,7 +78,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 // so `resolveSource` throws — the stub state `write.test.ts:184` names.
 // `source.tickets: db` is still what the file says.
 const UNRESOLVABLE_DB_FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {tickets: db}
 env: {required: [], plantAt: .env.local}
 steps: {}
@@ -88,7 +91,8 @@ runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {ref
 // `source.kinds` written by a first `--kinds` answer, with nothing writing
 // `env.plantAt` yet. `source.kinds: [bug]` is still what the file says.
 const UNRESOLVABLE_KINDS_FIXTURE = `version: 2
-repo: {base: main, submodules: false}
+branch: { main: main }
+repo: { submodules: false }
 source: {kinds: [bug], exclude: []}
 steps: {}
 runtime: {agent: claude-code, limits: {run: {turns: 10, wall: 2m}, attempt: {refusalFixes: 2, conflictResolutions: 2}, ticket: {newAttempts: 0}}}

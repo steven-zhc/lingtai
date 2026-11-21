@@ -15,7 +15,18 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { GROUPS, type Entry, type Index, isOpenKey, paletteKey, search } from '@/lib/search'
+import {
+  GROUPS,
+  type Entry,
+  type GoState,
+  type Index,
+  goKey,
+  inField,
+  isHashKey,
+  isOpenKey,
+  paletteKey,
+  search,
+} from '@/lib/search'
 
 import { Skeleton } from './skeleton'
 
@@ -116,11 +127,15 @@ export function Palette() {
   const problems = index === null ? ['the board could not be asked'] : index === 'pending' ? [] : index.problems
 
   useEffect(() => {
-    const open = () => {
+    // Which key the page's `Search` hint shows: the server cannot know, so CSS reads this.
+    document.documentElement.dataset.os = isMacNow() ? 'mac' : 'pc'
+    const open = (initial?: string) => {
       const d = dialog.current
-      if (d === null) return
+      if (d === null || d.open) return
       from.current = document.activeElement
       d.showModal()
+      // After showModal: closing resets the query, so an opening one is set last.
+      if (initial !== undefined) setQuery(initial)
       // Each open is a new question; an answer to an older one is dropped.
       const n = ++opens.current
       fetch('/api/search', { cache: 'no-store' })
@@ -135,17 +150,65 @@ export function Palette() {
           if (n === opens.current) setIndex(null)
         })
     }
+    let go: GoState = { armedAt: null }
+    const follow = (where: 't' | 'p' | 's') => {
+      if (where === 's') {
+        const f = document.querySelector<HTMLDetailsElement>('.bar details.filter')
+        if (f === null) return false
+        f.open = true
+        f.querySelector<HTMLElement>('a')?.focus()
+        return true
+      }
+      const el =
+        document.querySelector<HTMLElement>(`[data-go="${where}"]`) ??
+        (where === 't' ? document.querySelector<HTMLElement>('.bar .brand') : null)
+      if (el === null) return false
+      el.click()
+      return true
+    }
     const onKey = (e: KeyboardEvent) => {
-      if (!isOpenKey(e, isMacNow())) return
-      e.preventDefault()
       const d = dialog.current
-      if (d === null) return
-      if (d.open) d.close()
-      else open()
+      const el = e.target instanceof HTMLElement ? e.target : null
+      const target = { tag: el?.tagName ?? '', editable: el?.isContentEditable === true }
+      // Any key that is not a second `G` key leaves nothing armed.
+      const disarm = () => {
+        go = { armedAt: null }
+      }
+      if (isOpenKey(e, isMacNow())) {
+        disarm()
+        if (d === null) return
+        if (d.open) {
+          e.preventDefault()
+          d.close()
+          return
+        }
+        // A key is never bound while focus is in a field: ⌘K there is the field's own.
+        if (inField(target)) return
+        e.preventDefault()
+        open()
+        return
+      }
+      if (d === null || d.open) return disarm()
+      if (isHashKey(e, target)) {
+        disarm()
+        e.preventDefault()
+        open('#')
+        return
+      }
+      const next = goKey(go, e, target, Date.now())
+      go = next.state
+      if (next.effect !== null && follow(next.effect.go)) e.preventDefault()
+    }
+    const onClick = (e: MouseEvent) => {
+      if (e.target instanceof Element && e.target.closest('[data-palette]') !== null) open()
     }
     // Capture, so a text field that stops propagation cannot swallow it.
     window.addEventListener('keydown', onKey, true)
-    return () => window.removeEventListener('keydown', onKey, true)
+    document.addEventListener('click', onClick)
+    return () => {
+      window.removeEventListener('keydown', onKey, true)
+      document.removeEventListener('click', onClick)
+    }
   }, [])
 
   // The one place closing does its work, whether Escape, ⌘K or Enter closed it.

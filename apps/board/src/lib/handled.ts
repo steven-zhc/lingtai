@@ -16,6 +16,8 @@ export interface HandledRow {
   wrong: string
   /** What Lingtai did — the *auto-* verb; absent where only a person can answer. */
   did?: string
+  /** A footnote's label for the kind (#1345), singular and plural; absent where `did` is. */
+  short?: { one: string; many: string }
   /** The sentence on hover. */
   hover: string
   colour: string
@@ -26,6 +28,7 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   'review-fixed': {
     wrong: 'AI review found problems',
     did: 'auto-fixed',
+    short: { one: 'review fix', many: 'review fixes' },
     hover:
       'Before any code is accepted, an AI reviewer reads it. When it found problems, the agent fixed them and had the code reviewed again.',
     colour: 'var(--s1)',
@@ -33,6 +36,7 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   'base-moved': {
     wrong: 'newer changes landed first',
     did: 'auto-merged, re-tested',
+    short: { one: 're-merged', many: 're-merged' },
     hover:
       'Your project moved on while this work was in progress. Lingtai pulled in the newer code and ran the tests again, so nothing is built on an outdated copy.',
     colour: 'var(--accent)',
@@ -40,18 +44,21 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   conflict: {
     wrong: 'two changes touched the same code',
     did: 'auto-combined',
+    short: { one: 'combined', many: 'combined' },
     hover: 'This work and a newer change edited the same lines. The agent combined both versions so neither was lost.',
     colour: 'var(--s3)',
   },
   build: {
     wrong: 'tests or build broke',
     did: 'auto-fixed',
+    short: { one: 'build fix', many: 'build fixes' },
     hover: "Your project's tests or build failed on this change. The agent fixed the code until they passed.",
     colour: 'var(--s5)',
   },
   stopped: {
     wrong: 'agent stopped halfway',
     did: 'auto-restarted',
+    short: { one: 'restarted', many: 'restarted' },
     hover:
       'The AI service dropped, the agent crashed or answered nothing. Lingtai ran that step again from the saved work.',
     colour: 'var(--s2)',
@@ -59,12 +66,14 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   'review-restarted': {
     wrong: 'AI review rejected the approach',
     did: 'auto-started over',
+    short: { one: 'started over', many: 'started over' },
     hover: 'Review found the approach wrong, not just a few lines. Lingtai started a fresh attempt from the base.',
     colour: 'var(--s4)',
   },
   disputed: {
     wrong: 'the agent disputed a review finding',
     did: 'AI judge decided',
+    short: { one: 'judged', many: 'judged' },
     hover:
       'The agent argued a finding was wrong, mostly a test that was not its fault. An AI judge read both sides and chose the next step.',
     colour: 'var(--held)',
@@ -72,6 +81,7 @@ export const HANDLED_ROWS: Readonly<Record<Exclude<ProblemKind, 'other'>, Handle
   'too-big': {
     wrong: 'task too big for one change',
     did: 'auto-split',
+    short: { one: 'split', many: 'split' },
     hover: 'The change grew too large to review in one go. Lingtai split the task into smaller tickets.',
     colour: 'var(--s6)',
   },
@@ -208,6 +218,12 @@ export function handledRow(kind: string): HandledRow {
       colour: 'var(--muted)',
     }
   )
+}
+
+/** "5 review fixes", or null for a kind with no short label (`other`, an unknown one, or one only a person answers). */
+export function handledShort(kind: string, count: number): string | null {
+  const s = handledRow(kind).short
+  return s === undefined ? null : `${count} ${count === 1 ? s.one : s.many}`
 }
 
 // --- the figures the panel is drawn from --------------------------------------------

@@ -22,10 +22,8 @@
  */
 import { Deferred, Effect } from 'effect'
 
-export interface LaneHolder {
-  readonly runId: string
-  readonly issue: number | string
-}
+/** An attempt (`{runId, issue}`) or a PR (`{pr}`, the PR's stream id) — 0122 §3. */
+export type LaneHolder = { readonly runId: string; readonly issue: number | string } | { readonly pr: string }
 
 export interface LandingLane {
   /**

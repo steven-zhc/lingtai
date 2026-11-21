@@ -1,6 +1,6 @@
 import { passOverBaseRed } from '@lingtai/conductor'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
-import { passedOver, runnableNow } from '@lingtai/conductor/discover'
+import { passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -78,7 +78,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { queueOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -995,7 +995,12 @@ export async function askProject(
     return await Effect.runPromise(
       Effect.gen(function* () {
         const listing = yield* Effect.tryPromise({
-          try: () => runnableNow({ client: filter.tickets, queue: queueOf(filter.recipe) }),
+          try: () =>
+            runnableNow({
+              client: filter.tickets,
+              queue: queueOf(filter.recipe),
+              selection: selectionOf(filter.recipe),
+            }),
           catch: (err) => err,
         }).pipe(
           Effect.map((found) => ({ ok: true as const, found })),
@@ -1021,7 +1026,13 @@ export async function askProject(
         const offered = look === null ? found : passOverBaseRed(look, found).offered
         const select_ = (refs: typeof found.runnable) =>
           Effect.tryPromise(() =>
-            select({ project: filter.project, offered: refs, kinds: filter.kinds, backoffMs: filter.backoffMs }),
+            select({
+              project: filter.project,
+              offered: refs,
+              kinds: filter.kinds,
+              mode: modeOf(filter.recipe),
+              backoffMs: filter.backoffMs,
+            }),
           )
         const runnable = yield* select_(offered.runnable)
         const kept = new Set(offered.runnable.map((r) => String(r.ref)))
@@ -1112,7 +1123,17 @@ export async function queueFilters(
     backoffMs.set(filter.project, filter.backoffMs)
     plans.set(filter.project, filter.plan)
     ticketSources.set(filter.project, ticketSourceOf(filter.recipe))
-    for (const kind of filter.kinds) if (!kindOrder.includes(kind)) kindOrder.push(kind)
+    for (const kind of rankedKinds(filter.kinds, modeOf(filter.recipe)))
+      if (!kindOrder.includes(kind)) kindOrder.push(kind)
+  }
+  // A team project ranks `lingtai:pr-fix` ahead of its own kinds, and a solo project has no such
+  // ticket on the board, so the merged order puts it first whichever project was read first.
+  for (const filter of filters) {
+    if (!filter.ok || modeOf(filter.recipe) !== 'team') continue
+    const [prFix] = rankedKinds([], 'team')
+    kindOrder.splice(kindOrder.indexOf(prFix!), 1)
+    kindOrder.unshift(prFix!)
+    break
   }
   return { askable, problems, limits, backoffMs, plans, ticketSources, kindOrder }
 }

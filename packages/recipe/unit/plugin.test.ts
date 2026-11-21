@@ -65,7 +65,7 @@ import {
 /** The smallest recipe that resolves, so a case can put one action in it. */
 const BASE: Recipe = Recipe.parse({
   version: 2,
-  repo: { base: 'main' },
+  branch: { main: 'main' },
   source: { kinds: ['bug'] },
   env: { plantAt: '.env.local' },
   runtime: {},
@@ -654,9 +654,9 @@ describe('the two the pass stopped calling itself', () => {
 
   /** The values today's code is called with, and no others. */
   it('carries what the code it wraps is configured by, and nothing more', () => {
-    expect(worktreePlugin.schema.parse({ name: 'cut', worktree: { base: 'main', submodules: false } })).toEqual({
+    expect(worktreePlugin.schema.parse({ name: 'cut', worktree: { submodules: false } })).toEqual({
       name: 'cut',
-      worktree: { base: 'main', submodules: false },
+      worktree: { submodules: false },
     })
 
     /**
@@ -671,7 +671,7 @@ describe('the two the pass stopped calling itself', () => {
      * no refusal and no line anywhere saying the value had stopped being read. So
      * a block that does not say is refused by name instead.
      */
-    const silent = worktreePlugin.schema.safeParse({ name: 'cut', worktree: { base: 'main' } })
+    const silent = worktreePlugin.schema.safeParse({ name: 'cut', worktree: {} })
     expect(silent.success).toBe(false)
     expect(JSON.stringify(silent.error?.issues)).toContain('submodules')
 
@@ -741,7 +741,7 @@ describe('the one `claim` holds', () => {
   it('has no `assignee:` plugin left in the closed set', () => {
     expect(PLUGINS.map((plugin) => plugin.key)).not.toContain('assignee')
     expect(PLUGINS).toHaveLength(14)
-    expect(pluginOf({ name: 'whose', assignee: { take: 'both' } })).toBeNull()
+    expect(pluginOf({ name: 'whose', assignee: { take: 'all' } })).toBeNull()
   })
 
   /**
@@ -769,7 +769,7 @@ describe('the one `claim` holds', () => {
       kinds: ['bug', 'feature'],
       exclude: ['agent:hold'],
       backoff: '45m',
-      assignee: { take: 'both' },
+      assignee: { take: 'all' },
     }
     expect(queuePlugin.schema.parse({ name: 'what to work on', queue: whole })).toEqual({
       name: 'what to work on',
@@ -809,7 +809,7 @@ describe('the one `claim` holds', () => {
   it('declares no `env:`, and says what it does declare', () => {
     const problems = readFields(queuePlugin, {
       name: 'take work',
-      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } },
+      queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'all' } },
       env: ['GITHUB_TOKEN'],
     }).problems!
     expect(problems).toHaveLength(1)
@@ -826,21 +826,16 @@ describe('the one `claim` holds', () => {
    * `login`, so a person reading it is told what to add rather than what to
    * remove.
    */
-  it('keeps the rule that `assignee: { take: mine }` needs a login', () => {
+  it('parses `assignee: { take: mine }` and leaves the login refusal to the resolver', () => {
     // The other three, because the block requires all four — `assignee: {}` is
     // still how a person writes *whoever it is assigned to*.
     const q = { kinds: ['bug'], exclude: [], backoff: '1h' }
     expect(queuePlugin.schema.parse({ name: 'q', queue: { ...q, assignee: {} } })).toMatchObject({
-      queue: { assignee: { take: 'both' } },
+      queue: { assignee: { take: 'all' } },
     })
 
-    const refused = queuePlugin.schema.safeParse({
-      name: 'q',
-      queue: { ...q, assignee: { take: 'mine' } },
-    })
-    expect(refused.success).toBe(false)
-    expect(refused.error!.issues[0]!.message).toContain('take: mine needs a login')
-    expect(refused.error!.issues[0]!.path).toEqual(['queue', 'assignee', 'login'])
+    // The login refusal is the resolver's now (#1310): only it knows whether tickets are on GitHub.
+    expect(queuePlugin.schema.safeParse({ name: 'q', queue: { ...q, assignee: { take: 'mine' } } }).success).toBe(true)
 
     expect(
       queuePlugin.schema.parse({

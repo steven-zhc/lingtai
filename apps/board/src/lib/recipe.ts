@@ -42,6 +42,8 @@ import {
   parseDuration,
   provenanceSource,
   resolveRecipe,
+  selectionOf,
+  type Selection,
   type StepAction,
   type PluginSecrets,
   type Recipe,
@@ -413,7 +415,7 @@ export type ProjectRecipe =
       /** The file to open: the recipe, or this machine's `config.yml` when the fault is there. */
       at: string
       /** Which of the two files `at` is, so the page can name the fault it actually has. */
-      fault: 'recipe' | 'machine'
+      fault: 'recipe' | 'machine' | 'refused'
       problem: string
       /**
        * The recipe file's own text when the fault is the recipe's and the file
@@ -432,10 +434,12 @@ export type ProjectRecipe =
  * Each names its own remedy in its message; what a caller must not do is wrap
  * them in a sentence about the other file.
  */
-function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' } {
-  return err instanceof MachineConfigInvalidError
-    ? { at: machinePath(), fault: 'machine' }
-    : { at: recipe, fault: 'recipe' }
+export function faultOf(err: unknown, recipe: string): { at: string; fault: 'recipe' | 'machine' | 'refused' } {
+  if (err instanceof MachineConfigInvalidError) return { at: machinePath(), fault: 'machine' }
+  // By the tag and never by the sentence (#1306): a refusal reworded later must not change paragraph.
+  if (typeof err === 'object' && err !== null && '_tag' in err && err._tag === 'RecipeRefused')
+    return { at: recipe, fault: 'refused' }
+  return { at: recipe, fault: 'recipe' }
 }
 
 /** Run outside any fiber, uncounted — the board's edge (as `locks.ts`). */
@@ -488,8 +492,11 @@ export async function projectRecipe(
       ok: false,
       project,
       ...fault,
-      text: fault.fault === 'recipe' ? await textIfReadable(project) : null,
-      problem: (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
+      text: fault.fault !== 'machine' ? await textIfReadable(project) : null,
+      problem:
+        fault.fault === 'refused' && Array.isArray((err as { problems?: unknown }).problems)
+          ? (err as { problems: readonly string[] }).problems.join(' ').trim()
+          : (err as Error).message.replace(/\s*\n\s*/g, ' ').trim(),
     }
   }
   return {
@@ -582,6 +589,8 @@ export function describeAction(
    * call an implementer a cold reviewer on the task page.
    */
   step?: Step,
+  /** The mode and ticket source the queue selects on (#1310): `queue:` alone does not say whose tickets it takes. */
+  selection?: Selection,
 ): { does: string; bound: string } {
   // Every `no_log` value gone before a word of this is written (0061 §9). It
   // reads named fields, so today it could not print one by accident — the point
@@ -700,9 +709,9 @@ export function describeAction(
     // so the set is what this answers, and a reading with no case for a kind is a
     // `switch` that returns `undefined` on a page nobody would think to re-test.
     case 'worktree': {
-      const a = action as Extract<StepAction, { worktree: { base: string; submodules: boolean } }>
+      const a = action as Extract<StepAction, { worktree: { submodules: boolean } }>
       return {
-        does: `cuts the branch from origin/${a.worktree.base}${a.worktree.submodules ? ', submodules and all' : ''}`,
+        does: `cuts the branch from origin/<the landing branch>${a.worktree.submodules ? ', submodules and all' : ''}`,
         bound: 'no clock — it is the directory the work happens in',
       }
     }
@@ -728,12 +737,17 @@ export function describeAction(
       >
       const exclude = a.queue.exclude.length === 0 ? '' : `, never ${a.queue.exclude.join(', ')}`
       const me = a.queue.assignee?.login ?? "this machine's login"
+      const take = selection?.mode === 'team' ? 'mine' : a.queue.assignee?.take
       const whose =
-        a.queue.assignee?.take === 'mine'
-          ? `, only where assigned to ${me}`
-          : a.queue.assignee?.take === 'unassigned'
-            ? ', only where assigned to nobody'
+        selection?.tickets === 'db'
+          ? selection.mode === 'team'
+            ? ', every ticket — local tickets are yours'
             : ''
+          : take === 'mine'
+            ? `, only where assigned to ${me}`
+            : take === 'unassigned'
+              ? ', only where assigned to nobody'
+              : ''
       return {
         does: `takes ${a.queue.kinds.join(' before ')}${exclude}${whose}`,
         bound: `a failed attempt waits ${a.queue.backoff} before its own ticket is offered again`,
@@ -863,7 +877,7 @@ export interface Provenance {
 /**
  * Every value the resolve knows the origin of, as three columns (#218).
  *
- * **The whole map and not the rows' keys.** `repo.base` and `env.required` are
+ * **The whole map and not the rows' keys.** `branch.main` and `env.required` are
  * in it and in no reading, and a page whose exhaustive list was assembled from
  * what the reading above already showed would be exhaustive of the wrong thing.
  * This is `provenanceLines`' block, which `lingtai doctor` has printed since
@@ -915,7 +929,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: 'assignee',
-      says: describeAssignee(assigneeOf(recipe)),
+      says: describeAssignee(assigneeOf(recipe), selectionOf(recipe)),
       keys: ['runtime.assignee.take', 'runtime.assignee.login'],
     },
     {

@@ -1,12 +1,14 @@
+import { PR_FIX_LABEL } from '@lingtai/conductor/labels'
 import { STEPS } from '@lingtai/domain'
 import { resolveRecipe } from '@lingtai/recipe'
 import { describe, expect, it } from 'vitest'
 
-import { recipeLines } from '../src/lib/recipe-lines.ts'
+import { modeLines, recipeLines } from '../src/lib/recipe-lines.ts'
 
 const BASE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug, tech-debt], exclude: [blocked, agent:hold] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -19,7 +21,8 @@ runtime: { agent: claude-code, limits: { run: { turns: unbounded, wall: 2m }, at
 `
 const MINIMAL = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -102,7 +105,7 @@ describe('recipeLines', () => {
     const read = await lines(
       MINIMAL.replace(
         'steps: {}',
-        'steps:\n  claim:\n    - { name: take, queue: { kinds: [feature], exclude: [wip], backoff: 1h, assignee: { take: both } } }',
+        'steps:\n  claim:\n    - { name: take, queue: { kinds: [feature], exclude: [wip], backoff: 1h, assignee: { take: all } } }',
       ),
     )
     expect(setting(read, 'claim', 'kinds')).toBe('feature')
@@ -148,5 +151,68 @@ describe('recipeLines', () => {
       'the last attempt',
       '1 character of the diff',
     ])
+  })
+})
+
+describe('modeLines (#1326)', () => {
+  const RUNTIME = (assignee: string) =>
+    `runtime: { agent: claude-code, ${assignee}limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }`
+  const yaml = (head: string, assignee = '') =>
+    `version: 2\n${head}\nrepo: { submodules: false }\nenv: { required: [], plantAt: .env.local }\nsteps: {}\n${RUNTIME(assignee)}\n`
+  const read = async (text: string) => modeLines((await resolveRecipe(async () => text, 'main')).recipe)
+  const text = (m: ReturnType<typeof modeLines>) => m.lines.map((l) => `${l.label}: ${l.says}`).join('\n')
+  const GH = 'source: { kinds: [bug], exclude: [agent:hold] }'
+
+  it('reads a team GitHub recipe through the assignee rule', async () => {
+    const m = await read(
+      yaml(`mode: team\nbranch: { main: main, personal: me/work }\n${GH}`, 'assignee: { login: me, take: mine }, '),
+    )
+    expect(m.mode).toBe('team')
+    expect(m.personal).toBe('me/work')
+    expect(text(m)).toContain('assigned to me')
+    expect(text(m)).toContain(PR_FIX_LABEL)
+    expect(m.pr).toMatchObject({ turns: 20, wall: '5m', fromDefault: true })
+    expect(text(m)).not.toMatch(/kept current|before each claim|in review/)
+  })
+
+  it('reads pr.ci through ciOf, with where each value came from (#1338)', async () => {
+    const head = `mode: team\nbranch: { main: main, personal: me/work }\n${GH}\n`
+    const dflt = await read(yaml(head, 'assignee: { login: me }, '))
+    expect(dflt.pr?.ci).toEqual({
+      provider: 'detect',
+      required: 'all',
+      timeout: '60m',
+      from: { provider: 'default', required: 'default', timeout: 'default' },
+    })
+    const wrote = await read(
+      yaml(
+        `${head}pr: { ci: { provider: github-actions, required: [test], timeout: 30m } }`,
+        'assignee: { login: me }, ',
+      ),
+    )
+    expect(wrote.pr?.ci).toEqual({
+      provider: 'github-actions',
+      required: ['test'],
+      timeout: '30m',
+      from: { provider: 'recipe', required: 'recipe', timeout: 'recipe' },
+    })
+  })
+
+  it('names the login for a team recipe whose take is omitted', async () => {
+    const m = await read(
+      yaml(`mode: team\nbranch: { main: main, personal: me/work }\n${GH}`, 'assignee: { login: me }, '),
+    )
+    expect(text(m)).toContain('assigned to me')
+    expect(text(m)).not.toContain('(all)')
+  })
+
+  it('reads a recipe naming no mode as solo', async () => {
+    const m = await read(yaml(`branch: { main: main }\n${GH}`))
+    expect(m.mode).toBe('solo')
+    expect(m.named).toBe(false)
+    expect(m.pr).toBeNull()
+    expect(text(m)).toContain('lingtai:landed')
+    expect(text(m)).toContain('agent:hold')
+    expect(text(m)).toContain('none — each ticket lands itself')
   })
 })

@@ -48,7 +48,7 @@ import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import { loadProjectsEffect, recordTurn } from '@lingtai/project'
 import type { Recipe, ResolvedRecipe } from '@lingtai/recipe'
-import { baseOf, concurrencyOf, kindsOf, queueOf } from '@lingtai/recipe/settings'
+import { branchOf, concurrencyOf, kindsOf, modeOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 import type { TokenSource } from '@lingtai/repo'
 import { Effect } from 'effect'
 
@@ -256,12 +256,12 @@ export function conductWork(
 
       if (project.owner === null) {
         // A local registration always records `base` (`first-project.ts`). If it
-        // did not, the fallback is the recipe's own `repo.base` — never
+        // did not, the fallback is the recipe's own `branch.main` — never
         // `client.defaultBranch()`, which there is no client to ask.
         where.ref = project.base
         resolved = yield* Effect.promise(() => world.currentRecipe(project, undefined, where.ref ?? undefined))
         options.onRecipe?.(name, resolved.recipe)
-        if (where.ref === null) where.ref = baseOf(resolved.recipe)
+        if (where.ref === null) where.ref = branchOf(resolved.recipe)
 
         // Both before `where.looked()`: a refusal here — no `source.tickets:
         // db`, no `repo.remote`, a `TicketSourceConflict` — is recorded as a
@@ -524,16 +524,18 @@ export function conductWork(
       // pending — because the only thing that consumes one is the item ceasing
       // to be queued.
       // `orDie`: a listing that failed ends the look as it always did (a rejection, now a defect), never as an empty queue.
-      const offered = yield* runnableNowEffect({ client: discovery, queue: queueOf(resolved.recipe) }).pipe(
-        Effect.orDie,
-      )
+      const offered = yield* runnableNowEffect({
+        client: discovery,
+        queue: queueOf(resolved.recipe),
+        selection: selectionOf(resolved.recipe),
+      }).pipe(Effect.orDie)
       // **A red base passes a requested ticket over too** (#1208): the same look the queue makes, so a `now`
       // cannot claim a ticket the base would only release again. The request stays pending, and is said.
       const { offered: seen, line: baseRedLine } = yield* passOverForRedBase({
         store,
         project: name,
         recipe: resolved.recipe,
-        base: baseOf(resolved.recipe),
+        base: branchOf(resolved.recipe),
         owner: common.client.owner ?? '',
         repo: common.client.repo,
         offered,
@@ -552,6 +554,7 @@ export function conductWork(
           project: name,
           offered: seen.runnable,
           kinds: kindsOf(resolved.recipe),
+          mode: modeOf(resolved.recipe),
           backoffMs: 0,
         }),
       )

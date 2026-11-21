@@ -10,6 +10,7 @@
  */
 import { posix } from 'node:path'
 
+import { isUnsandboxableRuntime } from '@lingtai/domain'
 import {
   SandboxUnavailable,
   mirrorDir,
@@ -80,7 +81,17 @@ export type SandboxDecision =
   | { readonly kind: 'sandboxed'; readonly project_additions: ProjectAdditions }
   | { readonly kind: 'unsandboxed'; readonly reason: 'off by choice' }
   | { readonly kind: 'unsandboxed'; readonly reason: 'degraded'; readonly why: string }
+  | { readonly kind: 'unsandboxed'; readonly reason: 'runtime cannot' }
   | { readonly kind: 'refused'; readonly why: string }
+
+/**
+ * The pass's decision, narrowed to one invocation: a runtime that cannot be sandboxed runs unsandboxed under a pass
+ * that would have sandboxed it. Every other decision stands — `degraded` and `refused` are the host's to say.
+ */
+export const invocationDecision = (pass: SandboxDecision, runtime: string): SandboxDecision =>
+  pass.kind === 'sandboxed' && isUnsandboxableRuntime(runtime)
+    ? { kind: 'unsandboxed', reason: 'runtime cannot' }
+    : pass
 
 /** `~` and `~/…` against the host's home, normalised: only for a comparison, never written back into the recipe. */
 export const expandHome = (path: string, home: string): string =>

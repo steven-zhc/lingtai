@@ -20,13 +20,13 @@
  * pushes back into the checkout, `packages/actions/src/merge-action.ts:47`; no
  * `origin` is needed), its name is not already
  * another project's, the base branch exists, and an agent can run here — only
- * then does `askRecipe` (#431) take `repo.base`, `repo.remote` and, on an
+ * then does `askRecipe` (#431) take `branch.main`, `repo.remote` and, on an
  * absent file, `env.plantAt` as its seeds, and ask the rest of the recipe's
  * questions — writing all of it, seeds and answers together, in the one
  * creation write an absent file gets (#432). **That seed's `base` is not
  * necessarily final**: `askLanding`, inside `askRecipe`, can still move
- * `repo.base` — so what follows is a re-read of the file for its actual
- * `repo.base`, a second `git rev-parse` for that base's sha when it moved,
+ * `branch.main` — so what follows is a re-read of the file for its actual
+ * `branch.main`, a second `git rev-parse` for that base's sha when it moved,
  * `resolveLocalRecipe` reading the file back for its `configHash`, and
  * `register` (`addLocal` in `@lingtai/conductor/onboard`) appending
  * `ProjectConfigured` with `owner: null` against that final base, not the
@@ -67,7 +67,7 @@ import {
   resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
-import { baseOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
+import { branchOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -100,6 +100,7 @@ import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } fro
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe } from './setup-card.ts'
+import { askMode, askPersonal, type Mode } from './team.ts'
 import { ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
@@ -314,16 +315,17 @@ function conflictingFlags(flags: Record<string, string>, kept: string): string |
   if (github !== undefined && flags['project'] === 'local') {
     return `--github ${github}, but --project local names the other kind. Leave out --project, or leave out --github. ${kept}`
   }
-  const base = flags['base']
+  if (flags['base'] !== undefined) return `--base is now --main: pass --main ${flags['base']}. ${kept}`
+  const base = flags['main']
   const land = flags['land']
-  // `--land <branch>` and `--base` are different questions — where to read the
+  // `--land <branch>` and `--main` are different questions — where to read the
   // recipe from, and what it should land on — and a person who named both must
   // not have one silently overrule the other (#399, mirroring #75's rule for
-  // `--base` against the recipe's own `repo.base`). Checked here, before
+  // `--main` against the recipe's own `branch.main`). Checked here, before
   // anything is written, rather than inside `askRecipe`, where `askLanding`
   // would otherwise overwrite the base question's own answer silently.
   if (base !== undefined && land !== undefined && land !== 'hold' && land !== base) {
-    return `--land ${land} and --base ${base} name two different branches, and this command will not pick one silently. ${kept}`
+    return `--land ${land} and --main ${base} name two different branches, and this command will not pick one silently. ${kept}`
   }
   return null
 }
@@ -616,20 +618,21 @@ function runLocalBranch(
     let fromSha = ''
     const proposedNow = onDisk.get(['steps', 'proposed'])
     const currentProposed = Array.isArray(proposedNow) ? (proposedNow as unknown[]) : []
-    // The base the recipe resolves: a `worktree:` at `admit` says it ahead of `repo.base` (`baseOf`), so that
-    // is the one compared, moved and seeded below.
-    const admitNow = onDisk.get(['steps', 'admit'])
-    const declaredAtAdmit = Array.isArray(admitNow)
-      ? (admitNow as unknown[]).find(
-          (entry): entry is { worktree: { base?: unknown } } =>
-            typeof entry === 'object' && entry !== null && 'worktree' in entry,
-        )
-      : undefined
-    const currentBase = declaredAtAdmit !== undefined ? declaredAtAdmit.worktree.base : onDisk.get(['repo', 'base'])
-    // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--base`
+    // The base the recipe resolves (`branchOf`), which is the one compared, moved and seeded below. Null where
+    // there is no file yet or it does not resolve: the answer is then the detected one, never a raw path.
+    const currentBase = ((): string | null => {
+      const text = onDisk.text()
+      if (text === null) return null
+      try {
+        return branchOf(resolveSource(text, name, name).recipe)
+      } catch {
+        return null
+      }
+    })()
+    // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--main`
     // names the branch the person means to land on, and `askLanding` would move the base there anyway.
     const given = flags['land']
-    const detected = flags['base'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
+    const detected = flags['main'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
     // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
     let source: string | null = null
 
@@ -653,7 +656,7 @@ function runLocalBranch(
           project: 'local' as const,
           name,
           remote,
-          base: baseOf(recipe),
+          base: branchOf(recipe),
           trial: { trial: 'not-run' as const, because: 'no checks' },
           card: cardRecipe(recipe, toplevel),
           updated: true,
@@ -663,49 +666,102 @@ function runLocalBranch(
       }
     }
 
+    // Solo or team (0130 §1), asked here and not inside `askRecipe`, because the branch below is made before it
+    // runs — a file that already exists keeps the mode it names. `--defaults` takes team.
+    const fileText = onDisk.text()
+    const lingtaiWorld = flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world
+    let mode: Mode = onDisk.get(['mode']) === 'team' ? 'team' : 'solo'
+    if (fileText === null) {
+      const asked = yield* askMode(lingtaiWorld, { given: flags['mode'] ?? null, kept: world.kept })
+      if ('refused' in asked) return { refused: asked.refused }
+      mode = asked.mode
+    }
+    // A team project's `branch.main` is the branch checked out, or `--main` (0130 §2); never `lingtai-base`.
+    let mainBranch: string | null = null
+    if (mode === 'team') {
+      const landFlag = flags['land']
+      if (landFlag !== undefined && landFlag !== 'hold') {
+        return {
+          refused: `a team project lands on branch.personal, not on ${landFlag} — pass --personal <branch> to name it. ${world.kept}`,
+        }
+      }
+      const fileMain = onDisk.get(['branch', 'main'])
+      const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+      const checkedOut = head.ok ? head.stdout.trim() : ''
+      mainBranch = flags['main'] ?? (typeof fileMain === 'string' ? fileMain : checkedOut)
+      if (mainBranch === '') {
+        return {
+          refused: `${toplevel} has no branch checked out, and a team project's main is the one that is. Check out a branch, or pass --main <branch>. ${world.kept}`,
+        }
+      }
+      const mainTip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${mainBranch}^{commit}`])
+      if (!mainTip.ok) {
+        return {
+          refused: `${mainBranch} is not a branch in ${toplevel} — ${(mainTip.stderr || mainTip.stdout).trim()}. ${world.kept}`,
+        }
+      }
+    }
+
     // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
-    const baseAnswer = yield* questionEffect(
-      flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world,
-      {
-        name: 'the base branch',
-        flag: '--base <branch>',
-        given: flags['base'] ?? null,
-        prompt: "the branch this project's recipe governs and merges into",
-        // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
-        current: typeof currentBase === 'string' && ports === null ? currentBase : null,
-        detected,
-        kept: world.kept,
-        ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
-        ...(world.command === undefined ? {} : { command: world.command }),
-        validate: (answer) =>
-          Effect.gen(function* () {
-            source = null
-            const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
-            if (check.ok) {
-              fromSha = check.stdout.trim()
-              return null
-            }
-            if (answer !== LINGTAI_BASE) {
-              return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
-            }
-            // Decides only: `validate` can run again on a refusal, so nothing is created here.
-            const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
-            const branch = head.ok ? head.stdout.trim() : ''
-            const tip =
-              branch === ''
-                ? null
-                : yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
-            if (tip === null || !tip.ok) {
-              return (
-                `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
-                'Check out a branch, or pass --base <branch>'
-              )
-            }
-            source = branch
-            return null
-          }),
-      },
-    )
+    const baseAnswer =
+      mode === 'team' && mainBranch !== null
+        ? yield* askPersonal(lingtaiWorld, {
+            given: flags['personal'] ?? null,
+            fallback: typeof currentBase === 'string' && ports === null ? currentBase : LINGTAI_BASE,
+            main: mainBranch,
+            kept: world.kept,
+            validate: (answer) =>
+              Effect.gen(function* () {
+                source = null
+                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
+                if (check.ok) {
+                  fromSha = check.stdout.trim()
+                  return null
+                }
+                // Decides only: `validate` can run again on a refusal, so nothing is created here.
+                source = mainBranch
+                return null
+              }),
+          }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
+        : yield* questionEffect(flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world, {
+            name: 'the base branch',
+            flag: '--main <branch>',
+            given: flags['main'] ?? null,
+            prompt: "the branch this project's recipe governs and merges into",
+            // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
+            current: typeof currentBase === 'string' && ports === null ? currentBase : null,
+            detected,
+            kept: world.kept,
+            ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
+            ...(world.command === undefined ? {} : { command: world.command }),
+            validate: (answer) =>
+              Effect.gen(function* () {
+                source = null
+                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
+                if (check.ok) {
+                  fromSha = check.stdout.trim()
+                  return null
+                }
+                if (answer !== LINGTAI_BASE) {
+                  return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
+                }
+                // Decides only: `validate` can run again on a refusal, so nothing is created here.
+                const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+                const branch = head.ok ? head.stdout.trim() : ''
+                const tip =
+                  branch === ''
+                    ? null
+                    : yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+                if (tip === null || !tip.ok) {
+                  return (
+                    `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
+                    'Check out a branch, or pass --main <branch>'
+                  )
+                }
+                source = branch
+                return null
+              }),
+          })
     if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
     const base = baseAnswer.answer
 
@@ -756,7 +812,7 @@ function runLocalBranch(
             {
               project: name,
               changes: [
-                { path: ['repo', 'base'], value: base },
+                { path: ['branch', 'main'], value: base },
                 { path: ['repo', 'remote'], value: remote },
               ],
             },
@@ -826,24 +882,54 @@ function runLocalBranch(
     // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
     // cuts from a mirror of this checkout at `base`.
     let madeKept: string | null = null
-    if (source !== null) {
-      const made = yield* world.git(toplevel, ['branch', base, source])
-      if (!made.ok) {
-        return {
-          refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+    const makeBranch = () =>
+      Effect.gen(function* () {
+        if (source === null) return null
+        const made = yield* world.git(toplevel, ['branch', base, source])
+        if (!made.ok) {
+          return {
+            refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+          }
         }
-      }
-      const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
-      if (!tip.ok) {
+        const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
+        if (!tip.ok) {
+          return {
+            refused:
+              `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
+              `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
+          }
+        }
+        fromSha = tip.stdout.trim()
+        madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+        return null
+      })
+    // A team project's personal branch is made only after every question is answered, and only once the person
+    // said yes: the trial build below cuts at `branch.main`, which is where the branch would be cut from anyway.
+    const deferBranch = mode === 'team' && source !== null
+    if (deferBranch) {
+      const confirmed = yield* questionEffect(lingtaiWorld, {
+        name: 'making the personal branch',
+        flag: `--defaults, or make it yourself: git branch ${base} ${source}`,
+        given: flags['defaults'] !== undefined ? 'yes' : null,
+        prompt: `${base} does not exist in ${toplevel}. Make it from ${source}?`,
+        choices: ['yes', 'no'],
+        fallback: 'yes',
+        kept: world.kept,
+      })
+      if ('refused' in confirmed) return { refused: confirmed.refused }
+      if (confirmed.answer === 'no') {
         return {
           refused:
-            `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
-            `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
+            `${base} was not made — nothing was written and nothing was registered. ` +
+            `Make it yourself with: git branch ${base} ${source}, then run this again. ${world.kept}`,
         }
       }
-      fromSha = tip.stdout.trim()
-      madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+    } else {
+      const refusal = yield* makeBranch()
+      if (refusal !== null) return refusal
     }
+    // Until the branch is made, a deferred one is cut at the main it would be made from.
+    const trialBase = deferBranch && mainBranch !== null ? mainBranch : base
 
     const path = recipePath(name, world.home)
     const existingText = onDisk.text()
@@ -857,10 +943,16 @@ function runLocalBranch(
     const seeds = [
       // `--land <branch>` is the unattended landing, so it takes a `human:` hold off `steps.proposed` as it does elsewhere.
       ...landOnBranchChanges(
-        base,
+        // A team project's `branch.main` is the checked-out branch; the branch made above is `branch.personal`.
+        mode === 'team' && mainBranch !== null ? mainBranch : base,
         found !== undefined && flags['land'] !== undefined && flags['land'] !== 'hold' ? currentProposed : [],
-        Array.isArray(admitNow) ? admitNow : null,
       ),
+      ...(mode === 'team'
+        ? [
+            { path: ['mode'], value: 'team' },
+            { path: ['branch', 'personal'], value: base },
+          ]
+        : []),
       { path: ['repo', 'remote'], value: remote },
       ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
     ]
@@ -914,6 +1006,8 @@ function runLocalBranch(
       : yield* askRecipeEffect(world, {
           project: name,
           local: true,
+          // Decided above, before the branch was made; `askRecipe` asks no mode of a local project.
+          mode,
           proposal,
           runtimes,
           reader: world.setupReader(toplevel),
@@ -927,10 +1021,21 @@ function runLocalBranch(
               project: name,
               owner: '',
               repo: name,
-              base,
+              base: trialBase,
               remote,
               home: world.home,
-              draft,
+              // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
+              // trial prefers to its fallback: the trial reads it as the main it would be cut from.
+              draft:
+                deferBranch && mainBranch !== null
+                  ? {
+                      path: draft.path,
+                      set: (changes) => draft.set(changes),
+                      get: (key) => (key.join('.') === 'branch.personal' ? mainBranch : draft.get(key)),
+                      text: () => draft.text(),
+                      changes: () => draft.changes(),
+                    }
+                  : draft,
             }),
           history: (project) => Effect.runPromiseWith(services)(world.history(project)),
           seeds,
@@ -941,8 +1046,12 @@ function runLocalBranch(
           home: world.home,
         })
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
+    if (deferBranch) {
+      const refusal = yield* makeBranch()
+      if (refusal !== null) return refusal
+    }
 
-    // `askLanding`, inside `askRecipe`, can move `repo.base` on a local
+    // `askLanding`, inside `askRecipe`, can move `branch.main` on a local
     // project (#431's Watch out) — re-read the file it left behind rather than
     // trust the `base` this function's own question settled.
     const previewedOrRefused = yield* refusingOn(
@@ -952,7 +1061,7 @@ function runLocalBranch(
     if ('refused' in previewedOrRefused) return previewedOrRefused
     const previewed = previewedOrRefused.previewed
     const finalRecipe = resolveSource(previewed, path, path).recipe
-    const final = baseOf(finalRecipe)
+    const final = branchOf(finalRecipe)
     if (world.claudeToken !== undefined && !repairOnly) {
       yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
     }
@@ -1115,7 +1224,7 @@ function runGithubBranch(
         return { refused: taken({ slug: givenSlug, repo: givenRepo, takenBy: holder.owner }) }
       }
       const said: string[] = []
-      const baseFlag = flags['base']
+      const baseFlag = flags['main']
       const added = yield* spunEffect(
         world,
         `registering ${givenSlug}`,
@@ -1227,7 +1336,7 @@ function runGithubBranch(
     // `console.error`), and logging each line here too printed the whole
     // failure twice (#394 finding 7). On success only the warnings are printed, ahead of the card.
     const said: string[] = []
-    const baseFlag = flags['base']
+    const baseFlag = flags['main']
     const added = yield* spunEffect(
       world,
       `registering ${givenSlug}`,

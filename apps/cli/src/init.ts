@@ -476,7 +476,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         // finding 3; #431 fix round, finding 1 — the ten `askRecipe` flags got
         // no equivalent guard here, and this path never reaches
         // `runGithubBranch`'s own).
+        if (flags['base'] !== undefined) {
+          return stop(`--base is now --main: pass --main ${flags['base']}. The store chosen above is kept`)
+        }
         const discardedFlag = [
+          'main',
           'tickets',
           'kinds',
           'agent',

@@ -8,6 +8,7 @@ export {
   kindLabelOf,
   kindOf,
   passedOver,
+  rankedKinds,
   runnableNow,
   runnableNowEffect,
   type Considered,
@@ -19,7 +20,7 @@ export {
   type TicketSource,
 } from './discover.ts'
 export { lookAtBase, passOverBaseRed, passOverForRedBase, type BaseHead, type BaseRedLook } from './base-red.ts'
-export { currentRecipe, provideHostAnswer, signedInHere } from './projects.ts'
+export { copilotTokenSignedIn, currentRecipe, provideHostAnswer, signedInHere } from './projects.ts'
 export { gitRefChannel, type GitRefChannelOptions } from './git-refs.ts'
 export { ownerlessClient, ownerlessClientEffect, type OwnerlessClient } from './ownerless.ts'
 export {
@@ -105,7 +106,15 @@ export {
   type TerminalOutcome,
   type UnresolvedEnd,
 } from './end-step.ts'
-export { FOLLOWUP_LABEL, HOLD_LABEL, LINGTAI_LABEL_PREFIX, OWN_LABELS, foreignLabels, labelsFor } from './labels.ts'
+export {
+  FOLLOWUP_LABEL,
+  HOLD_LABEL,
+  PR_FIX_LABEL,
+  LINGTAI_LABEL_PREFIX,
+  OWN_LABELS,
+  foreignLabels,
+  labelsFor,
+} from './labels.ts'
 export {
   tellGitHubEffect,
   tellGitHubAboutEffect,
@@ -170,3 +179,4 @@ export {
   githubLimitPort,
 } from './account.ts'
 export { runtimesOf } from './runtimes-of.ts'
+export * from './pr.ts'

@@ -468,7 +468,8 @@ describe('what a pass writes today, one row per ending (#461)', () => {
   it('4. a judge restarts the pass (`PassRestarted`, `TicketReleased`)', async () => {
     const RESTARTABLE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -600,7 +601,8 @@ runtime:
   it('5. restarts spent: the second arrival holds, not requeues', async () => {
     const RESTARTABLE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -923,7 +925,8 @@ runtime:
   it('9. a check before the lane at `merge` refuses (`CheckRed`)', async () => {
     const CHECK_AT_MERGE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -1208,7 +1211,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   it('11. an agent asks a question (`StepAsked`)', async () => {
     const DRAFTED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -1307,7 +1311,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   it('12. a declared `human:` at `proposed` (`Human`)', async () => {
     const HUMAN_BEFORE_THE_LANE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -1903,7 +1908,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   function restartWithAKeptWip(did: string[], store: ReturnType<typeof memoryStore>) {
     const RESTARTABLE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

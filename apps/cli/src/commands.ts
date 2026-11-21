@@ -33,7 +33,7 @@ export type CommandDefinition = {
 export const PROJECTION_NAMES = ['task_view', 'finding_backlog', 'spend', 'ticket_report'] as const
 
 /** The accounts `lingtai account` knows; `account-lift.test.ts` holds this to `Account`. */
-export const ACCOUNT_NAMES = ['claude-code', 'codex', 'copilot', 'github'] as const
+export const ACCOUNT_NAMES = ['claude-code', 'codex', 'copilot', 'antigravity', 'github'] as const
 
 const define = <const N extends string>(
   definition: CommandDefinition & { readonly name: N },
@@ -58,11 +58,20 @@ export const COMMANDS = [
       '  --github-auth <gh|app>',
       '      how this machine reaches GitHub, asked only when nothing is set:',
       '      the signed-in gh login, or the App. gh is checked, not trusted',
-      '  --base <branch>',
-      '      github: where to read the recipe from, not what the base is —',
-      "      the recipe's own repo.base says that, and a --base",
-      '      contradicting it is refused. local: the branch the recipe',
-      "      governs. default: the repository's own default branch",
+      '  --main <branch>',
+      '      the branch the recipe governs and merges into (branch.main).',
+      "      A recipe's own branch.main contradicting it is refused.",
+      "      default: the repository's own default branch",
+      '      (--base is the old name for this flag, and is refused)',
+      '  --mode <team|solo>',
+      '      does anyone else work on this repository? team is the default:',
+      '      Lingtai works on a personal branch and you send main a PR',
+      '  --login <login>',
+      '      team mode on a machine that does not know your GitHub login:',
+      '      the issues assigned to it are the ones taken',
+      '  --personal <branch>',
+      '      team mode: the branch Lingtai works on, yours alone. default:',
+      '      <login>/<machine>, or lingtai-base for a local project',
       '  --tickets <github|db>',
       '      where tickets come from, instead of being asked. local takes',
       '      db only (#396)',
@@ -131,6 +140,23 @@ export const COMMANDS = [
     effect: 'changes',
     usage: ['lingtai now <project> --issue <n> [--json] [--no-color]'],
     examples: ['lingtai now lingtai --issue <n>'],
+  }),
+  define({
+    name: 'pr',
+    group: 'everyday',
+    task: 'what a team project’s draft holds, and where its open PR is',
+    effect: 'changes',
+    usage: [
+      'lingtai pr [<project>] [--json] [--no-color]',
+      '  The tickets landed on branch.personal that no PR holds, and the',
+      '  open PR: its number, its state and the steps it has been through.',
+      '  A solo project has no PR page: it lands on branch.main itself.',
+      'lingtai pr submit [<project>] [--json] [--no-color]',
+      '  Freezes branch.personal at one commit and starts the PR. Refused',
+      '  while another PR is open, saying which, and in a solo project.',
+      '  It is served by a running conductor: lingtai start, or lingtai run.',
+    ],
+    examples: ['lingtai pr', 'lingtai pr submit lingtai'],
   }),
   define({
     name: 'attach',
@@ -526,7 +552,9 @@ export const COMMANDS = [
       '  --github-auth <gh|app>',
       '      how this machine reaches GitHub, asked only when nothing is set:',
       '      the signed-in gh login, or the App. gh is checked, not trusted',
-      '  --base <branch>           the branch a local project governs',
+      '  --main <branch>           the branch a local project governs',
+      '  --mode <team|solo>        does anyone else work here? team is the default',
+      '  --personal <branch>       team mode: the branch Lingtai works on',
       '  --tickets <github|db>     where tickets come from',
       '  --kinds <a,b,c>          which labels are work, first taken first',
       '  --agent <claude-code|codex>  which agent writes the change',
@@ -615,8 +643,11 @@ export const COMMANDS = [
     task: 'check everything that can be checked',
     effect: 'reads',
     usage: [
-      'lingtai doctor [--verbose] [--json] [--no-color]',
+      'lingtai doctor [--verbose] [--json] [--no-color] [--fix]',
       '  Lists only what needs attention; --verbose lists every check, explained.',
+      '  --fix is the one way doctor writes: it rewrites a recipe refused for an old',
+      '  spelling (repo.base, worktree.base, take: both) as a new recipe change, and',
+      '  nothing else. It cannot be combined with --json.',
       '  Exits non-zero on any failure. Under --json a failing report is still the',
       '  report document, on exit 1: test .error first (the report could not be',
       '  produced), then .failed.',
@@ -666,7 +697,7 @@ export const COMMANDS = [
   define({
     name: 'token',
     group: 'install and upkeep',
-    task: 'set the token a sandboxed Claude Code run holds',
+    task: 'set the token a sandboxed Claude Code or Copilot run holds',
     effect: 'changes',
     usage: [
       'lingtai token claude',
@@ -677,8 +708,15 @@ export const COMMANDS = [
       '  or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.',
       '  Needs a terminal. The token is never printed, logged or put on a',
       '  command line.',
+      'lingtai token copilot',
+      '  Asks, at a hidden prompt, for a fine-grained personal access token',
+      '  (github_pat_…) with the Copilot Requests permission and writes it to',
+      '  copilot.github_token in ~/.lingtai/config.yml (0600), keeping every other',
+      '  key. A classic ghp_ token, which Copilot ignores, is refused by name.',
+      '  LINGTAI_COPILOT_GITHUB_TOKEN, when exported, wins over the file. Needs a',
+      '  terminal. The token is never printed, logged or put on a command line.',
     ],
-    examples: ['lingtai token claude'],
+    examples: ['lingtai token claude', 'lingtai token copilot'],
   }),
 ] as const
 

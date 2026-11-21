@@ -53,7 +53,8 @@ describe('a row per repository', () => {
   it('is one link to the project, with a recipe hint on a registered one', () => {
     const out = menu(html(['lingtai'], true))
 
-    expect(out.match(/href=/g)).toHaveLength(1)
+    // the project's row, then the menu's last row: add a repository
+    expect(out.match(/href=/g)).toHaveLength(2)
     expect(out).toContain('href="/?project=lingtai"')
     expect(out).toContain('<span class="phint">recipe · pause</span>')
     expect(out).not.toContain('/recipe/')
@@ -63,15 +64,17 @@ describe('a row per repository', () => {
     const out = menu(html(['a', 'gone'], true, undefined, ['a']))
 
     expect(out.match(/class="phint"/g)).toHaveLength(1)
-    expect(out.match(/href=/g)).toHaveLength(3)
+    expect(out.match(/href=/g)).toHaveLength(4)
   })
 
   it('escapes a name a URL must', () => {
     expect(html(['a b'], true)).toContain('href="/?project=a%20b"')
   })
 
-  it('has no add a repository row inside the menu', () => {
-    expect(menu(html(['a', 'b'], true))).not.toContain('add a repository')
+  it('ends the menu with the add a repository row, to where the App says', () => {
+    const out = menu(html(['a', 'b'], true))
+    expect(out.slice(out.lastIndexOf('<a'))).toContain('href="/setup/repository"')
+    expect(out.slice(out.lastIndexOf('<a'))).toContain('>add a repository</a>')
   })
 
   it('adds nothing to the empty board', () => {
@@ -92,24 +95,25 @@ describe('where it lands', () => {
     expect(out).not.toContain('/setup/github-app')
   })
 
-  /** The `+` follows the menu, outside it, and follows the App like the empty slot's link. */
-  it('puts the + after the menu, to where the App says', () => {
-    for (const [app, where] of [
-      [true, '/setup/repository'],
-      [false, '/setup/github-app'],
+  /** *add a repository* is the menu's last row, inside it, and follows the App like the empty slot's link. */
+  it('puts add a repository last inside the menu, to where the App says', () => {
+    for (const [app, where, why] of [
+      [true, '/setup/repository', 'add a repository'],
+      [false, '/setup/github-app', 'create the GitHub App, then install it'],
     ] as const) {
       for (const out of [html(['lingtai'], app), html(['lingtai', 'esctest'], app)]) {
-        const plus = out.slice(out.indexOf('</details>'))
-        expect(plus).toContain(`href="${where}"`)
-        expect(plus).toContain('aria-label=')
-        expect(plus).toContain('>+</a>')
-        expect(menu(out)).not.toContain(where)
+        const inside = menu(out)
+        const last = inside.slice(inside.lastIndexOf('<a'))
+        expect(last).toContain(`href="${where}"`)
+        expect(last).toContain(`>${why}</a>`)
+        expect(out.slice(out.indexOf('</details>'))).not.toContain(where)
       }
     }
   })
 
-  it('has no + on the empty board', () => {
+  it('has no + and no second link on the empty board', () => {
     expect(html([], true)).not.toContain('>+<')
+    expect(html([], true).match(/href=/g)).toHaveLength(1)
   })
 })
 
@@ -134,12 +138,19 @@ describe('which object on the row this is', () => {
    * tab in a list that was already a list of tabs.
    */
   it('is mounted left of the rail, which keeps the objects it was cut to', () => {
-    expect(bar.indexOf('<FilterSlot')).toBeGreaterThan(-1)
-    expect(bar.indexOf('<FilterSlot')).toBeLessThan(bar.indexOf('className="rail"'))
+    expect(bar.indexOf('<PlaceLine')).toBeGreaterThan(-1)
+    expect(bar.indexOf('<PlaceLine')).toBeLessThan(bar.indexOf('className="rail"'))
     // Nothing new inside the rail: the health dot, the
     // paused/draining chip and the headline, as #134 left them.
     const rail = bar.slice(bar.indexOf('className="rail"'))
-    for (const object of ['<FilterSlot', '<FilterMenu', '<AddProject', '/setup/repository', '/setup/github-app']) {
+    for (const object of [
+      '<PlaceLine',
+      '<FilterSlot',
+      '<FilterMenu',
+      '<AddProject',
+      '/setup/repository',
+      '/setup/github-app',
+    ]) {
       expect(rail).not.toContain(object)
     }
   })
@@ -162,7 +173,7 @@ describe('which object on the row this is', () => {
     expect(bar.length).toBeGreaterThan(0)
     // What the bar draws, read off its markup rather than off its comments.
     const rendered = [
-      ['filter', bar.includes('<FilterSlot')],
+      ['place', bar.includes('<PlaceLine')],
       ['health', bar.includes('<Health')],
       // The headline streams with the rail's other late parts (`RailTail`), so it is read off the page.
       ['headline', page.includes('className="head sig"')],
@@ -171,7 +182,7 @@ describe('which object on the row this is', () => {
       .map(([name]) => name)
     const named = rendered.join(', ')
 
-    expect(rendered).toEqual(['filter', 'health', 'headline'])
+    expect(rendered).toEqual(['place', 'health', 'headline'])
     // Twice in `page.tsx`, and once in `projects.tsx`: each says exactly what is rendered.
     expect(said(page).split(named)).toHaveLength(3)
     expect(said(read('../src/app/projects.tsx'))).toContain(named)
@@ -201,14 +212,14 @@ describe('the filter is one menu', () => {
   it('names the one project and lists its row, with no all-projects row', () => {
     const out = html(['lingtai'], true, 'lingtai')
 
-    expect(out).toMatch(/<summary>lingtai <span aria-hidden="true">▾<\/span><\/summary>/)
+    expect(out).toMatch(/<summary title="lingtai · G S">lingtai <span aria-hidden="true">▾<\/span><\/summary>/)
     expect(out).not.toContain('all projects</a>')
   })
 
   it('names all projects on all, and marks all current', () => {
     const out = html(['a', 'b'], true)
 
-    expect(out).toContain('<summary>all projects ')
+    expect(out).toContain('<summary title="Projects · G S">all projects ')
     expect(ascending(order(out, ['/', '/?project=a', '/?project=b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
     expect(out).toMatch(/aria-current="page"[^>]*>all projects</)
@@ -217,7 +228,7 @@ describe('the filter is one menu', () => {
   it('names the project in view, highlights its row and marks its name current', () => {
     const out = html(['a', 'b'], true, 'b')
 
-    expect(out).toContain('<summary>b ')
+    expect(out).toContain('<summary title="b · G S">b ')
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
     expect(out).toMatch(/<a class="tab prj on" aria-current="page" href="\/\?project=b">b</)
   })

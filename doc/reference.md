@@ -130,7 +130,7 @@ that hold it, and nothing appends it. A project starts today with `lingtai add`,
 whose stream begins at `ProjectConfigured`.
 
 <!-- streams:begin -->
-## stream — 10 prefixes, unbounded instances
+## stream — 11 prefixes, unbounded instances
 
 Generated from `doc/events.json` by `pnpm events:generate` — edit `STREAMS` and `PREFIXES` in
 `packages/domain/scripts/events.ts`, not this.
@@ -145,6 +145,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunAppliedKeptWork](events.json#RunAppliedKeptWork) *(retired)*, [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [SandboxBoundaryRecorded](events.json#SandboxBoundaryRecorded), [SandboxConnectionsRefused](events.json#SandboxConnectionsRefused), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) *(retired)*, [ProposalRouted](events.json#ProposalRouted), [StepRerunInPlace](events.json#StepRerunInPlace) *(retired)*, [StepRedone](events.json#StepRedone) |
 | `int-` | base branch, `int-{project}-{base}` | [IntegrationState](glossary.md#the-log-and-its-states) | [IntegrationAttempted](events.json#IntegrationAttempted), [IntegrationRefused](events.json#IntegrationRefused), [IntegrationSucceeded](events.json#IntegrationSucceeded), [BaseChecked](events.json#BaseChecked), [BaseFixProposed](events.json#BaseFixProposed) |
 | `prj-` | repository, `prj-{project}` | [ProjectState](glossary.md#the-log-and-its-states) | [ProjectOnboardingStarted](events.json#ProjectOnboardingStarted) *(retired)*, [ProjectConfigured](events.json#ProjectConfigured), [ProjectRecipeChanged](events.json#ProjectRecipeChanged), [ProjectSandboxObserved](events.json#ProjectSandboxObserved), [ProjectRefused](events.json#ProjectRefused), [ProjectRecovered](events.json#ProjectRecovered), [ProjectPaused](events.json#ProjectPaused), [ProjectResumed](events.json#ProjectResumed) |
+| `pr-` | PR, `pr-{project}-{n}` | [PrState](glossary.md#the-log-and-its-states) | [PrSubmitRequested](events.json#PrSubmitRequested), [PrSubmitRefused](events.json#PrSubmitRefused), [PrInProgress](events.json#PrInProgress), [PrStepDone](events.json#PrStepDone), [PrWaiting](events.json#PrWaiting), [PrPushed](events.json#PrPushed), [PrDraftOpened](events.json#PrDraftOpened), [PrOpened](events.json#PrOpened), [PrMerged](events.json#PrMerged), [PrClosed](events.json#PrClosed) |
 | `ctl-` | control stream: `ctl-conductor` (one per machine) and `ctl-github-app` | [ControlState](glossary.md#the-log-and-its-states) (`ctl-conductor`); none for `ctl-github-app` | [ConductorPaused](events.json#ConductorPaused), [ConductorResumed](events.json#ConductorResumed), [DayCeilingReached](events.json#DayCeilingReached), [DayCeilingLifted](events.json#DayCeilingLifted), [ConductorShutdownRequested](events.json#ConductorShutdownRequested), [ConductorStarted](events.json#ConductorStarted), [ConductorShutdownWithdrawn](events.json#ConductorShutdownWithdrawn) *(retired)*, [QueueChanged](events.json#QueueChanged), [RunRequested](events.json#RunRequested), [ContinueRequested](events.json#ContinueRequested), [DiscussionRequested](events.json#DiscussionRequested), [Reconciled](events.json#Reconciled), [GitHubAppCreated](events.json#GitHubAppCreated) |
 | `chat-` | discussion, `chat-…` | [ChatState](glossary.md#the-log-and-its-states) | [RunSpent](events.json#RunSpent), [DiscussionAsked](events.json#DiscussionAsked), [DiscussionAnswered](events.json#DiscussionAnswered) |
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
@@ -774,8 +775,8 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 324 occurrences in
-81 files**, counted 2026-11-05 — up from 226 in 47 because `#516`'s pair rule
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 327 occurrences in
+82 files**, counted 2026-11-20 — up from 226 in 47 because `#516`'s pair rule
 below is the same rule for this purpose and is counted here with it, and down
 from 661 in 62 the four words carried alone because `#247` had to
 carry the halves as far as compiling and asserting against a `src/` whose event

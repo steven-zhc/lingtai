@@ -41,8 +41,8 @@ const OWN = readFileSync(join(ROOT, '.lingtai/config.yaml'), 'utf8')
 /** Every environment surface the recipe has: `required`, `allow`, `deny`, and an action's own. */
 const DECLARING = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -176,7 +176,7 @@ describe('the plan and the stream', () => {
 describe('an attempt resolves from the Project’s declared recipe', () => {
   const HOME = '/h'
   const state = { project: 'lingtai', owner: null, base: 'main' } as Parameters<typeof currentRecipeEffect>[0]
-  const A = 'version: 2\nrepo:\n  base: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+  const A = 'version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
 
   const run = (map: Map<string, string>) => {
     const writes: string[] = []

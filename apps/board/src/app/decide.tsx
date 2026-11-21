@@ -13,7 +13,7 @@
  * card rendering and the click, so the diff being approved is not the diff that
  * was read. That has to be visible, not swallowed.
  */
-import { askedText, type WaitId } from '@lingtai/domain'
+import { askedText, type TriageQuestion, type WaitId } from '@lingtai/domain'
 import {
   allowedResolutions,
   triageCauseOf,
@@ -41,7 +41,7 @@ import {
   sendAttempt,
 } from './actions.ts'
 import { askedOf } from './asked-of.ts'
-import { TriageChoices, useTriageDraft } from './triage-picks.tsx'
+import { TriageChoices, useTriageDraft, type Sending } from './triage-picks.tsx'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -389,21 +389,31 @@ export function EditBodyAndRequeue({
   reason,
   triaged = null,
   answerOnly = false,
+  part = 'all',
 }: {
   project: string
   issue: number
   waitId: WaitId | null
   reason: WaitReason | null
+  /**
+   * Which card this is drawn in (#1344): `answer` is the choices the page has not drawn elsewhere and the button that
+   * sends them, `edit` the textarea and its button, `all` the whole form.
+   */
+  part?: 'all' | 'answer' | 'edit'
   /** The wait offers the answering but no body edit: only the picked answers and their button are drawn (#1254). */
   answerOnly?: boolean
   /** What triage answered on this wait: an `UndecidedQuestion` is answerable whatever the wait began as (#1254). */
   triaged?: TriageResult | null
 }) {
-  const [pending, setPending] = useState(false)
+  const [localSending, setLocalSending] = useState<Sending>({ pending: false, doneWaitId: null })
   const [detail, setDetail] = useState<string | null>(null)
-  const [doneWaitId, setDoneWaitId] = useState<WaitId | null>(null)
   const [, startTransition] = useTransition()
   const triage = useTriageDraft()
+  // Two cards each draw a button; one state keeps either press disabling both (#1344).
+  const { pending, doneWaitId } = triage?.sending ?? localSending
+  const setSending = triage?.setSending ?? setLocalSending
+  const setPending = (next: boolean) => setSending({ pending: next, doneWaitId })
+  const setDoneWaitId = (next: WaitId | null) => setSending({ pending: false, doneWaitId: next })
   const composed = triage?.waitId === waitId ? triage.text : ''
   // Own answers are carried over only where the wait itself ended (the page's wait is null too): a body edit that is
   // merely unavailable passes null here while the wait stands. They join a body draft rather than yield to it.
@@ -442,21 +452,29 @@ export function EditBodyAndRequeue({
   // The answer button writes the picked answers, never the textarea: where the text was changed it is not offered (#1254).
   const edited = waitId !== null && body?.waitId === waitId && body.text !== composed
 
-  if (waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
+  const answerAllowed = reason !== null && allowedResolutions(reason, triaged).includes('AnswerQuestions')
+  const showAnswer = part !== 'edit'
+  const showEdit = part !== 'answer' && !answerOnly
+  // The triage block draws triage's questions already; only a form with nothing else to say draws them again.
+  const drawn: readonly TriageQuestion[] =
+    part === 'all' || answerOnly ? asked : part === 'answer' || !answerAllowed ? ownAsked : []
+
+  if (part === 'answer' && waitId === null) return null
+  if (part !== 'answer' && waitId === null && (body?.text ?? '') === '' && !pending && detail === null) return null
 
   return (
     <div className="decide">
-      {waitId === null && (doneWaitId === null || doneWaitId !== draftWaitId) ? (
+      {part !== 'answer' && waitId === null && (doneWaitId === null || doneWaitId !== draftWaitId) ? (
         <p className="refusal">
           This ticket is no longer waiting on you. Your unsent draft is below; copy it before leaving.
         </p>
       ) : null}
-      {asked.length > 0 ? (
-        asked.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source={askedSource} />)
-      ) : question !== null ? (
+      {drawn.length > 0 ? (
+        drawn.map((q, index) => <TriageChoices key={q.id} question={q} index={index} source={askedSource} />)
+      ) : question !== null && asked.length === 0 ? (
         <p>{question}</p>
       ) : null}
-      {answerOnly ? null : (
+      {showEdit ? (
         <label className="reason">
           <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
           <textarea
@@ -468,12 +486,8 @@ export function EditBodyAndRequeue({
             }}
           />
         </label>
-      )}
-      {waitId !== null &&
-      asked.length > 0 &&
-      triage !== null &&
-      reason !== null &&
-      allowedResolutions(reason, triaged).includes('AnswerQuestions') ? (
+      ) : null}
+      {showAnswer && waitId !== null && asked.length > 0 && triage !== null && answerAllowed ? (
         <button
           className="btn pri"
           disabled={pending || doneWaitId === waitId || edited || triage.refusal !== null}
@@ -503,7 +517,7 @@ export function EditBodyAndRequeue({
           {pending ? '…' : 'Answer and continue the step'}
         </button>
       ) : null}
-      {waitId !== null && !answerOnly ? (
+      {showEdit && waitId !== null ? (
         <button
           className="btn"
           disabled={pending || doneWaitId === waitId || !currentText.trim()}

@@ -12,7 +12,10 @@
  */
 import { ticketStream } from '@lingtai/domain'
 import { readTasks } from '@lingtai/projector'
+import type { Selection } from '@lingtai/recipe'
 import { Effect } from 'effect'
+
+import { rankedKinds } from './discover.ts'
 
 /** What a caller needs to run one: enough to nominate it, and nothing more. */
 export interface Runnable {
@@ -34,6 +37,8 @@ export interface RunnableOptions {
   offered: readonly { ref: string; title: string; kind: string }[]
   /** The recipe's priority order. Priority is asked, not stored. */
   kinds: readonly string[]
+  /** The recipe's mode: in team mode `lingtai:pr-fix` ranks ahead of `kinds`. */
+  mode: Selection['mode']
   /**
    * Skip anything attempted inside this window.
    *
@@ -76,7 +81,7 @@ export function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
 /** `selectRunnable` as an Effect: an unreadable `task_view` is the failure, with the projector's own error. */
 export function selectRunnableEffect(options: RunnableOptions): Effect.Effect<Runnable[], unknown> {
   return Effect.gen(function* () {
-    const kinds = options.kinds.length > 0 ? [...options.kinds] : ['bug']
+    const kinds = rankedKinds(options.kinds.length > 0 ? options.kinds : ['bug'], options.mode)
     // Every row, not just the queued ones: a row's *existence* is what says the
     // log has an opinion about this issue, and its state is that opinion.
     const rows = yield* Effect.tryPromise({

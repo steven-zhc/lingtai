@@ -143,6 +143,45 @@ export interface Dependencies {
   totalBlockedBy: number
 }
 
+/** A pull request as Lingtai reads one: only these fields of GitHub's answer. */
+export interface OpenPull {
+  readonly number: number
+  readonly nodeId: string
+  readonly url: string
+  readonly headRef: string
+  readonly headSha: string
+  readonly state: string
+  readonly draft: boolean
+}
+
+/** What the sweep reads of one pull request (0130 §5): only these fields of GitHub's answer. */
+export interface PullState {
+  readonly state: 'open' | 'closed'
+  readonly merged: boolean
+  readonly mergeCommitSha: string | null
+  readonly headSha: string
+  readonly updatedAt: string
+}
+
+interface RawPull {
+  number: number
+  node_id: string
+  html_url: string
+  head: { ref: string; sha: string }
+  state: string
+  draft?: boolean
+}
+
+const toPull = (raw: RawPull): OpenPull => ({
+  number: raw.number,
+  nodeId: raw.node_id,
+  url: raw.html_url,
+  headRef: raw.head.ref,
+  headSha: raw.head.sha,
+  state: raw.state,
+  draft: raw.draft === true,
+})
+
 export interface Issue {
   number: number
   title: string
@@ -224,6 +263,20 @@ export interface GitHub {
   refSha(ref: string): E<string>
 
   /**
+   * Whether `refs/heads/<name>` exists — **that exact ref**. `matchingRefs` is a
+   * prefix match, so it would call `steven-zhc/foundry` present because
+   * `steven-zhc/foundry-pr-7` is. 200 is true, 404 is false, anything else
+   * fails: an unreadable remote is never *absent*.
+   */
+  branchExists(name: string): E<boolean>
+
+  /**
+   * Makes `refs/heads/<name>` at `sha`. A 422 *Reference already exists* is
+   * success — the branch is there, which is what was asked for.
+   */
+  createBranch(name: string, sha: string): E<void>
+
+  /**
    * Every ref beginning `refs/<prefix>`, named without that `refs/` —
    * `heads/agent/240-attempt-1`.
    *
@@ -268,6 +321,25 @@ export interface GitHub {
    */
   listIssuesSince(since: Date): E<Issue[]>
   getIssue(number: number): E<Issue>
+
+  /**
+   * The open pull requests whose head is `<owner>:<head>`, **filtered here to the head branch's exact name**:
+   * GitHub's `head` filter is a plain string match on the ref, so `-pr-1` would answer `-pr-10`'s PR too.
+   * Fails on anything but an answer: an unreadable list is never *no pull request* (0130 §5).
+   */
+  findOpenPull(head: string): E<readonly OpenPull[]>
+
+  /**
+   * One pull request's state, read strictly: an answer whose `state` is not `open` or `closed`, or whose `merged` is
+   * not a boolean, **fails** — an absent field is never *false*. A 404 is a failure too, never *closed*.
+   */
+  getPull(number: number): E<PullState>
+
+  /**
+   * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
+   * answers 422 and that is the caller's to read: this never opens a ready one instead.
+   */
+  openDraftPull(input: { title: string; head: string; base: string; body: string }): E<OpenPull>
 
   /**
    * Posts a comment.
@@ -424,6 +496,8 @@ export interface GitHubClient {
   defaultBranch(): Promise<string>
   fileAt(path: string, ref: string): Promise<string | null>
   refSha(ref: string): Promise<string>
+  branchExists(name: string): Promise<boolean>
+  createBranch(name: string, sha: string): Promise<void>
   matchingRefs(prefix: string): Promise<readonly string[]>
   deleteRef(ref: string): Promise<void>
   listOpenIssues(): Promise<Issue[]>
@@ -671,6 +745,14 @@ export const makeGitHub = (
           (err) => Effect.fail(new PermissionDenied(err, 'issues', level, isGh(auth) ? 'gh' : 'app')),
         )
 
+      /** A 403 that is a missing `pull_requests` permission is `PermissionDenied`; a rate limit is passed on. */
+      const asPullCall = <A>(level: 'read' | 'write', call: E<A>): E<A> =>
+        Effect.catchIf(
+          call,
+          (err) => err.status === 403 && !isRateLimited(err),
+          (err) => Effect.fail(new PermissionDenied(err, 'pull_requests', level, isGh(auth) ? 'gh' : 'app')),
+        )
+
       const listLinked = (path: string): E<LinkedIssue[]> =>
         asLinkCall(
           'read',
@@ -790,6 +872,28 @@ export const makeGitHub = (
           return raw.sha
         }),
 
+        branchExists: Effect.fn('github.branchExists')(function* (name: string) {
+          return yield* send<unknown>(
+            'GET',
+            `${repoPath}/git/ref/heads/${name.split('/').map(encodeURIComponent).join('/')}`,
+          ).pipe(
+            Effect.map(() => true),
+            Effect.catchIf(
+              (err) => err.status === 404,
+              () => Effect.succeed(false),
+            ),
+          )
+        }),
+
+        createBranch: Effect.fn('github.createBranch')(function* (name: string, sha: string) {
+          yield* send<unknown>('POST', `${repoPath}/git/refs`, { ref: `refs/heads/${name}`, sha }).pipe(
+            Effect.catchIf(
+              (err) => err.status === 422 && /already exists/i.test(err.detail),
+              () => Effect.void,
+            ),
+          )
+        }),
+
         matchingRefs: Effect.fn('github.matchingRefs')(function* (prefix: string) {
           // **Nothing swallowed, and not even a 404.** This endpoint answers a 200
           // and `[]` when no ref shares the prefix, so unlike `fileAt` it has no
@@ -897,6 +1001,51 @@ export const makeGitHub = (
         getIssue: Effect.fn('github.getIssue')(function* (number: number) {
           return toIssue(yield* send<Parameters<typeof toIssue>[0]>('GET', `${repoPath}/issues/${number}`))
         }),
+
+        findOpenPull: Effect.fn('github.findOpenPull')(function* (head: string) {
+          const raw = yield* asPullCall(
+            'read',
+            send<RawPull[]>(
+              'GET',
+              `${repoPath}/pulls?state=open&per_page=100&head=${encodeURIComponent(`${owner}:${head}`)}`,
+            ),
+          )
+          return raw.map(toPull).filter((p) => p.headRef === head)
+        }),
+
+        getPull: Effect.fn('github.getPull')(function* (number: number) {
+          const path = `${repoPath}/pulls/${number}`
+          const raw = yield* asPullCall('read', send<Record<string, unknown>>('GET', path))
+          const head = raw['head'] as { sha?: unknown } | null | undefined
+          const sha = raw['merge_commit_sha']
+          if (
+            (raw['state'] !== 'open' && raw['state'] !== 'closed') ||
+            typeof raw['merged'] !== 'boolean' ||
+            typeof head?.sha !== 'string' ||
+            typeof raw['updated_at'] !== 'string' ||
+            !(sha === null || sha === undefined || typeof sha === 'string')
+          ) {
+            return yield* new GitHubFailed(0, path, `the answer for pull request ${number} is not the five fields read`)
+          }
+          return {
+            state: raw['state'],
+            merged: raw['merged'],
+            mergeCommitSha: sha ?? null,
+            headSha: head.sha,
+            updatedAt: raw['updated_at'],
+          } satisfies PullState
+        }),
+
+        openDraftPull: Effect.fn('github.openDraftPull')(function* (input: {
+          title: string
+          head: string
+          base: string
+          body: string
+        }) {
+          return toPull(
+            yield* asPullCall('write', send<RawPull>('POST', `${repoPath}/pulls`, { ...input, draft: true })),
+          )
+        }),
       }
       return github
     }
@@ -915,6 +1064,8 @@ const toClient = (github: GitHub): GitHubClient => ({
   defaultBranch: () => runGitHub(github.defaultBranch()),
   fileAt: (path, ref) => runGitHub(github.fileAt(path, ref)),
   refSha: (ref) => runGitHub(github.refSha(ref)),
+  branchExists: (name) => runGitHub(github.branchExists(name)),
+  createBranch: (name, sha) => runGitHub(github.createBranch(name, sha)),
   matchingRefs: (prefix) => runGitHub(github.matchingRefs(prefix)),
   deleteRef: (ref) => runGitHub(github.deleteRef(ref)),
   listOpenIssues: () => runGitHub(github.listOpenIssues()),

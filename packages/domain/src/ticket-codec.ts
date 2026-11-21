@@ -76,6 +76,7 @@ const GitHubWrite = z.strictObject({ outcome: z.enum(['updated', 'failed']), tex
 
 const StoredTicket = z.strictObject({
   lifecycle: Lifecycle,
+  landed: z.strictObject({ mergeCommit: z.string(), base: z.string() }).nullable(),
   project: z.string().nullable(),
   source: z.enum(['github-issue', 'manual', 'agent-followup']).nullable(),
   externalRef: z.string().nullable(),
@@ -190,7 +191,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 10: an `AnswerQuestions` resolution, and a wait's reason is the `AskLimit` where it would be the sixth ask (#1254); a version-8 snapshot holds neither.
   // 11: a wait's `resolution` carries its `note` (#1259); a version-10 snapshot lost it.
   // 12: `splitStarts` counts a ticket's splits from `SplitStarted` (#1262); a version-11 snapshot has no such list.
-  version: 12,
+  // 13: `landed` keeps where a ticket landed after a `TicketClosed` (#1309); a version-12 snapshot does not know.
+  version: 13,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

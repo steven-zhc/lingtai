@@ -86,12 +86,29 @@ const eventsCommand = Command.make(
 
 const doctor = Command.make(
   'doctor',
-  { json, noColor, verbose: Flag.Boolean('verbose').pipe(Flag.withDefault(false)) },
+  {
+    json,
+    noColor,
+    verbose: Flag.Boolean('verbose').pipe(Flag.withDefault(false)),
+    fix: Flag.Boolean('fix').pipe(Flag.withDefault(false)),
+  },
   (args) =>
     Effect.gen(function* () {
       if (args.noColor) applyNoColor()
       // Loaded here, for the reason `status` gives.
-      const { doctorReportEffect, doctorJson, renderDoctor, tally } = yield* lift(() => import('./doctor.ts'))
+      const { doctorReportEffect, doctorJson, renderDoctor, tally, fixRefusal, fixOldSpellings, renderSpellingFixes } =
+        yield* lift(() => import('./doctor.ts'))
+      // Before anything is read or written: no script reads a report that wrote something.
+      const refused = fixRefusal(args)
+      if (refused !== null) return yield* Effect.fail(new Error(refused))
+      let fixFailed = false
+      if (args.fix) {
+        const { userInfo } = yield* lift(() => import('node:os'))
+        const { loadProjectsEffect } = yield* lift(() => import('@lingtai/project'))
+        const fixes = yield* fixOldSpellings(() => loadProjectsEffect(), {}, { by: `human:${userInfo().username}` })
+        for (const line of renderSpellingFixes(fixes)) console.log(line)
+        fixFailed = fixes === null || fixes.some((f) => f.outcome === 'failed')
+      }
       const { releaseCheck } = yield* lift(() => import('./install.ts'))
       const { doctorProgress } = yield* lift(() => import('./steps.ts'))
       const progress = doctorProgress({ stdout: process.stdout, stderr: process.stderr, json: args.json })
@@ -113,7 +130,7 @@ const doctor = Command.make(
       // does not refuse on the same number: a failure marked `restartAnswers` exits
       // this 1 and lets a restart through — see `gatingFailures`. A deferred check
       // is not a failure; a missing one would be.
-      yield* exitWith(report.failed === 0 ? 0 : 1)
+      yield* exitWith(report.failed === 0 && !fixFailed ? 0 : 1)
     }).pipe(orFailed('doctor', args.json)),
 ).pipe(Command.withDescription(definitionOf('doctor').task))
 
@@ -366,6 +383,36 @@ const now = Command.make(
       }),
     ),
 ).pipe(Command.withDescription(definitionOf('now').task))
+
+const prProject = Argument.String('project').pipe(Argument.optional)
+
+const prSubmit = Command.make('submit', { project: prProject, json, noColor }, (args) =>
+  answerWith('pr submit', args, () =>
+    Effect.gen(function* () {
+      const pr = yield* lift(() => import('./pr.ts'))
+      const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+      if ('refused' in chosen) return chosen.refused
+      return yield* pr.prSubmitVerdict(chosen.project, `human:${process.env['USER'] ?? 'operator'}`, pr.livePrWorld())
+    }),
+  ),
+).pipe(Command.withDescription('freeze the personal branch into a PR'))
+
+const prCommand = Command.make('pr', { project: prProject, json, noColor }, (args) =>
+  Effect.gen(function* () {
+    if (args.noColor) applyNoColor()
+    const pr = yield* lift(() => import('./pr.ts'))
+    const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+    if ('refused' in chosen) {
+      if (args.json) printJson('pr', verdictJson(chosen.refused.verdict))
+      else console.log(chosen.refused.verdict.detail)
+      return yield* exitWith(chosen.refused.code)
+    }
+    const report = yield* pr.prReport(chosen.project, pr.livePrWorld())
+    if (args.json) printJson('pr', report.json)
+    else for (const line of report.lines) console.log(line)
+    yield* exitWith(report.code)
+  }).pipe(orFailed('pr', args.json)),
+).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit]))
 
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
 export interface BoardRequest {
@@ -1189,12 +1236,35 @@ const tokenClaude = Command.make('claude', { noColor }, (args) =>
   ),
 )
 
+const tokenCopilot = Command.make('copilot', { noColor }, (args) =>
+  daemonHandler(args, () =>
+    Effect.gen(function* () {
+      const token = yield* lift(() => import('./copilot-token.ts'))
+      const { liveAsk } = yield* lift(() => import('./prompt.ts'))
+      const { liveMachineText } = yield* lift(() => import('@lingtai/setup'))
+      return yield* token.copilotTokenCommand(
+        token.liveCopilotTokenWorld({
+          ask: liveAsk,
+          log: (line) => console.log(line),
+          machine: liveMachineText(),
+          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
+        }),
+      )
+    }).pipe(
+      printedBy((err) => {
+        console.error(err instanceof Error ? err.message : 'could not set the token')
+        return 1
+      }),
+    ),
+  ),
+)
+
 const tokenCommand = Command.make('token', {}, () =>
   Effect.suspend(() => {
     console.error(commandHelp('token'))
     return exitWith(2)
   }),
-).pipe(Command.withDescription(definitionOf('token').task), Command.withSubcommands([tokenClaude]))
+).pipe(Command.withDescription(definitionOf('token').task), Command.withSubcommands([tokenClaude, tokenCopilot]))
 
 const ceilingCommand = Command.make('ceiling', {}, () =>
   Effect.suspend(() => {
@@ -1379,6 +1449,7 @@ export const root = Command.make('lingtai').pipe(
     ask,
     answer,
     now,
+    prCommand,
     board,
     runCommand,
     attachCommand,

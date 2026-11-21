@@ -111,7 +111,7 @@ async function viaAdd(
     local,
     runtimes: RUNTIMES,
     reader,
-    flags: { defaults: 'yes', ...extra.flags },
+    flags: { defaults: 'yes', mode: 'solo', ...extra.flags },
     buildFlags: [],
     defaultBranch: async () => 'main',
     history: async () => [],
@@ -157,7 +157,7 @@ const LIMITS = {
 describe('the page writes what lingtai add writes (#971)', () => {
   it('a GitHub repository, every default', async () => {
     const seeds = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
       {
         path: ['steps', 'end'],
@@ -184,6 +184,9 @@ describe('the page writes what lingtai add writes (#971)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox: null,
     }))
     expect(expected).toBeDefined()
@@ -192,7 +195,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
 
   it('a local directory, every default', async () => {
     const seeds = [
-      { path: ['repo', 'base'], value: LINGTAI_BASE },
+      { path: ['branch', 'main'], value: LINGTAI_BASE },
       { path: ['repo', 'remote'], value: '/work/chapter-garden' },
       { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
     ]
@@ -213,6 +216,9 @@ describe('the page writes what lingtai add writes (#971)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox: null,
     }))
     expect(written).toBe(expected)
@@ -221,7 +227,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
 
 describe('the sandbox step, new recipe (#1160)', () => {
   const GH_SEEDS = [
-    { path: ['repo', 'base'], value: 'main' },
+    { path: ['branch', 'main'], value: 'main' },
     { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
   ]
   const form =
@@ -242,6 +248,9 @@ describe('the sandbox step, new recipe (#1160)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox,
     })
   const sandboxOf = (text: string | undefined) => {
@@ -289,7 +298,7 @@ describe('the sandbox step, new recipe (#1160)', () => {
         proposal,
         runtimes: RUNTIMES,
         reader,
-        flags: { defaults: 'yes' },
+        flags: { defaults: 'yes', mode: 'solo' },
         buildFlags: [],
         defaultBranch: async () => 'main',
         history: async () => [],

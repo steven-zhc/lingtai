@@ -141,8 +141,16 @@ export type Tier = z.infer<typeof Tier>
  * walks it is still load-bearing.
  */
 
-export const RuntimeId = z.enum(['claude-code', 'codex', 'copilot'])
+export const RuntimeId = z.enum(['claude-code', 'codex', 'copilot', 'antigravity'])
 export type RuntimeId = z.infer<typeof RuntimeId>
+
+/**
+ * The runtimes that cannot run inside the sandbox in this release (0127): Antigravity binds a local port and reads
+ * the keychain, both of which the policy refuses. A fact about the agent, so it sits beside the id it is about.
+ */
+export const UNSANDBOXABLE_RUNTIMES: readonly RuntimeId[] = ['antigravity']
+export const isUnsandboxableRuntime = (id: string): boolean =>
+  (UNSANDBOXABLE_RUNTIMES as readonly string[]).includes(id)
 
 /**
  * A platform whose account a limit can stand on (0126 §2): a runtime, or a code
@@ -1029,7 +1037,7 @@ export const SandboxBoundary = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('sandboxed'), srtVersion: z.string(), policy: SandboxPolicyValue }),
   z.object({
     kind: z.literal('unsandboxed'),
-    reason: z.enum(['off by choice', 'degraded']),
+    reason: z.enum(['off by choice', 'degraded', 'runtime cannot']),
     why: z.string().optional(),
   }),
   z.object({ kind: z.literal('refused'), why: z.string() }),
@@ -1563,7 +1571,9 @@ export const FindingDeclined = z.object({
  *
  * @summary A run was ready to merge but waited, because another run was landing.
  */
-export const MergeLaneWaited = z.object({ behind: z.object({ runId: z.string(), issue: z.string() }) })
+export const MergeLaneWaited = z.object({
+  behind: z.union([z.object({ runId: z.string(), issue: z.string() }), z.object({ pr: z.string() })]),
+})
 
 /** @summary The conductor tried to merge a run's branch into the base branch. */
 export const IntegrationAttempted = z.object({ ticketId: z.string(), branch: z.string(), headSha: z.string() })
@@ -2499,6 +2509,119 @@ export const ProjectRecovered = z.object({
 export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string() })
 
 /**
+ * A person asked for their personal branch to be submitted as a PR (0130 §5): the first event of `pr-{project}-{n}`.
+ *
+ * Carries nothing but who: the daemon serves it, and decides everything else from the log and the mirror, so a
+ * request made on a stale page is answered with today's state.
+ *
+ * @summary A person asked to submit the personal branch as a PR: the first event of a PR's stream.
+ */
+export const PrSubmitRequested = z.object({ by: z.string() })
+
+/** Why a submit was refused; a closed set a reader can switch on. */
+const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'git'])
+
+/**
+ * A submit was refused while it was served: the PR's number is spent and the stream ends here.
+ * `detail` is a sentence for a person.
+ *
+ * @summary A submit request was refused while it was served; that PR number is spent.
+ */
+export const PrSubmitRefused = z.object({ reason: PrRefusalReason, detail: z.string() })
+
+/**
+ * The freeze: `branch.personal` was read at one commit and the tickets that commit holds were recorded (0130 §5).
+ *
+ * `because` says what took the PR here; it is an enum so the tickets that take a PR through In progress again (a
+ * `pr-fix` landing, a retry) add their own values. `prBranch` is `<branch.personal>-pr-<n>`.
+ *
+ * @summary A PR's branch was frozen at one commit with the tickets it holds, and it is In progress.
+ */
+export const PrInProgress = z.object({
+  because: z.enum(['submit', 'restart']),
+  branch: z.string(),
+  main: z.string(),
+  frozenSha: z.string(),
+  prBranch: z.string(),
+  tickets: z.array(z.object({ ticket: z.string(), mergeCommit: z.string(), title: z.string() })),
+})
+
+/**
+ * One of In progress's steps finished. **`headSha` is required**: evidence always names the commit it proves, so a
+ * `done` without one does not decode.
+ *
+ * @summary One of a PR's In progress steps finished, on the head commit it ran on.
+ */
+export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
+
+/** Why a PR waits on a person; each step's ticket extends the set with its own. */
+const PrWaitReason = z.enum(['denied', 'branch-moved', 'several-open', 'draft-unsupported'])
+
+/**
+ * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
+ *
+ * @summary A PR's step needs a person before it can go on: the PR is Waiting on you.
+ */
+export const PrWaiting = z.object({
+  step: z.string().min(1),
+  reason: PrWaitReason,
+  detail: z.string(),
+  headSha: z.string().min(1),
+})
+
+/**
+ * The PR branch `<branch.personal>-pr-<n>` is on the remote at `headSha` (0130 §5). `found` says whether the look took
+ * the place of the push: `existing` is a branch already there at that commit (a push whose record was lost).
+ *
+ * @summary A PR's branch is on the remote at one commit, pushed now or found already there.
+ */
+export const PrPushed = z.object({ headSha: z.string().min(1), found: z.enum(['pushed', 'existing']) })
+
+/**
+ * The PR is open on GitHub as a draft (0130 §5). `found` says whether the look took the place of the `POST`:
+ * `existing` is a pull request already open from the branch.
+ *
+ * @summary A PR is open on GitHub as a draft pull request, opened now or found already there.
+ */
+export const PrDraftOpened = z.object({
+  number: z.number().int(),
+  nodeId: z.string(),
+  url: z.string(),
+  found: z.enum(['opened', 'existing']),
+})
+
+/**
+ * The PR is In review. `host` is `github` where it has a pull request and `none` on a remote Lingtai does not follow,
+ * where `number` and `url` are null and the person opens it by hand.
+ *
+ * @summary A PR is In review: on GitHub with a pull request, or on another remote, unfollowed.
+ */
+export const PrOpened = z.object({
+  host: z.enum(['github', 'none']),
+  number: z.number().int().nullable(),
+  url: z.string().nullable(),
+})
+
+/**
+ * The PR was merged: `how` says whether git found its head on `branch.main` or the code host said so (a squash or
+ * rebase merge leaves nothing reachable). `mergeSha` is the host's merge commit, null when git answered. Terminal.
+ *
+ * @summary A PR was merged, found by git reachability or reported by the code host.
+ */
+export const PrMerged = z.object({
+  how: z.enum(['host', 'git']),
+  headSha: z.string().min(1),
+  mergeSha: z.string().nullable(),
+})
+
+/**
+ * The PR was closed on the code host without being merged. Its tickets are back in the draft. Terminal.
+ *
+ * @summary A PR was closed on the code host without merging; its tickets return to Draft.
+ */
+export const PrClosed = z.object({ headSha: z.string().min(1) })
+
+/**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
@@ -2808,6 +2931,16 @@ export const EVENTS = {
   ProjectRecovered,
   ProjectPaused,
   ProjectResumed,
+  PrSubmitRequested,
+  PrSubmitRefused,
+  PrInProgress,
+  PrStepDone,
+  PrWaiting,
+  PrPushed,
+  PrDraftOpened,
+  PrOpened,
+  PrMerged,
+  PrClosed,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -2919,6 +3052,16 @@ export const EVENT_AT = {
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],
   ProjectResumed: ['outside'],
+  PrSubmitRequested: ['outside'],
+  PrSubmitRefused: ['outside'],
+  PrInProgress: ['outside'],
+  PrStepDone: ['outside'],
+  PrWaiting: ['outside'],
+  PrPushed: ['outside'],
+  PrDraftOpened: ['outside'],
+  PrOpened: ['outside'],
+  PrMerged: ['outside'],
+  PrClosed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

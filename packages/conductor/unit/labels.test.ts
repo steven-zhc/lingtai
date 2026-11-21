@@ -3,7 +3,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { FOLLOWUP_LABEL, HOLD_LABEL, OWN_LABELS, foreignLabels, labelsFor } from '../src/labels.ts'
+import { FOLLOWUP_LABEL, HOLD_LABEL, LANDED_LABEL, OWN_LABELS, foreignLabels, labelsFor } from '../src/labels.ts'
 import { type IssueChannel, tellGitHubEffect } from '../src/tell.ts'
 
 describe('foreignLabels', () => {
@@ -23,8 +23,16 @@ describe('foreignLabels', () => {
 
 describe('OWN_LABELS', () => {
   it('is exactly what labelsFor produces over LABEL_STATES', () => {
-    expect(OWN_LABELS).toEqual(new Set(LABEL_STATES.flatMap((s) => labelsFor(s))))
-    expect([...OWN_LABELS].sort()).toEqual(['lingtai:waiting', 'lingtai:working'])
+    const landing = { base: 'personal', main: 'main' }
+    expect(OWN_LABELS).toEqual(new Set(LABEL_STATES.flatMap((s) => labelsFor(s, landing))))
+    expect([...OWN_LABELS].sort()).toEqual(['lingtai:landed', 'lingtai:waiting', 'lingtai:working'])
+  })
+
+  it('labelsFor wears lingtai:landed only for a landing off main, and not at all without one', () => {
+    expect(labelsFor('landed')).toEqual([])
+    expect(labelsFor('landed', { base: 'main', main: 'main' })).toEqual([])
+    expect(labelsFor('landed', { base: 'personal', main: 'main' })).toEqual([LANDED_LABEL])
+    expect(labelsFor('running', { base: 'personal', main: 'main' })).toEqual(['lingtai:working', LANDED_LABEL])
   })
 
   it('holds neither label a person sets', () => {

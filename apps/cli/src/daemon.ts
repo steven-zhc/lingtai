@@ -5,7 +5,7 @@
  */
 import { existsSync } from 'node:fs'
 
-import { createSlots, describeFilters, projectFiltersEffect } from '@lingtai/conductor'
+import { createSlots, describeFilters, makePrHandlers, projectFiltersEffect } from '@lingtai/conductor'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import {
@@ -57,6 +57,7 @@ import { lift, recovering } from './exit.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
+import { livePrPorts } from './pr-ports.ts'
 import { pauseProjects, resumeProjects } from './project-pause.ts'
 import { PROJECTIONS } from './projection.ts'
 import { startRates } from './rates.ts'
@@ -674,6 +675,8 @@ export function daemonCommand(
           // is spent (0033 §3). Off the pass path: a question must not queue behind
           // a run, and it takes no claim and provisions nothing that would need to.
           discuss: (event) => onDiscussionRequested(event, (line) => console.log(line), lockedEffect(guard)),
+          // A person's Submit is served here, and its walk is held by the loop so a restart's drain waits for it.
+          pr: makePrHandlers(livePrPorts(eventStore, (line) => console.log(line))),
           // A failure is a defect here, which `deliver` reports as it reports a rejection.
           triage: (event) =>
             onWaitStarted(

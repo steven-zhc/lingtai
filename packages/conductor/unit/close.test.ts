@@ -301,7 +301,8 @@ describe('closing a blocked item', () => {
 describe("a db project's close", () => {
   const RECIPE_DB_END_CLOSE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps:

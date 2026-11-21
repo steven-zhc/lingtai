@@ -1025,7 +1025,7 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     { what: 'no `admit:` key at all', steps: RECIPE },
     {
       what: 'the `worktree:` block a person pastes',
-      steps: cutAtAdmit('\n    - name: cut the branch\n      worktree: { base: main, submodules: false }'),
+      steps: cutAtAdmit('\n    - name: cut the branch\n      worktree: { submodules: false }'),
     },
   ])('cuts from origin/main with $what', async ({ steps }) => {
     const store = memoryStore()
@@ -1602,7 +1602,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     const ids: string[] = []
     const two = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -1751,10 +1752,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     await once(
       {
         project,
-        client: fakeGitHub(
-          [],
-          cutAtAdmit('\n    - name: cut the branch\n      worktree: { base: main, submodules: true }'),
-        ),
+        client: fakeGitHub([], cutAtAdmit('\n    - name: cut the branch\n      worktree: { submodules: true }')),
         runtime,
         issue: 7,
         hookBinary: '/tmp/fake/lingtai-hook',
@@ -2193,7 +2191,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
   it('dispatches no judge when only `HandToPerson` is on offer, declared or not', async () => {
     const NOTHING_TO_SPEND = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

@@ -12,7 +12,7 @@ import { createSqliteTicketSql, openSqliteLog } from '@lingtai/event-store/sqlit
 import type { TicketSql } from '@lingtai/event-store/ticket-sql'
 import type { GitHubClient } from '@lingtai/github'
 import { resolveRecipe } from '@lingtai/recipe'
-import { queueOf } from '@lingtai/recipe/settings'
+import { queueOf, selectionOf } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -69,7 +69,8 @@ function recordTicketCalls(client: GitHubClient, calls: string[]): GitHubClient 
 /** No `tickets:` written — the default, exactly as a project had it before this field existed. */
 const RECIPE_GITHUB = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -78,7 +79,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
 const RECIPE_DB = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -93,7 +95,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 const RECIPE_DB_HOLD = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -294,7 +297,11 @@ describe('a pass under source.tickets: db', () => {
     const github = recordTicketCalls(fakeGitHub([]), ticketCalls)
     const recipe = await recipeOf(RECIPE_DB)
 
-    const offered = await runnableNow({ client: ticketedClientOf(github, tickets), queue: queueOf(recipe) })
+    const offered = await runnableNow({
+      client: ticketedClientOf(github, tickets),
+      queue: queueOf(recipe),
+      selection: selectionOf(recipe),
+    })
 
     expect(offered.runnable.map((r) => r.ref)).toEqual([String(created.number)])
     expect(ticketCalls).toEqual([])

@@ -104,8 +104,8 @@ const ticketEdit = (
 
 const DB_YAML = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug, feature]
   tickets: db
@@ -118,8 +118,8 @@ runtime:
 
 const GITHUB_YAML = `
 version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug, feature]
 env:

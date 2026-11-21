@@ -262,7 +262,7 @@ describe('a push the base refuses (#662)', () => {
     expect(pushes(fake.calls)).toHaveLength(1)
     expect(result.detail).toContain('does not open pull requests')
     expect(result.detail).toContain('bypass')
-    expect(result.detail).toContain('repo.base')
+    expect(result.detail).toContain('branch.main')
   })
 
   it('answers an ordinary non-fast-forward with one recompute that refuses base-moved, never a second push (#1210)', async () => {

@@ -40,7 +40,10 @@ describe('the landing lane', () => {
           lane.through(
             'p:main',
             { runId: 'b', issue: 2 },
-            { onWait: (behind) => Effect.sync(() => void waits.push(`behind ${behind.runId}`)) },
+            {
+              onWait: (behind) =>
+                Effect.sync(() => void waits.push(`behind ${'runId' in behind ? behind.runId : behind.pr}`)),
+            },
             Effect.sync(() => {
               log.push('b:start')
               return 'B'

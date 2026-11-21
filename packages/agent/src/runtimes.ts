@@ -16,7 +16,7 @@
 import type { RuntimeId } from '@lingtai/domain'
 import { codexTextConfig } from '@lingtai/env'
 
-import { COPILOT_PROFILE } from './acp-session.ts'
+import { ANTIGRAVITY_PROFILE, COPILOT_PROFILE } from './acp-session.ts'
 import { createAcpRuntime } from './acp.ts'
 import { createClaudeCodeRuntime } from './claude-code.ts'
 import { createCodexTextRuntime, type CodexTextOptions } from './codex-text.ts'
@@ -96,6 +96,14 @@ export const RUNTIMES: Record<RuntimeId, (options?: RuntimeOptions) => Runtime> 
     if (options.tools === 'none') throw new ToolsCannotBeDenied('copilot')
     return createAcpRuntime({
       profile: COPILOT_PROFILE,
+      ...(options.binary === undefined ? {} : { binary: options.binary }),
+    })
+  },
+  antigravity: (options = {}) => {
+    // 019 E2: no tool-free mode either.
+    if (options.tools === 'none') throw new ToolsCannotBeDenied('antigravity')
+    return createAcpRuntime({
+      profile: ANTIGRAVITY_PROFILE,
       ...(options.binary === undefined ? {} : { binary: options.binary }),
     })
   },

@@ -228,7 +228,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({
       ok: true,
@@ -248,7 +248,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     })
 
     const path = `${HOME}/repo/recipe.yml`
-    expect(files.replaced[path]).toContain('base: lingtai-base')
+    expect(files.replaced[path]).toContain('main: lingtai-base')
     expect(files.replaced[path]).toContain('remote: /repo')
   })
 
@@ -257,7 +257,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       git: { '/nope::rev-parse --show-toplevel': fail('fatal: not a git repository') },
     })
 
-    const result = await chooseFirstProject(world, { local: '/nope' })
+    const result = await chooseFirstProject(world, { local: '/nope', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('/nope is not a git repository') })
     expect(registered).toEqual([])
@@ -306,7 +306,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       projects: [project('repo', 'someone-else')],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('someone-else/repo') })
     expect(registered).toEqual([])
@@ -321,7 +321,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       projects: [project('MyApp', 'acme')],
     })
 
-    const result = await chooseFirstProject(world, { local: '/code/myapp' })
+    const result = await chooseFirstProject(world, { local: '/code/myapp', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('acme/myapp') })
     expect(registered).toEqual([])
@@ -336,10 +336,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
         '/repo::remote get-url origin': fail('no origin'),
       },
       projects: [project('repo', null)],
-      files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
+      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n  remote: https://github.com/other/thing.git\n' },
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
 
     expect(result).toEqual({
       refused: expect.stringContaining('https://github.com/other/thing.git'),
@@ -357,10 +357,10 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       // `repo.remote` was ever written for it, since the schema makes the
       // key optional (`recipe.ts`).
       projects: [project('widget', null)],
-      files: { [path]: 'version: 2\nrepo:\n  base: main\n' },
+      files: { [path]: 'version: 2\nbranch:\n  main: main\n' },
     })
 
-    const result = await chooseFirstProject(world, { local: '/code/widget' })
+    const result = await chooseFirstProject(world, { local: '/code/widget', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('already registered with no repo.remote recorded') })
     expect(registered).toEqual([])
@@ -377,25 +377,31 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('no agent runtime is signed in') })
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
   })
 
-  it('--base answers the base question without a TTY, validated against the directory', async () => {
+  it('--main answers the base question without a TTY, validated against the directory', async () => {
     const { world, registered } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
         '/repo::rev-parse --verify refs/heads/develop^{commit}': ok('cafefee\n'),
       },
-      // --base answers the base question itself; --defaults answers every
+      // --main answers the base question itself; --defaults answers every
       // one `askRecipe` asks after it (#433).
       answers: [],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', base: 'develop', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, {
+      local: '/repo',
+      mode: 'solo',
+      main: 'develop',
+      defaults: '',
+      install: 'none',
+    })
 
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafefee' })
@@ -424,11 +430,11 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       },
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
 
     expect(result).toEqual({
       refused: expect.stringContaining(
-        'the base branch needs an answer: pass --base <branch>. the store chosen above is kept',
+        'the base branch needs an answer: pass --main <branch>. the store chosen above is kept',
       ),
     })
   })
@@ -443,7 +449,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     })
 
     const { flags } = flagsOf({ [flag]: true })
-    const result = await chooseFirstProject(world, { ...flags, local: '/repo', install: 'none' })
+    const result = await chooseFirstProject(world, { ...flags, local: '/repo', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(registered[0]).toMatchObject({ base: 'lingtai-base', fromSha: 'abc123f' })
@@ -458,7 +464,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       add: async () => (calls.push('add'), { ok: false as const }),
     })
 
-    const result = await chooseFirstProject(world, { defaults: '' })
+    const result = await chooseFirstProject(world, { defaults: '', mode: 'solo' })
 
     expect(result).toEqual({ refused: expect.stringContaining('pass --project github, or --project local') })
     expect(calls).toEqual([])
@@ -473,11 +479,11 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       return fail('no')
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
-    expect(result).toEqual({ refused: expect.stringContaining('pass --base <branch>') })
+    expect(result).toEqual({ refused: expect.stringContaining('pass --main <branch>') })
     expect(logged.join('\n')).toContain('/repo has no branch checked out')
-    expect(logged.join('\n')).toContain('--base <branch>')
+    expect(logged.join('\n')).toContain('--main <branch>')
     expect(calls.some((c) => c.startsWith('branch '))).toBe(false)
   })
 
@@ -499,7 +505,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const reader = world.setupReader
     world.setupReader = (top) => (order.push('recipe flow'), reader(top))
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, remote: '/repo', base: 'lingtai-base' })
     expect(order.indexOf('branch lingtai-base main')).toBeGreaterThan(-1)
@@ -522,7 +528,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       throw new Error(`unplanned git call: ${key}`)
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(made).toBe(true)
@@ -537,7 +543,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
     const git = world.git
     world.git = (dir, args) => (calls.push(args.join(' ')), git(dir, args))
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
 
     expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(calls.some((c) => c.startsWith('branch '))).toBe(false)
@@ -552,7 +558,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toMatchObject({ ok: true })
 
     const path = recipePath('repo', HOME)
@@ -573,7 +579,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: ['', 'no', ...RECIPE_FLOW_DEFAULTS],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
     expect(result).toMatchObject({ ok: true })
 
     // `askAgents`, `askInstallAndBuild`, `askTickets` (never asked for a
@@ -624,7 +630,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers: [''],
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' }, [
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' }, [
       'pnpm lint',
       'pnpm test',
     ])
@@ -650,14 +656,14 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers,
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', land: 'develop' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', land: 'develop' })
 
     expect(result).toMatchObject({ ok: true, base: 'develop' })
     expect(registered).toHaveLength(1)
     expect(registered[0]).toMatchObject({ base: 'develop', fromSha: 'cafef00' })
 
     const path = `${HOME}/repo/recipe.yml`
-    expect(files.replaced[path]).toContain('base: develop')
+    expect(files.replaced[path]).toContain('main: develop')
   })
 
   it('a landing answer naming a branch git does not have is refused by name, and nothing is registered (#431 Watch out)', async () => {
@@ -673,7 +679,7 @@ describe('chooseFirstProject — the local branch (#394)', () => {
       answers,
     })
 
-    const result = await chooseFirstProject(world, { local: '/repo', land: 'nope' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', land: 'nope' })
 
     expect(result).toEqual({ refused: expect.stringContaining('nope is not a branch in /repo') })
     expect(registered).toEqual([])
@@ -993,19 +999,19 @@ describe('chooseFirstProject — the GitHub branch (#394)', () => {
 describe('chooseFirstProject — contradicting flags are refused (#394)', () => {
   it('--local and --github together', async () => {
     const { world } = harness({})
-    const result = await chooseFirstProject(world, { local: '/repo', github: 'acme/widget' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', github: 'acme/widget' })
     expect(result).toEqual({ refused: expect.stringContaining('--local /repo and --github acme/widget') })
   })
 
   it('--local with --project github', async () => {
     const { world } = harness({})
-    const result = await chooseFirstProject(world, { local: '/repo', project: 'github' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', project: 'github' })
     expect(result).toEqual({ refused: expect.stringContaining('--project github names the other kind') })
   })
 
   it('--local with --github-app', async () => {
     const { world } = harness({})
-    const result = await chooseFirstProject(world, { local: '/repo', 'github-app': 'create' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', 'github-app': 'create' })
     expect(result).toEqual({ refused: expect.stringContaining('creates no GitHub App') })
   })
 
@@ -1022,7 +1028,7 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
   it('--local with no directory is refused before git is asked anything', async () => {
     // No git planned: `fakeGit` throws on any call, so a refusal is proof none was made.
     const { world, registered, files } = harness({})
-    const result = await chooseFirstProject(world, { local: '', base: 'main' })
+    const result = await chooseFirstProject(world, { local: '', main: 'main' })
     expect(result).toEqual({ refused: expect.stringContaining('--local needs the directory') })
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
@@ -1035,25 +1041,25 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
   })
 
   /**
-   * #399: `--land` and `--base` are different questions, and naming both with
+   * #399: `--land` and `--main` are different questions, and naming both with
    * different branches must not have one silently overrule the other. On the
    * local branch, without this, the base question writes `repo.base: main`
    * and `askLanding` inside `askRecipe` later overwrites it with `develop`
    * (the second pass's finding 1) — so this has to be refused before the base
    * question is even asked, and nothing may be registered.
    */
-  it('--base and --land naming different branches on the local branch is refused before anything is asked', async () => {
+  it('--main and --land naming different branches on the local branch is refused before anything is asked', async () => {
     const { world, asked, registered, files } = harness({})
-    const result = await chooseFirstProject(world, { local: '/repo', base: 'main', land: 'develop' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', main: 'main', land: 'develop' })
     expect(result).toEqual({
-      refused: expect.stringContaining('--land develop and --base main name two different branches'),
+      refused: expect.stringContaining('--land develop and --main main name two different branches'),
     })
     expect(asked).toEqual([])
     expect(registered).toEqual([])
     expect(files.replaced).toEqual({})
   })
 
-  it('--land hold does not contradict --base, since hold names no branch', async () => {
+  it('--land hold does not contradict --main, since hold names no branch', async () => {
     const { world } = harness({
       git: {
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
@@ -1061,7 +1067,7 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
       },
       answers: [...RECIPE_FLOW_DEFAULTS],
     })
-    const result = await chooseFirstProject(world, { local: '/repo', base: 'lingtai-base', land: 'hold' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', main: 'lingtai-base', land: 'hold' })
     expect(result).not.toEqual({
       refused: expect.stringContaining('name two different branches'),
     })
@@ -1363,7 +1369,7 @@ describe('chooseFirstProject — how this machine reaches GitHub (#710)', () => 
 describe('chooseFirstProject — re-running add --local over an old recipe (#772)', () => {
   const path = `${HOME}/repo/recipe.yml`
   const ORIGIN = 'https://github.com/me/repo.git'
-  const OLD = `version: 2\nrepo:\n  base: main\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`
+  const OLD = `version: 2\nbranch:\n  main: main\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`
   const git = (extra: GitPlan = {}): GitPlan => ({
     '/repo::rev-parse --show-toplevel': ok('/repo\n'),
     '/repo::remote get-url origin': ok(`${ORIGIN}\n`),
@@ -1372,7 +1378,10 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
   })
   const run = (options: Parameters<typeof harness>[0], flags: Record<string, string> = {}) => {
     const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD }, ...options })
-    return { h, result: chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none', ...flags }) }
+    return {
+      h,
+      result: chooseFirstProject(h.world, { local: '/repo', defaults: '', mode: 'solo', install: 'none', ...flags }),
+    }
   }
   const moved = `lands: ${ORIGIN} main → this checkout, lingtai-base`
 
@@ -1381,7 +1390,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(await result).toMatchObject({ ok: true, base: 'lingtai-base' })
     expect(h.logged).toContain(moved)
     expect(h.removed).toEqual(['repo'])
-    expect(h.files.replaced[path]).toContain('base: lingtai-base')
+    expect(h.files.replaced[path]).toContain('main: lingtai-base')
     expect(h.files.replaced[path]).toContain('remote: /repo')
   })
 
@@ -1443,41 +1452,41 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       files: { [path]: OLD },
     })
     h.world.inFlight = () => Effect.die(new Error('store down'))
-    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toEqual({ refused: unreadable })
     expect(h.files.replaced).toEqual({})
     expect(h.removed).toEqual([])
   })
 
-  it('--base dev keeps dev, and the line names it', async () => {
+  it('--main dev keeps dev, and the line names it', async () => {
     const { h, result } = run(
       { answers: ['yes'], git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }) },
-      { base: 'dev' },
+      { main: 'dev' },
     )
     expect(await result).toMatchObject({ ok: true, base: 'dev' })
     expect(h.logged).toContain(`lands: ${ORIGIN} main → this checkout, dev`)
-    expect(h.files.replaced[path]).toContain('base: dev')
+    expect(h.files.replaced[path]).toContain('main: dev')
   })
 
-  const SHADOWED = (admitBase: string, repoBase = 'main') =>
-    `version: 2\nrepo:\n  base: ${repoBase}\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        base: ${admitBase}\n        submodules: false\n`
+  const WITH_ADMIT = (repoBase = 'main') =>
+    `version: 2\nbranch:\n  main: ${repoBase}\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        submodules: false\n`
 
-  it('a base declared at steps.admit is the one moved, so the registration lands where the flow said (#968)', async () => {
+  it('a recipe with a steps.admit worktree has branch.main moved, so the registration lands where the flow said (#968)', async () => {
     const { h, result } = run(
       {
         answers: ['yes'],
-        files: { [path]: SHADOWED('main') },
+        files: { [path]: WITH_ADMIT() },
         git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }),
       },
-      { base: 'dev', land: 'dev' },
+      { main: 'dev', land: 'dev' },
     )
     expect(await result).toMatchObject({ ok: true, base: 'dev' })
-    expect(h.files.replaced[path]).toMatch(/worktree:\s+base: dev/)
+    expect(h.files.replaced[path]).toMatch(/branch:\s+main: dev/)
   })
 
-  it('a recipe whose steps.admit base already is the default is refused as added, not asked a base (#968)', async () => {
+  it('a recipe with a steps.admit worktree whose branch.main already is the default is refused as added, not asked a base (#968)', async () => {
     const { h, result } = run({
-      files: { [path]: SHADOWED('lingtai-base').replace(`remote: ${ORIGIN}`, 'remote: /repo') },
+      files: { [path]: WITH_ADMIT('lingtai-base').replace(`remote: ${ORIGIN}`, 'remote: /repo') },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
     expect(h.asked).toEqual([])
@@ -1487,7 +1496,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     const { h, result } = run({
       files: {
         [path]:
-          'version: 2\nrepo:\n  base: lingtai-base\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
@@ -1508,7 +1517,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `${SHADOWED('main')}  prepared:\n    - name: install\n      run: npm ci\n`,
+          [path]: `${WITH_ADMIT()}  prepared:\n    - name: install\n      run: npm ci\n`,
         },
       },
       { install: 'none' },
@@ -1525,7 +1534,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
 
   it('a remote that is neither the checkout nor its origin is still refused by the name guard', async () => {
     const { h, result } = run({
-      files: { [path]: 'version: 2\nrepo:\n  base: main\n  remote: https://github.com/other/thing.git\n' },
+      files: { [path]: 'version: 2\nbranch:\n  main: main\nrepo:\n  remote: https://github.com/other/thing.git\n' },
     })
     expect(await result).toEqual({ refused: expect.stringContaining('https://github.com/other/thing.git') })
     expect(h.removed).toEqual([])
@@ -1537,7 +1546,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       git: git({ '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n') }),
       files: {
         [path]:
-          'version: 2\nrepo:\n  base: main\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: main\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     expect(await result).toEqual({ refused: expect.stringContaining(`its recipe is ${path}`) })
@@ -1550,7 +1559,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `version: 2\nextends: pnpm-workspace\nrepo:\n  base: main\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
+          [path]: `version: 2\nextends: pnpm-workspace\nbranch:\n  main: main\nrepo:\n  remote: ${ORIGIN}\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n`,
         },
       },
       { install: 'none' },
@@ -1579,11 +1588,11 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       projects: [project('repo', null)],
       files: {
         [path]:
-          'version: 2\nrepo:\n  base: lingtai-base\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       },
     })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
-    const result = await chooseFirstProject(world, { local: '/repo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
     expect(result).toMatchObject({ ok: true, project: 'local' })
     expect(h.asked).toEqual([])
     expect(h.files.replaced).toEqual({})
@@ -1594,11 +1603,11 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       {
         answers: ['yes'],
         files: {
-          [path]: `${SHADOWED('main')}  proposed:\n    - name: hold every attempt\n      human: wait\n`,
+          [path]: `${WITH_ADMIT()}  proposed:\n    - name: hold every attempt\n      human: wait\n`,
         },
         git: git({ '/repo::rev-parse --verify refs/heads/dev^{commit}': ok('cafefee\n') }),
       },
-      { base: 'dev', land: 'dev' },
+      { main: 'dev', land: 'dev' },
     )
     expect(await result).toMatchObject({ ok: true })
     expect(h.files.replaced[path]).not.toContain('human:')
@@ -1620,7 +1629,7 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
           '/repo::rev-parse --verify refs/heads/main^{commit}': ok('beef123\n'),
         }),
       },
-      { base: 'main' },
+      { main: 'main' },
     )
     expect(await result).toMatchObject({ ok: true })
     expect(h.logged).toContain(`lands: ${ORIGIN} main → this checkout, main`)
@@ -1630,8 +1639,113 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
   it('without the ports (lingtai init) an old origin remote is still refused by the name guard', async () => {
     const h = harness({ git: git(), projects: [project('repo', null)], files: { [path]: OLD } })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
-    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', install: 'none' })
+    const result = await chooseFirstProject(world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
     expect(result).toEqual({ refused: expect.stringContaining(ORIGIN) })
     expect(h.files.replaced).toEqual({})
+  })
+})
+
+describe('chooseFirstProject — a local team project (#1324)', () => {
+  /** A checkout on `main`, with no `lingtai-base` yet; `calls` is every git call, in order. */
+  function teamHarness() {
+    const h = harness({})
+    const calls: string[] = []
+    let made = false
+    h.world.git = liftPort(async (_dir, args) => {
+      const key = args.join(' ')
+      calls.push(key)
+      if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
+      if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
+      if (key === 'rev-parse --verify refs/heads/main^{commit}') return ok('aaa111\n')
+      if (key === 'rev-parse --verify refs/heads/lingtai-base^{commit}') return made ? ok('aaa111\n') : fail('unknown')
+      if (key === 'branch lingtai-base main') return ((made = true), ok(''))
+      if (key === 'remote') return ok('')
+      throw new Error(`unplanned git call: ${key}`)
+    })
+    return { ...h, calls }
+  }
+
+  it('writes branch.main as the checked-out branch and branch.personal as lingtai-base, made with git branch and pushed nowhere', async () => {
+    const { world, calls, files, registered } = teamHarness()
+
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'team', defaults: '', install: 'none' })
+
+    expect(result).toMatchObject({ ok: true, base: 'lingtai-base' })
+    expect(calls).toContain('branch lingtai-base main')
+    expect(calls.filter((c) => c.startsWith('push'))).toEqual([])
+    const text = files.replaced[`${HOME}/repo/recipe.yml`]
+    expect(text).toMatch(/mode: team/)
+    expect(text).toMatch(/main: main/)
+    expect(text).toMatch(/personal: lingtai-base/)
+    // A local project has no login to take issues for: every ticket is the person's (0130 §3).
+    expect(text).not.toMatch(/assignee/)
+    expect(registered[0]).toMatchObject({ base: 'lingtai-base' })
+  })
+
+  it('asks no landing question, and --land hold is still honoured', async () => {
+    const { world, files } = (() => {
+      const t = teamHarness()
+      t.world.ask = async (prompt) => {
+        t.asked.push(prompt)
+        return /use every default/.test(prompt) ? 'no' : ''
+      }
+      return t
+    })()
+
+    const result = await chooseFirstProject(world, {
+      local: '/repo',
+      mode: 'team',
+      land: 'hold',
+      install: 'none',
+      build: 'none',
+    })
+
+    expect(result).toMatchObject({ ok: true })
+    expect(files.replaced[`${HOME}/repo/recipe.yml`]).toMatch(/human:/)
+  })
+
+  it('asks no landing question when it is not given', async () => {
+    const t = teamHarness()
+    t.world.ask = async (prompt) => {
+      t.asked.push(prompt)
+      return /use every default/.test(prompt) ? 'no' : ''
+    }
+
+    const result = await chooseFirstProject(t.world, {
+      local: '/repo',
+      mode: 'team',
+      install: 'none',
+      build: 'none',
+    })
+
+    expect(result).toMatchObject({ ok: true })
+    expect(t.asked.filter((p) => /when an attempt is ready|land this on which branch/.test(p))).toEqual([])
+  })
+
+  it('refuses --land <branch> before any branch is made: a team project lands on branch.personal', async () => {
+    const { world, calls } = teamHarness()
+
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'team', land: 'develop', install: 'none' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('a team project lands on branch.personal') })
+    expect(calls.filter((c) => c.startsWith('branch '))).toEqual([])
+  })
+
+  it('refuses a personal branch equal to main ignoring case, by name', async () => {
+    const { world } = teamHarness()
+
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'team', personal: 'Main', install: 'none' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('same branch as main, ignoring case') })
+  })
+
+  it('asks before making the personal branch, and answering no makes nothing', async () => {
+    const t = teamHarness()
+    t.world.ask = async (prompt) => (/Make it from/.test(prompt) ? 'no' : /use every default/.test(prompt) ? 'no' : '')
+
+    const result = await chooseFirstProject(t.world, { local: '/repo', mode: 'team', install: 'none' })
+
+    expect(result).toEqual({ refused: expect.stringContaining('was not made') })
+    expect(t.calls.filter((c) => c.startsWith('branch '))).toEqual([])
   })
 })

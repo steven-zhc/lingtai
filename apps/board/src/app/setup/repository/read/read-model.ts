@@ -39,6 +39,18 @@ export interface SandboxView {
   offLine: string
 }
 
+/** What the mode block starts from (0130 §1–3): read on the server, handed in as data. */
+export interface TeamView {
+  /** The person a `gh` machine is signed in as; null on an App machine, where a login is typed. */
+  login: string | null
+  /** This machine's name as a branch part (`machineName(hostname)`). */
+  host: string
+  /** The personal branch the field starts with: `<login>/<host>`, `lingtai-base` for a directory, empty where no login is known. */
+  personal: string
+  /** A directory's checked-out branch, which is its team project's `branch.main`; null on GitHub or on a detached HEAD. */
+  checkedOut: string | null
+}
+
 /** Everything the form starts from. */
 export interface ReadView {
   project: string
@@ -62,6 +74,7 @@ export interface ReadView {
   limits: SetupForm['limits']
   /** Null where the step is not asked: a recipe that already exists. A failed read still offers it. */
   sandbox: SandboxView | null
+  team: TeamView
 }
 
 export type Preview = { text: string; ceiling: string } | { refused: string }

@@ -60,7 +60,7 @@ import { agentBranch, armPrefix } from '@lingtai/conductor/branches'
 // pipeline and its child-process types, and the board imports this package —
 // so a barrel import here is a compile error three packages away.
 import { recipeForSeam, type ClientForEffect, type RecipeForEffect } from '@lingtai/conductor/filter'
-import { foreignLabels, labelsFor } from '@lingtai/conductor/labels'
+import { foreignLabels, LANDED_LABEL, labelsFor } from '@lingtai/conductor/labels'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 // One wording for *what a part-way sweep had already deleted*, shared rather
 // than written twice: the inline sweep and this one record the same row.
@@ -95,7 +95,10 @@ export interface UnresolvedProject {
 
 /** What `clientsForProjects` could build, and what it could not and why. */
 export interface ProjectClients {
-  clients: Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>
+  clients: Map<
+    string,
+    Tickets & RefChannel & { readonly owner: string | null; readonly repo: string; readonly main: string }
+  >
   unresolved: UnresolvedProject[]
 }
 
@@ -161,7 +164,7 @@ export function clientsForProjectsEffect(
         }))
     const recipeFor = options.recipeFor ?? recipeForSeam(undefined)
     const ticketsOf = options.ticketsOf ?? ticketsForEffect
-    const clients = new Map<string, Tickets & RefChannel & { readonly owner: string | null; readonly repo: string }>()
+    const clients: ProjectClients['clients'] = new Map()
     const unresolved: UnresolvedProject[] = []
     const reachable = hasAuth()
     for (const p of projects) {
@@ -183,7 +186,7 @@ export function clientsForProjectsEffect(
         yield* Effect.gen(function* () {
           const resolved = yield* recipeFor(p, undefined)
           const { client } = yield* ownerlessClientEffect(p, resolved.recipe, ticketsOf)
-          clients.set(project, client)
+          clients.set(project, { ...client, main: resolved.recipe.branch.main })
         }).pipe(Effect.catchCause(unresolve))
         continue
       }
@@ -197,7 +200,10 @@ export function clientsForProjectsEffect(
       if (built === null) continue
       yield* Effect.gen(function* () {
         const resolved = yield* recipeFor(p, built)
-        clients.set(project, ticketedClientOf(built, yield* ticketsOf(p, resolved.recipe, built)))
+        clients.set(project, {
+          ...ticketedClientOf(built, yield* ticketsOf(p, resolved.recipe, built)),
+          main: resolved.recipe.branch.main,
+        })
       }).pipe(Effect.catchCause(unresolve))
     }
     return { clients, unresolved }
@@ -294,7 +300,10 @@ export interface ConvergeOptions {
    */
   daemonStore?: DaemonStore
   /** Injected so a test needs no GitHub App. Keyed by project name. */
-  clients?: ReadonlyMap<string, Pick<Tickets, 'getIssue' | 'setLabels' | 'closeIssue'> & RefChannel>
+  clients?: ReadonlyMap<
+    string,
+    Pick<Tickets, 'getIssue' | 'setLabels' | 'closeIssue'> & RefChannel & { readonly main?: string }
+  >
   /** Injected so a test needs no `prj-` streams. */
   projects?: readonly ProjectState[]
   dryRun?: boolean
@@ -365,7 +374,16 @@ export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effe
       const events = yield* orElse(() => store.read(ticketId), [])
       if (events.length === 0) continue
       const item = reduceTicket(events)
-      const wanted = labelsFor(labelState(item.lifecycle.status))
+      // `branch.main` of the project's recipe, carried on its client. A ticket that landed on any other
+      // branch wears `lingtai:landed`, read off `item.landed` and not `lifecycle`, which a person's
+      // `TicketClosed` replaces (0130 §4). With no `main` known, a landed ticket's label is never judged:
+      // what it carries is kept rather than stripped.
+      const client = options.clients?.get(parsed.project)
+      const main = client?.main
+      const wanted = labelsFor(
+        labelState(item.lifecycle.status),
+        item.landed !== null && main !== undefined ? { base: item.landed.base, main } : undefined,
+      )
 
       // What the log last said it managed, per change, is `item.github.last`: a
       // failure with no later success is an outstanding claim; a success after it
@@ -405,7 +423,6 @@ export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effe
       // claiming anything about this issue, so it is not worth a request.
       if (wanted.length === 0 && !outstanding && !stale) continue
 
-      const client = options.clients?.get(parsed.project)
       if (!client) continue
 
       const current = yield* orElse(() => client.getIssue(issue), null)
@@ -415,7 +432,9 @@ export const findIssueDriftEffect = (options: ConvergeOptions = {}): Effect.Effe
       // for it: what the log implies is a set of names, and the difference this
       // computes is between two sets of names.
       const carried = current.labels.map((l) => l.name)
-      const target = [...new Set([...foreignLabels(carried), ...wanted])].sort()
+      const keepLanded =
+        item.landed !== null && main === undefined && carried.includes(LANDED_LABEL) ? [LANDED_LABEL] : []
+      const target = [...new Set([...foreignLabels(carried), ...wanted, ...keepLanded])].sort()
       const actual = [...carried].sort()
       if (target.join(',') !== actual.join(',')) {
         found.push({

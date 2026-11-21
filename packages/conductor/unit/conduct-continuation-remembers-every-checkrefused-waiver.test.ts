@@ -35,7 +35,8 @@ import { fakeGitHub, fakePorts, memoryStore, once, project, runtime, PROJECT } f
 /** `checkA` before `checkB` — the pipeline stops at the first refusal, so `checkB` is never reached this lap. */
 const TWO_CHECKS_REFUSE_AT_PROPOSED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

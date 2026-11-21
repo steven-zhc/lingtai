@@ -25,19 +25,18 @@
  * reaches any of these, so every value is present and an absent one is a bug in
  * the schema rather than something to paper over here.
  *
- * **`baseOf` and `submodulesOf` are the first two to have actually moved, and
- * they are still one question each** (`#268`, 0065). A recipe may write them at
- * `admit` as `worktree:`'s fields or under `repo:`, which is the same setting's
- * v1 spelling — so these two read the step first and `repo:` second, and that is
- * a **spelling** rather than a fallback: both are present on a resolved recipe,
- * and which of them a file wrote is exactly the knowledge this file exists to
- * hold alone. Every reader asks the accessor, so the merge lane lands on what
- * the tree was cut from whichever spelling was used, and there is no place for
- * the two to disagree.
+ * **`branchOf` and `submodulesOf` are the first two to have actually moved, and
+ * they are still one question each** (`#268`, 0065). `branchOf` reads
+ * `branch.personal` in team mode and `branch.main` in solo; the v1 spellings
+ * of the base (`repo.base`, `worktree.base`) are refused by name
+ * before the parse (`oldSpellingsIn`) and never reach it. `submodulesOf`
+ * reads `worktree:` at `admit` first and `repo:` second, a **spelling** rather
+ * than a fallback. Every reader asks the accessor, so the merge lane lands on
+ * what the tree was cut from, and there is no place for the two to disagree.
  *
  * **There is one accessor per setting 0061 §4 moves, and the set is closed by
  * that list rather than by what a caller happened to need.** It was three for a
- * while — `limitsFor`, `baseOf`, `kindsOf` — and the other three settings in
+ * while — `limitsFor`, `branchOf`, `kindsOf` — and the other three settings in
  * the same five-line table were read by hand in nine files: `repo.submodules`
  * at `conduct.ts` and the wizard, `source.exclude` at `discover.ts`, the
  * filter, the wizard and the board, `source.backoff` at four more. A half-set
@@ -51,7 +50,7 @@
  * it is a setting that moves onto a step exactly as the other six are, and
  * `assigneeOf` is here for the same reason `kindsOf` is.
  *
- * **And four more have actually moved, on `baseOf`'s terms** (`#269`).
+ * **And four more have actually moved, on `branchOf`'s terms** (`#269`).
  * `kindsOf`, `excludeOf`, `backoffOf` and `assigneeOf` read a `queue:` declared
  * at `claim` first and `source:`/`runtime:` second, which is the same **spelling**
  * distinction `cutAt` draws and not a fallback: both are present on a resolved
@@ -247,36 +246,63 @@ export function dispatchingSteps(recipe: Recipe): readonly Step[] {
  * none: `StepMap` refuses a second `worktree:` at a step by name when the recipe
  * resolves, so *the first one* and *the only one* are the same entry here.
  */
-function cutAt(recipe: Recipe): { base: string; submodules: boolean } | null {
+function cutAt(recipe: Recipe): { submodules: boolean } | null {
   const declared = recipe.steps.admit.find((action) => 'worktree' in action)
   return declared === undefined ? null : declared.worktree
 }
 
-/** The branch a pass cuts from and lands on. */
-export function baseOf(recipe: Recipe): string {
-  return cutAt(recipe)?.base ?? recipe.repo.base
+/** Which way this recipe lands (0130 §1): `solo` unless it writes `mode: team`. */
+export function modeOf(recipe: Recipe): 'solo' | 'team' {
+  return recipe.mode ?? 'solo'
 }
 
 /**
- * **Which line of this recipe says the base**, for the three readings that print
- * the key beside the value (`#268`).
- *
- * `baseDivergence`'s refusal, `lingtai doctor`'s base row and `lingtai add`'s
- * disagreement all name a key so that an operator knows which line to edit, and
- * all three said `repo.base` unconditionally. Against a recipe that has moved the
- * setting onto `admit` that sends a person to a line the conductor does not read
- * — the one failure mode this whole file exists to prevent, arriving through a
- * message rather than through a reader.
+ * What `pr.ci` resolves to, and where each value came from (0130 §5). **The one
+ * reader**: the recipe carries no defaults for these keys (they would move the
+ * hash), so absent means `detect`, every check (`'all'`) and 60 minutes. A
+ * `jenkins` provider is refused when a recipe resolves, so reaching here with
+ * one means the recipe was parsed and never resolved.
  */
-export function baseWrittenAt(recipe: Recipe): string {
-  return cutAt(recipe) === null ? 'repo.base' : "steps.admit's worktree.base"
+export function ciOf(recipe: Recipe): {
+  provider: 'github-actions' | 'none' | 'detect'
+  required: readonly string[] | 'all'
+  timeoutMs: number
+  from: { provider: 'recipe' | 'default'; required: 'recipe' | 'default'; timeout: 'recipe' | 'default' }
+} {
+  const ci = recipe.pr?.ci
+  if (ci?.provider === 'jenkins')
+    throw new Error('pr.ci.provider: jenkins reached ciOf from a recipe that was never resolved')
+  return {
+    provider: ci?.provider ?? 'detect',
+    required: ci?.required ?? 'all',
+    timeoutMs: ci?.timeout === undefined ? 3_600_000 : parseDuration(ci.timeout),
+    from: {
+      provider: ci?.provider === undefined ? 'default' : 'recipe',
+      required: ci?.required === undefined ? 'default' : 'recipe',
+      timeout: ci?.timeout === undefined ? 'default' : 'recipe',
+    },
+  }
+}
+
+/**
+ * The branch a pass cuts from and lands on: `branch.personal` in team mode and
+ * `branch.main` in solo (0104 §5, 0130 §2). **The one reader**; the old
+ * spellings (`repo.base`, `worktree.base`) are refused by name
+ * before the parse (`oldSpellingsIn`) and never reach the `Recipe` type.
+ */
+export function branchOf(recipe: Recipe): string {
+  return modeOf(recipe) === 'team' ? (recipe.branch.personal ?? recipe.branch.main) : recipe.branch.main
+}
+
+/** The key `branchOf` reads, for a message that names the line to edit. */
+export function branchKeyOf(recipe: Recipe): 'branch.main' | 'branch.personal' {
+  return modeOf(recipe) === 'team' ? 'branch.personal' : 'branch.main'
 }
 
 /**
  * Whether the worktree a pass is cut into gets the submodules.
  *
- * `baseOf`'s sibling and it moved with it: both are `worktree:`'s fields under
- * 0061 §4, and a caller that asks for one usually asks for the other in the
+ * `branchOf`'s sibling: a caller that asks for one usually asks for the other in the
  * next line (`conduct.ts`'s `repo.provision` call is exactly that pair).
  *
  * **A declared `worktree:` must name it** — `worktreePlugin`'s schema has no
@@ -287,7 +313,7 @@ export function baseWrittenAt(recipe: Recipe): string {
  * way that reads as the agent's fault.
  */
 export function submodulesOf(recipe: Recipe): boolean {
-  return cutAt(recipe)?.submodules ?? recipe.repo.submodules
+  return cutAt(recipe)?.submodules ?? recipe.repo?.submodules ?? false
 }
 
 /**
@@ -374,11 +400,11 @@ export function ticketSourceOf(recipe: Recipe): TicketSource {
  *
  * **Not one of `queue:`'s four, and `takeAt` plays no part here**, for
  * `ticketSourceOf`'s reason: this is a property of the repository, not of one
- * cut, so nothing moves it onto `admit` the way `baseOf` and `submodulesOf`
- * move. `cutAt` is not asked.
+ * cut, so nothing moves it onto `admit` the way `submodulesOf`
+ * moves. `cutAt` is not asked.
  */
 export function remoteOf(recipe: Recipe): string | null {
-  return recipe.repo.remote ?? null
+  return recipe.repo?.remote ?? null
 }
 
 /**
@@ -393,7 +419,7 @@ export function remoteOf(recipe: Recipe): string | null {
  * `describeFilter` and the board's reading — each reaching in by hand, which
  * is why they now ask here instead.
  *
- * Absent is `both`, and it is returned absent rather than filled in: what an
+ * Absent is `all`, and it is returned absent rather than filled in: what an
  * absent rule means belongs to `assigneeSkip` and to `describeAssignee`, which
  * say it in their own words, and 0046 §2's *a wrong login shows itself* wants
  * the reading to be able to say *nothing was written* rather than *both*.
@@ -422,7 +448,7 @@ export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
  * **`assignee` is the one value this fills in, because the block requires it and
  * `runtime.assignee` is absent from some recipes.** `EVERYONE` is what an
  * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
- * `rule?.take ?? "both"` — so writing it here selects identically and says out
+ * `rule?.take ?? "all"` — so writing it here selects identically and says out
  * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
  * still `assigneeOf`'s, which returns it absent: *nothing was written* and
  * *everyone* are one filter and two sentences, and only the filter is here.
@@ -437,8 +463,25 @@ export function queueOf(recipe: Recipe): QueueSettings {
 }
 
 /**
+ * What a pass selects *on*, beyond `queue:`'s four values (#1310): the mode and where tickets
+ * live. Filled by `selectionOf` at every caller of `runnableNow`, so the conductor, `lingtai run`,
+ * `lingtai status` and the board answer one question one way.
+ *
+ * **Not part of `queue:`**: a declared `queue:` action hands its own block, and a field there would
+ * be a recipe key a person could write.
+ */
+export interface Selection {
+  readonly mode: 'solo' | 'team'
+  readonly tickets: TicketSource
+}
+
+export function selectionOf(recipe: Recipe): Selection {
+  return { mode: modeOf(recipe), tickets: ticketSourceOf(recipe) }
+}
+
+/**
  * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
  * assigned to**, which is how the queue behaved before it read an assignee at
  * all (`assigneeSkip`).
  */
-const EVERYONE = { take: 'both' } as const
+const EVERYONE = { take: 'all' } as const

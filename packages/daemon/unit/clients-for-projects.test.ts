@@ -51,7 +51,11 @@ function seams() {
     clientFor: async () => stubClient,
     recipeFor: async (state: ProjectState) => {
       if (state.project === 'broken') throw new Error('RECIPE INVALID — source.kinds.3: Invalid option')
-      return { recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' } as never
+      return {
+        recipe: { version: 2 as const, source: { kinds: ['bug'] }, branch: { main: 'main' } },
+        ref: 'main',
+        configHash: 'c',
+      } as never
     },
   }
 }
@@ -95,6 +99,7 @@ describe('clientsForProjects, a project with no owner', () => {
           recipe: {
             version: 2 as const,
             source: { kinds: ['bug'], tickets: 'db' },
+            branch: { main: 'main' },
             repo: { remote: `https://example.invalid/${state.project}.git` },
           },
           ref: 'main',
@@ -114,7 +119,11 @@ describe('clientsForProjects, a project with no owner', () => {
       hasAuth: () => true,
       clientFor: notReached,
       recipeFor: async () =>
-        ({ recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' }) as never,
+        ({
+          recipe: { version: 2 as const, source: { kinds: ['bug'] }, branch: { main: 'main' } },
+          ref: 'main',
+          configHash: 'c',
+        }) as never,
     })
 
     expect(clients.has('local')).toBe(false)
@@ -140,7 +149,11 @@ describe('clientsForProjects, on a gh machine', () => {
         return client
       },
       recipeFor: async () =>
-        ({ recipe: { version: 2 as const, source: { kinds: ['bug'] } }, ref: 'main', configHash: 'c' }) as never,
+        ({
+          recipe: { version: 2 as const, source: { kinds: ['bug'] }, branch: { main: 'main' } },
+          ref: 'main',
+          configHash: 'c',
+        }) as never,
       ticketsOf: async () => ({}) as never,
     })
 

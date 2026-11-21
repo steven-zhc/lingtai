@@ -48,7 +48,9 @@ export const boundaryOfDecision = (decision: NotSandboxed) =>
     ? ({ kind: 'refused', why: decision.why } as const)
     : decision.reason === 'degraded'
       ? ({ kind: 'unsandboxed', reason: 'degraded', why: decision.why } as const)
-      : ({ kind: 'unsandboxed', reason: 'off by choice' } as const)
+      : decision.reason === 'runtime cannot'
+        ? ({ kind: 'unsandboxed', reason: 'runtime cannot' } as const)
+        : ({ kind: 'unsandboxed', reason: 'off by choice' } as const)
 
 /** What a boundary says about the project's sandbox (0128 §5, #1180); `refused` started no child, so nothing. */
 export const observedKindOf = (boundary: {
@@ -62,7 +64,9 @@ export const observedKindOf = (boundary: {
         ? 'degraded'
         : boundary.reason === 'off by choice'
           ? 'off by choice'
-          : null
+          : // 'runtime cannot' is one agent's fact, not the project's state: inside one pass it would alternate
+            // with a sandboxed step and append a transition per run.
+            null
       : null
 
 /** The kind a decision the base check ran under means: the wrap was handed, or the unsandboxed boundary of it. */

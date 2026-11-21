@@ -48,9 +48,10 @@ vi.mock('../src/conduct.ts', () => ({
 }))
 
 vi.mock('@lingtai/recipe/settings', () => ({
-  baseOf: () => 'main',
-  queueOf: () => ({ kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'both' } }),
+  branchOf: () => 'main',
+  queueOf: () => ({ kinds: ['bug'], exclude: [], backoff: '1h', assignee: { take: 'all' } }),
   kindsOf: () => ['bug'],
+  selectionOf: () => ({ mode: 'solo', tickets: 'github' }),
   backoffOf: () => '1h',
 }))
 

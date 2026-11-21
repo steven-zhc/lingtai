@@ -30,7 +30,7 @@ export type ProjectPauseAnswer =
   | { kind: 'not-paused' }
 
 /** Runs an attempt; a lost race (`ConcurrencyError`) runs it once more, and anything else is an `Error`. */
-const withOneRetry = <A>(attempt: Effect.Effect<A, unknown>): Effect.Effect<A, Error> =>
+export const withOneRetry = <A>(attempt: Effect.Effect<A, unknown>): Effect.Effect<A, Error> =>
   attempt.pipe(
     Effect.catchIf(
       (e): e is ConcurrencyError => e instanceof ConcurrencyError,

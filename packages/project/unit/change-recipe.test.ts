@@ -11,8 +11,8 @@ import { ProjectFiles, changeRecipe, loadProject, readProjectState, recipePath }
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)
 const GOOD = `version: 2
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:

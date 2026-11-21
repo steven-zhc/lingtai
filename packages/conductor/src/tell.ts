@@ -34,7 +34,7 @@ import { context } from '@opentelemetry/api'
 import { Effect, Result } from 'effect'
 
 import { agentBranch, armPrefix } from './branches.ts'
-import { foreignLabels } from './labels.ts'
+import { foreignLabels, LANDED_LABEL } from './labels.ts'
 import type { Tickets } from './ticket-store.ts'
 import { recordIssueUpdate } from './ticket/commands.ts'
 
@@ -104,7 +104,7 @@ export interface RefChannel {
 export type IssueChange =
   | { kind: 'comment'; body: string; waitId?: string; question?: string }
   | { kind: 'comment-edited'; waitId: string; commentId: number; body: string }
-  | { kind: 'labels'; labels: readonly string[] }
+  | { kind: 'labels'; labels: readonly string[]; keepLanded?: boolean }
   | { kind: 'closed' }
   | { kind: 'body'; body: string; ifUnchanged?: string }
   | { kind: 'refs'; andTheBranch: boolean }
@@ -240,7 +240,10 @@ function write(github: IssueChannel, issue: number, change: IssueWrite): Effect.
       case 'labels': {
         const current = yield* attempt(() => github.getIssue(issue))
         const carried = current.labels.map((l) => l.name)
-        const whole = [...new Set([...foreignLabels(carried), ...change.labels])]
+        // A recipe's own `labels:` action replaces Lingtai's labels but not the landing marker, which is
+        // computed from the ticket's state and written by the ending itself (0130 §4).
+        const kept = change.keepLanded === true && carried.includes(LANDED_LABEL) ? [LANDED_LABEL] : []
+        const whole = [...new Set([...foreignLabels(carried), ...kept, ...change.labels])]
         yield* attempt(() => github.setLabels(issue, whole))
         return change.labels.join(',')
       }
@@ -802,7 +805,7 @@ export function tellGitHubAboutEffect(options: TellAboutOptions): Effect.Effect<
                 'close' in action
                   ? tell({ kind: 'closed' }).pipe(Effect.map(held))
                   : 'labels' in action
-                    ? tell({ kind: 'labels', labels: action.labels }).pipe(Effect.map(held))
+                    ? tell({ kind: 'labels', labels: action.labels, keepLanded: true }).pipe(Effect.map(held))
                     : sweepRefsHeldEffect({ store, github, ticketId, andTheBranch: action.branch }),
               (ok) => !ok,
             )

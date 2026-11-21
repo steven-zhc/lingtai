@@ -65,6 +65,7 @@ import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
 import { HOST_FOR_SAVING, loadAllProjects, readProject, readProjectState, changeRecipe } from '@lingtai/project'
+import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
 import { kindsOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -1072,7 +1073,17 @@ export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Pr
           signedIn: signedInHere,
           hostFacts: HOST_FOR_SAVING.hostFacts,
         },
-        { by: actor(), store: eventStore },
+        {
+          by: actor(),
+          store: eventStore,
+          // Only a team → solo save calls this. The cards are task_view's, so a ticket landed while no conductor was
+          // folding is not yet one and reads as not in the draft — #1316's accepted trade.
+          candidates: (project) =>
+            readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
+              Effect.map((cards) => cards.map((card) => ({ issue: card.issue }))),
+              Effect.mapError((e) => (e instanceof Error ? e : new Error(String(e)))),
+            ),
+        },
       ),
     )
     if (!result.ok) return { ok: false, loaded, text, message: result.message }

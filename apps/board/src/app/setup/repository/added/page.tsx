@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { stateDir } from '@lingtai/env'
 import { readProject, recipePath } from '@lingtai/project'
-import { queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
+import { branchOf, modeOf, queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { liveMachineText, needsClaudeToken } from '@lingtai/setup'
 
 import { Bar } from '@/app/bar.tsx'
@@ -74,6 +74,8 @@ async function read(project: string | undefined): Promise<{ added: Added; token:
         held: [...queue.exclude],
         owner: state.owner,
         github: ticketSourceOf(resolved.recipe) === 'github',
+        mode: modeOf(resolved.recipe),
+        personal: branchOf(resolved.recipe),
       },
     },
     token: tokenSay(resolved.recipe),

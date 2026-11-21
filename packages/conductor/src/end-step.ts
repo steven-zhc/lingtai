@@ -63,6 +63,20 @@ import { Effect } from 'effect'
 export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed' | 'satisfied'
 
 /**
+ * What `end` resolves from: in team mode a `close` action does not resolve on
+ * `landed` (0130 §4) — the ticket stays open on its tracker until its code
+ * reaches `main`. Pure, and applied where the plan is *resolved*, so the
+ * recorded `EndActionsResolved` names exactly what is carried out.
+ */
+export function endActionsIn(
+  actions: readonly StepAction[],
+  where: { mode: 'solo' | 'team'; outcome: TerminalOutcome },
+): readonly StepAction[] {
+  if (where.mode !== 'team' || where.outcome !== 'landed') return actions
+  return actions.filter((a) => !('close' in a))
+}
+
+/**
  * The event the `end` point resolves to, or nothing.
  *
  * Pure, and takes the work item's stream rather than a store, so a caller can
@@ -90,9 +104,12 @@ export function resolveEndActions(
   events: readonly Envelope[],
   actions: readonly StepAction[],
   outcome: TerminalOutcome,
+  mode: 'solo' | 'team' = 'solo',
 ): ToAppend[] {
   // Nothing declared is not this point's business: the skip is the user's
-  // decision, and `StepsResolved` already says the point was empty.
+  // decision, and `StepsResolved` already says the point was empty. This asks
+  // about what was *declared*: a team landing whose only action was a `close`
+  // still resolves, to an empty list, so the outcome is recorded.
   if (actions.length === 0) return []
 
   const already = events.some(
@@ -105,7 +122,7 @@ export function resolveEndActions(
     | { name: string; labels: string[] }
     | { name: string; refs: true; branch: boolean }
   const resolved: Resolved[] = []
-  for (const a of actions) {
+  for (const a of endActionsIn(actions, { mode, outcome })) {
     // **The kind, and not the shape.** Every kind but the two that run for
     // effect is refused when the recipe resolves (`whyNoKindAt`), so this is
     // unreachable from a recipe and is left in for the case it is not: an

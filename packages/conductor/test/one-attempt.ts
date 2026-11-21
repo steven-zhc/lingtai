@@ -158,7 +158,8 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
 
 export const RECIPE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps: {}
@@ -176,7 +177,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const cutAtAdmit = (declared: string) => `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -195,7 +197,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const landAtMerge = (declared: string) => `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -214,7 +217,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const restartRecipe = (restarts: number) => `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -238,7 +242,8 @@ runtime:
  */
 export const restartRecipeNamedJudge = (restarts: number) => `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -261,7 +266,8 @@ runtime:
  */
 export const REVIEWED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -289,7 +295,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const JUDGED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -322,7 +329,8 @@ runtime:
  */
 export const JUDGED_BY_AN_AGENT = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -355,7 +363,8 @@ runtime:
  */
 export const TWO_RUNTIMES = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -378,7 +387,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const JUDGED_BY_A_CHEAP_AGENT = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -413,7 +423,8 @@ runtime:
  */
 export const DRAFTED = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:
@@ -447,7 +458,8 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
  */
 export const HUMAN_BEFORE_THE_LANE = `
 version: 2
-repo: { base: main, submodules: false }
+branch: { main: main }
+repo: { submodules: false }
 source: { kinds: [bug], exclude: [] }
 env: { required: [], plantAt: .env.local }
 steps:

@@ -23,8 +23,16 @@ import { Effect } from 'effect'
  * One runtime is parameterised by it; this ticket has one profile.
  */
 export interface AcpProfile {
-  /** What the runtime calls itself, in the log. */
+  /** The runtime this profile is: what the pass records as the invocation's runtime. */
+  readonly id: RuntimeId
+  /** What the runtime calls itself in a message. */
   readonly name: string
+  /** How `RunRequest.model` reaches the agent: Copilot's removed `session/set_model`, or a `model` config option. */
+  readonly modelBy: 'set_model' | 'config-option'
+  /** Whether the run reads the session's mode and switches to `mode` when it is not the one current. */
+  readonly selectMode: boolean
+  /** Said when `session/new` wants a sign-in, by the run and by the probe alike. */
+  readonly signedOut: string
   /** The executable, when a caller names none. */
   readonly command: string
   readonly args: readonly string[]
@@ -74,7 +82,28 @@ export function copilotTokens(usage: Record<string, unknown>): { tokens: TokenCo
   return note === undefined ? { tokens } : { tokens, note }
 }
 
+/**
+ * Antigravity (019 E1): `inputTokens` exclude the cache — total = input + output + cached read — and thought tokens
+ * are inside `outputTokens`, so there is no `reasoning` and `fresh` is the input as sent.
+ */
+export function antigravityTokens(usage: Record<string, unknown>): { tokens: TokenCounts; note?: string } {
+  const tokens: TokenCounts = {}
+  const fresh = count(usage['inputTokens'])
+  const cacheRead = count(usage['cachedReadTokens'])
+  const cacheWrite = count(usage['cachedWriteTokens'])
+  const output = count(usage['outputTokens'])
+  if (fresh !== undefined) tokens.fresh = fresh
+  if (cacheRead !== undefined) tokens.cacheRead = cacheRead
+  if (cacheWrite !== undefined) tokens.cacheWrite = cacheWrite
+  if (output !== undefined) tokens.output = output
+  return { tokens }
+}
+
 export const COPILOT_PROFILE: AcpProfile = {
+  id: 'copilot',
+  modelBy: 'set_model',
+  selectMode: false,
+  signedOut: 'copilot wants a sign-in: run `copilot login`',
   name: 'copilot',
   command: 'copilot',
   args: ['--acp'],
@@ -85,8 +114,29 @@ export const COPILOT_PROFILE: AcpProfile = {
   tokens: copilotTokens,
 }
 
+export const ANTIGRAVITY_PROFILE: AcpProfile = {
+  id: 'antigravity',
+  name: 'antigravity',
+  modelBy: 'config-option',
+  selectMode: true,
+  signedOut:
+    'antigravity is not signed in, or Lingtai is not running in your GUI login session (started over ssh?) — ' +
+    'sign in with `agy acp --login` in Terminal',
+  command: 'agy',
+  args: ['acp'],
+  // Never `auto` (0.16.md); 019 E2: `default` asks before every execute and edit.
+  mode: 'default',
+  // 019 E5: its model host refused → `end_turn` with this as the reply.
+  failedTurn: /^⚠ failed to construct executor/,
+  loginCommand: 'agy acp --login',
+  tokens: antigravityTokens,
+}
+
 /** The runtimes that speak ACP, by the profile each one runs on. */
-export const ACP_PROFILES: Partial<Record<RuntimeId, AcpProfile>> = { copilot: COPILOT_PROFILE }
+export const ACP_PROFILES: Partial<Record<RuntimeId, AcpProfile>> = {
+  copilot: COPILOT_PROFILE,
+  antigravity: ANTIGRAVITY_PROFILE,
+}
 
 /** ACP's own code for *Authentication required*. */
 export const AUTH_REQUIRED = -32000
@@ -127,8 +177,8 @@ export function streamOf(child: ChildProcess) {
 /** `client(...)` as Lingtai names itself to an agent. */
 export const lingtaiClient = () => client({ name: 'lingtai' })
 
-/** `initialize`, then `session/new`; the session's id. */
-export function openSession(ctx: ClientContext, cwd: string): Promise<string> {
+/** `initialize`, then `session/new`; the session's id and what `session/new` answered. */
+export function openSession(ctx: ClientContext, cwd: string) {
   return ctx
     .request('initialize', {
       protocolVersion: PROTOCOL_VERSION,
@@ -136,7 +186,7 @@ export function openSession(ctx: ClientContext, cwd: string): Promise<string> {
       clientInfo: { name: 'lingtai', version: '0' },
     })
     .then(() => ctx.request('session/new', { cwd, mcpServers: [] }))
-    .then((response) => response.sessionId)
+    .then((response) => ({ id: response.sessionId, response }))
 }
 
 /** The group, signalled. `-pid` is the group a `detached` child leads. */

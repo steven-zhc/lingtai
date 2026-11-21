@@ -75,6 +75,9 @@ describe('the answers write the block', () => {
       newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
     },
     turnsUnbounded: false,
+    mode: 'solo',
+    personal: '',
+    login: null,
     sandbox,
   })
   const HOME = '/h/.lingtai'

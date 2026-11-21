@@ -12,6 +12,7 @@ Generated from `apps/cli/src/commands.ts` and the parser; `lingtai --help` print
 | take the queue, in the recipe’s priority order | [lingtai run](#lingtai-run) |
 | what is runnable, and what is holding the rest | [lingtai status](#lingtai-status) |
 | ask for one ticket ahead of the queue | [lingtai now](#lingtai-now) |
+| what a team project’s draft holds, and where its open PR is | [lingtai pr](#lingtai-pr) |
 | follow a run’s log, from the beginning | [lingtai attach](#lingtai-attach) |
 | the minor findings passing steps raised | [lingtai backlog](#lingtai-backlog) |
 | what the pipeline did over a window of days | [lingtai report](#lingtai-report) |
@@ -39,11 +40,20 @@ lingtai add [<owner>/<repo>] [flags]
   --github-auth <gh|app>
       how this machine reaches GitHub, asked only when nothing is set:
       the signed-in gh login, or the App. gh is checked, not trusted
-  --base <branch>
-      github: where to read the recipe from, not what the base is —
-      the recipe's own repo.base says that, and a --base
-      contradicting it is refused. local: the branch the recipe
-      governs. default: the repository's own default branch
+  --main <branch>
+      the branch the recipe governs and merges into (branch.main).
+      A recipe's own branch.main contradicting it is refused.
+      default: the repository's own default branch
+      (--base is the old name for this flag, and is refused)
+  --mode <team|solo>
+      does anyone else work on this repository? team is the default:
+      Lingtai works on a personal branch and you send main a PR
+  --login <login>
+      team mode on a machine that does not know your GitHub login:
+      the issues assigned to it are the ones taken
+  --personal <branch>
+      team mode: the branch Lingtai works on, yours alone. default:
+      <login>/<machine>, or lingtai-base for a local project
   --tickets <github|db>
       where tickets come from, instead of being asked. local takes
       db only (#396)
@@ -131,6 +141,28 @@ lingtai now <project> --issue <n> [--json] [--no-color]
 
 ```sh
 lingtai now lingtai --issue <n>
+```
+
+### lingtai pr
+
+What a team project’s draft holds, and where its open PR is.
+
+Changes state — `--json` on its verdict (version 1).
+
+```text
+lingtai pr [<project>] [--json] [--no-color]
+  The tickets landed on branch.personal that no PR holds, and the
+  open PR: its number, its state and the steps it has been through.
+  A solo project has no PR page: it lands on branch.main itself.
+lingtai pr submit [<project>] [--json] [--no-color]
+  Freezes branch.personal at one commit and starts the PR. Refused
+  while another PR is open, saying which, and in a solo project.
+  It is served by a running conductor: lingtai start, or lingtai run.
+```
+
+```sh
+lingtai pr
+lingtai pr submit lingtai
 ```
 
 ### lingtai attach
@@ -635,7 +667,7 @@ Changes state.
 lingtai account lift <account> [--no-color]
   Says an account — a runtime, or github — is no longer at its limit. Projects
   that use it take work again at the next look. Appends nothing when no limit
-  stands. Accounts: claude-code, codex, copilot, github
+  stands. Accounts: claude-code, codex, copilot, antigravity, github
 ```
 
 ```sh
@@ -655,7 +687,7 @@ lingtai account lift github
 | check everything that can be checked | [lingtai doctor](#lingtai-doctor) |
 | how far projections lag, and rebuild one | [lingtai projection](#lingtai-projection) |
 | the events this version writes, by step | [lingtai events](#lingtai-events) |
-| set the token a sandboxed Claude Code run holds | [lingtai token](#lingtai-token) |
+| set the token a sandboxed Claude Code or Copilot run holds | [lingtai token](#lingtai-token) |
 
 ### lingtai init
 
@@ -681,7 +713,9 @@ lingtai init [flags]
   --github-auth <gh|app>
       how this machine reaches GitHub, asked only when nothing is set:
       the signed-in gh login, or the App. gh is checked, not trusted
-  --base <branch>           the branch a local project governs
+  --main <branch>           the branch a local project governs
+  --mode <team|solo>        does anyone else work here? team is the default
+  --personal <branch>       team mode: the branch Lingtai works on
   --tickets <github|db>     where tickets come from
   --kinds <a,b,c>          which labels are work, first taken first
   --agent <claude-code|codex>  which agent writes the change
@@ -796,8 +830,11 @@ Check everything that can be checked.
 Reads only — takes `--json` (version 1).
 
 ```text
-lingtai doctor [--verbose] [--json] [--no-color]
+lingtai doctor [--verbose] [--json] [--no-color] [--fix]
   Lists only what needs attention; --verbose lists every check, explained.
+  --fix is the one way doctor writes: it rewrites a recipe refused for an old
+  spelling (repo.base, worktree.base, take: both) as a new recipe change, and
+  nothing else. It cannot be combined with --json.
   Exits non-zero on any failure. Under --json a failing report is still the
   report document, on exit 1: test .error first (the report could not be
   produced), then .failed.
@@ -848,7 +885,7 @@ lingtai events TicketReleased --json
 
 ### lingtai token
 
-Set the token a sandboxed Claude Code run holds.
+Set the token a sandboxed Claude Code or Copilot run holds.
 
 Changes state.
 
@@ -861,8 +898,16 @@ lingtai token claude
   or keep. LINGTAI_CLAUDE_OAUTH_TOKEN, when exported, wins over the file.
   Needs a terminal. The token is never printed, logged or put on a
   command line.
+lingtai token copilot
+  Asks, at a hidden prompt, for a fine-grained personal access token
+  (github_pat_…) with the Copilot Requests permission and writes it to
+  copilot.github_token in ~/.lingtai/config.yml (0600), keeping every other
+  key. A classic ghp_ token, which Copilot ignores, is refused by name.
+  LINGTAI_COPILOT_GITHUB_TOKEN, when exported, wins over the file. Needs a
+  terminal. The token is never printed, logged or put on a command line.
 ```
 
 ```sh
 lingtai token claude
+lingtai token copilot
 ```

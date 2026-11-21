@@ -1,7 +1,23 @@
 import Link from 'next/link'
 
-import { handledRow } from '@/lib/handled'
+import { handledRow, handledShort } from '@/lib/handled'
 import type { HandledToday } from '@/lib/handled-today'
+
+function Tick() {
+  return (
+    <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <circle cx="7" cy="7" r="6.25" fill="var(--pass-soft)" stroke="var(--pass)" strokeWidth="1.5" />
+      <path
+        d="M4 7.2l2 2 4-4.4"
+        fill="none"
+        stroke="var(--pass)"
+        strokeWidth="1.6"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  )
+}
 
 /** The empty Waiting column's card (#1286, `doc/design/handled-for-you.html`, second tab). */
 export function HandledCard({
@@ -18,17 +34,7 @@ export function HandledCard({
     <div className="handled">
       <div className="handled-k">
         <span className="l">
-          <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-            <circle cx="7" cy="7" r="6.25" fill="var(--pass-soft)" stroke="var(--pass)" strokeWidth="1.5" />
-            <path
-              d="M4 7.2l2 2 4-4.4"
-              fill="none"
-              stroke="var(--pass)"
-              strokeWidth="1.6"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
+          <Tick />
           Nothing needs you
         </span>
         <span className="when" title="counted from midnight, your time zone">
@@ -94,6 +100,37 @@ export function HandledCard({
         </span>
         <Link href={`${weekHref}#handled`}>this week →</Link>
       </div>
+    </div>
+  )
+}
+
+/**
+ * The line under the Waiting column's cards while tickets wait (#1345,
+ * `doc/milestone/later/handled-footnote.html`). Text only: no bar, no colour per kind.
+ */
+export function HandledFootnote({ today, todayHref }: { today: HandledToday; todayHref: string }) {
+  if (today.solved === 0) return null
+  const words = today.kinds.map((k) => handledShort(k.kind, k.count)).filter((w): w is string => w !== null)
+  const hasWords = words.length > 0 || today.more !== null
+  return (
+    <div className="handled-foot">
+      <div className="handled-foot-h">
+        <Tick />
+        <span>
+          <b>{today.solved}</b> solved without you today
+        </span>
+        <Link href={todayHref}>see them →</Link>
+      </div>
+      {hasWords ? (
+        <p>
+          {words.join(' · ')}
+          {today.more === null ? null : (
+            <span title={today.more.hint}>
+              {words.length > 0 ? ' · ' : ''}+{today.more.kinds} more
+            </span>
+          )}
+        </p>
+      ) : null}
     </div>
   )
 }

@@ -17,8 +17,8 @@ const HOME = '/home/me/.lingtai'
  * touches. */
 const FIXTURE = `version: 2
 # the repo this governs
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]  # priority order
   # how long a backoff waits
@@ -69,8 +69,8 @@ describe('setRecipe', () => {
 
     const expected = `version: 2
 # the repo this governs
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]  # priority order
   # how long a backoff waits
@@ -96,7 +96,7 @@ steps:
   it('creates an absent file with only the keys set, and it resolves', async () => {
     const files = mapFiles()
     const changes = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['env', 'plantAt'], value: '.env.local' },
       { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
@@ -111,7 +111,7 @@ steps:
     expect(files.replaced).toEqual([{ path: PATH, text: result.text }])
 
     const resolved = resolveSource(result.text, 'main', PATH)
-    expect(resolved.recipe.repo.base).toBe('main')
+    expect(resolved.recipe.branch.main).toBe('main')
     expect(resolved.recipe.source.kinds).toEqual(['bug'])
     expect(resolved.recipe.env.plantAt).toBe('.env.local')
   })
@@ -158,8 +158,8 @@ steps:
   it('widens a narrow steps.* write to the whole block when the file inherits the rest from a preset', async () => {
     const PRESET_FIXTURE = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 source:
   kinds: [bug]
 env:
@@ -194,8 +194,8 @@ env:
     // narrow (preset-losing) change straight through.
     const STUB = `version: 2
 extends: pnpm-workspace
-repo:
-  base: main
+branch:
+  main: main
 `
     const files = mapFiles({ [PATH]: STUB })
     const result = await Effect.runPromise(
@@ -238,7 +238,7 @@ repo:
         'app',
         [
           { path: ['extends'], value: 'pnpm-workspace' },
-          { path: ['repo', 'base'], value: 'main' },
+          { path: ['branch', 'main'], value: 'main' },
           { path: ['source', 'kinds'], value: ['bug'] },
           { path: ['env', 'plantAt'], value: '.env.local' },
           { path: ['steps', 'build'], value: [{ name: 'test', run: 'pnpm test' }] },
@@ -259,7 +259,7 @@ repo:
   it('is a no-op when a change sets the value the file already has', async () => {
     const files = mapFiles({ [PATH]: FIXTURE })
     const result = await Effect.runPromise(
-      seedRecipe('app', [{ path: ['repo', 'base'], value: 'main' }], { home: HOME, files }),
+      seedRecipe('app', [{ path: ['source', 'backoff'], value: '2h' }], { home: HOME, files }),
     )
 
     expect(result).toEqual({ path: PATH, text: FIXTURE, written: false })
@@ -307,7 +307,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
   it('writes the keys in the order the loop reaches them, each comment above its own key', async () => {
     const files = mapFiles()
     const changes = [
-      { path: ['repo', 'base'], value: 'main' },
+      { path: ['branch', 'main'], value: 'main' },
       { path: ['env', 'plantAt'], value: '.env.local' },
       { path: ['source', 'kinds'], value: ['bug'] },
       { path: ['steps', 'build'], value: run },
@@ -323,7 +323,7 @@ describe('setRecipe orders a created recipe`s steps (#978)', () => {
 
   it('leaves the order of a file that already exists', async () => {
     const existing =
-      'version: 2\nrepo:\n  base: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
+      'version: 2\nbranch:\n  main: main\nenv:\n  plantAt: .env.local\nsource:\n  kinds: [bug]\nsteps:\n  build:\n    - name: x\n      run: "true"\n'
     const files = mapFiles({ [PATH]: existing })
     const { text } = await Effect.runPromise(
       seedRecipe('app', [{ path: ['steps', 'prepared'], value: run }], { home: HOME, files }),

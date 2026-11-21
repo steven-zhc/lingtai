@@ -118,8 +118,7 @@ const keptTimeouts = (at: TrialAt): Effect.Effect<Map<string, string>> =>
 
 /**
  * Where the next pass cuts from, and whether it takes submodules: what the file
- * already says (`baseOf` and `submodulesOf`, `settings.ts` — `worktree:` at
- * `admit` first, then `repo:`), and only for a recipe that says nothing, the
+ * already says (`branchOf` and `submodulesOf`, `settings.ts`), and only for a recipe that says nothing, the
  * base the caller was handed. A flag or GitHub's default branch is not where an
  * existing project's passes run.
  */
@@ -131,10 +130,15 @@ const cutOf = (at: TrialAt): Effect.Effect<{ base: string; submodules: boolean }
           | { worktree?: unknown }
           | undefined)
       : undefined
-    const wt = (declared?.worktree ?? {}) as { base?: unknown; submodules?: unknown }
-    const repoBase = yield* recipeKey(at, ['repo', 'base'])
+    const wt = (declared?.worktree ?? {}) as { submodules?: unknown }
     const repoSubmodules = yield* recipeKey(at, ['repo', 'submodules'])
-    const base = typeof wt.base === 'string' ? wt.base : typeof repoBase === 'string' ? repoBase : at.base
+    // `branch.main`, or `branch.personal` in team mode, as `branchOf` says. The old spellings are refused
+    // when the recipe resolves (#1308), so none stands in here.
+    const mode = yield* recipeKey(at, ['mode'])
+    const personal = yield* recipeKey(at, ['branch', 'personal'])
+    const main = yield* recipeKey(at, ['branch', 'main'])
+    const written = mode === 'team' && typeof personal === 'string' ? personal : main
+    const base = typeof written === 'string' ? written : at.base
     const submodules = typeof wt.submodules === 'boolean' ? wt.submodules : repoSubmodules === true
     return { base, submodules }
   })

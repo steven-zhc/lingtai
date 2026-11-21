@@ -9,7 +9,7 @@ vi.mock('@lingtai/project', async (orig) => ({
   ...(await orig<object>()),
   readProject: vi.fn(async () => ({ name: 'p' })),
 }))
-vi.mock('@lingtai/conductor/discover', () => ({ runnableNow: vi.fn() }))
+vi.mock('@lingtai/conductor/discover', () => ({ runnableNow: vi.fn(), rankedKinds: (kinds: string[]) => kinds }))
 vi.mock('@lingtai/conductor/filter', () => ({
   projectFilter: vi.fn(),
   stepPlan: vi.fn(),
@@ -25,6 +25,7 @@ vi.mock('@lingtai/recipe/settings', () => ({
     ticket: { newAttempts: 1 },
   }),
   queueOf: () => ({}),
+  selectionOf: () => ({ mode: 'solo', tickets: 'github' }),
 }))
 
 import { runnableNow } from '@lingtai/conductor/discover'

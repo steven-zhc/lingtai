@@ -12,7 +12,7 @@ import { Effect } from 'effect'
  */
 import { describe, expect, it } from 'vitest'
 
-import { signedInProbe } from '../src/projects.ts'
+import { copilotTokenSignedIn, signedInProbe } from '../src/projects.ts'
 
 function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => boolean) {
   const asked = { n: 0 }
@@ -32,7 +32,7 @@ function probe(capabilities: typeof CLAUDE_CODE_CAPABILITIES, loggedIn: () => bo
 const HOME = '/home/me/.lingtai'
 const RECIPE = `
 version: 2
-repo: { base: main }
+branch: { main: main }
 source: { kinds: [bug] }
 env: { plantAt: .env.local }
 steps: {}
@@ -82,5 +82,32 @@ describe('signedInProbe', () => {
     signed = true
     clock = 60_001
     expect(await signedIn()).toEqual(['claude-code'])
+  })
+})
+
+describe('the shared probe never signs Copilot in by the machine token (#1301)', () => {
+  const copilot = { ...CLAUDE_CODE_CAPABILITIES, id: 'copilot' as const }
+  it('a token-only machine is not signed in for an unsandboxed project', async () => {
+    const prior = process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
+    process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = 'github_pat_FAKE_probe'
+    try {
+      const runtime = {
+        capabilities: copilot,
+        checkAuth: async (env: Record<string, string>) => {
+          const ok = env['COPILOT_GITHUB_TOKEN'] === 'github_pat_FAKE_probe'
+          return {
+            state: ok ? ('signed-in' as const) : ('signed-out' as const),
+            loggedIn: ok,
+            method: null,
+            detail: '',
+          }
+        },
+      }
+      expect(await signedInProbe([runtime])()).toEqual([])
+      expect(await copilotTokenSignedIn([runtime])).toBe(true)
+    } finally {
+      if (prior === undefined) delete process.env['LINGTAI_COPILOT_GITHUB_TOKEN']
+      else process.env['LINGTAI_COPILOT_GITHUB_TOKEN'] = prior
+    }
   })
 })
