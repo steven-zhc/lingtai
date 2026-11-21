@@ -480,6 +480,44 @@ describe('resolveRounds, the sequences a review refused', () => {
     expect((await state(store)).refusals.map((r) => r.step)).toEqual(['review'])
   })
 
+  it('a lock whose check cannot read the stream still keeps the first reviewer’s findings', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = {
+      ...recipeWith(1),
+      steps: {
+        implement: [{ agent: 'claude-code', name: 'write' }],
+        review: [
+          { agent: 'claude-code', name: 'one' },
+          { agent: 'claude-code', name: 'two' },
+        ],
+        build: [],
+      },
+    } as unknown as Recipe
+    let failing = false
+    let thrown = 0
+    w.review = () => {
+      w.lock = 'paused by human:steven'
+      return JSON.stringify({
+        findings: [{ severity: 'minor', file: 'shelf.ts', line: 9, claim: 'a stale comment', failureScenario: 'none' }],
+      })
+    }
+    // The first read after the review's spend is on the log is the lock check's: it fails.
+    const reading = {
+      ...store,
+      append: async (stream: string, version: number, events: Parameters<typeof store.append>[2]) => {
+        const done = await store.append(stream, version, events)
+        if (events[0]!.type === 'RunSpent' && JSON.stringify(events[0]!.data).includes('"review"')) failing = true
+        return done
+      },
+      read: (stream: string) =>
+        failing && thrown++ === 0 ? Promise.reject(new Error('read failed')) : store.read(stream),
+    } as EventStore
+    await Effect.runPromise(resolveRounds(ports(reading, w), resolverFor(reading, w), askSync())).catch(() => undefined)
+    const ended = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'StepEnded')
+    expect(ended).toHaveLength(1)
+  })
+
   it('a StepEnded whose refusal was never written is refused on restart, and briefs the next round', async () => {
     const store = await inProgress()
     const w = aWorld()

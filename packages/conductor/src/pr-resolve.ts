@@ -393,18 +393,24 @@ export const resolveRounds = (
         const diff = clipped ? shown.stdout.slice(0, diffBytes) : shown.stdout
         const actions: PayloadOf<'StepEnded'>['outcome']['actions'] = []
         // On the PR's stream with the run id the review's spend names, so `findingsRaisedOf` reads its minors unchanged.
+        let recorded = false
         const recordReview = () =>
           appendOnPr(ports, project, n, 'StepEnded', {
             runId: runId('review'),
             outcome: { step: 'review', round, actions },
-          })
+          }).pipe(Effect.tap(() => Effect.sync(() => void (recorded = true))))
+        /** Whatever fails after a review was paid for — a read of the log, a later append — leaves its findings on the log first. */
+        const keepPaid = <A, E>(effect: Effect.Effect<A, E>): Effect.Effect<A, E> =>
+          effect.pipe(
+            Effect.onError(() => (actions.length > 0 && !recorded ? recordReview().pipe(Effect.ignore) : Effect.void)),
+          )
         const blocking: string[] = []
         for (const reviewer of reviewers) {
           // Checked before **each** paid review: an admission is not good for the next call (0126 §6).
-          const stopped = yield* stoppedNow
+          const stopped = yield* keepPaid(stoppedNow)
           if (stopped !== null) {
             // The reviews already paid for are on the log before the round is left: their findings are not lost with it.
-            if (actions.length > 0) yield* recordReview()
+            if (actions.length > 0 && !recorded) yield* recordReview()
             if (blocking.length > 0) {
               const said = blocking.join('\n')
               yield* recordSyncRoundRefused(
@@ -417,7 +423,7 @@ export const resolveRounds = (
             }
             return stopped
           }
-          const reviewed = yield* paid('review', reviewer, prReviewBrief(brief, diff, clipped))
+          const reviewed = yield* keepPaid(paid('review', reviewer, prReviewBrief(brief, diff, clipped)))
           const parsed = reviewed.failure === null ? parseFindings(reviewed.text) : null
           const base = { plugin: 'agent', name: reviewer.name, onSha: sha, evidence: '', yields: 'verdict' } as const
           if (reviewed.failure !== null) {

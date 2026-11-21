@@ -41,6 +41,7 @@ import {
   standMergeUp,
   sweepPrWorktrees,
 } from '@lingtai/repo'
+import { standInExcludes } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 
 import { processSandbox } from './sandbox.ts'
@@ -212,12 +213,17 @@ export function livePrPorts(
           return yield* Effect.fail(new Error(`${project} has no GitHub owner on record: the mirror cannot be fetched`))
         }
         const token = yield* tokenOf(project)
+        // srt's stand-in names, so `git add -A` works in a sandboxed conflict round (#1152): the exclude lives in the mirror's
+        // `info/exclude`, which every worktree of it shares, and is written on each fetch — so a sandbox enabled later is covered.
+        const decided = yield* decidePassSandbox(recipe.sandbox, processSandbox).pipe(Effect.orElseSucceed(() => null))
+        const sandboxed = decided !== null && invocationDecision(decided.decision, 'claude-code').kind === 'sandboxed'
         yield* ensureMirrorEffect({
           project,
           owner: slug?.owner ?? '',
           repo: slug?.repo ?? project,
           remote,
           token,
+          ...(sandboxed ? { exclude: standInExcludes } : {}),
         }).pipe(Effect.mapError(asError), Effect.asVoid)
       }),
     git: (project, args) => answered(gitEffect([...args], { cwd: mirrorPathFor(project) })),
