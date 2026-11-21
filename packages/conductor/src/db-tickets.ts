@@ -125,7 +125,7 @@ const LABEL_RENAMES: readonly (readonly [string, string])[] = [
 ]
 
 /**
- * Adds `lingtai:hold` beside `agent:hold` (likewise the follow-up) on every row,
+ * Adds `lingtai:hold` beside the old `agent:` hold label (likewise the follow-up) on every row,
  * and never removes the old label: a machine whose recipe still excludes only
  * the old name must not see its local tickets unheld the moment this starts.
  *
