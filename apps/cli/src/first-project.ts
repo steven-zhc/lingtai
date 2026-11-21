@@ -1024,7 +1024,18 @@ function runLocalBranch(
               base: trialBase,
               remote,
               home: world.home,
-              draft,
+              // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
+              // trial prefers to its fallback: the trial reads it as the main it would be cut from.
+              draft:
+                deferBranch && mainBranch !== null
+                  ? {
+                      path: draft.path,
+                      set: (changes) => draft.set(changes),
+                      get: (key) => (key.join('.') === 'branch.personal' ? mainBranch : draft.get(key)),
+                      text: () => draft.text(),
+                      changes: () => draft.changes(),
+                    }
+                  : draft,
             }),
           history: (project) => Effect.runPromiseWith(services)(world.history(project)),
           seeds,
@@ -1035,7 +1046,7 @@ function runLocalBranch(
           home: world.home,
         })
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
-    if (deferBranch && !repairOnly) {
+    if (deferBranch) {
       const refusal = yield* makeBranch()
       if (refusal !== null) return refusal
     }
