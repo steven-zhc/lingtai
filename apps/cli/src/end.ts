@@ -113,7 +113,13 @@ export const endReplay = (options: EndReplayOptions = {}, log = console.log): Ef
           // replayed as landed would write a resolution naming an outcome its own
           // log does not contain, and run every `when: landed` action on a ticket
           // that landed nothing (0044).
-          const ended = yield* recordEndPlanEffect(eventStore, item.ticketId, resolved.recipe.steps.end, item.outcome, modeOf(resolved.recipe))
+          const ended = yield* recordEndPlanEffect(
+            eventStore,
+            item.ticketId,
+            resolved.recipe.steps.end,
+            item.outcome,
+            modeOf(resolved.recipe),
+          )
           // Resolved and then carried out, in that order and in this process. The
           // outbox used to stand between them; there is nothing to wait for now.
           yield* tellGitHubAboutEffect({ store: eventStore, github: client, ticketId: item.ticketId, appended: ended })
