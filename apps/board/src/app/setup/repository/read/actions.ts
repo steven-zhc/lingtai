@@ -1,12 +1,20 @@
 'use server'
 import { everyRuntime } from '@lingtai/agent'
-import { addProject, livePorts, previewOf, readLocalTarget } from '@lingtai/conductor/add-from-page'
+import {
+  addProject,
+  checkPersonalEffect,
+  ghLoginHere,
+  livePorts,
+  previewOf,
+  readLocalTarget,
+  type PersonalCheck,
+} from '@lingtai/conductor/add-from-page'
 import { attemptCeiling } from '@lingtai/conductor/ceiling'
 import { recipePath } from '@lingtai/project'
 import { resolveSource } from '@lingtai/recipe'
 import { parseDuration } from '@lingtai/recipe/duration'
 import { boundsBesides, ceilingOf } from '@lingtai/recipe/settings'
-import { LINGTAI_BASE, type SetupForm } from '@lingtai/setup'
+import { LINGTAI_BASE, type SetupForm, type SetupTarget } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 /**
@@ -29,7 +37,16 @@ async function trusted(form: SetupForm): Promise<SetupForm | { refused: string }
   if (form.target.kind === 'github') {
     const { owner, repo } = form.target
     if (!SLUG.test(owner) || !SLUG.test(repo)) return { refused: `${owner}/${repo} is not a repository` }
-    return { ...form, project: repo, remote: null, closeOnEnd: form.closeOnEnd, turnsUnbounded: noCeiling }
+    // A `gh` machine's login is read here and overrides the page's; an App machine acts for nobody, so the typed one stands (`refusalOf` checks its shape).
+    const login = form.mode === 'team' ? ((await Effect.runPromise(ghLoginHere)) ?? (form.login?.trim() || null)) : null
+    return {
+      ...form,
+      project: repo,
+      remote: null,
+      closeOnEnd: form.closeOnEnd,
+      turnsUnbounded: noCeiling,
+      login,
+    }
   }
   const found = await Effect.runPromise(readLocalTarget(form.target.path))
   if (!found.ok) return { refused: found.why }
@@ -38,7 +55,9 @@ async function trusted(form: SetupForm): Promise<SetupForm | { refused: string }
     ...form,
     project: name,
     target: { kind: 'local', path: found.path },
-    base: LINGTAI_BASE,
+    // Solo lands on `lingtai-base`, made from the checked-out branch; a team project's main *is* the checked-out branch (0130 §2).
+    base: form.mode === 'team' ? (found.branch ?? '') : LINGTAI_BASE,
+    login: null,
     remote: found.path,
     tickets: 'db',
     closeOnEnd: false,
@@ -75,4 +94,19 @@ export async function addRepository(form: SetupForm): Promise<AddResult> {
   if ('refused' in checked) return { ok: false, say: checked.refused }
   const added = await Effect.runPromise(addProject(checked, livePorts(checked.target, actor())))
   return added.ok ? { ok: true, project: added.project } : added
+}
+
+/**
+ * The check as the personal branch is typed: git's rules and whether it exists. **Advisory** — it reads and never
+ * writes, and `addRepository` re-runs the refusal and makes the branch on its own authority.
+ */
+export async function checkPersonal(target: SetupTarget, name: string, base: string): Promise<PersonalCheck> {
+  // The target is re-read as `trusted` re-reads it: a page does not choose which directory or repository is asked.
+  if (target.kind === 'github') {
+    if (!SLUG.test(target.owner) || !SLUG.test(target.repo)) return { ok: false, say: 'not a repository', fix: null }
+    return Effect.runPromise(checkPersonalEffect(target, name, base))
+  }
+  const found = await Effect.runPromise(readLocalTarget(target.path))
+  if (!found.ok) return { ok: false, say: found.why, fix: null }
+  return Effect.runPromise(checkPersonalEffect({ kind: 'local', path: found.path }, name, base))
 }

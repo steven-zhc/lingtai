@@ -171,7 +171,7 @@ export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknow
  * `runtime.assignee`.
  */
 export function assigneeChanges(
-  rule: { login: string; take: 'mine' | 'all' },
+  rule: { login?: string; take: 'mine' | 'all' },
   rawClaim: readonly unknown[] | null,
 ): RecipeChange[] {
   const claim = rawClaim ?? []

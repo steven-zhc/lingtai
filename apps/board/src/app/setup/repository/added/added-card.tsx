@@ -5,6 +5,8 @@
  * stale link, an unreadable log, a recipe that no longer parses, the whole
  * card — is a claim about markup, and `page.tsx` is the reads and nothing else.
  */
+import { ModeGraph } from '../../../mode-graph.tsx'
+
 export type Added =
   | { state: 'none' }
   | { state: 'unregistered'; project: string }
@@ -15,7 +17,16 @@ export type Added =
       recipe: string
       /** The recipe as read, or the reason it could not be. */
       read:
-        | { ok: true; kinds: string[]; held: string[]; owner: string | null; github: boolean }
+        | {
+            ok: true
+            kinds: string[]
+            held: string[]
+            owner: string | null
+            github: boolean
+            /** A team project works on `personal` (0130 §1); absent or `solo` is today's card. */
+            mode?: 'team' | 'solo'
+            personal?: string
+          }
         | { ok: false; problem: string }
     }
 
@@ -76,8 +87,18 @@ export function AddedCard(props: Added) {
     <div className="wiz-added">
       <Stepper />
       <h3 className="wiz-title">
-        <span className="mono">{project}</span> is added
+        <span className="mono">{project}</span> is added{read.ok && read.mode === 'team' ? ' — team' : ''}
       </h3>
+      {read.ok && read.mode === 'team' ? (
+        <div className="wiz-team">
+          <ModeGraph mode="team" />
+          <p className="note">
+            Lingtai takes the issues assigned to you, works on <code>{read.personal}</code>, and sends nothing to main
+            until you submit a PR.
+          </p>
+          <p className="note">Next: assign yourself an issue and press Start.</p>
+        </div>
+      ) : null}
       <ul className="wiz-list">
         <li>
           <span className="wiz-ok">✓</span> recipe written — <code>{recipe}</code>

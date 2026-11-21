@@ -184,6 +184,9 @@ describe('the page writes what lingtai add writes (#971)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox: null,
     }))
     expect(expected).toBeDefined()
@@ -213,6 +216,9 @@ describe('the page writes what lingtai add writes (#971)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox: null,
     }))
     expect(written).toBe(expected)
@@ -242,6 +248,9 @@ describe('the sandbox step, new recipe (#1160)', () => {
       personApprovesMerge: false,
       limits: LIMITS,
       turnsUnbounded: false,
+      mode: 'solo',
+      personal: '',
+      login: null,
       sandbox,
     })
   const sandboxOf = (text: string | undefined) => {

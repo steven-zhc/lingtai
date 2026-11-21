@@ -5,11 +5,31 @@ import { describe, expect, it } from 'vitest'
 import { AddedCard, type Added } from '../src/app/setup/repository/added/added-card.tsx'
 
 const html = (a: Added) => renderToStaticMarkup(<AddedCard {...a} />)
-const ok = (over: Partial<{ held: string[]; owner: string | null; github: boolean }> = {}): Added => ({
+const ok = (
+  over: Partial<{
+    held: string[]
+    owner: string | null
+    github: boolean
+    mode: 'team' | 'solo'
+    personal: string
+  }> = {},
+): Added => ({
   state: 'registered',
   project: 'chapter-garden',
   recipe: '~/.lingtai/chapter-garden/recipe.yml',
   read: { ok: true, kinds: ['bug', 'feature'], held: ['agent:hold'], owner: 'me', github: true, ...over },
+})
+
+describe('step 3 for a team project (#1325)', () => {
+  it('says team, the branch, and the next step; a solo card is today’s', () => {
+    const out = html(ok({ mode: 'team', personal: 'steven-zhc/mac' }))
+    expect(out).toContain('is added — team')
+    expect(out).toContain('works on <code>steven-zhc/mac</code>')
+    expect(out).toContain('Next: assign yourself an issue and press Start.')
+    const solo = html(ok({ mode: 'solo' }))
+    expect(solo).not.toContain('— team')
+    expect(solo).not.toContain('Next: assign yourself')
+  })
 })
 
 describe('step 3', () => {
