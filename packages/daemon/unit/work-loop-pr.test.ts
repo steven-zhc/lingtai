@@ -73,3 +73,24 @@ describe('the PR sweep runs on its own timer (#1317)', () => {
     expect(overlapped).toBe(false)
   })
 })
+
+describe('a stalled read does not hold the drain (#1317)', () => {
+  it('stop() returns while a sweep is hung, and a timer tick never starts a walk', async () => {
+    let resumes = 0
+    const port = makeWorkLoop({
+      sweepMs: 10,
+      eventLog: log(),
+      daemonStore,
+      pass: () => Effect.void,
+      pr: {
+        serve: () => Effect.void,
+        resume: () => Effect.sync(() => void resumes++),
+        sweep: () => Effect.never,
+      },
+    })
+    await Effect.runPromise(port.start())
+    await new Promise((r) => setTimeout(r, 60))
+    await Effect.runPromise(port.stop())
+    expect(resumes).toBe(1)
+  })
+})

@@ -473,8 +473,9 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
    * on it, since its requests (the host, a fetch) have no bound; it is interrupted instead. A tick that finds the last
    * one still running starts none.
    */
-  function sweepPrs(): void {
-    resumePrs()
+  function sweepPrs(withWalks: boolean): void {
+    // The owed walks are tracked, which bounds nothing about a fetch: only startup waits on them, never a timer tick.
+    if (withWalks) resumePrs()
     const handlers = options.pr
     if (handlers?.sweep === undefined || sweepingPrs || stopped) return
     sweepingPrs = true
@@ -709,7 +710,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
         // A request made while the daemon was down is waiting in the stream rather than lost, and a walk a restart
         // cut off is resumed at its first unrecorded step. Tracked, so the drain that follows waits for it.
         if (options.pr) {
-          sweepPrs()
+          sweepPrs(true)
         }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
@@ -722,7 +723,7 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
                 Effect.andThen(
                   Effect.sync(() => {
                     void kick('sweep')
-                    sweepPrs()
+                    sweepPrs(false)
                   }),
                 ),
               ),

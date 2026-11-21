@@ -642,7 +642,7 @@ const closeMergedTickets = (
 
 /**
  * The sweep's read (#1317): for each project, the latest PR if it is open, asked about once; then the tickets of the
- * highest merged PR closed. One project's failure is that project's.
+ * merged PRs closed. One project's failure is that project's.
  */
 export const learnPrEnds = (
   ports: PrPorts,
