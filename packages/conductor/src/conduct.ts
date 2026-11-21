@@ -3967,8 +3967,18 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 for (const fix of owed) yield* recordPrFixLanded(project, attemptCut!.pr!, fix, store)
               }),
             )
-            if (Result.isFailure(mended))
+            // **A repair that failed is not a head to check against**: the PR's `lastPushed` is stale, and landing against
+            // it would refuse `pr-branch-moved` for a push nobody made and hand Lingtai's own to a person. Nothing is
+            // merged; the lane's own retry asks again.
+            if (Result.isFailure(mended)) {
               log(`PR ${attemptCut.pr}: fixes not told of were not mended: ${whyOf(mended.failure)}`)
+              return {
+                notMerged: {
+                  reason: 'unreachable',
+                  detail: `the PR could not be told of an earlier fix: ${whyOf(mended.failure)}`,
+                },
+              } as LandAnswer
+            }
             const prRead = yield* Effect.result(readPr(project, attemptCut.pr, store))
             if (Result.isFailure(prRead)) {
               return {

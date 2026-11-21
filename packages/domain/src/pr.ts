@@ -119,10 +119,8 @@ function withStep(state: PrState, record: PrStepRecord): PrState {
 
 /** How many tickets a commit holds: what was recorded for it, else all if it is the PR's head, else those it was frozen with. */
 function heldAt(state: PrState, sha: string): number {
-  // A head never recorded is held to the fewest tickets any recorded head held: never a ticket the log cannot show it has.
-  const known = Object.values(state.covers)
-  const fewest = known.length === 0 ? 0 : Math.min(...known)
-  return state.covers[sha] ?? (sha === state.lastPushed ? state.tickets.length : fewest)
+  // A head never recorded is somebody's commit on top of the PR branch, so it holds every fix the branch had landed.
+  return state.covers[sha] ?? state.tickets.length
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -156,7 +154,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         frozenSha: d.frozenSha,
         target: d.frozenSha,
         tickets: d.tickets,
-        covers: { ...state.covers, [d.frozenSha]: d.tickets.length },
+        // A restart names a head already recorded: what that head held stays what it was, not what the PR holds now.
+        covers: { ...state.covers, [d.frozenSha]: state.covers[d.frozenSha] ?? d.tickets.length },
         fixOwed: false,
         steps: [],
         wait: null,

@@ -79,4 +79,25 @@ describe('what an ending and a merge back cover is per ticket (#1341)', () => {
     const later = reducePrEvent(back, event('PrFixLanded', { ticket: '12', mergeCommit: 'e'.repeat(40) }))
     expect(later.mergedBackTickets).toEqual(['10', '11'])
   })
+
+  it('a restart at the old head does not make it hold the fix landed after it', () => {
+    const restarted = reducePrEvent(
+      landed,
+      event('PrInProgress', {
+        because: 'restart',
+        branch: 'feature',
+        main: 'main',
+        frozenSha: head,
+        prBranch: 'feature-pr-1',
+        tickets: landed.tickets,
+      }),
+    )
+    const merged = reducePrEvent(restarted, event('PrMerged', { how: 'git', headSha: head, mergeSha: null }))
+    expect(merged.mergedTickets).toEqual(['10'])
+  })
+
+  it('a head nobody recorded, on top of the fix, holds every ticket', () => {
+    const merged = reducePrEvent(landed, event('PrMerged', { how: 'host', headSha: 'd'.repeat(40), mergeSha: null }))
+    expect(merged.mergedTickets).toEqual(['10', '11'])
+  })
 })
