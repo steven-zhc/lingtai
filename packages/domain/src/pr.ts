@@ -54,6 +54,8 @@ export interface PrState {
   covers: Readonly<Record<string, number>>
   /** The tickets the commit a `PrMerged` named holds; the rest landed on the PR branch after it and are not merged. */
   mergedTickets: readonly string[]
+  /** False when the merged head was never recorded: `mergedTickets` is then only what every known head held, and the rest are proven one by one (#1341). */
+  mergedExact: boolean
   /** The tickets a successful merge back into the personal branch carried, over every merge back. */
   mergedBackTickets: readonly string[]
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
@@ -100,6 +102,7 @@ export const emptyPr: PrState = {
   fixOwed: false,
   covers: {},
   mergedTickets: [],
+  mergedExact: true,
   mergedBackTickets: [],
   host: null,
   steps: [],
@@ -238,7 +241,9 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
       const mergedTickets = state.tickets.slice(0, heldAt(state, d.headSha)).map((t) => t.ticket)
-      return { ...state, ...at, status: 'merged', wait: null, ended, mergedTickets }
+      // A head nobody recorded (a person pushed atop the PR branch) holds an unknown number of tickets: a floor, not a count.
+      const mergedExact = state.covers[d.headSha] !== undefined || Object.keys(state.covers).length === 0
+      return { ...state, ...at, status: 'merged', wait: null, ended, mergedTickets, mergedExact }
     }
     case 'PrClosed': {
       const d = event.data as PayloadOf<'PrClosed'>

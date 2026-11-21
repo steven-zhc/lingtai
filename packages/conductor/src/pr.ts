@@ -693,7 +693,23 @@ const closeMergedTickets = (
     const after = state.ended.seq
     let channel: IssueChannel | null = null
     // Only what the merged commit held: a fix that landed on the branch after it is not in the merge (#1341).
-    const merged = state.tickets.filter((t) => state.mergedTickets.includes(t.ticket))
+    let merged = state.tickets.filter((t) => state.mergedTickets.includes(t.ticket))
+    // A merged head the PR never recorded (a person added a commit on top of the PR branch) has unknown coverage: each
+    // ticket the floor left out is closed when git proves its commit is in what merged, and asked again until it is.
+    let unproven = 0
+    if (!state.mergedExact) {
+      for (const t of state.tickets.filter((x) => !state.mergedTickets.includes(x.ticket))) {
+        let held = false
+        for (const into of [state.ended.headSha, state.main === null ? null : `refs/heads/${state.main}`]) {
+          if (into === null || held) continue
+          const ask = ['merge-base', '--is-ancestor', t.mergeCommit, into] as const
+          const answer = yield* ports.git(project, ask)
+          if (answer.code === 0) held = true
+        }
+        if (held) merged = [...merged, t]
+        else unproven++
+      }
+    }
     for (const t of merged) {
       const ticketId = ticketStream(project, t.ticket)
       const events = yield* Effect.tryPromise({ try: () => ports.store.read(ticketId), catch: asError })
@@ -719,7 +735,7 @@ const closeMergedTickets = (
       )
         all = false
     }
-    if (all) memory.set(doneKey, 'done')
+    if (all && unproven === 0) memory.set(doneKey, 'done')
   })
 
 /** Each pr-fix landing on the open PR's branch that the PR does not hold gets its `PrFixLanded`, once (#1341). */

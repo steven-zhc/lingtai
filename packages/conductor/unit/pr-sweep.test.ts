@@ -378,6 +378,30 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     expect(state.tickets.map((t) => t.ticket)).toContain('93')
   })
 
+  it('a host head nobody recorded closes the fix its commit reached, and keeps asking about one it cannot prove', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const p: PrPorts = {
+      ...base,
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    // A person added a commit on top of the fix, and the host merged that one; git knows the fix is in it.
+    w.pull = { ...open, state: 'closed', merged: true, headSha: 'd'.repeat(40), mergeCommitSha: 'e'.repeat(40) }
+    await sweep({
+      ...p,
+      git: (project, args) =>
+        args[0] === 'merge-base'
+          ? Effect.succeed({ code: args[2] === FIX ? 0 : 1, stdout: '', stderr: '' })
+          : base.git(project, args),
+    })
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.mergedExact).toBe(false)
+    expect(w.closed.sort()).toEqual([1, 2, 93])
+  })
+
   it('on a merged PR the landing is refused and nothing is appended', async () => {
     const { store, w } = await inReview()
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
