@@ -168,6 +168,13 @@ export const customConfigFor = (host: HostFacts, input: PolicyInputs) => ({
   filesystem: filesystemFor(host, input),
 })
 
+/** Copilot's telemetry hosts (0127 §17, #1301): `*.githubcopilot.com` admits them unless the instance denies them. The last two are not measured. */
+export const KNOWN_TELEMETRY_DOMAINS: readonly string[] = [
+  'telemetry.individual.githubcopilot.com',
+  'telemetry.business.githubcopilot.com',
+  'telemetry.enterprise.githubcopilot.com',
+]
+
 /** The domains one run registers under its id: the project's, and the caller's. Never in the instance's list. */
 export const runDomains = (input: PolicyInputs): string[] =>
   unique([...(input.project_additions?.network ?? []), ...(input.caller_additions?.network ?? [])])
@@ -176,7 +183,7 @@ export const runDomains = (input: PolicyInputs): string[] =>
 export const instanceConfig = (host: HostFacts) => ({
   network: {
     allowedDomains: [...BUILT_IN_DOMAINS],
-    deniedDomains: [] as string[],
+    deniedDomains: [...KNOWN_TELEMETRY_DOMAINS],
     ...(host.platform === 'linux' ? { allowAllUnixSockets: true } : { allowUnixSockets: socketDirs(host) }),
   },
   filesystem: { denyRead: [] as string[], allowWrite: [] as string[], denyWrite: [] as string[] },

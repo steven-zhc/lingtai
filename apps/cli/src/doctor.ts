@@ -13,6 +13,8 @@ import {
   type RuntimeCapabilities,
   createRuntime,
   everyRuntime,
+  CLASSIC_COPILOT_TOKEN_SENTENCE,
+  NO_COPILOT_TOKEN_SENTENCE,
 } from '@lingtai/agent'
 /**
  * `lingtai doctor` — the old `preflight()`, generalised.
@@ -101,6 +103,7 @@ import {
   hasGitHubAuth,
   machineDatabaseUrl,
   claudeOauthToken,
+  copilotGithubToken,
   codexTextConfig,
   type CodexTextConfig,
   postgresUrlIfSet,
@@ -164,7 +167,7 @@ import {
 import { gitEffect } from '@lingtai/repo'
 import { installFor } from '@lingtai/sandbox'
 import { remedyFor } from '@lingtai/setup'
-import { Cause, Effect } from 'effect'
+import { Cause, Effect, Redacted } from 'effect'
 import pg from 'pg'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
@@ -1279,6 +1282,8 @@ export interface DoctorReach {
    * Injectable so a test reads no machine file.
    */
   claudeToken?: () => Effect.Effect<boolean, unknown>
+  /** `copilot: token`'s reader: a classification, never the value (#1301). */
+  copilotToken?: () => Effect.Effect<CopilotTokenKind, unknown>
   /**
    * As `probeSeaBuild` answers it — required rather than optional, and
    * `runDoctor`'s own `reach` parameter picks this one key out with `Pick` so
@@ -3117,6 +3122,60 @@ export function claudeTokenRow(
   )
 }
 
+/** What a sandboxed Copilot run would be handed, classified inside the reader so the value never leaves it. */
+export type CopilotTokenKind = 'set' | 'classic' | 'unset'
+
+/** `copilotGithubToken` as its classification, keeping the reader's own sentence. */
+export const readCopilotToken = (env?: NodeJS.ProcessEnv): Effect.Effect<CopilotTokenKind, Error> =>
+  Effect.try({
+    try: (): CopilotTokenKind => {
+      const token = copilotGithubToken(env)
+      if (token === undefined) return 'unset'
+      return Redacted.value(token).startsWith('ghp_') ? 'classic' : 'set'
+    },
+    catch: (err) => (err instanceof Error ? err : new Error('could not be read')),
+  })
+
+/**
+ * `copilot: token` (#1301, 0127 §8): the fine-grained token a sandboxed Copilot run is handed. A classic `ghp_` one
+ * fails, since Copilot ignores it without a word; unset fails only when a sandboxed project names `copilot`.
+ * The value is never read here — `read` answers a classification.
+ */
+export function copilotTokenRow(
+  read: () => Effect.Effect<CopilotTokenKind, unknown> = () => readCopilotToken(),
+  sandboxedNamed: () => Effect.Effect<boolean> = () => Effect.succeed(false),
+): Effect.Effect<CheckResult> {
+  const name = 'copilot: token'
+  return read().pipe(
+    Effect.flatMap((kind): Effect.Effect<CheckResult> => {
+      if (kind === 'set') return Effect.succeed({ name, status: 'ok', detail: 'set' })
+      if (kind === 'classic') {
+        return Effect.succeed({
+          name,
+          status: 'fail',
+          detail: `${CLASSIC_COPILOT_TOKEN_SENTENCE.replace(/^the Copilot token is /, 'the value is ')}`,
+        })
+      }
+      return sandboxedNamed().pipe(
+        Effect.map((named): CheckResult =>
+          named
+            ? { name, status: 'fail', detail: `not set — ${NO_COPILOT_TOKEN_SENTENCE}` }
+            : {
+                name,
+                status: 'ok',
+                detail:
+                  'not set — make a fine-grained token with Copilot Requests, then `copilot.github_token` in ~/.lingtai/config.yml',
+              },
+        ),
+      )
+    }),
+    // The reader's sentence names the path and quotes nothing; it is safe to show.
+    Effect.catch((err) =>
+      Effect.succeed<CheckResult>({ name, status: 'fail', detail: (err as Error).message ?? 'could not be read' }),
+    ),
+  )
+}
+
 /** `codexRoleRow`'s own marker for a role with no `codex_text` to run on, so the two throws get two titles. */
 class NoCodexText extends Error {
   override readonly cause: Error
@@ -3979,6 +4038,31 @@ export function runDoctor(
       claudeTokenRow(reach.claudeToken ?? (() => readClaudeToken(env))).pipe(Effect.map(push)),
     )
     yield* step(
+      'copilot token',
+      copilotTokenRow(reach.copilotToken ?? (() => readCopilotToken(env)), () => {
+        const recipeFor = recipeLookup({ ...reach, sandboxHost: 'skip' })
+        return recovering(
+          loadE().pipe(
+            Effect.flatMap((projects) =>
+              Effect.forEach(projects, (p) =>
+                recovering(
+                  recipeFor(p, undefined).pipe(
+                    Effect.map(
+                      (resolved) =>
+                        resolved.recipe.sandbox?.enabled === true && runtimesOf(resolved.recipe).includes('copilot'),
+                    ),
+                  ),
+                  () => false,
+                ),
+              ),
+            ),
+            Effect.map((named) => named.some(Boolean)),
+          ),
+          () => false,
+        )
+      }).pipe(Effect.map(push)),
+    )
+    yield* step(
       'deferred',
       Effect.sync(() => {
         for (const d of DEFERRED) results.push({ ...d, status: 'skip', deferred: true })
@@ -4075,7 +4159,7 @@ const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],
   ['Sandbox', ['sandbox']],
   ['GitHub', ['github']],
-  ['Runtimes', ['runtime', 'claude']],
+  ['Runtimes', ['runtime', 'claude', 'copilot']],
 ]
 
 /** The section of one check. A deferred row is *not implemented here* whatever its prefix; an unknown prefix is `Other`, never dropped. */
