@@ -47,7 +47,7 @@ import { liftPromise, type ActionContext, type ActionPort, type ActionResult } f
 
 /**
  * How the lane lands it, and there is one value because `integrate.ts` offers
- * one: `git merge --no-edit` of the branch into the base, then a push that is a
+ * one: `git merge --no-ff` of the branch into the base, then a push that is a
  * fast-forward where it can be one.
  *
  * A second value here would be a behaviour this repository does not have,

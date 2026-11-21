@@ -63,6 +63,20 @@ import { Effect } from 'effect'
 export type TerminalOutcome = 'landed' | 'blocked' | 'failed' | 'closed' | 'satisfied'
 
 /**
+ * What `end` resolves from: in team mode a `close` action does not resolve on
+ * `landed` (0130 §4) — the ticket stays open on its tracker until its code
+ * reaches `main`. Pure, and applied where the plan is *resolved*, so the
+ * recorded `EndActionsResolved` names exactly what is carried out.
+ */
+export function endActionsIn(
+  actions: readonly StepAction[],
+  where: { mode: 'solo' | 'team'; outcome: TerminalOutcome },
+): readonly StepAction[] {
+  if (where.mode !== 'team' || where.outcome !== 'landed') return actions
+  return actions.filter((a) => !('close' in a))
+}
+
+/**
  * The event the `end` point resolves to, or nothing.
  *
  * Pure, and takes the work item's stream rather than a store, so a caller can
