@@ -112,6 +112,12 @@ import type { DaemonStore } from './store.ts'
 export const DISCUSSION_EVENTS = ['DiscussionRequested', 'ProjectResumed', 'DayCeilingLifted'] as const
 
 /**
+ * The events a PR is served on (0130 §5): a person's Submit. Delivered to `pr`, whose walk the loop tracks so a
+ * drain waits for it — which `deliver` does not do, and arms a timer a walk of minutes would trip.
+ */
+export const PR_EVENTS = ['PrSubmitRequested'] as const
+
+/**
  * The events triage is handed (#997): a new wait, and a resume that lifts what
  * held one back. One list, read by the loop's delivery and by the handler's own
  * guard, so the next unlock event is added once.
@@ -291,6 +297,13 @@ export interface WorkLoopOptions {
   /** A new wait or a resume (`TRIAGE_EVENTS`), handed to the daemon's triage queue off the pass path. */
   triage?: (event: Envelope) => Effect.Effect<void>
   /**
+   * Serves a PR (`PR_EVENTS`). **Not through `deliver`**: the loop starts `serve` and returns, and holds the walk in
+   * its in-flight set, so `stop()` waits for the step in flight as it waits for a pass, and a walk longer than
+   * `SUBSCRIBER_TIMEOUT_MS` is never recorded as a failed plugin. `resume` serves every PR a request or a restart
+   * left unfinished, once, at the end of `start()`.
+   */
+  pr?: { serve: (event: Envelope) => Effect.Effect<void>; resume: () => Effect.Effect<void> }
+  /**
    * How often to sweep for work nothing announced. `0` disables it, which is
    * what a test wants and what a machine with a reachable webhook can afford.
    */
@@ -410,6 +423,20 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       .then((worked) => {
         if (worked && !stopped) void kick('completion')
       })
+  }
+
+  /**
+   * A PR's walk, handed to the in-flight set for the drain. A failure is recorded as any subscriber's is, with no
+   * timer: a walk that takes ten minutes is working, not failed.
+   */
+  function trackWalk(event: Envelope, walk: Effect.Effect<void>): void {
+    const run = Effect.runPromiseWith(services)(walk)
+    passesInFlight.track(run)
+    void run.catch((err: unknown) => {
+      const reason = String(err instanceof Error ? err.message : err)
+      tell(`pr failed on ${event.type}: ${reason}`)
+      void Effect.runPromiseWith(services)(recorder.record('pr', event, reason, undefined))
+    })
   }
 
   // ------------------------------------------------ the subscriber boundary --
@@ -573,6 +600,10 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
       const triage = options.triage
       deliver('triage', event, (e) => Effect.runPromiseWith(services)(Effect.suspend(() => triage(e))))
     }
+    if ((PR_EVENTS as readonly string[]).includes(event.type) && options.pr) {
+      const pr = options.pr
+      trackWalk(event, Effect.suspend(() => pr.serve(event)))
+    }
     if (!triggers.has(event.type)) return
     void kick('completion')
   }
@@ -622,6 +653,15 @@ export function makeWorkLoop(options: WorkLoopOptions): WorkLoopPort {
 
         // The cold start. Nothing is in flight, so nothing will tell us to begin.
         yield* pump('startup')
+
+        // A request made while the daemon was down is waiting in the stream rather than lost, and a walk a restart
+        // cut off is resumed at its first unrecorded step. Tracked, so the drain that follows waits for it.
+        if (options.pr) {
+          const resume = options.pr.resume()
+          const run = Effect.runPromiseWith(services)(resume)
+          passesInFlight.track(run)
+          void run.catch((err: unknown) => tell(`pr resume failed: ${String(err instanceof Error ? err.message : err)}`))
+        }
 
         // A stop during the startup look: no sweep, and no timer to outlive it.
         if (stopped) return

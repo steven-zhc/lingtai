@@ -33,7 +33,7 @@ export const APPEND_CALLEES: ReadonlySet<string> = new Set([
   'appendFrom',
 ])
 
-export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-' | 'acct-'
+export type StreamPrefix = 'ticket-' | 'pass-' | 'int-' | 'prj-' | 'pr-' | 'ctl-' | 'chat-' | 'ext-' | 'bkl-' | 'rcp-' | 'acct-'
 
 /**
  * Appends the finder cannot see, one row per site. A row finds its line by
@@ -437,6 +437,11 @@ export const STREAMS = {
   ProjectRecovered: ['prj-'],
   ProjectPaused: ['prj-'],
   ProjectResumed: ['prj-'],
+  PrSubmitRequested: ['pr-'],
+  PrSubmitRefused: ['pr-'],
+  PrInProgress: ['pr-'],
+  PrStepDone: ['pr-'],
+  PrWaiting: ['pr-'],
   AccountLimitReached: ['acct-'],
   AccountLimitLifted: ['acct-'],
   Reconciled: ['ctl-'],
@@ -457,6 +462,7 @@ export const PREFIXES = {
   'pass-': { onePer: 'attempt, `pass-…`', state: 'AttemptState' },
   'int-': { onePer: 'base branch, `int-{project}-{base}`', state: 'IntegrationState' },
   'prj-': { onePer: 'repository, `prj-{project}`', state: 'ProjectState' },
+  'pr-': { onePer: 'PR, `pr-{project}-{n}`', state: 'PrState' },
   'ctl-': {
     onePer: 'control stream: `ctl-conductor` (one per machine) and `ctl-github-app`',
     state: 'ControlState (`ctl-conductor`); none for `ctl-github-app`',
