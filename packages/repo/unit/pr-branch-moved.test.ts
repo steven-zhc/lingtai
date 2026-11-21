@@ -56,6 +56,13 @@ describe('the lane lands on a PR branch only where Lingtai last pushed it', () =
     expect(result).not.toMatchObject({ reason: 'pr-branch-moved' })
   })
 
+  it('leases the push to the expected head, so a reset after the fetch is not overwritten', async () => {
+    const fake = fakeGit()
+    await land(fake, sha)
+    const push = fake.calls.find((a) => a[0] === 'push')
+    expect(push).toContain(`--force-with-lease=refs/heads/feature-pr-1:${sha}`)
+  })
+
   it('has no such check without an expected base', async () => {
     const result = await land(fakeGit())
     expect(result).not.toMatchObject({ reason: 'pr-branch-moved' })

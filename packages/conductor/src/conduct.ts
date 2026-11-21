@@ -3995,7 +3995,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     ...(took === null ? {} : { title: took.ticket.title }),
                   },
                   store,
-                ),
+                ).pipe(Effect.retry({ times: 4 })),
               )
               if (Result.isFailure(told)) log(`PR ${attemptCut.pr} was not told of the fix: ${whyOf(told.failure)}`)
               else if (!told.success)

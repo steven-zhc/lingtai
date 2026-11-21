@@ -639,7 +639,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
             `origin rejected the push, but ${options.base} has not moved since the fetch`,
           )
         }
-        const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
+        // A pr-fix's push is leased to the head it was checked against, so a branch somebody reset after the fetch is
+        // rejected by origin rather than overwritten by a merge that descends from the old head (#1341).
+        const lease =
+          options.expectBase === undefined
+            ? []
+            : [`--force-with-lease=refs/heads/${options.base}:${options.expectBase}`]
+        const pushTry = at(['push', ...lease, 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
           Effect.catchTag('RepoFailed', (err) => {
             const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
             return said === 'remote-error' || said === 'push-rejected'
