@@ -169,6 +169,25 @@ PR is a person deciding a body of work is ready for the team.
      `actions: write`), and an agent fixing a red run is later. A repository
      that cannot open draft pull requests waits on you rather than opening one
      ready for review.
+   - **CI is a provider behind one interface**, as runtimes are
+     (`packages/agent/src/runtime.ts`): `CiProvider` declares its capabilities
+     (triggered by the push, or started through an API; can re-run; can read
+     logs) and answers `detect` (is CI configured for this project), `start` (a
+     no-op for a provider the push triggers) and `observe(sha)` (the checks on a
+     commit, each with its state and link), with `failureExcerpt` optional.
+     What a verdict is — green, red, running, none started, filtered to the
+     checks the recipe counts — and when Lingtai looks and what each verdict does
+     to the PR are Lingtai's, written once and shared by every provider. 0.16
+     builds the interface and `github-actions`; Jenkins is designed for and built
+     next, once the interface has been used for real (the rule `runtime.ts`
+     states for its second adapter).
+   - **`pr.ci` in the recipe**: `provider` (`github-actions`, `jenkins` or
+     `none`; absent, a workflow on pull requests means `github-actions`),
+     `required` (the checks that count; absent, every check on the head) and
+     `timeout` (`60m`), and for Jenkins a `jenkins: { url, job }` that 0.16
+     refuses by name, saying the adapter is next. Credentials are never in a
+     recipe: they are `~/.lingtai/config.yml`'s (`jenkins.user`,
+     `jenkins.token`), per [0117](0117-configuration-is-config-yml-and-the-environment.md).
    - **A change the review asks for is a `lingtai:pr-fix` ticket.** Opened from
      the PR's page the label is put on for the person; on the tracker a person
      adds it. It is a kind of its own and **ranks ahead of every kind the recipe
@@ -312,8 +331,9 @@ PR is a person deciding a body of work is ready for the team.
   from, as a field of the claim; `TicketLanded` gains no new position.
 - This repository runs solo: it is Lingtai's own repository and merges its own
   work unattended (CLAUDE.md, *Running Lingtai on Lingtai*).
-- Left for later (`doc/milestone/later/`): stacked PRs; bringing `main` into
-  `branch.personal` whenever it moves; Jenkins as a CI; an agent fixing a red
-  CI run; a *verify* step against the tickets' wants (0.17); review state and
+- Left for later (`doc/milestone/later/`): the Jenkins adapter; watching
+  `main`'s own CI (a red `main` named before a submit, and on the board);
+  flaky checks recorded; CI minutes in a PR's spend; stacked PRs; bringing `main` into
+  `branch.personal` whenever it moves; an agent fixing a red CI run; a *verify* step against the tickets' wants (0.17); review state and
   comments on the PR page; a blocker that has landed on the branch no longer
   blocking; a revert ticket.

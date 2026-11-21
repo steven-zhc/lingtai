@@ -29,8 +29,17 @@ them are in review.
 draft, the project's own `pull_request` workflows run, and green asks for review.
 Later, on the same step of the PR's life:
 
-- **Jenkins**: trigger the project's job with the PR branch, poll its result,
-  keep its credentials in `~/.lingtai/config.yml` as every other key.
+- **The Jenkins adapter** behind 0.16's `CiProvider` (0130 §5): `start` calls
+  the job named by `pr.ci.jenkins` with the PR branch and sha, `observe` reads
+  the build; credentials `jenkins.user` / `jenkins.token` in
+  `~/.lingtai/config.yml`. Needs a Jenkins to test against.
+- **Watching `main`'s own CI** — `ci.main`, the same provider: a red `main` is
+  named on the board and before a submit (a PR submitted onto a red `main` goes
+  red through no fault of its own). This repository's integration half was red
+  on `main` for days before anyone looked (#1332–#1335).
+- **Flaky checks** — one commit red then green is recorded; enough of them open
+  a ticket to fix the test.
+- **CI minutes** in a PR's spend, beside the agents'.
 - **An agent fixing a red CI run**, as the conflict agent fixes a sync — rounds,
   build and review — before the PR waits on the person.
 - **Verify**: a step after CI that checks the code against what its tickets
