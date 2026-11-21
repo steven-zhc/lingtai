@@ -13,13 +13,14 @@
  * there: taking the union with whatever labels somebody else put on the issue
  * needs GitHub's current state, and a decision must not.
  *
- * Two labels, deliberately. They say what *Lingtai* is doing; everything else
- * on an issue is somebody else's and is left alone.
+ * Two labels, deliberately. They say what *Lingtai* is doing. Lingtai owns the
+ * labels it computes (`OWN_LABELS`); any other label, `lingtai:`-prefixed or
+ * not, is somebody else's and is left alone.
  */
 
-import type { LabelState } from '@lingtai/domain'
+import { LABEL_STATES, type LabelState } from '@lingtai/domain'
 
-/** Every label Lingtai owns starts with this. Everything else is somebody else's. */
+/** The prefix of Lingtai's own label names — and of the ones a person sets to steer it, which are not Lingtai's to drop. */
 export const LINGTAI_LABEL_PREFIX = 'lingtai:'
 
 /**
@@ -43,7 +44,10 @@ export function labelsFor(state: LabelState): string[] {
   }
 }
 
-/** Somebody else's labels, which a whole-set write must not drop. */
+/** Every label `labelsFor` can produce, derived so it cannot drift from it. */
+export const OWN_LABELS: ReadonlySet<string> = new Set(LABEL_STATES.flatMap((s) => labelsFor(s)))
+
+/** Somebody else's labels — anything not in `OWN_LABELS` — which a whole-set write must not drop. */
 export function foreignLabels(current: readonly string[]): string[] {
-  return current.filter((l) => !l.startsWith(LINGTAI_LABEL_PREFIX))
+  return current.filter((l) => !OWN_LABELS.has(l))
 }
