@@ -128,6 +128,14 @@
     "reason": "Reads the base's records of one command, to see whether a failing test failed there before; one event type, nothing reduced (0108 §17)."
   },
   {
+    "file": "packages/conductor/src/pr-resolve.ts",
+    "function": "oneRound",
+    "type": "StepEnded",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds whether a round's review StepEnded is already on the PR's stream, so an append whose acknowledgement was lost is not made twice; reduces nothing (#1313)."
+  },
+  {
     "file": "packages/conductor/src/pr.ts",
     "function": "closeMergedTickets",
     "type": "IssueUpdated",
