@@ -101,8 +101,8 @@ import { Skeleton } from './skeleton.tsx'
  * spend there and five later tickets each added one more true fact beside it,
  * none of them arguing against the row; at 1440 it wrapped, and a bar where
  * everything is emphasised is a bar where nothing is
- * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to place, health,
- * headline now that the reading has moved to the footer
+ * ([the-bar.md](../../../../doc/design/the-bar.md)). Down to place, health
+ * now that the reading has moved to the footer
  * (the-bar.md, *Since 2026-11-05*) — and the rule that keeps the row small is stated at the
  * end of the bar below, where the next chip would be added.
  *
@@ -835,20 +835,6 @@ async function PausedPart({ ctx }: { ctx: Ctx }) {
   )
 }
 
-/**
- * **The headline, and the last thing on the row.** It is the only reason to
- * look up: the only column that is asking for a person, and the only amber on
- * the bar. With nothing waiting there is no headline at all.
- */
-async function HeadlinePart({ ctx }: { ctx: Ctx }) {
-  const { waiting } = shape(await ctx.reads.board, ctx.param)
-  return waiting > 0 ? (
-    <a className="head sig" href="#waiting" title="tickets that will not move until you decide">
-      {`${waiting} waiting on you`}
-    </a>
-  ) : null
-}
-
 async function LockPart({ ctx }: { ctx: Ctx }) {
   const [board, lockRead] = await Promise.all([ctx.reads.board, ctx.locks])
   const { only } = shape(board, ctx.param)
@@ -1204,7 +1190,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               real, and two boxes for one question is two things to learn to
               read. Green and silent when both are true, and a sentence with the
               action in it when either is not. Never amber — that is the
-              headline's, below. Outside every keyed boundary: it holds the
+              Waiting lane's, below. Outside every keyed boundary: it holds the
               subscription. */}
             {/* The sandbox's one shield, before the dot and never after it: health's sentence and command follow the
               dot when something is wrong, so a mark behind them would jump (#1183). Outside Health, which holds the
@@ -1222,9 +1208,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
             <Suspense key={key('paused')} fallback={<Pulse />}>
               <PausedPart ctx={ctx} />
             </Suspense>
-            <Suspense key={key('headline')} fallback={<Pulse />}>
-              <HeadlinePart ctx={ctx} />
-            </Suspense>
             {/* **A chip is not free, and the row is the unit.**
               [the-bar.md](../../../../doc/design/the-bar.md)
 
@@ -1235,11 +1218,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               on screen, #64 and #98 each added a health chip — and **none of
               those arguments was about the row**.
 
-              A bar carries what changes what you do next, and answers two
-              questions and no third: *is anything waiting on me?* and *is the
-              system doing what the code says?* Anything added here has to be
-              argued against the objects that are left — place, health,
-              headline — and not against the empty space beside them. A fact
+              A bar carries what changes what you do next, and answers one
+              question: *is the system doing what the code says?* (what is
+              waiting on you is the Waiting column's). Anything added here has
+              to be argued against the objects that are left — place, health
+              — and not against the empty space beside them. A fact
               that does not fit that test has a page: spend is on the report
               and the pass limits are on the recipe page.
 
