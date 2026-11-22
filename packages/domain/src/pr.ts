@@ -125,6 +125,10 @@ export interface PrState {
   edited: { readonly by: string; readonly version: number } | null
   /** The stream version of the latest `PrSummaryWritten` or `PrSummaryNotWritten`: the summary was tried by then, whatever came of it. Null before the first. */
   summaryTried: number | null
+  /** Why the latest summary attempt wrote nothing (`PrSummaryNotWritten`); null once a summary was written or edited, and before any attempt. */
+  summaryNotWritten: string | null
+  /** The PR was marked ready for review on the code host (`PrOpened` with a host): it is no longer a draft there, whatever a later pass does. */
+  markedReady: boolean
   /** The pr-fix tickets that joined the PR, each with the version of the `PrFixLanded` that said so. */
   fixesLanded: readonly {
     readonly ticket: string
@@ -189,6 +193,8 @@ export const emptyPr: PrState = {
   granting: null,
   refusal: null,
   summary: null,
+  summaryNotWritten: null,
+  markedReady: false,
   edited: null,
   summaryTried: null,
   fixesLanded: [],
@@ -357,7 +363,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         d.host === 'none'
           ? withStep(state, { step: 'open', headSha: state.target ?? '' })
           : withStep(state, { step: 'ready', headSha: state.following ?? state.target ?? '' })
-      return { ...stepped, ...at, status: 'in-review', wait: null }
+      return { ...stepped, ...at, status: 'in-review', wait: null, markedReady: state.markedReady || d.host !== 'none' }
     }
     case 'BranchSynced': {
       const d = event.data as PayloadOf<'BranchSynced'>
@@ -479,6 +485,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...state,
         ...at,
         summary: { title: d.title, text: d.summary },
+        summaryNotWritten: null,
         // What the run saw, not where its answer landed: a pr-fix that joined while it ran is not covered.
         summaryTried: d.basedOn,
         summaryChangedAt: event.version,
@@ -487,7 +494,14 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrSummaryNotWritten': {
       const d = event.data as PayloadOf<'PrSummaryNotWritten'>
-      return { ...state, ...at, summaryTried: d.basedOn, summaryChangedAt: event.version, descriptionOwed: true }
+      return {
+        ...state,
+        ...at,
+        summaryNotWritten: d.why,
+        summaryTried: d.basedOn,
+        summaryChangedAt: event.version,
+        descriptionOwed: true,
+      }
     }
     case 'PrSummaryEdited': {
       const d = event.data as PayloadOf<'PrSummaryEdited'>
@@ -495,6 +509,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...state,
         ...at,
         summary: { title: state.summary?.title ?? null, text: d.summary },
+        summaryNotWritten: null,
         edited: { by: d.by, version: event.version },
         summaryChangedAt: event.version,
         descriptionOwed: true,

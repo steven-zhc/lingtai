@@ -9,7 +9,7 @@
 import type { ReactNode } from 'react'
 
 import { Bar, BarActions } from '@/app/bar.tsx'
-import { PlaceLine, viewsFor } from '@/app/place-line.tsx'
+import { PlaceLine, viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { Projects } from '@/app/projects.tsx'
 import type { LockMap } from '@/lib/lock-marks.ts'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
@@ -20,6 +20,8 @@ export type RecipeBarFilter = {
   app: boolean
   locks: LockMap
   sandbox?: ReadonlyMap<string, SandboxState>
+  /** The place line's views where the page read them (a team project's `PRs`, #1319); absent draws `viewsFor`'s. */
+  views?: PlaceView[]
 }
 
 export function RecipeBar({
@@ -30,17 +32,20 @@ export function RecipeBar({
   locks,
   sandbox,
   pause,
-}: { project: string; pause?: ReactNode } & RecipeBarFilter) {
+  views,
+  here = 'recipe',
+}: { project: string; pause?: ReactNode; here?: 'recipe' | 'prs' } & RecipeBarFilter) {
+  const barHere = here === 'recipe' ? ({ here: 'recipe' } as const) : {}
   return (
     <Bar
       project={project}
-      here="recipe"
-      actions={<BarActions project={project} here="recipe" pause={pause} recipe={false} />}
+      {...barHere}
+      actions={<BarActions project={project} {...barHere} pause={pause} recipe={false} />}
     >
       <PlaceLine
         project={project}
-        views={viewsFor(project)}
-        here="recipe"
+        views={views ?? viewsFor(project)}
+        here={here}
         menu={
           <Projects
             filters={filters}

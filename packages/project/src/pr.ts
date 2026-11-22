@@ -433,10 +433,11 @@ export function readPrDraft(
   recipe: Recipe,
   candidates: readonly { readonly issue: string }[],
   store: EventStore,
+  prs?: readonly PrState[],
 ): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     if (modeOf(recipe) !== 'team') return []
-    return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store)
+    return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store, prs)
   })
 }
 
@@ -446,6 +447,8 @@ export function readDraftOn(
   personal: string,
   candidates: readonly { readonly issue: string }[],
   store: EventStore,
+  /** The PRs, where the caller has read them already: the stream is then not read a second time, and a caller whose read of one failed does not pass any. */
+  prs?: readonly PrState[],
 ): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
@@ -455,7 +458,7 @@ export function readDraftOn(
     // personal branch, so it is a draft ticket like the PR's own. Per ticket, never per branch (#1341): a later fix on
     // the branch, or one the PR was never told of, is not on the personal branch.
     const mergedBack = new Map<string, string>()
-    for (const pr of yield* listPrs(project, store)) {
+    for (const pr of prs ?? (yield* listPrs(project, store))) {
       if (pr.status === 'closed') {
         if (pr.prBranch !== null) for (const t of pr.mergedBackTickets) mergedBack.set(t, pr.prBranch)
         continue

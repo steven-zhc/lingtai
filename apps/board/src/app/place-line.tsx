@@ -19,6 +19,8 @@ export interface PlaceView {
   key?: string
   /** A count painted with `--fail`, never `--signal`. */
   badge?: { n: number; title: string }
+  /** Set when the badge's count could not be read: the title says so and no count is drawn. */
+  unread?: string
 }
 
 /** At most four views on the line; a fifth goes into `More ▾`. */
@@ -28,12 +30,36 @@ export function placeViews<T>(views: readonly T[]): { line: T[]; more: T[] } {
   return { line: views.slice(0, MAX_ON_LINE), more: views.slice(MAX_ON_LINE) }
 }
 
-/** The views a project in view has: `Tickets` and `Recipe`; with *All projects*, `Tickets` alone. */
-export const viewsFor = (project: string | undefined): PlaceView[] =>
+/**
+ * The views a project in view has: `Tickets` and `Recipe`; with *All projects*, `Tickets` alone. `prs` is given for a
+ * team project only (a solo one has no PRs, 0130 §5): `waiting` is the count of PRs waiting on the person, painted
+ * `--fail` on `PRs` itself, and **null where it could not be read** — the view stays and says so, and never reads 0.
+ */
+export const viewsFor = (project: string | undefined, prs?: { waiting: number | null }): PlaceView[] =>
   project === undefined
     ? [{ id: 'tickets', label: 'Tickets', href: '/', key: 'T' }]
     : [
         { id: 'tickets', label: 'Tickets', href: `/?project=${encodeURIComponent(project)}`, key: 'T' },
+        ...(prs === undefined
+          ? []
+          : [
+              {
+                id: 'prs',
+                label: 'PRs',
+                href: `/pr/${encodeURIComponent(project)}`,
+                key: 'P',
+                ...(prs.waiting === null
+                  ? { unread: 'could not read the PRs' }
+                  : prs.waiting === 0
+                    ? {}
+                    : {
+                        badge: {
+                          n: prs.waiting,
+                          title: `${prs.waiting} PR${prs.waiting === 1 ? '' : 's'} waiting on you`,
+                        },
+                      }),
+              } satisfies PlaceView,
+            ]),
         { id: 'recipe', label: 'Recipe', href: `/recipe/${encodeURIComponent(project)}` },
       ]
 
@@ -44,7 +70,9 @@ function View({ v, here }: { v: PlaceView; here: string | undefined }) {
       className={current ? 'view on' : 'view'}
       href={v.href}
       aria-current={current ? 'page' : undefined}
-      title={v.key === undefined ? undefined : `${v.label} · G ${v.key}`}
+      title={
+        v.key === undefined ? undefined : `${v.label} · G ${v.key}${v.unread === undefined ? '' : ` · ${v.unread}`}`
+      }
       {...(v.key === undefined ? {} : { 'data-go': v.key.toLowerCase() })}
     >
       {v.label}

@@ -64,8 +64,18 @@ import { allowedResolutions } from '@lingtai/domain/wait'
 import { machineDayCeiling, stateDir } from '@lingtai/env'
 import { hasGitHubApp, hasGitHubAuth } from '@lingtai/env'
 import { eventStore, log } from '@lingtai/event-store'
-import { HOST_FOR_SAVING, loadAllProjects, readProject, readProjectState, changeRecipe } from '@lingtai/project'
+import {
+  HOST_FOR_SAVING,
+  loadAllProjects,
+  readProject,
+  readProjectState,
+  changeRecipe,
+  grantPrRounds,
+  requestPrRetry,
+  requestPrSubmit,
+} from '@lingtai/project'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
+import { modeOf } from '@lingtai/recipe'
 import { kindsOf } from '@lingtai/recipe/settings'
 import { git } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -667,6 +677,62 @@ async function projectLock(verb: 'pause' | 'resume', project: string): Promise<A
     const result = await Effect.runPromise(setProjectPaused(eventStore, verb, project, actor()))
     revalidatePath('/', 'layout')
     return result
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * The PRs board's three buttons (#1319, 0130 §5, §6). Each calls the command `@lingtai/project` owns and revalidates;
+ * **nothing here appends to a `pr-` stream** — the board never does. A refusal comes back as `detail`, drawn where the
+ * button was, and a stale page is refused by the command itself (*PR 7 is no longer waiting*), never acted on.
+ */
+async function prRef(name: string, n: number) {
+  const state = await project(name)
+  const { recipe } = await currentRecipe(state)
+  return { recipe, ref: { project: name, n, mode: modeOf(recipe) } }
+}
+
+export async function submitPrNow(input: { project: string }): Promise<ActionResult> {
+  try {
+    const state = await project(input.project)
+    const { recipe } = await currentRecipe(state)
+    const answer = await Effect.runPromise(requestPrSubmit(input.project, modeOf(recipe), actor(), eventStore))
+    revalidatePath('/', 'layout')
+    return answer.kind === 'refused'
+      ? { ok: false, detail: answer.detail }
+      : { ok: true, detail: `PR ${answer.n} submitted` }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/** *Give the agent 3 more rounds*: for the commit the card showed, so a page stale by a commit is refused. */
+export async function moreRoundsNow(input: {
+  project: string
+  n: number
+  merging: 'main' | 'back'
+  commit: string
+}): Promise<ActionResult> {
+  try {
+    const { ref } = await prRef(input.project, input.n)
+    const answer = await Effect.runPromise(
+      grantPrRounds(ref, { by: actor(), merging: input.merging, commit: input.commit }, eventStore),
+    )
+    revalidatePath('/', 'layout')
+    return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'rounds granted' }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/** *Check again* and *I resolved it — check again*: `lingtai pr retry`. */
+export async function retryPrNow(input: { project: string; n: number }): Promise<ActionResult> {
+  try {
+    const { ref } = await prRef(input.project, input.n)
+    const answer = await Effect.runPromise(requestPrRetry(ref, { by: actor() }, eventStore))
+    revalidatePath('/', 'layout')
+    return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'checking again' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }
