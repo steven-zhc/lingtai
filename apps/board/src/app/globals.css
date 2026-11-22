@@ -3410,6 +3410,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .pr-chip.waiting { color: var(--fail); border-color: var(--fail); }
 .pr-chip.running { color: #9c5a08; }
 .pr-chip.pending { color: #6c7aa3; }
+.pr-chip.skipped { color: #9c5a08; border-style: dashed; }
 .pr-rail { list-style: none; margin: 0.5rem 0; padding: 0 0 0 1rem; position: relative; }
 .pr-rail::before { content: ''; position: absolute; left: 0.3rem; top: 0.2rem; bottom: 0.2rem; width: 3px; background: #c4cce4; border-radius: 2px; }
 .pr-rail.cut::before { background: repeating-linear-gradient(#c4cce4 0 3px, transparent 3px 6px); }

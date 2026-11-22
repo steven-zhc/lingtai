@@ -83,7 +83,13 @@ export type PrsRead =
 
 /** The page's one read: the recipe, the PRs, the draft (over every landed ticket, never the two-day window), spend. */
 export async function readPrPage(project: string): Promise<PrsRead> {
-  const state = await readProject(project).catch(() => null)
+  // A project that is not registered is `null`; a read that rejected is a failure, never *no such project*.
+  let state: Awaited<ReturnType<typeof readProject>>
+  try {
+    state = await readProject(project)
+  } catch (err) {
+    return { kind: 'failed', error: (err as Error).message }
+  }
   if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
   try {
     const { recipe } = await currentRecipe(state)
@@ -91,15 +97,24 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const prs = yield* readProjectPrs(project, eventStore)
-        const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
-          Effect.mapError(failed),
-        )
-        const draft: PrDraftTicket[] = yield* readPrDraft(
-          project,
-          recipe,
-          cards.map((c) => ({ issue: c.issue })),
-          eventStore,
-        )
+        // The draft is decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as
+        // such where the draft would be, while every PR that was read is still drawn. Never an empty draft.
+        const unread = prs.find((r) => !('pr' in r))
+        const draft: PrDraftTicket[] | { error: string } =
+          unread !== undefined
+            ? { error: `PR ${unread.n} could not be read` }
+            : yield* Effect.gen(function* () {
+                const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
+                  Effect.mapError(failed),
+                )
+                return yield* readPrDraft(
+                  project,
+                  recipe,
+                  cards.map((c) => ({ issue: c.issue })),
+                  eventStore,
+                  prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
+                )
+              }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
         const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
         const spend = new Map<number, number>()
         for (const row of rows) {
@@ -146,13 +161,19 @@ export const servedWords = (holder: string | null): string =>
  */
 export async function placeViewsOf(project: string | undefined): Promise<PlaceView[]> {
   if (project === undefined) return viewsFor(undefined)
-  const state = await readProject(project).catch(() => null)
+  // Whether it is a team project is not known when either read fails: `PRs` stays, saying so, and is never dropped.
+  let state: Awaited<ReturnType<typeof readProject>>
+  try {
+    state = await readProject(project)
+  } catch {
+    return viewsFor(project, { waiting: null })
+  }
   if (state === null || state === undefined || !state.owner) return viewsFor(project)
   let recipe: Recipe
   try {
     recipe = (await currentRecipe(state)).recipe
   } catch {
-    return viewsFor(project)
+    return viewsFor(project, { waiting: null })
   }
   if (modeOf(recipe) !== 'team') return viewsFor(project)
   const waiting = await Effect.runPromise(waitingPrs(project, eventStore)).catch(() => null)

@@ -30,7 +30,7 @@ export interface Slip {
 export interface Chip {
   readonly step: string
   readonly text: string
-  readonly status: 'done' | 'running' | 'waiting' | 'pending'
+  readonly status: 'done' | 'running' | 'waiting' | 'pending' | 'skipped'
 }
 
 export type ButtonKind = 'submit' | 'rounds' | 'retry' | 'link'
@@ -125,10 +125,20 @@ export const DRAFT_NAME = 'Next PR'
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 
-const slipsOf = (pr: PrState): Slip[] => [
-  ...pr.tickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: false })),
-  ...pr.fixesLanded.map((t) => ({ ticket: t.ticket, title: t.title, fix: true })),
-]
+/**
+ * One slip per ticket the PR holds. `PrFixLanded` puts a pr-fix into `tickets` *and* `fixesLanded`, so `tickets` is the
+ * list and `fixesLanded` only says which of them are fixes. `only` narrows it, as to the tickets a merge carried.
+ */
+const slipsOf = (pr: PrState, only?: ReadonlySet<string>): Slip[] => {
+  const fixes = new Map(pr.fixesLanded.map((f) => [f.ticket, f.title]))
+  return pr.tickets
+    .filter((t) => only === undefined || only.has(t.ticket))
+    .map((t) => ({
+      ticket: t.ticket,
+      title: t.title === '' ? (fixes.get(t.ticket) ?? '') : t.title,
+      fix: fixes.has(t.ticket),
+    }))
+}
 
 /** The newest three, then how many more. Newest is last: tickets are held in the order they landed. */
 const shown = (all: readonly Slip[]): { slips: Slip[]; more: number } => ({
@@ -174,6 +184,10 @@ function chipsOf(pr: PrState, stepNames: readonly string[]): Chip[] {
                 .join(', ')}`.trimEnd()
       }
     }
+    if (row.step === 'summary' && status === 'done' && pr.summaryNotWritten !== null) {
+      text = 'summary — skipped'
+      status = 'skipped'
+    }
     if (row.step === 'sync' && status === 'done' && pr.resolutions.length > 0) text = 'sync ✓ conflicts resolved'
     chips.push({ step: row.step, text, status })
   }
@@ -184,7 +198,8 @@ export interface PrBoardInput {
   readonly project: string
   readonly recipe: Recipe
   readonly prs: readonly PrRead[]
-  readonly draft: readonly DraftTicket[]
+  /** The draft, or why it could not be read: never an empty draft for a read that failed. */
+  readonly draft: readonly DraftTicket[] | { readonly error: string }
   /** The conductor's own step list, in order. */
   readonly stepNames: readonly string[]
   /** Reported spend on each PR's stream, by `n`; absent is unknown. */
@@ -206,8 +221,11 @@ export function prBoard(input: PrBoardInput): PrBoardView {
   const open = latest !== null && isOpen(latest) ? latest : null
   const call = callForPr(recipe)
 
-  const cardOf = (pr: PrState, tone: Tone, extra: Partial<CardView> = {}): CardView => {
-    const all = slipsOf(pr)
+  const draftTickets: readonly DraftTicket[] = 'error' in input.draft ? [] : input.draft
+  const draftError = 'error' in input.draft ? input.draft.error : null
+
+  const cardOf = (pr: PrState, tone: Tone, extra: Partial<CardView> = {}, only?: ReadonlySet<string>): CardView => {
+    const all = slipsOf(pr, only)
     const { slips, more } = shown(all)
     const n = pr.n ?? 0
     return {
@@ -226,15 +244,21 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       byHand: [],
       buttons: [],
       ...extra,
+      // A summary that was skipped says why on every card the PR has, never a blank and never a ✓.
+      ...(pr.summaryNotWritten === null
+        ? {}
+        : { meta: [`no summary: ${pr.summaryNotWritten}`, ...(extra.meta ?? [])] }),
     }
   }
 
   // ── Draft ───────────────────────────────────────────────────────────────────────────────────────────────────────
-  const draftCards: CardView[] = []
+  const draftCards: (CardView | FailedCard)[] = []
   const requested = latest !== null && latest.status === 'requested' ? latest : null
   const refused = latest !== null && latest.status === 'refused' ? latest : null
-  if (input.draft.length > 0 || requested !== null) {
-    const all = input.draft.map((t) => ({ ticket: t.ticket, title: t.title, fix: false }))
+  if (draftError !== null) {
+    draftCards.push({ failed: true, key: 'draft', n: 0, text: `The draft could not be read: ${draftError}` })
+  } else if (draftTickets.length > 0 || requested !== null) {
+    const all = draftTickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: false }))
     const { slips, more } = shown(all)
     const sub: string[] = []
     const buttons: Button[] = []
@@ -321,14 +345,22 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         }),
       )
     } else if (pr.status === 'merged') {
-      const closed = slipsOf(pr).length
+      // What the merged head held, not what the PR holds now: a pr-fix that landed on a later head is not in the merge
+      // and is not closed. An unrecorded head makes the count a floor.
+      const carried = new Set(pr.mergedTickets)
+      const closed = carried.size
       mergedAll.push(
-        cardOf(pr, 'merged', {
-          pill: 'merged',
-          sub: [
-            `${pr.ended === null ? '' : `${pr.ended.at.toISOString().slice(5, 10)} · `}${plural(closed, 'ticket', 'tickets')} closed`,
-          ],
-        }),
+        cardOf(
+          pr,
+          'merged',
+          {
+            pill: 'merged',
+            sub: [
+              `${pr.ended === null ? '' : `${pr.ended.at.toISOString().slice(5, 10)} · `}${pr.mergedExact ? '' : 'at least '}${plural(closed, 'ticket', 'tickets')} closed`,
+            ],
+          },
+          carried,
+        ),
       )
     }
   }
@@ -340,7 +372,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       conflictResolutions: ceilingOf(recipe).attempt.conflictResolutions,
     })
     const n = pr.n ?? 0
-    const stillDraft = pr.host !== null ? ['still a GitHub draft — nobody was asked to review it'] : []
+    const stillDraft =
+      pr.host !== null && !pr.markedReady ? ['still a GitHub draft — nobody was asked to review it'] : []
     if (view === null) {
       return cardOf(pr, 'waiting', { pill: 'waiting', sub: ['waiting on you'] })
     }
@@ -402,7 +435,10 @@ export function prBoard(input: PrBoardInput): PrBoardView {
   return {
     strip: {
       branches: `${personal} → ${main}`,
-      notInPr: `${plural(input.draft.length, 'ticket', 'tickets')} not in a PR yet`,
+      notInPr:
+        draftError === null
+          ? `${plural(draftTickets.length, 'ticket', 'tickets')} not in a PR yet`
+          : 'tickets not in a PR: unknown',
       mainNote: `${main} is brought in at the next submit`,
     },
     waiting: waitingCount,
@@ -411,7 +447,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         id: 'draft',
         title: 'Draft',
         tone: 'draft',
-        count: draftCards.length === 0 ? 0 : input.draft.length,
+        count: draftCards.length === 0 || draftError !== null ? 0 : draftTickets.length,
         cards: draftCards,
         older: [],
         empty: 'Lingtai keeps taking tickets; they gather here.',

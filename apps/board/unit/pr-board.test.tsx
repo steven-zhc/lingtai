@@ -234,6 +234,8 @@ describe('prBoard', () => {
       pr: pr(n, {
         status: 'merged',
         tickets: [tk(n)],
+        mergedTickets: [String(n)],
+        mergedExact: true,
         ended: { how: 'git', headSha: 'h', mergeSha: 'm', seq: 1n, at: new Date('2026-11-18T00:00:00Z') },
       }),
     }))
@@ -270,6 +272,66 @@ describe('prBoard', () => {
     expect(cards(v, 'review')).toHaveLength(1)
     const html = renderToStaticMarkup(<PrColumns project="p" view={v} />)
     expect(html).toContain('PR 1 could not be read: disk gone')
+  })
+
+  it('draws a pr-fix once, labelled, though the reducer holds it in tickets and fixesLanded', () => {
+    const fix = { ticket: '9', mergeCommit: 'c9', title: 'the fix' }
+    const p = pr(2, {
+      status: 'in-review',
+      tickets: [tk(1), fix],
+      fixesLanded: [{ ...fix, version: 5 }],
+    })
+    const card = cards(prBoard(input([{ n: 2, pr: p }])), 'review')[0]!
+    expect(card.slips).toEqual([
+      { ticket: '1', title: 'ticket 1', fix: false },
+      { ticket: '9', title: 'the fix', fix: true },
+    ])
+    expect(card.more).toBe(0)
+  })
+
+  it('never draws a skipped summary as done, and says why on the card', () => {
+    const p = pr(2, {
+      status: 'in-progress',
+      steps: [
+        { step: 'sync', headSha: 'a' },
+        { step: 'build', headSha: 'a' },
+        { step: 'summary', headSha: 'a' },
+      ],
+      summaryNotWritten: 'the project is locked',
+    })
+    const card = cards(prBoard(input([{ n: 2, pr: p }])), 'progress')[0]!
+    expect(card.chips.find((c) => c.step === 'summary')).toMatchObject({ status: 'skipped', text: 'summary — skipped' })
+    expect(card.meta).toContain('no summary: the project is locked')
+  })
+
+  it('counts and draws on a merged card only what the merged head held', () => {
+    const fix = { ticket: '9', mergeCommit: 'c9', title: 'later fix' }
+    const p = pr(2, {
+      status: 'merged',
+      tickets: [tk(1), fix],
+      fixesLanded: [{ ...fix, version: 5 }],
+      mergedTickets: ['1'],
+      mergedExact: true,
+      ended: { how: 'host', headSha: 'h', mergeSha: 'm', seq: 1n, at: new Date('2026-11-18T00:00:00Z') },
+    })
+    const card = col(prBoard(input([{ n: 2, pr: p }], [])), 'merged').cards[0] as CardView
+    expect(card.sub).toEqual(['11-18 · 1 ticket closed'])
+    expect(card.slips.map((x) => x.ticket)).toEqual(['1'])
+  })
+
+  it('does not call a PR that was marked ready a GitHub draft after a pr-fix', () => {
+    const wait = { step: 'ci', reason: 'ci-red', detail: 'e2e failed', headSha: 'h' } as const
+    const host = { number: 91, nodeId: 'n', url: 'u' }
+    const draft = pr(3, { status: 'waiting', host, wait })
+    const ready = pr(3, { status: 'waiting', host, wait, markedReady: true })
+    expect(cards(prBoard(input([{ n: 3, pr: draft }])), 'waiting')[0]!.sub[0]).toContain('still a GitHub draft')
+    expect(cards(prBoard(input([{ n: 3, pr: ready }])), 'waiting')[0]!.sub.join(' ')).not.toContain('GitHub draft')
+  })
+
+  it('draws an unreadable draft as its own failure, never as an empty draft', () => {
+    const v = prBoard({ ...input([]), draft: { error: 'disk gone' } })
+    expect(col(v, 'draft').cards[0]).toMatchObject({ failed: true, text: 'The draft could not be read: disk gone' })
+    expect(v.strip.notInPr).toBe('tickets not in a PR: unknown')
   })
 
   it('says Nothing is waiting on you only for a board that was read', () => {

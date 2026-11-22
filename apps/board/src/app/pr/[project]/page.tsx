@@ -15,6 +15,7 @@ import { placeViewsOf, readPrPage } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 
 import { FooterFetched } from '../../footer-fetched'
+import { Follow } from '../../live'
 import { LockBanner, pauseSlot } from '../../lock-banner'
 import { PrColumns } from '../../pr-columns'
 import { RecipeBar } from '../../recipe/[project]/recipe-bar'
@@ -44,27 +45,42 @@ async function Board({ project }: { project: string }) {
 
 export default async function Page({ params }: { params: Promise<{ project: string }> }) {
   const name = decodeURIComponent((await params).project)
-  const projects = await readRegistered().catch(() => [])
+  // A listing that fails is said, not drawn as a menu with no projects in it.
+  let listingError: string | null = null
+  const projects = await readRegistered().catch((err: unknown) => {
+    listingError = (err as Error).message
+    return []
+  })
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
-  const onBoard = await onBoardProjects().catch(() => [] as string[])
+  const onBoard = await onBoardProjects().catch((err: unknown) => {
+    listingError ??= (err as Error).message
+    return [] as string[]
+  })
   return (
-    <main className="detail pr-page">
-      <RecipeBar
-        project={name}
-        here="prs"
-        filters={filterOptions(registered, onBoard)}
-        registered={registered}
-        app={hasGitHubAuth()}
-        locks={lockMap(await readProjectLocks())}
-        sandbox={sandboxStates(projects)}
-        views={await placeViewsOf(name)}
-        pause={await pauseSlot(name)}
-      />
-      <LockBanner project={name} />
-      <Suspense fallback={<Skeleton shape="card" count={5} />}>
-        <Board project={name} />
-      </Suspense>
-      <FooterFetched />
-    </main>
+    <Follow>
+      <main className="detail pr-page">
+        <RecipeBar
+          project={name}
+          here="prs"
+          filters={filterOptions(registered, onBoard)}
+          registered={registered}
+          app={hasGitHubAuth()}
+          locks={lockMap(await readProjectLocks())}
+          sandbox={sandboxStates(projects)}
+          views={await placeViewsOf(name)}
+          pause={await pauseSlot(name)}
+        />
+        <LockBanner project={name} />
+        {listingError === null ? null : (
+          <p className="pr-refusal" role="alert">
+            The list of projects could not be read: {listingError}
+          </p>
+        )}
+        <Suspense fallback={<Skeleton shape="card" count={5} />}>
+          <Board project={name} />
+        </Suspense>
+        <FooterFetched />
+      </main>
+    </Follow>
   )
 }
