@@ -31,10 +31,11 @@ const stale: CodeNews = {
 }
 
 describe('Said', () => {
-  it('draws the command in <code>, after the sentence and outside it', () => {
+  it('draws stale code as the dot alone, with the fact and the command in its title', () => {
     const out = renderToStaticMarkup(<Said said={bearing('open', health(), stale, null)} />)
-    expect(out).toContain('<code>lingtai restart</code>')
-    expect(out).toMatch(/<span class="why"[^>]*>daemon 4 commits behind<\/span><code>/)
+    expect(out).not.toContain('<code>')
+    expect(out).not.toContain('class="why"')
+    expect(out).toContain('lingtai restart')
   })
 
   it('draws a command a task page can reach the same way', () => {

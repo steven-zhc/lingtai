@@ -97,12 +97,14 @@ describe('the health dot', () => {
    * Stale code is a fault: `current` and `not paused` were both true for
    * thirty-nine minutes in which the fix that had landed could not run.
    */
-  it('carries the sentence and the action when the daemon holds old code', () => {
+  it('turns the dot and keeps the sentence and the action in the title when the daemon holds old code', () => {
     const said = bearing('open', board(), behind, null)
 
     expect(said.tone).toBe('warn')
-    expect(said.why).toBe('daemon 4 commits behind')
-    expect(said.command).toBe('lingtai restart')
+    expect(said.why).toBeNull()
+    expect(said.command).toBeNull()
+    expect(said.title).toContain('daemon 4 commits behind')
+    expect(said.title).toContain('lingtai restart')
   })
 
   /**
@@ -179,7 +181,7 @@ describe('the health dot', () => {
 })
 
 /**
- * Amber, and the one thing allowed to wear it.
+ * Amber, and nothing on the bar is allowed to wear it.
  *
  * Asserted against the stylesheet rather than against `bearing()`, because
  * `bearing()` cannot break this and never could: its `Tone` union has three
@@ -188,7 +190,7 @@ describe('the health dot', () => {
  * held `$81.83 repair`, and the file stated the rule 23 lines above it.
  *
  * So the question this asks is the one #134 asked: how many things on the bar
- * are amber? The answer has to be one, and it has to be the headline.
+ * are amber? The answer is none: amber is the Waiting lane's.
  */
 describe("the bar's amber", () => {
   const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
@@ -219,7 +221,7 @@ describe("the bar's amber", () => {
     const page = read('page.tsx')
     const bar = page.slice(page.search(/<Bar\s/), page.indexOf('<div className="cols">'))
     expect(bar.length).toBeGreaterThan(0)
-    // The rail's late parts (the paused chip, the drain, the headline) stream in
+    // The rail's late parts (the paused chip, the drain) stream in
     // `RailTail`, and the filter's and the actions' slots are parts of their own.
     const late = page.slice(page.indexOf('async function MenuRows'), page.indexOf('async function BannerPart'))
     expect(late.length).toBeGreaterThan(0)
@@ -263,7 +265,7 @@ describe("the bar's amber", () => {
    * still amber on the bar whenever Resume was being confirmed, which is exactly
    * the shape a filter on the selector's text lets through.
    */
-  it('is worn by exactly one thing that can render on the bar, and it is the headline', () => {
+  it('is worn by nothing that can render on the bar', () => {
     const onTheBar = wearers
       .flatMap((sel) => sel.split(',').map((s) => s.trim()))
       .filter((sel) => {
@@ -276,15 +278,13 @@ describe("the bar's amber", () => {
         return classes.length > 0 && classes.every((c) => barClasses.has(c))
       })
 
-    expect(onTheBar).toEqual(['.bar .head.sig'])
+    expect(onTheBar).toEqual([])
   })
 
   /** The guard above is only as good as its reading of the source. */
   it("reads the bar's classes, including the ones its components bring", () => {
     for (const c of [
       'bar',
-      'head',
-      'sig',
       'dot',
       'chip',
       'held',
@@ -433,10 +433,13 @@ describe('health keeps its command apart from its sentence (#904)', () => {
     })
   })
 
-  it('reads daemon 4 commits behind with lingtai restart for stale code', () => {
+  it('puts daemon 4 commits behind and lingtai restart in the title only for stale code', () => {
     const said = bearing('open', board(), behind, null)
-    expect(said.why).toBe('daemon 4 commits behind')
-    expect(said.command).toBe('lingtai restart')
+    expect(said.tone).toBe('warn')
+    expect(said.why).toBeNull()
+    expect(said.command).toBeNull()
+    expect(said.title).toContain('daemon 4 commits behind')
+    expect(said.title).toContain('lingtai restart')
   })
 
   it('is silent when well: no sentence and no command', () => {
@@ -458,11 +461,6 @@ describe('the home bar in page.tsx (#904)', () => {
     expect(bar.length).toBeGreaterThan(0)
     expect(page).not.toContain('QueuedSegment')
     expect(bar).not.toContain('nothing waiting on you')
-  })
-
-  it('links the headline to the Waiting column, only while something waits', () => {
-    expect(bar).toMatch(/waiting > 0 \? \(\s*<a className="head sig" href="#waiting"/)
-    expect(page).toContain("id={col.id === 'waiting' ? 'waiting' : undefined}")
   })
 })
 
