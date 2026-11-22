@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 一个 PR 的一生（ADR 0131 的流程图）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* VOICE  calm and exact, the board's own
+   IDEA   the PR page's five columns, with In progress opened up into its nine steps
+   PICTURE one rail of states across the top; under In progress, the steps top to bottom, each with where a failure goes
+   COLOUR teal = Lingtai going on, amber = an agent at work, red = waiting on you, slate = the team on the code host
+   TYPE   IBM Plex Sans + Mono as the board */
+:root{
+  --ground:#f1f4f4;--surface:#fff;--ink:#0f181c;--ink-2:#3a4a50;--muted:#5e6e74;--rule:#d8e0e1;--rule-2:#c3cfd1;
+  --accent:#0b6a70;--accent-soft:#dcedee;--accent-ink:#075056;--signal:#9c5a08;--signal-soft:#f7ead6;
+  --pass:#2c7a4c;--pass-soft:#dfeee4;--fail:#a33029;--fail-soft:#f6e1de;--team:#4a5d8a;--team-soft:#e5e9f3;
+  --sans:"IBM Plex Sans","PingFang SC",system-ui,sans-serif;--mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
+}
+*{box-sizing:border-box;min-width:0}
+body{margin:0;background:var(--ground);color:var(--ink);font:14.5px/1.55 var(--sans)}
+.wrap{max-width:1180px;margin:0 auto;padding:26px 24px 48px}
+h1{font-size:24px;margin:0 0 4px}
+.lede{color:var(--ink-2);margin:0 0 20px}
+code{font:12.5px var(--mono)}
+
+/* the rail of states */
+.rail{display:grid;grid-template-columns:1fr 28px 1.25fr 28px 1fr 28px 1fr;align-items:stretch;margin-bottom:8px}
+.state{background:var(--surface);border:1px solid var(--rule);border-top:3px solid var(--rule-2);border-radius:3px;padding:10px 12px}
+.state b{display:block;font-size:15px}
+.state span{font-size:12.5px;color:var(--muted)}
+.state.work{border-top-color:var(--accent)}
+.state.team{border-top-color:var(--team)}
+.state.done{border-top-color:var(--pass)}
+.arrow{display:grid;place-items:center;color:var(--rule-2);font:600 16px var(--mono)}
+.under{display:grid;grid-template-columns:1fr 28px 1.25fr 28px 1fr 28px 1fr;margin-bottom:22px;font-size:12.5px;color:var(--muted)}
+.under div{padding:6px 4px 0}
+
+/* the steps of In progress */
+.steps{background:var(--surface);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.steps h2{margin:0;padding:10px 14px;font:600 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);border-bottom:1px solid var(--rule)}
+.row{display:grid;grid-template-columns:44px 1.1fr 1.6fr 1.7fr;gap:14px;padding:11px 14px;border-bottom:1px solid var(--rule);align-items:start}
+.row:last-child{border-bottom:0}
+.n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font:600 12.5px var(--mono)}
+.name{font-weight:600}
+.what{color:var(--ink-2);font-size:13.5px}
+.outs{display:flex;flex-direction:column;gap:5px}
+.out{font-size:13px;display:flex;gap:8px;align-items:baseline}
+.out i{font-style:normal;color:var(--muted);white-space:nowrap}
+.pill{display:inline-block;font:500 12px var(--sans);padding:1px 8px;border-radius:3px;white-space:nowrap}
+.pill.wait{background:var(--fail-soft);color:var(--fail)}
+.pill.agent{background:var(--signal-soft);color:var(--signal)}
+.pill.loop{background:var(--accent-soft);color:var(--accent-ink)}
+.pill.ok{background:var(--pass-soft);color:var(--pass)}
+.new{font:600 10.5px var(--mono);letter-spacing:.05em;color:#fff;background:var(--accent);border-radius:2px;padding:0 5px;margin-left:6px;vertical-align:2px}
+
+/* after review */
+.after{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:22px}
+.box{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--rule-2);border-radius:3px;padding:12px 14px}
+.box h3{margin:0 0 6px;font-size:14.5px}
+.box p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.box.team{border-left-color:var(--team)}
+.box.wait{border-left-color:var(--fail)}
+.box.loop{border-left-color:var(--accent)}
+.legend{display:flex;gap:16px;flex-wrap:wrap;margin:18px 0 0;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>一个 PR 的一生</h1>
+  <p class="lede">ADR 0131 的流程图。上面一排是 PR 页的状态；下面把 <b>In progress</b> 展开成九步，每一步写出它做什么、走不下去时去哪里。
+  标了 <span class="new">新</span> 的是 2026-11-21 新定的规则。</p>
+
+  <div class="rail">
+    <div class="state"><b>Draft</b><span>落在个人分支、还没进 PR 的票；随票落地而增长</span></div>
+    <div class="arrow">→</div>
+    <div class="state work"><b>In progress</b><span>人点“提交”之后，灵台按下面九步做</span></div>
+    <div class="arrow">→</div>
+    <div class="state team"><b>In review</b><span>在代码平台上，团队评审</span></div>
+    <div class="arrow">→</div>
+    <div class="state done"><b>Merged</b><span>团队合进 main；灵台关掉它的票</span></div>
+  </div>
+  <div class="under">
+    <div>只有人能提交；一次只开一个 PR，其它票照常落地</div><div></div>
+    <div>任何一步走不下去 → <span class="pill wait">Waiting on you</span>，说明原因；其它工作不停</div><div></div>
+    <div>灵台不合并，只是得知：git 可达，或平台报告</div><div></div>
+    <div>squash 合并且分支被删时，按 <code>refs/pull/&lt;n&gt;/head</code> 去抓 <span class="new">新</span></div>
+  </div>
+
+  <div class="steps">
+    <h2>In progress · 九步</h2>
+
+    <div class="row"><div class="n">1</div><div class="name">冻结个人分支</div>
+      <div class="what">把个人分支此刻的提交定为这个 PR 的内容</div>
+      <div class="outs"><div class="out"><i>中途重启</i> 先找已有的 PR 分支和 PR，绝不开第二个</div></div></div>
+
+    <div class="row"><div class="n">2</div><div class="name">合进 main</div>
+      <div class="what">main 已经是祖先就跳过；否则在合并通道里合进来</div>
+      <div class="outs">
+        <div class="out"><i>冲突</i><span class="pill agent">解冲突 agent</span> 按 main 的每个提交计轮数</div>
+        <div class="out"><i>轮数用完</i><span class="pill wait">Waiting on you</span></div></div></div>
+
+    <div class="row"><div class="n">3</div><div class="name">build</div>
+      <div class="what">合完的结果先 build，绿了才能推</div>
+      <div class="outs"><div class="out"><i>红</i><span class="pill wait">Waiting on you</span></div></div></div>
+
+    <div class="row"><div class="n">4</div><div class="name">合进别人的提交 <span class="new">新</span></div>
+      <div class="what">推送前先 fetch 远端的 PR 分支；别人在灵台上次推的提交之上加了提交，就合进来，合完再 build</div>
+      <div class="outs">
+        <div class="out"><i>冲突</i><span class="pill agent">解冲突 agent</span> 和第 2 步同一套</div>
+        <div class="out"><i>force-push</i><span class="pill wait">Waiting on you</span> 不合，可能把对方删掉的提交加回去</div>
+        <div class="out"><i>分支被删</i><span class="pill wait">Waiting on you</span></div></div></div>
+
+    <div class="row"><div class="n">5</div><div class="name">推送 PR 分支</div>
+      <div class="what"><code>&lt;branch.personal&gt;-pr-&lt;n&gt;</code>，在合并通道里推</div>
+      <div class="outs"><div class="out"><i>结果不明</i> 看一次远端，绝不盲推第二次</div></div></div>
+
+    <div class="row"><div class="n">6</div><div class="name">开草稿 PR</div>
+      <div class="what">以草稿开出，项目自己的 CI 照常在上面跑</div>
+      <div class="outs"><div class="out"><i>平台不支持草稿</i><span class="pill wait">Waiting on you</span> 不开成 ready 的 PR</div></div></div>
+
+    <div class="row"><div class="n">7</div><div class="name">CI</div>
+      <div class="what">读当前 head 上的检查，只算 recipe 要求的那些</div>
+      <div class="outs">
+        <div class="out"><i>红</i><span class="pill wait">Waiting on you</span> 写出失败的检查；人在平台上重跑后点“再检查一次”</div>
+        <div class="out"><i>30 分钟没启动 / 超时</i><span class="pill wait">Waiting on you</span></div></div></div>
+
+    <div class="row"><div class="n">8</div><div class="name">标题和摘要</div>
+      <div class="what"><code>pr:</code> agent 写摘要；描述从日志生成</div>
+      <div class="outs"><div class="out"><i>项目被锁</i> 不写摘要也照开，并说明原因</div></div></div>
+
+    <div class="row"><div class="n">9</div><div class="name">标 ready <span class="new">新</span></div>
+      <div class="what">先再读一次 head：还是 CI 检查过的那个提交，就标 ready</div>
+      <div class="outs">
+        <div class="out"><i>head 变了</i><span class="pill loop">回到第 7 步</span> 跟着新 head 的 CI，不进等你处理</div>
+        <div class="out"><i>没变</i><span class="pill ok">In review</span></div></div></div>
+  </div>
+
+  <div class="after">
+    <div class="box team"><h3>团队要求修改</h3>
+      <p>人开一张 <code>lingtai:pr-fix</code> 票。它排在所有票前面，从 PR 分支切出、落在 PR 分支上；
+      落地时发现分支被别人推过，同样按第 4 步合进来 <span class="new">新</span>。落地后 PR 回到
+      <b>In progress</b> 再走一遍。</p></div>
+    <div class="box loop"><h3>合进 main 之后</h3>
+      <p>PR 分支合回个人分支一次，下一个 PR 就带着这些修改。推送结果不明时记为
+      <code>unknown</code>：不知道推上去没有，仍然欠着，下次再看 <span class="new">新</span>。</p></div>
+    <div class="box wait"><h3>关闭但没合并</h3>
+      <p>PR 回到 <b>Draft</b>；票留在个人分支上，什么都不回滚。在平台上重新打开的 PR 不再跟踪。</p></div>
+  </div>
+
+  <div class="legend">
+    <span><span class="pill loop">继续</span> 灵台继续往下走</span>
+    <span><span class="pill agent">agent</span> agent 在干活，花钱计入当天上限</span>
+    <span><span class="pill wait">等你</span> 等你处理：再给三轮 / 自己解决后再检查一次 / 退回草稿</span>
+    <span><span class="pill ok">团队</span> 交给团队</span>
+  </div>
+</div>
+</body>
+</html>
