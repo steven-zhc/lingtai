@@ -397,6 +397,8 @@ const ciStep: PrStep = {
           ),
         )
       if (pull === null) return { kind: 'again' } as StepAnswer
+      // No CI verdict is recorded for a PR that is closed or merged: the sweep records that.
+      if (pull.state !== 'open' || pull.merged) return { kind: 'again' } as StepAnswer
       const target = pull.headSha
       // Recorded as the step's own event, so the verdict and every wait carry the head CI followed.
       yield* recordPrCiFollowing(project, n, { headSha: target }, ports.store)
@@ -522,6 +524,8 @@ const readyStep: PrStep = {
           ),
         )
       if (pull === null) return { kind: 'again' } as StepAnswer
+      // A closed or merged PR is not In review: record nothing, and the sweep records `PrClosed` or `PrMerged`.
+      if (pull.state !== 'open' || pull.merged) return { kind: 'again' } as StepAnswer
       // A moved head is the ordinary case, never a wait: nothing is marked, and the walk goes back to `ci` on the new head.
       if (pull.headSha !== followed) {
         return {

@@ -4,7 +4,7 @@
  */
 import { readFileSync } from 'node:fs'
 
-import { type CiCheck, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { type CiCheck, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
@@ -37,6 +37,7 @@ interface World {
   detect: 'configured' | 'none'
   draft: boolean
   pullHead: string
+  pullState?: 'open' | 'closed'
   pullHeads?: string[]
   checksBySha?: Record<string, CiCheck[]>
   observedShas: string[]
@@ -101,7 +102,7 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
       ]),
     getPull: () =>
       Effect.succeed({
-        state: 'open',
+        state: w.pullState ?? 'open',
         merged: false,
         mergeCommitSha: null,
         headSha: w.pullHeads?.shift() ?? w.pullHead,
@@ -157,6 +158,17 @@ describe('the ci and ready steps', () => {
     expect(w.marked).toEqual(['PR_7'])
     const s = reducePr(await store.read(prStream('lingtai', 1)))
     expect(s.status).toBe('in-review')
+    expect(prStepRows(['ready'], s)).toEqual([{ step: 'ready', status: 'done', headSha: FROZEN }])
+  })
+
+  it('a PR closed by hand after CI went green is not recorded In review', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    w.draft = false
+    w.pullState = 'closed'
+    await serve(ports(store, w, recipeWith()))
+    expect(await types(store)).not.toContain('PrOpened')
+    expect(w.marked).toEqual([])
   })
 
   it('a running check appends nothing and is read again on the next serve', async () => {

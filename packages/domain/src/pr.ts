@@ -195,7 +195,10 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrOpened': {
       const d = event.data as PayloadOf<'PrOpened'>
-      const stepped = d.host === 'none' ? withStep(state, { step: 'open', headSha: state.target ?? '' }) : state
+      const stepped =
+        d.host === 'none'
+          ? withStep(state, { step: 'open', headSha: state.target ?? '' })
+          : withStep(state, { step: 'ready', headSha: state.following ?? state.target ?? '' })
       return { ...stepped, ...at, status: 'in-review', wait: null }
     }
     case 'PrMerged': {
