@@ -412,7 +412,16 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     } else if (row.step === 'summary') {
       // A top-up that wrote nothing is the top-up row's: the Summary row keeps its own attempt's outcome.
       // Only this pass's own events: `pr.summaryNotWritten` lives for the PR and would blame a row for an earlier pass.
-      const why = notWritten('submit')
+      // `summaryStep` does not run again once tried, so a retry's pass holds no summary event: the submit outcome is the
+      // latest one at `submit` in the whole stream, a later write clearing an earlier failure.
+      const submitted = last(
+        events,
+        (x) =>
+          (x.type === 'PrSummaryNotWritten' || x.type === 'PrSummaryWritten') &&
+          (x.data as { at?: string }).at === 'submit',
+      )
+      const why =
+        submitted?.type === 'PrSummaryNotWritten' ? (submitted.data as PayloadOf<'PrSummaryNotWritten'>).why : null
       if (why !== null) {
         status = 'skipped'
         text = `no summary: ${why}`

@@ -114,8 +114,16 @@
   {
     "file": "apps/board/src/lib/pr-page.ts",
     "function": "stepRows",
+    "type": "PrSummaryNotWritten",
+    "count": 2,
+    "class": "select",
+    "reason": "Finds the latest submit-time summary outcome in the whole stream, because a retry's pass does not run the summary again; the summary is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "stepRows",
     "type": "PrSummaryWritten",
-    "count": 1,
+    "count": 2,
     "class": "select",
     "reason": "Finds whether the summary top-up ran this pass (a summary written at a pr-fix), to draw its row only then; the summary is `reducePr`'s."
   },

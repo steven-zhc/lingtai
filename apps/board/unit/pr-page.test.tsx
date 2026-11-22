@@ -428,6 +428,28 @@ describe("a retry does not inherit the last pass's top-up failure", () => {
   })
 })
 
+describe('a retry keeps the submit summary failure', () => {
+  it('the Summary row still says why, after a new pass that did not run the summary', () => {
+    const v = page([
+      requested,
+      started,
+      ['PrSummaryNotWritten', { at: 'submit', why: 'the day ceiling', basedOn: 0 }],
+      done('sync'),
+      done('build'),
+      done('summary'),
+      waiting('ci-red', 'ci'),
+      started,
+      done('sync'),
+      done('build'),
+      done('summary'),
+    ])
+    expect(v.steps.find((s) => s.step === 'summary')).toMatchObject({
+      status: 'skipped',
+      text: 'no summary: the day ceiling',
+    })
+  })
+})
+
 describe('the description and the spend the page shows', () => {
   it('uses the ticket facts the daemon publishes: spend known, a closed ticket without Closes', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]], {
