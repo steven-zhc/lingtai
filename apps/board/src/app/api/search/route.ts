@@ -1,5 +1,5 @@
 /**
- * The ⌘K index (#908): pages, projects, recipes and tickets, from the log and
+ * The ⌘K index (#908): pages, projects, recipes, tickets and PRs, from the log and
  * the register — never from GitHub, because a key press that fans out to
  * GitHub costs a request per project per open.
  *
@@ -10,9 +10,11 @@
 import { storeChoice } from '@lingtai/env'
 import { loadProjects } from '@lingtai/project'
 import { readTasks } from '@lingtai/projector/task-view'
+import { Effect } from 'effect'
 
 import { emptyIfUnbuilt, onBoardProjects } from '@/lib/board'
-import { buildIndex } from '@/lib/search'
+import { readSearchPrs } from '@/lib/prs'
+import { type SearchPr, buildIndex } from '@/lib/search'
 
 export const dynamic = 'force-dynamic'
 
@@ -40,5 +42,29 @@ export async function GET(): Promise<Response> {
   if (logged instanceof Error) projects = logged
   else if (registered instanceof Error) projects = registered
   else projects = [...logged, ...registered.flatMap((p) => (p.project === null ? [] : [p.project]))]
-  return Response.json(buildIndex({ tasks, projects }))
+  // A team project's PRs, each read caught on its own: one that fails is its sentence, never an empty group.
+  const prs = new Map<string, readonly SearchPr[] | Error>()
+  const problems: string[] = []
+  if (!(registered instanceof Error)) {
+    const names = registered.flatMap((p) => (p.project === null ? [] : [p.project]))
+    const reads = await Promise.all(
+      names.map((name) =>
+        Effect.runPromise(readSearchPrs(name)).then(
+          (r) => ({ name, r }),
+          (e: unknown) => ({ name, r: asError(e) }),
+        ),
+      ),
+    )
+    for (const { name, r } of reads) {
+      if (r === 'solo') continue
+      if (r instanceof Error) prs.set(name, r)
+      else {
+        prs.set(name, r.prs)
+        problems.push(...r.problems)
+      }
+    }
+  }
+  const index = buildIndex({ tasks, projects, prs })
+  index.problems.push(...problems)
+  return Response.json(index)
 }

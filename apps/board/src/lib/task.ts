@@ -116,7 +116,7 @@ import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
 import { readProjectLocks } from './locks.ts'
-import { prName, type PrRead } from './pr-board.ts'
+import { prHolding, prName, type PrRead } from './pr-board.ts'
 import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
@@ -907,14 +907,8 @@ export type Holder =
 export function holderOf(ticket: string, base: string, personal: string, read: OnBranchRead): Holder {
   if ('error' in read) return { kind: 'unread', error: read.error }
   const prs = read.prs.flatMap((r) => ('pr' in r ? [r.pr] : []))
-  const holds = (p: PrState) =>
-    p.tickets.some((t) => t.ticket === ticket) || p.fixesLanded.some((f) => f.ticket === ticket)
-  const open = prs.find((p) => isOpen(p) && holds(p))
-  if (open !== undefined) return { kind: 'open', pr: open }
-  const merged = prs.find((p) => p.status === 'merged' && p.mergedTickets.includes(ticket))
-  if (merged !== undefined) return { kind: 'merged', pr: merged }
-  const merging = prs.find((p) => p.status === 'merged' && !p.mergedExact && holds(p))
-  if (merging !== undefined) return { kind: 'merging', pr: merging }
+  const holding = prHolding(ticket, prs)
+  if (holding !== null) return holding
   // A fix merged back into the draft (`PrMergedBack`) is in the draft even when its PR ended unmerged: the draft wins.
   if (!('error' in read.draft) && read.draft.some((d) => d.ticket === ticket)) return { kind: 'draft' }
   const ended = prs.find((p) => p.prBranch === base && !isOpen(p))
