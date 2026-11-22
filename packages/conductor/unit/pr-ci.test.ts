@@ -353,3 +353,49 @@ describe('check identity', () => {
     ])
   })
 })
+
+describe('a head that moves while it is observed', () => {
+  it('a red on the old head records nothing, and the next serve observes the new head', async () => {
+    const store = await frozen()
+    const B = 'b'.repeat(40)
+    const w = aWorld([check('e2e', 'failure')])
+    w.checksBySha = { [B]: [check('e2e', 'success')] }
+    // The first look (to follow) sees A; the look after observing sees B.
+    w.pullHeads = [FROZEN, B]
+    w.pullHead = B
+    const p = ports(store, w, recipeWith())
+    await serve(p)
+    expect((await types(store)).includes('PrWaiting')).toBe(false)
+    expect((await types(store)).includes('PrChecked')).toBe(false)
+    await serve(p)
+    expect(w.observedShas).toContain(B)
+    expect(reducePr(await store.read(prStream('lingtai', 1))).status).toBe('in-review')
+  })
+
+  it('a detect project fetches the mirror before reading the workflows', async () => {
+    const store = await frozen()
+    const w = aWorld([check('a', 'success')])
+    const calls: string[] = []
+    const p = ports(store, w, recipeWith({ provider: 'detect' }))
+    const fetch = p.fetch
+    await serve({
+      ...p,
+      fetch: (project) => {
+        calls.push('fetch')
+        return fetch(project)
+      },
+      ci: (...args) =>
+        p.ci!(...args).pipe(
+          Effect.map((c) => ({
+            ...c!,
+            detect: (h) => {
+              calls.push('detect')
+              return c!.detect(h)
+            },
+          })),
+        ),
+    })
+    expect(calls.indexOf('fetch')).toBeLessThan(calls.indexOf('detect'))
+    expect(w.observed).toBeGreaterThan(0)
+  })
+})

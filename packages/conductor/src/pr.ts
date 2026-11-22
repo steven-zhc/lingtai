@@ -416,8 +416,13 @@ const ciStep: PrStep = {
         branch: state.prBranch,
         ...(state.host === null ? {} : { pr: { number: state.host.number } }),
       }
+      const hostNumber = state.host.number
       const read = Effect.gen(function* () {
         const ci = yield* CiProvider
+        if (settings.provider === 'detect') {
+          // The head GitHub reported may be one somebody else pushed: the mirror has it only once it is fetched.
+          yield* ports.fetch(project)
+        }
         if (settings.provider === 'detect' && (yield* ci.detect(head)) === 'none') {
           return skipped('no workflow runs on pull requests')
         }
@@ -432,6 +437,12 @@ const ciStep: PrStep = {
           now: new Date(now),
           timeoutMs: settings.timeoutMs,
         })
+        // A verdict that waits on a person is about the head observed: if the head moved meanwhile, record nothing and
+        // answer `again`, so the next sweep follows the new head.
+        if (verdict.kind === 'red' || verdict.kind === 'none-started' || verdict.kind === 'timed-out') {
+          const now = yield* github.getPull(hostNumber)
+          if (now.headSha !== target) return { kind: 'again' } as StepAnswer
+        }
         switch (verdict.kind) {
           case 'running':
             return { kind: 'again' } as StepAnswer
