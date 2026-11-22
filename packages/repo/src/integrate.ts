@@ -99,9 +99,9 @@ export interface IntegrateOptions {
    */
   remote?: string
   /**
-   * The sha the base is expected to be at once fetched (#1341): a pr-fix landing on a PR branch passes the head Lingtai
-   * last pushed there, so a branch somebody else pushed to is refused `pr-branch-moved` before anything is merged or
-   * pushed. Absent on every other landing.
+   * The head Lingtai last pushed to the PR branch (#1341): a pr-fix landing passes it, and the fetched base must descend
+   * from it — others' commits on top are landed on as fetched (0131 §4, #1353), a force-push or a deleted branch is
+   * refused `pr-branch-moved` before anything is merged or pushed. Absent on every other landing.
    */
   expectBase?: string
   /** The issue number, for the sentence a held land hands a person (`lingtai approve --issue`). */
@@ -478,11 +478,18 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           return yield* refuse('head-moved', `expected ${options.headSha} found ${fetchedHead}`)
         }
 
-        // A PR branch is the lane's base for a pr-fix: it must still be what Lingtai last pushed (0130 §5, #1341).
+        // A PR branch is the lane's base for a pr-fix: it must still hold what Lingtai last pushed (0131 §4, #1353). Commits
+        // others pushed on top are landed on as fetched; a force-push (the head no longer in its history) is refused.
+        let fetchedBase: string | undefined
         if (options.expectBase !== undefined) {
-          const fetchedBase = (yield* at(['rev-parse', laneBase], mirror)).trim()
-          if (fetchedBase !== options.expectBase) {
-            return yield* refuse('pr-branch-moved', `expected ${options.expectBase} found ${fetchedBase}`)
+          fetchedBase = (yield* at(['rev-parse', laneBase], mirror)).trim()
+          const ask = ['merge-base', '--is-ancestor', options.expectBase, fetchedBase] as const
+          const holds = yield* Effect.result(at([...ask], mirror))
+          if (Result.isFailure(holds)) {
+            // `git merge-base --is-ancestor` answers by exit code: 1 is *no*, anything else is git failing and is never *yes*.
+            const err = holds.failure
+            if (!(err._tag === 'RepoFailed' && err.exitCode === 1)) return yield* Effect.fail(err)
+            return yield* refuse('pr-branch-moved', `expected ${options.expectBase} in the history of ${fetchedBase}`)
           }
         }
 
@@ -592,7 +599,11 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // landed after it, and no sha is stored anywhere. `-z` for the reason the
         // conflict branch gives above.
         const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
-        if (fork !== localBase) {
+        // A pr-fix landing on a PR branch lands on the base as fetched (0131 §4, #1353): the ancestry check above allowed
+        // exactly that movement, whatever commit the ticket forked at. Only the first try — the recompute after a lost push
+        // runs without the right to push, so a base that moved again is refused `base-moved` as on any other base.
+        const landsOnFetched = push && options.expectBase !== undefined
+        if (fork !== localBase && !landsOnFetched) {
           const names = (range: string) =>
             at(['diff', '--name-only', '-z', range], mirror).pipe(
               Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),
@@ -640,11 +651,9 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           )
         }
         // A pr-fix's push is leased to the head it was checked against, so a branch somebody reset after the fetch is
-        // rejected by origin rather than overwritten by a merge that descends from the old head (#1341).
-        const lease =
-          options.expectBase === undefined
-            ? []
-            : [`--force-with-lease=refs/heads/${options.base}:${options.expectBase}`]
+        // rejected by origin rather than overwritten by a merge that descends from the old head (#1341). It is the head the lane
+        // merged onto, which may be past `expectBase` when others pushed (#1353).
+        const lease = fetchedBase === undefined ? [] : [`--force-with-lease=refs/heads/${options.base}:${fetchedBase}`]
         const pushTry = at(['push', ...lease, 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
           Effect.catchTag('RepoFailed', (err) => {
             const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind

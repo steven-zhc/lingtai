@@ -719,7 +719,7 @@ export async function submitPrNow(input: { project: string }): Promise<ActionRes
 export async function moreRoundsNow(input: {
   project: string
   n: number
-  merging: 'main' | 'back'
+  merging: 'main' | 'back' | 'outside'
   commit: string
 }): Promise<ActionResult> {
   try {

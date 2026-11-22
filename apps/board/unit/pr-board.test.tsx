@@ -211,7 +211,7 @@ describe('prBoard', () => {
 
   it('has a word for every reason a PR waits', () => {
     for (const reason of Object.keys(WAIT_WORDS)) expect(WAIT_WORDS[reason as keyof typeof WAIT_WORDS]).not.toBe('')
-    expect(Object.keys(WAIT_WORDS)).toHaveLength(12)
+    expect(Object.keys(WAIT_WORDS)).toHaveLength(14)
   })
 
   it('draws a PR in review with its branch and CI count', () => {

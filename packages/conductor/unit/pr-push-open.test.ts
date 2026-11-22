@@ -52,6 +52,8 @@ interface World {
   posts: Record<string, unknown>[]
   /** What `git merge-base --is-ancestor` answers. */
   ancestor: number
+  /** Overrides `ancestor` for one question: whether `a` is an ancestor of `b`. */
+  ancestorOf?: (a: string, b: string) => number
   /** What `git cat-file -e` answers. */
   object: number
   findFails?: GitHubFailed
@@ -114,7 +116,10 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
           : args[0] === 'cat-file'
             ? { code: w.object, stdout: '', stderr: '' }
             : {
-                code: args[1] === '--is-ancestor' && args[3] === FROZEN && args[2]?.startsWith('m') ? 0 : w.ancestor,
+                code:
+                  args[1] === '--is-ancestor' && args[3] === FROZEN && args[2]?.startsWith('m')
+                    ? 0
+                    : (w.ancestorOf?.(args[2]!, args[3]!) ?? w.ancestor),
                 stdout: '',
                 stderr: '',
               },
@@ -216,6 +221,8 @@ describe('push and open', () => {
 
     const moved = await frozen()
     const w2 = aWorld()
+    // A force-push: the frozen commit is not in the branch's history.
+    w2.ancestor = 1
     w2.refs.set(REF, OTHER)
     await serve(ports(moved, w2))
     const s = await state(moved)
@@ -223,6 +230,22 @@ describe('push and open', () => {
     expect(s.wait).toMatchObject({ step: 'push', reason: 'branch-moved' })
     expect(s.wait!.detail).toContain('eeeeeee')
     expect(w2.remoteCalls.some((a) => a[0] === 'push')).toBe(false)
+  })
+
+  it('a branch others pushed to after outside looked answers restart: nothing is pushed, nothing is waited on', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    // OTHER is on top of the frozen commit, and the target has not merged it.
+    w.ancestorOf = (a, b) => (a === FROZEN && b === OTHER ? 0 : a === OTHER && b === FROZEN ? 1 : 0)
+    w.refs.set(REF, OTHER)
+    const before = (await types(store)).length
+    await serve(ports(store, w), PUSH_ONLY)
+    expect(w.remoteCalls.some((a) => a[0] === 'push')).toBe(false)
+    const s = await state(store)
+    expect(s.wait).toBeNull()
+    expect(s.steps.some((x) => x.step === 'push')).toBe(false)
+    // A restart is the walk going round: In progress is recorded again, a wait never is.
+    expect((await types(store)).slice(before)).not.toContain('PrWaiting')
   })
 
   it('a branch gone after a recorded push is branch-moved too', async () => {

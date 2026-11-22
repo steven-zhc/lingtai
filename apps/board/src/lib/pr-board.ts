@@ -51,7 +51,7 @@ export interface Button {
   /** The sentence that says why it cannot be pressed; set means disabled. */
   readonly disabled?: string
   /** For `rounds`: what the grant is about, as the page showed it. */
-  readonly grant?: { readonly merging: 'main' | 'back'; readonly commit: string }
+  readonly grant?: { readonly merging: 'main' | 'back' | 'outside'; readonly commit: string }
 }
 
 export interface CardView {
@@ -123,6 +123,8 @@ export const WAIT_WORDS: Record<WaitReason, string> = {
   'sync-unknown': 'sync could not tell',
   'sync-rewritten': 'branch rewritten',
   'sync-locked': 'conflicts, agent locked out',
+  'outside-conflict': 'conflicts with commits others pushed',
+  'outside-red': 'build red after merging commits others pushed',
 }
 
 const CI_WAITS: ReadonlySet<WaitReason> = new Set<WaitReason>(['ci-red', 'ci-none-started', 'ci-timeout'])
@@ -400,7 +402,11 @@ export function prBoard(input: PrBoardInput): PrBoardView {
           ? 'rounds: unknown'
           : `${view.roundsUsed} of ${view.roundsAllowed} rounds spent`
       const buttons: Button[] = []
-      if (view.reason === 'sync-conflict' && view.commit !== null && view.merging !== null) {
+      if (
+        (view.reason === 'sync-conflict' || view.reason === 'outside-conflict' || view.reason === 'outside-red') &&
+        view.commit !== null &&
+        view.merging !== null
+      ) {
         buttons.push({
           kind: 'rounds',
           label: 'Give the agent 3 more rounds',

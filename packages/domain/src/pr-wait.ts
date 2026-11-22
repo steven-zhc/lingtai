@@ -17,6 +17,8 @@ const RETRYABLE: ReadonlySet<WaitReason> = new Set<WaitReason>([
   'sync-unknown',
   'sync-rewritten',
   'sync-locked',
+  'outside-conflict',
+  'outside-red',
 ])
 
 export interface PrWaitFacts {
@@ -31,11 +33,11 @@ export interface PrWaitFacts {
 export interface PrConflictWait {
   readonly kind: 'conflict'
   readonly since: Date | null
-  readonly reason: 'sync-conflict' | 'sync-locked'
+  readonly reason: 'sync-conflict' | 'sync-locked' | 'outside-conflict' | 'outside-red'
   readonly detail: string
   /** The `main` commit being merged. */
   readonly commit: string | null
-  readonly merging: 'main' | 'back' | null
+  readonly merging: 'main' | 'back' | 'outside' | null
   readonly mainAhead: number | null
   readonly paths: readonly string[] | null
   readonly roundsUsed: number | null
@@ -68,14 +70,16 @@ const shellPath = (path: string): string => {
 }
 
 /** The mock's four lines (0130 §6): switch to the PR branch, merge `main`, push, and check again. */
-function commandsFor(state: PrState, facts: PrWaitFacts): string[] {
+function commandsFor(state: PrState, facts: PrWaitFacts, outside = false): string[] {
   const git = facts.checkout === null ? 'git' : `git -C ${shellPath(facts.checkout)}`
   const prBranch = state.prBranch ?? '<pr-branch>'
   const main = state.main ?? 'main'
   const never = state.lastPushed === null
   return [
     never ? `${git} switch -c ${prBranch} ${short(state.frozenSha ?? '')}` : `${git} switch ${prBranch}`,
-    `${git} merge origin/${main} # resolve, commit`,
+    outside
+      ? `${git} pull origin ${prBranch} # merge what others pushed; resolve, commit`
+      : `${git} merge origin/${main} # resolve, commit`,
     never ? `${git} push -u origin ${prBranch}` : `${git} push`,
     `lingtai pr retry ${facts.project} # checks it, builds it, goes on`,
   ]
@@ -86,7 +90,12 @@ export function prWaitOf(state: PrState, facts: PrWaitFacts): PrWaitView | null 
   const wait = state.wait
   if (state.status !== 'waiting' || wait === null) return null
   const since = state.waitSince
-  if (wait.reason === 'sync-conflict' || wait.reason === 'sync-locked') {
+  if (
+    wait.reason === 'sync-conflict' ||
+    wait.reason === 'sync-locked' ||
+    wait.reason === 'outside-conflict' ||
+    wait.reason === 'outside-red'
+  ) {
     const c = wait.conflict ?? null
     const used = c === null ? null : conflictRoundsLeft(state, c.merging, c.commit, facts.conflictResolutions).used
     return {
@@ -106,7 +115,7 @@ export function prWaitOf(state: PrState, facts: PrWaitFacts): PrWaitView | null 
           : c.ours.map((o) => ({ issue: o.number, title: o.title, mergeCommit: o.mergeCommit })),
       theirs: c === null || c.unread?.theirs ? null : c.theirs,
       lastRefusal: c?.last ?? null,
-      commands: commandsFor(state, facts),
+      commands: commandsFor(state, facts, c?.merging === 'outside' || wait.reason.startsWith('outside-')),
     }
   }
   return {

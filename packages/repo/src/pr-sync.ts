@@ -34,7 +34,7 @@ export type GitPort = (args: string[], options?: GitRunOptions) => Effect.Effect
 export interface MergeInWorktreeOptions {
   readonly project: string
   readonly home?: string
-  /** The worktree's directory name: `pr-sync-<n>-<epoch>` or `pr-back-<n>-<epoch>`. */
+  /** The worktree's directory name: `pr-sync-<n>-<epoch>`, `pr-back-…` or `pr-outside-…`. */
   readonly name: string
   /** The commit the merge is made on. */
   readonly at: string
@@ -45,14 +45,14 @@ export interface MergeInWorktreeOptions {
 }
 
 /** The names a PR's worktrees carry, and that the sweep below takes. */
-export const PR_WORKTREE_PREFIXES = ['pr-sync-', 'pr-back-'] as const
+export const PR_WORKTREE_PREFIXES = ['pr-sync-', 'pr-back-', 'pr-outside-'] as const
 
 /**
- * The build worktree of a PR's own check (`base-<sha7>-pr-<n>-sync|back`, the fixed `checkId`s of #1312): a process
+ * The build worktree of a PR's own check (`base-<sha7>-pr-<n>-sync|back|outside`, the fixed `checkId`s of #1312): a process
  * killed mid-build leaves it, and the resumed build would fail to cut a worktree where one stands. A pass's base check
  * is `base-<sha7>-<runId>` and is not matched.
  */
-const PR_BUILD_WORKTREE = /^base-[0-9a-f]+-pr-\d+-(sync|back)$/
+const PR_BUILD_WORKTREE = /^base-[0-9a-f]+-pr-\d+-(sync|back|outside)$/
 
 /**
  * Cuts a detached worktree at `at`, merges `theirs` into it with `--no-ff`, and answers the merge commit. A conflict
@@ -99,7 +99,7 @@ export const mergeInWorktree = (options: MergeInWorktreeOptions): Effect.Effect<
   )
 
 /**
- * Removes every `pr-sync-*`, `pr-back-*` and PR build (`base-<sha7>-pr-<n>-sync|back`) worktree of the project, then prunes the registrations with no directory.
+ * Removes every `pr-sync-*`, `pr-back-*` and PR build (`base-<sha7>-pr-<n>-sync|back|outside`) worktree of the project, then prunes the registrations with no directory.
  * Each step swallows its own failure: a sweep that refused a merge would be a worse bug than the one it clears.
  */
 export const sweepPrWorktrees = (options: {

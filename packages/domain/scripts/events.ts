@@ -351,6 +351,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'BranchSynced',",
   },
   {
+    event: 'PrOutsideMerged',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrOutsideMerged',",
+  },
+  {
     event: 'PrFixLanded',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -622,6 +628,7 @@ export const STREAMS = {
   PrChecked: ['pr-'],
   PrOpened: ['pr-'],
   BranchSynced: ['pr-'],
+  PrOutsideMerged: ['pr-'],
   PrFixLanded: ['pr-'],
   PrMergedBack: ['pr-'],
   PrMergeBackFailed: ['pr-'],

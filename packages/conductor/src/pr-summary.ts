@@ -149,7 +149,8 @@ const runSummary = (context: {
     const basedOn = first.version
     // Told from what this read holds, so what `basedOn` claims covered is what the prompt held.
     const items: readonly Item[] = at === 'submit' ? first.tickets : joinedSinceSummary(first)
-    if (items.length === 0) return done
+    const others = outsideSinceSummary(first)
+    if (items.length === 0 && others.length === 0) return done
     const told = yield* Effect.forEach(items, (item) => describeItem(ports, summarizer, project, item))
     const conflicts =
       at === 'submit'
@@ -168,6 +169,9 @@ const runSummary = (context: {
       at === 'submit' ? '\n# The tickets\n' : '\n# What changed since: the tickets that joined\n',
       told.join('\n\n'),
       ...(conflicts.length === 0 ? [] : ['\n# Conflicts resolved on this PR\n', conflicts.join('\n')]),
+      ...(others.length === 0
+        ? []
+        : ['\n# Commits others pushed to the PR branch, merged in\n', outsideLines(others).join('\n')]),
       ...(call.prompt === undefined ? [] : ['\n', call.prompt]),
     ].join('\n')
 
@@ -233,6 +237,19 @@ const runSummary = (context: {
 export const joinedSinceSummary = (state: PrState): readonly Item[] =>
   state.summaryTried === null ? [] : state.fixesLanded.filter((f) => f.version > (state.summaryTried ?? 0))
 
+/** The merges of commits others pushed to the PR branch since the summary was tried (#1353); all of them before it was. */
+export const outsideSinceSummary = (state: PrState): PrState['outsideMerged'] =>
+  state.summaryTried === null
+    ? state.outsideMerged
+    : state.outsideMerged.filter((m) => m.version > (state.summaryTried ?? 0))
+
+/** The commits others pushed, as the prompt tells them. */
+const outsideLines = (merges: PrState['outsideMerged']): string[] =>
+  merges.flatMap((m) => [
+    ...m.commits.map((c) => `- ${c.sha.slice(0, 7)} ${c.subject} (${c.author})`),
+    ...(m.omitted > 0 ? [`- … and ${m.omitted} more`] : []),
+  ])
+
 /** `summary`: once per PR, before `push`. Absent a summarizer, or tried already, it answers `done` and does nothing. */
 export const summaryStep: PrStep = {
   name: 'summary',
@@ -253,8 +270,10 @@ export const topupStep: PrStep = {
     Effect.gen(function* () {
       const target = state.target ?? state.frozenSha ?? ''
       const summarizer = ports.summarizer
+      // A round with only others' commits merged in is still a top-up (#1353).
       const joined = joinedSinceSummary(state)
-      if (summarizer === undefined || joined.length === 0) return { kind: 'done', headSha: target } as StepAnswer
+      if (summarizer === undefined || (joined.length === 0 && outsideSinceSummary(state).length === 0))
+        return { kind: 'done', headSha: target } as StepAnswer
       return yield* runSummary({ project, n, ports, summarizer, at: 'pr-fix' })
     }),
 }
