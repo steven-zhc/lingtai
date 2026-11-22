@@ -88,7 +88,7 @@ code{font:12.5px var(--mono)}
   <div class="lc-under">
     <div>只有人能 Submit；一次只开一个 PR，其它票照常落地</div><div></div>
     <div>能自己走的情况灵台接着走（见每行），只有标红的才去 Waiting on you</div><div></div>
-    <div>你可以：再给 agent 三轮；或自己在 PR 分支上解决后点“再检查一次”（<code>lingtai pr retry</code>）。其它工作不停</div><div></div>
+    <div>你可以：再给 agent 三轮；自己在 PR 分支上解决后点“再检查一次”（<code>lingtai pr retry</code>）；或退回 Draft。其它工作不停</div><div></div>
     <div>团队的评论只在平台上，灵台不读</div><div></div>
     <div>灵台不合并，只是得知：git 可达，或平台报告</div>
   </div>
@@ -168,7 +168,7 @@ code{font:12.5px var(--mono)}
 
   <div class="lc-band"><b>每轮 In progress 走完：合回个人分支</b>（第一次 Submit 和每次返工之后都做一次，下一个 PR 就带着这些修改）
     <ul>
-      <li>合回前先 build；有冲突交给解冲突 agent，和第 2 步同一套</li>
+      <li>合回前先 build；有冲突或 build 红，交给解冲突 agent，和第 2 步同一套，轮数共用</li>
       <li>推送结果不明时记 <code>unknown</code>：不知道推上去没有，仍然欠着，下次再看 <span class="lc-new">新</span></li>
       <li>灵台的合并提交已经在个人分支的历史里（不只是顶端），就算合回成功；直接记下，不重新 build <span class="lc-new">新</span></li>
       <li>git 的报错原因（stderr）带进记录，Waiting on you 能说清为什么 <span class="lc-new">新</span></li>
@@ -179,7 +179,7 @@ code{font:12.5px var(--mono)}
   <div class="lc-after">
     <div class="lc-box lc-team"><h3>团队要求修改</h3>
       <p>评论只在平台上，灵台不读；PR 留在 <b>In review</b>。人开一张 <code>lingtai:pr-fix</code> 票，做的时候 PR 也还在 In review。
-      它排在所有票前面，从 PR 分支切出、落在 PR 分支上；落地时发现分支被别人推过，同样按第 4 步合进来 <span class="lc-new">新</span>。
+      它排在所有票前面，从 PR 分支切出、落在 PR 分支上；落地时发现分支被别人推过，就把别人的提交一起合进来；有冲突按这张票自己的合并冲突处理（它的修复轮会先合进 PR 分支） <span class="lc-new">新</span>。
       落地后 PR 回到 <b>In progress</b>，从第 2 步重新走；平台上的 PR 一直是 ready，不退回草稿 <span class="lc-new">新</span>。</p></div>
     <div class="lc-box lc-done"><h3>合进 main 之后</h3>
       <p>灵台得知合并（git 可达，或平台报告），PR 进 <b>Merged</b>，关掉它的票。squash 合并且分支被删时，按分支名抓不到最后的 head，
@@ -191,7 +191,7 @@ code{font:12.5px var(--mono)}
   <div class="lc-legend">
     <span><span class="lc-pill lc-on">灵台</span> 灵台自己接着走，或回到某一步</span>
     <span><span class="lc-pill lc-agent">agent</span> agent 在干活，花钱计入当天上限</span>
-    <span><span class="lc-pill lc-wait">Waiting on you</span> 等你：再给三轮，或自己解决后再检查一次</span>
+    <span><span class="lc-pill lc-wait">Waiting on you</span> 等你：再给三轮 / 自己解决后再检查一次 / 退回 Draft</span>
     <span><span class="lc-pill lc-team">In review</span> 交给团队</span>
   </div>
 </div>

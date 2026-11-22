@@ -61,10 +61,11 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 
    **Waiting on you** says why, and stops nothing else: tickets are still claimed
    and land on `branch.personal`. The person ends it from the PR page: *give the
-   agent more rounds* (three), or resolve it by hand on the PR branch and *check
+   agent more rounds* (three); resolve it by hand on the PR branch and *check
    again* (`lingtai pr retry`), which takes the head the person pushed — if it
    still holds the frozen commit — and goes on from step 2 (`lingtai pr rounds`
-   gives the rounds from a terminal).
+   gives the rounds from a terminal); or *take it back to Draft*, which closes the
+   PR on the code host and leaves its tickets in *Draft* for the next one.
 
 3. **`main` is brought in when a PR is submitted or reworked, and only then.**
    The sync is PR work: it runs on the PR branch, as step 2, at *Submit* and at
@@ -112,6 +113,13 @@ branch, the review's changes, and the merge back. One topic, one ADR.
      merged, **waiting on you**: merging could bring back commits somebody
      removed on purpose;
    - the branch deleted on the remote → **waiting on you**.
+
+   A pr-fix ticket's landing is the merge lane's, inside the ticket's attempt, so
+   it takes the ticket's road rather than the PR's: the lane merges the ticket
+   into the PR branch as fetched, others' commits included; a conflict is the
+   ticket's merge conflict, resolved by its own fix round, which merges the PR
+   branch in first; only a force-push or a deleted branch is refused. The PR's
+   own round then builds and checks the result from step 2.
 
 5. **The summary is written before the draft opens, and topped up after CI.**
    The description is generated from the log — the tickets, `Closes #…` for each
@@ -214,8 +222,9 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 9. **The PR branch is merged back into `branch.personal` after every round of
    *In progress*** — after the first submit and after each rework — so the
    person's branch is current and the next PR carries the change.
-   - The merge back is built before it is pushed, as the sync is, and a
-     conflict with tickets landed since goes to the conflict agent the same way.
+   - The merge back is built before it is pushed, as the sync is. A conflict
+     with tickets landed since, or a red build of the merge, goes to the
+     conflict agent the same way and spends the same rounds.
    - A push whose answer is unclear is recorded `PrMergeBackFailed { why:
      'unknown' }`: **not known whether it landed; still owed**, and looked at
      again on the next serve.
@@ -287,8 +296,9 @@ branch, the review's changes, and the merge back. One topic, one ADR.
   the agent could not mend, a force-push, a deleted branch, a red CI run, a code
   host that cannot open drafts. Following the team's push and an unknown push
   answer are Lingtai's own.
-- The conflict agent has two jobs — a conflict and a red build after a merge —
-  and one budget, `attempt.conflictResolutions`, per PR.
+- The conflict agent has two jobs — a conflict and a red build after a merge,
+  at the sync, at others' commits and at the merge back — and one budget,
+  `attempt.conflictResolutions`, per PR.
 - The `pr:` agent runs once at submit and once per rework that brought something
   new; both count against the day's ceiling.
 - The PR page's *Merged* column is the PR history.
