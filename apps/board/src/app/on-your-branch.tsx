@@ -12,7 +12,7 @@ export function OnYourBranchView({ where }: { where: WhereOnBranch }) {
   return (
     <div className="obs" data-part="on-your-branch">
       <p className="obs-poster">
-        <b>LANDED</b> <span className="prp-small">{where.small}</span>
+        <span className="prp-small">{where.small}</span>
       </p>
       <BranchSketch sketch={where.sketch} />
       <dl className="obs-facts">
@@ -76,14 +76,9 @@ export function OnYourBranchView({ where }: { where: WhereOnBranch }) {
   )
 }
 
-/** A skeleton of the part's last size, drawn while the read is out (0111 §15). */
-export function OnYourBranchSkeleton() {
-  return <div className="obs obs-skeleton" aria-hidden="true" />
-}
-
 /**
  * The streamed part. `null` on a solo project and on a landing the personal branch does not own, so those pages are the
- * markup they were.
+ * markup they were (the Suspense fallback is empty, so a solo page gains no visible region).
  */
 export async function OnYourBranch({
   project,

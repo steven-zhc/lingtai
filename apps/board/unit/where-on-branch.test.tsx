@@ -108,6 +108,41 @@ describe('whereOnBranch', () => {
     expect(w?.in.text).toMatch(/not on your branch/)
   })
 
+  it('reads a fix merged back into the draft as the draft, though its PR closed', () => {
+    const w = run(landing({ base: 'lingtai-pr-7', isFix: true }), {
+      prs: [{ n: 7, pr: pr({ status: 'closed', tickets: [] }) }],
+      draft: [tk('5')],
+    })
+    expect(w?.in.text).toMatch(/not in a PR yet/)
+  })
+
+  it('names the ticket in the Closes clause and the PR state truthfully', () => {
+    const open = run(landing(), { prs: [{ n: 7, pr: pr({}) }], draft: [] })
+    expect(open?.alsoCloses).toContain('`Closes #5`')
+    const building = run(landing(), { prs: [{ n: 7, pr: pr({ status: 'in-progress' }) }], draft: [] })
+    expect(building?.in.text).toContain('being prepared')
+    const waiting = run(landing(), { prs: [{ n: 7, pr: pr({ status: 'waiting' }) }], draft: [] })
+    expect(waiting?.in.text).toContain('waiting on you')
+    const elsewhere = run(landing(), {
+      prs: [{ n: 7, pr: pr({ host: { number: 3, nodeId: 'n', url: 'https://git.example.com/o/p/pulls/3' } }) }],
+      draft: [],
+    })
+    expect(elsewhere?.in.text).not.toContain('GitHub')
+  })
+
+  it('draws only the tickets the merged head held', () => {
+    const w = run(landing(), {
+      prs: [
+        {
+          n: 7,
+          pr: pr({ status: 'merged', tickets: [tk('5'), tk('6')], mergedTickets: ['5'], mergedExact: true }),
+        },
+      ],
+      draft: [],
+    })
+    expect(w?.sketch.dots.map((d) => d.ticket)).toEqual(['5'])
+  })
+
   it('explains a pr-fix claimed with no PR open', () => {
     const w = run(landing({ isFix: true, cutFrom: { branch: 'foundry', pr: null } }), { prs: [], draft: [tk('5')] })
     expect(w?.notes.join()).toMatch(/no PR was open when it was claimed/)

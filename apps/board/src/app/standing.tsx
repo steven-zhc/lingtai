@@ -442,7 +442,7 @@ import { Discussion } from './discussion.tsx'
 import { EditPromptAction } from './edit-prompt.tsx'
 import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
-import { OnYourBranch, OnYourBranchSkeleton } from './on-your-branch.tsx'
+import { OnYourBranch } from './on-your-branch.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog, LiveLog, RawRunLog } from './run-log.tsx'
@@ -1409,7 +1409,7 @@ export function Standing({
 
               {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. */}
               {standing.state !== 'queued' && standing.landedOn && project !== null && issue !== null ? (
-                <Suspense fallback={<OnYourBranchSkeleton />}>
+                <Suspense fallback={null}>
                   <OnYourBranch project={project} ticket={String(issue)} landing={standing.landedOn} />
                 </Suspense>
               ) : null}

@@ -915,6 +915,8 @@ export function holderOf(ticket: string, base: string, personal: string, read: O
   if (merged !== undefined) return { kind: 'merged', pr: merged }
   const merging = prs.find((p) => p.status === 'merged' && !p.mergedExact && holds(p))
   if (merging !== undefined) return { kind: 'merging', pr: merging }
+  // A fix merged back into the draft (`PrMergedBack`) is in the draft even when its PR ended unmerged: the draft wins.
+  if (!('error' in read.draft) && read.draft.some((d) => d.ticket === ticket)) return { kind: 'draft' }
   const ended = prs.find((p) => p.prBranch === base && !isOpen(p))
   if (ended !== undefined) return { kind: 'after-end', pr: ended }
   const unread = read.prs.find((r) => !('pr' in r))
@@ -996,10 +998,12 @@ export function whereOnBranch(input: {
         : read.draft.map((d) => ({ ticket: d.ticket, title: d.title, fix: false }))
     return windowed(list, ticket)
   }
-  const prDots = (pr: PrState): Pick<OnBranchSketch, 'dots' | 'more'> => {
+  const prDots = (pr: PrState, only?: ReadonlySet<string>): Pick<OnBranchSketch, 'dots' | 'more'> => {
     const fixes = new Set(pr.fixesLanded.map((f) => f.ticket))
     return windowed(
-      pr.tickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: fixes.has(t.ticket) })),
+      pr.tickets
+        .filter((t) => only === undefined || only.has(t.ticket))
+        .map((t) => ({ ticket: t.ticket, title: t.title, fix: fixes.has(t.ticket) })),
       ticket,
     )
   }
@@ -1014,7 +1018,21 @@ export function whereOnBranch(input: {
     label,
     ...dots,
   })
-  const closesNote = input.github && !landing.closed ? 'the PR also says `Closes #<n>`' : null
+  const closesNote = input.github && !landing.closed ? `the PR also says \`Closes #${ticket}\`` : null
+  const stateOf = (pr: PrState): string => {
+    switch (pr.status) {
+      case 'in-review':
+        return pr.host !== null && pr.host.url.startsWith('https://github.com/') ? 'open on GitHub' : 'in review'
+      case 'in-progress':
+        return 'being prepared'
+      case 'waiting':
+        return 'waiting on you'
+      case 'requested':
+        return 'requested'
+      default:
+        return 'in review'
+    }
+  }
   const changeOf = (pr: PrState) =>
     prFixTicketLink({ project: input.project, owner: input.owner, github: input.github, name: nameOf(pr) })
 
@@ -1062,7 +1080,7 @@ export function whereOnBranch(input: {
       return {
         small: landing.isFix && onFixBranch ? `IN ${name}` : 'ON YOUR BRANCH',
         in: {
-          text: `${name} · ${pr.status === 'in-review' ? 'open on GitHub' : 'in review'}`,
+          text: `${name} · ${stateOf(pr)}`,
           failed: false,
           host: hostOf(pr),
           page: pageOf(pr.n ?? 0),
@@ -1074,11 +1092,7 @@ export function whereOnBranch(input: {
         alsoCloses: closesNote,
         change: changeOf(pr),
         notes: [...notes, ...fixNote],
-        sketch: sketchOf(
-          'pr',
-          `in ${name} · ${pr.status === 'in-review' ? 'open on GitHub' : 'in review'}`,
-          prDots(pr),
-        ),
+        sketch: sketchOf('pr', `in ${name} · ${stateOf(pr)}`, prDots(pr)),
       }
     }
     case 'merged':
@@ -1104,7 +1118,7 @@ export function whereOnBranch(input: {
         alsoCloses: null,
         change: null,
         notes,
-        sketch: sketchOf('pr', `in ${name} · merged`, prDots(pr)),
+        sketch: sketchOf('pr', `in ${name} · merged`, prDots(pr, merged ? new Set(pr.mergedTickets) : undefined)),
       }
     }
     case 'after-end': {
