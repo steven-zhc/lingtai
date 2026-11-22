@@ -1,6 +1,6 @@
 # The board's bar, weighted
 
-**Status** built · 2026-09-10 · `#134` · revised 2026-11-06 · `#953` · the place line and keys 2026-11-20 (0.16) · a picture at
+**Status** built · 2026-09-10 · `#134` · revised 2026-11-06 · `#953` · the place line and keys 2026-11-20 (0.16) · no headline, stale code a dot 2026-11-21 · a picture at
 `claude.ai/code/artifact/f57ced9e-f1a4-4405-8d55-01e76ee7c562`
 
 ## The bar is a frame and a row; the reading is in a footer
@@ -13,7 +13,7 @@ doing what the code says?*, and carries only what a person acts on. It is a
   `?project=`), and `Report` at the right (`apps/board/src/app/bar.tsx`), marked
   current on `/report`. The frame does not grow either: a second destination
   beside `Report` has to be argued here the way a fourth object is.
-- **The row** is three objects: **the filter, health, the headline.** The rule
+- **The row** is two objects: **the filter and health.** The rule
   below, *a chip is not free and the row is the unit*, governs the row.
 
 The row's objects:
@@ -23,19 +23,27 @@ The row's objects:
   `recipe` is not an object of its own.
 - **Health** is silent when well: a green dot and nothing else. When it is
   not, one sentence names the fault and the command that fixes it
-  (*daemon 17 commits behind · `lingtai restart`*, written bare as every
-  other health sentence writes its command). Today's spend joins it
+  (*3 runnable and nothing is conducting · `lingtai daemon`*, written bare as
+  every other health sentence writes its command). **Stale code is the one
+  fault that turns the dot and writes no sentence** (2026-11-21): *daemon 89
+  commits behind · `lingtai restart`* is in the dot's title, and `lingtai
+  doctor`'s `daemon: currency` still says it. On the bar it was read every
+  time `main` moved and acted on only when somebody meant to restart anyway; an
+  installed binary never shows it at all. Today's spend joins it
   only when it passes 80 % of the day's ceiling (*today $120 + ~$45 of $200*,
   in the fail colour, never amber), because that is the one reading a person
   then acts on. Reported and estimated stay two figures, never one sum
   (`packages/conductor/src/day-ceiling.ts`).
-- **The headline** is the count waiting on you, in amber, linking to the
-  column, and nothing when the count is zero. Amber stays the headline's alone.
+- **There is no headline** (2026-11-21). The count waiting on you was one,
+  in amber, linking to the column; it was drawn only on `/`, where the Waiting
+  column's heading already says the same number in the same amber, so it was
+  the argument the next point makes for every other count. The bar now wears
+  no amber at all.
 - **The counts are not on the bar**: each column carries its own, so *2 queued
   · 3 running · 65 landed* was the same numbers twice. *nothing waiting on you*
   goes for the same reason.
 - **A project switch draws the bar and the columns' frame at once.** The paused
-  chip, the headline, the health dot, the filter's summary and each column's
+  chip, the health dot, the filter's summary and each column's
   count are the loading pulse until they answer; the project actions, the
   filter's menu and the banner are absent until they do.
 
@@ -109,7 +117,7 @@ while working on something else. Two questions, and no third:
 
 | | | |
 |---|---|---|
-| `1 waiting on you` | **stays, as the headline** | the only reason to look up, and the only amber left |
+| `1 waiting on you` | **stayed, as the headline, until 2026-11-21** | then removed: on `/` the Waiting column's heading says it, and no other page drew it |
 | `daemon N behind` + `current` | **merge into one health** | one dot, and a sentence only when it is red — two chips for two independent facts is two things to learn to read |
 | `10 queued · 1 running · 45 landed` | **stays, unboxed** | a box says *this is a thing*; this is a reading. Kept as parts — `#81` stands |
 | `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
@@ -119,7 +127,7 @@ while working on something else. Two questions, and no third:
 ## The rule to keep
 
 **A chip is not free, and the row is the unit.** Anything added here has to be
-argued against the three objects that are there, not against the empty space
+argued against the two objects that are there, not against the empty space
 beside them, which is the argument none of the six tickets above was asked to
 make. The frame is held to the same rule.
 
@@ -135,8 +143,7 @@ ticket says the same thing ten times. The filter's menu keeps a small mark besid
 the one place projects are told apart; the banners under the bar say *degraded* and *stopped* in words.
 
 It is in the code in `.rail`, before `<Health>` (`apps/board/src/app/page.tsx`), fed by
-`sandbox-slot.tsx`. `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health,
-headline*.
+`sandbox-slot.tsx`. `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health*.
 
 ### An affordance inside an object is not a new object
 
@@ -165,7 +172,7 @@ registered project.
 **The banner is the one place that says why a project's work does not start** —
 a project's pause, the day's ceiling, a runtime's usage limit — each with what
 lifts it. It is a band under the bar and not an object on it, so the row stays
-at filter, health and headline.
+at filter and health.
 
 **With one project selected, `Recipe` and `Pause` sit on the right, apart from
 `Report`.** `Report` is the window's reading and is there whatever the filter
@@ -189,9 +196,9 @@ over a left rail of icons, a dock, a drawer, stacked boards and a project home
 - **The views are `Tickets · PRs · Recipe`.** `PRs` appears for a team project
   only; `Recipe` moves here from the right, beside the views it configures. With
   *All projects* there is only `Tickets`: a PR is one project's branch.
-- **The headline still counts tickets only.** What waits on you on the PR board
-  is a count on `PRs` itself, in the fail colour and never amber — amber stays
-  the headline's alone.
+- **What waits on you on the PR board is a count on `PRs` itself**, in the
+  fail colour and never amber, as the Tickets board's is the Waiting column's
+  heading.
 - **Search is a visible field on the right, `Search ⌘K`**, beside `Pause` and
   `Report`; ⌘K (#908) was a key nobody could see.
 - **At most four views on the line.** A fifth goes into a `More ▾` at its end,
@@ -208,19 +215,18 @@ over a left rail of icons, a dock, a drawer, stacked boards and a project home
   `doc/milestone/later/keys.md`.
 
 ```
-Lingtai / chapter-garden ▾ / Tickets  PRs ❶  Recipe   ●  2 waiting on you     [Search ⌘K]  Pause  Report
+Lingtai / chapter-garden ▾ / Tickets  PRs ❶  Recipe   ●     [Search ⌘K]  Pause  Report
 ```
 
 ## What it looks like now
 
 ```
-◆ Lingtai │ [lingtai ▾]   ●  [1 waiting on you]                 Report
+◆ Lingtai │ [lingtai ▾]   ●                                     Report
 Today ▮▮▯ $26.15 + ~$22.03 of $200 · 65 landed · projections current · home ~/.lingtai
 ```
 
-One line at 1440. Nothing waiting and nothing wrong is quieter still: there is
-no headline at all (the Waiting column's own empty line says so), and the dot is
-green and says nothing.
+One line at 1440. Nothing wrong is quieter still: the dot is green and says
+nothing.
 
 Where the facts that left the bar went:
 
@@ -228,7 +234,7 @@ Where the facts that left the bar went:
 |---|---|
 | `$488.52` · `$81.83 answering` | `/report`, off the bar: the window's spend by purpose, which a chip could never have carried. Today's figure stays in the footer |
 | `<project>: rounds ×N` | `/recipe/<project>`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
-| `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when either is not, and whichever fact is not the headline stays in the title |
+| `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when the board is not current, and stale code turns the dot with its sentence in the title only (2026-11-21); and whichever fact is not the headline stays in the title |
 
 `paused` (the setup's pause only) and `draining` are still chips and still
 amber-free, because both are already absent when there is nothing to say. `recipe` in the filter is the same
@@ -247,5 +253,4 @@ round's `pill sig` (`#84`), an open question. Cards are read one at a time and o
 purpose; the bar is glanced at while you are doing something else, and it is
 that difference, not the palette, that makes a second amber cost something here
 and nothing there. `apps/board/unit/bar.test.ts` asserts the scoped version:
-of everything that can render inside `.bar`, exactly one selector paints with
-`--signal`, and it is the headline's.
+nothing that can render inside `.bar` paints with `--signal`.
