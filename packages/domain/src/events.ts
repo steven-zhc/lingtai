@@ -711,7 +711,7 @@ export const SpentFor = z.discriminatedUnion('_tag', [
     z.object({
       _tag: z.literal('Pr'),
       purpose: z.enum(['resolve', 'review']),
-      merging: z.enum(['main', 'back']),
+      merging: z.enum(['main', 'back', 'outside']),
       commit: z.string().min(1),
       round: z.number().int().positive(),
     }),
@@ -2603,6 +2603,8 @@ const PrWaitReason = z.enum([
   'sync-unknown',
   'sync-rewritten',
   'sync-locked',
+  'outside-conflict',
+  'outside-red',
 ])
 
 /**
@@ -2610,7 +2612,7 @@ const PrWaitReason = z.enum([
  * conflicted, what each side meant, how many rounds were spent and what refused the last. #1314 reads this and never git.
  */
 export const ConflictEnd = z.object({
-  merging: z.enum(['main', 'back']),
+  merging: z.enum(['main', 'back', 'outside']),
   commit: z.string().min(1),
   paths: z.array(z.string()),
   ours: z.array(z.object({ number: z.string(), title: z.string(), mergeCommit: z.string() })),
@@ -2738,6 +2740,22 @@ export const BranchSynced = z.object({
 })
 
 /**
+ * Commits others pushed to the PR branch on top of what Lingtai last pushed were merged in, and the merge built (0131 §4,
+ * #1353): `clean` when the merge built green, `resolved` when the conflict agent resolved a conflict or a red build.
+ * `remoteHead` is the branch as fetched, `head` the merge — it becomes the PR's `target`; nothing here pushes it.
+ * `commits` is the range `lastPushed..remoteHead`, capped, and `omitted` counts those past the cap.
+ *
+ * @summary Commits others pushed to a PR branch were merged into the PR's commit and built; the merge is the PR's target.
+ */
+export const PrOutsideMerged = z.object({
+  remoteHead: z.string().min(1),
+  commits: z.array(z.object({ sha: z.string().min(1), author: z.string(), subject: z.string() })),
+  omitted: z.number().int().nonnegative(),
+  head: z.string().min(1),
+  how: z.enum(['clean', 'resolved']),
+})
+
+/**
  * The PR branch at `prHead` was merged into `branch.personal`, built, and pushed as `mergeCommit` (0130 §6), so the
  * person's next tickets are cut from a branch that holds `main` and every `lingtai:pr-fix` change.
  *
@@ -2772,7 +2790,7 @@ export const PrMergeBackFailed = z.object({
  * @summary A round of the conflict agent started on a PR: one commit merged into another, round n, for a conflict or a red build of a clean merge.
  */
 export const SyncRoundStarted = z.object({
-  merging: z.enum(['main', 'back']),
+  merging: z.enum(['main', 'back', 'outside']),
   commit: z.string().min(1),
   start: z.string().min(1),
   round: z.number().int().positive(),
@@ -2788,7 +2806,7 @@ export const SyncRoundStarted = z.object({
  * @summary A round of the conflict agent was refused, and what refused it.
  */
 export const SyncRoundRefused = z.object({
-  merging: z.enum(['main', 'back']),
+  merging: z.enum(['main', 'back', 'outside']),
   commit: z.string().min(1),
   round: z.number().int().positive(),
   step: z.enum(['build', 'review', 'answer']),
@@ -2822,7 +2840,7 @@ export const PrClosed = z.object({ headSha: z.string().min(1) })
  */
 export const PrRoundsGranted = z.object({
   by: z.string(),
-  merging: z.enum(['main', 'back']),
+  merging: z.enum(['main', 'back', 'outside']),
   commit: z.string().min(1),
   rounds: z.literal(3),
 })
@@ -3221,6 +3239,7 @@ export const EVENTS = {
   PrChecked,
   PrOpened,
   BranchSynced,
+  PrOutsideMerged,
   PrMergedBack,
   PrMergeBackFailed,
   SyncRoundStarted,
@@ -3359,6 +3378,7 @@ export const EVENT_AT = {
   PrChecked: ['outside'],
   PrOpened: ['outside'],
   BranchSynced: ['outside'],
+  PrOutsideMerged: ['outside'],
   PrMergedBack: ['outside'],
   PrMergeBackFailed: ['outside'],
   SyncRoundStarted: ['outside'],

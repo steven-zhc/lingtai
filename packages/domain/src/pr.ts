@@ -113,7 +113,7 @@ export interface PrState {
    * The conflict a grant sent back to the agent, until the PR waits again or moves past it (#1314): a second grant for the
    * same commit, read against the state the first one left, is still a person's decision and adds to it.
    */
-  granting: { readonly merging: 'main' | 'back'; readonly commit: string } | null
+  granting: { readonly merging: 'main' | 'back' | 'outside'; readonly commit: string } | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
   /**
    * The PR's title and summary as they stand (#1318): the agent's (`PrSummaryWritten`), the summary the person's where they
@@ -134,6 +134,8 @@ export interface PrState {
   }[]
   /** The conflicts the conflict agent resolved on this PR (`BranchSynced { how: 'resolved' }`, #1313), for the summary's prompt. */
   resolutions: readonly { readonly mainCommit: string; readonly head: string }[]
+  /** The merges of commits others pushed to the PR branch (`PrOutsideMerged`, #1353), each with the stream version it landed at. */
+  outsideMerged: readonly (PayloadOf<'PrOutsideMerged'> & { readonly version: number })[]
   /** The hash of the description last put on the code host (`PrDescriptionPushed`). */
   descriptionPushed: string | null
   /** The stream version of the latest summary event (written, not written, edited): a push rendered before it leaves the description owed. */
@@ -191,6 +193,7 @@ export const emptyPr: PrState = {
   summaryTried: null,
   fixesLanded: [],
   resolutions: [],
+  outsideMerged: [],
   descriptionPushed: null,
   summaryChangedAt: 0,
   descriptionOwed: false,
@@ -380,6 +383,18 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         adopted: d.how === 'clean' ? null : state.adopted,
         resolutions:
           d.how === 'resolved' ? [...state.resolutions, { mainCommit: d.mainCommit, head: d.head }] : state.resolutions,
+      }
+    }
+    case 'PrOutsideMerged': {
+      const d = event.data as PayloadOf<'PrOutsideMerged'>
+      // The merge adds others' commits and no ticket: it holds what the commit it was made on held.
+      const held = state.target === null ? undefined : state.covers[state.target]
+      return {
+        ...withStep(state, { step: 'outside', headSha: d.head }),
+        ...at,
+        target: d.head,
+        covers: held !== undefined && state.covers[d.head] === undefined ? { ...state.covers, [d.head]: held } : state.covers,
+        outsideMerged: [...state.outsideMerged, { ...d, version: event.version }],
       }
     }
     case 'SyncRoundRefused':
@@ -662,6 +677,18 @@ export function syncedTransition(
 }
 
 /**
+ * Commits others pushed to the PR branch are in the PR's commit (0131 §4, #1353). A step already recorded since the latest
+ * `PrInProgress` appends nothing; a record made after a newer pass began proves nothing about it.
+ */
+export function outsideTransition(
+  state: PrState,
+  merged: PayloadOf<'PrOutsideMerged'>,
+): ToAppend<PayloadOf<'PrOutsideMerged'>> | null {
+  if (!walking(state) || state.steps.some((s) => s.step === 'outside')) return null
+  return { type: 'PrOutsideMerged', actor: 'conductor', data: merged }
+}
+
+/**
  * Which step a `BranchSynced` is the record of. A clean merge is the build's; `already` and a resolution of a conflict are the
  * sync step's own. **A record made once `sync` is on the steps is the build's** (#1352): a merge that built red and an agent
  * amended is recorded by the build step, or the next serve would build the old merge again and buy another round.
@@ -676,7 +703,7 @@ export const syncedStep = (state: PrState, how: PayloadOf<'BranchSynced'>['how']
  */
 export function conflictRoundsLeft(
   state: PrState,
-  merging: 'main' | 'back',
+  merging: 'main' | 'back' | 'outside',
   commit: string,
   bound: number,
   granted = 0,
@@ -1018,7 +1045,7 @@ export function syncRefusalTransition(
 /** The refusal of the latest refused round for a commit, from the log: what buys the next round, and what a spent end says. */
 export const lastRefusalOf = (
   state: PrState,
-  merging: 'main' | 'back',
+  merging: 'main' | 'back' | 'outside',
   commit: string,
 ): { readonly step: 'build' | 'review' | 'answer'; readonly said: string } | null => {
   const mine = state.refusals.filter((r) => r.merging === merging && r.commit === commit)
@@ -1048,7 +1075,7 @@ function notAskable(
 }
 
 /** The rounds a person gave for one commit: the sum of the grants that name it. */
-export const grantedFor = (state: PrState, merging: 'main' | 'back', commit: string): number =>
+export const grantedFor = (state: PrState, merging: 'main' | 'back' | 'outside', commit: string): number =>
   state.grants.filter((g) => g.merging === merging && g.commit === commit).reduce((sum, g) => sum + g.rounds, 0)
 
 /**
@@ -1060,7 +1087,7 @@ export function grantTransition(
   state: PrState | null,
   mode: 'solo' | 'team',
   project: string,
-  grant: { by: string; merging: 'main' | 'back'; commit: string },
+  grant: { by: string; merging: 'main' | 'back' | 'outside'; commit: string },
 ): PrRequest<PayloadOf<'PrRoundsGranted'>> {
   const no = notAskable(state, mode, project)
   if (no !== null) return no
@@ -1085,7 +1112,7 @@ export function grantTransition(
   }
   if (state.status !== 'waiting' || state.wait === null)
     return refused(`${name} is ${state.status}, not waiting on you`)
-  if (state.wait.reason !== 'sync-conflict') {
+  if (state.wait.reason !== 'sync-conflict' && state.wait.reason !== 'outside-conflict' && state.wait.reason !== 'outside-red') {
     return refused(
       `rounds buy an agent only for a conflict — ${name} waits on ${state.wait.reason}: fix it by hand, then lingtai pr retry`,
     )
@@ -1096,7 +1123,7 @@ export function grantTransition(
   }
   if (conflict.merging !== grant.merging || conflict.commit !== grant.commit) {
     return refused(
-      `${name} now waits on ${conflict.merging === 'main' ? 'main' : 'the merge back'} at ${conflict.commit.slice(0, 7)}, not ${grant.commit.slice(0, 7)}: read it again`,
+      `${name} now waits on ${conflict.merging === 'main' ? 'main' : conflict.merging === 'outside' ? 'the commits others pushed' : 'the merge back'} at ${conflict.commit.slice(0, 7)}, not ${grant.commit.slice(0, 7)}: read it again`,
     )
   }
   return granted

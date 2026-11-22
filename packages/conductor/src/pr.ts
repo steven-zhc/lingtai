@@ -62,6 +62,7 @@ import { Clock, Effect, Result, Semaphore } from 'effect'
 import { CiProvider, type CiProviderShape } from './ci.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
+import { outsideStep } from './pr-outside.ts'
 import { type PrSummarizer, summaryStep, topupStep } from './pr-summary.ts'
 import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 import { type IssueChannel, tellGitHubEffect } from './tell.ts'
@@ -249,9 +250,11 @@ type Turn = StepAnswer | { readonly kind: 'failed'; readonly error: Error }
 /**
  * **The only push of a PR branch**, never forced, in the branch's lane turn. Every read is inside the turn. It looks
  * first: a branch at `target` is recorded `existing` and nothing is pushed; one at the last commit Lingtai pushed is
- * fast-forwarded when `target` descends from it; anything else is for a person (`branch-moved`), and a `target` that
- * does not descend from the last push is a pr-fix landing that went first — nothing is appended and the newer pass
- * through In progress starts again.
+ * fast-forwarded when `target` descends from it; a branch others pushed to after `outside` looked (it descends from the
+ * last push) answers `restart`, so the walk goes round and `outside` merges it (#1353) — a moved head is never waited on;
+ * a last push no longer in the branch's history (a force-push), or a branch gone, is for a person (`branch-moved`); and a
+ * `target` that does not descend from the last push is a pr-fix landing that went first — nothing is appended and the
+ * newer pass through In progress starts again.
  */
 const pushStep: PrStep = {
   name: 'push',
@@ -293,6 +296,13 @@ const pushStep: PrStep = {
         if (at === null && state.lastPushed !== null) return moved(null)
         // Before the first push the frozen commit is what the sync accepted on the remote; the target descends from it.
         if (at !== null && at !== state.lastPushed && !(state.lastPushed === null && at === state.frozenSha)) {
+          // Others' commits on top of the last push are `outside`'s to merge: the walk goes round and never waits (#1353).
+          const base = state.lastPushed ?? state.frozenSha
+          if (base === null) return moved(at)
+          const ask = ['merge-base', '--is-ancestor', base, at] as const
+          const holds = yield* ports.git(project, ask)
+          if (holds.code === 0) return { kind: 'restart' } as StepAnswer
+          if (holds.code !== 1) return yield* Effect.fail(new Error(gitSaid(ask, holds)))
           return moved(at)
         }
 
@@ -682,7 +692,7 @@ const readyStep: PrStep = {
 }
 
 /**
- * **In progress, as a fixed list.** `sync`, `build` (#1312), `summary` (#1318), `push`, `open`, `ci` (#1339), `topup`
+ * **In progress, as a fixed list.** `sync`, `build` (#1312), `outside` (#1353), `summary` (#1318), `push`, `open`, `ci` (#1339), `topup`
  * (#1318) and `ready`, in 0131 §2's order: the summary is written before the push so the draft opens with it, and
  * topped up after CI with each pr-fix that joined since.
  * Nothing else orders them, and the PR page draws its *What Lingtai did* rows from this list and the records.
@@ -690,6 +700,7 @@ const readyStep: PrStep = {
 export const IN_PROGRESS_STEPS: readonly PrStep[] = [
   syncStep,
   buildStep,
+  outsideStep,
   summaryStep,
   pushStep,
   openStep,
