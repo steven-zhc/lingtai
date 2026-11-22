@@ -9,11 +9,12 @@ import { type ReactNode } from 'react'
 
 import { Bar, BarActions } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
-import { PlaceLine, viewsFor } from '@/app/place-line.tsx'
+import { PlaceLine, viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { ModeGraph } from '@/components/mode-graph.tsx'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { placeViewsOf } from '@/lib/prs.ts'
 import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe } from '@/lib/recipe'
 import { modeLines, modeSource, recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
@@ -261,6 +262,7 @@ export function Recipe({
   view,
   edit = false,
   bar,
+  views,
   pause,
   banner,
   sandbox,
@@ -270,6 +272,8 @@ export function Recipe({
   view: ProjectRecipe
   edit?: boolean
   bar?: RecipeBarFilter
+  /** The place line's views, read by the page (a team project has `PRs`, #1319): this stays pure. */
+  views?: PlaceView[]
   /** The bar's Pause button and the row under it, built by the page that read the locks (#994): this stays pure. */
   pause?: ReactNode
   banner?: ReactNode
@@ -290,10 +294,10 @@ export function Recipe({
             here="recipe"
             actions={<BarActions project={view.project} here="recipe" pause={pause} recipe={false} />}
           >
-            <PlaceLine project={view.project} views={viewsFor(view.project)} here="recipe" />
+            <PlaceLine project={view.project} views={views ?? viewsFor(view.project)} here="recipe" />
           </Bar>
         ) : (
-          <RecipeBar project={view.project} {...bar} pause={pause} />
+          <RecipeBar project={view.project} {...bar} {...(views === undefined ? {} : { views })} pause={pause} />
         )}
         {banner}
 
@@ -468,6 +472,7 @@ export default async function RecipePage({
         />
       }
       bar={bar}
+      views={await placeViewsOf(name)}
       pause={await pauseSlot(name)}
       banner={<LockBanner project={name} />}
     />

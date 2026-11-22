@@ -41,6 +41,7 @@ import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
+import { placeViewsOf } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
@@ -64,7 +65,7 @@ import { LockRows, pauseSlot } from './lock-banner.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
-import { PlaceLine, viewsFor } from './place-line.tsx'
+import { PlaceLine } from './place-line.tsx'
 import { filterSummary, filterTitle, ProjectRows } from './projects.tsx'
 import { QueuedAnswered, QueuedCountAnswered, QueuedCountPending, QueuedFallback } from './queued-stream.tsx'
 import { Rail, Segs } from './rail.tsx'
@@ -791,7 +792,7 @@ async function FilterSlot({ ctx, app }: { ctx: Ctx; app: boolean }) {
   return (
     <PlaceLine
       project={m.only}
-      views={viewsFor(m.only)}
+      views={await placeViewsOf(m.only)}
       here="tickets"
       menu={
         <FilterMenu className="filter" summary={filterSummary(m.only ?? 'all projects')} title={filterTitle(m.only)}>
@@ -1150,7 +1151,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           {param !== undefined ? (
             <PlaceLine
               project={param}
-              views={viewsFor(param)}
+              views={await placeViewsOf(param)}
               here="tickets"
               menu={
                 <FilterMenu className="filter" summary={filterSummary(param)} title={filterTitle(param)}>
