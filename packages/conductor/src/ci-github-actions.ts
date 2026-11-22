@@ -70,12 +70,12 @@ export function githubActionsProvider(deps: GithubActionsDeps): CiProviderShape 
     capabilities: { trigger: 'on-push', canRerun: false, canReadLogs: false },
     detect: (head) =>
       Effect.gen(function* () {
-        const listed = yield* git(['ls-tree', '--name-only', head.sha, '.github/workflows/'])
+        const listed = yield* git(['ls-tree', '-z', '--name-only', head.sha, '.github/workflows/'])
         if (listed.code !== 0)
           return yield* Effect.fail(new Error(`git ls-tree answered exit ${listed.code ?? 'nothing'}`))
         const files = listed.stdout
-          .split('\n')
-          .map((l) => l.trim())
+          // `-z`: NUL-separated and unquoted, so a non-ASCII name is the raw path `git show` takes.
+          .split('\0')
           .filter((l) => /\.ya?ml$/.test(l))
         for (const file of files) {
           const shown = yield* git(['show', `${head.sha}:${file}`])

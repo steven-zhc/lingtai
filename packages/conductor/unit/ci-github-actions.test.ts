@@ -13,8 +13,8 @@ const files = (workflows: Record<string, string>) =>
           ? {
               code: 0,
               stdout: Object.keys(workflows)
-                .map((f) => `.github/workflows/${f}`)
-                .join('\n'),
+                .map((f) => `.github/workflows/${f}\0`)
+                .join(''),
             }
           : { code: 0, stdout: workflows[args[1]!.split('/').pop()!] ?? '' },
       ),
@@ -35,6 +35,12 @@ describe('detect', () => {
   })
   it('a file that does not parse counts as configured', () => {
     expect(runsOnPullRequest('on: [unclosed\n')).toBe(true)
+  })
+})
+
+describe('detect with a non-ASCII workflow name', () => {
+  it('reads the raw path from NUL-separated ls-tree output', async () => {
+    expect(await detect({ '测试.yml': 'on: pull_request\n' })).toBe('configured')
   })
 })
 

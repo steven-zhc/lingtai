@@ -38,6 +38,7 @@ interface World {
   draft: boolean
   pullHead: string
   pullState?: 'open' | 'closed'
+  pullStates?: ('open' | 'closed')[]
   pullHeads?: string[]
   checksBySha?: Record<string, CiCheck[]>
   observedShas: string[]
@@ -102,7 +103,7 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
       ]),
     getPull: () =>
       Effect.succeed({
-        state: w.pullState ?? 'open',
+        state: w.pullStates?.shift() ?? w.pullState ?? 'open',
         merged: false,
         mergeCommitSha: null,
         headSha: w.pullHeads?.shift() ?? w.pullHead,
@@ -164,9 +165,12 @@ describe('the ci and ready steps', () => {
   it('a PR closed by hand after CI went green is not recorded In review', async () => {
     const store = await frozen()
     const w = aWorld([check('a', 'success')])
-    w.draft = false
+    // open while ci reads, closed when ready looks just before the mutation
+    w.pullStates = ['open']
     w.pullState = 'closed'
+    w.draft = true
     await serve(ports(store, w, recipeWith()))
+    expect(await types(store)).toContain('PrChecked')
     expect(await types(store)).not.toContain('PrOpened')
     expect(w.marked).toEqual([])
   })
