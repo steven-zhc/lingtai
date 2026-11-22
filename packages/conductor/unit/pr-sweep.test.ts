@@ -41,6 +41,7 @@ const open: PullState = {
   mergeCommitSha: null,
   headSha: FROZEN,
   updatedAt: '2026-11-21T00:00:00Z',
+  draft: false,
 }
 const aWorld = (): World => ({ pull: open, reach: 1, pullCalls: [], closed: [], fetches: 0, gitCalls: [] })
 

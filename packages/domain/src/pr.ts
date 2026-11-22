@@ -60,6 +60,19 @@ export interface PrState {
   mergedBackTickets: readonly string[]
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
+  /** When the PR branch was last pushed (`PrPushed`'s own time): the 30-minute none-started rule counts from here. */
+  pushedAt: Date | null
+  /**
+   * The latest verdict recorded on a head (`PrChecked`). **Not a step**: a red one must not make a retry skip `ci`; it
+   * only keeps the same verdict on the same head from being appended twice.
+   */
+  checked: { readonly headSha: string; readonly verdict: 'green' | 'red' } | null
+  /** The latest `PrChecked`, whole: what the PR page and `lingtai pr` draw the CI line and the failing checks from. */
+  checks: PayloadOf<'PrChecked'> | null
+  /** The head CI is following (`PrCiFollowing`): reset by `PrInProgress`, moved when the pull request's head moves. */
+  following: string | null
+  /** The latest `PrCiSkipped`: *no CI step*, and why. */
+  ciSkipped: PayloadOf<'PrCiSkipped'> | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
   steps: readonly PrStepRecord[]
   /**
@@ -132,6 +145,11 @@ export const emptyPr: PrState = {
   mergedExact: true,
   mergedBackTickets: [],
   host: null,
+  pushedAt: null,
+  checked: null,
+  checks: null,
+  ciSkipped: null,
+  following: null,
   steps: [],
   mergeBack: null,
   rounds: [],
@@ -206,9 +224,28 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         fixOwed: false,
         steps: [],
         wait: null,
+        following: null,
         waitSince: null,
         pending: null,
         granting: null,
+      }
+    }
+    case 'PrCiFollowing': {
+      const d = event.data as PayloadOf<'PrCiFollowing'>
+      // The head moved: its checks are read afresh, so the verdict and the `ci` step's record are of the old one. The
+      // 30-minute rule counts from when the new head was first followed, unless it is the head Lingtai pushed.
+      return {
+        ...state,
+        ...at,
+        steps: state.steps.filter((s) => s.step !== 'ci'),
+        following: d.headSha,
+        checked: null,
+        checks: null,
+        ciSkipped: null,
+        pushedAt: d.headSha === state.lastPushed ? state.pushedAt : event.at,
+        status: state.status === 'waiting' ? 'in-progress' : state.status,
+        wait: null,
+        waitSince: null,
       }
     }
     case 'PrFixLanded': {
@@ -246,7 +283,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrPushed': {
       const d = event.data as PayloadOf<'PrPushed'>
-      return { ...withStep(state, { step: 'push', headSha: d.headSha }), ...at, lastPushed: d.headSha }
+      return {
+        ...withStep(state, { step: 'push', headSha: d.headSha }),
+        ...at,
+        lastPushed: d.headSha,
+        pushedAt: event.at,
+      }
     }
     case 'PrDraftOpened': {
       const d = event.data as PayloadOf<'PrDraftOpened'>
@@ -256,9 +298,23 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         host: { number: d.number, nodeId: d.nodeId, url: d.url },
       }
     }
+    case 'PrCiSkipped': {
+      const d = event.data as PayloadOf<'PrCiSkipped'>
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, ciSkipped: d }
+    }
+    case 'PrChecked': {
+      const d = event.data as PayloadOf<'PrChecked'>
+      const checked = { headSha: d.headSha, verdict: d.verdict }
+      // Green is the `ci` step's record; red is a fact about the head and records no step.
+      if (d.verdict === 'red') return { ...state, ...at, checked, checks: d }
+      return { ...withStep(state, { step: 'ci', headSha: d.headSha }), ...at, checked, checks: d }
+    }
     case 'PrOpened': {
       const d = event.data as PayloadOf<'PrOpened'>
-      const stepped = d.host === 'none' ? withStep(state, { step: 'open', headSha: state.target ?? '' }) : state
+      const stepped =
+        d.host === 'none'
+          ? withStep(state, { step: 'open', headSha: state.target ?? '' })
+          : withStep(state, { step: 'ready', headSha: state.following ?? state.target ?? '' })
       return { ...stepped, ...at, status: 'in-review', wait: null }
     }
     case 'BranchSynced': {
@@ -586,6 +642,45 @@ export function draftOpenedTransition(
 ): ToAppend<PayloadOf<'PrDraftOpened'>> | null {
   if (!walking(state) || state.steps.some((s) => s.step === 'open')) return null
   return { type: 'PrDraftOpened', actor: 'conductor', data: opened }
+}
+
+/** CI follows this head. Nothing is appended for the head it already follows. */
+export function ciFollowingTransition(
+  state: PrState,
+  following: PayloadOf<'PrCiFollowing'>,
+): ToAppend<PayloadOf<'PrCiFollowing'>> | null {
+  if (state.status !== 'in-progress') return null
+  if (state.following === following.headSha) return null
+  return { type: 'PrCiFollowing', actor: 'conductor', data: following }
+}
+
+/** The step `ci` is passed over: the project has none. Recorded once per pass through In progress. */
+export function ciSkippedTransition(
+  state: PrState,
+  skipped: PayloadOf<'PrCiSkipped'>,
+): ToAppend<PayloadOf<'PrCiSkipped'>> | null {
+  if (!walking(state) || state.steps.some((s) => s.step === 'ci')) return null
+  if (skipped.headSha !== state.following) return null
+  return { type: 'PrCiSkipped', actor: 'conductor', data: skipped }
+}
+
+/**
+ * A verdict on a head. **The same verdict on the same head appends nothing**, so a sweep that reads the same red twice
+ * says it once; a pr-fix landing's new head is a new read. A verdict about an earlier pass's head proves nothing.
+ */
+export function checkedTransition(
+  state: PrState,
+  checked: PayloadOf<'PrChecked'>,
+): ToAppend<PayloadOf<'PrChecked'>> | null {
+  if (!walking(state)) return null
+  if (checked.headSha !== state.following) return null
+  // Green is the step's record, so it is appended while the step is not recorded (a retry's new pass starts empty).
+  if (checked.verdict === 'green') {
+    if (state.steps.some((s) => s.step === 'ci')) return null
+  } else if (state.checked?.headSha === checked.headSha && state.checked.verdict === 'red') {
+    return null
+  }
+  return { type: 'PrChecked', actor: 'conductor', data: checked }
 }
 
 /** The PR is In review. Only a PR that is walking goes there. */

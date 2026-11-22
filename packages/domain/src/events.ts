@@ -2592,6 +2592,9 @@ const PrWaitReason = z.enum([
   'branch-moved',
   'several-open',
   'draft-unsupported',
+  'ci-red',
+  'ci-none-started',
+  'ci-timeout',
   'sync-conflict',
   'sync-red',
   'sync-unknown',
@@ -2654,6 +2657,55 @@ export const PrDraftOpened = z.object({
   nodeId: z.string(),
   url: z.string(),
   found: z.enum(['opened', 'existing']),
+})
+
+/**
+ * The project has no CI to read on this PR (`pr.ci.provider: none`, or `detect` found no workflow on pull requests), so
+ * the `ci` step is passed over and the PR page says so (0130 §5).
+ *
+ * @summary A PR has no CI step: the project's CI was declared none or no workflow runs on pull requests.
+ */
+export const PrCiSkipped = z.object({ headSha: z.string().min(1), why: z.string() })
+
+/**
+ * The head the `ci` step is following. A PR's branch is shared, so its head moves (a suggestion, *Update branch*, a push):
+ * CI is read on the head the pull request has now, and a head that moved takes the PR back to `ci` on the new one.
+ *
+ * @summary A PR's CI now follows this head commit: the pull request's head moved, or CI began reading it.
+ */
+export const PrCiFollowing = z.object({ headSha: z.string().min(1) })
+
+/**
+ * The project's CI finished on the PR's head: `green` (the `ci` step is done) or `red` (the PR then waits on a person).
+ * `checks` are the ones read, by name, state and link; a check's `artifacts` are links to what it left on the CI platform.
+ *
+ * @summary A PR's checks on its head finished: green moves the PR on, red names the failing checks.
+ */
+export const PrChecked = z.object({
+  headSha: z.string().min(1),
+  verdict: z.enum(['green', 'red']),
+  checks: z.array(
+    z.object({
+      name: z.string(),
+      state: z.enum([
+        'queued',
+        'running',
+        'success',
+        'failure',
+        'neutral',
+        'skipped',
+        'cancelled',
+        'timed-out',
+        'unknown',
+      ]),
+      url: z.string(),
+      /** On a red verdict: this check is one the verdict counted and found failing (an observed-only check is not). */
+      failing: z.boolean().optional(),
+      artifacts: z
+        .array(z.object({ kind: z.enum(['log', 'screenshot', 'video', 'other']), name: z.string(), url: z.string() }))
+        .optional(),
+    }),
+  ),
 })
 
 /**
@@ -3113,6 +3165,9 @@ export const EVENTS = {
   PrWaiting,
   PrPushed,
   PrDraftOpened,
+  PrCiSkipped,
+  PrCiFollowing,
+  PrChecked,
   PrOpened,
   BranchSynced,
   PrMergedBack,
@@ -3244,6 +3299,9 @@ export const EVENT_AT = {
   PrWaiting: ['outside'],
   PrPushed: ['outside'],
   PrDraftOpened: ['outside'],
+  PrCiSkipped: ['outside'],
+  PrCiFollowing: ['outside'],
+  PrChecked: ['outside'],
   PrOpened: ['outside'],
   BranchSynced: ['outside'],
   PrMergedBack: ['outside'],

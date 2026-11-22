@@ -82,7 +82,7 @@ person pastes is still never accepted: it is the case that fails silently.
    and refreshes it a minute before it expires, one refresh at a time, so a
    token never expires partway through a merge.
 
-3. **The permissions are these five, and only these.**
+3. **The permissions are these seven, and only these.**
 
 | Permission | Level | For |
 |---|---|---|
@@ -90,6 +90,8 @@ person pastes is still never accepted: it is the case that fails silently.
 | Contents | read + write | cloning, pushing `agent/*`, merging into base |
 | Pull requests | read + write | opening and reading pull requests |
 | Workflows | read + write | pushing changes to `.github/workflows` |
+| Checks | read | reading a PR's check runs |
+| Statuses | read | reading a PR's commit statuses |
 | Metadata | read | required by GitHub for any App |
 
    `REQUIRED_PERMISSIONS` in `packages/github/src/app.ts` is this table in code,

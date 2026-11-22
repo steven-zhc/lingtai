@@ -18,6 +18,7 @@ import {
   decidePassSandbox,
   runtimesOf,
 } from '@lingtai/conductor'
+import { ciProviderFor } from '@lingtai/conductor/ci-providers'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { ownerlessClientEffect } from '@lingtai/conductor/ownerless'
 import { currentRecipeEffect } from '@lingtai/conductor/projects'
@@ -237,6 +238,15 @@ export function livePrPorts(
         return yield* answered(args[0] === 'fetch' ? retryUnreachable(run) : run)
       }),
     github: githubOf,
+    // The CI provider the recipe names, over this project's GitHub and mirror (#1339).
+    ci: (project, github) =>
+      Effect.gen(function* () {
+        const recipe = yield* recipeOf(project)
+        return ciProviderFor(recipe, {
+          github,
+          git: (args) => answered(gitEffect([...args], { cwd: mirrorPathFor(project) })),
+        })
+      }),
     merge: (project, options) => mergeInWorktree({ project, ...options }),
     sweep: (project) => sweepPrWorktrees({ project }),
     build: (project, options) =>

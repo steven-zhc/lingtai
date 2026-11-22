@@ -268,8 +268,8 @@ describe('the walk', () => {
     run: ({ state }) => Effect.succeed({ kind: 'done', headSha: state.target ?? 'x' }),
   })
 
-  it('lists In progress’s steps in 0130 §5’s order, sync and build first', () => {
-    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['sync', 'build', 'push', 'open'])
+  it('lists In progress’s steps in 0130 §5’s order, sync and build first, ci and ready last', () => {
+    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['sync', 'build', 'push', 'open', 'ci', 'ready'])
   })
 
   it('records each step with the head sha it ran on, and a second serve runs none of them again', async () => {

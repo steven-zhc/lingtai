@@ -13,7 +13,15 @@ import { describe, expect, it } from 'vitest'
 
 import { listRepositories } from '../src/index.ts'
 
-const WRITE = { issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }
+const WRITE = {
+  issues: 'write',
+  contents: 'write',
+  pull_requests: 'write',
+  workflows: 'write',
+  checks: 'read',
+  statuses: 'read',
+  metadata: 'read',
+}
 
 interface FakeInstallation {
   id: number

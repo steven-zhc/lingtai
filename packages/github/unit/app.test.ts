@@ -71,12 +71,16 @@ describe('permissionGaps', () => {
     appSlug: null,
   })
 
-  it('names workflows when an installation holds only the old four', () => {
+  it('names workflows, checks and statuses when an installation holds only the old four', () => {
     expect(
       permissionGaps(installed({ issues: 'write', contents: 'write', pull_requests: 'write', metadata: 'read' })).map(
         ({ name, need, have }) => ({ name, need, have }),
       ),
-    ).toEqual([{ name: 'workflows', need: 'write', have: 'none' }])
+    ).toEqual([
+      { name: 'workflows', need: 'write', have: 'none' },
+      { name: 'checks', need: 'read', have: 'none' },
+      { name: 'statuses', need: 'read', have: 'none' },
+    ])
   })
 
   it('sends the owner to the App page before the installation page, with fallbacks for both', () => {
@@ -91,7 +95,15 @@ describe('permissionGaps', () => {
   it('is empty when the installation grants everything', () => {
     expect(
       permissionGaps(
-        installed({ issues: 'write', contents: 'write', pull_requests: 'write', workflows: 'write', metadata: 'read' }),
+        installed({
+          issues: 'write',
+          contents: 'write',
+          pull_requests: 'write',
+          workflows: 'write',
+          checks: 'read',
+          statuses: 'read',
+          metadata: 'read',
+        }),
       ),
     ).toEqual([])
   })
@@ -105,7 +117,7 @@ describe('permissionGaps', () => {
   it('names each missing permission, what it has, and what it is for', () => {
     const gaps = permissionGaps(installed({ issues: 'read', contents: 'write', metadata: 'read' }))
 
-    expect(gaps.map((g) => g.name).sort()).toEqual(['issues', 'pull_requests', 'workflows'])
+    expect(gaps.map((g) => g.name).sort()).toEqual(['checks', 'issues', 'pull_requests', 'statuses', 'workflows'])
     const issues = gaps.find((g) => g.name === 'issues')!
     expect(issues.have).toBe('read')
     expect(issues.need).toBe('write')
@@ -121,6 +133,8 @@ describe('permissionGaps', () => {
           contents: 'write',
           pull_requests: 'write',
           workflows: 'write',
+          checks: 'write',
+          statuses: 'write',
           metadata: 'write',
         }),
       ),

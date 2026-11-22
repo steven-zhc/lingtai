@@ -268,6 +268,8 @@ export const REQUIRED_PERMISSIONS: { name: string; level: 'read' | 'write'; why:
   { name: 'contents', level: 'write', why: 'cloning, pushing agent/*, merging into base' },
   { name: 'pull_requests', level: 'write', why: 'opening and reading pull requests' },
   { name: 'workflows', level: 'write', why: 'pushing changes to .github/workflows' },
+  { name: 'checks', level: 'read', why: "reading a PR's check runs" },
+  { name: 'statuses', level: 'read', why: "reading a PR's commit statuses" },
   { name: 'metadata', level: 'read', why: 'required by GitHub for any App' },
 ]
 

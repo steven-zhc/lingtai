@@ -161,6 +161,30 @@ export interface PullState {
   readonly mergeCommitSha: string | null
   readonly headSha: string
   readonly updatedAt: string
+  /** Whether it is still a draft (#1339): a PR marked ready by hand is not marked again. */
+  readonly draft: boolean
+}
+
+/** One check run on a commit, by the fields read (#1339). `conclusion` is null until it completes. */
+export interface CheckRun {
+  readonly name: string
+  readonly status: string
+  readonly conclusion: string | null
+  readonly url: string
+  /** `details_url`: where the check's own evidence lives (an external log), which may differ from `url`. */
+  readonly detailsUrl: string
+  readonly startedAt: string | null
+  readonly completedAt: string | null
+}
+
+/** The combined commit status, by the fields read: `total` is `total_count`, so 0 is *no statuses*, never *pending*. */
+export interface CombinedStatus {
+  readonly total: number
+  readonly statuses: readonly {
+    readonly context: string
+    readonly state: string
+    readonly url: string | null
+  }[]
 }
 
 interface RawPull {
@@ -334,6 +358,21 @@ export interface GitHub {
    * not a boolean, **fails** — an absent field is never *false*. A 404 is a failure too, never *closed*.
    */
   getPull(number: number): E<PullState>
+
+  /**
+   * Every check run on a commit, **every page**, latest of each name (#1339). A 403 that is not a rate limit is
+   * `PermissionDenied` naming `checks`. A failed read is a failure, never *no checks*.
+   */
+  checkRunsAt(sha: string): E<readonly CheckRun[]>
+
+  /** The commit's combined status, read for `total_count` and each status. A 403 names `statuses`. */
+  combinedStatusAt(sha: string): E<CombinedStatus>
+
+  /**
+   * Marks a draft pull request ready for review, by its GraphQL node id — REST cannot change `draft`. **GraphQL answers
+   * an error with HTTP 200**, so a non-empty `errors` array, or a pull request still a draft, is a failure.
+   */
+  markReadyForReview(nodeId: string): E<void>
 
   /**
    * Closes a pull request without merging it (`PATCH /pulls/{number} { state: 'closed' }`, #1314): the one write to a pull
@@ -759,6 +798,14 @@ export const makeGitHub = (
           (err) => Effect.fail(new PermissionDenied(err, 'pull_requests', level, isGh(auth) ? 'gh' : 'app')),
         )
 
+      /** A 403 that is a missing `checks` or `statuses` permission is `PermissionDenied`; a rate limit is passed on. */
+      const asChecksCall = <A>(permission: 'checks' | 'statuses', call: E<A>): E<A> =>
+        Effect.catchIf(
+          call,
+          (err) => err.status === 403 && !isRateLimited(err),
+          (err) => Effect.fail(new PermissionDenied(err, permission, 'read', isGh(auth) ? 'gh' : 'app')),
+        )
+
       const listLinked = (path: string): E<LinkedIssue[]> =>
         asLinkCall(
           'read',
@@ -1039,7 +1086,102 @@ export const makeGitHub = (
             mergeCommitSha: sha ?? null,
             headSha: head.sha,
             updatedAt: raw['updated_at'],
+            draft: raw['draft'] === true,
           } satisfies PullState
+        }),
+
+        checkRunsAt: Effect.fn('github.checkRunsAt')(function* (sha: string) {
+          const out: CheckRun[] = []
+          for (let page = 1; ; page++) {
+            const path = `${repoPath}/commits/${sha}/check-runs?filter=latest&per_page=100&page=${page}`
+            const raw = yield* asChecksCall('checks', send<{ check_runs?: unknown }>('GET', path))
+            if (!Array.isArray(raw.check_runs)) {
+              return yield* new GitHubFailed(0, path, `the answer for the check runs at ${sha} is not a list`)
+            }
+            for (const r of raw.check_runs as Record<string, unknown>[]) {
+              if (typeof r['name'] !== 'string' || typeof r['status'] !== 'string') {
+                return yield* new GitHubFailed(0, path, `a check run at ${sha} has no name or status`)
+              }
+              out.push({
+                name: r['name'],
+                status: r['status'],
+                conclusion: typeof r['conclusion'] === 'string' ? r['conclusion'] : null,
+                url: typeof r['html_url'] === 'string' ? r['html_url'] : '',
+                detailsUrl: typeof r['details_url'] === 'string' ? r['details_url'] : '',
+                startedAt: typeof r['started_at'] === 'string' ? r['started_at'] : null,
+                completedAt: typeof r['completed_at'] === 'string' ? r['completed_at'] : null,
+              })
+            }
+            if (raw.check_runs.length < 100) return out
+            if (page >= LINK_PAGES) {
+              return yield* new GitHubFailed(0, path, `more than ${LINK_PAGES * 100} check runs at ${sha}`)
+            }
+          }
+        }),
+
+        combinedStatusAt: Effect.fn('github.combinedStatusAt')(function* (sha: string) {
+          const statuses: CombinedStatus['statuses'][number][] = []
+          let total = 0
+          // `total_count` is the whole; `statuses` is one page of it. Every page is read, and a short count is a failure.
+          for (let page = 1; ; page++) {
+            const path = `${repoPath}/commits/${sha}/status?per_page=100&page=${page}`
+            const raw = yield* asChecksCall(
+              'statuses',
+              send<{ total_count?: unknown; statuses?: unknown }>('GET', path),
+            )
+            if (typeof raw.total_count !== 'number' || !Array.isArray(raw.statuses)) {
+              return yield* new GitHubFailed(0, path, `the answer for the status at ${sha} is not the fields read`)
+            }
+            total = raw.total_count
+            for (const s of raw.statuses as Record<string, unknown>[]) {
+              if (typeof s['context'] === 'string' && typeof s['state'] === 'string') {
+                statuses.push({
+                  context: s['context'],
+                  state: s['state'],
+                  url: typeof s['target_url'] === 'string' ? s['target_url'] : null,
+                })
+              }
+            }
+            if (statuses.length >= total || raw.statuses.length === 0) break
+            if (page >= LINK_PAGES) break
+          }
+          if (statuses.length < total) {
+            return yield* new GitHubFailed(
+              0,
+              `${repoPath}/commits/${sha}/status`,
+              `read ${statuses.length} of ${total} statuses at ${sha} — the listing is incomplete`,
+            )
+          }
+          return { total, statuses } satisfies CombinedStatus
+        }),
+
+        markReadyForReview: Effect.fn('github.markReadyForReview')(function* (nodeId: string) {
+          const path = '/graphql'
+          const raw = yield* asPullCall(
+            'write',
+            send<{
+              data?: { markPullRequestReadyForReview?: { pullRequest?: { isDraft?: unknown } | null } | null } | null
+              errors?: { type?: string; message?: string }[]
+            }>('POST', path, {
+              query:
+                'mutation($id: ID!) { markPullRequestReadyForReview(input: { pullRequestId: $id }) { pullRequest { isDraft } } }',
+              variables: { id: nodeId },
+            }),
+          )
+          if (Array.isArray(raw.errors) && raw.errors.length > 0) {
+            const forbidden = raw.errors.some((e) => e.type === 'FORBIDDEN')
+            const failed = new GitHubFailed(
+              forbidden ? 403 : 0,
+              path,
+              `marking ${nodeId} ready for review: ${raw.errors.map((e) => e.message ?? e.type ?? 'error').join('; ')}`,
+            )
+            return yield* forbidden
+              ? Effect.fail(new PermissionDenied(failed, 'pull_requests', 'write', isGh(auth) ? 'gh' : 'app'))
+              : Effect.fail(failed)
+          }
+          if (raw.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
+            return yield* new GitHubFailed(0, path, `${nodeId} is still a draft after markPullRequestReadyForReview`)
+          }
         }),
 
         closePull: Effect.fn('github.closePull')(function* (number: number) {

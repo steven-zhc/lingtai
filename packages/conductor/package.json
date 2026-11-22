@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./ticket": "./src/ticket/commands.ts",
+    "./ci-providers": "./src/ci-providers.ts",
     "./run-log": "./src/run-log.ts",
     "./snapshot-state": "./src/snapshot-state.ts",
     "./projects": "./src/projects.ts",
