@@ -13,6 +13,13 @@ import { savePrSummaryNow } from './actions.ts'
 
 export function PrSummaryEditor({ project, n, summary }: { project: string; n: number; summary: PageSummary }) {
   const [text, setText] = useState(summary.text)
+  // The stream's summary moves under an open page (the agent finishes, a pr-fix extends it): a field the person has not
+  // touched follows it, and one they have edited keeps their words.
+  const [base, setBase] = useState(summary.text)
+  if (summary.text !== base) {
+    setBase(summary.text)
+    if (text === base) setText(summary.text)
+  }
   const [pending, startTransition] = useTransition()
   const [answer, setAnswer] = useState<{ ok: boolean; detail: string } | null>(null)
   const save = () => {

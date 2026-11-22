@@ -18,15 +18,19 @@ import {
   prDescription,
   prStepRows,
   prWaitOf,
+  reducePr,
   summaryEditTransition,
 } from '@lingtai/domain'
-import { type Recipe, ceilingOf, remoteOf } from '@lingtai/recipe'
+import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
 import { summarise } from './history.ts'
 import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
+
+/** Whether the project's *tickets* are on GitHub (`source.tickets`): a different axis from where the PR is pushed. */
+export const ticketsOnGitHub = (recipe: Recipe): boolean => ticketSourceOf(recipe) === 'github'
 
 // ── The ticket a person opens for a change the review asked for ────────────────────────────────────────────────────
 
@@ -181,6 +185,10 @@ export interface PrPageInput {
   readonly open: PrState | null
   /** What the PR's stream cost, reported; null is unknown, never `$0`. */
   readonly spend: number | null
+  /** What each ticket cost and whether it is still open, as the daemon's description reads them; absent is unknown. */
+  readonly facts?: readonly { readonly ticket: string; readonly open: boolean | null; readonly spend: number | null }[]
+  /** The two parts of `spend`, for Facts: what the tickets cost and what the PR's own runs cost. Null is unknown. */
+  readonly spendParts?: { readonly tickets: number | null; readonly pr: number | null }
   /** The conductor's own step list, in order. */
   readonly stepNames: readonly string[]
   readonly now: Date
@@ -193,7 +201,7 @@ const STEP_LABELS: Record<string, string> = {
   push: 'Push',
   open: 'Open the draft PR',
   ci: 'CI',
-  topup: 'Bring main in again',
+  topup: 'Extend the summary',
   ready: 'Ready for review',
 }
 
@@ -222,6 +230,12 @@ const CHECK_WORDS: Record<string, string> = {
 }
 
 const money = (n: number | null): string => (n === null ? 'spend unknown' : `$${n.toFixed(2)}`)
+function spendFact(input: Pick<PrPageInput, 'spend' | 'spendParts'>): string {
+  const parts = input.spendParts
+  if (input.spend === null || parts === undefined || parts.tickets === null || parts.pr === null)
+    return money(input.spend)
+  return `${money(input.spend)} · tickets ${money(parts.tickets)} · PR runs ${money(parts.pr)}`
+}
 const short = (sha: string | null): string => (sha === null ? '?' : sha.slice(0, 7))
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 const day = (d: Date): string => `${d.toISOString().slice(5, 10)} ${d.toISOString().slice(11, 16)}`
@@ -246,13 +260,30 @@ function lastPass(events: readonly Envelope[]): readonly Envelope[] {
   return []
 }
 
-/** Each step's duration: its `PrStepDone`'s time minus the time of the event before it, from the `PrInProgress`. */
-function stepDurations(pass: readonly Envelope[]): Map<string, number> {
+/**
+ * Each step's duration: the time from the previous step's completion (or the `PrInProgress`) to the event that recorded
+ * the step as done — whichever event that was (`PrStepDone`, `BranchSynced`, `PrPushed`, `PrChecked`…). Found by folding the
+ * events with `reducePr` and noting when each step first appears, so it spans the step's whole run rather than the append
+ * gap before one event.
+ */
+function stepDurations(events: readonly Envelope[]): Map<string, number> {
   const out = new Map<string, number>()
-  for (let i = 1; i < pass.length; i++) {
-    const e = pass[i]!
-    if (e.type === 'PrStepDone')
-      out.set((e.data as PayloadOf<'PrStepDone'>).step, e.at.getTime() - pass[i - 1]!.at.getTime())
+  let start = -1
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.type === 'PrInProgress') {
+      start = i
+      break
+    }
+  }
+  if (start < 0) return out
+  let from = events[start]!.at.getTime()
+  for (let i = start + 1; i < events.length; i++) {
+    for (const s of reducePr(events.slice(0, i + 1)).steps) {
+      if (out.has(s.step)) continue
+      const at = events[i]!.at.getTime()
+      out.set(s.step, at - from)
+      from = at
+    }
   }
   return out
 }
@@ -264,7 +295,7 @@ const last = <T>(xs: readonly T[], f: (x: T) => boolean): T | undefined => {
 
 function stepRows(pr: PrState, events: readonly Envelope[], names: readonly string[], recipe: Recipe): PageStep[] {
   const pass = lastPass(events)
-  const times = stepDurations(pass)
+  const times = stepDurations(events)
   const synced = last(pass, (e) => e.type === 'BranchSynced')?.data as PayloadOf<'BranchSynced'> | undefined
   const pushed = last(pass, (e) => e.type === 'PrPushed')?.data as PayloadOf<'PrPushed'> | undefined
   const view = prWaitOf(pr, {
@@ -282,10 +313,11 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     const duration = ms === undefined || ms <= 0 ? null : span(ms)
     const base = { step: row.step, label, duration, link: null as PageStep['link'] }
     if (row.status === 'pending') {
-      // `topup` is only there when main moved during the pass: not reached is not worth a row.
-      if (row.step === 'topup') continue
       if (inFlight !== undefined && inFlight.step === row.step) {
         out.push({ ...base, status: 'running', mark: '…', text: 'running now', duration: null })
+      } else if (row.step === 'topup') {
+        // The top-up runs only when a pr-fix joined since the summary was tried: not reached is not worth a row.
+        continue
       } else {
         out.push({
           ...base,
@@ -312,12 +344,21 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     // done
     let text = 'done'
     let status: PageStep['status'] = 'done'
+    if (row.step === 'topup') {
+      // `topup` answers done with no run when no pr-fix joined: only a run (`PrSummaryWritten` at `pr-fix`) is a row.
+      if (!pass.some((e) => e.type === 'PrSummaryWritten' && (e.data as PayloadOf<'PrSummaryWritten'>).at === 'pr-fix'))
+        continue
+    }
     let link: PageStep['link'] = null
     if (row.step === 'sync') {
       if (synced === undefined) text = 'main brought in'
       else if (synced.how === 'already') text = 'nothing to bring in'
       else if (synced.how === 'clean') text = 'main brought in, clean'
-      else text = `a conflict resolved by the agent · ${plural(pr.rounds.length, 'round', 'rounds')}`
+      else {
+        // Rounds are the PR's for its lifetime: this pass's are the ones bought for the `main` commit it brought in.
+        const used = pr.rounds.filter((r) => r.merging === 'main' && r.commit === synced.mainCommit).length
+        text = `a conflict resolved by the agent · ${plural(used, 'round', 'rounds')}`
+      }
     } else if (row.step === 'build') {
       text = 'built'
     } else if (row.step === 'push') {
@@ -337,6 +378,8 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
         text = `no summary: ${pr.summaryNotWritten}`
       } else if (pr.edited !== null) text = 'written, then edited by you'
       else text = pr.summary?.text != null ? 'written by the agent' : 'done'
+    } else if (row.step === 'topup') {
+      text = 'the summary extended for the pr-fix'
     } else if (row.step === 'ready') {
       text = 'ready for review'
     }
@@ -397,7 +440,7 @@ export function prPage(input: PrPageInput): PrPageView {
   const buttons: Button[] = []
   let fixCommand: PrPageView['fixCommand'] = null
   let doNote: string | null = null
-  const fix = prFixTicketLink({ project, owner: input.owner, github, name })
+  const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name })
   const addFix = () => {
     if (fix === null) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
@@ -489,7 +532,10 @@ export function prPage(input: PrPageInput): PrPageView {
     generated: prDescription({
       title: null,
       summary: null,
-      tickets: pr.tickets.map((t) => ({ ...t, open: null, spend: null })),
+      tickets: pr.tickets.map((t) => {
+        const read = input.facts?.find((f) => f.ticket === t.ticket)
+        return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
+      }),
     }).body,
     notes,
     saveLabel: 'Save',
@@ -504,7 +550,7 @@ export function prPage(input: PrPageInput): PrPageView {
     { label: 'Base', value: pr.main ?? main },
     { label: 'Head', value: `${short(head)}${pr.lastPushed === null ? '' : ' · pushed by Lingtai'}` },
     { label: 'Main', value: synced === undefined ? 'not brought in yet' : `brought in ${day(synced.at)}` },
-    { label: 'Spend', value: money(input.spend) },
+    { label: 'Spend', value: spendFact(input) },
   ]
   if (mb !== null && mb.outcome === 'failed' && mb.prHead === head) {
     facts.push({

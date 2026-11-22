@@ -16,10 +16,11 @@ import { type PrPageView, hostLine, prFixTicketLink, prPage } from '../src/lib/p
 const recipe = {
   mode: 'team',
   branch: { main: 'main', personal: 'foundry' },
+  source: {},
   runtime: { agent: 'claude-code', limits: { attempt: { conflictResolutions: 3 } } },
 } as unknown as Recipe
 
-const STEPS = ['sync', 'build', 'push', 'ci', 'summary', 'ready']
+const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
 const T0 = Date.UTC(2026, 10, 20, 11, 0, 0)
 
 /** `[type, data, secondsAfterThePreviousEvent?]` → envelopes with consecutive seq and version. */
@@ -136,7 +137,7 @@ describe('in progress', () => {
   it('names the step in flight and draws no action', () => {
     const v = page([requested, started, done('sync'), done('build')])
     expect(v.buttons).toEqual([])
-    expect(v.steps.find((s) => s.status === 'running')?.step).toBe('push')
+    expect(v.steps.find((s) => s.status === 'running')?.step).toBe('summary')
     expect(v.doNote).toContain('working on it')
   })
   it('draws a step duration from the events, and none where there is no time between', () => {
@@ -290,6 +291,123 @@ describe('in review, merged, closed', () => {
     const v = page(review, { spend: null })
     expect(v.facts.find((f) => f.label === 'Spend')?.value).toBe('spend unknown')
     expect(v.sub).not.toContain('$0')
+  })
+})
+
+describe('what Lingtai did: durations, top-up, rounds', () => {
+  it('a step lasts from the previous step to the event that recorded it, not the last append gap', () => {
+    const v = page([
+      requested,
+      started,
+      ['RunSpent', {}, 300],
+      ['PrSummaryWritten', { by: 'agent', at: 'submit', title: 'T', summary: 's', basedOn: 0 }, 0.01],
+      done('summary', 0.01),
+    ])
+    expect(v.steps.find((s) => s.step === 'summary')?.duration).toBe('5m 0s')
+  })
+  it('a step recorded by PrPushed has a duration too', () => {
+    const v = page([requested, started, ['PrPushed', { headSha: 'f0f0f0f0', found: 'pushed' }, 90]])
+    expect(v.steps.find((s) => s.step === 'push')?.duration).toBe('1m 30s')
+  })
+  it('the summary top-up is its own row, running while it runs and never a second sync', () => {
+    const base = [
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      done('summary'),
+      done('push'),
+      draftOpened,
+      green,
+      done('ci'),
+    ]
+    const running = page(base)
+    expect(running.steps.find((s) => s.step === 'topup')).toMatchObject({
+      status: 'running',
+      label: 'Extend the summary',
+    })
+    expect(JSON.stringify(running.steps)).not.toContain('Bring main in again')
+    const ran = page([
+      ...base,
+      ['PrSummaryWritten', { by: 'agent', at: 'pr-fix', title: 'T', summary: 's', basedOn: 0 }],
+      done('topup'),
+    ])
+    expect(ran.steps.find((s) => s.step === 'topup')).toMatchObject({ status: 'done', label: 'Extend the summary' })
+    const none = page([...base, done('topup')])
+    expect(none.steps.find((s) => s.step === 'topup')).toBeUndefined()
+  })
+  it('the conflict row counts this pass, not the PR lifetime', () => {
+    const round = (commit: string, i: number): Spec => [
+      'SyncRoundStarted',
+      { merging: 'main', commit, start: 's', round: i },
+    ]
+    const sync = (commit: string): Spec => ['BranchSynced', { mainCommit: commit, head: 'h', how: 'resolved' }]
+    const v = page([
+      requested,
+      started,
+      round('m1', 1),
+      round('m1', 2),
+      sync('m1'),
+      done('sync'),
+      ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'c47c47c47' }],
+      [
+        'PrInProgress',
+        { because: 'pr-fix', branch: 'foundry', main: 'main', frozenSha: 'f1', prBranch: 'foundry-pr-7', tickets },
+      ],
+      round('m2', 1),
+      sync('m2'),
+      done('sync'),
+    ])
+    expect(v.steps.find((s) => s.step === 'sync')?.text).toContain('1 round')
+    expect(v.steps.find((s) => s.step === 'sync')?.text).not.toContain('3 rounds')
+  })
+})
+
+describe('the description and the spend the page shows', () => {
+  it('uses the ticket facts the daemon publishes: spend known, a closed ticket without Closes', () => {
+    const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]], {
+      facts: [
+        { ticket: '41', open: true, spend: 1.5 },
+        { ticket: '42', open: false, spend: 2.05 },
+      ],
+      spendParts: { tickets: 3.55, pr: 0.06 },
+      spend: 3.61,
+    })
+    const body = v.summary?.generated ?? ''
+    expect(body).toContain('Closes #41')
+    expect(body).not.toContain('Closes #42')
+    expect(body).toContain('$1.50')
+    expect(body).not.toContain('spend unknown')
+    expect(v.facts.find((f) => f.label === 'Spend')?.value).toBe('$3.61 · tickets $3.55 · PR runs $0.06')
+  })
+})
+
+describe('where New pr-fix ticket goes follows the ticket source, not the remote', () => {
+  const review: Spec[] = [
+    requested,
+    started,
+    draftOpened,
+    green,
+    ['PrOpened', { host: 'github', number: 88, url: 'u' }],
+  ]
+  it('a GitHub-hosted project with tickets in the db shows the command', () => {
+    const db = { ...recipe, source: { tickets: 'db' } } as unknown as Recipe
+    const v = page(review, { recipe: db })
+    expect(v.fixCommand?.command).toBe('lingtai ticket new --project p')
+    expect(labels(v)).not.toContain('New pr-fix ticket')
+  })
+  it('a project with a remote of its own and tickets on GitHub shows the issue link', () => {
+    const away = { ...recipe, repo: { remote: '/srv/x.git' }, source: { tickets: 'github' } } as unknown as Recipe
+    const v = page(review, { recipe: away })
+    expect(labels(v)).toContain('New pr-fix ticket')
+  })
+})
+
+describe('the tickets on the rail open their task pages', () => {
+  it('number and title link to the task page', () => {
+    const html = renderToStaticMarkup(<PrDetail project="p" view={page([requested, started])} host={null} />)
+    expect(html).toContain('href="/task/ticket-p-41"')
+    expect(html.match(/href="\/task\/ticket-p-41"/g)).toHaveLength(2)
   })
 })
 

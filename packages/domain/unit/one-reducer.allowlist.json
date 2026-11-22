@@ -58,10 +58,10 @@
   {
     "file": "apps/board/src/lib/pr-page.ts",
     "function": "stepDurations",
-    "type": "PrStepDone",
+    "type": "PrInProgress",
     "count": 1,
     "class": "select",
-    "reason": "Subtracts one event's time from the one before it for each step's duration; `PrStepRecord` carries no time, so the events are read directly."
+    "reason": "Finds where the last pass began, then folds the events with `reducePr` to see when each step appeared; `PrStepRecord` carries no time and the state is `reducePr`'s."
   },
   {
     "file": "apps/board/src/lib/pr-page.ts",
@@ -78,6 +78,14 @@
     "count": 1,
     "class": "select",
     "reason": "Picks whether the push found the branch already there, for a step row's sentence; the state is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "stepRows",
+    "type": "PrSummaryWritten",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds whether the summary top-up ran this pass (a summary written at a pr-fix), to draw its row only then; the summary is `reducePr`'s."
   },
   {
     "file": "apps/board/src/lib/task.ts",

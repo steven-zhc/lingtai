@@ -13,7 +13,7 @@ import { type PrState, isOpen, prStream, reducePr } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
-import { makeGitHub } from '@lingtai/github'
+import { type GitHub, makeGitHub } from '@lingtai/github'
 import { type PrDraftTicket, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
@@ -23,7 +23,7 @@ import { Effect } from 'effect'
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
 import { type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
-import { type HostRead, type PrPageView, githubHosted, prFixTicketLink, prPage } from './pr-page.ts'
+import { type HostRead, type PrPageView, githubHosted, prFixTicketLink, prPage, ticketsOnGitHub } from './pr-page.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -153,7 +153,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           const link = prFixTicketLink({
             project,
             owner: state.owner,
-            github: githubHosted(recipe),
+            github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
           })
           return link?.kind === 'link' ? link.href : null
@@ -210,6 +210,42 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   return viewsFor(project, { waiting })
 }
 
+const ended = (pr: PrState): boolean => pr.status === 'merged' || pr.status === 'closed'
+
+/** The project's GitHub, or null where there is no App, no owner or the client could not be made: never a failure. */
+const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub | null> => {
+  if (owner === null || owner === '' || !hasGitHubAuth()) return Effect.succeed(null)
+  return makeGitHub({ auth: githubClientAuth(), owner, repo: project }).pipe(Effect.orElseSucceed(() => null))
+}
+
+/**
+ * What the description reads of each ticket, as the daemon's `facts` port does: whether it is still open on GitHub, and what
+ * its runs cost (`null` where any run's cost is unreported, or the read failed). The PR's own stream is not a ticket's.
+ */
+const ticketFacts = (
+  project: string,
+  tickets: readonly string[],
+  github: GitHub | null,
+): Effect.Effect<{ ticket: string; open: boolean | null; spend: number | null }[]> =>
+  Effect.forEach(tickets, (ticket) =>
+    Effect.gen(function* () {
+      const open =
+        github === null || !/^\d+$/.test(ticket)
+          ? null
+          : yield* github.getIssue(Number(ticket)).pipe(
+              Effect.map((issue) => issue.state === 'open'),
+              Effect.orElseSucceed(() => null),
+            )
+      const rows = yield* readSpendEffect({ project, ticket }).pipe(Effect.orElseSucceed(() => null))
+      const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
+      const spend =
+        own === null || own.length === 0 || own.some((r) => r.costUsd === null)
+          ? null
+          : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+      return { ticket, open, spend }
+    }),
+  )
+
 /** What one PR's page knows, or why it could not be known. */
 export type PrDetailRead =
   | { readonly kind: 'solo'; readonly recipe: Recipe }
@@ -236,7 +272,8 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }
-  if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
+  // A local project legitimately records no owner: it is registered all the same.
+  if (state === null || state === undefined) return { kind: 'unknown' }
   try {
     const { recipe } = await currentRecipe(state)
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
@@ -251,7 +288,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
           const view = prPage({
             project,
             recipe,
-            owner: state.owner,
+            owner: state.owner ?? null,
             pr: null,
             events: [],
             draft,
@@ -265,20 +302,31 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         const events = yield* readPrEvents(project, n, eventStore)
         if (events.length === 0) return { kind: 'none' } as const
         const pr = reducePr(events)
-        // Spend unknown on a failed read: never `$0`.
-        const spend = yield* spendByPr(project, [n]).pipe(
-          Effect.map((m) => m.get(n) ?? null),
+        // The spend the page says is the PR's whole: its tickets' runs and its own. A part that could not be read leaves the
+        // total unknown — never `$0`, and never one part presented as the sum.
+        const github = ended(pr) || !githubHosted(recipe) ? null : yield* githubOf(project, state.owner ?? null)
+        const facts = yield* ticketFacts(
+          project,
+          pr.tickets.map((t) => t.ticket),
+          github,
+        )
+        const own = yield* spendByPr(project, [n]).pipe(
+          Effect.map((m) => m.get(n) ?? 0),
           Effect.orElseSucceed(() => null),
         )
+        const tickets = facts.some((f) => f.spend === null) ? null : facts.reduce((sum, f) => sum + (f.spend ?? 0), 0)
+        const spend = own === null || tickets === null ? null : own + tickets
         const view = prPage({
           project,
           recipe,
-          owner: state.owner,
+          owner: state.owner ?? null,
           pr,
           events,
           draft: [],
           open: null,
           spend,
+          spendParts: { tickets, pr: own },
+          facts,
           stepNames,
           now,
         })
