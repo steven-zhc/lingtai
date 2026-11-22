@@ -22,7 +22,7 @@ import { Effect } from 'effect'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
-import { type FixTicket, type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
+import { type FixTicket, type PrBoardView, type PrRead, prBoard, prHolding, prName } from './pr-board.ts'
 import {
   type HostRead,
   type PrPageView,
@@ -32,6 +32,7 @@ import {
   prPage,
   ticketsOnGitHub,
 } from './pr-page.ts'
+import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
@@ -435,3 +436,45 @@ export const readOnBranch = (project: string): Effect.Effect<OnBranchPageRead> =
     }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
     return { kind: 'team', recipe, owner: state.owner ?? null, read } as const
   }).pipe(Effect.catch(() => Effect.succeed({ kind: 'none' } as const)))
+
+/**
+ * What ⌘K indexes of a project's PRs (#1342): plain data for `buildIndex`, from the log alone. A solo project is not
+ * read (`'solo'`); a read that fails is an `Error`, never an empty list, so the palette says it could not tell. One
+ * unreadable stream is a problem of its own and leaves the other PRs listed.
+ */
+export const readSearchPrs = (
+  project: string,
+): Effect.Effect<{ readonly prs: SearchPr[]; readonly problems: string[] } | 'solo', Error> =>
+  Effect.gen(function* () {
+    const state = yield* Effect.tryPromise({ try: () => readProject(project), catch: failed })
+    if (state === null || state === undefined) return 'solo' as const
+    const { recipe } = yield* Effect.tryPromise({ try: () => currentRecipe(state), catch: failed })
+    if (modeOf(recipe) !== 'team') return 'solo' as const
+    const reads = yield* readProjectPrs(project, eventStore)
+    const states = reads.flatMap((r) => ('pr' in r ? [r.pr] : []))
+    const problems = reads.flatMap((r) => ('pr' in r ? [] : [`PR ${r.n} of ${project} could not be read`]))
+    const prs = states.flatMap((pr): SearchPr[] =>
+      pr.status === null
+        ? []
+        : [
+            {
+              project,
+              n: pr.n ?? 0,
+              host: pr.host?.number ?? null,
+              name: prName(pr),
+              title: pr.summary?.title ?? null,
+              branch: pr.prBranch ?? null,
+              status: pr.status,
+              tickets: [...new Set([...pr.tickets.map((t) => t.ticket), ...pr.fixesLanded.map((f) => f.ticket)])],
+              holding: [],
+            },
+          ],
+    )
+    const tickets = new Set(prs.flatMap((p) => p.tickets))
+    for (const t of tickets) {
+      const held = prHolding(t, states)
+      if (held === null) continue
+      prs.find((p) => p.n === held.pr.n)?.holding.push(t)
+    }
+    return { prs, problems }
+  })

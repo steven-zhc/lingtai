@@ -7,11 +7,12 @@
  * caught by the Next build after the merge and by nothing before it (#230);
  * `unit/palette.test.tsx` holds this file to the rule.
  */
+import type { PrStatus } from '@lingtai/domain'
 import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
 
-export type Group = 'Pages' | 'Projects' | 'Recipes' | 'Tickets'
+export type Group = 'Pages' | 'Projects' | 'Recipes' | 'Tickets' | 'PRs'
 
-export const GROUPS: readonly Group[] = ['Pages', 'Projects', 'Recipes', 'Tickets']
+export const GROUPS: readonly Group[] = ['Pages', 'Projects', 'Recipes', 'Tickets', 'PRs']
 
 export interface Entry {
   group: Group
@@ -19,6 +20,35 @@ export interface Entry {
   detail?: string
   href: string
   keys: string[]
+  /** The number a query of just digits finds this by at rank 0; `hash` when `#<n>` names it (a ticket, a PR with a host number). */
+  number?: { value: string; hash: boolean }
+}
+
+/** A PR as the route hands it over: plain data, so this file imports no PR code. */
+export interface SearchPr {
+  project: string
+  /** Lingtai's id: the href, and what `pr <n>` finds before the host has a number. */
+  n: number
+  /** The code host's number; `#<n>` names only this. */
+  host: number | null
+  name: string
+  title: string | null
+  branch: string | null
+  status: PrStatus
+  /** Every ticket the PR has ever named: its keys. */
+  tickets: string[]
+  /** The tickets it holds now: what a ticket's *in PR* says. */
+  holding: string[]
+}
+
+export const PR_WORD: Record<PrStatus, string> = {
+  requested: 'requested',
+  'in-progress': 'in progress',
+  waiting: 'waiting on you',
+  'in-review': 'in review',
+  refused: 'refused',
+  merged: 'merged',
+  closed: 'closed',
 }
 
 export interface Index {
@@ -67,9 +97,11 @@ const reason = (e: Error): string => e.message.split('\n')[0] ?? 'unknown'
 export function buildIndex({
   tasks,
   projects,
+  prs,
 }: {
   tasks: readonly TaskCard[] | Error
   projects: readonly string[] | Error
+  prs?: ReadonlyMap<string, readonly SearchPr[] | Error>
 }): Index {
   const entries: Entry[] = []
   const problems: string[] = []
@@ -99,26 +131,93 @@ export function buildIndex({
       keys: [p, `recipe ${p}`],
     })
   }
+  const holder = new Map<string, string>()
+  for (const [project, read] of prs ?? []) {
+    if (read instanceof Error) {
+      problems.push(`PRs could not be read for ${project}: ${reason(read)}`)
+      continue
+    }
+    for (const pr of read) for (const t of pr.holding) holder.set(`${project}\u0000${t}`, pr.name)
+  }
   if (!(tasks instanceof Error)) {
     for (const t of tasks) {
+      const inPr = holder.get(`${t.project}\u0000${t.issue}`)
       entries.push({
         group: 'Tickets',
         label: t.title.trim() === '' ? `#${t.issue}` : `#${t.issue} ${t.title}`,
-        detail: `${t.project} · ${TICKET_WORD[t.state] ?? t.state}`,
+        detail: `${t.project} · ${TICKET_WORD[t.state] ?? t.state}${inPr === undefined ? '' : ` · in ${inPr}`}`,
         href: `/task/${encodeURIComponent(t.taskId)}`,
         keys: [t.issue, t.title, t.taskId],
+        number: { value: t.issue, hash: true },
+      })
+    }
+  }
+  for (const [project, read] of prs ?? []) {
+    if (read instanceof Error) continue
+    for (const pr of read) {
+      const title = pr.title?.trim() ?? ''
+      const k = pr.tickets.length
+      entries.push({
+        group: 'PRs',
+        label: title === '' ? pr.name : `${pr.name} ${title}`,
+        detail: `${project} · ${PR_WORD[pr.status] ?? pr.status} · ${k} ${k === 1 ? 'ticket' : 'tickets'}`,
+        href: `/pr/${encodeURIComponent(project)}/${pr.n}`,
+        keys: [
+          ...(pr.host === null ? [] : [String(pr.host)]),
+          title,
+          pr.branch ?? '',
+          ...pr.tickets.map((t) => `#${t}`),
+        ],
+        number: pr.host === null ? { value: String(pr.n), hash: false } : { value: String(pr.host), hash: true },
       })
     }
   }
   return { entries, problems }
 }
 
-/** Lower rank is better; `null` is no match. */
-function rank(e: Entry, q: string, issue: string | null): number | null {
-  if (issue !== null && e.group === 'Tickets' && e.keys[0] === issue) return 0
+/** How a number was typed: `88`, `#88` or `pr 88`. */
+interface NumberQuery {
+  kind: 'bare' | 'hash' | 'pr'
+  digits: string
+}
+
+function numberQuery(q: string): NumberQuery | null {
+  const m = /^(#|pr\s*#?)?(\d+)$/i.exec(q)
+  if (!m) return null
+  const kind = m[1] === undefined ? 'bare' : m[1] === '#' ? 'hash' : 'pr'
+  return { kind, digits: m[2] as string }
+}
+
+/** The query's letters in order, with gaps, in `label`: how tight (span) and how early (start). Null when not a subsequence. */
+export function fuzzy(q: string, label: string): { span: number; start: number } | null {
+  const letters = q.replace(/\s+/g, '').toLowerCase()
+  if (letters === '') return null
+  const text = label.toLowerCase()
+  let at = -1
+  let start = -1
+  for (const ch of letters) {
+    at = text.indexOf(ch, at + 1)
+    if (at < 0) return null
+    if (start < 0) start = at
+  }
+  return { span: at - start, start }
+}
+
+/** The shortest query that fuzzy-matches: two letters would light every title. */
+const FUZZY_MIN = 3
+
+/** `[rank, span, start]`, lower is better; `null` is no match. */
+function rank(e: Entry, q: string, num: NumberQuery | null): [number, number, number] | null {
+  if (num !== null && e.number !== undefined && e.number.value === num.digits) {
+    if (num.kind === 'pr' ? e.group === 'PRs' : e.number.hash) return [0, 0, 0]
+  }
   const keys = [...e.keys, e.label].map((k) => k.toLowerCase())
-  if (keys.some((k) => k.startsWith(q))) return 1
-  if (keys.some((k) => k.includes(q))) return 2
+  if (keys.some((k) => k !== '' && k.startsWith(q))) return [1, 0, 0]
+  if (keys.some((k) => k !== '' && k.includes(q))) return [2, 0, 0]
+  if (num === null && q.replace(/\s+/g, '').length >= FUZZY_MIN) {
+    const f = fuzzy(q, e.label)
+    if (f !== null) return [3, f.span, f.start]
+  }
   return null
 }
 
@@ -135,16 +234,15 @@ export function search(index: Index, query: string): Entry[] {
     }
     return out
   }
-  const m = /^#?(\d+)$/.exec(q)
-  const issue = m ? (m[1] as string) : null
+  const num = numberQuery(q)
   for (const g of GROUPS) {
-    const ranked: { e: Entry; r: number; i: number }[] = []
+    const ranked: { e: Entry; r: [number, number, number]; i: number }[] = []
     index.entries.forEach((e, i) => {
       if (e.group !== g) return
-      const r = rank(e, q, issue)
+      const r = rank(e, q, num)
       if (r !== null) ranked.push({ e, r, i })
     })
-    ranked.sort((a, b) => a.r - b.r || a.i - b.i)
+    ranked.sort((a, b) => a.r[0] - b.r[0] || a.r[1] - b.r[1] || a.r[2] - b.r[2] || a.i - b.i)
     out.push(...ranked.slice(0, PER_GROUP).map((x) => x.e))
   }
   return out

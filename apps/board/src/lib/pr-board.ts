@@ -133,6 +133,25 @@ const CI_WAITS: ReadonlySet<WaitReason> = new Set<WaitReason>(['ci-red', 'ci-non
 export const prName = (pr: Pick<PrState, 'host' | 'n'>): string =>
   pr.host !== null ? `PR #${pr.host.number}` : `PR ${pr.n ?? '?'}`
 
+/**
+ * The PR that holds `ticket` by the store's own rules (a closed PR gives its tickets back; a merge holds what its
+ * commit held): an open PR, else a merged one that held it, else a merge whose commit is not yet known exactly.
+ */
+export function prHolding(
+  ticket: string,
+  prs: readonly PrState[],
+): { readonly kind: 'open' | 'merged' | 'merging'; readonly pr: PrState } | null {
+  const holds = (p: PrState) =>
+    p.tickets.some((t) => t.ticket === ticket) || p.fixesLanded.some((f) => f.ticket === ticket)
+  const open = prs.find((p) => isOpen(p) && holds(p))
+  if (open !== undefined) return { kind: 'open', pr: open }
+  const merged = prs.find((p) => p.status === 'merged' && p.mergedTickets.includes(ticket))
+  if (merged !== undefined) return { kind: 'merged', pr: merged }
+  const merging = prs.find((p) => p.status === 'merged' && !p.mergedExact && holds(p))
+  if (merging !== undefined) return { kind: 'merging', pr: merging }
+  return null
+}
+
 export const DRAFT_NAME = 'Next PR'
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
