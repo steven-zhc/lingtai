@@ -746,11 +746,10 @@ export function summaryWrittenTransition(
 ): ToAppend<PayloadOf<'PrSummaryWritten'> | PayloadOf<'PrSummaryNotWritten'>> | null {
   if (!walking(state)) return null
   if (state.edited !== null && state.edited.version > written.basedOn) {
-    return {
-      type: 'PrSummaryNotWritten',
-      actor: 'conductor',
-      data: { at: written.at, why: `set aside: ${state.edited.by} edited the summary while the agent was writing` },
-    }
+    return summaryNotWrittenTransition(state, {
+      at: written.at,
+      why: `set aside: ${state.edited.by} edited the summary while the agent was writing`,
+    })
   }
   return { type: 'PrSummaryWritten', actor: 'conductor', data: written }
 }
