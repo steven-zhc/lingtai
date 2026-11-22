@@ -1,0 +1,480 @@
+/**
+ * The PRs board as data (#1319, 0130 §5): five columns, each PR a card drawn as a branch.
+ *
+ * Pure: it imports types and the domain's pure folds, never a store, so a test reads every word the page draws
+ * without rendering. The page and `lib/prs.ts` (which reads the log) share it. The step names are handed in — they
+ * are the conductor's list, and the conductor stays out of this file so a client graph may import it.
+ */
+import { type PayloadOf, type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type Recipe, callForPr, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
+
+type WaitReason = PayloadOf<'PrWaiting'>['reason']
+
+/** One PR as read: its state, or why that stream could not be. */
+export type PrRead = { readonly n: number; readonly pr: PrState } | { readonly n: number; readonly error: string }
+
+export interface DraftTicket {
+  readonly ticket: string
+  readonly mergeCommit: string
+  readonly title: string
+}
+
+export type Tone = 'draft' | 'progress' | 'waiting' | 'review' | 'merged'
+
+export interface Slip {
+  readonly ticket: string
+  readonly title: string
+  readonly fix: boolean
+}
+
+export interface Chip {
+  readonly step: string
+  readonly text: string
+  readonly status: 'done' | 'running' | 'waiting' | 'pending'
+}
+
+export type ButtonKind = 'submit' | 'rounds' | 'retry' | 'link'
+
+export interface Button {
+  readonly kind: ButtonKind
+  readonly label: string
+  /** For `link`. */
+  readonly href?: string
+  /** The sentence that says why it cannot be pressed; set means disabled. */
+  readonly disabled?: string
+  /** For `rounds`: what the grant is about, as the page showed it. */
+  readonly grant?: { readonly merging: 'main' | 'back'; readonly commit: string }
+}
+
+export interface CardView {
+  readonly failed?: false
+  readonly key: string
+  readonly n: number | null
+  readonly tone: Tone
+  readonly name: string
+  readonly pill: string | null
+  /** *14 tickets*, shown in the header only when the card holds more than three. */
+  readonly count: string | null
+  readonly href: string | null
+  readonly sub: readonly string[]
+  readonly slips: readonly Slip[]
+  /** Tickets past the three drawn. */
+  readonly more: number
+  readonly chips: readonly Chip[]
+  /** Facts under the chips: the conflict's sides, rounds, spend. */
+  readonly meta: readonly string[]
+  /** The by-hand commands, for a conflict. */
+  readonly byHand: readonly string[]
+  readonly buttons: readonly Button[]
+}
+
+export interface FailedCard {
+  readonly failed: true
+  readonly key: string
+  readonly n: number
+  readonly text: string
+}
+
+export interface ColumnView {
+  readonly id: 'draft' | 'progress' | 'waiting' | 'review' | 'merged'
+  readonly title: string
+  readonly tone: Tone
+  readonly count: number
+  readonly cards: readonly (CardView | FailedCard)[]
+  /** Merged only: what folds under *▸ N older*. */
+  readonly older: readonly CardView[]
+  readonly empty: string
+  readonly note: string | null
+}
+
+export interface PrBoardView {
+  readonly strip: { readonly branches: string; readonly notInPr: string; readonly mainNote: string }
+  readonly columns: readonly ColumnView[]
+  /** PRs waiting on the person: what `PRs` on the place line counts. */
+  readonly waiting: number
+}
+
+/** How many slips a card draws. */
+export const SLIPS_SHOWN = 3
+/** Merged PRs drawn before the rest fold. */
+export const MERGED_OPEN = 3
+
+/** What a person reads for each reason a PR waits. Typed on the enum, so a new reason is a type error here. */
+export const WAIT_WORDS: Record<WaitReason, string> = {
+  denied: 'push denied',
+  'branch-moved': 'branch moved',
+  'several-open': 'several pull requests open',
+  'draft-unsupported': 'drafts unsupported',
+  'ci-red': 'CI failed',
+  'ci-none-started': 'CI never started',
+  'ci-timeout': 'CI timed out',
+  'sync-conflict': 'conflicts with main',
+  'sync-red': 'build red',
+  'sync-unknown': 'sync could not tell',
+  'sync-rewritten': 'branch rewritten',
+  'sync-locked': 'conflicts, agent locked out',
+}
+
+const CI_WAITS: ReadonlySet<WaitReason> = new Set<WaitReason>(['ci-red', 'ci-none-started', 'ci-timeout'])
+
+/** `PR #<host number>` once the code host has one, else `PR <n>`: Lingtai's own id, never with a `#`. */
+export const prName = (pr: Pick<PrState, 'host' | 'n'>): string =>
+  pr.host !== null ? `PR #${pr.host.number}` : `PR ${pr.n ?? '?'}`
+
+export const DRAFT_NAME = 'Next PR'
+
+const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
+
+const slipsOf = (pr: PrState): Slip[] => [
+  ...pr.tickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: false })),
+  ...pr.fixesLanded.map((t) => ({ ticket: t.ticket, title: t.title, fix: true })),
+]
+
+/** The newest three, then how many more. Newest is last: tickets are held in the order they landed. */
+const shown = (all: readonly Slip[]): { slips: Slip[]; more: number } => ({
+  slips: all.slice(-SLIPS_SHOWN),
+  more: Math.max(0, all.length - SLIPS_SHOWN),
+})
+
+const usd = (n: number | null): string => (n === null ? 'unknown' : `$${n.toFixed(2)}`)
+
+/** The failing check's link, picked as `lingtai pr` picks it. */
+export function failingRun(pr: PrState): string | null {
+  const read = pr.checks
+  if (read === null) return null
+  const flagged = read.checks.some((c) => c.failing === true)
+  const failing = read.checks.filter((c) =>
+    flagged ? c.failing === true : !['success', 'neutral', 'skipped', 'queued', 'running'].includes(c.state),
+  )
+  return failing.find((c) => c.url !== '')?.url ?? null
+}
+
+function chipsOf(pr: PrState, stepNames: readonly string[]): Chip[] {
+  const chips: Chip[] = []
+  const rows = prStepRows(stepNames, pr)
+  // The first row that is neither done nor waiting is the one running now while the PR is in progress.
+  const running = pr.status === 'in-progress' ? rows.find((r) => r.status === 'pending')?.step : undefined
+  for (const row of rows) {
+    if (row.step === 'topup' && row.status === 'pending') continue
+    let status: Chip['status'] = row.status === 'done' ? 'done' : row.status === 'waiting' ? 'waiting' : 'pending'
+    if (row.step === running) status = 'running'
+    let text = `${row.step} ${status === 'done' ? '✓' : status === 'waiting' ? '✕' : status === 'running' ? '…' : '·'}`
+    if (row.step === 'ci') {
+      if (pr.ciSkipped !== null && pr.checks === null) {
+        text = 'no CI'
+        status = 'done'
+      } else if (pr.checks !== null) {
+        const ok = pr.checks.checks.filter((c) => ['success', 'neutral', 'skipped'].includes(c.state)).length
+        text =
+          pr.checks.verdict === 'green'
+            ? `CI ✓ ${ok}/${pr.checks.checks.length}`
+            : `CI ✕ ${pr.checks.checks
+                .filter((c) => c.failing === true)
+                .map((c) => c.name)
+                .join(', ')}`.trimEnd()
+      }
+    }
+    if (row.step === 'sync' && status === 'done' && pr.resolutions.length > 0) text = 'sync ✓ conflicts resolved'
+    chips.push({ step: row.step, text, status })
+  }
+  return chips
+}
+
+export interface PrBoardInput {
+  readonly project: string
+  readonly recipe: Recipe
+  readonly prs: readonly PrRead[]
+  readonly draft: readonly DraftTicket[]
+  /** The conductor's own step list, in order. */
+  readonly stepNames: readonly string[]
+  /** Reported spend on each PR's stream, by `n`; absent is unknown. */
+  readonly spend: ReadonlyMap<number, number>
+  /** What a submitted-and-unserved PR says about who is serving it. */
+  readonly servedWords: string
+  /** Where *New pr-fix ticket* goes, or null where the repository has no owner on record. */
+  readonly newFixHref: string | null
+}
+
+const href = (project: string, n: number): string => `/pr/${encodeURIComponent(project)}/${n}`
+
+export function prBoard(input: PrBoardInput): PrBoardView {
+  const { recipe, project } = input
+  const main = recipe.branch.main
+  const personal = recipe.branch.personal ?? main
+  const good = input.prs.flatMap((r) => ('pr' in r ? [r] : []))
+  const latest = good[good.length - 1]?.pr ?? null
+  const open = latest !== null && isOpen(latest) ? latest : null
+  const call = callForPr(recipe)
+
+  const cardOf = (pr: PrState, tone: Tone, extra: Partial<CardView> = {}): CardView => {
+    const all = slipsOf(pr)
+    const { slips, more } = shown(all)
+    const n = pr.n ?? 0
+    return {
+      key: `pr-${n}`,
+      n,
+      tone,
+      name: prName(pr),
+      pill: null,
+      count: all.length > SLIPS_SHOWN ? plural(all.length, 'ticket', 'tickets') : null,
+      href: href(project, n),
+      sub: [],
+      slips,
+      more,
+      chips: [],
+      meta: [],
+      byHand: [],
+      buttons: [],
+      ...extra,
+    }
+  }
+
+  // ── Draft ───────────────────────────────────────────────────────────────────────────────────────────────────────
+  const draftCards: CardView[] = []
+  const requested = latest !== null && latest.status === 'requested' ? latest : null
+  const refused = latest !== null && latest.status === 'refused' ? latest : null
+  if (input.draft.length > 0 || requested !== null) {
+    const all = input.draft.map((t) => ({ ticket: t.ticket, title: t.title, fix: false }))
+    const { slips, more } = shown(all)
+    const sub: string[] = []
+    const buttons: Button[] = []
+    if (requested !== null) {
+      sub.push(`submitted — ${input.servedWords}`)
+    } else {
+      sub.push(
+        open !== null
+          ? `landed on ${personal} since ${prName(open)} was submitted`
+          : `landed on ${personal}, not yet on ${main}`,
+      )
+      if (refused?.refusal != null) sub.push(`the last submit was refused: ${refused.refusal.detail}`)
+      buttons.push({
+        kind: 'submit',
+        label: 'Submit PR',
+        ...(open === null
+          ? {}
+          : { disabled: `one PR at a time — submit opens once ${prName(open)} is merged or closed` }),
+      })
+      if (open === null) {
+        sub.push(
+          `submit: brings ${main} in, builds, pushes, runs CI on a GitHub draft PR, writes the summary (≤ ${call.turns} turns, ${Math.round(call.wallMs / 60_000)} min)`,
+        )
+      }
+    }
+    draftCards.push({
+      key: 'draft',
+      n: null,
+      tone: 'draft',
+      name: DRAFT_NAME,
+      pill: null,
+      count: plural(all.length, 'ticket', 'tickets'),
+      href: null,
+      sub,
+      slips,
+      more,
+      chips: [],
+      meta: [],
+      byHand: [],
+      buttons,
+    })
+  }
+
+  // ── The PRs, by state ───────────────────────────────────────────────────────────────────────────────────────────
+  const progress: (CardView | FailedCard)[] = []
+  const waiting: (CardView | FailedCard)[] = []
+  const review: (CardView | FailedCard)[] = []
+  const mergedAll: (CardView | FailedCard)[] = []
+  let waitingCount = 0
+
+  // Newest first within a column: a number is a position, not a string.
+  for (const read of [...input.prs].sort((a, b) => b.n - a.n)) {
+    if (!('pr' in read)) {
+      // Unreadable: it belongs to no column we can name, so the failure is drawn where the open work is.
+      progress.push({
+        failed: true,
+        key: `pr-${read.n}`,
+        n: read.n,
+        text: `PR ${read.n} could not be read: ${read.error}`,
+      })
+      continue
+    }
+    const pr = read.pr
+    if (pr.status === 'in-progress') {
+      const fix = pr.fixesLanded.length > 0 && pr.steps.length === 0
+      progress.push(
+        cardOf(pr, 'progress', {
+          name: fix ? `${prName(pr)} · pr-fix` : prName(pr),
+          pill: 'CI',
+          sub: [`then merged back once into ${personal}`, ...(pr.host !== null ? [] : ['not yet a GitHub draft'])],
+          chips: chipsOf(pr, input.stepNames),
+        }),
+      )
+    } else if (pr.status === 'waiting') {
+      waitingCount++
+      waiting.push(waitingCard(pr))
+    } else if (pr.status === 'in-review') {
+      const ci = pr.ciSkipped !== null && pr.checks === null ? 'no CI' : pr.checks === null ? null : ciText(pr)
+      review.push(
+        cardOf(pr, 'review', {
+          pill: 'in review',
+          sub: [`${pr.prBranch ?? '?'} → ${pr.main ?? main}`],
+          meta: ci === null ? [] : [ci],
+        }),
+      )
+    } else if (pr.status === 'merged') {
+      const closed = slipsOf(pr).length
+      mergedAll.push(
+        cardOf(pr, 'merged', {
+          pill: 'merged',
+          sub: [
+            `${pr.ended === null ? '' : `${pr.ended.at.toISOString().slice(5, 10)} · `}${plural(closed, 'ticket', 'tickets')} closed`,
+          ],
+        }),
+      )
+    }
+  }
+
+  function waitingCard(pr: PrState): CardView | FailedCard {
+    const view = prWaitOf(pr, {
+      project,
+      checkout: localCheckout(recipe),
+      conflictResolutions: ceilingOf(recipe).attempt.conflictResolutions,
+    })
+    const n = pr.n ?? 0
+    const stillDraft = pr.host !== null ? ['still a GitHub draft — nobody was asked to review it'] : []
+    if (view === null) {
+      return cardOf(pr, 'waiting', { pill: 'waiting', sub: ['waiting on you'] })
+    }
+    const header = `${prName(pr)} · ${WAIT_WORDS[view.reason]}`
+    if (view.kind === 'conflict') {
+      const spent = input.spend.get(n) ?? null
+      const rounds =
+        view.roundsUsed === null || view.roundsAllowed === null
+          ? 'rounds: unknown'
+          : `${view.roundsUsed} of ${view.roundsAllowed} rounds spent`
+      const buttons: Button[] = []
+      if (view.reason === 'sync-conflict' && view.commit !== null && view.merging !== null) {
+        buttons.push({
+          kind: 'rounds',
+          label: 'Give the agent 3 more rounds',
+          grant: { merging: view.merging, commit: view.commit },
+        })
+      }
+      buttons.push({ kind: 'retry', label: 'I resolved it — check again' })
+      return cardOf(pr, 'waiting', {
+        name: header,
+        pill: 'waiting',
+        sub: [
+          ...stillDraft,
+          `at ${view.merging === 'back' ? 'merge back' : 'submit'} · ${
+            view.paths === null ? 'files unknown' : view.paths.join(', ')
+          } · ${rounds} · ${usd(spent)}`,
+        ],
+        meta: [
+          view.ours === null
+            ? 'ours: unknown'
+            : `ours ${view.ours.map((o) => `#${o.issue} ${o.title}`).join(', ') || 'none'}`,
+          view.theirs === null
+            ? 'theirs: unknown'
+            : `theirs ${view.theirs.map((t) => `${t.sha.slice(0, 7)} ${t.author}`).join(', ') || 'none'}`,
+          ...(view.lastRefusal === null ? [] : [`last refusal: ${view.lastRefusal.step}`]),
+        ],
+        byHand: view.commands,
+        buttons,
+      })
+    }
+    const buttons: Button[] = []
+    if (CI_WAITS.has(view.reason)) {
+      const run = failingRun(pr)
+      if (run !== null) buttons.push({ kind: 'link', label: 'Open the run ↗', href: run })
+      if (input.newFixHref !== null) buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: input.newFixHref })
+    }
+    // Only the waits a retry ends have a way out here; the others show what happened and nothing to press.
+    if (view.commands.length > 0) buttons.push({ kind: 'retry', label: 'Check again' })
+    return cardOf(pr, 'waiting', {
+      name: header,
+      pill: 'waiting',
+      sub: [...stillDraft, view.detail],
+      chips: chipsOf(pr, input.stepNames),
+      buttons,
+    })
+  }
+
+  return {
+    strip: {
+      branches: `${personal} → ${main}`,
+      notInPr: `${plural(input.draft.length, 'ticket', 'tickets')} not in a PR yet`,
+      mainNote: `${main} is brought in at the next submit`,
+    },
+    waiting: waitingCount,
+    columns: [
+      {
+        id: 'draft',
+        title: 'Draft',
+        tone: 'draft',
+        count: draftCards.length === 0 ? 0 : input.draft.length,
+        cards: draftCards,
+        older: [],
+        empty: 'Lingtai keeps taking tickets; they gather here.',
+        note: null,
+      },
+      {
+        id: 'progress',
+        title: 'In progress',
+        tone: 'progress',
+        count: progress.length,
+        cards: progress,
+        older: [],
+        empty: 'No PR is being built.',
+        note: 'The order every PR goes through: bring main in · build · conflict agent · push · CI · summary',
+      },
+      {
+        id: 'waiting',
+        title: 'Waiting on you',
+        tone: 'waiting',
+        count: waiting.length,
+        cards: waiting,
+        older: [],
+        empty: 'Nothing is waiting on you.',
+        note: null,
+      },
+      {
+        id: 'review',
+        title: 'In review',
+        tone: 'review',
+        count: review.length,
+        cards: review,
+        older: [],
+        empty: 'No PR is in review.',
+        note: null,
+      },
+      {
+        id: 'merged',
+        title: 'Merged',
+        tone: 'merged',
+        count: mergedAll.length,
+        cards: mergedAll.slice(0, MERGED_OPEN),
+        older: mergedAll.slice(MERGED_OPEN).filter((c): c is CardView => !c.failed),
+        empty: 'Nothing has merged yet.',
+        note: null,
+      },
+    ],
+  }
+}
+
+function ciText(pr: PrState): string | null {
+  if (pr.checks === null) return null
+  const ok = pr.checks.checks.filter((c) => ['success', 'neutral', 'skipped'].includes(c.state)).length
+  return `CI ${pr.checks.verdict === 'green' ? '✓' : '✕'} ${ok}/${pr.checks.checks.length}`
+}
+
+/** A local project's checkout is `repo.remote`, a path: the by-hand commands then name it. */
+function localCheckout(recipe: Recipe): string | null {
+  const remote = remoteOf(recipe)
+  return remote !== null && (remote.startsWith('/') || remote.startsWith('~')) ? remote : null
+}
+
+/** The sentence a solo project's PR page is. */
+export const soloSentence = (project: string, recipe: Recipe): string =>
+  `${project} is a solo project: each ticket lands on ${recipe.branch.main} itself, so it has no PRs`
+
+export const isTeam = (recipe: Recipe): boolean => modeOf(recipe) === 'team'
