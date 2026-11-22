@@ -297,13 +297,18 @@ const pushStep: PrStep = {
         // Before the first push the frozen commit is what the sync accepted on the remote; the target descends from it.
         if (at !== null && at !== state.lastPushed && !(state.lastPushed === null && at === state.frozenSha)) {
           // Others' commits on top of the last push are `outside`'s to merge: the walk goes round and never waits (#1353).
+          // What is not on top of it — a force-push — is a person's.
           const base = state.lastPushed ?? state.frozenSha
           if (base === null) return moved(at)
-          const ask = ['merge-base', '--is-ancestor', base, at] as const
-          const holds = yield* ports.git(project, ask)
-          if (holds.code === 0) return { kind: 'restart' } as StepAnswer
-          if (holds.code !== 1) return yield* Effect.fail(new Error(gitSaid(ask, holds)))
-          return moved(at)
+          const onTop = ['merge-base', '--is-ancestor', base, at] as const
+          const holds = yield* ports.git(project, onTop)
+          if (holds.code === 1) return moved(at)
+          if (holds.code !== 0) return yield* Effect.fail(new Error(gitSaid(onTop, holds)))
+          // A remote `outside` has merged is under the target, and is fast-forwarded; one it has not seen is not.
+          const merged = ['merge-base', '--is-ancestor', at, target] as const
+          const seen = yield* ports.git(project, merged)
+          if (seen.code === 1) return { kind: 'restart' } as StepAnswer
+          if (seen.code !== 0) return yield* Effect.fail(new Error(gitSaid(merged, seen)))
         }
 
         // The commit has to be in the mirror to be pushed from it; a re-cloned mirror loses it, and the walk is run again.

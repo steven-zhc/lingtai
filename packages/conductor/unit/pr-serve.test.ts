@@ -272,6 +272,7 @@ describe('the walk', () => {
     expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual([
       'sync',
       'build',
+      'outside',
       'summary',
       'push',
       'open',

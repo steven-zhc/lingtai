@@ -76,17 +76,17 @@ const outsideStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       yield* fetchInto(ports, project, [[ref, fetchedRef(n, 'pr')]])
       const at = yield* resolve(ports, project, fetchedRef(n, 'pr'))
 
-      if (at === target || (yield* isAncestor(ports, project, at, target))) {
-        return { kind: 'done', headSha: target } as StepAnswer
-      }
+      if (at === target) return { kind: 'done', headSha: target } as StepAnswer
       // Before the first push the frozen commit is what the sync accepted on the remote; the target descends from it.
       const base = lastPushed ?? frozenSha
-      if (base === null || !(yield* isAncestor(ports, project, base, at))) {
+      if (base === null || (at !== base && !(yield* isAncestor(ports, project, base, at)))) {
         return wait(
           'branch-moved',
           `${prBranch} is at ${short(at)}; Lingtai's last push ${short(base ?? '')} is no longer in its history`,
         )
       }
+      // Under the target already: what others pushed was merged, and `push` fast-forwards the branch.
+      if (yield* isAncestor(ports, project, at, target)) return { kind: 'done', headSha: target } as StepAnswer
 
       const { commits, omitted } = yield* commitsOf(ports, project, base, at)
       // The target has to be in the mirror to be merged and pushed from it; a re-cloned mirror loses it.

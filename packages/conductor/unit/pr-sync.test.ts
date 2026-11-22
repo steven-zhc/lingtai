@@ -234,6 +234,8 @@ describe('sync and build', () => {
   it('a PR branch somebody else rewrote is sync-rewritten naming both shas, and nothing is merged', async () => {
     const store = await frozen()
     const w = aWorld()
+    // A force-push: the frozen commit is not in the branch's history.
+    w.ancestor = (a, b) => a === b
     w.remote.set(PR_REF, OTHER)
     await serve(ports(store, w), named('sync', 'build', 'push'))
     const s = await state(store)
