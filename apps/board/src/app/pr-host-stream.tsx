@@ -6,8 +6,9 @@
 import { type PrState } from '@lingtai/domain'
 
 import { hostLine } from '@/lib/pr-page.ts'
-import { readHostPull } from '@/lib/prs.ts'
+import { readGeneratedBody, readHostPull } from '@/lib/prs.ts'
 
+import { GeneratedBox } from './pr-generated-box'
 import { Skeleton } from './skeleton'
 
 export function HostFallback() {
@@ -29,4 +30,20 @@ export async function PrHostLine({
       {line.text}
     </span>
   )
+}
+
+/** The read-only rest of the description, whose `Closes` lines wait on each ticket's state at its host. */
+export async function PrGeneratedStream({ project, n }: { project: string; n: number }) {
+  let body: string
+  try {
+    body = await readGeneratedBody(project, n)
+  } catch (err) {
+    return (
+      <p
+        className="pr-refusal"
+        role="alert"
+      >{`The rest of the description could not be read: ${(err as Error).message}`}</p>
+    )
+  }
+  return <GeneratedBox value={body} />
 }

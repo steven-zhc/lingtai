@@ -411,7 +411,8 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
       }
     } else if (row.step === 'summary') {
       // A top-up that wrote nothing is the top-up row's: the Summary row keeps its own attempt's outcome.
-      const why = notWritten('submit') ?? (topupWhy === null ? pr.summaryNotWritten : null)
+      // Only this pass's own events: `pr.summaryNotWritten` lives for the PR and would blame a row for an earlier pass.
+      const why = notWritten('submit')
       if (why !== null) {
         status = 'skipped'
         text = `no summary: ${why}`
@@ -456,6 +457,18 @@ const checkRows = (pr: PrState): PageCheck[] =>
     url: c.url === '' ? null : c.url,
     failing: c.failing === true || c.state === 'failure' || c.state === 'timed-out',
   }))
+
+/** The generated rest of the description: what the daemon regenerates from the log, under the person's summary. */
+export function generatedBody(pr: PrState, facts: PrPageInput['facts']): string {
+  return prDescription({
+    title: null,
+    summary: null,
+    tickets: pr.tickets.map((t) => {
+      const read = facts?.find((f) => f.ticket === t.ticket)
+      return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
+    }),
+  }).body
+}
 
 /** The page's whole text for one PR, or for the draft when `pr` is null. */
 export function prPage(input: PrPageInput): PrPageView {
@@ -571,14 +584,7 @@ export function prPage(input: PrPageInput): PrPageView {
     text: pr.summary?.text ?? '',
     editable: edit.kind === 'request',
     refusal: edit.kind === 'refused' ? edit.detail : null,
-    generated: prDescription({
-      title: null,
-      summary: null,
-      tickets: pr.tickets.map((t) => {
-        const read = input.facts?.find((f) => f.ticket === t.ticket)
-        return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
-      }),
-    }).body,
+    generated: generatedBody(pr, input.facts),
     notes,
     saveLabel: 'Save',
   }

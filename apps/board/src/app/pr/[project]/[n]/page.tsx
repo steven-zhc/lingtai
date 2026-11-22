@@ -18,7 +18,7 @@ import { FooterFetched } from '../../../footer-fetched'
 import { Follow } from '../../../live'
 import { LockBanner, pauseSlot } from '../../../lock-banner'
 import { PrDetail } from '../../../pr-detail'
-import { HostFallback, PrHostLine } from '../../../pr-host-stream'
+import { HostFallback, PrGeneratedStream, PrHostLine } from '../../../pr-host-stream'
 import { RecipeBar } from '../../../recipe/[project]/recipe-bar'
 
 export const dynamic = 'force-dynamic'
@@ -53,7 +53,13 @@ async function Detail({ project, n }: { project: string; n: number | 'next' | nu
         <PrHostLine project={project} number={read.ask} status={read.status} />
       </Suspense>
     )
-  return <PrDetail project={project} view={read.view} host={host} />
+  const generated =
+    n === 'next' ? undefined : (
+      <Suspense fallback={<HostFallback />}>
+        <PrGeneratedStream project={project} n={n} />
+      </Suspense>
+    )
+  return <PrDetail project={project} view={read.view} host={host} generated={generated} />
 }
 
 export default async function Page({ params }: { params: Promise<{ project: string; n: string }> }) {

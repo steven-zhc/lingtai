@@ -5,13 +5,24 @@
  * generated rest of the description — tickets, `Closes #…`, merge commits and spend — read-only, because an edit to a
  * `Closes` line would silently stop a ticket closing. Save calls `savePrSummaryNow` with the summary and nothing else.
  */
-import { useState, useTransition } from 'react'
+import { type ReactNode, useState, useTransition } from 'react'
 
 import type { PageSummary } from '@/lib/pr-page.ts'
 
 import { savePrSummaryNow } from './actions.ts'
 
-export function PrSummaryEditor({ project, n, summary }: { project: string; n: number; summary: PageSummary }) {
+export function PrSummaryEditor({
+  project,
+  n,
+  summary,
+  generated,
+}: {
+  project: string
+  n: number
+  summary: PageSummary
+  /** The generated rest, read-only: a slot, because the page may stream it. */
+  generated: ReactNode
+}) {
   const [text, setText] = useState(summary.text)
   // The stream's summary moves under an open page (the agent finishes, a pr-fix extends it): a field the person has not
   // touched follows it, and one they have edited keeps their words.
@@ -60,13 +71,7 @@ export function PrSummaryEditor({ project, n, summary }: { project: string; n: n
         </p>
       ))}
       <hr className="prp-rule" />
-      <textarea
-        aria-label="The rest of the description, generated"
-        className="prp-textarea generated"
-        readOnly
-        value={summary.generated}
-        rows={Math.min(12, Math.max(3, summary.generated.split('\n').length))}
-      />
+      {generated}
     </div>
   )
 }

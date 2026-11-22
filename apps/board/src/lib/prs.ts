@@ -23,7 +23,15 @@ import { Effect } from 'effect'
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
 import { type FixTicket, type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
-import { type HostRead, type PrPageView, githubHosted, prFixTicketLink, prPage, ticketsOnGitHub } from './pr-page.ts'
+import {
+  type HostRead,
+  type PrPageView,
+  generatedBody,
+  githubHosted,
+  prFixTicketLink,
+  prPage,
+  ticketsOnGitHub,
+} from './pr-page.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -313,12 +321,12 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         const pr = reducePr(events)
         // The spend the page says is the PR's whole: its tickets' runs and its own. A part that could not be read leaves the
         // total unknown — never `$0`, and never one part presented as the sum.
-        // A ticket's state is read from the tickets' own host, merged PR or not: a closed ticket stays unlisted either way.
-        const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
+        // Only the log here: whether a ticket is still open is GitHub's, and `readGeneratedBody` asks it in a streamed part, so
+        // no request to the host holds the page back.
         const facts = yield* ticketFacts(
           project,
           pr.tickets.map((t) => t.ticket),
-          github,
+          null,
         )
         const own = yield* spendByPr(project, [n]).pipe(
           Effect.map((m) => m.get(n) ?? 0),
@@ -374,4 +382,26 @@ export async function readHostPull(project: string, number: number): Promise<Hos
   } catch (err) {
     return { kind: 'failed', reason: (err as Error).message }
   }
+}
+
+/**
+ * The generated rest of the description with each ticket's open state asked of its host — the one part of the page that
+ * waits on GitHub, streamed after everything the log answers. A ticket whose read is slow or fails is unknown, never closed.
+ */
+export async function readGeneratedBody(project: string, n: number): Promise<string> {
+  const state = await readProject(project)
+  if (state === null || state === undefined) throw new Error(`no project named ${project}`)
+  const { recipe } = await currentRecipe(state)
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const pr = reducePr(yield* readPrEvents(project, n, eventStore))
+      const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
+      const facts = yield* ticketFacts(
+        project,
+        pr.tickets.map((t) => t.ticket),
+        github,
+      )
+      return generatedBody(pr, facts)
+    }),
+  )
 }

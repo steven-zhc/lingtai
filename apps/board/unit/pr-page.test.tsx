@@ -406,6 +406,28 @@ describe('rounds and the top-up, by their own attempt', () => {
   })
 })
 
+describe("a retry does not inherit the last pass's top-up failure", () => {
+  it('the Summary row is not blamed for a crash recorded before the new pass', () => {
+    const v = page([
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      ['PrSummaryWritten', { by: 'agent', at: 'submit', title: 'T', summary: 's', basedOn: 0 }],
+      done('summary'),
+      ['PrSummaryNotWritten', { at: 'pr-fix', why: 'the agent crashed', basedOn: 0 }],
+      done('topup'),
+      started,
+      done('sync'),
+      done('build'),
+      done('summary'),
+    ])
+    const row = v.steps.find((s) => s.step === 'summary')
+    expect(row).toMatchObject({ status: 'done', mark: '✓' })
+    expect(JSON.stringify(v.steps)).not.toContain('the agent crashed')
+  })
+})
+
 describe('the description and the spend the page shows', () => {
   it('uses the ticket facts the daemon publishes: spend known, a closed ticket without Closes', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]], {

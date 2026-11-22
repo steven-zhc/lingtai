@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
 import { PrButtons } from './pr-buttons.tsx'
+import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
 
 /** A ticket's task page: the task id is `ticket-<project>-<issue>`, as the home page and the standing list link it. */
@@ -72,11 +73,14 @@ export function PrDetail({
   project,
   view,
   host,
+  generated,
 }: {
   project: string
   view: PrPageView
   /** The code host's one word, streamed; absent where nothing is asked. */
   host: ReactNode
+  /** The generated description, streamed; absent draws the view's own. */
+  generated?: ReactNode
 }) {
   return (
     <div className="prp">
@@ -161,7 +165,12 @@ export function PrDetail({
           {view.summary === null || view.n === null ? null : (
             <section className="prp-panel" aria-label="Summary">
               <h2>Summary — the PR&apos;s description on GitHub</h2>
-              <PrSummaryEditor project={project} n={view.n} summary={view.summary} />
+              <PrSummaryEditor
+                project={project}
+                n={view.n}
+                summary={view.summary}
+                generated={generated ?? <GeneratedBox value={view.summary.generated} />}
+              />
             </section>
           )}
         </div>
