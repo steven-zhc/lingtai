@@ -19,7 +19,7 @@ import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { resolveRounds } from '../src/pr-resolve.ts'
+import { type ConflictAsk, resolveRounds } from '../src/pr-resolve.ts'
 import { mergePrBack } from '../src/pr-sync.ts'
 import {
   type ConflictResolver,
@@ -251,7 +251,7 @@ const askSync = (commit = MAIN) => ({
   checkId: 'pr-1-sync',
 })
 
-const resolve = (store: EventStore, w: World, ask = askSync()) =>
+const resolve = (store: EventStore, w: World, ask: ConflictAsk = askSync()) =>
   Effect.runPromise(resolveRounds(ports(store, w), resolverFor(store, w), ask))
 
 describe('resolveRounds', () => {
