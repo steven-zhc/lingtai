@@ -40,13 +40,18 @@ code{font:12.5px var(--mono)}
 /* the steps of In progress */
 .steps{background:var(--surface);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
 .steps h2{margin:0;padding:10px 14px;font:600 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);border-bottom:1px solid var(--rule)}
-.row{display:grid;grid-template-columns:44px 1.1fr 1.6fr 1.7fr;gap:14px;padding:11px 14px;border-bottom:1px solid var(--rule);align-items:start}
+.row{display:grid;grid-template-columns:44px 1fr 1.5fr 1.6fr 1.1fr;gap:14px;padding:11px 14px;border-bottom:1px solid var(--rule);align-items:start}
 .row:last-child{border-bottom:0}
+.row.head{padding:7px 14px;font:600 11.5px var(--mono);letter-spacing:.05em;color:var(--muted);background:#f7f9f9}
+.again{font-size:13px;color:var(--accent-ink);border-left:2px solid var(--accent-soft);padding-left:9px}
+.again.skip{color:var(--muted)}
+.loopback{margin-top:10px;padding:10px 14px;background:var(--surface);border:1px dashed var(--accent);border-radius:3px;font-size:13.5px;color:var(--ink-2)}
 .n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font:600 12.5px var(--mono)}
 .name{font-weight:600}
 .what{color:var(--ink-2);font-size:13.5px}
 .outs{display:flex;flex-direction:column;gap:5px}
-.out{font-size:13px;display:flex;gap:8px;align-items:baseline}
+.out{font-size:13px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+.out .pill{flex-shrink:0}
 .out i{font-style:normal;color:var(--muted);white-space:nowrap}
 .pill{display:inline-block;font:500 12px var(--sans);padding:1px 8px;border-radius:3px;white-space:nowrap}
 .pill.wait{background:var(--fail-soft);color:var(--fail)}
@@ -69,13 +74,13 @@ code{font:12.5px var(--mono)}
 <body>
 <div class="wrap">
   <h1>一个 PR 的一生</h1>
-  <p class="lede">ADR 0131 的流程图。上面一排是 PR 页的状态；下面把 <b>In progress</b> 展开成九步，每一步写出它做什么、走不下去时去哪里。
-  标了 <span class="new">新</span> 的是 2026-11-21 新定的规则。</p>
+  <p class="lede">ADR 0131 的流程图。上面一排是 PR 页的状态；下面把 <b>In progress</b> 展开成十步，每一步写出它做什么、走不下去时去哪里、返工时做什么。
+  标了 <span class="new">新</span> 的是 2026-11-21、22 新定的规则。</p>
 
   <div class="rail">
     <div class="state"><b>Draft</b><span>落在个人分支、还没进 PR 的票；随票落地而增长</span></div>
     <div class="arrow">→</div>
-    <div class="state work"><b>In progress</b><span>人点“提交”之后，灵台按下面九步做</span></div>
+    <div class="state work"><b>In progress</b><span>人点“提交”之后，灵台按下面十步做</span></div>
     <div class="arrow">→</div>
     <div class="state team"><b>In review</b><span>在代码平台上，团队评审</span></div>
     <div class="arrow">→</div>
@@ -89,59 +94,85 @@ code{font:12.5px var(--mono)}
   </div>
 
   <div class="steps">
-    <h2>In progress · 九步</h2>
+    <h2>In progress · 十步</h2>
+    <div class="row head"><div></div><div>步骤</div><div>做什么</div><div>走不下去</div><div>返工时 <span class="new">新</span></div></div>
 
     <div class="row"><div class="n">1</div><div class="name">冻结个人分支</div>
       <div class="what">把个人分支此刻的提交定为这个 PR 的内容</div>
-      <div class="outs"><div class="out"><i>中途重启</i> 先找已有的 PR 分支和 PR，绝不开第二个</div></div></div>
+      <div class="outs">
+        <div class="out"><i>中途重启</i>先找已有的 PR 分支和 PR，绝不开第二个</div></div>
+      <div class="again skip">不做：PR 的内容就是 PR 分支，个人分支上的新票不进来</div></div>
 
     <div class="row"><div class="n">2</div><div class="name">合进 main</div>
       <div class="what">main 已经是祖先就跳过；否则在合并通道里合进来</div>
       <div class="outs">
         <div class="out"><i>冲突</i><span class="pill agent">解冲突 agent</span> 按 main 的每个提交计轮数</div>
-        <div class="out"><i>轮数用完</i><span class="pill wait">Waiting on you</span></div></div></div>
+        <div class="out"><i>轮数用完</i><span class="pill wait">Waiting on you</span></div></div>
+      <div class="again"><b>从这里重新走</b>：PR 开着时 main 可能已经往前走了</div></div>
 
     <div class="row"><div class="n">3</div><div class="name">build</div>
       <div class="what">合完的结果先 build，绿了才能推</div>
-      <div class="outs"><div class="out"><i>红</i><span class="pill wait">Waiting on you</span></div></div></div>
+      <div class="outs">
+        <div class="out"><i>合进了东西后红</i><span class="pill agent">解冲突 agent</span> 轮数共用 <span class="new">新</span></div>
+        <div class="out"><i>什么都没合进就红</i><span class="pill wait">Waiting on you</span> 个人分支本身是坏的</div></div>
+      <div class="again">做</div></div>
 
     <div class="row"><div class="n">4</div><div class="name">合进别人的提交 <span class="new">新</span></div>
-      <div class="what">推送前先 fetch 远端的 PR 分支；别人在灵台上次推的提交之上加了提交，就合进来，合完再 build</div>
+      <div class="what">fetch 远端的 PR 分支；别人在灵台上次推的提交之上加了提交，就合进来，合完再 build</div>
       <div class="outs">
-        <div class="out"><i>冲突</i><span class="pill agent">解冲突 agent</span> 和第 2 步同一套</div>
+        <div class="out"><i>第一次提交</i>远端还没有 PR 分支，跳过</div>
+        <div class="out"><i>冲突 / 合完红</i><span class="pill agent">解冲突 agent</span> 和第 2 步同一套</div>
         <div class="out"><i>force-push</i><span class="pill wait">Waiting on you</span> 不合，可能把对方删掉的提交加回去</div>
-        <div class="out"><i>分支被删</i><span class="pill wait">Waiting on you</span></div></div></div>
+        <div class="out"><i>分支被删</i><span class="pill wait">Waiting on you</span></div></div>
+      <div class="again">做：这时它才真正起作用</div></div>
 
-    <div class="row"><div class="n">5</div><div class="name">推送 PR 分支</div>
-      <div class="what"><code>&lt;branch.personal&gt;-pr-&lt;n&gt;</code>，在合并通道里推</div>
-      <div class="outs"><div class="out"><i>结果不明</i> 看一次远端，绝不盲推第二次</div></div></div>
+    <div class="row"><div class="n">5</div><div class="name">标题和摘要 <span class="new">新</span></div>
+      <div class="what"><code>pr:</code> agent 写标题和摘要，在开 PR 之前；描述的其余部分从日志生成</div>
+      <div class="outs">
+        <div class="out"><i>项目被锁</i>不写摘要，用第一张票的标题照开，说明原因</div></div>
+      <div class="again skip">不重写，第一版留着</div></div>
 
-    <div class="row"><div class="n">6</div><div class="name">开草稿 PR</div>
-      <div class="what">以草稿开出，项目自己的 CI 照常在上面跑</div>
-      <div class="outs"><div class="out"><i>平台不支持草稿</i><span class="pill wait">Waiting on you</span> 不开成 ready 的 PR</div></div></div>
+    <div class="row"><div class="n">6</div><div class="name">推送 PR 分支</div>
+      <div class="what"><code>&lt;branch.personal&gt;-pr-&lt;n&gt;</code>，在合并通道里推；第一次提交时，这是它第一次到服务器上</div>
+      <div class="outs">
+        <div class="out"><i>结果不明</i>看一次远端，绝不盲推第二次</div></div>
+      <div class="again">第 2 或 4 步合进了东西才推</div></div>
 
-    <div class="row"><div class="n">7</div><div class="name">CI</div>
+    <div class="row"><div class="n">7</div><div class="name">开草稿 PR</div>
+      <div class="what">以草稿开出，标题和摘要已经是正式的；项目自己的 CI 照常在上面跑</div>
+      <div class="outs">
+        <div class="out"><i>平台不支持草稿</i><span class="pill wait">Waiting on you</span> 不开成 ready 的 PR</div></div>
+      <div class="again skip">跳过：PR 已经开着，按分支找到它</div></div>
+
+    <div class="row"><div class="n">8</div><div class="name">CI</div>
       <div class="what">读当前 head 上的检查，只算 recipe 要求的那些</div>
       <div class="outs">
         <div class="out"><i>红</i><span class="pill wait">Waiting on you</span> 写出失败的检查；人在平台上重跑后点“再检查一次”</div>
-        <div class="out"><i>30 分钟没启动 / 超时</i><span class="pill wait">Waiting on you</span></div></div></div>
+        <div class="out"><i>30 分钟没启动 / 超时</i><span class="pill wait">Waiting on you</span></div></div>
+      <div class="again">做，看新 head</div></div>
 
-    <div class="row"><div class="n">8</div><div class="name">标题和摘要</div>
-      <div class="what"><code>pr:</code> agent 写摘要；描述从日志生成</div>
-      <div class="outs"><div class="out"><i>项目被锁</i> 不写摘要也照开，并说明原因</div></div></div>
+    <div class="row"><div class="n">9</div><div class="name">补充摘要 <span class="new">新</span></div>
+      <div class="what">只写第一版之后发生的事：第 4 步合进来的别人的提交，落地的 pr-fix 票（要求改什么、怎么改的）。不读平台上的评论</div>
+      <div class="outs">
+        <div class="out"><i>没有新东西</i>跳过，不花钱</div></div>
+      <div class="again">做：把这张 pr-fix 票补进去</div></div>
 
-    <div class="row"><div class="n">9</div><div class="name">标 ready <span class="new">新</span></div>
+    <div class="row"><div class="n">10</div><div class="name">标 ready <span class="new">新</span></div>
       <div class="what">先再读一次 head：还是 CI 检查过的那个提交，就标 ready</div>
       <div class="outs">
-        <div class="out"><i>head 变了</i><span class="pill loop">回到第 7 步</span> 跟着新 head 的 CI，不进等你处理</div>
-        <div class="out"><i>没变</i><span class="pill ok">In review</span></div></div></div>
+        <div class="out"><i>head 变了</i><span class="pill loop">回到第 8 步</span> 跟着新 head 的 CI，不进等你处理</div>
+        <div class="out"><i>没变</i><span class="pill ok">In review</span></div></div>
+      <div class="again skip">平台上已是 ready，什么都不做；不退回草稿</div></div>
+
   </div>
+
+  <div class="loopback"><span class="pill loop">返工</span> pr-fix 票落地到 PR 分支（推之前先按第 4 步合进别人的提交）→ PR 回到 <b>In progress</b>，<b>从第 2 步重新走</b>，按右列做 → 回到 <b>In review</b> <span class="new">新</span></div>
 
   <div class="after">
     <div class="box team"><h3>团队要求修改</h3>
-      <p>人开一张 <code>lingtai:pr-fix</code> 票。它排在所有票前面，从 PR 分支切出、落在 PR 分支上；
+      <p>评论只在平台上，灵台不读；PR 留在 <b>In review</b>。人开一张 <code>lingtai:pr-fix</code> 票。它排在所有票前面，从 PR 分支切出、落在 PR 分支上；
       落地时发现分支被别人推过，同样按第 4 步合进来 <span class="new">新</span>。落地后 PR 回到
-      <b>In progress</b> 再走一遍。</p></div>
+      <b>In progress</b>，从第 2 步重新走；平台上的 PR 一直是 ready，不退回草稿 <span class="new">新</span>。</p></div>
     <div class="box loop"><h3>合进 main 之后</h3>
       <p>PR 分支合回个人分支一次，下一个 PR 就带着这些修改。推送结果不明时记为
       <code>unknown</code>：不知道推上去没有，仍然欠着，下次再看 <span class="new">新</span>。</p></div>
