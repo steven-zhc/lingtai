@@ -263,9 +263,10 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'BranchSynced': {
       const d = event.data as PayloadOf<'BranchSynced'>
-      // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it); a
+      // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it) — except
+      // a resolution made once `sync` is recorded, an agent's amend of a red merge, which is the build step's (`syncedStep`); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
-      const step = d.how === 'clean' ? 'build' : 'sync'
+      const step = syncedStep(state, d.how)
       // The sync started from `target` or from the newer `lastPushed` (a descendant of it, else no sync happens): the
       // merge holds what the later of the two held.
       const held = Math.max(
@@ -518,10 +519,18 @@ export function syncedTransition(
   synced: PayloadOf<'BranchSynced'>,
 ): ToAppend<PayloadOf<'BranchSynced'>> | null {
   if (!walking(state)) return null
-  const step = synced.how === 'clean' ? 'build' : 'sync'
+  const step = syncedStep(state, synced.how)
   if (state.steps.some((s) => s.step === step)) return null
   return { type: 'BranchSynced', actor: 'conductor', data: synced }
 }
+
+/**
+ * Which step a `BranchSynced` is the record of. A clean merge is the build's; `already` and a resolution of a conflict are the
+ * sync step's own. **A record made once `sync` is on the steps is the build's** (#1352): a merge that built red and an agent
+ * amended is recorded by the build step, or the next serve would build the old merge again and buy another round.
+ */
+export const syncedStep = (state: PrState, how: PayloadOf<'BranchSynced'>['how']): 'sync' | 'build' =>
+  how === 'clean' || state.steps.some((r) => r.step === 'sync') ? 'build' : 'sync'
 
 /**
  * How many rounds of the conflict agent started for one commit being merged (`merging`), and how many are allowed:

@@ -179,3 +179,24 @@ export const standMergeUp = (options: {
     // A worktree that would not cut, or a read that failed, is git's text and never an exception.
     Effect.catch((err: RepoFailed) => Effect.succeed({ kind: 'failed', text: err.detail } as StandMergeResult)),
   )
+
+/**
+ * **A commit stood up for an agent to amend** (#1352): the same detached `pr-sync-…` / `pr-back-…` worktree as
+ * `standMergeUp`, at `commit` itself — a merge that came out clean and built red — with nothing merged and no markers.
+ * Never released, like `standMergeUp`: `sweepPrWorktrees` is the only thing that removes it. Never fails: git's text is `failed`.
+ */
+export const standCommitUp = (options: {
+  readonly project: string
+  readonly home?: string
+  readonly name: string
+  readonly at: string
+  readonly git?: GitPort
+}): Effect.Effect<StandMergeResult> =>
+  Effect.gen(function* () {
+    const home = options.home ?? stateDir()
+    const mirror = mirrorPathFor(options.project, home)
+    const gitPort = options.git ?? gitEffect
+    const cwd = worktreePath(home, options.project, options.name)
+    yield* mirrorWrite(mirror, gitPort(['worktree', 'add', '--force', '--detach', cwd, options.at], { cwd: mirror }))
+    return { kind: 'standing', cwd, paths: [] } as StandMergeResult
+  }).pipe(Effect.catch((err: RepoFailed) => Effect.succeed({ kind: 'failed', text: err.detail } as StandMergeResult)))

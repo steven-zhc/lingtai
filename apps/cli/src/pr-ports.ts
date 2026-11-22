@@ -39,6 +39,7 @@ import {
   mergeInWorktree,
   mirrorPathFor,
   standMergeUp,
+  standCommitUp,
   sweepPrWorktrees,
 } from '@lingtai/repo'
 import { standInExcludes } from '@lingtai/sandbox'
@@ -116,6 +117,7 @@ export function livePrPorts(
       ? undefined
       : {
           standMerge: (project, options) => standMergeUp({ project, ...options }),
+          standCommit: (project, options) => standCommitUp({ project, ...options }),
           gitIn: (cwd, args) => answered(gitEffect([...args], { cwd })),
           // Unhooked, as the cold reviewer is: the hook's events belong to a pass's stream and a PR's has none. The run is
           // bounded by the runtime's own flags — turns, wall and dollars — and by nothing of the hook's.

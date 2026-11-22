@@ -150,6 +150,8 @@ export interface PrDispatched {
 export interface ConflictResolver {
   /** `git merge --no-commit --no-ff` stood up in a `pr-sync-…` / `pr-back-…` worktree, markers left. Never aborts or releases. */
   standMerge(project: string, options: { name: string; at: string; theirs: string }): Effect.Effect<StandMergeResult>
+  /** A worktree detached at `at`, nothing merged: a clean merge that built red, for an agent to amend (#1352). Never released. */
+  standCommit(project: string, options: { name: string; at: string }): Effect.Effect<StandMergeResult>
   /** Runs `git` in a directory other than the mirror: a round's worktree. A non-zero exit is an answer. */
   gitIn(cwd: string, args: readonly string[]): Effect.Effect<PrGitAnswer, Error>
   /** One run of an agent. **Not bounded like a read**: its limit is the recipe's `run.wall`. */

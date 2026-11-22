@@ -19,7 +19,7 @@ import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { resolveRounds } from '../src/pr-resolve.ts'
+import { type ConflictAsk, resolveRounds } from '../src/pr-resolve.ts'
 import { mergePrBack } from '../src/pr-sync.ts'
 import {
   type ConflictResolver,
@@ -36,6 +36,8 @@ const MAIN_2 = '9'.repeat(40)
 const PERSONAL = 'b'.repeat(40)
 const RESOLVED = '1'.repeat(40)
 const MOVED = '2'.repeat(40)
+/** A clean merge of `MAIN` into `FROZEN`, made by the sync. */
+const MERGE = '3'.repeat(40)
 
 const recipeWith = (conflictResolutions: number, reviewers = true): Recipe =>
   ({
@@ -61,6 +63,8 @@ interface World {
   sweeps: number
   /** What the agent left: `HEAD`'s parents, as `rev-list --parents` prints them after the sha. */
   parents: string[]
+  /** What the agent left, once it has been dispatched; absent is `parents`. */
+  parentsAfter?: string[]
   mergeInProgress: boolean
   buildAnswer: (sha: string) => PrBuildAnswer
   /** The reviewer's text for a round (1-based). */
@@ -71,6 +75,9 @@ interface World {
   remote: Map<string, string>
   personalNow: string
   stood: StandMergeResult
+  /** The commits a red round stood up, and how many conflict merges were stood up. */
+  stoodCommits: string[]
+  stoodMerges: number
 }
 
 const CLEAN = '{"findings":[]}'
@@ -91,20 +98,29 @@ const aWorld = (): World => ({
   remote: new Map(),
   personalNow: PERSONAL,
   stood: { kind: 'standing', cwd: '/work/pr-sync-1-1', paths: ['shelf.ts'] },
+  stoodCommits: [],
+  stoodMerges: 0,
 })
 
 const roundOf = (runId: string): number => Number(runId.split(':').at(-1))
 
 function resolverFor(store: EventStore, w: World): ConflictResolver {
   return {
-    standMerge: () => Effect.succeed(w.stood),
+    standMerge: () => Effect.sync(() => (w.stoodMerges++, w.stood)),
+    standCommit: (_project, o) =>
+      Effect.sync(() => (w.stoodCommits.push(o.at), { kind: 'standing', cwd: '/work/pr-sync-1-1', paths: [] })),
     gitIn: (_cwd, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
         if (args[0] === 'rev-parse' && args[1] === '-q') {
           return { code: w.mergeInProgress ? 0 : 1, stdout: '', stderr: '' }
         }
-        if (args[0] === 'rev-list') return { code: 0, stdout: `${RESOLVED} ${w.parents.join(' ')}\n`, stderr: '' }
+        if (args[0] === 'rev-list')
+          return {
+            code: 0,
+            stdout: `${RESOLVED} ${(w.dispatched.length > 0 ? (w.parentsAfter ?? w.parents) : w.parents).join(' ')}\n`,
+            stderr: '',
+          }
         if (args[0] === 'rev-parse') return { code: 0, stdout: `${RESOLVED}\n`, stderr: '' }
         if (args[0] === 'show') return { code: 0, stdout: '-old\n+new\n', stderr: '' }
         return { code: 0, stdout: '', stderr: '' }
@@ -132,6 +148,8 @@ function ports(store: EventStore, w: World): PrPorts {
   const resolved: Record<string, string> = {
     'refs/lingtai/pr/1/main': MAIN,
     'refs/lingtai/pr/1/personal': w.personalNow,
+    [`${MERGE}^1`]: FROZEN,
+    [`${MERGE}^2`]: MAIN,
   }
   return {
     store,
@@ -233,7 +251,7 @@ const askSync = (commit = MAIN) => ({
   checkId: 'pr-1-sync',
 })
 
-const resolve = (store: EventStore, w: World, ask = askSync()) =>
+const resolve = (store: EventStore, w: World, ask: ConflictAsk = askSync()) =>
   Effect.runPromise(resolveRounds(ports(store, w), resolverFor(store, w), ask))
 
 describe('resolveRounds', () => {
@@ -698,3 +716,140 @@ describe('the merge back with a resolver', () => {
     expect((await locked.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrMergedBack')
   })
 })
+
+describe('a red build of a clean merge (#1352)', () => {
+  const syncing = [...IN_PROGRESS_STEPS].filter((s) => s.name === 'sync' || s.name === 'build')
+  const cleanThenRed = (w: World) => {
+    w.mergeAnswer = () => ({ kind: 'merged', sha: MERGE })
+    w.buildAnswer = (sha) =>
+      sha === MERGE
+        ? { kind: 'red', command: 'pnpm typecheck', evidence: 'shelf.ts(4): byTitle is not defined' }
+        : { kind: 'green' }
+  }
+
+  it('the sync: the agent amends the merge, the resolution is the target, one round is counted, and a second serve spends none', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    cleanThenRed(w)
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, syncing))
+
+    const s = await state(store)
+    expect(s.wait).toBeNull()
+    expect(s.target).toBe(RESOLVED)
+    expect(s.status).not.toBe('waiting')
+    expect(s.steps.map((x) => x.step)).toEqual(['sync', 'build'])
+    expect(s.steps.find((x) => x.step === 'build')!.headSha).toBe(RESOLVED)
+    const events = await store.read(prStream('lingtai', 1))
+    expect(events.filter((e) => e.type === 'SyncRoundStarted')).toHaveLength(1)
+    expect(events.find((e) => e.type === 'SyncRoundStarted')!.data).toMatchObject({
+      why: 'red',
+      commit: MAIN,
+      start: FROZEN,
+    })
+    expect(events.find((e) => e.type === 'BranchSynced')!.data).toEqual({
+      mainCommit: MAIN,
+      head: RESOLVED,
+      how: 'resolved',
+    })
+    expect(events.some((e) => e.type === 'PrWaiting')).toBe(false)
+    // The round stood up the clean merge, never a merge with markers, and briefed the agent with the build's words.
+    expect(w.stoodCommits).toEqual([MERGE])
+    expect(w.stoodMerges).toBe(0)
+    expect(w.dispatched[0]!.prompt).toContain('byTitle is not defined')
+
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, syncing))
+    expect((await state(store)).rounds).toHaveLength(1)
+  })
+
+  it('the sync: rounds spent waits sync-red with the build’s words and the spent sentence', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = recipeWith(2)
+    cleanThenRed(w)
+    w.buildAnswer = () => ({ kind: 'red', command: 'pnpm typecheck', evidence: 'still red' })
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, syncing))
+
+    const s = await state(store)
+    expect(s.status).toBe('waiting')
+    expect(s.wait).toMatchObject({ reason: 'sync-red', conflict: { roundsUsed: 2, last: { step: 'build' } } })
+    expect(s.wait?.detail).toContain('pnpm typecheck')
+    expect(s.wait?.detail).toContain('spent 2 rounds')
+    expect(s.rounds).toHaveLength(2)
+  })
+
+  it('a merge that conflicted and was resolved in one round, then built red: the red round is the commit’s second', async () => {
+    const store = await inProgress()
+    await Effect.runPromise(
+      recordSyncRoundStarted('lingtai', 1, { merging: 'main', commit: MAIN, start: FROZEN, round: 1 }, store),
+    )
+    const w = aWorld()
+    const end = await resolve(store, w, {
+      ...askSync(),
+      paths: [],
+      why: { kind: 'red', merge: MERGE, command: 'pnpm test', evidence: 'red' },
+    })
+    expect(end.kind).toBe('resolved')
+    expect((await state(store)).rounds.map((r) => r.round)).toEqual([1, 2])
+  })
+
+  it('an answer that adds a commit on top of the merge is that round refused', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    w.recipe = recipeWith(1)
+    w.parentsAfter = [MERGE]
+    const end = await resolve(store, w, {
+      ...askSync(),
+      paths: [],
+      why: { kind: 'red', merge: MERGE, command: 'pnpm test', evidence: 'red' },
+    })
+    expect(end.kind).toBe('spent')
+    if (end.kind === 'spent') expect(end.end.last).toMatchObject({ step: 'answer' })
+  })
+
+  it('names the tickets whose files the output mentions, and every ticket when none is named', async () => {
+    const store = await inProgress()
+    const w = aWorld()
+    const red = (evidence: string) => ({ kind: 'red' as const, merge: MERGE, command: 'pnpm test', evidence })
+    await resolve(store, w, { ...askSync(), paths: [], why: red('shelf.ts(4): boom') })
+    expect(w.dispatched[0]!.prompt).toContain('#1 pin the shelf')
+    const other = aWorld()
+    await resolve(await inProgress(), other, { ...askSync(), paths: [], why: red('something unrelated') })
+    expect(other.dispatched[0]!.prompt).toContain('#1 pin the shelf')
+  })
+
+  it('the merge back: a clean merge that builds red goes to a round; rounds spent record PrMergeBackFailed red', async () => {
+    const store = await inReviewed()
+    const w = aWorld()
+    w.recipe = recipeWith(1)
+    w.parents = [PERSONAL, FROZEN]
+    w.mergeAnswer = () => ({ kind: 'merged', sha: MERGE })
+    w.buildAnswer = () => ({ kind: 'red', command: 'pnpm test', evidence: 'red' })
+    await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
+
+    expect((await state(store)).rounds.map((r) => r.merging)).toEqual(['back'])
+    expect(w.stoodCommits).toEqual([MERGE])
+    const failed = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(failed.type).toBe('PrMergeBackFailed')
+    expect(failed.data).toMatchObject({ why: 'red', conflict: { merging: 'back', roundsUsed: 1 } })
+    expect(w.pushes).toEqual([])
+  })
+
+  it('the merge back: the agent amends the merge and the push is of the amended commit', async () => {
+    const store = await inReviewed()
+    const w = aWorld()
+    w.parents = [PERSONAL, FROZEN]
+    w.mergeAnswer = () => ({ kind: 'merged', sha: MERGE })
+    w.buildAnswer = (sha) =>
+      sha === MERGE ? { kind: 'red', command: 'pnpm test', evidence: 'red' } : { kind: 'green' }
+    await Effect.runPromise(mergePrBack(ports(store, w), 'lingtai', 1))
+    expect(w.pushes).toEqual([['push', 'origin', `${RESOLVED}:refs/heads/lingtai-team`]])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrMergedBack')
+  })
+})
+
+async function inReviewed(): Promise<EventStore> {
+  const store = await inProgress()
+  await Effect.runPromise(recordPrPushed('lingtai', 1, { headSha: FROZEN, found: 'pushed' }, store))
+  await Effect.runPromise(recordPrOpened('lingtai', 1, { host: 'none', number: null, url: null }, store))
+  return store
+}
