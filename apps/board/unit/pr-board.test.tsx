@@ -1,0 +1,317 @@
+/**
+ * The PRs board (#1319): the read's id filter, the view model's every state, the place line's `PRs`, and the claim
+ * that nothing in the board appends to a `pr-` stream. Unit only: the visual check is a person's, in a browser.
+ */
+import { readFileSync, readdirSync, statSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { type PrState, emptyPr, prStream } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import type { Recipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { viewsFor } from '../src/app/place-line.tsx'
+import { PrColumns } from '../src/app/pr-columns.tsx'
+import {
+  type CardView,
+  type PrBoardInput,
+  type PrRead,
+  WAIT_WORDS,
+  prBoard,
+  prName,
+  soloSentence,
+} from '../src/lib/pr-board.ts'
+
+const recipe = {
+  mode: 'team',
+  branch: { main: 'main', personal: 'foundry' },
+  runtime: { agent: 'claude-code', limits: { attempt: { conflictResolutions: 3 } } },
+} as unknown as Recipe
+
+const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
+const tk = (n: number) => ({ ticket: String(n), mergeCommit: `c${n}`, title: `ticket ${n}` })
+const pr = (n: number, over: Partial<PrState>): PrState => ({ ...emptyPr, project: 'p', n, ...over })
+const input = (prs: PrRead[], draft = [tk(1), tk(2)]): PrBoardInput => ({
+  project: 'p',
+  recipe,
+  prs,
+  draft,
+  stepNames: STEPS,
+  spend: new Map(),
+  servedWords: 'it is served when a conductor runs',
+  newFixHref: 'https://example.test/new',
+})
+const col = (view: ReturnType<typeof prBoard>, id: string) => view.columns.find((c) => c.id === id)!
+const cards = (view: ReturnType<typeof prBoard>, id: string) => col(view, id).cards as CardView[]
+
+describe('the read', () => {
+  const requested = { type: 'PrSubmitRequested', actor: 'human:x', data: { by: 'human:x' } } as const
+
+  it("finds a project's PRs by number, never by prefix: 9 before 10, and not pr-lingtai-x-3", async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const store = createMemoryEventStore()
+    // 1..10: a PR numbered 9 with no 1–8 cannot exist (`requestPrSubmit` appends at one past the highest).
+    for (let n = 1; n <= 10; n++) await store.append(prStream('lingtai', n), 0, [requested])
+    // `pr-lingtai-x-3` is `lingtai-x`'s PR 3 — and the very stream a prefix listing would hand to `lingtai`.
+    for (let n = 1; n <= 3; n++) await store.append(prStream('lingtai-x', n), 0, [requested])
+    const reads = await Effect.runPromise(readProjectPrs('lingtai', store))
+    expect(reads.map((r) => r.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    const other = await Effect.runPromise(readProjectPrs('lingtai-x', store))
+    expect(other.map((r) => r.n)).toEqual([1, 2, 3])
+  })
+
+  it('reads an unreadable stream as itself and still reads the others', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const store = createMemoryEventStore()
+    await store.append(prStream('p', 1), 0, [requested])
+    await store.append(prStream('p', 2), 0, [requested])
+    const real = store.read.bind(store)
+    store.read = async (id: string) => {
+      if (id === prStream('p', 1)) throw new Error('disk gone')
+      return real(id)
+    }
+    const reads = await Effect.runPromise(readProjectPrs('p', store))
+    expect(reads[0]).toEqual({ n: 1, error: 'disk gone' })
+    expect('pr' in reads[1]!).toBe(true)
+  })
+})
+
+describe('prBoard', () => {
+  it('draws Submit with its cost line when no PR is open', () => {
+    const v = prBoard(input([]))
+    const draft = cards(v, 'draft')[0]!
+    expect(draft.buttons).toEqual([{ kind: 'submit', label: 'Submit PR' }])
+    expect(draft.sub.join(' ')).toContain('landed on foundry, not yet on main')
+    expect(draft.sub.join(' ')).toContain('≤ 20 turns, 5 min')
+    expect(v.strip.branches).toBe('foundry → main')
+    expect(v.strip.notInPr).toBe('2 tickets not in a PR yet')
+  })
+
+  it('disables Submit beside an open PR, naming it', () => {
+    const open = pr(7, { status: 'in-review', host: { number: 88, nodeId: 'n', url: 'u' }, tickets: [tk(3)] })
+    const draft = cards(prBoard(input([{ n: 7, pr: open }])), 'draft')[0]!
+    expect(draft.buttons[0]!.disabled).toBe('one PR at a time — submit opens once PR #88 is merged or closed')
+    expect(draft.sub[0]).toBe('landed on foundry since PR #88 was submitted')
+  })
+
+  it('draws an empty draft as the column line, not a card', () => {
+    const v = prBoard(input([], []))
+    expect(col(v, 'draft').cards).toEqual([])
+    expect(col(v, 'draft').empty).toBe('Lingtai keeps taking tickets; they gather here.')
+  })
+
+  it('keeps a requested PR on the draft, saying who serves it, and never as in progress', () => {
+    const v = prBoard(input([{ n: 1, pr: pr(1, { status: 'requested' }) }]))
+    expect(cards(v, 'draft')[0]!.sub[0]).toContain('submitted — it is served when a conductor runs')
+    expect(cards(v, 'draft')[0]!.buttons).toEqual([])
+    expect(col(v, 'progress').cards).toEqual([])
+  })
+
+  it('draws a PR in progress with its steps from the conductor’s list', () => {
+    const p = pr(2, {
+      status: 'in-progress',
+      steps: [
+        { step: 'sync', headSha: 'a' },
+        { step: 'build', headSha: 'a' },
+      ],
+      tickets: [tk(1)],
+    })
+    const card = cards(prBoard(input([{ n: 2, pr: p }])), 'progress')[0]!
+    expect(card.name).toBe('PR 2')
+    expect(card.chips.map((c) => c.step)).toEqual(STEPS.filter((s) => s !== 'topup'))
+    expect(card.chips[0]).toMatchObject({ step: 'sync', status: 'done' })
+    expect(card.chips[2]).toMatchObject({ step: 'summary', status: 'running' })
+  })
+
+  it('draws no CI as no CI, never CI ✓ 0/0', () => {
+    const p = pr(2, {
+      status: 'in-review',
+      ciSkipped: { why: 'no workflow' } as PrState['ciSkipped'],
+      prBranch: 'foundry-pr-2',
+    })
+    expect(cards(prBoard(input([{ n: 2, pr: p }])), 'review')[0]!.meta).toEqual(['no CI'])
+  })
+
+  const checks = (verdict: 'green' | 'red') =>
+    ({
+      headSha: 'h',
+      verdict,
+      checks: [
+        { name: 'unit', state: 'success', url: 'u1' },
+        {
+          name: 'e2e',
+          state: verdict === 'green' ? 'success' : 'failure',
+          url: 'https://run/1',
+          failing: verdict === 'red',
+        },
+      ],
+    }) as PrState['checks']
+
+  it('draws a CI wait with the run, a new pr-fix ticket and Check again', () => {
+    const p = pr(3, {
+      status: 'waiting',
+      host: { number: 91, nodeId: 'n', url: 'u' },
+      checks: checks('red'),
+      wait: { step: 'ci', reason: 'ci-red', detail: 'e2e failed', headSha: 'h' },
+    })
+    const v = prBoard(input([{ n: 3, pr: p }]))
+    const card = cards(v, 'waiting')[0]!
+    expect(card.name).toBe('PR #91 · CI failed')
+    expect(card.sub[0]).toBe('still a GitHub draft — nobody was asked to review it')
+    expect(card.buttons.map((b) => b.label)).toEqual(['Open the run ↗', 'New pr-fix ticket', 'Check again'])
+    expect(card.buttons[0]).toMatchObject({ href: 'https://run/1' })
+    expect(v.waiting).toBe(1)
+  })
+
+  it('draws a conflict wait with more rounds, check again and the by-hand lines', () => {
+    const p = pr(4, {
+      status: 'waiting',
+      prBranch: 'foundry-pr-4',
+      frozenSha: 'abcdef1234',
+      wait: {
+        step: 'sync',
+        reason: 'sync-conflict',
+        detail: 'conflict',
+        headSha: 'h',
+        conflict: {
+          merging: 'main',
+          commit: 'a90d2ce1',
+          paths: ['shelf.ts'],
+          ours: [{ number: '43', title: 'sorts the shelf', mergeCommit: 'm' }],
+          theirs: [{ sha: 'a90d2ce1', author: 'li-wei', subject: 's' }],
+          roundsUsed: 3,
+          last: { step: 'build', said: 'red' },
+        },
+      },
+    })
+    const v = prBoard({ ...input([{ n: 4, pr: p }]), spend: new Map([[4, 1.35]]) })
+    const card = cards(v, 'waiting')[0]!
+    expect(card.buttons.map((b) => b.label)).toEqual(['Give the agent 3 more rounds', 'I resolved it — check again'])
+    expect(card.buttons[0]!.grant).toEqual({ merging: 'main', commit: 'a90d2ce1' })
+    expect(card.sub.join(' ')).toContain('shelf.ts')
+    expect(card.sub.join(' ')).toContain('$1.35')
+    expect(card.meta.join(' ')).toContain('theirs a90d2ce li-wei')
+    expect(card.byHand.at(-1)).toContain('lingtai pr retry p')
+  })
+
+  it('draws an unknown spend as unknown, never $0', () => {
+    const p = pr(4, {
+      status: 'waiting',
+      wait: { step: 'sync', reason: 'sync-conflict', detail: 'c', headSha: 'h' },
+    })
+    expect(cards(prBoard(input([{ n: 4, pr: p }])), 'waiting')[0]!.sub.join(' ')).toContain('unknown')
+  })
+
+  it('gives a wait no retry ends no Check again', () => {
+    const p = pr(5, { status: 'waiting', wait: { step: 'push', reason: 'denied', detail: 'nope', headSha: 'h' } })
+    expect(cards(prBoard(input([{ n: 5, pr: p }])), 'waiting')[0]!.buttons).toEqual([])
+  })
+
+  it('has a word for every reason a PR waits', () => {
+    for (const reason of Object.keys(WAIT_WORDS)) expect(WAIT_WORDS[reason as keyof typeof WAIT_WORDS]).not.toBe('')
+    expect(Object.keys(WAIT_WORDS)).toHaveLength(12)
+  })
+
+  it('draws a PR in review with its branch and CI count', () => {
+    const p = pr(6, {
+      status: 'in-review',
+      prBranch: 'foundry-pr-6',
+      main: 'main',
+      host: { number: 88, nodeId: 'n', url: 'u' },
+      checks: checks('green'),
+    })
+    const card = cards(prBoard(input([{ n: 6, pr: p }])), 'review')[0]!
+    expect(card.pill).toBe('in review')
+    expect(card.sub).toEqual(['foundry-pr-6 → main'])
+    expect(card.meta).toEqual(['CI ✓ 2/2'])
+  })
+
+  it('draws four merged PRs as three and 1 older, newest first', () => {
+    const merged = [1, 2, 3, 4].map((n) => ({
+      n,
+      pr: pr(n, {
+        status: 'merged',
+        tickets: [tk(n)],
+        ended: { how: 'git', headSha: 'h', mergeSha: 'm', seq: 1n, at: new Date('2026-11-18T00:00:00Z') },
+      }),
+    }))
+    const c = col(prBoard(input(merged, [])), 'merged')
+    expect((c.cards as CardView[]).map((x) => x.name)).toEqual(['PR 4', 'PR 3', 'PR 2'])
+    expect(c.older.map((x) => x.name)).toEqual(['PR 1'])
+    expect(c.cards[0]).toMatchObject({ sub: ['11-18 · 1 ticket closed'] })
+  })
+
+  it('draws fourteen tickets as three slips and + 11 more', () => {
+    const p = pr(8, { status: 'in-review', tickets: Array.from({ length: 14 }, (_, i) => tk(i + 1)) })
+    const card = cards(prBoard(input([{ n: 8, pr: p }])), 'review')[0]!
+    expect(card.slips).toHaveLength(3)
+    expect(card.more).toBe(11)
+    expect(card.count).toBe('14 tickets')
+    expect(renderToStaticMarkup(<PrColumns project="p" view={prBoard(input([{ n: 8, pr: p }]))} />)).toContain(
+      '+ 11 more',
+    )
+  })
+
+  it('names a PR without a host number PR <n>, never PR #<n>', () => {
+    expect(prName({ host: null, n: 12 })).toBe('PR 12')
+    expect(prName({ host: { number: 88, nodeId: '', url: '' }, n: 12 })).toBe('PR #88')
+  })
+
+  it('draws an unreadable stream as its own failure and the others still', () => {
+    const v = prBoard(
+      input([
+        { n: 1, error: 'disk gone' },
+        { n: 2, pr: pr(2, { status: 'in-review' }) },
+      ]),
+    )
+    expect(col(v, 'progress').cards[0]).toMatchObject({ failed: true, text: 'PR 1 could not be read: disk gone' })
+    expect(cards(v, 'review')).toHaveLength(1)
+    const html = renderToStaticMarkup(<PrColumns project="p" view={v} />)
+    expect(html).toContain('PR 1 could not be read: disk gone')
+  })
+
+  it('says Nothing is waiting on you only for a board that was read', () => {
+    expect(col(prBoard(input([])), 'waiting').empty).toBe('Nothing is waiting on you.')
+  })
+})
+
+describe('the place line', () => {
+  it('has no PRs for a solo project or All projects, and says so for a solo page', () => {
+    expect(viewsFor('p').map((v) => v.id)).toEqual(['tickets', 'recipe'])
+    expect(viewsFor(undefined).map((v) => v.id)).toEqual(['tickets'])
+    expect(soloSentence('p', recipe)).toBe('p is a solo project: each ticket lands on main itself, so it has no PRs')
+  })
+
+  it('has PRs with a fail-coloured count when one waits, and none at zero', () => {
+    const one = viewsFor('p', { waiting: 1 }).find((v) => v.id === 'prs')!
+    expect(one).toMatchObject({ href: '/pr/p', key: 'P', badge: { n: 1, title: '1 PR waiting on you' } })
+    expect(viewsFor('p', { waiting: 2 }).find((v) => v.id === 'prs')!.badge!.title).toBe('2 PRs waiting on you')
+    expect(viewsFor('p', { waiting: 0 }).find((v) => v.id === 'prs')!.badge).toBeUndefined()
+  })
+
+  it('never reads an unreadable count as 0', () => {
+    const v = viewsFor('p', { waiting: null }).find((x) => x.id === 'prs')!
+    expect(v.badge).toBeUndefined()
+    expect(v.unread).toBe('could not read the PRs')
+  })
+})
+
+describe('the board never appends to a pr- stream', () => {
+  const walk = (dir: string): string[] =>
+    readdirSync(dir).flatMap((f) => {
+      const p = join(dir, f)
+      return statSync(p).isDirectory() ? walk(p) : /\.tsx?$/.test(p) ? [p] : []
+    })
+
+  it('imports a PR command only in actions.ts, and never appends one itself', () => {
+    const src = join(__dirname, '..', 'src')
+    for (const file of walk(src)) {
+      const text = readFileSync(file, 'utf8')
+      if (/prStream\(/.test(text)) expect(text, file).not.toMatch(/\.append\(/)
+      if (!file.endsWith('app/actions.ts'))
+        expect(text, file).not.toMatch(/\b(requestPr[A-Z]\w*|grantPrRounds|recordPr\w*)\(/)
+    }
+  })
+})
