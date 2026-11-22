@@ -599,7 +599,10 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // landed after it, and no sha is stored anywhere. `-z` for the reason the
         // conflict branch gives above.
         const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
-        if (fork !== localBase) {
+        // A pr-fix cut from the head Lingtai last pushed (`expectBase`) that others pushed on top of is landed on as fetched
+        // (0131 §4, #1353): that movement is what the ancestry check above allowed, and a conflict is the ordinary one below.
+        const forkedAtExpected = options.expectBase !== undefined && fork === options.expectBase
+        if (fork !== localBase && !forkedAtExpected) {
           const names = (range: string) =>
             at(['diff', '--name-only', '-z', range], mirror).pipe(
               Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),

@@ -128,7 +128,7 @@ const outsideStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
             kind: 'done',
             headSha: sha,
             record: (project, n, store) =>
-              recordPrOutsideMerged(project, n, { remoteHead: at, commits, omitted, head: sha, how }, store),
+              recordPrOutsideMerged(project, n, { remoteHead: at, commits, omitted, head: sha, how }, target, store),
           } as StepAnswer
         })
       const ended = (

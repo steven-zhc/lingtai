@@ -113,8 +113,15 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       const ref = `refs/heads/${prBranch}`
       const at = yield* remoteSha(ports, project, ref)
       const expected = state.lastPushed ?? start
-      const holds =
-        at !== null && at !== state.lastPushed && at !== start ? yield* isAncestor(ports, project, expected, at) : true
+      // `ls-remote` names a commit and does not bring it: the remote head is fetched before it is asked about.
+      let holds = true
+      if (at !== null && at !== state.lastPushed && at !== start) {
+        const prRef = fetchedRef(n, 'pr')
+        holds = yield* Effect.gen(function* () {
+          yield* fetchInto(ports, project, [[ref, prRef]])
+          return yield* isAncestor(ports, project, expected, yield* resolve(ports, project, prRef))
+        }).pipe(Effect.ensuring(dropRef(ports, project, prRef)))
+      }
       if (at === null ? state.lastPushed !== null : !holds) {
         return wait(
           'sync-rewritten',

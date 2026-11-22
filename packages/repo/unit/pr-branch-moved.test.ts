@@ -12,7 +12,7 @@ import { integrateEffect } from '../src/integrate.ts'
 const sha = '1'.repeat(40)
 
 /** What `git merge-base --is-ancestor` exits with in the fake: 0 yes, 1 no, anything else is git failing. */
-function fakeGit(ancestor: number = 0, fetched: string = sha) {
+function fakeGit(ancestor: number = 0, fetched: string = sha, fork: string = fetched) {
   const calls: string[][] = []
   const git = (args: string[]): Effect.Effect<string, RepoFailed> => {
     calls.push(args)
@@ -22,7 +22,7 @@ function fakeGit(ancestor: number = 0, fetched: string = sha) {
         : Effect.fail(new RepoFailed({ operation: 'git', detail: 'no', command: args, exitCode: ancestor }))
     }
     if (args[0] === 'rev-parse' && args[1]?.endsWith('/base')) return Effect.succeed(fetched)
-    if (args[0] === 'merge-base') return Effect.succeed(fetched)
+    if (args[0] === 'merge-base') return Effect.succeed(fork)
     if (args[0] === 'rev-parse') return Effect.succeed(sha)
     if (args[0] === 'rev-list') return Effect.succeed('1')
     return Effect.succeed('')
@@ -66,9 +66,11 @@ describe('the lane lands on a PR branch that still holds what Lingtai last pushe
 
   it('lands on the fetched base when others pushed on top of the expected head, leasing the push to what it fetched', async () => {
     const fetched = 'e'.repeat(40)
-    const fake = fakeGit(0, fetched)
+    // The ticket forked from `moved`; the base is now `fetched`, on top of it: merge-base stays at the fork.
+    const fake = fakeGit(0, fetched, moved)
     const result = await land(fake, moved)
     expect(result).not.toMatchObject({ reason: 'pr-branch-moved' })
+    expect(result).not.toMatchObject({ reason: 'base-moved' })
     const push = fake.calls.find((a) => a[0] === 'push')
     expect(push).toContain(`--force-with-lease=refs/heads/feature-pr-1:${fetched}`)
   })

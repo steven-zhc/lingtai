@@ -684,8 +684,11 @@ export function syncedTransition(
 export function outsideTransition(
   state: PrState,
   merged: PayloadOf<'PrOutsideMerged'>,
+  onto: string,
 ): ToAppend<PayloadOf<'PrOutsideMerged'>> | null {
   if (!walking(state) || state.steps.some((s) => s.step === 'outside')) return null
+  // A merge made on a commit that is no longer the target (a pr-fix landed meanwhile) holds none of what the target holds.
+  if (onto !== (state.target ?? state.frozenSha)) return null
   return { type: 'PrOutsideMerged', actor: 'conductor', data: merged }
 }
 

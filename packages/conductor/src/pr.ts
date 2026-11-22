@@ -300,15 +300,27 @@ const pushStep: PrStep = {
           // What is not on top of it — a force-push — is a person's.
           const base = state.lastPushed ?? state.frozenSha
           if (base === null) return moved(at)
-          const onTop = ['merge-base', '--is-ancestor', base, at] as const
-          const holds = yield* ports.git(project, onTop)
-          if (holds.code === 1) return moved(at)
-          if (holds.code !== 0) return yield* Effect.fail(new Error(gitSaid(onTop, holds)))
-          // A remote `outside` has merged is under the target, and is fast-forwarded; one it has not seen is not.
-          const merged = ['merge-base', '--is-ancestor', at, target] as const
-          const seen = yield* ports.git(project, merged)
-          if (seen.code === 1) return { kind: 'restart' } as StepAnswer
-          if (seen.code !== 0) return yield* Effect.fail(new Error(gitSaid(merged, seen)))
+          // `ls-remote` names a commit and does not bring it: fetched first, so a commit pushed after the mirror's last fetch is asked about.
+          const prRef = fetchedRef(n, 'pr')
+          const verdict = yield* Effect.gen(function* () {
+            yield* fetchInto(ports, project, [[ref, prRef]])
+            const rev = ['rev-parse', '--verify', '--quiet', `${prRef}^{commit}`] as const
+            const got = yield* ports.git(project, rev)
+            const head = got.stdout.trim()
+            if (got.code !== 0 || head === '') return yield* Effect.fail(new Error(gitSaid(rev, got)))
+            const onTop = ['merge-base', '--is-ancestor', base, head] as const
+            const holds = yield* ports.git(project, onTop)
+            if (holds.code === 1) return 'moved' as const
+            if (holds.code !== 0) return yield* Effect.fail(new Error(gitSaid(onTop, holds)))
+            // A remote `outside` has merged is under the target, and is fast-forwarded; one it has not seen is not.
+            const merged = ['merge-base', '--is-ancestor', head, target] as const
+            const seen = yield* ports.git(project, merged)
+            if (seen.code === 1) return 'restart' as const
+            if (seen.code !== 0) return yield* Effect.fail(new Error(gitSaid(merged, seen)))
+            return 'merged' as const
+          }).pipe(Effect.ensuring(dropRef(ports, project, prRef)))
+          if (verdict === 'moved') return moved(at)
+          if (verdict === 'restart') return { kind: 'restart' } as StepAnswer
         }
 
         // The commit has to be in the mirror to be pushed from it; a re-cloned mirror loses it, and the walk is run again.

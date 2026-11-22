@@ -6,7 +6,7 @@ import { prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub } from '@lingtai/github'
-import { recordPrPushed, requestPrSubmit } from '@lingtai/project'
+import { recordPrOutsideMerged, recordPrPushed, requestPrSubmit } from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -291,5 +291,20 @@ describe('the outside step', () => {
     await walk(ports(store, w))
     expect((await state(store)).wait).toMatchObject({ step: 'outside', reason: 'branch-moved' })
     expect(w.merges).toEqual([])
+  })
+
+  it('a merge made on a commit that is no longer the target is not recorded: it holds none of what the target holds', async () => {
+    const store = await inProgress(true)
+    const merged = {
+      remoteHead: REMOTE,
+      commits: [],
+      omitted: 0,
+      head: OUTMERGE,
+      how: 'clean' as const,
+    }
+    await Effect.runPromise(recordPrOutsideMerged('lingtai', 1, merged, 'e'.repeat(40), store))
+    expect((await events(store)).map((e) => e.type)).not.toContain('PrOutsideMerged')
+    await Effect.runPromise(recordPrOutsideMerged('lingtai', 1, merged, FROZEN, store))
+    expect((await state(store)).target).toBe(OUTMERGE)
   })
 })

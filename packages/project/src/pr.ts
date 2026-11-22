@@ -287,13 +287,14 @@ export const recordPrOutsideMerged = (
   project: string,
   n: number,
   merged: PayloadOf<'PrOutsideMerged'>,
+  onto: string,
   store: EventStore,
 ) =>
   transitionPr(
     store,
     project,
     n,
-    (state) => outsideTransition(state, merged),
+    (state) => outsideTransition(state, merged, onto),
     (_state, appended) => appended,
   )
 
