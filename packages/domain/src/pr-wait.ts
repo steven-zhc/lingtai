@@ -5,6 +5,20 @@
 import type { PayloadOf } from './events.ts'
 import { type PrState, conflictRoundsLeft, grantedFor } from './pr.ts'
 
+type WaitReason = PayloadOf<'PrWaiting'>['reason']
+
+/** The waits a person can end with `lingtai pr retry`: the sync ones and the three CI ones (#1355). */
+const RETRYABLE: ReadonlySet<WaitReason> = new Set<WaitReason>([
+  'ci-red',
+  'ci-none-started',
+  'ci-timeout',
+  'sync-conflict',
+  'sync-red',
+  'sync-unknown',
+  'sync-rewritten',
+  'sync-locked',
+])
+
 export interface PrWaitFacts {
   readonly project: string
   /** The local checkout's path, for `git -C`; null where the project has none on this machine. */
@@ -101,6 +115,6 @@ export function prWaitOf(state: PrState, facts: PrWaitFacts): PrWaitView | null 
     reason: wait.reason,
     step: wait.step,
     detail: wait.detail,
-    commands: wait.reason.startsWith('sync-') ? [`lingtai pr retry ${facts.project}`] : [],
+    commands: RETRYABLE.has(wait.reason) ? [`lingtai pr retry ${facts.project}`] : [],
   }
 }
