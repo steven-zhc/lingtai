@@ -445,6 +445,25 @@ const prBack = Command.make('back', { project: prProject, json, noColor }, (args
   ),
 ).pipe(Command.withDescription('take the PR back to Draft: close the draft pull request'))
 
+const prSummary = Command.make(
+  'summary',
+  { project: prProject, file: Flag.String('file').pipe(Flag.optional), json, noColor },
+  (args) =>
+    answerWith('pr summary', args, () =>
+      Effect.gen(function* () {
+        const pr = yield* lift(() => import('./pr.ts'))
+        const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+        if ('refused' in chosen) return chosen.refused
+        return yield* pr.prSummaryVerdict(
+          chosen.project,
+          `human:${process.env['USER'] ?? 'operator'}`,
+          args.file._tag === 'Some' ? args.file.value : null,
+          pr.livePrWorld(),
+        )
+      }),
+    ),
+).pipe(Command.withDescription('print the open PR’s summary, or replace it with --file and push it to GitHub'))
+
 const prCommand = Command.make('pr', { project: prProject, json, noColor }, (args) =>
   Effect.gen(function* () {
     if (args.noColor) applyNoColor()
@@ -460,7 +479,7 @@ const prCommand = Command.make('pr', { project: prProject, json, noColor }, (arg
     else for (const line of report.lines) console.log(line)
     yield* exitWith(report.code)
   }).pipe(orFailed('pr', args.json)),
-).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit, prRetry, prRounds, prBack]))
+).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit, prRetry, prRounds, prBack, prSummary]))
 
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
 export interface BoardRequest {

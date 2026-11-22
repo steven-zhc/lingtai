@@ -277,7 +277,7 @@ function spentBy(d: Payload, r: Reading): string {
     case 'Discussion':
       return 'a discussion'
     case 'Pr':
-      return `the conflict agent (${spentFor.purpose})`
+      return spentFor.purpose === 'summary' ? 'the summary agent' : `the conflict agent (${spentFor.purpose})`
     default:
       throw new Error('no for')
   }
@@ -542,6 +542,11 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrRetryRequested: (d) => `${need(d, 'by')} asked for the PR to be checked again`,
   PrHeadAdopted: (d) => `The head ${sha(d, 'head')}, pushed by a person, was adopted as the PR's own`,
   PrBackRequested: (d) => `${need(d, 'by')} asked to take the PR back to Draft`,
+  PrSummaryWritten: (d) =>
+    `The summary agent wrote the PR's ${d['at'] === 'pr-fix' ? 'top-up' : 'title and summary'}: ${clip(d['title'])}`,
+  PrSummaryNotWritten: (d) => `No summary was written (${need(d, 'at')}): ${clip(d['why'])}`,
+  PrSummaryEdited: (d) => `${need(d, 'by')} replaced the PR's summary`,
+  PrDescriptionPushed: () => `The PR's description was put on the code host`,
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,
@@ -945,7 +950,8 @@ function whoOf(event: Envelope, ctx: LineContext): string {
   if (event.type === 'TriageStarted' || event.type === 'WaitTriaged') return 'triage'
   if (event.type.startsWith('Discussion')) return 'a discussion'
   if (event.type === 'RunSpent') {
-    switch ((event.data as { for?: { _tag?: string } } | null)?.for?._tag) {
+    const spent = (event.data as { for?: { _tag?: string; purpose?: string } } | null)?.for
+    switch (spent?._tag) {
       case 'Judge':
         return 'the judge'
       case 'Triage':
@@ -953,7 +959,7 @@ function whoOf(event: Envelope, ctx: LineContext): string {
       case 'Discussion':
         return 'a discussion'
       case 'Pr':
-        return 'the conflict agent'
+        return spent.purpose === 'summary' ? 'the summary agent' : 'the conflict agent'
     }
   }
   return actor

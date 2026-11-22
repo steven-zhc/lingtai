@@ -13,6 +13,7 @@ import { runnableEnv } from '@lingtai/agent-env'
 import {
   type ConflictResolver,
   type PrPorts,
+  type PrSummarizer,
   buildAt,
   claudeConfigDirFor,
   decidePassSandbox,
@@ -46,6 +47,7 @@ import {
 import { standInExcludes } from '@lingtai/sandbox'
 import { Effect } from 'effect'
 
+import { prepare } from './discuss.ts'
 import { processSandbox } from './sandbox.ts'
 import { tracedPorts } from './tracing.ts'
 
@@ -113,6 +115,61 @@ export function livePrPorts(
           : Effect.fail(asError(err)),
       ),
     )
+  // The body **as claimed**, off the ticket's own stream: the issue on GitHub may have been edited since the work landed,
+  // and the agents are told what the code that conflicts was written to mean.
+  const ticketBody = (project: string, ticket: string) =>
+    Effect.tryPromise({ try: () => store.read(ticketStream(project, ticket)), catch: asError }).pipe(
+      Effect.flatMap((events) => {
+        const claimed = events
+          .filter((e) => e.type === 'TicketClaimed' || e.type === 'TicketContinued')
+          .map((e) => (e.data as { body?: string }).body)
+          .filter((body): body is string => body !== undefined)
+        const body = claimed.at(-1)
+        return body === undefined
+          ? Effect.fail(new Error(`no body was recorded when #${ticket} was claimed`))
+          : Effect.succeed(body)
+      }),
+    )
+  /**
+   * The `pr:` agent (#1318): **no tools**, as a discussion's is — an empty directory and a settings file that denies
+   * everything (`prepare`), a runtime built with `tools: 'none'`, and nothing but what it needs to authenticate. Without
+   * `locked` no summary run is made, for the reason no conflict round is: it would be new work outside every lock.
+   */
+  const summarizer: PrSummarizer | undefined =
+    locked === undefined
+      ? undefined
+      : {
+          write: (_project, request) =>
+            Effect.gen(function* () {
+              const { cwd, settingsPath } = yield* prepare(request.runId.replace(/[^A-Za-z0-9._-]/g, '_')).pipe(
+                Effect.mapError(asError),
+              )
+              const outcome = yield* createRuntime(request.runtime, { tools: 'none' }).run({
+                runId: request.runId,
+                cwd,
+                prompt: request.prompt,
+                ...(request.model === undefined ? {} : { model: request.model }),
+                settingsPath,
+                env: runnableEnv({}),
+                limits: request.limits,
+                log: NO_RUN_LOG,
+              })
+              return {
+                turns: outcome.turns,
+                durationMs: outcome.durationMs,
+                costUsd: outcome.costUsd,
+                ...(outcome.usage === undefined ? {} : { usage: outcome.usage }),
+                text: outcome.text ?? null,
+                failure: outcome.failure ?? null,
+              }
+            }),
+          runtimeVersion: (_project, runtime) =>
+            runtimeVersionOfEffect(createRuntime(runtime, { tools: 'none' }), runnableEnv({})).pipe(
+              Effect.orElseSucceed(() => null),
+            ),
+          ticketBody,
+          locked,
+        }
   const resolver: ConflictResolver | undefined =
     locked === undefined
       ? undefined
@@ -180,27 +237,14 @@ export function livePrPorts(
             }),
           runtimeVersion: (_project, runtime) =>
             runtimeVersionOfEffect(createRuntime(runtime), runnableEnv({})).pipe(Effect.orElseSucceed(() => null)),
-          // The body **as claimed**, off the ticket's own stream: the issue on GitHub may have been edited since the work landed,
-          // and the agents are told what the code that conflicts was written to mean.
-          ticketBody: (project, ticket) =>
-            Effect.tryPromise({ try: () => store.read(ticketStream(project, ticket)), catch: asError }).pipe(
-              Effect.flatMap((events) => {
-                const claimed = events
-                  .filter((e) => e.type === 'TicketClaimed' || e.type === 'TicketContinued')
-                  .map((e) => (e.data as { body?: string }).body)
-                  .filter((body): body is string => body !== undefined)
-                const body = claimed.at(-1)
-                return body === undefined
-                  ? Effect.fail(new Error(`no body was recorded when #${ticket} was claimed`))
-                  : Effect.succeed(body)
-              }),
-            ),
+          ticketBody,
           locked,
         }
   return {
     store,
     log,
     ...(resolver === undefined ? {} : { resolver }),
+    ...(summarizer === undefined ? {} : { summarizer }),
     recipe: recipeOf,
     candidates: (project) =>
       readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(

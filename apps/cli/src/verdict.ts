@@ -84,6 +84,7 @@ export const VERBS = {
   'pr retry': { accepted: 'checking again', refused: 'not checked' },
   'pr rounds': { accepted: 'rounds given', refused: 'no rounds given' },
   'pr back': { accepted: 'taken back', refused: 'not taken back' },
+  'pr summary': { accepted: 'summary', refused: 'summary not replaced' },
 } as const
 
 /** A refusal the CLI itself made, before the conductor was asked. */

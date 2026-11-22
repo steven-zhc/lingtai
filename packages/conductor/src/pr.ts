@@ -38,6 +38,7 @@ import {
   recordPrCiFollowing,
   recordPrChecked,
   recordPrDraftOpened,
+  recordPrDescriptionPushed,
   recordPrHeadAdopted,
   recordPrRetried,
   recordPrTakenBack,
@@ -54,11 +55,14 @@ import {
 } from '@lingtai/project'
 import { type Recipe, ciOf, modeOf, remoteOf } from '@lingtai/recipe'
 import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
+import { createHash } from 'node:crypto'
+
 import { Clock, Effect, Result, Semaphore } from 'effect'
 
 import { CiProvider, type CiProviderShape } from './ci.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
+import { type PrSummarizer, summaryStep, topupStep } from './pr-summary.ts'
 import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 
@@ -133,6 +137,11 @@ export interface PrPorts {
    * the person as it did before, and a conflicting merge back is `PrMergeBackFailed { why: 'conflict' }`.
    */
   readonly resolver?: ConflictResolver
+  /**
+   * The `pr:` agent's run, with no tools (#1318). **Absent means no summary is written**: `summary` and `topup` answer `done`
+   * and append nothing, and the description is the generated one under the first ticket's title.
+   */
+  readonly summarizer?: PrSummarizer
   readonly log?: (line: string) => void
   /** How long the freeze waits between looks at a landing still in flight (default 1s); 0 in a test. */
   readonly landingWaitMs?: number
@@ -339,13 +348,51 @@ export const describePr = (
       tickets.map((t) => t.ticket),
     )
     return prDescription({
-      title: null,
-      summary: null,
+      title: state?.summary?.title ?? null,
+      summary: state?.summary?.text ?? null,
       tickets: tickets.map((t) => {
         const read = facts.find((f) => f.ticket === t.ticket)
         return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
       }),
     })
+  })
+
+/** What names a description: the hash of the title and the body, so one that has not changed is not pushed again. */
+export const descriptionHash = (described: { title: string; body: string }): string =>
+  createHash('sha256').update(`${described.title}\n${described.body}`, 'utf8').digest('hex')
+
+/**
+ * **The only push of a PR's description** (#1318): the title and body regenerated from the log — the summary, the tickets,
+ * `Closes #…` — and put on the code host when they differ from what was last pushed. Run at the end of every serve, so one
+ * function answers the top-up, a locked or failed run (the description goes with no new summary), a person's edit at any
+ * status, and a daemon that died between the record and the push. `PrDescriptionPushed` is appended **even when nothing
+ * changed**, so what was owed is settled; a push that failed appends nothing and is made again at the next serve.
+ */
+export const pushDescription = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const state = yield* readPr(project, n, ports.store)
+    if (state === null || !state.descriptionOwed || !isOpen(state) || state.host === null) return
+    const recipe = yield* ports.recipe(project)
+    // On a remote that is not GitHub there is nothing to push to: `lingtai pr` prints the description.
+    if (prHostOf(recipe) !== 'github') return
+    const described = yield* describePr(ports, project, n)
+    const hash = descriptionHash(described)
+    if (hash !== state.descriptionPushed) {
+      const github = yield* ports.github(project)
+      const number = state.host.number
+      const pushed = yield* github.updatePull(number, described).pipe(
+        Effect.as(true),
+        Effect.catch((err: unknown) => {
+          if (err instanceof GitHubFailed && notThePersons(err)) {
+            ports.log?.(`pr ${project} PR ${n}: the description was not pushed (${err.message}); it is owed still`)
+            return Effect.succeed(false)
+          }
+          return Effect.fail(asError(err))
+        }),
+      )
+      if (!pushed) return
+    }
+    yield* recordPrDescriptionPushed(project, n, { bodyHash: hash }, ports.store)
   })
 
 /**
@@ -367,12 +414,23 @@ const openStep: PrStep = {
           record: (project, n, store) => recordPrOpened(project, n, { host: 'none', number: null, url: null }, store),
         } as StepAnswer
       }
-      const existing = (found: 'opened' | 'existing', pull: { number: number; nodeId: string; url: string }) =>
+      const existing = (
+        found: 'opened' | 'existing',
+        pull: { number: number; nodeId: string; url: string },
+        described?: { title: string; body: string },
+      ) =>
         ({
           kind: 'done',
           headSha: target,
           record: (project, n, store) =>
-            recordPrDraftOpened(project, n, { number: pull.number, nodeId: pull.nodeId, url: pull.url, found }, store),
+            recordPrDraftOpened(project, n, { number: pull.number, nodeId: pull.nodeId, url: pull.url, found }, store).pipe(
+              // The body it opened with is what the code host holds: nothing is owed a push until the log says otherwise.
+              Effect.andThen(
+                described === undefined
+                  ? Effect.void
+                  : recordPrDescriptionPushed(project, n, { bodyHash: descriptionHash(described) }, store),
+              ),
+            ),
         }) as StepAnswer
       // A PR opened on an earlier pass through In progress is answered from the state.
       if (state.host !== null) return existing('existing', state.host)
@@ -396,7 +454,7 @@ const openStep: PrStep = {
       const opened = yield* github
         .openDraftPull({ title: described.title, head: prBranch, base: recipe.branch.main, body: described.body })
         .pipe(
-          Effect.map((pull) => existing('opened', pull)),
+          Effect.map((pull) => existing('opened', pull, described)),
           Effect.catch((err: unknown): Effect.Effect<StepAnswer, Error> => {
             if (err instanceof GitHubFailed && err.status === 422 && /draft/i.test(err.detail)) {
               return Effect.succeed({
@@ -613,11 +671,21 @@ const readyStep: PrStep = {
 }
 
 /**
- * **In progress, as a fixed list.** `sync`, `build` (#1312), `push`, `open`, `ci` and `ready` (#1339) here; `summary`
- * (#1318) comes between `ci` and `ready`, in 0130 §5's order.
+ * **In progress, as a fixed list.** `sync`, `build` (#1312), `summary` (#1318), `push`, `open`, `ci` (#1339), `topup`
+ * (#1318) and `ready`, in 0131 §2's order: the summary is written before the push so the draft opens with it, and
+ * topped up after CI with each pr-fix that joined since.
  * Nothing else orders them, and the PR page draws its *What Lingtai did* rows from this list and the records.
  */
-export const IN_PROGRESS_STEPS: readonly PrStep[] = [syncStep, buildStep, pushStep, openStep, ciStep, readyStep]
+export const IN_PROGRESS_STEPS: readonly PrStep[] = [
+  syncStep,
+  buildStep,
+  summaryStep,
+  pushStep,
+  openStep,
+  ciStep,
+  topupStep,
+  readyStep,
+]
 
 /**
  * The freeze of a `requested` PR: `branch.personal` at one commit, and the tickets that commit holds. A read that
@@ -896,6 +964,8 @@ export const servePr = (
       yield* walkPr(ports, project, n, steps)
       // A PR that reached In review is merged back into `branch.personal`, once, in that branch's lane turn.
       yield* mergePrBack(ports, project, n)
+      // The description on the code host follows the log: a top-up, a lock's reason, a person's edit (#1318).
+      yield* pushDescription(ports, project, n)
     }),
   )
 
@@ -918,6 +988,7 @@ export const servePendingPrs = (
             pr.status === 'in-progress' ||
             pr.pending !== null ||
             pr.fixOwed ||
+            (pr.descriptionOwed && pr.host !== null && isOpen(pr)) ||
             mergeBackOwed(pr)) &&
           pr.n !== null
         ) {
