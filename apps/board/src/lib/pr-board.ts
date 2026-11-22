@@ -131,7 +131,7 @@ const plural = (n: number, one: string, many: string): string => `${n} ${n === 1
  * One slip per ticket the PR holds. `PrFixLanded` puts a pr-fix into `tickets` *and* `fixesLanded`, so `tickets` is the
  * list and `fixesLanded` only says which of them are fixes. `only` narrows it, as to the tickets a merge carried.
  */
-const slipsOf = (pr: PrState, only?: ReadonlySet<string>): Slip[] => {
+export const slipsOf = (pr: PrState, only?: ReadonlySet<string>): Slip[] => {
   const fixes = new Map(pr.fixesLanded.map((f) => [f.ticket, f.title]))
   return pr.tickets
     .filter((t) => only === undefined || only.has(t.ticket))
@@ -210,6 +210,8 @@ export interface PrBoardInput {
   readonly servedWords: string
   /** Where *New pr-fix ticket* goes, or null where the repository has no owner on record. */
   readonly newFixHref: string | null
+  /** The same, for one PR: its name is in the prefilled title. Absent, `newFixHref` serves every PR. */
+  readonly newFixFor?: (pr: PrState) => string | null
 }
 
 const href = (project: string, n: number): string => `/pr/${encodeURIComponent(project)}/${n}`
@@ -424,7 +426,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     if (CI_WAITS.has(view.reason)) {
       const run = failingRun(pr)
       if (run !== null) buttons.push({ kind: 'link', label: 'Open the run ↗', href: run })
-      if (input.newFixHref !== null) buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: input.newFixHref })
+      const fix = input.newFixFor === undefined ? input.newFixHref : input.newFixFor(pr)
+      if (fix !== null) buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix })
     }
     // Only the waits a retry ends have a way out here; the others show what happened and nothing to press.
     if (view.commands.length > 0) buttons.push({ kind: 'retry', label: 'Check again' })

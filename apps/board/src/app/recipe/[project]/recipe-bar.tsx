@@ -34,7 +34,8 @@ export function RecipeBar({
   pause,
   views,
   here = 'recipe',
-}: { project: string; pause?: ReactNode; here?: 'recipe' | 'prs' } & RecipeBarFilter) {
+  tail,
+}: { project: string; pause?: ReactNode; here?: 'recipe' | 'prs'; tail?: string } & RecipeBarFilter) {
   const barHere = here === 'recipe' ? ({ here: 'recipe' } as const) : {}
   return (
     <Bar
@@ -46,6 +47,7 @@ export function RecipeBar({
         project={project}
         views={views ?? viewsFor(project)}
         here={here}
+        tail={tail}
         menu={
           <Projects
             filters={filters}

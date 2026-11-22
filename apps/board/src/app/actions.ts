@@ -72,6 +72,7 @@ import {
   changeRecipe,
   grantPrRounds,
   requestPrRetry,
+  editPrSummary,
   requestPrSubmit,
 } from '@lingtai/project'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
@@ -733,6 +734,22 @@ export async function retryPrNow(input: { project: string; n: number }): Promise
     const answer = await Effect.runPromise(requestPrRetry(ref, { by: actor() }, eventStore))
     revalidatePath('/', 'layout')
     return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'checking again' }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * *Save* the summary (#1318): the summary alone — the generated rest of the description is never the person's to edit.
+ * **This appends a request for the daemon, which regenerates the description and puts it on the code host**: nothing here
+ * asks GitHub, so the page says *saved* and not *pushed* until the log says the push happened.
+ */
+export async function savePrSummaryNow(input: { project: string; n: number; summary: string }): Promise<ActionResult> {
+  try {
+    const { ref } = await prRef(input.project, input.n)
+    const answer = await Effect.runPromise(editPrSummary(ref, { by: actor(), summary: input.summary }, eventStore))
+    revalidatePath('/', 'layout')
+    return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'summary saved' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

@@ -9,10 +9,12 @@
 import { inProgressStepNames } from '@lingtai/conductor'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { prStream } from '@lingtai/domain'
+import { type PrState, isOpen, prStream, reducePr } from '@lingtai/domain'
+import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
-import { type PrDraftTicket, readPr, readPrDraft, readProject } from '@lingtai/project'
+import { makeGitHub } from '@lingtai/github'
+import { type PrDraftTicket, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
 import { type Recipe, modeOf } from '@lingtai/recipe'
@@ -20,7 +22,8 @@ import { Effect } from 'effect'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
-import { type PrBoardView, type PrRead, prBoard } from './pr-board.ts'
+import { type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
+import { type HostRead, type PrPageView, githubHosted, prFixTicketLink, prPage } from './pr-page.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -74,6 +77,44 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
     return pr !== null && pr.status === 'waiting' ? 1 : 0
   })
 
+/**
+ * The draft, decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as such where
+ * the draft would be, while every PR that was read is still drawn. **Never an empty draft** for a read that failed. The PRs
+ * board and a PR's page both ask here, so the two cannot decide the draft differently.
+ */
+export const readDraftOf = (
+  project: string,
+  recipe: Recipe,
+  prs: readonly PrRead[],
+): Effect.Effect<PrDraftTicket[] | { error: string }> => {
+  const unread = prs.find((r) => !('pr' in r))
+  if (unread !== undefined) return Effect.succeed({ error: `PR ${unread.n} could not be read` })
+  return Effect.gen(function* () {
+    const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
+      Effect.mapError(failed),
+    )
+    return yield* readPrDraft(
+      project,
+      recipe,
+      cards.map((c) => ({ issue: c.issue })),
+      eventStore,
+      prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
+    )
+  }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
+}
+
+/** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
+export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
+  Effect.gen(function* () {
+    const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
+    const spend = new Map<number, number>()
+    for (const row of rows) {
+      if (row.costUsd === null) continue
+      for (const n of ns) if (row.streamId === prStream(project, n)) spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
+    }
+    return spend
+  })
+
 /** What the board knows of a project's PRs, or why it could not be known. */
 export type PrsRead =
   | { readonly kind: 'solo'; readonly recipe: Recipe }
@@ -97,38 +138,26 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const prs = yield* readProjectPrs(project, eventStore)
-        // The draft is decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as
-        // such where the draft would be, while every PR that was read is still drawn. Never an empty draft.
-        const unread = prs.find((r) => !('pr' in r))
-        const draft: PrDraftTicket[] | { error: string } =
-          unread !== undefined
-            ? { error: `PR ${unread.n} could not be read` }
-            : yield* Effect.gen(function* () {
-                const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
-                  Effect.mapError(failed),
-                )
-                return yield* readPrDraft(
-                  project,
-                  recipe,
-                  cards.map((c) => ({ issue: c.issue })),
-                  eventStore,
-                  prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
-                )
-              }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
-        const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
-        const spend = new Map<number, number>()
-        for (const row of rows) {
-          if (row.costUsd === null) continue
-          for (const read of prs) {
-            if (row.streamId === prStream(project, read.n)) spend.set(read.n, (spend.get(read.n) ?? 0) + row.costUsd)
-          }
-        }
+        const draft = yield* readDraftOf(project, recipe, prs)
+        const spend = yield* spendByPr(
+          project,
+          prs.map((r) => r.n),
+        )
         const waitingForServe = prs.some((r) => 'pr' in r && r.pr.status === 'requested')
         const holder = waitingForServe
           ? yield* Effect.tryPromise({ try: () => conductorLockHolder(), catch: failed }).pipe(
               Effect.orElseSucceed(() => 'unknown' as string | null),
             )
           : null
+        const fixHref = (name: string | null): string | null => {
+          const link = prFixTicketLink({
+            project,
+            owner: state.owner,
+            github: githubHosted(recipe),
+            name: name ?? 'the PR',
+          })
+          return link?.kind === 'link' ? link.href : null
+        }
         return prBoard({
           project,
           recipe,
@@ -137,7 +166,8 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           stepNames: inProgressStepNames(),
           spend,
           servedWords: servedWords(holder),
-          newFixHref: `https://github.com/${state.owner}/${project}/issues/new?labels=${encodeURIComponent('lingtai:pr-fix')}`,
+          newFixHref: fixHref(null),
+          newFixFor: (pr) => fixHref(prName(pr)),
         })
       }),
     )
@@ -178,4 +208,112 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   if (modeOf(recipe) !== 'team') return viewsFor(project)
   const waiting = await Effect.runPromise(waitingPrs(project, eventStore)).catch(() => null)
   return viewsFor(project, { waiting })
+}
+
+/** What one PR's page knows, or why it could not be known. */
+export type PrDetailRead =
+  | { readonly kind: 'solo'; readonly recipe: Recipe }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'failed'; readonly error: string }
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'team'
+      readonly recipe: Recipe
+      readonly view: PrPageView
+      readonly status: PrState['status']
+      /** The host's number, only while the log says the PR is open there: the one thing the render asks the host. */
+      readonly ask: number | null
+    }
+
+/**
+ * The page's one read: `n` is Lingtai's id, or `next` for the draft. The PR's events are read once and folded, and kept —
+ * the history and each step's duration need them. **A failed read is `failed` with its words, never *no such PR*.**
+ */
+export async function readPrDetail(project: string, n: number | 'next'): Promise<PrDetailRead> {
+  let state: Awaited<ReturnType<typeof readProject>>
+  try {
+    state = await readProject(project)
+  } catch (err) {
+    return { kind: 'failed', error: (err as Error).message }
+  }
+  if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
+  try {
+    const { recipe } = await currentRecipe(state)
+    if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        const stepNames = inProgressStepNames()
+        const now = new Date()
+        if (n === 'next') {
+          const prs = yield* readProjectPrs(project, eventStore)
+          const draft = yield* readDraftOf(project, recipe, prs)
+          const latest = [...prs].reverse().find((r): r is { n: number; pr: PrState } => 'pr' in r)?.pr ?? null
+          const view = prPage({
+            project,
+            recipe,
+            owner: state.owner,
+            pr: null,
+            events: [],
+            draft,
+            open: latest !== null && isOpen(latest) ? latest : null,
+            spend: null,
+            stepNames,
+            now,
+          })
+          return { kind: 'team', recipe, view, status: null, ask: null } as const
+        }
+        const events = yield* readPrEvents(project, n, eventStore)
+        if (events.length === 0) return { kind: 'none' } as const
+        const pr = reducePr(events)
+        // Spend unknown on a failed read: never `$0`.
+        const spend = yield* spendByPr(project, [n]).pipe(
+          Effect.map((m) => m.get(n) ?? null),
+          Effect.orElseSucceed(() => null),
+        )
+        const view = prPage({
+          project,
+          recipe,
+          owner: state.owner,
+          pr,
+          events,
+          draft: [],
+          open: null,
+          spend,
+          stepNames,
+          now,
+        })
+        const ask = githubHosted(recipe) && pr.host !== null && isOpen(pr) ? pr.host.number : null
+        return { kind: 'team', recipe, view, status: pr.status, ask } as const
+      }),
+    )
+  } catch (err) {
+    const words = (err as Error).message
+    return { kind: 'failed', error: n === 'next' ? words : `${prStream(project, n)}: ${words}` }
+  }
+}
+
+/**
+ * The one request a render makes of the code host: this PR's state, by the fields read. A failure is its words, never
+ * *closed*. The client is the one every other read builds — `githubClientForEffect`'s own auth and repository, as the
+ * Effect face `getPull` is on — so there is no second way of minting an installation token.
+ */
+export async function readHostPull(project: string, number: number): Promise<HostRead> {
+  try {
+    const state = await readProject(project)
+    if (state === null || state === undefined) return { kind: 'failed', reason: `no project named ${project}` }
+    if (!hasGitHubAuth()) return { kind: 'failed', reason: 'no GitHub App configured' }
+    if (!state.owner) return { kind: 'failed', reason: 'no owner recorded for this project' }
+    const options = { auth: githubClientAuth(), owner: state.owner, repo: project }
+    return await Effect.runPromise(
+      makeGitHub(options).pipe(
+        Effect.flatMap((github) => github.getPull(number)),
+        Effect.map((pull): HostRead => ({ kind: 'ok', state: pull.state, merged: pull.merged, draft: pull.draft })),
+        Effect.catch((err) =>
+          Effect.succeed<HostRead>({ kind: 'failed', reason: err instanceof Error ? err.message : String(err) }),
+        ),
+      ),
+    )
+  } catch (err) {
+    return { kind: 'failed', reason: (err as Error).message }
+  }
 }

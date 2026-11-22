@@ -1,0 +1,381 @@
+/**
+ * One PR's page (#1320): `prPage` per state, built by folding hand-written events with `reducePr` — never a hand-built
+ * `PrState`, so a reducer change cannot leave a test passing on a state the reducer would never produce.
+ */
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { type Envelope, type PrState, reducePr } from '@lingtai/domain'
+import type { Recipe } from '@lingtai/recipe'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { describe, expect, it } from 'vitest'
+
+import { PrDetail } from '../src/app/pr-detail.tsx'
+import { type PrPageView, hostLine, prFixTicketLink, prPage } from '../src/lib/pr-page.ts'
+
+const recipe = {
+  mode: 'team',
+  branch: { main: 'main', personal: 'foundry' },
+  runtime: { agent: 'claude-code', limits: { attempt: { conflictResolutions: 3 } } },
+} as unknown as Recipe
+
+const STEPS = ['sync', 'build', 'push', 'ci', 'summary', 'ready']
+const T0 = Date.UTC(2026, 10, 20, 11, 0, 0)
+
+/** `[type, data, secondsAfterThePreviousEvent?]` → envelopes with consecutive seq and version. */
+type Spec = readonly [string, unknown, number?]
+function events(specs: readonly Spec[]): Envelope[] {
+  let at = T0
+  return specs.map(([type, data, gap], i) => {
+    at += (gap ?? 60) * 1000
+    return {
+      seq: BigInt(i + 1),
+      streamId: 'pr-p-7',
+      version: i + 1,
+      type,
+      schemaVer: 1,
+      data,
+      actor: 'conductor',
+      causation: null,
+      at: new Date(at),
+    }
+  })
+}
+
+const tickets = [
+  { ticket: '41', mergeCommit: 'c41c41c41', title: 'garden shelf' },
+  { ticket: '42', mergeCommit: 'c42c42c42', title: 'wall colour' },
+]
+const requested: Spec = ['PrSubmitRequested', { by: 'human:steven' }]
+const started: Spec = [
+  'PrInProgress',
+  { because: 'submit', branch: 'foundry', main: 'main', frozenSha: 'f0f0f0f0', prBranch: 'foundry-pr-7', tickets },
+]
+const done = (step: string, gap = 60): Spec => ['PrStepDone', { step, headSha: 'f0f0f0f0' }, gap]
+const draftOpened: Spec = [
+  'PrDraftOpened',
+  { number: 88, nodeId: 'N', url: 'https://github.com/o/p/pull/88', found: 'opened' },
+]
+const green: Spec = [
+  'PrChecked',
+  {
+    headSha: 'f0f0f0f0',
+    verdict: 'green',
+    checks: [{ name: 'unit', state: 'success', url: 'https://ci/1' }],
+  },
+]
+const red: Spec = [
+  'PrChecked',
+  {
+    headSha: 'f0f0f0f0',
+    verdict: 'red',
+    checks: [
+      { name: 'unit', state: 'success', url: 'https://ci/1' },
+      { name: 'e2e', state: 'failure', url: 'https://ci/2', failing: true },
+    ],
+  },
+]
+const waiting = (reason: string, step: string, extra: object = {}): Spec => [
+  'PrWaiting',
+  { step, reason, detail: `because ${reason}`, headSha: 'f0f0f0f0', ...extra },
+]
+
+function page(specs: readonly Spec[], over: Partial<Parameters<typeof prPage>[0]> = {}): PrPageView {
+  const evs = events(specs)
+  return prPage({
+    project: 'p',
+    recipe,
+    owner: 'o',
+    pr: reducePr(evs),
+    events: evs,
+    draft: [],
+    open: null,
+    spend: 4.02,
+    stepNames: STEPS,
+    now: new Date(T0 + 3 * 3600_000),
+    ...over,
+  })
+}
+const labels = (v: PrPageView) => v.buttons.map((b) => b.label)
+
+describe('the draft', () => {
+  const draft = { kind: 'draft' as const }
+  const base = {
+    project: 'p',
+    recipe,
+    owner: 'o',
+    pr: null,
+    events: [],
+    spend: null,
+    stepNames: STEPS,
+    now: new Date(),
+  }
+  it('offers Submit PR, and no step rows or summary', () => {
+    const v = prPage({ ...base, draft: [{ ticket: '41', mergeCommit: 'c', title: 'a' }], open: null })
+    expect(v.kind).toBe(draft.kind)
+    expect(v.header.name).toBe('Next PR')
+    expect(v.poster.word).toBe('DRAFT')
+    expect(labels(v)).toEqual(['Submit PR'])
+    expect(v.buttons[0]?.disabled).toBeUndefined()
+    expect(v.steps).toEqual([])
+    expect(v.summary).toBeNull()
+  })
+  it("disables Submit, naming the open PR's", () => {
+    const open: PrState = reducePr(events([requested, started, draftOpened]))
+    const v = prPage({ ...base, draft: [{ ticket: '43', mergeCommit: 'c', title: 'b' }], open })
+    expect(v.buttons[0]?.disabled).toContain('PR #88')
+  })
+  it('says an unread draft is unknown, and offers nothing', () => {
+    const v = prPage({ ...base, draft: { error: 'PR 3 could not be read' }, open: null })
+    expect(v.buttons).toEqual([])
+    expect(v.doNote).toContain('PR 3 could not be read')
+  })
+})
+
+describe('in progress', () => {
+  it('names the step in flight and draws no action', () => {
+    const v = page([requested, started, done('sync'), done('build')])
+    expect(v.buttons).toEqual([])
+    expect(v.steps.find((s) => s.status === 'running')?.step).toBe('push')
+    expect(v.doNote).toContain('working on it')
+  })
+  it('draws a step duration from the events, and none where there is no time between', () => {
+    const v = page([requested, started, done('sync', 90), done('build', 0)])
+    expect(v.steps[0]?.duration).toBe('1m 30s')
+    expect(v.steps[1]?.duration).toBeNull()
+  })
+})
+
+describe('waiting on you', () => {
+  it('a conflict offers more rounds and check again, and carries the by-hand steps', () => {
+    const v = page([
+      requested,
+      started,
+      waiting('sync-conflict', 'sync', {
+        conflict: {
+          merging: 'main',
+          commit: 'abc1234',
+          paths: ['shelf.ts'],
+          ours: [],
+          theirs: [],
+          roundsUsed: 3,
+          last: null,
+        },
+      }),
+    ])
+    expect(labels(v)).toEqual(['Give the agent 3 more rounds', 'I resolved it — check again'])
+    expect(v.wait?.byHand.some((c) => c.includes('lingtai pr retry p'))).toBe(true)
+    expect(v.wait?.lines.join(' ')).toContain('shelf.ts')
+  })
+  it('red CI offers check again, a new pr-fix ticket and the run — and never Run CI again', () => {
+    const v = page([
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      done('push'),
+      draftOpened,
+      red,
+      waiting('ci-red', 'ci'),
+    ])
+    expect(labels(v)).toEqual(['Check again', 'New pr-fix ticket', 'Open the run ↗'])
+    expect(v.buttons[2]).toMatchObject({ href: 'https://ci/2' })
+    expect(JSON.stringify(v)).not.toContain('Run CI again')
+  })
+  it('a branch rewritten by hand offers check again only', () => {
+    const v = page([requested, started, waiting('sync-rewritten', 'sync')])
+    expect(v.buttons.filter((b) => b.kind !== 'retry')).toEqual([])
+    expect(JSON.stringify(v)).not.toContain('Run CI again')
+  })
+  it('draft-unsupported is a sentence and no button', () => {
+    const v = page([requested, started, waiting('draft-unsupported', 'open')])
+    expect(v.buttons).toEqual([])
+    expect(v.wait?.detail).toContain('draft-unsupported')
+  })
+  it('a PR stopped at CI draws the summary as not reached, never ✓; and CI as stopped', () => {
+    const v = page([
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      done('push'),
+      draftOpened,
+      red,
+      waiting('ci-red', 'ci'),
+    ])
+    const summary = v.steps.find((s) => s.step === 'summary')
+    expect(summary).toMatchObject({ status: 'not-reached', mark: '·' })
+    expect(summary?.text).toContain('not reached')
+    expect(v.steps.find((s) => s.step === 'ci')?.mark).toBe('✕')
+  })
+})
+
+describe('what Lingtai did', () => {
+  const sync = (how: string): Spec => ['BranchSynced', { mainCommit: 'm1', head: 'h1', how }]
+  it('a clean sync says there was nothing to bring in, never a conflict row', () => {
+    const v = page([requested, started, sync('already'), done('sync')])
+    const row = v.steps.find((s) => s.step === 'sync')
+    expect(row?.text).toBe('nothing to bring in')
+    expect(JSON.stringify(v.steps)).not.toMatch(/conflict/i)
+  })
+  it('a resolved conflict says so, with the rounds', () => {
+    const v = page([requested, started, sync('resolved'), done('sync')])
+    expect(v.steps.find((s) => s.step === 'sync')?.text).toContain('conflict resolved')
+  })
+  it('a project with no workflow says no CI step', () => {
+    const v = page([
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      done('push'),
+      ['PrCiSkipped', { headSha: 'f0f0f0f0', why: 'no workflow on pull requests' }],
+      done('ci'),
+    ])
+    expect(v.steps.find((s) => s.step === 'ci')?.text).toContain('no CI step')
+    expect(v.checks.head).toContain('no CI step')
+  })
+  it('a summary that was not written says why, and is not a ✓', () => {
+    const v = page([
+      requested,
+      started,
+      ['PrSummaryNotWritten', { at: 'submit', why: 'the day ceiling', basedOn: 0 }],
+      done('summary'),
+    ])
+    const row = v.steps.find((s) => s.step === 'summary')
+    expect(row?.text).toBe('no summary: the day ceiling')
+    expect(row?.mark).toBe('—')
+    expect(v.summary?.notes).toContain('no summary: the day ceiling')
+  })
+  it('a PR that never reached CI says no checks ran', () => {
+    expect(page([requested, started]).checks).toEqual({ head: 'no checks ran', rows: [] })
+  })
+})
+
+describe('in review, merged, closed', () => {
+  const review: Spec[] = [
+    requested,
+    started,
+    draftOpened,
+    green,
+    ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+  ]
+  it('in review: a new pr-fix ticket and the review link, on GitHub', () => {
+    const v = page(review)
+    expect(labels(v)).toEqual(['New pr-fix ticket', 'Review on GitHub ↗'])
+    expect(v.buttons[1]).toMatchObject({ href: 'https://github.com/o/p/pull/88' })
+    expect(v.header.host).toEqual({ label: 'GitHub #88 ↗', href: 'https://github.com/o/p/pull/88' })
+    expect(v.strip.find((s) => s.id === 'review')?.mode).toBe('current')
+    expect(v.poster.line).toContain('ON GITHUB')
+  })
+  it('merged: no action, its tickets are closed', () => {
+    const v = page([...review, ['PrMerged', { how: 'host', headSha: 'f0f0f0f0', mergeSha: 'm' }]])
+    expect(v.buttons).toEqual([])
+    expect(v.doNote).toBe('its tickets are closed')
+    expect(v.summary?.editable).toBe(false)
+  })
+  it('closed without merging: no action, its tickets are back in the draft', () => {
+    const v = page([...review, ['PrClosed', { headSha: 'f0f0f0f0' }]])
+    expect(v.buttons).toEqual([])
+    expect(v.doNote).toContain('back in the draft')
+  })
+  it('Facts say when the last merge back failed, and that unknown is tried again', () => {
+    const fail = (why: string): Spec => ['PrMergeBackFailed', { prHead: 'f0f0f0f0', why, detail: 'x' }]
+    const v = page([...review, ['PrPushed', { headSha: 'f0f0f0f0', found: 'pushed' }], fail('unknown')])
+    const line = v.facts.find((f) => f.label === 'Merge back')?.value
+    expect(line).toContain('not yet on foundry')
+    expect(line).toContain('will be tried again')
+  })
+  it('spend that could not be read is unknown, never $0', () => {
+    const v = page(review, { spend: null })
+    expect(v.facts.find((f) => f.label === 'Spend')?.value).toBe('spend unknown')
+    expect(v.sub).not.toContain('$0')
+  })
+})
+
+describe('prFixTicketLink', () => {
+  it('on GitHub: the new-issue form, with the label and the title put in', () => {
+    const link = prFixTicketLink({ project: 'p', owner: 'o', github: true, name: 'PR #88' })
+    expect(link?.kind).toBe('link')
+    const url = new URL((link as { href: string }).href)
+    expect(url.origin + url.pathname).toBe('https://github.com/o/p/issues/new')
+    expect(url.searchParams.get('labels')).toBe('lingtai:pr-fix')
+    expect(url.searchParams.get('title')).toBe('pr-fix for PR #88: ')
+  })
+  it('on a local project: the command, and the line to write', () => {
+    expect(prFixTicketLink({ project: 'p', owner: null, github: false, name: 'PR 7' })).toEqual({
+      kind: 'command',
+      command: 'lingtai ticket new --project p',
+      note: 'put lingtai:pr-fix on its labels: line',
+    })
+  })
+  it('with no owner on record there is no link', () => {
+    expect(prFixTicketLink({ project: 'p', owner: null, github: true, name: 'PR 7' })).toBeNull()
+  })
+})
+
+describe('the summary', () => {
+  const written: Spec = [
+    'PrSummaryWritten',
+    { by: 'agent', at: 'submit', title: 'Shelf', summary: 'A shelf and a wall.', basedOn: 0 },
+  ]
+  const open: Spec[] = [
+    requested,
+    started,
+    written,
+    draftOpened,
+    green,
+    ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+  ]
+  it('is a textarea over the summary alone, with the generated rest read-only under it', () => {
+    const view = page(open)
+    expect(view.summary?.text).toBe('A shelf and a wall.')
+    expect(view.summary?.generated).toContain('Closes #41')
+    expect(view.summary?.generated).not.toContain('A shelf and a wall.')
+    const html = renderToStaticMarkup(<PrDetail project="p" view={view} host={null} />)
+    const areas = html.match(/<textarea[^>]*>/g) ?? []
+    expect(areas).toHaveLength(2)
+    expect(areas[0]).not.toContain('readOnly')
+    expect(areas[0]).not.toContain('readonly')
+    expect(areas[1]).toMatch(/readonly/i)
+    expect(html).toContain('Save')
+    expect(html).not.toContain('Save to GitHub')
+    expect(html).not.toContain('Rewrite with the agent')
+  })
+  it('a save the daemon has not served is said to be behind', () => {
+    const edited = page([...open, ['PrSummaryEdited', { by: 'human:steven', summary: 'Mine.' }]])
+    expect(edited.summary?.text).toBe('Mine.')
+    expect(edited.summary?.notes.join(' ')).toContain("GitHub's copy is behind")
+    expect(edited.summary?.notes.join(' ')).toContain('edited by you')
+  })
+  it('savePrSummaryNow sends the summary alone', () => {
+    const src = readFileSync(join(__dirname, '../src/app/actions.ts'), 'utf8')
+    const body = src.slice(src.indexOf('export async function savePrSummaryNow'))
+    expect(body.slice(0, body.indexOf('\n}\n'))).toContain('editPrSummary(ref, { by: actor(), summary: input.summary }')
+    const editor = readFileSync(join(__dirname, '../src/app/pr-summary-editor.tsx'), 'utf8')
+    expect(editor).toContain('savePrSummaryNow({ project, n, summary: text })')
+  })
+})
+
+describe('what the code host says', () => {
+  it('a failed read is drawn as the failure, never as closed or merged; the log keeps its state', () => {
+    const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]])
+    const line = hostLine({ status: 'in-review' }, { kind: 'failed', reason: 'rate limited' })
+    expect(line).toEqual({ text: 'GitHub could not be asked: rate limited', failed: true })
+    expect(v.poster.word).toBe('IN REVIEW')
+  })
+  it('merged on the host before the log says so is a note, and the buttons follow the log', () => {
+    const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]])
+    const line = hostLine({ status: 'in-review' }, { kind: 'ok', state: 'closed', merged: true, draft: false })
+    expect(line.text).toBe('merged on GitHub — Lingtai records it within five minutes')
+    expect(labels(v)).toContain('New pr-fix ticket')
+  })
+  it('closed on the host; and an open one, draft or not', () => {
+    expect(
+      hostLine({ status: 'in-review' }, { kind: 'ok', state: 'closed', merged: false, draft: false }).text,
+    ).toContain('closed on GitHub — Lingtai records')
+    expect(hostLine({ status: 'in-progress' }, { kind: 'ok', state: 'open', merged: false, draft: true }).text).toBe(
+      'a draft on GitHub',
+    )
+  })
+})

@@ -32,6 +32,54 @@
     "reason": "Chooses how one field of one event is rendered, and keeps no state (plan §1.3)."
   },
   {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "lastPass",
+    "type": "PrInProgress",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds where the last pass through In progress began, to read its step times from the events after it; the PR's state is `reducePr`'s and this keeps none."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "prPage",
+    "type": "BranchSynced",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds when `main` was last brought in, for Facts; reads one event for a sentence and keeps no state."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "prPage",
+    "type": "PrSummaryEdited",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds when the person last edited the summary, for the line under the editor; the summary itself is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "stepDurations",
+    "type": "PrStepDone",
+    "count": 1,
+    "class": "select",
+    "reason": "Subtracts one event's time from the one before it for each step's duration; `PrStepRecord` carries no time, so the events are read directly."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "stepRows",
+    "type": "BranchSynced",
+    "count": 1,
+    "class": "select",
+    "reason": "Picks how the last sync went (`already`, `clean`, `resolved`) for a step row's sentence; the state is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "stepRows",
+    "type": "PrPushed",
+    "count": 1,
+    "class": "select",
+    "reason": "Picks whether the push found the branch already there, for a step row's sentence; the state is `reducePr`'s."
+  },
+  {
     "file": "apps/board/src/lib/task.ts",
     "function": "satisfiedOf",
     "type": "TicketSatisfied",

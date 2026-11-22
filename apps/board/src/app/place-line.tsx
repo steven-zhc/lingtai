@@ -90,7 +90,10 @@ export function PlaceLine({
   menu,
   views,
   here,
+  tail,
 }: {
+  /** The crumb continued: a page below a view says where (`/ PR #88`, #1320). */
+  tail?: string | undefined
   project?: string | undefined
   /** The project menu, already built (the home page streams its rows); without one the crumb is the name as text. */
   menu?: ReactNode
@@ -127,6 +130,14 @@ export function PlaceLine({
               </details>
             )}
           </span>
+        </>
+      )}
+      {tail === undefined ? null : (
+        <>
+          <span className="slash" aria-hidden="true">
+            /
+          </span>
+          <span className="crumb">{tail}</span>
         </>
       )}
     </span>
