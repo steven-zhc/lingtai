@@ -37,10 +37,15 @@ matters, and looking only at the installation shows nothing to approve:
    Set **Checks** and **Statuses** to *Read-only*.
 2. Accept them on the **installation**: GitHub emails the account that owns it,
    and the installation's settings page shows the request.
-3. Run `lingtai add` for a repository to confirm the gap has closed: it checks the
-   installation's permissions by name and refuses naming any still missing.
-   `lingtai doctor` does not check them yet, so a quiet doctor proves nothing here. The table of every permission is in [GitHub](github.md#one-app-and-it-is-not-a-person),
-   and [operating](operating.md) has the setup for a new App.
+3. Confirm it took. On the installation's settings page both permissions read
+   *Read-only*, with nothing left pending. **No command re-checks a repository
+   that is already added**: `lingtai add` refuses it as already added before it
+   reads permissions, and `lingtai doctor` does not check them. The check
+   happens when a repository not yet added is onboarded (`lingtai add`, or the
+   board's picker, which names a gap beside the installation), so that is where
+   a missing approval would show. The table of every permission is in
+   [GitHub](github.md#one-app-and-it-is-not-a-person), and
+   [operating](operating.md) has the setup for a new App.
 
 A person using `gh` rather than an App has nothing to approve.
 
@@ -86,14 +91,22 @@ The right order, done by you and not by an agent:
 
    ```bash
    gh label create lingtai:hold --description "held by a person" 2>/dev/null || true
-   gh issue list --label agent:hold --state open --limit 1000 --json number --jq '.[].number' |
+   gh api --paginate 'repos/{owner}/{repo}/issues?labels=agent:hold&state=open&per_page=100' \
+     --jq '.[].number' |
      xargs -I{} gh issue edit {} --add-label lingtai:hold
    ```
 
    `gh issue edit --add-label` needs the label to exist, so the first line creates
-   it (harmless where it already does), and `--limit` lifts `gh issue list`'s
-   default of 30. Count what is left: `gh issue list --label agent:hold --state open
-   --limit 1000 --json number,labels` should show `lingtai:hold` on every one.
+   it (harmless where it already does). `--paginate` follows every page, so no
+   count caps it; `gh issue list --limit` would, silently. Verify with the same
+   unbounded listing: this prints the number of every open `agent:hold` issue
+   that does not yet carry `lingtai:hold`, and **must print nothing** before you
+   go on:
+
+   ```bash
+   gh api --paginate 'repos/{owner}/{repo}/issues?labels=agent:hold&state=open&per_page=100' \
+     --jq '.[] | select(([.labels[].name] | index("lingtai:hold")) | not) | .number'
+   ```
 
    On the local ticket store you do nothing: the store's own migration adds
    `lingtai:hold` to every ticket that has `agent:hold` the first time it is
