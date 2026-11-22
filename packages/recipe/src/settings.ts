@@ -64,7 +64,7 @@ import { STEPS, type Step } from '@lingtai/domain'
 
 import { maxTurns, parseDuration, type TurnLimit } from './duration.ts'
 import { isBuiltInJudge } from './judges.ts'
-import type { QueueSettings, Recipe, StepAction, TicketSource } from './recipe.ts'
+import { DiscussAgent, type QueueSettings, type Recipe, type StepAction, type TicketSource } from './recipe.ts'
 
 export type { TicketSource } from './recipe.ts'
 
@@ -281,6 +281,29 @@ export function ciOf(recipe: Recipe): {
       required: ci?.required === undefined ? 'default' : 'recipe',
       timeout: ci?.timeout === undefined ? 'default' : 'recipe',
     },
+  }
+}
+
+/**
+ * What one run of the `pr:` agent may spend, resolved (#1318, 0131 §5): `callFor`'s twin for the summary. **The agent is
+ * `pr.agent`, else `runtime.agent` where that is one a run with no tools can be held to (`DiscussAgent`); null where it
+ * is not**, and there is then no summary run — never a runtime that was not asked for. No `usd`: `Pr` carries none.
+ */
+export function callForPr(recipe: Recipe): {
+  agent: DiscussAgent | null
+  model?: string
+  prompt?: string
+  turns: number
+  wallMs: number
+} {
+  const pr = recipe.pr
+  const stand = DiscussAgent.safeParse(pr?.agent ?? recipe.runtime.agent)
+  return {
+    agent: stand.success ? stand.data : null,
+    ...(pr?.model === undefined ? {} : { model: pr.model }),
+    ...(pr?.prompt === undefined ? {} : { prompt: pr.prompt }),
+    turns: pr?.limits.turns ?? 20,
+    wallMs: parseDuration(pr?.limits.wall ?? '5m'),
   }
 }
 

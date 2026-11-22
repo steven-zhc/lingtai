@@ -381,6 +381,12 @@ export interface GitHub {
   closePull(number: number): E<void>
 
   /**
+   * Replaces a pull request's title and body (`PATCH /pulls/{number} { title, body }`, #1318): the description Lingtai
+   * owns, regenerated from the log. Nothing else about the pull request is touched.
+   */
+  updatePull(number: number, input: { title: string; body: string }): E<void>
+
+  /**
    * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
    * answers 422 and that is the caller's to read: this never opens a ready one instead.
    */
@@ -1186,6 +1192,10 @@ export const makeGitHub = (
 
         closePull: Effect.fn('github.closePull')(function* (number: number) {
           yield* asPullCall('write', send<unknown>('PATCH', `${repoPath}/pulls/${number}`, { state: 'closed' }))
+        }),
+
+        updatePull: Effect.fn('github.updatePull')(function* (number: number, input: { title: string; body: string }) {
+          yield* asPullCall('write', send<unknown>('PATCH', `${repoPath}/pulls/${number}`, input))
         }),
 
         openDraftPull: Effect.fn('github.openDraftPull')(function* (input: {
