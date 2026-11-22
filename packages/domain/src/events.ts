@@ -703,17 +703,20 @@ export const SpentFor = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),
   /**
-   * An agent run on a PR's own stream (#1313, 0130 §6): the conflict agent (`resolve`) and the reviewer of its
-   * resolution (`review`), one per round. `merging` and `commit` name what was being merged and `round` which try this
-   * was. #1318's summary agent files under the same member with `purpose: 'summary'`.
+   * An agent run on a PR's own stream (0130 §6, 0131 §2): the conflict agent (`resolve`) and the reviewer of its
+   * resolution (`review`), one per round (#1313) — and the `pr:` agent's summary (#1318), at submit or at a pr-fix's
+   * landing. **One member, so every reader of the tag already knows it.**
    */
-  z.object({
-    _tag: z.literal('Pr'),
-    purpose: z.enum(['resolve', 'review']),
-    merging: z.enum(['main', 'back']),
-    commit: z.string().min(1),
-    round: z.number().int().positive(),
-  }),
+  z.discriminatedUnion('purpose', [
+    z.object({
+      _tag: z.literal('Pr'),
+      purpose: z.enum(['resolve', 'review']),
+      merging: z.enum(['main', 'back']),
+      commit: z.string().min(1),
+      round: z.number().int().positive(),
+    }),
+    z.object({ _tag: z.literal('Pr'), purpose: z.literal('summary'), at: z.enum(['submit', 'pr-fix']) }),
+  ]),
 ])
 export type SpentFor = z.infer<typeof SpentFor>
 
@@ -2848,6 +2851,54 @@ export const PrHeadAdopted = z.object({ head: z.string().min(1), by: z.string() 
 export const PrBackRequested = z.object({ by: z.string() })
 
 /**
+ * The `pr:` agent wrote a PR's title and summary (#1318, 0131 §2, §5): at submit, or topped up for a `lingtai:pr-fix` that
+ * landed since. `by` is `agent`; `basedOn` is the version of the PR's stream the run began at, so an edit that landed
+ * while it ran is known to be later. `summary` is null for an answer of one line, never an empty string.
+ *
+ * @summary The summary agent wrote a PR's title and summary, at submit or topped up after a pr-fix.
+ */
+export const PrSummaryWritten = z.object({
+  by: z.literal('agent'),
+  at: z.enum(['submit', 'pr-fix']),
+  title: z.string().min(1),
+  summary: z.string().min(1).nullable(),
+  basedOn: z.number().int().nonnegative(),
+})
+
+/**
+ * No summary was written (#1318): the project was locked, the run failed or answered nothing, or a person edited the
+ * summary while it ran and the agent's text was set aside. The PR goes on with the summary it has.
+ *
+ * @summary No PR summary was written this time, and why: a lock, a failed run, or a person's edit that won.
+ */
+export const PrSummaryNotWritten = z.object({
+  at: z.enum(['submit', 'pr-fix']),
+  why: z.string().min(1),
+  /** The version of the PR's stream the attempt read its input at: the pr-fixes after it are not covered by it. */
+  basedOn: z.number().int().nonnegative(),
+})
+
+/**
+ * A person replaced the PR's summary (#1318). Only the summary is theirs: the ticket lines and `Closes #…` are regenerated
+ * every time. Served by the daemon, which pushes the description to the code host.
+ *
+ * @summary A person replaced a PR's summary; the daemon pushes the regenerated description to the code host.
+ */
+export const PrSummaryEdited = z.object({ by: z.string(), summary: z.string().min(1) })
+
+/**
+ * The PR's title and body were put on the code host (#1318), or found already there. `bodyHash` names the description
+ * pushed, so one that has not changed is not pushed again.
+ *
+ * @summary A PR's regenerated title and body are on the code host.
+ */
+export const PrDescriptionPushed = z.object({
+  bodyHash: z.string().min(1),
+  /** The version of the PR's stream the description was rendered at: a summary change after it is still owed a push. */
+  basedOn: z.number().int().nonnegative(),
+})
+
+/**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
  * resets, or the configured backoff when it said nothing readable; `untilFrom`
  * says which, in the order `standDown` tries them. Only an attempt meeting the
@@ -3180,6 +3231,10 @@ export const EVENTS = {
   PrRetryRequested,
   PrHeadAdopted,
   PrBackRequested,
+  PrSummaryWritten,
+  PrSummaryNotWritten,
+  PrSummaryEdited,
+  PrDescriptionPushed,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -3314,6 +3369,10 @@ export const EVENT_AT = {
   PrRetryRequested: ['outside'],
   PrHeadAdopted: ['outside'],
   PrBackRequested: ['outside'],
+  PrSummaryWritten: ['outside'],
+  PrSummaryNotWritten: ['outside'],
+  PrSummaryEdited: ['outside'],
+  PrDescriptionPushed: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

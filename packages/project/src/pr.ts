@@ -46,6 +46,10 @@ import {
   syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
+  summaryWrittenTransition,
+  summaryNotWrittenTransition,
+  descriptionPushedTransition,
+  summaryEditTransition,
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
@@ -622,3 +626,73 @@ export const recordPrTakenBack = (project: string, n: number, closed: PayloadOf<
     (state) => backClosedTransition(state, closed),
     (_state, appended) => appended,
   )
+
+/**
+ * The `pr:` agent's answer (#1318). **The person's words win a race**: where a `PrSummaryEdited` landed after the version
+ * the run began at (`basedOn`), the text is set aside and `PrSummaryNotWritten` is what is appended. Answers which of the
+ * two it was, or null when the PR was no longer walking.
+ */
+export const recordPrSummaryWritten = (
+  project: string,
+  n: number,
+  written: PayloadOf<'PrSummaryWritten'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => summaryWrittenTransition(state, written),
+    (_state, appended) => appended,
+  )
+
+/** No summary was written this time: a lock, a failed run. The PR goes on with the one it has. */
+export const recordPrSummaryNotWritten = (
+  project: string,
+  n: number,
+  notWritten: PayloadOf<'PrSummaryNotWritten'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => summaryNotWrittenTransition(state, notWritten),
+    (_state, appended) => appended,
+  )
+
+/** The description on the code host is the log's: appended whether or not the hash changed, so what was owed is settled. */
+export const recordPrDescriptionPushed = (
+  project: string,
+  n: number,
+  pushed: PayloadOf<'PrDescriptionPushed'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => descriptionPushedTransition(state, pushed),
+    (_state, appended) => appended,
+  )
+
+/** One paid run of the `pr:` agent, on the PR's own stream (0110 §9, #1318): its `RunSpent`, appended at the head it is read at. */
+export const recordPrRunSpent = (project: string, n: number, spent: PayloadOf<'RunSpent'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    () => ({ type: 'RunSpent', actor: 'conductor', data: spent }),
+    (_state, appended) => appended,
+  )
+
+/**
+ * *Replace the summary* (#1318, `lingtai pr summary --file`): refused by name where there is nothing open to push to, and
+ * otherwise appended for the daemon to serve — it regenerates the description and puts it on the code host.
+ */
+export const editPrSummary = (
+  pr: PrRef,
+  edit: { by: string; summary: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => summaryEditTransition(state, pr.mode, pr.project, edit))

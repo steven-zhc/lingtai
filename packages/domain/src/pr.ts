@@ -115,6 +115,31 @@ export interface PrState {
    */
   granting: { readonly merging: 'main' | 'back'; readonly commit: string } | null
   refusal: PayloadOf<'PrSubmitRefused'> | null
+  /**
+   * The PR's title and summary as they stand (#1318): the agent's (`PrSummaryWritten`), the summary the person's where they
+   * edited it (`PrSummaryEdited`, which leaves the title as the agent wrote it). **`PrInProgress` does not reset any of
+   * the summary's facts** — a rework or a pr-fix pass never rewrites it.
+   */
+  summary: { readonly title: string | null; readonly text: string | null } | null
+  /** The latest person's edit of the summary, and the stream version it landed at: an agent run that began before it loses. */
+  edited: { readonly by: string; readonly version: number } | null
+  /** The stream version of the latest `PrSummaryWritten` or `PrSummaryNotWritten`: the summary was tried by then, whatever came of it. Null before the first. */
+  summaryTried: number | null
+  /** The pr-fix tickets that joined the PR, each with the version of the `PrFixLanded` that said so. */
+  fixesLanded: readonly {
+    readonly ticket: string
+    readonly mergeCommit: string
+    readonly title: string
+    readonly version: number
+  }[]
+  /** The conflicts the conflict agent resolved on this PR (`BranchSynced { how: 'resolved' }`, #1313), for the summary's prompt. */
+  resolutions: readonly { readonly mainCommit: string; readonly head: string }[]
+  /** The hash of the description last put on the code host (`PrDescriptionPushed`). */
+  descriptionPushed: string | null
+  /** The stream version of the latest summary event (written, not written, edited): a push rendered before it leaves the description owed. */
+  summaryChangedAt: number
+  /** A summary event came after what the last `PrDescriptionPushed` rendered: the code host's description is behind the log's. */
+  descriptionOwed: boolean
   /** How the PR ended, once it has (`PrMerged`, `PrClosed`); `how` is null for a close. `seq` is the ending event's. */
   ended: {
     readonly how: 'host' | 'git' | null
@@ -161,6 +186,14 @@ export const emptyPr: PrState = {
   adopted: null,
   granting: null,
   refusal: null,
+  summary: null,
+  edited: null,
+  summaryTried: null,
+  fixesLanded: [],
+  resolutions: [],
+  descriptionPushed: null,
+  summaryChangedAt: 0,
+  descriptionOwed: false,
   ended: null,
   version: 0,
   lastSeq: null,
@@ -262,6 +295,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         fixOwed: true,
         tickets,
         covers: { ...state.covers, [d.mergeCommit]: tickets.length },
+        fixesLanded: state.fixesLanded.some((f) => f.ticket === d.ticket)
+          ? state.fixesLanded
+          : [
+              ...state.fixesLanded,
+              { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '', version: event.version },
+            ],
       }
     }
     case 'PrStepDone': {
@@ -339,6 +378,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         target: d.head,
         covers,
         adopted: d.how === 'clean' ? null : state.adopted,
+        resolutions:
+          d.how === 'resolved' ? [...state.resolutions, { mainCommit: d.mainCommit, head: d.head }] : state.resolutions,
       }
     }
     case 'SyncRoundRefused':
@@ -415,6 +456,42 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     case 'PrHeadAdopted': {
       const d = event.data as PayloadOf<'PrHeadAdopted'>
       return { ...state, ...at, lastPushed: d.head, target: d.head, adopted: d.head }
+    }
+    case 'PrSummaryWritten': {
+      const d = event.data as PayloadOf<'PrSummaryWritten'>
+      return {
+        ...state,
+        ...at,
+        summary: { title: d.title, text: d.summary },
+        // What the run saw, not where its answer landed: a pr-fix that joined while it ran is not covered.
+        summaryTried: d.basedOn,
+        summaryChangedAt: event.version,
+        descriptionOwed: true,
+      }
+    }
+    case 'PrSummaryNotWritten': {
+      const d = event.data as PayloadOf<'PrSummaryNotWritten'>
+      return { ...state, ...at, summaryTried: d.basedOn, summaryChangedAt: event.version, descriptionOwed: true }
+    }
+    case 'PrSummaryEdited': {
+      const d = event.data as PayloadOf<'PrSummaryEdited'>
+      return {
+        ...state,
+        ...at,
+        summary: { title: state.summary?.title ?? null, text: d.summary },
+        edited: { by: d.by, version: event.version },
+        summaryChangedAt: event.version,
+        descriptionOwed: true,
+      }
+    }
+    case 'PrDescriptionPushed': {
+      const d = event.data as PayloadOf<'PrDescriptionPushed'>
+      return {
+        ...state,
+        ...at,
+        descriptionPushed: d.bodyHash,
+        descriptionOwed: d.basedOn < state.summaryChangedAt,
+      }
     }
     default:
       return { ...state, ...at }
@@ -681,6 +758,48 @@ export function checkedTransition(
     return null
   }
   return { type: 'PrChecked', actor: 'conductor', data: checked }
+}
+
+/**
+ * The summary agent's answer (#1318). **The person's words win a race**: a `PrSummaryEdited` that landed after the version
+ * the run began at (`basedOn`) is the summary, and the agent's text is set aside — recorded as `PrSummaryNotWritten`, which
+ * still counts as the attempt, so the pr-fix it was about is not summarised again. The append is at the head this was read
+ * at, so an edit landing between the check and the append moves the version, and the retry reads it.
+ */
+export function summaryWrittenTransition(
+  state: PrState,
+  written: PayloadOf<'PrSummaryWritten'>,
+): ToAppend<PayloadOf<'PrSummaryWritten'> | PayloadOf<'PrSummaryNotWritten'>> | null {
+  if (!walking(state)) return null
+  if (state.edited !== null && state.edited.version > written.basedOn) {
+    return summaryNotWrittenTransition(state, {
+      at: written.at,
+      basedOn: written.basedOn,
+      why: `set aside: ${state.edited.by} edited the summary while the agent was writing`,
+    })
+  }
+  return { type: 'PrSummaryWritten', actor: 'conductor', data: written }
+}
+
+/** No summary was written this time (a lock, a failed run): the attempt is recorded, the PR goes on. */
+export function summaryNotWrittenTransition(
+  state: PrState,
+  notWritten: PayloadOf<'PrSummaryNotWritten'>,
+): ToAppend<PayloadOf<'PrSummaryNotWritten'>> | null {
+  if (!walking(state)) return null
+  return { type: 'PrSummaryNotWritten', actor: 'conductor', data: notWritten }
+}
+
+/**
+ * The description on the code host now matches the log's (#1318). Appended even when the hash did not change, so what was
+ * owed is not owed again; an ended PR has nothing to push to.
+ */
+export function descriptionPushedTransition(
+  state: PrState,
+  pushed: PayloadOf<'PrDescriptionPushed'>,
+): ToAppend<PayloadOf<'PrDescriptionPushed'>> | null {
+  if (!isOpen(state)) return null
+  return { type: 'PrDescriptionPushed', actor: 'conductor', data: pushed }
 }
 
 /** The PR is In review. Only a PR that is walking goes there. */
@@ -981,6 +1100,26 @@ export function grantTransition(
     )
   }
   return granted
+}
+
+/**
+ * *Replace the summary* (#1318): refused by name on a solo project, with no PR, and on a PR that ended — there is nothing open
+ * to push to. A stale page still replaces it: the person's latest words are the summary.
+ */
+export function summaryEditTransition(
+  state: PrState | null,
+  mode: 'solo' | 'team',
+  project: string,
+  edit: { by: string; summary: string },
+): PrRequest<PayloadOf<'PrSummaryEdited'>> {
+  if (mode === 'solo') return refused(`${project} lands on its main branch itself; there is no PR`)
+  if (state === null || state.n === null) return refused(`${project} has no PR`)
+  if (!isOpen(state)) {
+    return refused(`${prName(project, state.n)} is ${state.status}; there is nothing open to push a summary to`)
+  }
+  const summary = edit.summary.trim()
+  if (summary === '') return refused('the summary is empty')
+  return { kind: 'request', event: { type: 'PrSummaryEdited', actor: edit.by, data: { by: edit.by, summary } } }
 }
 
 /** *Check again* (#1314): refused by name on a solo project, with no PR open, and on a PR that is not waiting. */

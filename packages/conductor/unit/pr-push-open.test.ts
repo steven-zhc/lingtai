@@ -163,7 +163,13 @@ describe('push and open', () => {
     const store = await frozen()
     const w = aWorld()
     await serve(ports(store, w))
-    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrDraftOpened'])
+    expect(await types(store)).toEqual([
+      'PrSubmitRequested',
+      'PrInProgress',
+      'PrPushed',
+      'PrDraftOpened',
+      'PrDescriptionPushed',
+    ])
     const post = w.posts[0]!
     expect(post).toMatchObject({ draft: true, head: 'lingtai-team-pr-1', base: 'main', title: 'ticket 1' })
     const body = post['body'] as string

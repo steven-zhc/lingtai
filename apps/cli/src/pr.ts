@@ -1,4 +1,3 @@
-import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 /**
  * `lingtai pr [<project>]` and `lingtai pr submit [<project>]` (0130 §5).
  *
@@ -7,6 +6,9 @@ import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
  * does** — *in progress* once `PrInProgress` lands within a minute, the serve's own refusal if it came, and where
  * nothing conducts, the sentence that says when it will be served.
  */
+import { readFile } from 'node:fs/promises'
+
+import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
 import { type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
@@ -14,6 +16,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import {
   type PrDraftTicket,
   type PrRequestAnswer,
+  editPrSummary,
   grantPrRounds,
   latestPr,
   readPr,
@@ -403,4 +406,71 @@ export const prRequestVerdict = (
       unanswered(holder, ask === 'back' ? 'taking it back' : ask === 'retry' ? 'checking it' : 'resolving it'),
       'waiting',
     )
+  })
+
+/**
+ * `lingtai pr summary [<project>] [--file <path>]` (#1318): without `--file` the open PR's summary is printed; with it the
+ * file's text replaces the summary — a request on the PR's stream, refused by name where the pure transition says so (a PR
+ * merged or closed has nothing open to push to) — and the verdict waits, as Submit does, for the daemon's push: the first
+ * `PrDescriptionPushed` after the edit. On a remote that is not GitHub nothing is pushed and the new description is printed.
+ */
+export const prSummaryVerdict = (
+  project: string,
+  by: string,
+  file: string | null,
+  world: PrWorld,
+  waitMs: number = SUBMIT_WAIT_MS,
+): Effect.Effect<Answered, Error> =>
+  Effect.gen(function* () {
+    const recipe = yield* world.recipe(project)
+    const mode = modeOf(recipe)
+    if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
+    const latest = yield* latestPr(project, world.store)
+    if (latest === null || latest.n === null) return refusal(1, 'no-pr', `${project} has no PR`, { subject: project })
+    const n = latest.n
+    const subject = `${project} PR ${n}`
+    const said = (detail: string, extra: Record<string, unknown> = {}): Answered => ({
+      code: 0,
+      verdict: { outcome: 'accepted', subject, form: 'sentence', detail, extra: { project, n, ...extra } },
+    })
+    if (file === null) {
+      const text = latest.summary?.text ?? null
+      return said(text === null ? 'no summary has been written yet' : text, { summary: text })
+    }
+    const text = yield* Effect.tryPromise({ try: () => readFile(file, 'utf8'), catch: (e) => e as Error })
+    // The boundary is taken before the edit is submitted: a daemon that pushes at once has acknowledged after it.
+    const after = (yield* readPr(project, n, world.store))?.version ?? 0
+    const asked = yield* editPrSummary({ project, n, mode }, { by, summary: text }, world.store)
+    if (asked.kind === 'refused') return refusal(1, 'refused', asked.detail, { subject })
+    // A remote that is not GitHub has nowhere to push: the description is printed for the person to put where it goes.
+    if (prHostOf(recipe) === 'none') {
+      const described = yield* world.describe(project, n)
+      return said(`summary replaced; the description is\n\n# ${described.title}\n\n${described.body}`, {
+        pushed: false,
+      })
+    }
+    const until = world.now() + waitMs
+    for (;;) {
+      const state = yield* readPr(project, n, world.store)
+      if (state !== null && !isOpen(state)) {
+        return refusal(
+          1,
+          'ended',
+          `${subject} is ${state.status}; the summary was recorded but nothing is open to push to`,
+          {
+            subject,
+          },
+        )
+      }
+      // The push the edit asked for: a `PrDescriptionPushed` after it clears what was owed.
+      if (state !== null && state.version > after && !state.descriptionOwed) {
+        return said('summary replaced and pushed to GitHub', { pushed: true })
+      }
+      if (world.now() >= until) break
+      yield* Effect.promise(() => world.sleep(POLL_MS))
+    }
+    const holder = yield* Effect.tryPromise({ try: () => world.holder(), catch: (e) => e as Error }).pipe(
+      Effect.orElseSucceed(() => 'unknown' as string | null),
+    )
+    return said(unanswered(holder, 'pushing it'), { pushed: false })
   })

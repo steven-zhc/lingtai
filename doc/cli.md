@@ -168,6 +168,11 @@ lingtai pr rounds [<project>] [--json] [--no-color]
 lingtai pr back [<project>] [--json] [--no-color]
   Take the PR back to Draft: closes the draft pull request on GitHub.
   The tickets stay on the personal branch. Refused while a step runs.
+lingtai pr summary [<project>] [--file <path>] [--json] [--no-color]
+  Prints the open PR’s summary. --file replaces it with the file’s text
+  and waits for the description to be pushed to GitHub. Only the summary
+  is yours: the ticket lines and Closes lines are regenerated. Refused
+  for a PR that is merged or closed.
 ```
 
 ```sh

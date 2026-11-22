@@ -269,7 +269,16 @@ describe('the walk', () => {
   })
 
   it('lists In progress’s steps in 0130 §5’s order, sync and build first, ci and ready last', () => {
-    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual(['sync', 'build', 'push', 'open', 'ci', 'ready'])
+    expect(inProgressStepNames(IN_PROGRESS_STEPS)).toEqual([
+      'sync',
+      'build',
+      'summary',
+      'push',
+      'open',
+      'ci',
+      'topup',
+      'ready',
+    ])
   })
 
   it('records each step with the head sha it ran on, and a second serve runs none of them again', async () => {
