@@ -1,4 +1,3 @@
-import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 /**
  * `lingtai pr [<project>]` and `lingtai pr submit [<project>]` (0130 §5).
  *
@@ -9,6 +8,7 @@ import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
  */
 import { readFile } from 'node:fs/promises'
 
+import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
 import { type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
@@ -452,9 +452,14 @@ export const prSummaryVerdict = (
     for (;;) {
       const state = yield* readPr(project, n, world.store)
       if (state !== null && !isOpen(state)) {
-        return refusal(1, 'ended', `${subject} is ${state.status}; the summary was recorded but nothing is open to push to`, {
-          subject,
-        })
+        return refusal(
+          1,
+          'ended',
+          `${subject} is ${state.status}; the summary was recorded but nothing is open to push to`,
+          {
+            subject,
+          },
+        )
       }
       // The push the edit asked for: a `PrDescriptionPushed` after it clears what was owed.
       if (state !== null && state.version > after && !state.descriptionOwed) {

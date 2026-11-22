@@ -126,7 +126,14 @@ export interface PrState {
   /** The stream version of the latest `PrSummaryWritten` or `PrSummaryNotWritten`: the summary was tried by then, whatever came of it. Null before the first. */
   summaryTried: number | null
   /** The pr-fix tickets that joined the PR, each with the version of the `PrFixLanded` that said so. */
-  fixesLanded: readonly { readonly ticket: string; readonly mergeCommit: string; readonly title: string; readonly version: number }[]
+  fixesLanded: readonly {
+    readonly ticket: string
+    readonly mergeCommit: string
+    readonly title: string
+    readonly version: number
+  }[]
+  /** The conflicts the conflict agent resolved on this PR (`BranchSynced { how: 'resolved' }`, #1313), for the summary's prompt. */
+  resolutions: readonly { readonly mainCommit: string; readonly head: string }[]
   /** The hash of the description last put on the code host (`PrDescriptionPushed`). */
   descriptionPushed: string | null
   /** A summary event came after the last `PrDescriptionPushed`: the code host's description is behind the log's. */
@@ -181,6 +188,7 @@ export const emptyPr: PrState = {
   edited: null,
   summaryTried: null,
   fixesLanded: [],
+  resolutions: [],
   descriptionPushed: null,
   descriptionOwed: false,
   ended: null,
@@ -286,7 +294,10 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         covers: { ...state.covers, [d.mergeCommit]: tickets.length },
         fixesLanded: state.fixesLanded.some((f) => f.ticket === d.ticket)
           ? state.fixesLanded
-          : [...state.fixesLanded, { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '', version: event.version }],
+          : [
+              ...state.fixesLanded,
+              { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '', version: event.version },
+            ],
       }
     }
     case 'PrStepDone': {
@@ -364,6 +375,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         target: d.head,
         covers,
         adopted: d.how === 'clean' ? null : state.adopted,
+        resolutions:
+          d.how === 'resolved' ? [...state.resolutions, { mainCommit: d.mainCommit, head: d.head }] : state.resolutions,
       }
     }
     case 'SyncRoundRefused':

@@ -479,7 +479,10 @@ const prCommand = Command.make('pr', { project: prProject, json, noColor }, (arg
     else for (const line of report.lines) console.log(line)
     yield* exitWith(report.code)
   }).pipe(orFailed('pr', args.json)),
-).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit, prRetry, prRounds, prBack, prSummary]))
+).pipe(
+  Command.withDescription(definitionOf('pr').task),
+  Command.withSubcommands([prSubmit, prRetry, prRounds, prBack, prSummary]),
+)
 
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
 export interface BoardRequest {

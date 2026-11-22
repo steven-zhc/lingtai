@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 /**
  * Serving a PR (0130 §5): the freeze, and the walk through In progress's steps.
  *
@@ -55,8 +57,6 @@ import {
 } from '@lingtai/project'
 import { type Recipe, ciOf, modeOf, remoteOf } from '@lingtai/recipe'
 import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
-import { createHash } from 'node:crypto'
-
 import { Clock, Effect, Result, Semaphore } from 'effect'
 
 import { CiProvider, type CiProviderShape } from './ci.ts'
@@ -423,7 +423,12 @@ const openStep: PrStep = {
           kind: 'done',
           headSha: target,
           record: (project, n, store) =>
-            recordPrDraftOpened(project, n, { number: pull.number, nodeId: pull.nodeId, url: pull.url, found }, store).pipe(
+            recordPrDraftOpened(
+              project,
+              n,
+              { number: pull.number, nodeId: pull.nodeId, url: pull.url, found },
+              store,
+            ).pipe(
               // The body it opened with is what the code host holds: nothing is owed a push until the log says otherwise.
               Effect.andThen(
                 described === undefined

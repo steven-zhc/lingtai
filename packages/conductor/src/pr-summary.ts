@@ -17,13 +17,8 @@
  *
  * Where no `summarizer` is wired nothing here runs and nothing is appended.
  */
-import { type PayloadOf, type PrState, prStream } from '@lingtai/domain'
-import {
-  readPr,
-  recordPrRunSpent,
-  recordPrSummaryNotWritten,
-  recordPrSummaryWritten,
-} from '@lingtai/project'
+import { type PrState, prStream } from '@lingtai/domain'
+import { readPr, recordPrRunSpent, recordPrSummaryNotWritten, recordPrSummaryWritten } from '@lingtai/project'
 import { callForPr } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
@@ -123,20 +118,6 @@ const describeItem = (ports: PrPorts, summarizer: PrSummarizer, project: string,
     ].join('\n')
   })
 
-/** The conflicts the conflict agent resolved on this PR (#1313), told as the prompt's own section. */
-const resolvedConflicts = (ports: PrPorts, project: string, n: number) =>
-  Effect.tryPromise({ try: () => ports.store.read(prStream(project, n)), catch: (e) => e }).pipe(
-    Effect.map((events) =>
-      events
-        .filter((e) => e.type === 'BranchSynced' && (e.data as PayloadOf<'BranchSynced'>).how === 'resolved')
-        .map((e) => {
-          const d = e.data as PayloadOf<'BranchSynced'>
-          return `- a conflict with main at ${d.mainCommit.slice(0, 7)} was resolved by the conflict agent (merge ${d.head.slice(0, 7)})`
-        }),
-    ),
-    Effect.catch(() => Effect.succeed([] as string[])),
-  )
-
 /** One paid run, from the lock check to the record of its answer. Answers the step's `done`. */
 const runSummary = (context: {
   project: string
@@ -153,7 +134,8 @@ const runSummary = (context: {
     const target = first?.target ?? first?.frozenSha ?? ''
     const done: StepAnswer = { kind: 'done', headSha: target }
     if (first === null) return { kind: 'again' } as StepAnswer
-    const notWritten = (why: string) => recordPrSummaryNotWritten(project, n, { at, why }, ports.store).pipe(Effect.as(done))
+    const notWritten = (why: string) =>
+      recordPrSummaryNotWritten(project, n, { at, why }, ports.store).pipe(Effect.as(done))
 
     const recipe = yield* ports.recipe(project)
     const call = callForPr(recipe)
@@ -169,7 +151,13 @@ const runSummary = (context: {
     const basedOn = first.version
     const items: readonly Item[] = at === 'submit' ? first.tickets : context.joined
     const told = yield* Effect.forEach(items, (item) => describeItem(ports, summarizer, project, item))
-    const conflicts = at === 'submit' ? yield* resolvedConflicts(ports, project, n) : []
+    const conflicts =
+      at === 'submit'
+        ? first.resolutions.map(
+            (r) =>
+              `- a conflict with main at ${r.mainCommit.slice(0, 7)} was resolved by the conflict agent (merge ${r.head.slice(0, 7)})`,
+          )
+        : []
     const current =
       first.summary === null
         ? ''
@@ -203,7 +191,8 @@ const runSummary = (context: {
       })
       .pipe(Effect.result)
     // A run that threw returned no outcome, and a killed process has nothing to record (0110 §2).
-    if (Result.isFailure(outcome)) return yield* notWritten(`the run did not finish (crash): ${outcome.failure.message}`)
+    if (Result.isFailure(outcome))
+      return yield* notWritten(`the run did not finish (crash): ${outcome.failure.message}`)
     const ran = outcome.success
     // A `RunSpent` that cannot be appended is said and the summary is still used, as a discussion's is.
     yield* recordPrRunSpent(
@@ -251,7 +240,8 @@ export const summaryStep: PrStep = {
     Effect.gen(function* () {
       const target = state.target ?? state.frozenSha ?? ''
       const summarizer = ports.summarizer
-      if (summarizer === undefined || state.summaryTried !== null) return { kind: 'done', headSha: target } as StepAnswer
+      if (summarizer === undefined || state.summaryTried !== null)
+        return { kind: 'done', headSha: target } as StepAnswer
       return yield* runSummary({ project, n, ports, summarizer, at: 'submit', joined: [] })
     }),
 }
