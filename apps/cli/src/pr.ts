@@ -131,13 +131,14 @@ const waitLines = (state: PrState, project: string, recipe: Recipe): string[] =>
       ...(view.commands.length === 0 ? [] : ['  to go on:', ...view.commands.map((c) => `    ${c}`)]),
     ]
   }
+  const outside = view.merging === 'outside' || view.reason.startsWith('outside-')
   const rounds =
     view.roundsUsed === null || view.roundsAllowed === null
       ? 'rounds: unknown'
       : `${view.roundsUsed} of ${view.roundsAllowed} rounds spent`
   return [
-    `  waiting on you at sync${since} (${view.reason}): ${view.detail.split('\n')[0] ?? ''}`,
-    `  main moved: ${orUnknown(view.mainAhead, String)} commit(s); conflicts in ${orUnknown(view.paths, (p) => p.join(', '))}; ${rounds}`,
+    `  waiting on you at ${outside ? 'outside' : 'sync'}${since} (${view.reason}): ${view.detail.split('\n')[0] ?? ''}`,
+    `  ${outside ? 'commits others pushed' : 'main moved'}: ${orUnknown(view.mainAhead, String)} commit(s); conflicts in ${orUnknown(view.paths, (p) => p.join(', '))}; ${rounds}`,
     ...(view.ours === null
       ? ['  ours: unknown']
       : ['  ours:', ...view.ours.map((o) => `    #${o.issue} ${o.title} (${o.mergeCommit.slice(0, 7)})`)]),
@@ -145,7 +146,8 @@ const waitLines = (state: PrState, project: string, recipe: Recipe): string[] =>
       ? ['  theirs: unknown']
       : ['  theirs:', ...view.theirs.map((t) => `    ${t.sha.slice(0, 7)} ${t.author}: ${t.subject}`)]),
     ...(view.lastRefusal === null ? [] : [`  last refusal at ${view.lastRefusal.step}: ${view.lastRefusal.said}`]),
-    ...(view.reason === 'sync-conflict' && view.commit !== null
+    ...((view.reason === 'sync-conflict' || view.reason === 'outside-conflict' || view.reason === 'outside-red') &&
+    view.commit !== null
       ? [`  give the agent 3 more rounds: lingtai pr rounds ${project}`]
       : []),
     '  or resolve it by hand:',

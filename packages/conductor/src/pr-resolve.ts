@@ -44,7 +44,7 @@ export type ConflictWhy =
 export interface ConflictAsk {
   readonly project: string
   readonly n: number
-  readonly merging: 'main' | 'back'
+  readonly merging: 'main' | 'back' | 'outside'
   /** The commit merged in: a `main` commit, or the PR's head. */
   readonly commit: string
   /** The commit it is merged into: the PR branch's start, or `branch.personal`'s head. */
@@ -152,8 +152,9 @@ const oursOf = (
     const state = yield* readPr(ask.project, ask.n, ports.store)
     // The merge back's ours are the tickets landed on `branch.personal` since the freeze: the draft, which holds
     // exactly the landed tickets no PR holds yet. The sync's are the ones this PR holds.
+    // The outside merge's are the PR's own tickets too: what others pushed is the other side.
     const tickets =
-      ask.merging === 'main'
+      ask.merging !== 'back'
         ? (state?.tickets ?? [])
         : (yield* readPrDraft(
             ask.project,
@@ -203,7 +204,9 @@ const theirsOf = (
       '--format=%H%x00%an%x00%s%x00',
       `${ask.start}..${ask.commit}`,
       // A red build is a clean merge: the whole merged range is what the other side did.
-      ...(ask.why?.kind === 'red' ? [] : ['--', ...paths]),
+      // Others' commits are listed whole, as the one thing the other side did, capped.
+      ...(ask.merging === 'outside' ? ['--max-count=50'] : []),
+      ...(ask.why?.kind === 'red' || ask.merging === 'outside' ? [] : ['--', ...paths]),
     ] as const
     const answer = yield* ports.git(ask.project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
@@ -291,7 +294,11 @@ export const resolveRounds = (
       Effect.gen(function* () {
         if (implement === null) return yield* Effect.fail(new Error('no agent at implement'))
         yield* ports.sweep(project)
-        const name = `${ask.merging === 'main' ? 'pr-sync' : 'pr-back'}-${n}-${Date.now()}`
+        const worktree = { main: 'pr-sync', back: 'pr-back', outside: 'pr-outside' } as const satisfies Record<
+          ConflictAsk['merging'],
+          string
+        >
+        const name = `${worktree[ask.merging]}-${n}-${Date.now()}`
         const stood =
           red === null
             ? yield* resolver.standMerge(project, { name, at: ask.start, theirs: ask.commit })

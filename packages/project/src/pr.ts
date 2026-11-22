@@ -41,6 +41,7 @@ import {
   backRequestTransition,
   type PrRequest,
   waitTransition,
+  outsideTransition,
   syncedTransition,
   syncRoundTransition,
   syncRefusalTransition,
@@ -278,6 +279,22 @@ export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'Pr
     project,
     n,
     (state) => openedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** Commits others pushed to the PR branch are merged into the PR's commit and built (#1353). A step already recorded appends nothing. */
+export const recordPrOutsideMerged = (
+  project: string,
+  n: number,
+  merged: PayloadOf<'PrOutsideMerged'>,
+  onto: string,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => outsideTransition(state, merged, onto),
     (_state, appended) => appended,
   )
 
@@ -574,7 +591,7 @@ const requestOnPr = <E>(
 /** *Give the agent 3 more rounds* for the commit the wait is about (#1314). */
 export const grantPrRounds = (
   pr: PrRef,
-  grant: { by: string; merging: 'main' | 'back'; commit: string },
+  grant: { by: string; merging: 'main' | 'back' | 'outside'; commit: string },
   store: EventStore,
 ): Effect.Effect<PrRequestAnswer, Error> =>
   requestOnPr(store, pr, (state) => grantTransition(state, pr.mode, pr.project, grant))

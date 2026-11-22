@@ -28,7 +28,7 @@ export interface TheirsCommit {
 export type Read<T> = readonly T[] | { readonly failed: string }
 
 export interface ConflictBrief {
-  readonly merging: 'main' | 'back'
+  readonly merging: 'main' | 'back' | 'outside'
   /** The branch merged into: the PR branch for a sync, `branch.personal` for the merge back. */
   readonly into: string
   /** What is merged in: `main` for a sync, the PR branch for the merge back. */
@@ -65,13 +65,19 @@ export function sidesOf(brief: ConflictBrief): string {
   const theirs = failed(brief.theirs)
     ? [`(could not be read: ${brief.theirs.failed})`]
     : brief.theirs.length === 0
-      ? [brief.red === undefined ? '(no commit touched these paths)' : '(no commit was merged)']
+      ? [
+          brief.red === undefined && brief.merging !== 'outside'
+            ? '(no commit touched these paths)'
+            : '(no commit was merged)',
+        ]
       : brief.theirs.map((c) => `- ${short(c.sha)} ${c.subject} (${c.author})`)
   return [
     `## What ${brief.into} meant — the tickets ${brief.red === undefined ? 'whose code conflicts' : 'whose files the failing output names'}`,
     ...ours,
     '',
-    `## What ${brief.from} meant — the commits that brought the other side`,
+    brief.merging === 'outside'
+      ? `## What ${brief.from} holds — the commits others pushed to the PR branch`
+      : `## What ${brief.from} meant — the commits that brought the other side`,
     ...theirs,
   ].join('\n')
 }

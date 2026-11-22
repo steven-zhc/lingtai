@@ -22,10 +22,10 @@ import { asError, backRef, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, t
 import { type ConflictWhy, type ResolveEnd, resolveRounds } from './pr-resolve.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
 
-const short = (sha: string): string => sha.slice(0, 7)
+export const short = (sha: string): string => sha.slice(0, 7)
 
 /** A failed read or write is the person's to hear of; a denied permission is the walk's own `denied` wait. */
-const orUnknown = <A>(
+export const orUnknown = <A>(
   effect: Effect.Effect<A, Error>,
   unknown: (message: string) => A,
 ): Effect.Effect<A, PermissionDenied> =>
@@ -36,7 +36,7 @@ const orUnknown = <A>(
   ) as Effect.Effect<A, PermissionDenied>
 
 /** `rev-parse --verify` of a ref to a commit: the sha, or the sentence for why not. */
-const resolve = (ports: PrPorts, project: string, ref: string): Effect.Effect<string, Error> =>
+export const resolve = (ports: PrPorts, project: string, ref: string): Effect.Effect<string, Error> =>
   Effect.gen(function* () {
     const args = ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`] as const
     const answer = yield* ports.git(project, args)
@@ -46,7 +46,12 @@ const resolve = (ports: PrPorts, project: string, ref: string): Effect.Effect<st
   })
 
 /** `git merge-base --is-ancestor`: exit 0 and 1 are the answer, anything else is git failing. */
-const isAncestor = (ports: PrPorts, project: string, ancestor: string, of: string): Effect.Effect<boolean, Error> =>
+export const isAncestor = (
+  ports: PrPorts,
+  project: string,
+  ancestor: string,
+  of: string,
+): Effect.Effect<boolean, Error> =>
   Effect.gen(function* () {
     const args = ['merge-base', '--is-ancestor', ancestor, of] as const
     const answer = yield* ports.git(project, args)
@@ -103,11 +108,21 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
         )
       }
 
-      // The PR branch on the remote must be what Lingtai put there: a merge made on anything else would be pushed over it.
+      // The PR branch on the remote must hold what Lingtai put there. Commits others pushed on top of it are `outside`'s to
+      // merge once this step's merge is built (0131 §4, #1353); a head that does not descend from it was rewritten.
       const ref = `refs/heads/${prBranch}`
       const at = yield* remoteSha(ports, project, ref)
       const expected = state.lastPushed ?? start
-      if (at === null ? state.lastPushed !== null : at !== state.lastPushed && at !== start) {
+      // `ls-remote` names a commit and does not bring it: the remote head is fetched before it is asked about.
+      let holds = true
+      if (at !== null && at !== state.lastPushed && at !== start) {
+        const prRef = fetchedRef(n, 'pr')
+        holds = yield* Effect.gen(function* () {
+          yield* fetchInto(ports, project, [[ref, prRef]])
+          return yield* isAncestor(ports, project, expected, yield* resolve(ports, project, prRef))
+        }).pipe(Effect.ensuring(dropRef(ports, project, prRef)))
+      }
+      if (at === null ? state.lastPushed !== null : !holds) {
         return wait(
           'sync-rewritten',
           `${prBranch} is ${at === null ? 'gone' : `at ${short(at)}`} on the remote; Lingtai left it at ${short(expected)}`,
@@ -182,7 +197,7 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
   )
 
 /** What a person reads when the rounds are spent: how many, and what refused the last. */
-const spentSentence = (end: ConflictEnd): string =>
+export const spentSentence = (end: ConflictEnd): string =>
   `the conflict agent spent ${end.roundsUsed} round${end.roundsUsed === 1 ? '' : 's'}` +
   (end.last === null ? '' : `; the last was refused at ${end.last.step}:\n${end.last.said}`)
 

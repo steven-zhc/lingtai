@@ -524,11 +524,16 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     d['how'] === 'already'
       ? `Main (${sha(d, 'mainCommit')}) was already in the PR branch`
       : `Main (${sha(d, 'mainCommit')}) was merged into the PR branch as ${sha(d, 'head')} and built`,
+  PrOutsideMerged: (d) => {
+    const count =
+      (Array.isArray(d['commits']) ? d['commits'].length : 0) + (typeof d['omitted'] === 'number' ? d['omitted'] : 0)
+    return `Merged ${count} commit${count === 1 ? '' : 's'} others pushed to the PR branch (${sha(d, 'remoteHead')}) as ${sha(d, 'head')}${d['how'] === 'resolved' ? ', resolved by the conflict agent' : ''} and built`
+  },
   PrFixLanded: (d) => `A pr-fix ticket landed on the PR branch as ${sha(d, 'mergeCommit')}: In progress again`,
   PrMergedBack: (d) =>
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
   SyncRoundStarted: (d) =>
-    `Round ${need(d, 'round')} of the conflict agent: ${String(d['merging']) === 'back' ? 'the PR branch' : 'main'} at ${String(d['commit']).slice(0, 7)} into ${String(d['start']).slice(0, 7)}`,
+    `Round ${need(d, 'round')} of the conflict agent: ${{ back: 'the PR branch', outside: 'the commits others pushed to the PR branch' }[String(d['merging'])] ?? 'main'} at ${String(d['commit']).slice(0, 7)} into ${String(d['start']).slice(0, 7)}`,
   SyncRoundRefused: (d) =>
     `Round ${need(d, 'round')} of the conflict agent was refused at ${need(d, 'step')}: ${clip(d['said'])}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
