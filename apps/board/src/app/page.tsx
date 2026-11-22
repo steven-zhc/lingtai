@@ -41,13 +41,14 @@ import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
-import { placeViewsOf } from '@/lib/prs.ts'
+import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
+import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
 import { readWhy } from '@/lib/why-read.ts'
 
 import { Bar, BarActions } from './bar.tsx'
@@ -528,10 +529,12 @@ export function LandedRow({
   card,
   showProject,
   issue,
+  where = null,
 }: {
   card: BoardCard
   showProject: boolean
   issue: string | null
+  where?: Where
 }) {
   const said = [
     // First, and only when it is true: this column's heading says *Landed*, and
@@ -576,7 +579,48 @@ export function LandedRow({
       <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
         · {said.join(' · ')}
       </Link>
+      {where === null ? null : where.tag === 'branch' ? (
+        <span className="ltag ltag-branch">on your branch</span>
+      ) : where.tag === 'merged' ? (
+        <span className="ltag ltag-merged">merged</span>
+      ) : (
+        <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
+          in {where.name}
+        </Link>
+      )}
     </li>
+  )
+}
+
+/** A team project's foot line: where its landings are, from the draft — whether or not any Landed row is still retained. */
+export function LandedFoot({
+  reads,
+  showProject,
+  registryUnread = false,
+}: {
+  reads: ReadonlyMap<string, LandedWhereRead>
+  showProject: boolean
+  registryUnread?: boolean
+}) {
+  return (
+    <>
+      {registryUnread ? <div className="lfoot unread">where these are could not be read</div> : null}
+      {[...reads.entries()].map(([project, read]) => {
+        const foot = footLine(read)
+        if (foot === null) return null
+        return (
+          <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
+            {showProject ? <span className="proj">{project}</span> : null}
+            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
+            {foot.kind === 'line' ? (
+              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
+                PRs →
+              </Link>
+            ) : null}
+          </div>
+        )
+      })}
+    </>
   )
 }
 
@@ -588,19 +632,32 @@ export function LandedRow({
  * than showing too much of it — the trade every `details` on the board already
  * makes.
  */
-function Landed({
+export function Landed({
   cards,
   showProject,
   issue,
+  reads = new Map(),
+  registryUnread = false,
+  footShowProject = false,
 }: {
   cards: BoardCard[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
+  reads?: ReadonlyMap<string, LandedWhereRead>
+  registryUnread?: boolean
+  /** The projects in scope are several, whichever of them have rows: a foot line then names its project. */
+  footShowProject?: boolean
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
       {some.map((c) => (
-        <LandedRow key={c.taskId} card={c} showProject={showProject} issue={issue(c)} />
+        <LandedRow
+          key={c.taskId}
+          card={c}
+          showProject={showProject}
+          issue={issue(c)}
+          where={whereLanded(c.ref, reads.get(c.project))}
+        />
       ))}
     </ul>
   )
@@ -615,6 +672,11 @@ function Landed({
           {rows(older)}
         </details>
       ) : null}
+      <LandedFoot
+        reads={reads}
+        showProject={showProject || footShowProject || reads.size > 1}
+        registryUnread={registryUnread}
+      />
     </>
   )
 }
@@ -674,14 +736,20 @@ type LockRead = Awaited<ReturnType<typeof readProjectLocks>>
  */
 function startReads(param: string | undefined) {
   const board = loadBoard(param)
-  const registered = timed('projects.read', () => readRegistered()).catch(() => [])
+  const registeredRead = timed('projects.read', () => readRegistered())
+  const registered = registeredRead.catch(() => [])
+  // A failed register read is [] above; this says so, so a quiet team project is reported unread rather than left out.
+  const registeredUnread = registeredRead.then(
+    () => false,
+    () => true,
+  )
   const control = timed('events.control', () => readControlOnce())
   const settled = Promise.all([board, control])
   const day = settled.then(() =>
     timed('spend.day', () => control.then((c) => readDayReading(undefined, c)), { failed: (r) => r.day === null }),
   )
   const lags = board.then(() => timed('projections.lag', () => projectionLag()).then(footerLags, () => null))
-  return { board, registered, control, day, lags }
+  return { board, registered, registeredUnread, control, day, lags }
 }
 type Reads = ReturnType<typeof startReads>
 
@@ -952,11 +1020,12 @@ async function CardsPart({
   queue: Promise<GithubQueue>
   projectKey: string
 }) {
-  const [board, registered, control, lockRead] = await Promise.all([
+  const [board, registered, control, lockRead, registeredUnread] = await Promise.all([
     ctx.reads.board,
     ctx.reads.registered,
     ctx.reads.control,
     ctx.locks,
+    ctx.reads.registeredUnread,
   ])
   const col = board.columns.find((c) => c.id === id)
   if (col === undefined) return null
@@ -1037,6 +1106,45 @@ async function CardsPart({
       </Suspense>
     )
   }
+  if (col.id === 'landed') {
+    // Once per team project on the board, never per row, and whether or not a Landed row is retained: the draft and the
+    // open PR outlive the two days a row does. A solo project reads no PR stream and gets no entry.
+    // The projects in scope, from the register and the selection — never from the cards, which a quiet team project has none of.
+    const projects = [
+      ...new Set([
+        ...(only === undefined ? registered.flatMap((p) => (p.project === null ? [] : [p.project])) : [only]),
+        ...onBoard,
+      ]),
+    ].filter((p) => only === undefined || p === only)
+    const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
+    const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
+    const registryUnread = only === undefined && registeredUnread
+    if (col.cards.length === 0)
+      return (
+        <>
+          <p
+            className={`empty${emptyHeld(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses) ? ' held' : ''}`}
+          >
+            {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
+          </p>
+          <LandedFoot
+            reads={reads}
+            showProject={projects.length > 1 || reads.size > 1}
+            registryUnread={registryUnread}
+          />
+        </>
+      )
+    return (
+      <Landed
+        cards={col.cards}
+        showProject={onBoard.size > 1}
+        issue={ticket}
+        reads={reads}
+        registryUnread={registryUnread}
+        footShowProject={projects.length > 1}
+      />
+    )
+  }
   if (col.cards.length === 0) {
     return (
       <p
@@ -1046,7 +1154,6 @@ async function CardsPart({
       </p>
     )
   }
-  if (col.id === 'landed') return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
   return (
     <>
       {col.cards.map((card) => (
