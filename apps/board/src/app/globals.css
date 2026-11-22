@@ -407,9 +407,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .col.hot .col-h .ct { font-size: 22px; font-weight: 500; line-height: 1; letter-spacing: 0; }
 .col.hot .cards, .col.hot .cards-in { gap: 9px; }
 
-.col.hot { display: flex; flex-direction: column; }
-.col.hot .cards, .col.hot .cards-in { flex: 1; }
-.handled-foot { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--rule-2); font-size: 12.5px; color: var(--muted); }
+.handled-foot { padding-top: 10px; border-top: 1px solid var(--rule-2); font-size: 12.5px; color: var(--muted); }
 .handled-foot-h { display: flex; align-items: center; gap: 7px; }
 .handled-foot-h b { color: var(--text); font-weight: 500; }
 .handled-foot-h a { margin-left: auto; color: var(--accent); }
