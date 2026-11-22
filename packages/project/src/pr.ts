@@ -30,8 +30,17 @@ import {
   openedTransition,
   mergedTransition,
   closedTransition,
+  backClosedTransition,
+  retryTransition,
+  adoptTransition,
+  grantTransition,
+  retryRequestTransition,
+  backRequestTransition,
+  type PrRequest,
   waitTransition,
   syncedTransition,
+  syncRoundTransition,
+  syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
   ticketStream,
@@ -444,3 +453,129 @@ export function readUnheldFixLandings(
     return unheld.sort((a, b) => Number((order.get(a.ticket) ?? 0n) - (order.get(b.ticket) ?? 0n)))
   })
 }
+
+/**
+ * A round of the conflict agent starts (#1313): appended **before** the agent is dispatched, and answers whether this call
+ * appended it. A round already counted for the commit (a second appender read the same head) appends nothing and answers
+ * false, so the agent is not started twice for one round.
+ */
+export const recordSyncRoundStarted = (
+  project: string,
+  n: number,
+  round: PayloadOf<'SyncRoundStarted'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRoundTransition(state, round),
+    (_state, appended) => appended,
+  )
+
+/** A started round was refused (#1313): on the log, so a restart and the end of the rounds read it and not memory. */
+export const recordSyncRoundRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'SyncRoundRefused'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRefusalTransition(state, refusal),
+    (_state, appended) => appended,
+  )
+
+/** Which PR a person's request is about, and whether its project is team: a solo project has none. */
+export interface PrRef {
+  readonly project: string
+  readonly n: number
+  readonly mode: 'solo' | 'team'
+}
+
+/** What a request came to: appended for the conductor to serve, or the sentence that says why not. */
+export type PrRequestAnswer = { kind: 'appended' } | { kind: 'refused'; detail: string }
+
+/**
+ * Reads the PR, asks the pure transition, and appends what it decides at the version read — the shape of `pauseProject`.
+ * **Nothing here writes the event itself**: a refusal appends nothing and says why.
+ */
+const requestOnPr = <E>(
+  store: EventStore,
+  pr: PrRef,
+  transition: (state: PrState | null) => PrRequest<E>,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  withOneRetry(
+    Effect.gen(function* () {
+      const events = yield* readPrEvents(pr.project, pr.n, store)
+      const state = events.length === 0 ? null : reducePr(events)
+      const decided = transition(state)
+      if (decided.kind === 'refused') return { kind: 'refused', detail: decided.detail } as PrRequestAnswer
+      yield* Effect.tryPromise({
+        try: () => store.append(prStream(pr.project, pr.n), state?.version ?? 0, [decided.event]),
+        catch: (e) => e,
+      })
+      return { kind: 'appended' } as PrRequestAnswer
+    }),
+  )
+
+/** *Give the agent 3 more rounds* for the commit the wait is about (#1314). */
+export const grantPrRounds = (
+  pr: PrRef,
+  grant: { by: string; merging: 'main' | 'back'; commit: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => grantTransition(state, pr.mode, pr.project, grant))
+
+/** *Check again* (`lingtai pr retry`, #1314). */
+export const requestPrRetry = (
+  pr: PrRef,
+  request: { by: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => retryRequestTransition(state, pr.mode, pr.project, request.by))
+
+/** *Back*: close the draft and return the PR's tickets to Draft (#1314). */
+export const requestPrBack = (
+  pr: PrRef,
+  request: { by: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => backRequestTransition(state, pr.mode, pr.project, request.by))
+
+/** The conductor served a retry without a head to adopt: In progress starts again from its first step. */
+export const recordPrRetried = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => retryTransition(state),
+    (_state, appended) => appended,
+  )
+
+/** The conductor adopted the head a person pushed to the PR branch. */
+export const recordPrHeadAdopted = (
+  project: string,
+  n: number,
+  adopted: PayloadOf<'PrHeadAdopted'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => adoptTransition(state, adopted),
+    (_state, appended) => appended,
+  )
+
+/** A back was served: the PR is closed, with or without a pull request on a code host to close. */
+export const recordPrTakenBack = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => backClosedTransition(state, closed),
+    (_state, appended) => appended,
+  )

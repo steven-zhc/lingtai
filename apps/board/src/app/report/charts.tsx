@@ -217,7 +217,9 @@ export function SpendPanel({ days }: { days: SpendDay[] }) {
           const named = new Map<string, { name: string; order: number; money: Money }>()
           for (const p of d.byPurpose) {
             const known = PURPOSE_SERIES.some(
-              (s) => s.key === (p.purpose === 'Triage' || p.purpose === 'Discussion' ? 'Other' : p.purpose),
+              (s) =>
+                s.key ===
+                (p.purpose === 'Triage' || p.purpose === 'Discussion' || p.purpose === 'Pr' ? 'Other' : p.purpose),
             )
             const i = purposeSeriesOf(p.purpose)
             const key = known ? `series:${i}` : `purpose:${p.purpose}`

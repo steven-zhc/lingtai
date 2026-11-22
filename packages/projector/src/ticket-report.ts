@@ -11,6 +11,7 @@ import {
   parseTicketStream,
   problemsOf,
   reviewSummaryOf,
+  TicketCodecError,
 } from '@lingtai/domain'
 import type { RateRow } from '@lingtai/domain/rate-card'
 import { estimateRow } from '@lingtai/domain/rate-card'
@@ -53,12 +54,12 @@ import { estimateRow } from '@lingtai/domain/rate-card'
  * - **A `RunSpent` with no link to a ticket is dropped**: there is no row to
  *   put it on (unlike `spend`, which keeps it with a null ticket).
  */
-import { Effect } from 'effect'
+import { Cause, Effect } from 'effect'
 
 import { readRateSnapshot } from './rate-snapshot.ts'
 import { columnOf } from './store.ts'
 import type { Projection, ProjectionContextPort } from './store.ts'
-import { reduceStoredTicket } from './ticket-row.ts'
+import { backfillStateRows, reduceStoredTicket, ticketBefore } from './ticket-row.ts'
 
 export const TICKET_REPORT_TABLE = 'ticket_report'
 
@@ -164,6 +165,13 @@ export interface TicketReportRow {
   /** One per problem a step raised, with who finally answered it (0123 §2, #1284). */
   problems: Problem[]
   cost: Record<string, PurposeCost>
+  /**
+   * Why the title, merge commit and satisfied-at are not the ticket's: its stored state was of an older
+   * shape and has not (or could not) be re-reduced from the log (#1349). Null or absent: they are real.
+   */
+  unread?: string | null
+  /** The title, merge commit and satisfied-at were re-reduced from the log on this read (#1349). */
+  recovered?: boolean
   /** The ticket's title, off the stored `ticket_state`. */
   title: string | null
   /** The merge commit, for a landed ticket. */
@@ -216,9 +224,16 @@ const orNull = <T>(value: unknown): T | null => (value === null || value === und
 const numOrNull = (value: unknown): number | null => (value === null || value === undefined ? null : Number(value))
 
 /** Both stores' one mapper: SQLite hands JSON back as text and Postgres as a value, `json` takes either. */
+// The writer re-reduces a row of an older shape (#1348). This read has no log: it marks the row `unread`, and
+// `fillStale` (given a way to read the stream) or the backfill (#1349) is what gives it its state.
 export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow {
   const ticket = String(row.ticket)
-  const state = decodeTicket(columnOf(row, TICKET_REPORT_TABLE, 'ticket_state'), TICKET_REPORT_TABLE, ticket)
+  let state: TicketState | null = null
+  try {
+    state = decodeTicket(columnOf(row, TICKET_REPORT_TABLE, 'ticket_state'), TICKET_REPORT_TABLE, ticket)
+  } catch (error) {
+    if (!(error instanceof TicketCodecError)) throw error
+  }
   return {
     ticket,
     project: (row.project as string | null | undefined) ?? null,
@@ -236,9 +251,10 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
     waits: json<ReportWait[]>(row.waits, []).map((w) => ({ ...w, by: w.by ?? null, onSha: w.onSha ?? null })),
     problems: json(columnOf(row, TICKET_REPORT_TABLE, 'problems'), []),
     cost: json(row.cost, {}),
-    title: state.title,
-    mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
-    satisfiedAt: state.lifecycle.status === 'satisfied' ? state.lifecycle.baseSha : null,
+    unread: state === null ? STORED_OLDER : null,
+    title: state === null ? '' : state.title,
+    mergeCommit: state?.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
+    satisfiedAt: state?.lifecycle.status === 'satisfied' ? state.lifecycle.baseSha : null,
     landingRun: orNull<string>(columnOf(row, TICKET_REPORT_TABLE, 'landing_run')),
     landingAttempt: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_attempt')),
     landingFixRounds: numOrNull(columnOf(row, TICKET_REPORT_TABLE, 'landing_fix_rounds')),
@@ -250,6 +266,60 @@ export function ticketReportRowOf(row: Record<string, unknown>): TicketReportRow
       orNull(columnOf(row, TICKET_REPORT_TABLE, 'summary_clipped')),
     ),
   }
+}
+
+const STORED_OLDER = 'stored in an older shape'
+
+/** A stale row's three fields off a re-read state, or the sentence that says it could not be read. */
+const unreadRow = (row: TicketReportRow, why: string): TicketReportRow => ({
+  ...row,
+  unread: why,
+  title: `could not read this ticket's state: ${why}`,
+  mergeCommit: null,
+  satisfiedAt: null,
+})
+
+/**
+ * Gives every row the mapper marked `unread` its state off the log (#1349): `reread` is one ticket's state,
+ * handed in by a caller that holds an event store (the projector does not import the conductor). A failed
+ * read, or a stream with no events, is that row shown as unread and never the page's failure. With no
+ * `reread` the rows are shown unread as they are.
+ */
+export function fillStale(
+  rows: TicketReportRow[],
+  reread?: (ticket: string) => Effect.Effect<TicketState, unknown>,
+): Effect.Effect<TicketReportRow[]> {
+  const stale = rows.filter((r) => r.unread !== null && r.unread !== undefined)
+  if (stale.length === 0) return Effect.succeed(rows)
+  const filled = (row: TicketReportRow): Effect.Effect<TicketReportRow> => {
+    if (reread === undefined) return Effect.succeed(unreadRow(row, 'not re-read here'))
+    return reread(row.ticket).pipe(
+      Effect.map((state): TicketReportRow => {
+        // `readThroughSnapshot` folds from `emptyTicket` itself, so a stream with no events returns it.
+        if (state === emptyTicket) return unreadRow(row, 'the ticket has no events')
+        return {
+          ...row,
+          unread: null,
+          recovered: true,
+          title: state.title,
+          mergeCommit: state.lifecycle.status === 'landed' ? state.lifecycle.mergeCommit : null,
+          satisfiedAt: state.lifecycle.status === 'satisfied' ? state.lifecycle.baseSha : null,
+        }
+      }),
+      Effect.catchCause((cause) => Effect.succeed(unreadRow(row, causeMessage(cause)))),
+    )
+  }
+  return Effect.forEach(stale, filled, { concurrency: 8 }).pipe(
+    Effect.map((done) => {
+      const by = new Map(done.map((r) => [r.ticket, r]))
+      return rows.map((r) => by.get(r.ticket) ?? r)
+    }),
+  )
+}
+
+const causeMessage = (cause: Cause.Cause<unknown>): string => {
+  const e = Cause.squash(cause)
+  return e instanceof Error ? e.message : String(e)
 }
 
 const fresh = (ticket: string): State => ({
@@ -510,7 +580,19 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
     }).pipe(Effect.withSpan('projector.ticket_report.reset'))
   },
 
-  reduce(events, ctx) {
+  backfill(ctx, log, beforeSeq, after, limit) {
+    return backfillStateRows(
+      [{ table: TICKET_REPORT_TABLE, key: 'ticket', column: 'ticket_state', shape: 'ticket' }],
+      TICKET_REPORT_TABLE,
+      ctx,
+      log,
+      beforeSeq,
+      after,
+      limit,
+    )
+  },
+
+  reduce(events, ctx, log) {
     return Effect.gen(function* () {
       let snapshot: readonly RateRow[] | null = null
 
@@ -698,8 +780,14 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
           ticket = yield* ticketOf(ctx, event.streamId)
           if (ticket !== null) {
             const { s, stored } = yield* load(ctx, ticket)
-            if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
-            if (signOfLife(s, event, event.streamId)) {
+            let reReduced = false
+            if (stored !== undefined) {
+              const before = yield* ticketBefore(stored, ticket, event.seq, TICKET_REPORT_TABLE, log)
+              s.ticketState = before.state
+              reReduced = before.reReduced
+            }
+            // A row re-reduced is written back whether or not this event was a sign of life.
+            if (signOfLife(s, event, event.streamId) || reReduced) {
               yield* save(ctx, s)
             }
           }
@@ -711,8 +799,10 @@ export const ticketReportProjectionWith = (ports: TicketReportPorts): Projection
         const { s, stored } = yield* load(ctx, ticket)
         let after: TicketState | null = null
         if (onTicketStream) {
-          after = s.ticketState = reduceStoredTicket(stored, event, TICKET_REPORT_TABLE).after
-        } else if (stored !== undefined) s.ticketState = decodeTicket(stored, TICKET_REPORT_TABLE, ticket)
+          after = s.ticketState = (yield* reduceStoredTicket(stored, event, TICKET_REPORT_TABLE, log)).after
+        } else if (stored !== undefined) {
+          s.ticketState = (yield* ticketBefore(stored, ticket, event.seq, TICKET_REPORT_TABLE, log)).state
+        }
         change?.(s, after)
         // A pass-stream event is also a sign of life, whatever else it did.
         if (isAttemptStream(event.streamId)) signOfLife(s, event, event.streamId)

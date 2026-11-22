@@ -175,14 +175,12 @@ describe('which object on the row this is', () => {
     const rendered = [
       ['place', bar.includes('<PlaceLine')],
       ['health', bar.includes('<Health')],
-      // The headline streams with the rail's other late parts (`RailTail`), so it is read off the page.
-      ['headline', page.includes('className="head sig"')],
     ]
       .filter(([, present]) => present)
       .map(([name]) => name)
     const named = rendered.join(', ')
 
-    expect(rendered).toEqual(['place', 'health', 'headline'])
+    expect(rendered).toEqual(['place', 'health'])
     // Twice in `page.tsx`, and once in `projects.tsx`: each says exactly what is rendered.
     expect(said(page).split(named)).toHaveLength(3)
     expect(said(read('../src/app/projects.tsx'))).toContain(named)

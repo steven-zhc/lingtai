@@ -17,6 +17,7 @@ import type { TicketSource } from '@lingtai/recipe/settings'
 
 import { queueFilters } from './board.ts'
 import { dateText, kindSeries, moneyText, OTHER, type ReportChip, projectionChip, type Series } from './report.ts'
+import { rereadTicket } from './snapshot-writer.ts'
 
 export type LandedParams = Record<string, string | string[] | undefined>
 
@@ -257,6 +258,7 @@ export async function currentLanded(q: LandedQuery): Promise<LandedData> {
     ...(q.kind === null ? {} : { kind: q.kind }),
     ...(q.before === null ? {} : { before: q.before }),
     limit: PAGE_SIZE + 1,
+    reread: rereadTicket,
   })
   const rows = read.slice(0, PAGE_SIZE)
   const last = rows.at(-1)
@@ -270,7 +272,10 @@ export async function currentLanded(q: LandedQuery): Promise<LandedData> {
         ...(q.project === null ? {} : { project: q.project }),
         taskIds: rows.map((r) => r.ticket),
       })
-      for (const e of entries) backlog.set(e.taskId, [...(backlog.get(e.taskId) ?? []), e])
+      for (const e of entries) {
+        if (e.taskId === null) continue // a PR's entry has no ticket to land under
+        backlog.set(e.taskId, [...(backlog.get(e.taskId) ?? []), e])
+      }
     } catch (err) {
       backlogError = (err as Error).message
     }

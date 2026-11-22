@@ -250,6 +250,33 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unknown')
   })
 
+  it('names a ticket whose state could not be read, in text and in json (#1349)', async () => {
+    const unread = row({ ticket: 'repo#9', unread: 'stream unavailable', title: 'could not read' })
+    const text = await run({}, { tickets: () => Effect.succeed([unread]) })
+    expect(text.out).toContain("repo#9  could not read this ticket's state: stream unavailable")
+    const json = JSON.parse((await run({ json: true }, { tickets: () => Effect.succeed([unread]) })).out)
+    expect(json.unread).toEqual([{ ticket: 'repo#9', unread: 'stream unavailable' }])
+  })
+
+  it('prints a recovered title under a ticket that took fix rounds (#1349)', async () => {
+    const r = await run(
+      {},
+      { tickets: () => Effect.succeed([row({ fixRounds: 2, title: 'the recovered title', unread: null })]) },
+    )
+    expect(r.out).toContain('the recovered title')
+  })
+
+  it('names a recovered ticket with zero fix rounds (#1349)', async () => {
+    const r = await run(
+      {},
+      {
+        tickets: () =>
+          Effect.succeed([row({ fixRounds: 0, title: 'zero rounds title', unread: null, recovered: true })]),
+      },
+    )
+    expect(r.out).toContain('zero rounds title')
+  })
+
   it('prints — for a figure with nothing behind it, and unclassified as its own row', async () => {
     const r = await run({}, { tickets: () => Effect.succeed([row({ outcome: 'closed', kind: null })]) })
     expect(r.out).toContain('(unclassified)')

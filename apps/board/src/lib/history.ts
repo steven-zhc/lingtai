@@ -251,7 +251,7 @@ const stepStarted: Formatter = (d) => {
 
 /** Who a `RunSpent` paid for, from its `for` — the same switch `who` reads. */
 function spentBy(d: Payload, r: Reading): string {
-  const spentFor = d['for'] as { _tag?: string; step?: string; name?: string } | undefined
+  const spentFor = d['for'] as { _tag?: string; step?: string; name?: string; purpose?: string } | undefined
   switch (spentFor?._tag) {
     case 'Action':
       return `${attemptAgent(r, r.streamId)} (${spentFor.name ?? spentFor.step})`
@@ -261,6 +261,8 @@ function spentBy(d: Payload, r: Reading): string {
       return 'triage'
     case 'Discussion':
       return 'a discussion'
+    case 'Pr':
+      return `the conflict agent (${spentFor.purpose})`
     default:
       throw new Error('no for')
   }
@@ -504,12 +506,21 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrFixLanded: (d) => `A pr-fix ticket landed on the PR branch as ${sha(d, 'mergeCommit')}: In progress again`,
   PrMergedBack: (d) =>
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
+  SyncRoundStarted: (d) =>
+    `Round ${need(d, 'round')} of the conflict agent: ${String(d['merging']) === 'back' ? 'the PR branch' : 'main'} at ${String(d['commit']).slice(0, 7)} into ${String(d['start']).slice(0, 7)}`,
+  SyncRoundRefused: (d) =>
+    `Round ${need(d, 'round')} of the conflict agent was refused at ${need(d, 'step')}: ${clip(d['said'])}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
   PrMerged: (d) =>
     d['how'] === 'host'
       ? 'The PR was merged, as the code host reports'
       : 'The PR was merged: its head is on the main branch',
   PrClosed: () => 'The PR was closed without merging; its tickets are back in Draft',
+  PrRoundsGranted: (d) =>
+    `${need(d, 'by')} gave the conflict agent ${need(d, 'rounds')} more rounds for ${String(d['commit']).slice(0, 7)}`,
+  PrRetryRequested: (d) => `${need(d, 'by')} asked for the PR to be checked again`,
+  PrHeadAdopted: (d) => `The head ${sha(d, 'head')}, pushed by a person, was adopted as the PR's own`,
+  PrBackRequested: (d) => `${need(d, 'by')} asked to take the PR back to Draft`,
   PrStepDone: (d) => `PR step ${need(d, 'step')} finished at ${sha(d, 'headSha')}`,
   PrWaiting: (d) => `The PR is waiting on you at ${need(d, 'step')} (${need(d, 'reason')}): ${clip(d['detail'])}`,
   AccountLimitReached: (d) => `${accountOf(d).name} reached its ${accountOf(d).limit} until ${need(d, 'until')}`,
@@ -920,6 +931,8 @@ function whoOf(event: Envelope, ctx: LineContext): string {
         return 'triage'
       case 'Discussion':
         return 'a discussion'
+      case 'Pr':
+        return 'the conflict agent'
     }
   }
   return actor

@@ -1,6 +1,7 @@
-import { log } from '@lingtai/event-store'
+import { ticketReducer, type TicketState } from '@lingtai/domain'
+import { eventStore, log, readThroughSnapshot } from '@lingtai/event-store'
 import { makeSnapshotWriter, type SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
-import { Context, Layer, ManagedRuntime } from 'effect'
+import { Context, Effect, Layer, ManagedRuntime } from 'effect'
 
 /**
  * The board's one snapshot writer (0124 §5, #871): a `ManagedRuntime` whose
@@ -37,3 +38,14 @@ export function boardSnapshotWriter(): Promise<SnapshotWriter> {
 export async function boardWriterOrNone(): Promise<SnapshotWriter | undefined> {
   return boardSnapshotWriter().catch(() => undefined)
 }
+
+/**
+ * One ticket's state off the log, through a snapshot and leaving one behind (0124, #1349): what `/report`
+ * and `/landed` hand the projector's reads for a row stored in an older shape. The writer is taken on the
+ * first call, so a page with no such row opens none. The board writes snapshots and never a projection row.
+ */
+export const rereadTicket = (ticket: string): Effect.Effect<TicketState, unknown> =>
+  Effect.flatMap(
+    Effect.promise(() => boardWriterOrNone()),
+    (writer) => readThroughSnapshot(eventStore, ticketReducer, ticket, 'all', { snapshots: log.snapshots, writer }),
+  )

@@ -181,4 +181,4 @@ export {
 export { runtimesOf } from './runtimes-of.ts'
 export * from './pr.ts'
 export { buildAt, type BuildAtOptions } from './pr-build.ts'
-export { type SandboxService } from './sandbox-decision.ts'
+export { type SandboxService, decidePassSandbox } from './sandbox-decision.ts'

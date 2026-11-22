@@ -23,6 +23,8 @@ import {
   reasonWords,
   resolutionWords,
 } from '@lingtai/conductor/report'
+import { ticketReducer, type TicketState } from '@lingtai/domain'
+import { eventStore, readThroughSnapshot } from '@lingtai/event-store'
 import {
   projectionLagEffect,
   readSpendEffect,
@@ -33,6 +35,13 @@ import {
 import { Cause, Effect } from 'effect'
 
 import { jsonDocument, keyValues, section, table } from './output.ts'
+
+/**
+ * One ticket's state off the log for a row stored in an older shape (#1349). No snapshots and no writer:
+ * only a long-lived process writes them (0124), so this is one full read and nothing left behind.
+ */
+const rereadTicket = (ticket: string): Effect.Effect<TicketState, unknown> =>
+  readThroughSnapshot(eventStore, ticketReducer, ticket, 'all')
 
 /** The projections the report's figures come from, in the order they are named. */
 export const REPORT_PROJECTIONS = ['ticket_report', 'spend'] as const
@@ -163,7 +172,13 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
   const placed = r.counts.landed + r.counts.closed + r.counts.open
   const spent = r.spend.total
   // Survival is its own cohort (first review in the window), so a window with no placed ticket can still have it.
-  if (placed === 0 && r.survival.length === 0 && spent.reportedCents + spent.estimatedCents + spent.unknown === 0) {
+  if (
+    placed === 0 &&
+    r.survival.length === 0 &&
+    r.unread.length === 0 &&
+    r.recovered.length === 0 &&
+    spent.reportedCents + spent.estimatedCents + spent.unknown === 0
+  ) {
     return [`no tickets and no spend in ${label}`]
   }
 
@@ -251,6 +266,7 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
         'most fix rounds',
         top.flatMap((t) => [
           `${t.ticket}  ${kindName(t.kind)}  ${t.outcome}  ${moneyText(t.cost)}`,
+          ...(t.title === null ? [] : [`  ${t.title}`]),
           `  ${t.sentence}`,
           ...(t.purposeShares.length > 0
             ? [
@@ -262,6 +278,24 @@ export function renderReport(r: Report, options: { columns?: number | undefined 
               `  waited for ${reasonWords(w.reason)}${w.cause === null ? '' : ` · triage: ${causeWords(w.cause)}`} · ${resolutionWords(w.resolution)}`,
           ),
         ]),
+      ),
+    )
+  }
+  if (r.recovered.length > 0) {
+    out.push(
+      '',
+      section(
+        'titles recovered from the log',
+        r.recovered.map((t) => `${t.ticket}  ${t.title}`),
+      ),
+    )
+  }
+  if (r.unread.length > 0) {
+    out.push(
+      '',
+      section(
+        'tickets that could not be read',
+        r.unread.map((u) => `${u.ticket}  could not read this ticket's state: ${u.unread}`),
       ),
     )
   }
@@ -328,7 +362,7 @@ export const runReport = (
 
     const now = (ports.now ?? (() => new Date()))()
     const window = resolveWindow(query.spec, now)
-    const tickets = yield* (ports.tickets ?? ((q) => readTicketReportEffect(q)))(
+    const tickets = yield* (ports.tickets ?? ((q) => readTicketReportEffect({ ...q, reread: rereadTicket })))(
       query.project === null ? {} : { project: query.project },
     )
     // Not narrowed by project here: `report()` does it, and a run with no ticket belongs to no project.

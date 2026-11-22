@@ -198,7 +198,34 @@ export interface Projection {
    * before the runner noticed will re-read the same events, and so will a
    * rebuild. `on conflict do nothing` keyed on `seq` is the cheap way.
    */
-  reduce(events: readonly Envelope[], ctx: ProjectionContextPort): Effect.Effect<void>
+  reduce(events: readonly Envelope[], ctx: ProjectionContextPort, log: ProjectionLog): Effect.Effect<void>
+
+  /**
+   * Rewrites stored ticket (and run) states of an older shape, one page (#1349): up to `limit` rows after the
+   * cursor `after` (null starts), each re-reduced from its stream's events below `beforeSeq` and written back —
+   * the state column only. Returns the cursor to pass back, null when the scan is done. The runner calls it
+   * inside a transaction of its own, holding the lane no batch commits through, with `beforeSeq` one past
+   * its checkpoint: a row is never given an event the projection has not yet applied.
+   */
+  backfill?(
+    ctx: ProjectionContextPort,
+    log: ProjectionLog,
+    beforeSeq: bigint,
+    after: string | null,
+    limit: number,
+  ): Effect.Effect<{ rewritten: number; next: string | null }>
+}
+
+/**
+ * What a reduce may ask of the log beyond its own events (#1348): one stream, to
+ * re-reduce a stored row that is of an older shape. Not on the context, which
+ * both stores build inside a transaction and which has no business holding a log.
+ */
+export interface ProjectionLog {
+  /** The stream, every event: `EventsPort.read`. A failure is a defect, as every log read is. */
+  read(streamId: string): Effect.Effect<Envelope[]>
+  /** A line a person should see, said at most once per projection and stream. */
+  note(line: string): void
 }
 
 export interface ProjectionLag {

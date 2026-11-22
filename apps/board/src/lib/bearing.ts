@@ -8,11 +8,11 @@
  * read, not two ([the-bar.md](../../../../doc/design/the-bar.md)).
  *
  * So the two are reduced here, into a dot and at most one sentence. **Green and
- * silent is the whole of the ordinary case**; anything else says what is wrong
- * and what to do about it, because a health indicator that reports a fault and
+ * silent is the whole of the ordinary case**; anything else (stale code is the one exception,
+ * which only turns the dot) says what is wrong and what to do about it, because a health indicator that reports a fault and
  * not the remedy is one you have to go and look something up for.
  *
- * Neither fact is lost: whichever is not the headline is still in the title,
+ * Neither fact is lost: whichever is not the sentence is still in the title,
  * which is why `code.said` is appended to **every** branch below — including the
  * two that say nothing about the code at all. A dead stream and a board that has
  * not answered yet are exactly the states in which somebody wants to know what
@@ -29,8 +29,8 @@ import type { Health } from './health.ts'
 /**
  * Pass, fail, or neither — never the accent and never amber.
  *
- * Amber is the headline's, and the headline's alone: it means *a human is the
- * thing being waited on*, and a second amber on the row dilutes the first,
+ * Amber is the Waiting lane's colour, and nothing on the bar wears it: it means
+ * *a human is the thing being waited on*, and a second amber dilutes the first,
  * which is the entire reason the palette carries the rule. `idle` is for the
  * states that are true, temporary and nobody's fault — catching up, or a
  * projection nothing has built yet.
@@ -243,9 +243,10 @@ export function bearing(
     return {
       tone: 'warn',
       label: code.wrong,
-      why: code.wrong,
-      command: code.command,
-      title: also(board.lag === 0 ? `task_view is at the head — ${beat}` : `catching up — ${beat}`),
+      // The one fault that turns the dot and writes no sentence: the fact and the command are the hover.
+      why: null,
+      command: null,
+      title: `${also(board.lag === 0 ? `task_view is at the head — ${beat}` : `catching up — ${beat}`)}; ${code.wrong} — ${code.command}`,
     }
   }
   if (board.lag > 0) {

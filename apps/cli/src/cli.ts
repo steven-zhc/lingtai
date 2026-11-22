@@ -397,6 +397,54 @@ const prSubmit = Command.make('submit', { project: prProject, json, noColor }, (
   ),
 ).pipe(Command.withDescription('freeze the personal branch into a PR'))
 
+const prRetry = Command.make('retry', { project: prProject, json, noColor }, (args) =>
+  answerWith('pr retry', args, () =>
+    Effect.gen(function* () {
+      const pr = yield* lift(() => import('./pr.ts'))
+      const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+      if ('refused' in chosen) return chosen.refused
+      return yield* pr.prRequestVerdict(
+        'retry',
+        chosen.project,
+        `human:${process.env['USER'] ?? 'operator'}`,
+        pr.livePrWorld(),
+      )
+    }),
+  ),
+).pipe(Command.withDescription('check a waiting PR again: take the branch as you left it, build it, go on'))
+
+const prRounds = Command.make('rounds', { project: prProject, json, noColor }, (args) =>
+  answerWith('pr rounds', args, () =>
+    Effect.gen(function* () {
+      const pr = yield* lift(() => import('./pr.ts'))
+      const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+      if ('refused' in chosen) return chosen.refused
+      return yield* pr.prRequestVerdict(
+        'rounds',
+        chosen.project,
+        `human:${process.env['USER'] ?? 'operator'}`,
+        pr.livePrWorld(),
+      )
+    }),
+  ),
+).pipe(Command.withDescription('give the conflict agent 3 more rounds for the commit the PR waits on'))
+
+const prBack = Command.make('back', { project: prProject, json, noColor }, (args) =>
+  answerWith('pr back', args, () =>
+    Effect.gen(function* () {
+      const pr = yield* lift(() => import('./pr.ts'))
+      const chosen = yield* pr.chooseProject(given(args.project), pr.registeredProjects)
+      if ('refused' in chosen) return chosen.refused
+      return yield* pr.prRequestVerdict(
+        'back',
+        chosen.project,
+        `human:${process.env['USER'] ?? 'operator'}`,
+        pr.livePrWorld(),
+      )
+    }),
+  ),
+).pipe(Command.withDescription('take the PR back to Draft: close the draft pull request'))
+
 const prCommand = Command.make('pr', { project: prProject, json, noColor }, (args) =>
   Effect.gen(function* () {
     if (args.noColor) applyNoColor()
@@ -412,7 +460,7 @@ const prCommand = Command.make('pr', { project: prProject, json, noColor }, (arg
     else for (const line of report.lines) console.log(line)
     yield* exitWith(report.code)
   }).pipe(orFailed('pr', args.json)),
-).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit]))
+).pipe(Command.withDescription(definitionOf('pr').task), Command.withSubcommands([prSubmit, prRetry, prRounds, prBack]))
 
 /** What was typed after `board`: `port` and `dir` are null where nothing was, and the runner resolves them. */
 export interface BoardRequest {
