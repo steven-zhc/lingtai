@@ -41,13 +41,14 @@ import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { elapsed } from '@/lib/progress'
-import { placeViewsOf } from '@/lib/prs.ts'
+import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
+import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
 import { readWhy } from '@/lib/why-read.ts'
 
 import { Bar, BarActions } from './bar.tsx'
@@ -528,10 +529,12 @@ export function LandedRow({
   card,
   showProject,
   issue,
+  where = null,
 }: {
   card: BoardCard
   showProject: boolean
   issue: string | null
+  where?: Where
 }) {
   const said = [
     // First, and only when it is true: this column's heading says *Landed*, and
@@ -576,6 +579,15 @@ export function LandedRow({
       <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
         · {said.join(' · ')}
       </Link>
+      {where === null ? null : where.tag === 'branch' ? (
+        <span className="ltag ltag-branch">on your branch</span>
+      ) : where.tag === 'merged' ? (
+        <span className="ltag ltag-merged">merged</span>
+      ) : (
+        <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
+          in {where.name}
+        </Link>
+      )}
     </li>
   )
 }
@@ -588,19 +600,27 @@ export function LandedRow({
  * than showing too much of it — the trade every `details` on the board already
  * makes.
  */
-function Landed({
+export function Landed({
   cards,
   showProject,
   issue,
+  reads = new Map(),
 }: {
   cards: BoardCard[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
+  reads?: ReadonlyMap<string, LandedWhereRead>
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
       {some.map((c) => (
-        <LandedRow key={c.taskId} card={c} showProject={showProject} issue={issue(c)} />
+        <LandedRow
+          key={c.taskId}
+          card={c}
+          showProject={showProject}
+          issue={issue(c)}
+          where={whereLanded(c.ref, reads.get(c.project))}
+        />
       ))}
     </ul>
   )
@@ -615,6 +635,21 @@ function Landed({
           {rows(older)}
         </details>
       ) : null}
+      {[...reads.entries()].map(([project, read]) => {
+        const foot = footLine(read)
+        if (foot === null) return null
+        return (
+          <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
+            {showProject ? <span className="proj">{project}</span> : null}
+            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
+            {foot.kind === 'line' ? (
+              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
+                PRs →
+              </Link>
+            ) : null}
+          </div>
+        )
+      })}
     </>
   )
 }
@@ -1046,7 +1081,13 @@ async function CardsPart({
       </p>
     )
   }
-  if (col.id === 'landed') return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} />
+  if (col.id === 'landed') {
+    // Once per project on the column, never per row; a solo project reads no PR stream and gets no entry.
+    const projects = [...new Set(col.cards.map((c) => c.project))]
+    const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
+    const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
+    return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} reads={reads} />
+  }
   return (
     <>
       {col.cards.map((card) => (
