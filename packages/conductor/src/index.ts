@@ -181,5 +181,5 @@ export {
 export { runtimesOf } from './runtimes-of.ts'
 export * from './pr.ts'
 export { buildAt, type BuildAtOptions } from './pr-build.ts'
-export { parseSummary, type PrSummarizer } from './pr-summary.ts'
+export { joinedSinceSummary, parseSummary, type PrSummarizer } from './pr-summary.ts'
 export { type SandboxService, decidePassSandbox } from './sandbox-decision.ts'

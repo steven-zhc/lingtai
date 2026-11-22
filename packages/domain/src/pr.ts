@@ -136,7 +136,9 @@ export interface PrState {
   resolutions: readonly { readonly mainCommit: string; readonly head: string }[]
   /** The hash of the description last put on the code host (`PrDescriptionPushed`). */
   descriptionPushed: string | null
-  /** A summary event came after the last `PrDescriptionPushed`: the code host's description is behind the log's. */
+  /** The stream version of the latest summary event (written, not written, edited): a push rendered before it leaves the description owed. */
+  summaryChangedAt: number
+  /** A summary event came after what the last `PrDescriptionPushed` rendered: the code host's description is behind the log's. */
   descriptionOwed: boolean
   /** How the PR ended, once it has (`PrMerged`, `PrClosed`); `how` is null for a close. `seq` is the ending event's. */
   ended: {
@@ -190,6 +192,7 @@ export const emptyPr: PrState = {
   fixesLanded: [],
   resolutions: [],
   descriptionPushed: null,
+  summaryChangedAt: 0,
   descriptionOwed: false,
   ended: null,
   version: 0,
@@ -460,12 +463,16 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...state,
         ...at,
         summary: { title: d.title, text: d.summary },
-        summaryTried: event.version,
+        // What the run saw, not where its answer landed: a pr-fix that joined while it ran is not covered.
+        summaryTried: d.basedOn,
+        summaryChangedAt: event.version,
         descriptionOwed: true,
       }
     }
-    case 'PrSummaryNotWritten':
-      return { ...state, ...at, summaryTried: event.version, descriptionOwed: true }
+    case 'PrSummaryNotWritten': {
+      const d = event.data as PayloadOf<'PrSummaryNotWritten'>
+      return { ...state, ...at, summaryTried: d.basedOn, summaryChangedAt: event.version, descriptionOwed: true }
+    }
     case 'PrSummaryEdited': {
       const d = event.data as PayloadOf<'PrSummaryEdited'>
       return {
@@ -473,12 +480,18 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...at,
         summary: { title: state.summary?.title ?? null, text: d.summary },
         edited: { by: d.by, version: event.version },
+        summaryChangedAt: event.version,
         descriptionOwed: true,
       }
     }
     case 'PrDescriptionPushed': {
       const d = event.data as PayloadOf<'PrDescriptionPushed'>
-      return { ...state, ...at, descriptionPushed: d.bodyHash, descriptionOwed: false }
+      return {
+        ...state,
+        ...at,
+        descriptionPushed: d.bodyHash,
+        descriptionOwed: d.basedOn < state.summaryChangedAt,
+      }
     }
     default:
       return { ...state, ...at }
@@ -761,6 +774,7 @@ export function summaryWrittenTransition(
   if (state.edited !== null && state.edited.version > written.basedOn) {
     return summaryNotWrittenTransition(state, {
       at: written.at,
+      basedOn: written.basedOn,
       why: `set aside: ${state.edited.by} edited the summary while the agent was writing`,
     })
   }

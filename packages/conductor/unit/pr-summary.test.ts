@@ -13,7 +13,7 @@ import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type PrSummarizer, parseSummary } from '../src/pr-summary.ts'
+import { type PrSummarizer, joinedSinceSummary, parseSummary } from '../src/pr-summary.ts'
 import { type PrPorts, type PrStep, IN_PROGRESS_STEPS, servePr } from '../src/pr.ts'
 
 const team = {
@@ -390,12 +390,45 @@ describe('the top-up, after CI', () => {
     await serve(ports(store, w), named('summary', 'topup'))
     expect(w.runs).toBe(1)
     const log = await events(store)
-    expect(log.filter((e) => e.type === 'PrSummaryNotWritten').map((e) => e.data)).toEqual([
+    expect(log.filter((e) => e.type === 'PrSummaryNotWritten').map((e) => e.data)).toMatchObject([
       { at: 'pr-fix', why: 'paused by steven' },
     ])
     expect(w.patches).toHaveLength(1)
     expect(w.patches[0]!.body).toContain('Closes #3 — ticket 3')
     expect(w.patches[0]!.title).toBe('Add the thing')
+  })
+})
+
+describe('what a run saw, and what a push rendered', () => {
+  it('does not count a pr-fix that landed while the run was in flight as summarised', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    w.during = async () => {
+      await landed(store, '3', 'lingtai-team-pr-1')
+      await Effect.runPromise(
+        recordPrFixLanded('lingtai', 1, { ticket: '3', mergeCommit: 'm3', title: 'ticket 3' }, store),
+      )
+    }
+    await serve(ports(store, w))
+    // The run saw the PR before the fix: the top-up still owes it.
+    expect(joinedSinceSummary(await state(store)).map((f) => f.ticket)).toEqual(['3'])
+  })
+
+  it('leaves the description owed when an edit landed after the version the push rendered', async () => {
+    const store = await frozen()
+    const w = aWorld()
+    await serve(ports(store, w))
+    const stale = (await state(store)).version
+    await Effect.runPromise(
+      editPrSummary({ project: 'lingtai', n: 1, mode: 'team' }, { by: 'human:steven', summary: 'B.' }, store),
+    )
+    await store.append(prStream('lingtai', 1), (await events(store)).length, [
+      { type: 'PrDescriptionPushed', actor: 'conductor', data: { bodyHash: 'a'.repeat(64), basedOn: stale } },
+    ])
+    expect((await state(store)).descriptionOwed).toBe(true)
+    await serve(ports(store, w), [])
+    expect(w.patches.at(-1)!.body.startsWith('B.')).toBe(true)
+    expect((await state(store)).descriptionOwed).toBe(false)
   })
 })
 

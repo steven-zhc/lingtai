@@ -392,7 +392,8 @@ export const pushDescription = (ports: PrPorts, project: string, n: number): Eff
       )
       if (!pushed) return
     }
-    yield* recordPrDescriptionPushed(project, n, { bodyHash: hash }, ports.store)
+    // Acknowledges what was rendered, not what the log holds now: a summary change after `state` is still owed.
+    yield* recordPrDescriptionPushed(project, n, { bodyHash: hash, basedOn: state.version }, ports.store)
   })
 
 /**
@@ -433,7 +434,12 @@ const openStep: PrStep = {
               Effect.andThen(
                 described === undefined
                   ? Effect.void
-                  : recordPrDescriptionPushed(project, n, { bodyHash: descriptionHash(described) }, store),
+                  : recordPrDescriptionPushed(
+                      project,
+                      n,
+                      { bodyHash: descriptionHash(described), basedOn: state.version },
+                      store,
+                    ),
               ),
             ),
         }) as StepAnswer

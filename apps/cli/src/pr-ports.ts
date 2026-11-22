@@ -144,7 +144,12 @@ export function livePrPorts(
               const { cwd, settingsPath } = yield* prepare(request.runId.replace(/[^A-Za-z0-9._-]/g, '_')).pipe(
                 Effect.mapError(asError),
               )
-              const outcome = yield* createRuntime(request.runtime, { tools: 'none' }).run({
+              // `createRuntime` throws for a runtime that cannot be held to no tools: that is a failed run, not a defect.
+              const runtime = yield* Effect.try({
+                try: () => createRuntime(request.runtime, { tools: 'none' }),
+                catch: asError,
+              })
+              const outcome = yield* runtime.run({
                 runId: request.runId,
                 cwd,
                 prompt: request.prompt,
@@ -164,7 +169,8 @@ export function livePrPorts(
               }
             }),
           runtimeVersion: (_project, runtime) =>
-            runtimeVersionOfEffect(createRuntime(runtime, { tools: 'none' }), runnableEnv({})).pipe(
+            Effect.try({ try: () => createRuntime(runtime, { tools: 'none' }), catch: asError }).pipe(
+              Effect.flatMap((made) => runtimeVersionOfEffect(made, runnableEnv({}))),
               Effect.orElseSucceed(() => null),
             ),
           ticketBody,

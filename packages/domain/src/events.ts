@@ -2871,7 +2871,12 @@ export const PrSummaryWritten = z.object({
  *
  * @summary No PR summary was written this time, and why: a lock, a failed run, or a person's edit that won.
  */
-export const PrSummaryNotWritten = z.object({ at: z.enum(['submit', 'pr-fix']), why: z.string().min(1) })
+export const PrSummaryNotWritten = z.object({
+  at: z.enum(['submit', 'pr-fix']),
+  why: z.string().min(1),
+  /** The version of the PR's stream the attempt read its input at: the pr-fixes after it are not covered by it. */
+  basedOn: z.number().int().nonnegative(),
+})
 
 /**
  * A person replaced the PR's summary (#1318). Only the summary is theirs: the ticket lines and `Closes #…` are regenerated
@@ -2887,7 +2892,11 @@ export const PrSummaryEdited = z.object({ by: z.string(), summary: z.string().mi
  *
  * @summary A PR's regenerated title and body are on the code host.
  */
-export const PrDescriptionPushed = z.object({ bodyHash: z.string().min(1) })
+export const PrDescriptionPushed = z.object({
+  bodyHash: z.string().min(1),
+  /** The version of the PR's stream the description was rendered at: a summary change after it is still owed a push. */
+  basedOn: z.number().int().nonnegative(),
+})
 
 /**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it

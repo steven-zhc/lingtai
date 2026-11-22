@@ -125,8 +125,6 @@ const runSummary = (context: {
   ports: PrPorts
   summarizer: PrSummarizer
   at: 'submit' | 'pr-fix'
-  /** The pr-fix tickets that joined since: only these are told at a top-up. */
-  joined: readonly Item[]
 }): Effect.Effect<StepAnswer, Error> =>
   Effect.gen(function* () {
     const { project, n, ports, summarizer, at } = context
@@ -135,7 +133,7 @@ const runSummary = (context: {
     const done: StepAnswer = { kind: 'done', headSha: target }
     if (first === null) return { kind: 'again' } as StepAnswer
     const notWritten = (why: string) =>
-      recordPrSummaryNotWritten(project, n, { at, why }, ports.store).pipe(Effect.as(done))
+      recordPrSummaryNotWritten(project, n, { at, why, basedOn: first.version }, ports.store).pipe(Effect.as(done))
 
     const recipe = yield* ports.recipe(project)
     const call = callForPr(recipe)
@@ -149,7 +147,9 @@ const runSummary = (context: {
 
     // The version this run began at, read before the prompt is built: an edit after it is the person's, and wins.
     const basedOn = first.version
-    const items: readonly Item[] = at === 'submit' ? first.tickets : context.joined
+    // Told from what this read holds, so what `basedOn` claims covered is what the prompt held.
+    const items: readonly Item[] = at === 'submit' ? first.tickets : joinedSinceSummary(first)
+    if (items.length === 0) return done
     const told = yield* Effect.forEach(items, (item) => describeItem(ports, summarizer, project, item))
     const conflicts =
       at === 'submit'
@@ -242,7 +242,7 @@ export const summaryStep: PrStep = {
       const summarizer = ports.summarizer
       if (summarizer === undefined || state.summaryTried !== null)
         return { kind: 'done', headSha: target } as StepAnswer
-      return yield* runSummary({ project, n, ports, summarizer, at: 'submit', joined: [] })
+      return yield* runSummary({ project, n, ports, summarizer, at: 'submit' })
     }),
 }
 
@@ -255,6 +255,6 @@ export const topupStep: PrStep = {
       const summarizer = ports.summarizer
       const joined = joinedSinceSummary(state)
       if (summarizer === undefined || joined.length === 0) return { kind: 'done', headSha: target } as StepAnswer
-      return yield* runSummary({ project, n, ports, summarizer, at: 'pr-fix', joined })
+      return yield* runSummary({ project, n, ports, summarizer, at: 'pr-fix' })
     }),
 }

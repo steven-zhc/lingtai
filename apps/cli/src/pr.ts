@@ -438,9 +438,10 @@ export const prSummaryVerdict = (
       return said(text === null ? 'no summary has been written yet' : text, { summary: text })
     }
     const text = yield* Effect.tryPromise({ try: () => readFile(file, 'utf8'), catch: (e) => e as Error })
+    // The boundary is taken before the edit is submitted: a daemon that pushes at once has acknowledged after it.
+    const after = (yield* readPr(project, n, world.store))?.version ?? 0
     const asked = yield* editPrSummary({ project, n, mode }, { by, summary: text }, world.store)
     if (asked.kind === 'refused') return refusal(1, 'refused', asked.detail, { subject })
-    const after = (yield* readPr(project, n, world.store))?.version ?? 0
     // A remote that is not GitHub has nowhere to push: the description is printed for the person to put where it goes.
     if (prHostOf(recipe) === 'none') {
       const described = yield* world.describe(project, n)

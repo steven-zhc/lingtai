@@ -342,9 +342,9 @@ const SAMPLES = {
   PrHeadAdopted: [{ head: 'a'.repeat(40), by: 'steven' }],
   PrBackRequested: [{ by: 'steven' }],
   PrSummaryWritten: [{ by: 'agent', at: 'submit', title: 'Add the summary agent', summary: 'It writes.', basedOn: 3 }],
-  PrSummaryNotWritten: [{ at: 'pr-fix', why: 'the day ceiling is reached' }],
+  PrSummaryNotWritten: [{ at: 'pr-fix', why: 'the day ceiling is reached', basedOn: 3 }],
   PrSummaryEdited: [{ by: 'steven', summary: 'My words.' }],
-  PrDescriptionPushed: [{ bodyHash: 'c'.repeat(64) }],
+  PrDescriptionPushed: [{ bodyHash: 'c'.repeat(64), basedOn: 4 }],
   PrWaiting: [{ step: 'push', reason: 'denied', detail: 'the App lacks a permission', headSha: 'a'.repeat(40) }],
   AccountLimitReached: [
     { account: 'claude-code', until: '2026-11-11T05:00:00.000Z', untilFrom: 'message', said: 'resets at 5am' },
