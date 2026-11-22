@@ -2,7 +2,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { Envelope } from '../src/envelope.ts'
-import { emptyPr, fixLandedTransition, fixRestartTransition, reducePrEvent, type PrState } from '../src/pr.ts'
+import {
+  emptyPr,
+  fixLandedTransition,
+  fixRestartTransition,
+  mergedBackTransition,
+  reducePrEvent,
+  type PrState,
+} from '../src/pr.ts'
 
 const head = 'a'.repeat(40)
 const fixHead = 'b'.repeat(40)
@@ -109,5 +116,48 @@ describe('what an ending and a merge back cover is per ticket (#1341)', () => {
     )
     const merged = reducePrEvent(synced, event('PrMerged', { how: 'git', headSha: 'c'.repeat(40), mergeSha: null }))
     expect(merged.mergedTickets).toEqual(['10', '11'])
+  })
+})
+
+describe('covers holds only exact counts, and a merge back is recorded on an ended PR (#1354)', () => {
+  const c = 'c'.repeat(40)
+  const frozen = { ...inReview, covers: { [head]: 1 } }
+  const landed = reducePrEvent(frozen, event('PrFixLanded', { ticket: '11', mergeCommit: fixHead }))
+
+  it('a head a person pushed gets no guessed count, so a merge at it is not exact', () => {
+    const adopted = reducePrEvent(landed, event('PrHeadAdopted', { head: c }))
+    const again = reducePrEvent(
+      adopted,
+      event('PrInProgress', {
+        because: 'restart',
+        branch: 'feature',
+        main: 'main',
+        frozenSha: head,
+        prBranch: 'feature-pr-1',
+        tickets: landed.tickets,
+      }),
+    )
+    const synced = reducePrEvent(again, event('BranchSynced', { mainCommit: head, head: c, how: 'clean' }))
+    expect(synced.covers[c]).toBeUndefined()
+    const merged = reducePrEvent(synced, event('PrMerged', { how: 'git', headSha: c, mergeSha: null }))
+    expect(merged.mergedExact).toBe(false)
+  })
+
+  it('a merge back is recorded on a closed or merged PR for the head last pushed, once', () => {
+    const back = { prHead: fixHead, mergeCommit: c, how: 'clean' as const }
+    for (const status of ['in-review', 'closed', 'merged'] as const) {
+      const state = { ...landed, status }
+      expect(mergedBackTransition(state, back)).toMatchObject({ type: 'PrMergedBack' })
+      const done = reducePrEvent(state, event('PrMergedBack', back))
+      expect(mergedBackTransition(done, back)).toBeNull()
+    }
+  })
+
+  it('is refused for a PR not in review, or a head that was not last pushed', () => {
+    const back = { prHead: fixHead, mergeCommit: c, how: 'clean' as const }
+    for (const status of ['in-progress', 'waiting', 'requested', 'refused'] as const) {
+      expect(mergedBackTransition({ ...landed, status }, back)).toBeNull()
+    }
+    expect(mergedBackTransition(landed, { ...back, prHead: head })).toBeNull()
   })
 })

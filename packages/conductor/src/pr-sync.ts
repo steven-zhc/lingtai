@@ -337,6 +337,20 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         ports.store,
       )
 
+    // A merge back that pushed and was not recorded is never success: the PR has no record of the head (#1354). While the
+    // PR is in review that is `unknown`, still owed; for any other status the log line is the whole record.
+    const refusedRecord = (answer: 'recorded' | 'already' | 'refused', mergeCommit: string) =>
+      answer !== 'refused'
+        ? Effect.void
+        : Effect.gen(function* () {
+            ports.log?.(
+              `pr ${n} merge back pushed ${short(mergeCommit)}; the PR has no record of ${short(prHead)}, so it is not counted as merged back`,
+            )
+            yield* failed('unknown', `pushed ${short(mergeCommit)}; the PR has no record of ${short(prHead)}`).pipe(
+              Effect.catch(() => Effect.void),
+            )
+          })
+
     // `freezePr` falls back to `main` where the recipe names no personal branch; that must never become a push to it.
     if (branch === main) {
       yield* failed('unknown', `the PR was frozen on ${main}, which is not a personal branch: nothing is pushed there`)
@@ -519,6 +533,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         )
         return
       }
+      yield* refusedRecord(recorded.success, decided.mergeCommit)
     })
 
     const lane = ports.lane ?? landingLane
@@ -625,6 +640,8 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             ports.log?.(
               `pr ${n} merge back pushed ${short(pushed.mergeCommit)}; recording it: ${asError(recorded.failure).message}`,
             )
+          } else {
+            yield* refusedRecord(recorded.success, pushed.mergeCommit)
           }
         }
         return { kind: 'done' } as const

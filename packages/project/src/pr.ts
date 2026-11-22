@@ -256,7 +256,12 @@ export const recordPrMergedBack = (project: string, n: number, merged: PayloadOf
     project,
     n,
     (state) => mergedBackTransition(state, merged),
-    (_state, appended) => appended,
+    (state, appended): 'recorded' | 'already' | 'refused' =>
+      appended
+        ? 'recorded'
+        : state.mergeBack?.prHead === merged.prHead && state.mergeBack.outcome === 'merged'
+          ? 'already'
+          : 'refused',
   )
 
 /** The merge back did not complete; with `unknown` it is not known whether the push landed, and the head stays owed. Once per head. */

@@ -267,17 +267,21 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       // a resolution made once `sync` is recorded, an agent's amend of a red merge, which is the build step's (`syncedStep`); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
       const step = syncedStep(state, d.how)
-      // The sync started from `target` or from the newer `lastPushed` (a descendant of it, else no sync happens): the
-      // merge holds what the later of the two held.
-      const held = Math.max(
-        heldAt(state, state.target ?? ''),
-        state.lastPushed === null ? 0 : heldAt(state, state.lastPushed),
-      )
+      // The sync started from `target` or from the newer `lastPushed`; the merge holds what the later of the two held. A
+      // count is recorded only when every commit it could have started from has an exact one — `heldAt`'s floor is for
+      // reading, and a guess written here would read as exact (#1354).
+      const starts = [state.target, state.lastPushed].filter((c): c is string => c !== null)
+      const counts = starts.map((c) => state.covers[c])
+      const exact = counts.length > 0 && counts.every((n) => n !== undefined)
+      const covers =
+        exact && state.covers[d.head] === undefined
+          ? { ...state.covers, [d.head]: Math.max(...(counts as number[])) }
+          : state.covers
       return {
         ...withStep(state, { step, headSha: d.head }),
         ...at,
         target: d.head,
-        covers: { ...state.covers, [d.head]: state.covers[d.head] ?? held },
+        covers,
         adopted: d.how === 'clean' ? null : state.adopted,
       }
     }
@@ -548,12 +552,17 @@ export function conflictRoundsLeft(
   return { used, left: Math.max(0, bound + granted - used), next: used + 1 }
 }
 
-/** The PR branch was merged back into `branch.personal` and pushed; only a PR in review, once per head. */
+/**
+ * The PR branch was merged back into `branch.personal` and pushed; once per head, for the head last pushed. The PR may have
+ * been closed or merged since the push, and the push still landed (#1354). A PR that never reached review has no such head.
+ * (A push that landed, a process that died before this, and a PR closed after is not found again: `mergeBackOwed` is in review only.)
+ */
 export function mergedBackTransition(
   state: PrState,
   merged: PayloadOf<'PrMergedBack'>,
 ): ToAppend<PayloadOf<'PrMergedBack'>> | null {
-  if (state.status !== 'in-review') return null
+  if (state.status !== 'in-review' && state.status !== 'merged' && state.status !== 'closed') return null
+  if (state.lastPushed !== merged.prHead) return null
   // A failure — `unknown` above all, which a landed push whose answer was lost looks like — never stands in the way of the merge being found.
   if (state.mergeBack?.prHead === merged.prHead && state.mergeBack.outcome === 'merged') return null
   return { type: 'PrMergedBack', actor: 'conductor', data: merged }
