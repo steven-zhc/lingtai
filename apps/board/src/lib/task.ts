@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 
 import { ceilingReached, daySpend, diffBaseShaOf, startOfLocalDay } from '@lingtai/conductor'
 import { githubClientFor, projectClient, projectFilter, type StepPlan } from '@lingtai/conductor/filter'
+import { PR_FIX_LABEL } from '@lingtai/conductor/labels'
 import { ownerlessClient } from '@lingtai/conductor/ownerless'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { readProjectTicket } from '@lingtai/conductor/read-ticket'
@@ -12,6 +13,8 @@ import {
   chatStream,
   reduceChat,
   reduceTicket,
+  isOpen,
+  type PrState,
   claimShapeOf,
   splitActivityOf,
   splitProgressOf,
@@ -93,6 +96,7 @@ import { eventStore } from '@lingtai/event-store'
 // anything. See `TicketView.found`.
 import { GitHubFailed } from '@lingtai/github'
 import { readProject } from '@lingtai/project'
+import type { PrDraftTicket } from '@lingtai/project'
 import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@lingtai/projector'
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
@@ -112,6 +116,8 @@ import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
 import { readProjectLocks } from './locks.ts'
+import { prName, type PrRead } from './pr-board.ts'
+import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
 import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
@@ -513,6 +519,8 @@ export interface StandingView {
   /** What an evidence row's source tag names: the project's base and the split's children (#1252). */
   satisfiedContext?: { base: string | null; children: number[] }
   /** The last person's move, only when its resulting lifecycle is still current. */
+  /** Where the ticket landed (kept past a close): what *LANDED · ON YOUR BRANCH* is decided from, never the project's mode today. */
+  landedOn?: OnBranchLanding | null
   afterMove?: {
     resolution: string
     by: string
@@ -867,6 +875,288 @@ export function withSatisfiedContext(
   }
 }
 
+// ── A team's landing, said on its task page (#1323, 0130 §4) ────────────────────────────────────────────────────────
+
+/** What the ticket's own stream says of its landing, kept past a close (`TicketState.landed`). */
+export interface OnBranchLanding {
+  readonly base: string
+  readonly mergeCommit: string
+  /** A person (or anything) closed the ticket after it landed. */
+  readonly closed: boolean
+  /** The ticket carries `lingtai:pr-fix`. */
+  readonly isFix: boolean
+  /** A `lingtai:pr-fix` ticket's claim cut: `pr` is null when no PR was open at the claim. */
+  readonly cutFrom: { readonly branch: string; readonly pr: number | null } | null
+}
+
+/** What the board read of the project's PRs: `error` for a read that failed, never an empty answer. */
+export type OnBranchRead =
+  | { readonly error: string }
+  | { readonly prs: readonly PrRead[]; readonly draft: readonly PrDraftTicket[] | { readonly error: string } }
+
+export type Holder =
+  | { readonly kind: 'open'; readonly pr: PrState }
+  | { readonly kind: 'merged'; readonly pr: PrState }
+  | { readonly kind: 'merging'; readonly pr: PrState }
+  | { readonly kind: 'after-end'; readonly pr: PrState }
+  | { readonly kind: 'draft' }
+  | { readonly kind: 'none' }
+  | { readonly kind: 'unread'; readonly error: string }
+
+/** The PR that holds `ticket`, by the store's own rules (a closed PR gives its tickets back; a merge holds what its commit held). */
+export function holderOf(ticket: string, base: string, personal: string, read: OnBranchRead): Holder {
+  if ('error' in read) return { kind: 'unread', error: read.error }
+  const prs = read.prs.flatMap((r) => ('pr' in r ? [r.pr] : []))
+  const holds = (p: PrState) =>
+    p.tickets.some((t) => t.ticket === ticket) || p.fixesLanded.some((f) => f.ticket === ticket)
+  const open = prs.find((p) => isOpen(p) && holds(p))
+  if (open !== undefined) return { kind: 'open', pr: open }
+  const merged = prs.find((p) => p.status === 'merged' && p.mergedTickets.includes(ticket))
+  if (merged !== undefined) return { kind: 'merged', pr: merged }
+  const merging = prs.find((p) => p.status === 'merged' && !p.mergedExact && holds(p))
+  if (merging !== undefined) return { kind: 'merging', pr: merging }
+  // A fix merged back into the draft (`PrMergedBack`) is in the draft even when its PR ended unmerged: the draft wins.
+  if (!('error' in read.draft) && read.draft.some((d) => d.ticket === ticket)) return { kind: 'draft' }
+  const ended = prs.find((p) => p.prBranch === base && !isOpen(p))
+  if (ended !== undefined) return { kind: 'after-end', pr: ended }
+  const unread = read.prs.find((r) => !('pr' in r))
+  if (unread !== undefined) return { kind: 'unread', error: `PR ${unread.n} could not be read` }
+  if ('error' in read.draft) return { kind: 'unread', error: read.draft.error }
+  if (read.draft.some((d) => d.ticket === ticket)) return { kind: 'draft' }
+  void personal
+  return { kind: 'none' }
+}
+
+export interface OnBranchSketch {
+  readonly main: string
+  readonly personal: string
+  readonly box: 'pr' | 'draft' | null
+  readonly label: string
+  readonly dots: readonly {
+    readonly ticket: string
+    readonly title: string
+    readonly fix: boolean
+    readonly this: boolean
+  }[]
+  /** Tickets in the box that are not drawn. */
+  readonly more: number
+}
+
+export interface WhereOnBranch {
+  /** The poster's small line beside the state word: `ON YOUR BRANCH`, `MERGED`, `IN PR #88`, or `NOT ON YOUR BRANCH`. */
+  readonly small: string
+  readonly in: {
+    readonly text: string
+    readonly failed: boolean
+    readonly host: string | null
+    readonly page: string | null
+  }
+  /** `<sha7>` on a branch, and the PR branch it is also in once there is one. */
+  readonly mergeCommit: { readonly sha: string; readonly on: string; readonly inBranch: string | null }
+  readonly closedWhen: string
+  /** Under `Closed when`: the PR also says `Closes #n` (a GitHub ticket still open). */
+  readonly alsoCloses: string | null
+  readonly change: PrFixLink | null
+  /** Extra readings: a pr-fix's, or why it landed where it did. */
+  readonly notes: readonly string[]
+  readonly sketch: OnBranchSketch
+}
+
+const MOST_DOTS = 5
+
+/**
+ * *Where it is* for a ticket that landed on a team's personal branch, or on a PR's branch (0130 §4): `null` — and the page
+ * is today's — unless the landing's own `base` says so. **Never the project's mode today**: a ticket that landed on `main`
+ * before the project became team is an ordinary solo landing.
+ */
+export function whereOnBranch(input: {
+  readonly ticket: string
+  readonly landing: OnBranchLanding
+  readonly project: string
+  readonly owner: string | null
+  readonly github: boolean
+  readonly branch: { readonly main: string; readonly personal: string }
+  readonly read: OnBranchRead
+}): WhereOnBranch | null {
+  const { ticket, landing, branch, read } = input
+  const prBranches =
+    'error' in read ? [] : read.prs.flatMap((r) => ('pr' in r && r.pr.prBranch !== null ? [r.pr.prBranch] : []))
+  if (landing.base !== branch.personal && !prBranches.includes(landing.base)) return null
+  const holder = holderOf(ticket, landing.base, branch.personal, read)
+  const sha = landing.mergeCommit.slice(0, 7)
+  const pageOf = (n: number | 'next') => `/pr/${input.project}/${n}`
+  const nameOf = (pr: PrState) => prName(pr)
+  const hostOf = (pr: PrState) => (pr.host === null ? null : pr.host.url)
+  const notes: string[] = []
+  if (landing.isFix && landing.cutFrom !== null && landing.cutFrom.pr === null)
+    notes.push('no PR was open when it was claimed, so it landed on your branch')
+
+  const draftDots = (): Pick<OnBranchSketch, 'dots' | 'more'> => {
+    const list =
+      'error' in read || 'error' in read.draft
+        ? []
+        : read.draft.map((d) => ({ ticket: d.ticket, title: d.title, fix: false }))
+    return windowed(list, ticket)
+  }
+  const prDots = (pr: PrState, only?: ReadonlySet<string>): Pick<OnBranchSketch, 'dots' | 'more'> => {
+    const fixes = new Set(pr.fixesLanded.map((f) => f.ticket))
+    return windowed(
+      pr.tickets
+        .filter((t) => only === undefined || only.has(t.ticket))
+        .map((t) => ({ ticket: t.ticket, title: t.title, fix: fixes.has(t.ticket) })),
+      ticket,
+    )
+  }
+  const sketchOf = (
+    box: OnBranchSketch['box'],
+    label: string,
+    dots: Pick<OnBranchSketch, 'dots' | 'more'>,
+  ): OnBranchSketch => ({
+    main: branch.main,
+    personal: branch.personal,
+    box,
+    label,
+    ...dots,
+  })
+  const closesNote = input.github && !landing.closed ? `the PR also says \`Closes #${ticket}\`` : null
+  const stateOf = (pr: PrState): string => {
+    switch (pr.status) {
+      case 'in-review':
+        return pr.host !== null && pr.host.url.startsWith('https://github.com/') ? 'open on GitHub' : 'in review'
+      case 'in-progress':
+        return 'being prepared'
+      case 'waiting':
+        return 'waiting on you'
+      case 'requested':
+        return 'requested'
+      default:
+        return 'in review'
+    }
+  }
+  const changeOf = (pr: PrState) =>
+    prFixTicketLink({ project: input.project, owner: input.owner, github: input.github, name: nameOf(pr) })
+
+  switch (holder.kind) {
+    case 'unread':
+      return {
+        small: 'ON YOUR BRANCH',
+        in: { text: 'which PR holds it could not be read', failed: true, host: null, page: null },
+        mergeCommit: { sha, on: landing.base, inBranch: null },
+        closedWhen: `its PR is merged into ${branch.main}`,
+        alsoCloses: null,
+        change: null,
+        notes,
+        sketch: sketchOf(null, '', { dots: [], more: 0 }),
+      }
+    case 'none':
+      return {
+        small: 'ON YOUR BRANCH',
+        in: { text: 'no PR or draft holds it', failed: false, host: null, page: null },
+        mergeCommit: { sha, on: landing.base, inBranch: null },
+        closedWhen: `its PR is merged into ${branch.main}`,
+        alsoCloses: null,
+        change: null,
+        notes,
+        sketch: sketchOf(null, '', { dots: [], more: 0 }),
+      }
+    case 'draft':
+      return {
+        small: 'ON YOUR BRANCH',
+        in: { text: 'not in a PR yet — the draft holds it', failed: false, host: null, page: pageOf('next') },
+        mergeCommit: { sha, on: landing.base, inBranch: null },
+        closedWhen: landing.closed
+          ? 'closed by a person; its code goes into the PR without `Closes`'
+          : `its PR is merged into ${branch.main}`,
+        alsoCloses: null,
+        change: null,
+        notes,
+        sketch: sketchOf('draft', 'in the draft · not submitted', draftDots()),
+      }
+    case 'open': {
+      const pr = holder.pr
+      const name = nameOf(pr)
+      const onFixBranch = landing.base === pr.prBranch
+      const fixNote = landing.isFix && onFixBranch ? ['cut from its branch for a change the review asked for'] : []
+      return {
+        small: landing.isFix && onFixBranch ? `IN ${name}` : 'ON YOUR BRANCH',
+        in: {
+          text: `${name} · ${stateOf(pr)}`,
+          failed: false,
+          host: hostOf(pr),
+          page: pageOf(pr.n ?? 0),
+        },
+        mergeCommit: { sha, on: landing.base, inBranch: pr.prBranch },
+        closedWhen: landing.closed
+          ? 'closed by a person; its code goes into the PR without `Closes`'
+          : `${name} is merged into ${branch.main} — Lingtai closes this ticket then`,
+        alsoCloses: closesNote,
+        change: changeOf(pr),
+        notes: [...notes, ...fixNote],
+        sketch: sketchOf('pr', `in ${name} · ${stateOf(pr)}`, prDots(pr)),
+      }
+    }
+    case 'merged':
+    case 'merging': {
+      const pr = holder.pr
+      const name = nameOf(pr)
+      const merged = holder.kind === 'merged'
+      const when = pr.ended === null ? '' : ` ${pr.ended.at.toISOString().slice(0, 10)}`
+      return {
+        small: merged ? 'MERGED' : 'ON YOUR BRANCH',
+        in: {
+          text: merged
+            ? `${name} · merged${when}`
+            : `${name} · merged — whether this ticket's commit is in the merge is still being checked`,
+          failed: false,
+          host: hostOf(pr),
+          page: pageOf(pr.n ?? 0),
+        },
+        mergeCommit: { sha, on: landing.base, inBranch: pr.prBranch },
+        closedWhen: merged
+          ? `closed when ${name} merged`
+          : `${name} is merged — Lingtai closes this ticket once its commit is proven in`,
+        alsoCloses: null,
+        change: null,
+        notes,
+        sketch: sketchOf('pr', `in ${name} · merged`, prDots(pr, merged ? new Set(pr.mergedTickets) : undefined)),
+      }
+    }
+    case 'after-end': {
+      const pr = holder.pr
+      const name = nameOf(pr)
+      return {
+        small: 'NOT ON YOUR BRANCH',
+        in: {
+          text: `landed on ${pr.prBranch ?? landing.base} after ${name} was ${pr.status === 'merged' ? 'merged' : 'closed'} — not on your branch; open a new ticket to carry it`,
+          failed: false,
+          host: hostOf(pr),
+          page: pageOf(pr.n ?? 0),
+        },
+        mergeCommit: { sha, on: landing.base, inBranch: null },
+        closedWhen: `no PR holds it; open a new ticket to carry it`,
+        alsoCloses: null,
+        change: null,
+        notes,
+        sketch: sketchOf(null, '', { dots: [], more: 0 }),
+      }
+    }
+  }
+}
+
+/** At most five dots, this ticket among them, in the order given; the rest are counted. */
+function windowed(
+  list: readonly { ticket: string; title: string; fix: boolean }[],
+  ticket: string,
+): Pick<OnBranchSketch, 'dots' | 'more'> {
+  const at = Math.max(
+    0,
+    list.findIndex((t) => t.ticket === ticket),
+  )
+  const start = Math.max(0, Math.min(at - Math.floor(MOST_DOTS / 2), list.length - MOST_DOTS))
+  const shown = list.slice(start, start + MOST_DOTS)
+  return { dots: shown.map((t) => ({ ...t, this: t.ticket === ticket })), more: list.length - shown.length }
+}
+
 function whoWaits(life: TicketLifecycle, base: string | null = null): string {
   switch (life.status) {
     case 'blocked':
@@ -979,6 +1269,16 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
       body !== undefined && item.github.bodyAfterWait !== null && item.github.bodyAfterWait === item.github.lastWait
         ? { result: body.outcome, detail: body.text }
         : null,
+    landedOn:
+      item.landed === null
+        ? null
+        : {
+            base: item.landed.base,
+            mergeCommit: item.landed.mergeCommit,
+            closed: life.status === 'closed',
+            isFix: item.labels.includes(PR_FIX_LABEL),
+            cutFrom: item.cutFrom === null ? null : { branch: item.cutFrom.branch, pr: item.cutFrom.pr },
+          },
     triageStatus: null,
     running: life.status === 'claimed' && run !== null ? runningPanelOf(run, null) : null,
     since: since === null ? null : since.toISOString(),

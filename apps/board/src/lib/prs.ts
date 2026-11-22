@@ -32,6 +32,7 @@ import {
   prPage,
   ticketsOnGitHub,
 } from './pr-page.ts'
+import type { OnBranchRead } from './task.ts'
 import type { LandedWhereRead } from './where-landed.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
@@ -429,3 +430,32 @@ export async function readGeneratedBody(project: string, n: number): Promise<str
     }),
   )
 }
+
+/** What the task page's *on your branch* part asks: the recipe's branches, the project's owner, and the PRs and the draft. */
+export type OnBranchPageRead =
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'team'
+      readonly recipe: Recipe
+      readonly owner: string | null
+      readonly read: OnBranchRead
+    }
+
+/**
+ * The part's one read (#1323). **Only a team project reads PRs**, so a solo project's task page asks nothing new. A read
+ * that fails is `{ error }`, never an empty list: the page then says it could not be read, not *not in a PR yet*.
+ * A recipe that cannot be read is `none`: `branch.personal` is unknown and the page says what it says today.
+ */
+export const readOnBranch = (project: string): Effect.Effect<OnBranchPageRead> =>
+  Effect.gen(function* () {
+    const state = yield* Effect.tryPromise({ try: () => readProject(project), catch: failed })
+    if (state === null || state === undefined) return { kind: 'none' } as const
+    const { recipe } = yield* Effect.tryPromise({ try: () => currentRecipe(state), catch: failed })
+    if (modeOf(recipe) !== 'team') return { kind: 'none' } as const
+    const read: OnBranchRead = yield* Effect.gen(function* () {
+      const prs = yield* readProjectPrs(project, eventStore)
+      const draft = yield* readDraftOf(project, recipe, prs)
+      return { prs, draft }
+    }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
+    return { kind: 'team', recipe, owner: state.owner ?? null, read } as const
+  }).pipe(Effect.catch(() => Effect.succeed({ kind: 'none' } as const)))

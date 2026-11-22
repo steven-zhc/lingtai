@@ -19,7 +19,7 @@ import {
 // the same hold rather than keeping three copies of the words.
 import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
-import { Fragment, type ReactNode } from 'react'
+import { Fragment, Suspense, type ReactNode } from 'react'
 
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
@@ -442,6 +442,7 @@ import { Discussion } from './discussion.tsx'
 import { EditPromptAction } from './edit-prompt.tsx'
 import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
+import { OnYourBranch } from './on-your-branch.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog, LiveLog, RawRunLog } from './run-log.tsx'
@@ -1405,6 +1406,13 @@ export function Standing({
             >
               {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle">Where it is</h2>}
               {isFramed ? null : stateReadout}
+
+              {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. */}
+              {standing.state !== 'queued' && standing.landedOn && project !== null && issue !== null ? (
+                <Suspense fallback={null}>
+                  <OnYourBranch project={project} ticket={String(issue)} landing={standing.landedOn} />
+                </Suspense>
+              ) : null}
 
               {!isFramed && (standing.state === 'blocked' || standing.afterMove) && progress !== null ? (
                 <Rail progress={progress} live={false} held={budget} />
