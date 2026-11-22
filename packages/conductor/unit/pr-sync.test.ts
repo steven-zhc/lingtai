@@ -63,6 +63,7 @@ const aWorld = (): World => ({
 function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPorts {
   const resolved: Record<string, string> = {
     'refs/lingtai/pr/1/main': MAIN,
+    'refs/lingtai/pr/1/pr': OTHER,
     'refs/lingtai/pr/1/personal': PERSONAL,
     [`${MERGE}^2`]: MAIN,
   }
