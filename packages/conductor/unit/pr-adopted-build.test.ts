@@ -56,4 +56,16 @@ describe('the build step and a head a person pushed', () => {
     const built: string[] = []
     expect(await run(state(HEAD), ports(built, 'red'))).toMatchObject({ kind: 'wait', reason: 'sync-red' })
   })
+
+  it('waits at once for an adopted head that builds red, even with a conflict agent: nothing was merged (#1352)', async () => {
+    const built: string[] = []
+    const refuses = () => {
+      throw new Error('no round may start for an adopted head')
+    }
+    const withAgent = {
+      ...ports(built, 'red'),
+      resolver: { standMerge: refuses, standCommit: refuses, locked: refuses },
+    } as unknown as PrPorts
+    expect(await run({ ...state(HEAD), main: 'main' }, withAgent)).toMatchObject({ kind: 'wait', reason: 'sync-red' })
+  })
 })

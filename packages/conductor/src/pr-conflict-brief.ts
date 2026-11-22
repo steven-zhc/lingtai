@@ -40,6 +40,8 @@ export interface ConflictBrief {
   readonly round: number
   readonly bound: number
   /** The refusal that bought this round: the build's output, or the review's blocking findings, verbatim (0108 §5). */
+  /** Set when the merge is clean and its build is red (#1352): the command and the output the agent is handed. */
+  readonly red?: { readonly command: string; readonly evidence: string }
   readonly refusal: { readonly step: 'build' | 'review' | 'answer'; readonly said: string } | null
 }
 
@@ -52,7 +54,7 @@ export function sidesOf(brief: ConflictBrief): string {
   const ours = failed(brief.ours)
     ? [`(could not be read: ${brief.ours.failed})`]
     : brief.ours.length === 0
-      ? ['(no ticket the branch holds touched these paths)']
+      ? [brief.red === undefined ? '(no ticket the branch holds touched these paths)' : '(the branch holds no ticket)']
       : brief.ours.map((t) => {
           const body = typeof t.body === 'string' ? t.body.trim() : `(body could not be read: ${t.body.failed})`
           return [
@@ -63,10 +65,10 @@ export function sidesOf(brief: ConflictBrief): string {
   const theirs = failed(brief.theirs)
     ? [`(could not be read: ${brief.theirs.failed})`]
     : brief.theirs.length === 0
-      ? ['(no commit touched these paths)']
+      ? [brief.red === undefined ? '(no commit touched these paths)' : '(no commit was merged)']
       : brief.theirs.map((c) => `- ${short(c.sha)} ${c.subject} (${c.author})`)
   return [
-    `## What ${brief.into} meant — the tickets whose code conflicts`,
+    `## What ${brief.into} meant — the tickets ${brief.red === undefined ? 'whose code conflicts' : 'whose files the failing output names'}`,
     ...ours,
     '',
     `## What ${brief.from} meant — the commits that brought the other side`,
@@ -77,6 +79,27 @@ export function sidesOf(brief: ConflictBrief): string {
 /** The prompt of one round of the conflict agent, as parts a `recordPrompt` takes. */
 export function prConflictBrief(brief: ConflictBrief): string[] {
   const merge = `${brief.from} at ${short(brief.commit)} into ${brief.into}`
+  if (brief.red !== undefined) {
+    return [
+      `The merge of ${merge} is clean, but \`${brief.red.command}\` fails on it. This is round ${brief.round} of ${brief.bound}.`,
+      '\n\n',
+      `The merge commit is checked out in this directory. Both sides were right alone and are wrong together: change ` +
+        `it so **both** sides keep what they meant and the build passes, then **amend** the merge commit ` +
+        '(`git commit --amend --no-edit`). Do not add a commit on top of it, do not reset, rebase or change its parents, ' +
+        `and do not drop either side: the commit you leave must have exactly two parents, ${brief.into} and ${short(brief.commit)}.`,
+      '\n\n',
+      `## What failed\n\`${brief.red.command}\`:\n${brief.red.evidence.trim() === '' ? '(no output)' : brief.red.evidence}`,
+      '\n\n',
+      sidesOf(brief),
+      ...(brief.refusal === null
+        ? []
+        : [
+            '\n\n',
+            `## Why the last attempt was refused (${brief.refusal.step})\n${brief.refusal.said}\n\n` +
+              'Fix what it names, in the commit this directory stands in.',
+          ]),
+    ]
+  }
   return [
     `You are resolving a merge conflict: ${merge}. This is round ${brief.round} of ${brief.bound}.`,
     '\n\n',
@@ -100,6 +123,23 @@ export function prConflictBrief(brief: ConflictBrief): string[] {
 
 /** The prompt of the reviewer of a resolution: its remerge diff, and the two sides it had to keep. */
 export function prReviewBrief(brief: ConflictBrief, diff: string, clipped: boolean): string[] {
+  if (brief.red !== undefined) {
+    return [
+      `You are reviewing the fix of a clean merge whose build failed: ${brief.from} at ${short(brief.commit)} into ${brief.into}; \`${brief.red.command}\` failed on the merge.`,
+      '\n\n',
+      'Below is what the agent changed **beyond** git’s own merge (`git show --remerge-diff`). Judge whether it ' +
+        'keeps what both sides meant, makes the build pass, and invents nothing. Answer with JSON only: ' +
+        '`{"findings":[{"severity":"blocker"|"major"|"minor","file":string,"line":number|null,"claim":string,' +
+        '"failureScenario":string}]}` — an empty list passes; a blocker or a major refuses it.',
+      '\n\n',
+      `## What failed\n${brief.red.evidence.trim() === '' ? '(no output)' : brief.red.evidence}`,
+      '\n\n',
+      sidesOf(brief),
+      '\n\n',
+      `## The fix${clipped ? ' (clipped: it is longer than the reviewer reads whole)' : ''}\n`,
+      diff,
+    ]
+  }
   return [
     `You are reviewing the resolution of a merge conflict: ${brief.from} at ${short(brief.commit)} into ${brief.into}.`,
     '\n\n',

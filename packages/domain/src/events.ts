@@ -2694,13 +2694,15 @@ export const PrMergeBackFailed = z.object({
  * dispatched, and never refunded**: 0108 §8 resets no counter on a restart, so the rounds used for a commit are the
  * count of these events for it.
  *
- * @summary A round of the conflict agent started on a PR: one commit merged into another, round n.
+ * @summary A round of the conflict agent started on a PR: one commit merged into another, round n, for a conflict or a red build of a clean merge.
  */
 export const SyncRoundStarted = z.object({
   merging: z.enum(['main', 'back']),
   commit: z.string().min(1),
   start: z.string().min(1),
   round: z.number().int().positive(),
+  /** Why the round was bought (#1352): absent is a `conflict`, as every round was before a red build could buy one. */
+  why: z.enum(['conflict', 'red']).optional(),
 })
 
 /**

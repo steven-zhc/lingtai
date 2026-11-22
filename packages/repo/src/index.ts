@@ -41,6 +41,7 @@ export {
   PR_WORKTREE_PREFIXES,
   mergeInWorktree,
   standMergeUp,
+  standCommitUp,
   sweepPrWorktrees,
   type GitPort,
   type StandMergeResult,
