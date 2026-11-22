@@ -703,9 +703,31 @@ const closeMergedTickets = (
       // commit it lacks proves nothing. Fetched before asking, on every sweep; a fetch that fails leaves them unproven.
       const fetched = left.length === 0 ? null : yield* Effect.result(ports.fetch(project))
       if (fetched !== null && Result.isFailure(fetched)) unproven += left.length
+      // A fetch of the branches that succeeds is not a head that arrived: a squash merge deletes the PR branch, and the
+      // mirror only mirrors branches. The head is checked for, then fetched by the PR's own ref, which the host keeps; one
+      // still absent proves nothing either way, and git's 128 for it is never read as *not an ancestor*.
+      const headRef = `refs/lingtai/pr/${state.n}/merged-head`
+      let headHere = false
+      if (fetched !== null && !Result.isFailure(fetched)) {
+        const have = () =>
+          ports.git(project, ['cat-file', '-e', `${state.ended!.headSha}^{commit}`]).pipe(
+            Effect.map((a) => a.code === 0),
+            Effect.catch(() => Effect.succeed(false)),
+          )
+        headHere = yield* have()
+        if (!headHere) {
+          yield* ports
+            .remote(project, ['fetch', 'origin', `+refs/pull/${state.n}/head:${headRef}`])
+            .pipe(Effect.catch(() => Effect.void))
+          headHere = yield* have()
+        }
+      }
       for (const t of fetched !== null && Result.isFailure(fetched) ? [] : left) {
         let held = false
-        for (const into of [state.ended.headSha, state.main === null ? null : `refs/heads/${state.main}`]) {
+        for (const into of [
+          headHere ? state.ended.headSha : null,
+          state.main === null ? null : `refs/heads/${state.main}`,
+        ]) {
           if (into === null || held) continue
           const ask = ['merge-base', '--is-ancestor', t.mergeCommit, into] as const
           const answer = yield* ports.git(project, ask)
@@ -714,6 +736,8 @@ const closeMergedTickets = (
         if (held) merged = [...merged, t]
         else unproven++
       }
+      // Dropped only after the ancestry was asked: the ref is what kept the fetched head from being collected.
+      yield* dropRef(ports, project, headRef)
     }
     for (const t of merged) {
       const ticketId = ticketStream(project, t.ticket)
