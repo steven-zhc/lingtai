@@ -509,6 +509,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   PrDraftOpened: (d) =>
     `Draft pull request #${need(d, 'number')} was ${d['found'] === 'existing' ? 'found' : 'opened'}: ${need(d, 'url')}`,
   PrCiSkipped: (d) => `The PR has no CI step: ${clip(d['why'])}`,
+  PrCiFollowing: (d) => `CI is following ${sha(d, 'headSha')}`,
   PrChecked: (d) =>
     d['verdict'] === 'green'
       ? `CI is green on ${sha(d, 'headSha')}`

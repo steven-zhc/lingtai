@@ -22,6 +22,7 @@ describe('ciLines', () => {
     ]
     const lines = ciLines({ ...emptyPr, checks: { headSha: 'a', verdict: 'red' as const, checks } })
     expect(lines[0]).toContain('✕ test ·')
+    expect(lines[0]).toContain('0 of 2 green')
     expect(lines.join('\n')).not.toContain('preview')
   })
 })

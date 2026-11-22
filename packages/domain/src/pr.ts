@@ -53,6 +53,8 @@ export interface PrState {
   checked: { readonly headSha: string; readonly verdict: 'green' | 'red' } | null
   /** The latest `PrChecked`, whole: what the PR page and `lingtai pr` draw the CI line and the failing checks from. */
   checks: PayloadOf<'PrChecked'> | null
+  /** The head CI is following (`PrCiFollowing`): reset by `PrInProgress`, moved when the pull request's head moves. */
+  following: string | null
   /** The latest `PrCiSkipped`: *no CI step*, and why. */
   ciSkipped: PayloadOf<'PrCiSkipped'> | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
@@ -89,6 +91,7 @@ export const emptyPr: PrState = {
   checked: null,
   checks: null,
   ciSkipped: null,
+  following: null,
   steps: [],
   wait: null,
   refusal: null,
@@ -135,6 +138,24 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         target: d.frozenSha,
         tickets: d.tickets,
         steps: [],
+        wait: null,
+        following: null,
+      }
+    }
+    case 'PrCiFollowing': {
+      const d = event.data as PayloadOf<'PrCiFollowing'>
+      // The head moved: its checks are read afresh, so the verdict and the `ci` step's record are of the old one. The
+      // 30-minute rule counts from when the new head was first followed, unless it is the head Lingtai pushed.
+      return {
+        ...state,
+        ...at,
+        steps: state.steps.filter((s) => s.step !== 'ci'),
+        following: d.headSha,
+        checked: null,
+        checks: null,
+        ciSkipped: null,
+        pushedAt: d.headSha === state.lastPushed ? state.pushedAt : event.at,
+        status: state.status === 'waiting' ? 'in-progress' : state.status,
         wait: null,
       }
     }
@@ -321,13 +342,23 @@ export function draftOpenedTransition(
   return { type: 'PrDraftOpened', actor: 'conductor', data: opened }
 }
 
+/** CI follows this head. Nothing is appended for the head it already follows. */
+export function ciFollowingTransition(
+  state: PrState,
+  following: PayloadOf<'PrCiFollowing'>,
+): ToAppend<PayloadOf<'PrCiFollowing'>> | null {
+  if (state.status !== 'in-progress') return null
+  if (state.following === following.headSha) return null
+  return { type: 'PrCiFollowing', actor: 'conductor', data: following }
+}
+
 /** The step `ci` is passed over: the project has none. Recorded once per pass through In progress. */
 export function ciSkippedTransition(
   state: PrState,
   skipped: PayloadOf<'PrCiSkipped'>,
 ): ToAppend<PayloadOf<'PrCiSkipped'>> | null {
   if (!walking(state) || state.steps.some((s) => s.step === 'ci')) return null
-  if (skipped.headSha !== (state.target ?? state.frozenSha)) return null
+  if (skipped.headSha !== state.following) return null
   return { type: 'PrCiSkipped', actor: 'conductor', data: skipped }
 }
 
@@ -340,7 +371,7 @@ export function checkedTransition(
   checked: PayloadOf<'PrChecked'>,
 ): ToAppend<PayloadOf<'PrChecked'>> | null {
   if (!walking(state)) return null
-  if (checked.headSha !== (state.target ?? state.frozenSha)) return null
+  if (checked.headSha !== state.following) return null
   // Green is the step's record, so it is appended while the step is not recorded (a retry's new pass starts empty).
   if (checked.verdict === 'green') {
     if (state.steps.some((s) => s.step === 'ci')) return null
@@ -382,9 +413,7 @@ export function closedTransition(
 
 /** A step that needs a person; the same wait twice in a row appends nothing. */
 export function waitTransition(state: PrState, wait: PayloadOf<'PrWaiting'>): ToAppend<PayloadOf<'PrWaiting'>> | null {
-  // A head that moved while the PR was being marked ready takes it back out of In review.
-  const takenBack = state.status === 'in-review' && wait.reason === 'branch-moved'
-  if (state.status !== 'in-progress' && state.status !== 'waiting' && !takenBack) return null
+  if (state.status !== 'in-progress' && state.status !== 'waiting') return null
   if (state.status === 'waiting' && state.wait?.step === wait.step && state.wait.reason === wait.reason) return null
   return { type: 'PrWaiting', actor: 'conductor', data: wait }
 }

@@ -26,6 +26,7 @@ import {
   restartTransition,
   draftOpenedTransition,
   ciSkippedTransition,
+  ciFollowingTransition,
   checkedTransition,
   openedTransition,
   mergedTransition,
@@ -201,6 +202,21 @@ export const recordPrCiSkipped = (project: string, n: number, skipped: PayloadOf
     project,
     n,
     (state) => ciSkippedTransition(state, skipped),
+    (_state, appended) => appended,
+  )
+
+/** CI follows this head; a head that moved takes the walk back to `ci` on it. */
+export const recordPrCiFollowing = (
+  project: string,
+  n: number,
+  following: PayloadOf<'PrCiFollowing'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => ciFollowingTransition(state, following),
     (_state, appended) => appended,
   )
 

@@ -38,7 +38,7 @@ export function ciLines(pr: PrState): string[] {
   const head =
     read.verdict === 'green'
       ? `  CI green · ${read.checks.filter((c) => passing.has(c.state)).length}/${total} checks passing`
-      : `  CI ✕ ${failing.map((c) => c.name).join(', ')} · ${total - failing.length} of ${total} green`
+      : `  CI ✕ ${failing.map((c) => c.name).join(', ')} · ${read.checks.filter((c) => passing.has(c.state)).length} of ${total} green`
   return [
     head,
     ...(skipped.length === 0 ? [] : [`    skipped: ${skipped.map((c) => c.name).join(', ')}`]),

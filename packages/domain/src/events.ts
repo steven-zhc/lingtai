@@ -2607,6 +2607,14 @@ export const PrDraftOpened = z.object({
 export const PrCiSkipped = z.object({ headSha: z.string().min(1), why: z.string() })
 
 /**
+ * The head the `ci` step is following. A PR's branch is shared, so its head moves (a suggestion, *Update branch*, a push):
+ * CI is read on the head the pull request has now, and a head that moved takes the PR back to `ci` on the new one.
+ *
+ * @summary A PR's CI now follows this head commit: the pull request's head moved, or CI began reading it.
+ */
+export const PrCiFollowing = z.object({ headSha: z.string().min(1) })
+
+/**
  * The project's CI finished on the PR's head: `green` (the `ci` step is done) or `red` (the PR then waits on a person).
  * `checks` are the ones read, by name, state and link; a check's `artifacts` are links to what it left on the CI platform.
  *
@@ -2988,6 +2996,7 @@ export const EVENTS = {
   PrPushed,
   PrDraftOpened,
   PrCiSkipped,
+  PrCiFollowing,
   PrChecked,
   PrOpened,
   PrMerged,
@@ -3111,6 +3120,7 @@ export const EVENT_AT = {
   PrPushed: ['outside'],
   PrDraftOpened: ['outside'],
   PrCiSkipped: ['outside'],
+  PrCiFollowing: ['outside'],
   PrChecked: ['outside'],
   PrOpened: ['outside'],
   PrMerged: ['outside'],

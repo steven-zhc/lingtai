@@ -317,6 +317,7 @@ const SAMPLES = {
   PrPushed: [{ headSha: 'a'.repeat(40), found: 'pushed' }],
   PrDraftOpened: [{ number: 7, nodeId: 'PR_x', url: 'https://github.com/o/r/pull/7', found: 'opened' }],
   PrCiSkipped: [{ headSha: 'a'.repeat(40), why: 'no workflow runs on pull requests' }],
+  PrCiFollowing: [{ headSha: 'a'.repeat(40) }],
   PrChecked: [
     {
       headSha: 'a'.repeat(40),

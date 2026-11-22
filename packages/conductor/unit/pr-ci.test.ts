@@ -37,14 +37,10 @@ interface World {
   detect: 'configured' | 'none'
   draft: boolean
   pullHead: string
-  pushOnMark?: string
-  failGetAfterMark?: boolean
-  failGetOn?: number
-  convertFails?: boolean
-  gets?: number
   pullHeads?: string[]
+  checksBySha?: Record<string, CiCheck[]>
+  observedShas: string[]
   marked: string[]
-  reverted: string[]
   readFails: boolean
   markFails: boolean
   observed: number
@@ -82,9 +78,12 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
     capabilities: { trigger: 'on-push', canRerun: false, canReadLogs: false },
     detect: () => Effect.succeed(w.detect),
     start: () => Effect.void,
-    observe: () => {
+    observe: (sha) => {
       w.observed++
-      return w.readFails ? Effect.fail(new Error('the read failed')) : Effect.succeed({ checks: w.checks })
+      w.observedShas.push(sha)
+      return w.readFails
+        ? Effect.fail(new Error('the read failed'))
+        : Effect.succeed({ checks: w.checksBySha?.[sha] ?? w.checks })
     },
   }
   const github = {
@@ -101,29 +100,16 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
         },
       ]),
     getPull: () =>
-      (w.gets = (w.gets ?? 0) + 1) === w.failGetOn
-        ? Effect.fail(new GitHubFailed(0, 'pulls/7', 'down'))
-        : w.failGetAfterMark === true && w.marked.length > 0
-          ? Effect.fail(new GitHubFailed(0, 'pulls/7', 'down'))
-          : Effect.succeed({
-              state: 'open',
-              merged: false,
-              mergeCommitSha: null,
-              headSha: w.pullHeads?.shift() ?? w.pullHead,
-              updatedAt: 'x',
-              draft: w.draft,
-            } satisfies PullState),
-    convertToDraft: (id: string) =>
-      w.convertFails
-        ? Effect.fail(new GitHubFailed(0, '/graphql', 'down'))
-        : Effect.sync(() => void w.reverted.push(id)),
+      Effect.succeed({
+        state: 'open',
+        merged: false,
+        mergeCommitSha: null,
+        headSha: w.pullHeads?.shift() ?? w.pullHead,
+        updatedAt: 'x',
+        draft: w.draft,
+      } satisfies PullState),
     markReadyForReview: (id: string) =>
-      w.markFails
-        ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom'))
-        : Effect.sync(() => {
-            w.marked.push(id)
-            if (w.pushOnMark !== undefined) w.pullHead = w.pushOnMark
-          }),
+      w.markFails ? Effect.fail(new GitHubFailed(0, '/graphql', 'boom')) : Effect.sync(() => void w.marked.push(id)),
   } as unknown as GitHub
   return {
     store,
@@ -146,7 +132,7 @@ const aWorld = (checks: CiCheck[]): World => ({
   draft: true,
   pullHead: FROZEN,
   marked: [],
-  reverted: [],
+  observedShas: [],
   readFails: false,
   markFails: false,
   observed: 0,
@@ -164,6 +150,7 @@ describe('the ci and ready steps', () => {
       'PrInProgress',
       'PrPushed',
       'PrDraftOpened',
+      'PrCiFollowing',
       'PrChecked',
       'PrOpened',
     ])
@@ -177,7 +164,13 @@ describe('the ci and ready steps', () => {
     const w = aWorld([check('a', 'running')])
     const p = ports(store, w, recipeWith())
     await serve(p)
-    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrDraftOpened'])
+    expect(await types(store)).toEqual([
+      'PrSubmitRequested',
+      'PrInProgress',
+      'PrPushed',
+      'PrDraftOpened',
+      'PrCiFollowing',
+    ])
     w.checks = [check('a', 'success')]
     await serve(p)
     expect((await types(store)).slice(-2)).toEqual(['PrChecked', 'PrOpened'])
@@ -252,7 +245,13 @@ describe('the ci and ready steps', () => {
     const w = aWorld([])
     w.readFails = true
     await serve(ports(store, w, recipeWith()))
-    expect(await types(store)).toEqual(['PrSubmitRequested', 'PrInProgress', 'PrPushed', 'PrDraftOpened'])
+    expect(await types(store)).toEqual([
+      'PrSubmitRequested',
+      'PrInProgress',
+      'PrPushed',
+      'PrDraftOpened',
+      'PrCiFollowing',
+    ])
   })
 
   it('pr.ci.provider none is PrCiSkipped and the walk goes on to ready', async () => {
@@ -286,57 +285,48 @@ describe('the ci and ready steps', () => {
     expect(await types(failing)).not.toContain('PrOpened')
   })
 
-  it('a head pushed after CI was read is not marked ready and appends no PrOpened', async () => {
+  it('a head that moved before ready goes back to ci on the new head, and green there marks it ready', async () => {
     const store = await frozen()
+    const B = 'b'.repeat(40)
     const w = aWorld([check('a', 'success')])
-    w.pullHead = 'b'.repeat(40)
+    w.pullHeads = [FROZEN]
+    w.pullHead = B
+    await serve(ports(store, w, recipeWith()))
+    expect(w.observedShas).toEqual([FROZEN, B])
+    expect(w.marked).toEqual(['PR_7'])
+    const all = await store.read(prStream('lingtai', 1))
+    expect(all.filter((e) => e.type === 'PrCiFollowing').map((e) => (e.data as { headSha: string }).headSha)).toEqual([
+      FROZEN,
+      B,
+    ])
+    const s = reducePr(all)
+    expect(s.status).toBe('in-review')
+    expect(s.checks?.headSha).toBe(B)
+    expect(all.some((e) => e.type === 'PrWaiting')).toBe(false)
+  })
+
+  it('a head that moved and is red waits ci-red naming the new head', async () => {
+    const store = await frozen()
+    const B = 'b'.repeat(40)
+    const w = aWorld([check('a', 'success')])
+    w.checksBySha = { [B]: [check('e2e', 'failure')] }
+    w.pullHeads = [FROZEN]
+    w.pullHead = B
     await serve(ports(store, w, recipeWith()))
     expect(w.marked).toEqual([])
-    expect(await types(store)).not.toContain('PrOpened')
-    expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
-  })
-
-  it('a push landing between the look and the mutation appends no PrOpened', async () => {
-    const store = await frozen()
-    const w = aWorld([check('a', 'success')])
-    w.pushOnMark = 'b'.repeat(40)
-    await serve(ports(store, w, recipeWith()))
-    expect(w.reverted).toEqual(['PR_7'])
-    expect(await types(store)).not.toContain('PrOpened')
-    expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'branch-moved' })
-  })
-
-  it('a failed read after marking ready puts it back to a draft and records no PrOpened', async () => {
-    const store = await frozen()
-    const w = aWorld([check('a', 'success')])
-    w.failGetAfterMark = true
-    await serve(ports(store, w, recipeWith())).catch(() => undefined)
-    expect(w.reverted).toEqual(['PR_7'])
-    expect(await types(store)).not.toContain('PrOpened')
-  })
-
-  it('a push after the append is put back to a draft and the log leaves In review', async () => {
-    const store = await frozen()
-    const w = aWorld([check('a', 'success')])
-    // getPull calls: ready's look, after the mutation, next to the append, then the settling look.
-    w.pullHeads = [FROZEN, FROZEN, FROZEN, 'b'.repeat(40)]
-    await serve(ports(store, w, recipeWith()))
-    expect(w.reverted).toEqual(['PR_7'])
     const s = reducePr(await store.read(prStream('lingtai', 1)))
-    expect(s.status).toBe('waiting')
-    expect(s.wait).toMatchObject({ reason: 'branch-moved' })
+    expect(s.wait).toMatchObject({ step: 'ci', reason: 'ci-red', headSha: B })
+    expect(s.wait?.detail).toContain(B.slice(0, 7))
   })
 
-  it('a failed settling read and a failed conversion still leave the log out of In review', async () => {
+  it('ci follows the pull request’s head and not the frozen target', async () => {
     const store = await frozen()
-    const w = aWorld([check('a', 'success')])
-    // getPull calls: ready's look, after the mutation, next to the append, then the settling look (fails).
-    w.failGetOn = 4
-    w.convertFails = true
-    await serve(ports(store, w, recipeWith())).catch(() => undefined)
-    const s = reducePr(await store.read(prStream('lingtai', 1)))
-    expect(s.status).toBe('waiting')
-    expect(s.wait).toMatchObject({ reason: 'branch-moved' })
+    const B = 'b'.repeat(40)
+    const w = aWorld([check('a', 'running')])
+    w.pullHead = B
+    await serve(ports(store, w, recipeWith()))
+    expect(w.observedShas).toEqual([B])
+    expect(reducePr(await store.read(prStream('lingtai', 1))).following).toBe(B)
   })
 
   it('the step code imports nothing from the one adapter', () => {

@@ -20,8 +20,6 @@ import {
   prDescription,
   prStream,
   ciVerdict,
-  openedTransition,
-  reducePr,
   ticketStream,
 } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -33,9 +31,9 @@ import {
   recordPrClosed,
   recordPrMerged,
   readPr,
-  readPrEvents,
   readPrDraft,
   recordPrCiSkipped,
+  recordPrCiFollowing,
   recordPrChecked,
   recordPrDraftOpened,
   recordPrInProgress,
@@ -356,8 +354,6 @@ const severalOpen = (pulls: readonly { number: number; url: string }[], target: 
   headSha: target,
 })
 
-const cwdSha = (state: PrState): string | null => state.target ?? state.frozenSha
-
 /** How a failing check is named in a wait: its name, how it ended, and where to open it. */
 const failingLine = (f: { name: string; state: string; url: string }): string =>
   `${f.name} (${f.state})${f.url === '' ? '' : ` ${f.url}`}`
@@ -385,10 +381,25 @@ const ciStep: PrStep = {
   name: 'ci',
   run: ({ project, n, state, ports }) =>
     Effect.gen(function* () {
-      const target = cwdSha(state)
-      if (target === null || state.prBranch === null) return { kind: 'again' } as StepAnswer
+      if (state.prBranch === null || state.host === null) return { kind: 'again' } as StepAnswer
       const recipe = yield* ports.recipe(project)
       const settings = ciOf(recipe)
+      if (ports.ci === undefined && settings.provider !== 'none') return { kind: 'again' } as StepAnswer
+      // The head is the pull request's own *now*: the branch is shared, so it moves (a suggestion, *Update branch*, a push).
+      const github = yield* ports.github(project)
+      const pull = yield* github
+        .getPull(state.host.number)
+        .pipe(
+          Effect.catch((err: unknown) =>
+            err instanceof GitHubFailed && !(err instanceof PermissionDenied) && notThePersons(err)
+              ? Effect.succeed(null)
+              : Effect.fail(asError(err)),
+          ),
+        )
+      if (pull === null) return { kind: 'again' } as StepAnswer
+      const target = pull.headSha
+      // Recorded as the step's own event, so the verdict and every wait carry the head CI followed.
+      yield* recordPrCiFollowing(project, n, { headSha: target }, ports.store)
       const skipped = (why: string): StepAnswer => ({
         kind: 'done',
         headSha: target,
@@ -397,7 +408,6 @@ const ciStep: PrStep = {
       if (settings.provider === 'none') return skipped('the recipe says pr.ci.provider: none')
       if (ports.ci === undefined) return { kind: 'again' } as StepAnswer
       // Built over the step's own (bounded) GitHub, so no read the adapter makes outlives the walk's limit.
-      const github = yield* ports.github(project)
       const provider = yield* ports.ci(project, github)
       if (provider === null) return skipped('the recipe says pr.ci.provider: none')
 
@@ -418,7 +428,7 @@ const ciStep: PrStep = {
         const verdict = ciVerdict({
           checks,
           required: settings.required,
-          pushedAt: state.pushedAt ?? new Date(now),
+          pushedAt: (yield* readPr(project, n, ports.store))?.pushedAt ?? new Date(now),
           now: new Date(now),
           timeoutMs: settings.timeoutMs,
         })
@@ -487,8 +497,8 @@ const readyStep: PrStep = {
   name: 'ready',
   run: ({ project, state, ports }) =>
     Effect.gen(function* () {
-      const target = cwdSha(state)
-      if (target === null || state.host === null) return { kind: 'again' } as StepAnswer
+      const followed = state.following
+      if (followed === null || state.host === null) return { kind: 'again' } as StepAnswer
       const host = state.host
       const github = yield* ports.github(project)
       const pull = yield* github
@@ -501,110 +511,21 @@ const readyStep: PrStep = {
           ),
         )
       if (pull === null) return { kind: 'again' } as StepAnswer
-      // CI's verdict is about `target`; a head pushed since is a different commit and was never read.
-      if (pull.headSha !== target) {
-        // A head pushed while an earlier attempt was promoting it may already be ready, unread: back to a draft.
-        if (!pull.draft) yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
+      // A moved head is the ordinary case, never a wait: nothing is marked, and the walk goes back to `ci` on the new head.
+      if (pull.headSha !== followed) {
         return {
-          kind: 'wait',
-          reason: 'branch-moved',
-          detail: `the pull request is at ${pull.headSha.slice(0, 7)}, but CI was read on ${target.slice(0, 7)}`,
-          headSha: target,
+          kind: 'done',
+          headSha: followed,
+          record: (project, n, store) => recordPrCiFollowing(project, n, { headSha: pull.headSha }, store),
         } as StepAnswer
       }
-      let marked = false
-      if (pull.draft) {
-        yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
-        marked = true
-        // The mutation takes no expected head, so the head is read again after it. A push that landed in between has
-        // been promoted unread: it is put back to a draft, and `PrOpened` is never appended for a commit CI did not read.
-        const after = yield* github.getPull(host.number).pipe(
-          Effect.catch((err: unknown) =>
-            // Cannot tell whether a push landed: back to a draft rather than leave an unread head ready.
-            github.convertToDraft(host.nodeId).pipe(
-              Effect.mapError(asError),
-              Effect.flatMap(() => Effect.fail(asError(err))),
-            ),
-          ),
-        )
-        if (after.headSha !== target) {
-          yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
-          return {
-            kind: 'wait',
-            reason: 'branch-moved',
-            detail: `the pull request moved to ${after.headSha.slice(0, 7)} while it was marked ready, but CI was read on ${target.slice(0, 7)}`,
-            headSha: target,
-          } as StepAnswer
-        }
-      }
+      // The gap between this look and the mutation is accepted: GitHub has no "mark ready only if the head is still X".
+      if (pull.draft) yield* github.markReadyForReview(host.nodeId).pipe(Effect.mapError(asError))
       return {
         kind: 'done',
-        headSha: target,
+        headSha: followed,
         record: (project, n, store) =>
-          Effect.gen(function* () {
-            const opened = { host: 'github' as const, number: host.number, url: host.url }
-            // The log leaves In review **first**, so a compensation that fails halfway leaves the log on the safe side: a
-            // Waiting PR is re-walked, and `ready` converts a ready head it never read back to a draft. Both halves are
-            // tried either way; a failure of either is raised afterwards.
-            const revert = (why: string) =>
-              Effect.gen(function* () {
-                const waited = yield* recordPrWaiting(
-                  project,
-                  n,
-                  { step: 'ready', reason: 'branch-moved', detail: why, headSha: target },
-                  store,
-                ).pipe(
-                  Effect.as(null as Error | null),
-                  Effect.catch((e: unknown) => Effect.succeed(asError(e))),
-                )
-                const converted = yield* github.convertToDraft(host.nodeId).pipe(
-                  Effect.as(null as Error | null),
-                  Effect.catch((e: unknown) => Effect.succeed(asError(e))),
-                )
-                const failed = waited ?? converted
-                if (failed !== null) return yield* Effect.fail(failed)
-              })
-            // The store is read first and the pull request last, so the look is the thing next to the append: no read sits
-            // between them for a push to land in. A head that moved, or a look that failed, is never recorded as In review.
-            const events = yield* readPrEvents(project, n, store)
-            const state = reducePr(events)
-            const next = openedTransition(state, opened)
-            if (next === null) return false
-            const last = yield* github
-              .getPull(host.number)
-              .pipe(
-                Effect.catch((err: unknown) =>
-                  (marked ? github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError)) : Effect.void).pipe(
-                    Effect.andThen(Effect.fail(asError(err))),
-                  ),
-                ),
-              )
-            if (last.headSha !== target) {
-              if (marked) yield* github.convertToDraft(host.nodeId).pipe(Effect.mapError(asError))
-              return yield* Effect.fail(
-                new Error(`the pull request moved to ${last.headSha.slice(0, 7)} before In review was recorded`),
-              )
-            }
-            yield* Effect.tryPromise({
-              try: () => store.append(prStream(project, n), state.version, [next]),
-              catch: asError,
-            })
-            // A push may still have landed in the instant between the look and the append. It is caught here, put back to a
-            // draft, and the log says so: In review is never left standing on a head CI did not read.
-            const settled = yield* github
-              .getPull(host.number)
-              .pipe(
-                Effect.catch((err: unknown) =>
-                  revert(`could not confirm the head after marking it ready: ${asError(err).message}`).pipe(
-                    Effect.andThen(Effect.fail(asError(err))),
-                  ),
-                ),
-              )
-            if (settled.headSha !== target) {
-              yield* revert(`the pull request moved to ${settled.headSha.slice(0, 7)} as it was marked ready`)
-            }
-            return true
-          }),
+          recordPrOpened(project, n, { host: 'github' as const, number: host.number, url: host.url }, store),
       } as StepAnswer
     }),
 }
