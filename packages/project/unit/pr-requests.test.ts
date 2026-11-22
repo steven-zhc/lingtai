@@ -237,6 +237,12 @@ describe('what a waiting PR shows', () => {
       detail: 'build red',
       commands: ['lingtai pr retry chapter-garden'],
     })
+    for (const reason of ['ci-red', 'ci-none-started', 'ci-timeout', 'sync-unknown'] as const) {
+      const w = await waiting({ reason, conflict: null })
+      expect(prWaitOf(await state(w), facts)).toMatchObject({
+        commands: ['lingtai pr retry chapter-garden'],
+      })
+    }
     const denied = await waiting({ reason: 'denied', conflict: null })
     expect(prWaitOf(await state(denied), facts)).toMatchObject({ kind: 'plain', commands: [] })
     const fresh = createMemoryEventStore()
