@@ -649,8 +649,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // A pr-fix's push is leased to the head it was checked against, so a branch somebody reset after the fetch is
         // rejected by origin rather than overwritten by a merge that descends from the old head (#1341). It is the head the lane
         // merged onto, which may be past `expectBase` when others pushed (#1353).
-        const lease =
-          fetchedBase === undefined ? [] : [`--force-with-lease=refs/heads/${options.base}:${fetchedBase}`]
+        const lease = fetchedBase === undefined ? [] : [`--force-with-lease=refs/heads/${options.base}:${fetchedBase}`]
         const pushTry = at(['push', ...lease, 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
           Effect.catchTag('RepoFailed', (err) => {
             const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind

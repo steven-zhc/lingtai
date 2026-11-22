@@ -46,7 +46,12 @@ export const resolve = (ports: PrPorts, project: string, ref: string): Effect.Ef
   })
 
 /** `git merge-base --is-ancestor`: exit 0 and 1 are the answer, anything else is git failing. */
-export const isAncestor = (ports: PrPorts, project: string, ancestor: string, of: string): Effect.Effect<boolean, Error> =>
+export const isAncestor = (
+  ports: PrPorts,
+  project: string,
+  ancestor: string,
+  of: string,
+): Effect.Effect<boolean, Error> =>
   Effect.gen(function* () {
     const args = ['merge-base', '--is-ancestor', ancestor, of] as const
     const answer = yield* ports.git(project, args)
@@ -109,9 +114,7 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       const at = yield* remoteSha(ports, project, ref)
       const expected = state.lastPushed ?? start
       const holds =
-        at !== null && at !== state.lastPushed && at !== start
-          ? yield* isAncestor(ports, project, expected, at)
-          : true
+        at !== null && at !== state.lastPushed && at !== start ? yield* isAncestor(ports, project, expected, at) : true
       if (at === null ? state.lastPushed !== null : !holds) {
         return wait(
           'sync-rewritten',

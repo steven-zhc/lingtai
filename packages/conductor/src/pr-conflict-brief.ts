@@ -65,7 +65,11 @@ export function sidesOf(brief: ConflictBrief): string {
   const theirs = failed(brief.theirs)
     ? [`(could not be read: ${brief.theirs.failed})`]
     : brief.theirs.length === 0
-      ? [brief.red === undefined && brief.merging !== 'outside' ? '(no commit touched these paths)' : '(no commit was merged)']
+      ? [
+          brief.red === undefined && brief.merging !== 'outside'
+            ? '(no commit touched these paths)'
+            : '(no commit was merged)',
+        ]
       : brief.theirs.map((c) => `- ${short(c.sha)} ${c.subject} (${c.author})`)
   return [
     `## What ${brief.into} meant — the tickets ${brief.red === undefined ? 'whose code conflicts' : 'whose files the failing output names'}`,

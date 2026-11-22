@@ -393,7 +393,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...withStep(state, { step: 'outside', headSha: d.head }),
         ...at,
         target: d.head,
-        covers: held !== undefined && state.covers[d.head] === undefined ? { ...state.covers, [d.head]: held } : state.covers,
+        covers:
+          held !== undefined && state.covers[d.head] === undefined ? { ...state.covers, [d.head]: held } : state.covers,
         outsideMerged: [...state.outsideMerged, { ...d, version: event.version }],
       }
     }
@@ -1112,7 +1113,11 @@ export function grantTransition(
   }
   if (state.status !== 'waiting' || state.wait === null)
     return refused(`${name} is ${state.status}, not waiting on you`)
-  if (state.wait.reason !== 'sync-conflict' && state.wait.reason !== 'outside-conflict' && state.wait.reason !== 'outside-red') {
+  if (
+    state.wait.reason !== 'sync-conflict' &&
+    state.wait.reason !== 'outside-conflict' &&
+    state.wait.reason !== 'outside-red'
+  ) {
     return refused(
       `rounds buy an agent only for a conflict — ${name} waits on ${state.wait.reason}: fix it by hand, then lingtai pr retry`,
     )

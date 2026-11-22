@@ -525,7 +525,8 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
       ? `Main (${sha(d, 'mainCommit')}) was already in the PR branch`
       : `Main (${sha(d, 'mainCommit')}) was merged into the PR branch as ${sha(d, 'head')} and built`,
   PrOutsideMerged: (d) => {
-    const count = (Array.isArray(d['commits']) ? d['commits'].length : 0) + (typeof d['omitted'] === 'number' ? d['omitted'] : 0)
+    const count =
+      (Array.isArray(d['commits']) ? d['commits'].length : 0) + (typeof d['omitted'] === 'number' ? d['omitted'] : 0)
     return `Merged ${count} commit${count === 1 ? '' : 's'} others pushed to the PR branch (${sha(d, 'remoteHead')}) as ${sha(d, 'head')}${d['how'] === 'resolved' ? ', resolved by the conflict agent' : ''} and built`
   },
   PrFixLanded: (d) => `A pr-fix ticket landed on the PR branch as ${sha(d, 'mergeCommit')}: In progress again`,

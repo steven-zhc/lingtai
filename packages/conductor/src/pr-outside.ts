@@ -1,3 +1,5 @@
+import type { ConflictEnd, PayloadOf } from '@lingtai/domain'
+import { recordPrOutsideMerged } from '@lingtai/project'
 /**
  * A PR's `outside` step (0131 §4, #1353): commits others pushed to the PR branch on top of what Lingtai last pushed are
  * **merged in** before Lingtai pushes it — never a force-push and never a rebase, so their shas stay on the branch and the
@@ -14,13 +16,11 @@
  * `restart` for a remote that moved after this step looked, so a moved head sends the walk round and never waits.
  */
 import { Effect } from 'effect'
-import { recordPrOutsideMerged } from '@lingtai/project'
 
 import { dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
 import { type ResolveEnd, resolveRounds } from './pr-resolve.ts'
 import { isAncestor, orUnknown, resolve, short, spentSentence } from './pr-sync.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
-import type { ConflictEnd, PayloadOf } from '@lingtai/domain'
 
 /** How many of the commits others pushed an event, a brief and a page name: the rest are counted. */
 export const OUTSIDE_COMMITS_SHOWN = 50
@@ -96,8 +96,14 @@ const outsideStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
 
       yield* ports.sweep(project)
       const subject = `Merge ${prBranch} at ${short(at)} (pushed by others) into ${prBranch}`
-      const merged = yield* ports.merge(project, { name: `pr-outside-${n}-${Date.now()}`, at: target, theirs: at, message: subject })
-      if (merged.kind === 'failed') return wait('sync-unknown', `merging ${prBranch} at ${short(at)} failed: ${merged.text}`)
+      const merged = yield* ports.merge(project, {
+        name: `pr-outside-${n}-${Date.now()}`,
+        at: target,
+        theirs: at,
+        message: subject,
+      })
+      if (merged.kind === 'failed')
+        return wait('sync-unknown', `merging ${prBranch} at ${short(at)} failed: ${merged.text}`)
 
       const from = `${prBranch} on the remote`
       const checkId = `pr-${n}-outside`
@@ -125,11 +131,17 @@ const outsideStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
               recordPrOutsideMerged(project, n, { remoteHead: at, commits, omitted, head: sha, how }, store),
           } as StepAnswer
         })
-      const ended = (resolved: ResolveEnd, said: string, reason: 'outside-conflict' | 'outside-red'): Effect.Effect<StepAnswer, Error> => {
+      const ended = (
+        resolved: ResolveEnd,
+        said: string,
+        reason: 'outside-conflict' | 'outside-red',
+      ): Effect.Effect<StepAnswer, Error> => {
         if (resolved.kind === 'resolved') return keep(resolved.sha, 'resolved')
         if (resolved.kind === 'unknown') return Effect.succeed(wait('sync-unknown', resolved.why))
         if (resolved.kind === 'locked') {
-          return Effect.succeed(wait('sync-locked', `${resolved.sentence}\n${spentSentence(resolved.end)}`, resolved.end))
+          return Effect.succeed(
+            wait('sync-locked', `${resolved.sentence}\n${spentSentence(resolved.end)}`, resolved.end),
+          )
         }
         return Effect.succeed(wait(reason, `${said}\n${spentSentence(resolved.end)}`, resolved.end))
       }
