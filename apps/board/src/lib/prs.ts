@@ -9,7 +9,7 @@
 import { inProgressStepNames } from '@lingtai/conductor'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, prStream, reducePr } from '@lingtai/domain'
+import { type PrState, isOpen, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -22,7 +22,7 @@ import { Effect } from 'effect'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
-import { type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
+import { type FixTicket, type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
 import { type HostRead, type PrPageView, githubHosted, prFixTicketLink, prPage, ticketsOnGitHub } from './pr-page.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
@@ -149,15 +149,13 @@ export async function readPrPage(project: string): Promise<PrsRead> {
               Effect.orElseSucceed(() => 'unknown' as string | null),
             )
           : null
-        const fixHref = (name: string | null): string | null => {
-          const link = prFixTicketLink({
+        const fixHref = (name: string | null): FixTicket | null =>
+          prFixTicketLink({
             project,
             owner: state.owner,
             github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
           })
-          return link?.kind === 'link' ? link.href : null
-        }
         return prBoard({
           project,
           recipe,
@@ -210,7 +208,8 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   return viewsFor(project, { waiting })
 }
 
-const ended = (pr: PrState): boolean => pr.status === 'merged' || pr.status === 'closed'
+/** How long a page waits for one ticket's state on GitHub before it says *unknown*. */
+const ISSUE_READ_BUDGET = '3 seconds'
 
 /** The project's GitHub, or null where there is no App, no owner or the client could not be made: never a failure. */
 const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub | null> => {
@@ -227,23 +226,33 @@ const ticketFacts = (
   tickets: readonly string[],
   github: GitHub | null,
 ): Effect.Effect<{ ticket: string; open: boolean | null; spend: number | null }[]> =>
-  Effect.forEach(tickets, (ticket) =>
-    Effect.gen(function* () {
-      const open =
-        github === null || !/^\d+$/.test(ticket)
-          ? null
-          : yield* github.getIssue(Number(ticket)).pipe(
-              Effect.map((issue) => issue.state === 'open'),
-              Effect.orElseSucceed(() => null),
-            )
-      const rows = yield* readSpendEffect({ project, ticket }).pipe(Effect.orElseSucceed(() => null))
-      const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
-      const spend =
-        own === null || own.length === 0 || own.some((r) => r.costUsd === null)
-          ? null
-          : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
-      return { ticket, open, spend }
-    }),
+  Effect.forEach(
+    tickets,
+    (ticket) =>
+      Effect.gen(function* () {
+        // The log's half first and never waiting on GitHub: the issue read runs beside it, in parallel with every other
+        // ticket's, and a slow or failed one is unknown after `ISSUE_READ_BUDGET` rather than holding the page.
+        const openRead =
+          github === null || !/^\d+$/.test(ticket)
+            ? Effect.succeed(null)
+            : github.getIssue(Number(ticket)).pipe(
+                Effect.map((issue): boolean | null => issue.state === 'open'),
+                Effect.timeout(ISSUE_READ_BUDGET),
+                Effect.orElseSucceed(() => null),
+              )
+        // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
+        const rows = yield* readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(
+          Effect.orElseSucceed(() => null),
+        )
+        const open = yield* openRead
+        const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
+        const spend =
+          own === null || own.length === 0 || own.some((r) => r.costUsd === null)
+            ? null
+            : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+        return { ticket, open, spend }
+      }),
+    { concurrency: 'unbounded' },
   )
 
 /** What one PR's page knows, or why it could not be known. */
@@ -304,7 +313,8 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         const pr = reducePr(events)
         // The spend the page says is the PR's whole: its tickets' runs and its own. A part that could not be read leaves the
         // total unknown — never `$0`, and never one part presented as the sum.
-        const github = ended(pr) || !githubHosted(recipe) ? null : yield* githubOf(project, state.owner ?? null)
+        // A ticket's state is read from the tickets' own host, merged PR or not: a closed ticket stays unlisted either way.
+        const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
         const facts = yield* ticketFacts(
           project,
           pr.tickets.map((t) => t.ticket),

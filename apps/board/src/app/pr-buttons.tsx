@@ -24,7 +24,11 @@ export function PrButtons({ project, n, buttons }: { project: string; n: number 
   return (
     <div className="pr-actions">
       {buttons.map((b) =>
-        b.kind === 'link' ? (
+        b.kind === 'command' ? (
+          <p key={b.label} className="pr-why">
+            {b.label}: <code>{b.command}</code> — {b.note}
+          </p>
+        ) : b.kind === 'link' ? (
           <a key={b.label} className="pr-btn" href={b.href} target="_blank" rel="noreferrer">
             {b.label}
           </a>

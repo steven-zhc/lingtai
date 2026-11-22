@@ -33,13 +33,21 @@ export interface Chip {
   readonly status: 'done' | 'running' | 'waiting' | 'pending' | 'skipped'
 }
 
-export type ButtonKind = 'submit' | 'rounds' | 'retry' | 'link'
+export type ButtonKind = 'submit' | 'rounds' | 'retry' | 'link' | 'command'
+
+/** *New pr-fix ticket* where the tickets are: a link to the new-issue form, or the command to run for a local one. */
+export type FixTicket =
+  | { readonly kind: 'link'; readonly href: string }
+  | { readonly kind: 'command'; readonly command: string; readonly note: string }
 
 export interface Button {
   readonly kind: ButtonKind
   readonly label: string
   /** For `link`. */
   readonly href?: string
+  /** For `command`: what to run, drawn as code, and the line that goes with it. Pressing nothing: a person types it. */
+  readonly command?: string
+  readonly note?: string
   /** The sentence that says why it cannot be pressed; set means disabled. */
   readonly disabled?: string
   /** For `rounds`: what the grant is about, as the page showed it. */
@@ -209,9 +217,9 @@ export interface PrBoardInput {
   /** What a submitted-and-unserved PR says about who is serving it. */
   readonly servedWords: string
   /** Where *New pr-fix ticket* goes, or null where the repository has no owner on record. */
-  readonly newFixHref: string | null
+  readonly newFixHref: FixTicket | null
   /** The same, for one PR: its name is in the prefilled title. Absent, `newFixHref` serves every PR. */
-  readonly newFixFor?: (pr: PrState) => string | null
+  readonly newFixFor?: (pr: PrState) => FixTicket | null
 }
 
 const href = (project: string, n: number): string => `/pr/${encodeURIComponent(project)}/${n}`
@@ -427,7 +435,13 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       const run = failingRun(pr)
       if (run !== null) buttons.push({ kind: 'link', label: 'Open the run ↗', href: run })
       const fix = input.newFixFor === undefined ? input.newFixHref : input.newFixFor(pr)
-      if (fix !== null) buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix })
+      if (fix !== null) {
+        buttons.push(
+          fix.kind === 'link'
+            ? { kind: 'link', label: 'New pr-fix ticket', href: fix.href }
+            : { kind: 'command', label: 'New pr-fix ticket', command: fix.command, note: fix.note },
+        )
+      }
     }
     // Only the waits a retry ends have a way out here; the others show what happened and nothing to press.
     if (view.commands.length > 0) buttons.push({ kind: 'retry', label: 'Check again' })

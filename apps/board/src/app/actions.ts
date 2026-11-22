@@ -100,6 +100,13 @@ async function project(name: string) {
   return state
 }
 
+/** A registered project, ownerless or not: a local team-mode project records no owner and its PRs are still its own. */
+async function registeredProject(name: string) {
+  const state = await readProject(name)
+  if (!state) throw new Error(`no project named "${name}" — run lingtai add first`)
+  return state
+}
+
 /**
  * Where a wait's triage answers are written (#921) — the ticket store of an
  * ownerless project, GitHub otherwise. `undefined` when there is none, which
@@ -689,14 +696,14 @@ async function projectLock(verb: 'pause' | 'resume', project: string): Promise<A
  * button was, and a stale page is refused by the command itself (*PR 7 is no longer waiting*), never acted on.
  */
 async function prRef(name: string, n: number) {
-  const state = await project(name)
+  const state = await registeredProject(name)
   const { recipe } = await currentRecipe(state)
   return { recipe, ref: { project: name, n, mode: modeOf(recipe) } }
 }
 
 export async function submitPrNow(input: { project: string }): Promise<ActionResult> {
   try {
-    const state = await project(input.project)
+    const state = await registeredProject(input.project)
     const { recipe } = await currentRecipe(state)
     const answer = await Effect.runPromise(requestPrSubmit(input.project, modeOf(recipe), actor(), eventStore))
     revalidatePath('/', 'layout')

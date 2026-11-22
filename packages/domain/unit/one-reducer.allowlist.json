@@ -41,6 +41,14 @@
   },
   {
     "file": "apps/board/src/lib/pr-page.ts",
+    "function": "notWritten",
+    "type": "PrSummaryNotWritten",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds why the summary was not written at one point (submit or a pr-fix), to put it on the row of the attempt that failed; the summary is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
     "function": "prPage",
     "type": "BranchSynced",
     "count": 1,
@@ -54,6 +62,30 @@
     "count": 1,
     "class": "select",
     "reason": "Finds when the person last edited the summary, for the line under the editor; the summary itself is `reducePr`'s."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "roundsOfLastSync",
+    "type": "BranchSynced",
+    "count": 2,
+    "class": "select",
+    "reason": "Bounds the last sync's window in the events, to count the conflict rounds started inside it; keeps no state."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "roundsOfLastSync",
+    "type": "PrInProgress",
+    "count": 1,
+    "class": "select",
+    "reason": "Bounds the last sync's window at where the pass began; keeps no state."
+  },
+  {
+    "file": "apps/board/src/lib/pr-page.ts",
+    "function": "roundsOfLastSync",
+    "type": "SyncRoundStarted",
+    "count": 1,
+    "class": "select",
+    "reason": "Counts the conflict rounds started inside the last sync's window for its row's sentence; the PR's rounds are `reducePr`'s."
   },
   {
     "file": "apps/board/src/lib/pr-page.ts",

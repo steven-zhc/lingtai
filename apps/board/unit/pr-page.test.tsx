@@ -363,6 +363,49 @@ describe('what Lingtai did: durations, top-up, rounds', () => {
   })
 })
 
+describe('rounds and the top-up, by their own attempt', () => {
+  const round = (commit: string, i: number): Spec => [
+    'SyncRoundStarted',
+    { merging: 'main', commit, start: 's', round: i },
+  ]
+  const sync = (commit: string): Spec => ['BranchSynced', { mainCommit: commit, head: 'h', how: 'resolved' }]
+  it('a sync resolved again for the same main commit does not count the earlier rounds', () => {
+    const v = page([
+      requested,
+      started,
+      round('m1', 1),
+      round('m1', 2),
+      sync('m1'),
+      round('m1', 3),
+      sync('m1'),
+      done('sync'),
+    ])
+    expect(v.steps.find((s) => s.step === 'sync')?.text).toContain('1 round')
+    expect(v.steps.find((s) => s.step === 'sync')?.text).not.toContain('3 rounds')
+  })
+  it('a top-up that wrote nothing keeps its row and does not blame the Summary row', () => {
+    const v = page([
+      requested,
+      started,
+      done('sync'),
+      done('build'),
+      ['PrSummaryWritten', { by: 'agent', at: 'submit', title: 'T', summary: 's', basedOn: 0 }],
+      done('summary'),
+      done('push'),
+      draftOpened,
+      green,
+      done('ci'),
+      ['PrSummaryNotWritten', { at: 'pr-fix', why: 'the agent crashed', basedOn: 0 }],
+      done('topup'),
+    ])
+    expect(v.steps.find((s) => s.step === 'topup')).toMatchObject({
+      status: 'skipped',
+      text: 'no summary: the agent crashed',
+    })
+    expect(v.steps.find((s) => s.step === 'summary')?.mark).toBe('✓')
+  })
+})
+
 describe('the description and the spend the page shows', () => {
   it('uses the ticket facts the daemon publishes: spend known, a closed ticket without Closes', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]], {

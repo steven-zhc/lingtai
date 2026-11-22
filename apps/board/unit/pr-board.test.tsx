@@ -41,7 +41,7 @@ const input = (prs: PrRead[], draft = [tk(1), tk(2)]): PrBoardInput => ({
   stepNames: STEPS,
   spend: new Map(),
   servedWords: 'it is served when a conductor runs',
-  newFixHref: 'https://example.test/new',
+  newFixHref: { kind: 'link', href: 'https://example.test/new' },
 })
 const col = (view: ReturnType<typeof prBoard>, id: string) => view.columns.find((c) => c.id === id)!
 const cards = (view: ReturnType<typeof prBoard>, id: string) => col(view, id).cards as CardView[]

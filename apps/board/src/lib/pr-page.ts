@@ -288,6 +288,31 @@ function stepDurations(events: readonly Envelope[]): Map<string, number> {
   return out
 }
 
+/** The conflict agent's rounds for the last `BranchSynced`: those started after the sync before it, or the pass's start. */
+function roundsOfLastSync(events: readonly Envelope[]): number {
+  let end = -1
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (events[i]!.type === 'BranchSynced') {
+      end = i
+      break
+    }
+  }
+  if (end < 0) return 0
+  let from = 0
+  for (let i = end - 1; i >= 0; i--) {
+    if (events[i]!.type === 'BranchSynced' || events[i]!.type === 'PrInProgress') {
+      from = i
+      break
+    }
+  }
+  let n = 0
+  for (let i = from; i < end; i++) {
+    const e = events[i]!
+    if (e.type === 'SyncRoundStarted' && (e.data as PayloadOf<'SyncRoundStarted'>).merging === 'main') n++
+  }
+  return n
+}
+
 const last = <T>(xs: readonly T[], f: (x: T) => boolean): T | undefined => {
   for (let i = xs.length - 1; i >= 0; i--) if (f(xs[i]!)) return xs[i]
   return undefined
@@ -303,6 +328,14 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     checkout: null,
     conflictResolutions: ceilingOf(recipe).attempt.conflictResolutions,
   })
+  const notWritten = (at: string) => {
+    const e = last(
+      pass,
+      (x) => x.type === 'PrSummaryNotWritten' && (x.data as PayloadOf<'PrSummaryNotWritten'>).at === at,
+    )
+    return e === undefined ? null : (e.data as PayloadOf<'PrSummaryNotWritten'>).why
+  }
+  const topupWhy = notWritten('pr-fix')
   const rows = prStepRows(names, pr)
   const inFlight =
     pr.status === 'in-progress' || pr.status === 'requested' ? rows.find((r) => r.status === 'pending') : undefined
@@ -346,7 +379,10 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     let status: PageStep['status'] = 'done'
     if (row.step === 'topup') {
       // `topup` answers done with no run when no pr-fix joined: only a run (`PrSummaryWritten` at `pr-fix`) is a row.
-      if (!pass.some((e) => e.type === 'PrSummaryWritten' && (e.data as PayloadOf<'PrSummaryWritten'>).at === 'pr-fix'))
+      if (
+        topupWhy === null &&
+        !pass.some((e) => e.type === 'PrSummaryWritten' && (e.data as PayloadOf<'PrSummaryWritten'>).at === 'pr-fix')
+      )
         continue
     }
     let link: PageStep['link'] = null
@@ -355,8 +391,9 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
       else if (synced.how === 'already') text = 'nothing to bring in'
       else if (synced.how === 'clean') text = 'main brought in, clean'
       else {
-        // Rounds are the PR's for its lifetime: this pass's are the ones bought for the `main` commit it brought in.
-        const used = pr.rounds.filter((r) => r.merging === 'main' && r.commit === synced.mainCommit).length
+        // Rounds are the PR's for its lifetime: this sync's are the ones started since the sync before it finished, or
+        // since this pass began — a retried sync of the same `main` commit does not inherit the failed one's.
+        const used = roundsOfLastSync(events)
         text = `a conflict resolved by the agent · ${plural(used, 'round', 'rounds')}`
       }
     } else if (row.step === 'build') {
@@ -373,13 +410,18 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
         link = run === null ? null : { label: 'runs ↗', href: run }
       }
     } else if (row.step === 'summary') {
-      if (pr.summaryNotWritten !== null) {
+      // A top-up that wrote nothing is the top-up row's: the Summary row keeps its own attempt's outcome.
+      const why = notWritten('submit') ?? (topupWhy === null ? pr.summaryNotWritten : null)
+      if (why !== null) {
         status = 'skipped'
-        text = `no summary: ${pr.summaryNotWritten}`
+        text = `no summary: ${why}`
       } else if (pr.edited !== null) text = 'written, then edited by you'
       else text = pr.summary?.text != null ? 'written by the agent' : 'done'
     } else if (row.step === 'topup') {
-      text = 'the summary extended for the pr-fix'
+      if (topupWhy !== null) {
+        status = 'skipped'
+        text = `no summary: ${topupWhy}`
+      } else text = 'the summary extended for the pr-fix'
     } else if (row.step === 'ready') {
       text = 'ready for review'
     }
