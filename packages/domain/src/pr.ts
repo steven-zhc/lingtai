@@ -213,7 +213,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'BranchSynced': {
       const d = event.data as PayloadOf<'BranchSynced'>
-      // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it); a
+      // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it) — except
+      // a resolution made once `sync` is recorded, an agent's amend of a red merge, which is the build step's (`syncedStep`); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
       const step = syncedStep(state, d.how)
       return {

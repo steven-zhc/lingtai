@@ -590,7 +590,14 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             const kept =
               made.code === 0 && merge !== '' ? yield* ports.git(project, ['update-ref', backRef(n), merge]) : null
             if (kept === null || kept.code !== 0) {
-              yield* failed('red', `\`${built.command}\` fails on ${short(moved.sha)}:\n${built.evidence}`)
+              // Preparing the next round failed in git: that is not the build's verdict, and `unknown` is retried.
+              const said =
+                made.code !== 0
+                  ? gitSaid(shaped, made)
+                  : kept === null
+                    ? 'commit-tree answered no commit'
+                    : gitSaid(['update-ref', backRef(n), merge], kept)
+              yield* failed('unknown', `${said}\n\`${built.command}\` fails on ${short(moved.sha)}:\n${built.evidence}`)
               return { kind: 'done' } as const
             }
             return {
@@ -649,7 +656,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             yield* failed(
               why?.kind === 'red' ? 'red' : 'conflict',
               why?.kind === 'red'
-                ? `\`${why.command}\` fails on the merge of ${prBranch} (${short(prHead)}) into ${branch}: ${spentSentence(ended.end)}`
+                ? `\`${why.command}\` fails on the merge of ${prBranch} (${short(prHead)}) into ${branch}:\n${why.evidence}\n${spentSentence(ended.end)}`
                 : `${prBranch} (${short(prHead)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
               ended.end,
             )
