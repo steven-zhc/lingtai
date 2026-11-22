@@ -1331,7 +1331,7 @@ because a v1 file that says neither has always meant those; the block takes the
 fields without those defaults, for the reason `worktree:` makes `submodules`
 required (`#268`). A block written to narrow the kinds and nothing else would
 otherwise replace a configured hold list with `[]` while `source:` sat unread two
-blocks up — an `agent:hold` ticket claimed and an agent dispatched on work a
+blocks up — an `lingtai:hold` ticket claimed and an agent dispatched on work a
 person was holding, which is exactly the *quietly wrong* this step can be. So the
 three that would have been silent are refused by name, and `assignee: { take:
 both }` is how a machine that names nobody writes what an absent

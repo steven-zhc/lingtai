@@ -41,7 +41,8 @@ top-level blocks, and the steps are one of them.
 
 | You chose | Where it is written | Step it acts at |
 |---|---|---|
-| Which branch changes land on, and where it is pushed | `repo.base`, `repo.remote` | `admit` cuts from it, `merge` lands on it |
+| Whether this project is solo or team, and which branches | `mode`, `branch.main`, `branch.personal`; `repo.remote` for where it is pushed | `admit` cuts from the landing branch, `merge` lands on it |
+| Whose tickets are taken | `take` under `runtime.assignee` (or the `queue:` entry at `claim`) | `claim` |
 | Which agent, and how much it may spend | `agent:` on the `implement` entry (`runtime.agent` when `implement` is empty); `runtime.limits` | `implement` |
 | How a worktree is made ready | `steps.prepared` | `prepared` |
 | What must pass before review | `steps.build` | `build` |
@@ -119,9 +120,9 @@ same thing, and a step with nothing declared runs its built-in default:
 | Step | When nothing is declared |
 |---|---|
 | `claim` | the queue takes a ticket |
-| `admit` | cuts the branch and worktree from the base |
+| `admit` | cuts the branch and worktree from the landing branch (`branch.personal` in team mode, else `branch.main`) |
 | `implement` | one agent, on `runtime.agent` |
-| `merge` | lands the branch on the base |
+| `merge` | lands the branch on the landing branch |
 | the other six | nothing runs |
 
 Two things follow, and each has cost somebody an attempt.
@@ -195,6 +196,73 @@ no separate install), using `mvnw`/`gradlew` when it is at the root; Gradle wins
 are present. Rust from `Cargo.toml` (`cargo fetch`, then `cargo fmt --check`, `cargo clippy` and
 `cargo test`, with `--locked` when `Cargo.lock` is at the root). A Python project with only `requirements.txt` gets
 a note asking you to type the install command, not a suggestion.
+
+## Solo or team (0.16)
+
+`mode` is `solo` or `team`. **A recipe that names no mode is solo**, so a project
+made before 0.16 does what it did; `lingtai add` and `lingtai init` ask, and a new
+project defaults to team. The mode decides four things:
+
+| | `solo` | `team` |
+|---|---|---|
+| `take` | `all`, or as written | `mine`, and only `mine` |
+| The branch a ticket is cut from and lands on | `branch.main` | `branch.personal` |
+| A ticket ends | `landed` on `main`, and closed | `landed` on your branch, left open on the tracker until its PR merges |
+| Reaching `main` | the landing itself | a PR ([A PR's life](concepts.md#a-prs-life)) |
+
+```yaml
+mode: team
+
+branch:
+  main: main
+  personal: steven-zhc/steven-s-macbook-pro
+
+runtime:
+  agent: claude-code
+  assignee:
+    login: steven-zhc
+    take: mine
+
+pr:
+  agent: claude-code
+  ci:
+    provider: github-actions
+    required: [build]
+    timeout: 60m
+```
+
+- **`branch.main`** is the trunk, and replaces `repo.base` and an `admit` entry's
+  `worktree.base`. **`branch.personal`** is your branch, required in team mode and
+  refused in solo. `lingtai add` suggests `<login>/<machine>` and you may change
+  it. It is refused by name if git would not accept it as a branch name, or if it
+  is `branch.main` ignoring case. The landing branch is one value, read from
+  the mode alone: there is no key for the merge lane.
+- **`take`** is `all`, `mine` or `unassigned`, written under `runtime.assignee`
+  or, where the recipe declares a `queue:` at `claim`, under that entry's
+  `assignee`. `both` is the old spelling of `all`. On GitHub, *mine* is an issue
+  assigned to `login`, so a team recipe on GitHub needs the `login`; on the
+  local ticket store every ticket is yours. Team mode refuses `take: all` and
+  `take: unassigned`, saying to remove `take` or use `mode: solo`.
+- **`pr:`** configures the agent that writes a PR's title and summary, and is
+  refused in a solo recipe. Its keys are `agent` (one that can run with no
+  tools; absent means `runtime.agent` where that one can), `model`, `prompt`
+  and `limits` (`turns` 20 and `wall` `5m` by default). It has **no `usd`**: it
+  spends outside any attempt, so each run counts against the day's ceiling
+  instead.
+- **`pr.ci`** says which CI a PR waits on. `provider` is `github-actions`,
+  `none`, or absent to detect (a workflow on pull requests means
+  `github-actions`). `required` names the checks that count; absent, every check
+  on the PR's head counts, and an empty list is refused. `timeout` defaults to
+  `60m`. `provider: jenkins` is refused in 0.16, saying the adapter is next
+  release. If Jenkins is ever used its credentials are `jenkins.user` and
+  `jenkins.token` in `~/.lingtai/config.yml`, never in a recipe, and a recipe
+  that writes them is refused by name.
+
+The old spellings `repo.base`, `steps.admit[*].worktree.base` and `take: both`
+are refused by 0.16 when the recipe resolves, naming the key and the fix, so a
+project made before 0.16 must have them rewritten before its daemon restarts.
+[Upgrading to 0.16](upgrading-to-0.16.md) says how `lingtai doctor --fix`
+rewrites them.
 
 ## Every other key
 

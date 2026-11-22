@@ -42,14 +42,24 @@ Permissions, as installed:
 
 | Permission | Level | For |
 |---|---|---|
-| Issues | read + write | reading work items, writing `agent:*` labels and comments |
+| Issues | read + write | reading work items, writing `lingtai:*` labels and comments |
 | Contents | read + write | cloning, pushing `agent/*`, merging into base |
-| Pull requests | read + write | opening and reading PRs |
+| Pull requests | read + write | opening and reading pull requests |
 | Workflows | read + write | pushing changes to `.github/workflows` |
+| Checks | read | reading a PR's check runs (0.16) |
+| Statuses | read | reading a PR's commit statuses (0.16) |
 | Metadata | read | required |
 
 The App also subscribes to the `issues` and `push` webhook events for
 event-driven discovery; that is not a permission.
+
+**Checks and statuses are new in 0.16, and every installation is asked to approve
+them once — solo projects too.** The permissions list is one list, as `workflows`
+was, so a project that will never open a PR still has the gap, and `lingtai add`
+refuses a repository whose installation has not accepted them, naming them. An
+installation can only accept what the App already asks for, so the order is: add
+the two on the App's own permissions page, then accept them on the installation.
+[Upgrading to 0.16](upgrading-to-0.16.md) walks through it.
 
 **Rate limit is not a reason.** An installation and a PAT both start at 5,000
 requests an hour; the App's scales with repository and user count, and 15,000 is
@@ -257,6 +267,39 @@ App's bot identity (`<slug>[bot]`,
 `<id>+<slug>[bot]@users.noreply.github.com`) at the merge.
 
 This is a gap, not a decision. It is small and it is not ticketed.
+
+## A team project's PR
+
+*0.16, for a project whose recipe says `mode: team`* ([concepts](concepts.md#a-prs-life)
+has the states). On GitHub:
+
+- **A team project never pushes `main`.** Lingtai pushes your personal branch and
+  a PR's own branch, `<branch.personal>-pr-<n>`, and nothing else.
+- **The PR is opened as a draft pull request**, so the project's own
+  `pull_request` workflows run on it unchanged, and is marked ready only when
+  the checks the project counts have passed on its head (`pr.ci.required`, or
+  every check where it names none; a neutral or skipped result passes) and the
+  head is still the commit that passed. A project with no workflow on pull
+  requests, or with `pr.ci.provider: none`, has no CI step: the PR is marked
+  ready without CI being read, and the PR page says so. A red run waits on you: you re-run it on GitHub and check again,
+  because Lingtai never re-runs a workflow.
+- **What the team does there is read back.** A merged PR closes every ticket it
+  held; one closed without merging goes back to Draft. Lingtai finds out on the
+  daemon's sweep, which reads the one open PR, and when the PR page renders.
+- **Merge it with a merge commit.** The merge lane's own merges are `--no-ff`, so
+  one ticket the team refuses is one `git revert`. **A squash merge still counts
+  as merged, and loses that: one ticket = one `git revert` is gone, because the
+  tickets are no longer separate commits on `main`.** A rebase merge is the same.
+- **One personal branch is one machine's.** The conductor lock is a file on one
+  machine, and a conductor that takes it releases every claim another worker
+  recorded, so two machines on one log would release each other's claims, and two
+  on one personal branch would push over each other. **Two people on one
+  Postgres log is not supported.** A person with two machines has two personal
+  branches and submits each from its own.
+- **A code host that is not GitHub** (GitLab, or a local checkout) cannot open a
+  PR for Lingtai: submitting pushes the frozen branch and prints the description
+  for you to open by hand, and the PR goes to *In review* unfollowed. It is
+  *Merged* when git finds its head on `main`. That is the design, not a fault.
 
 ## What this cannot do yet
 

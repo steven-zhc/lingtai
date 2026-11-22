@@ -710,6 +710,7 @@
     <ul class="rules">
       <li><b>Only the conductor writes about work.</b> <span>Claims, gate verdicts, integrations, landings. Nothing else may.</span></li>
       <li><b>The board writes too.</b> <span>Approve and requeue are appends. The board is not read-only — it is where a person's decision enters the log.</span></li>
+      <li><b>A team project's PR has a stream of its own.</b> <span>0.16: <code>pr-{project}-{n}</code>, beside the ticket and attempt streams (<a href="decisions/0131-a-pr-goes-from-draft-to-merged.md">0131</a>). Its requests — submit, check again, more rounds, back to draft — are appended by the board or the CLI and served by the conductor, as a discussion's are; the conductor appends everything else, its steps and its states. Learning that the team merged or closed it is the daemon's sweep: one read of the one open PR, on a timer of its own, not inside a pass.</span></li>
       <li><b>The agent writes through the hook.</b> <span>A thin binary on a unix socket; the conductor appends on its behalf, with the run id as the actor.</span></li>
       <li><b>Projections never write to the log.</b> <span>They read it and maintain their own table. A projection that appended would be a second author of history.</span></li>
       <li><b>There is one projection.</b> <span><code>task_view</code>. A list of one was a list whose only job was to let a projection be written and silently left out of it — no table, no checkpoint, no failing check. A second one is added in the open, by name, or it does not exist.</span></li>
@@ -985,7 +986,7 @@
           <tr><th>Store</th><th>Holds</th><th>Written by</th><th>Rebuildable</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">events</td><td>every fact about what Lingtai did</td><td class="who">conductor, board, CLI, agent</td><td class="who">no — it is the source</td></tr>
+          <tr><td class="k">events</td><td>every fact about what Lingtai did — a stream per ticket, per attempt and, in a team project, per PR (<code>pr-{project}-{n}</code>)</td><td class="who">conductor, board, CLI, agent</td><td class="who">no — it is the source</td></tr>
           <tr><td class="k">checkpoints</td><td>how far the projection has read</td><td class="who">the projector, in the reducer's own transaction</td><td class="who">yes</td></tr>
           <tr><td class="k">stream_snapshots</td><td>one stream's reduced state, every fifth event (<a href="decisions/0124-a-stream-fold-is-cached-as-a-snapshot.md">0124</a>)</td><td class="who">the daemon and the board</td><td class="who">yes — delete any row; the next read reduces from version 1</td></tr>
           <tr><td class="k">task_view</td><td>the board's cards</td><td class="who">the projector, and nothing else</td><td class="who">yes — <code>lingtai projection rebuild task_view</code></td></tr>

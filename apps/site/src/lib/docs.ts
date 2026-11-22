@@ -60,7 +60,7 @@ export const DOCS_PUBLIC = false
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
  * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). Nothing else in `doc/` has been through
+ * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -77,6 +77,7 @@ export const PUBLIC_SLUGS = [
   'requirements',
   'safety',
   'guide',
+  'upgrading-to-0.16',
   'from-symphony',
   'plugins',
   'events',
@@ -133,6 +134,7 @@ export const SECTIONS: Section[] = [
       'why.md',
       'guide.md',
       'operating.md',
+      'upgrading-to-0.16.md',
       'reference.md',
       'design.md',
       'roadmap.md',

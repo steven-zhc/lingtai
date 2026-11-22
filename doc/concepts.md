@@ -100,16 +100,60 @@ is waiting for and offers the moves that make sense:
 
 ## How a ticket ends
 
-- **Landed.** The change merged into the base branch, and the ticket is done.
+- **Landed.** The change merged into the branch the project lands on, and the
+  ticket's work is done. In a **solo** project that branch is `main`, and the
+  ticket is closed. In a **team** project (0.16) it is your own branch, and the
+  ticket stays open on the tracker, labelled `lingtai:landed`, until the PR that
+  holds it merges — see [A PR's life](#a-prs-life).
 - **Closed.** A person ended it at a wait.
 - **Still waiting.** Nothing is lost while it waits. A ticket can stay at a wait
   for as long as you like; the daemon takes other work meanwhile.
+
+## A PR's life
+
+*New in 0.16, and only in a team project.* A project is **solo** or **team**,
+and the recipe's `mode` says which; a recipe that names no mode is solo, which
+is how Lingtai has always run. A team project takes only the tickets assigned to
+you and lands each on your own branch, `branch.personal`. Lingtai never pushes
+`main` for a team. Between your branch and `main` there is a **PR**: you
+deciding a body of work is ready for the team. A PR has its own board, with five
+states:
+
+- **Draft.** What has landed on your branch and no PR holds yet. It grows as
+  tickets land.
+- **In progress.** You pressed *Submit* (or ran `lingtai pr submit`), and Lingtai
+  is getting the branch ready for review. It freezes your branch at one commit,
+  brings `main` in, builds, takes in whatever others pushed to the PR's branch,
+  has the summary written, pushes, opens the PR on the code host as a draft, waits
+  for the project's CI, tops up the summary, and marks the PR ready. A conflict,
+  or a build that goes red after a merge, goes to an agent first.
+- **Waiting on you.** A step cannot go on without a person, and says why: a
+  conflict the agent could not resolve, a force-push or a deleted PR branch, a
+  red CI run, a code host that cannot open drafts. Nothing else stops: tickets
+  keep landing on your branch. You give the agent more rounds
+  (`lingtai pr rounds`), mend it by hand and check again (`lingtai pr retry`), or
+  take the PR back to Draft (`lingtai pr back`), which closes it on the code host.
+- **In review.** Open on the code host and ready, because the build is green and
+  the CI the project asked for passed (or the project has none), on the commit that is now the PR's head. The team reviews it there.
+- **Merged.** The team merged it into `main`, and every ticket it held is closed.
+  A PR the team closes without merging goes back to Draft.
+
+**One PR at a time.** Tickets keep landing on your branch while a PR is open, and
+*Submit* is refused, naming the open PR, until it is merged or closed.
+
+**A change the review asks for is a `lingtai:pr-fix` ticket.** In team mode it
+ranks ahead of every kind, `bug` included, because the team is waiting on it.
+While a PR is open it is cut from that PR's branch and lands on it, and the PR
+then runs In progress again from bringing `main` in. A project that is not on
+GitHub gets its branch pushed and the description printed, and opens the PR by
+hand. [The GitHub page](github.md#a-team-projects-pr) and
+[the upgrade page](upgrading-to-0.16.md) have the rest.
 
 ## The words
 
 | Word                              | What it means, in Chapter Garden                                                                                                      | Where you meet it |
 | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| **Project, repository, base**     | Chapter Garden is the project. Its repository is where the code lives, and the base branch (`main`) is where finished work lands.    | the board's project menu, and `repo.base` in the recipe |
+| **Project, repository, base**     | Chapter Garden is the project. Its repository is where the code lives, and the base branch (`main`) is where finished work lands. In a team project (0.16) work lands on your own branch first.    | the board's project menu, and `branch.main` in the recipe |
 | **Ticket and kind label**         | The story you opened in Step 2. Its kind label, such as `feature`, is what puts it in the queue.                                      | a card on the board, and `source.kinds` in the recipe |
 | **Recipe**                        | A local file you may edit by hand, saying what an attempt does for this project: which agent writes, what checks run, and who decides. The project's log keeps every version of it.                          | `~/.lingtai/<project>/recipe.yml`, and the board's recipe page |
 | **Attempt and agent run**         | An attempt is one try at a ticket. An agent run is one session of the agent inside it. A fix round is another run in the same attempt. A ticket can have several attempts.  | the Attempts section of a ticket's page |
