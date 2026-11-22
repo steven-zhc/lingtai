@@ -592,6 +592,35 @@ export function LandedRow({
   )
 }
 
+/** A team project's foot line: where its landings are, from the draft — whether or not any Landed row is still retained. */
+export function LandedFoot({
+  reads,
+  showProject,
+}: {
+  reads: ReadonlyMap<string, LandedWhereRead>
+  showProject: boolean
+}) {
+  return (
+    <>
+      {[...reads.entries()].map(([project, read]) => {
+        const foot = footLine(read)
+        if (foot === null) return null
+        return (
+          <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
+            {showProject ? <span className="proj">{project}</span> : null}
+            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
+            {foot.kind === 'line' ? (
+              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
+                PRs →
+              </Link>
+            ) : null}
+          </div>
+        )
+      })}
+    </>
+  )
+}
+
 /**
  * Landed, in full: the most recent few, and a disclosure over the rest.
  *
@@ -635,21 +664,7 @@ export function Landed({
           {rows(older)}
         </details>
       ) : null}
-      {[...reads.entries()].map(([project, read]) => {
-        const foot = footLine(read)
-        if (foot === null) return null
-        return (
-          <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
-            {showProject ? <span className="proj">{project}</span> : null}
-            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
-            {foot.kind === 'line' ? (
-              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
-                PRs →
-              </Link>
-            ) : null}
-          </div>
-        )
-      })}
+      <LandedFoot reads={reads} showProject={showProject} />
     </>
   )
 }
@@ -1072,6 +1087,25 @@ async function CardsPart({
       </Suspense>
     )
   }
+  if (col.id === 'landed') {
+    // Once per team project on the board, never per row, and whether or not a Landed row is retained: the draft and the
+    // open PR outlive the two days a row does. A solo project reads no PR stream and gets no entry.
+    const projects = [...onBoard]
+    const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
+    const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
+    if (col.cards.length === 0)
+      return (
+        <>
+          <p
+            className={`empty${emptyHeld(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses) ? ' held' : ''}`}
+          >
+            {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
+          </p>
+          <LandedFoot reads={reads} showProject={onBoard.size > 1} />
+        </>
+      )
+    return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} reads={reads} />
+  }
   if (col.cards.length === 0) {
     return (
       <p
@@ -1080,13 +1114,6 @@ async function CardsPart({
         {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
       </p>
     )
-  }
-  if (col.id === 'landed') {
-    // Once per project on the column, never per row; a solo project reads no PR stream and gets no entry.
-    const projects = [...new Set(col.cards.map((c) => c.project))]
-    const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
-    const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
-    return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} reads={reads} />
   }
   return (
     <>

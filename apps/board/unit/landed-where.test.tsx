@@ -2,7 +2,7 @@ import type { PrState } from '@lingtai/domain'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { Landed } from '../src/app/page.tsx'
+import { Landed, LandedFoot } from '../src/app/page.tsx'
 import type { BoardCard } from '../src/lib/board.ts'
 import type { LandedWhereRead } from '../src/lib/where-landed.ts'
 
@@ -54,5 +54,13 @@ describe('a team project’s Landed column', () => {
     const html = render(new Map([['lingtai', { kind: 'failed', error: 'x' }]]))
     expect(html).not.toContain('on your branch')
     expect(html).toContain('where these are could not be read')
+  })
+})
+
+describe('a team project with no retained Landed row', () => {
+  it('still draws the foot line', () => {
+    const html = renderToStaticMarkup(<LandedFoot reads={new Map([['lingtai', team]])} showProject={false} />)
+    expect(html).toContain('2 not in a PR yet · PR #88 in review')
+    expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
   })
 })
