@@ -98,6 +98,12 @@ export interface IntegrateOptions {
    * git refuses the push; absent, a URL and an scp-like address are not checked.
    */
   remote?: string
+  /**
+   * The sha the base is expected to be at once fetched (#1341): a pr-fix landing on a PR branch passes the head Lingtai
+   * last pushed there, so a branch somebody else pushed to is refused `pr-branch-moved` before anything is merged or
+   * pushed. Absent on every other landing.
+   */
+  expectBase?: string
   /** The issue number, for the sentence a held land hands a person (`lingtai approve --issue`). */
   issue?: string
   token?: TokenSource
@@ -472,6 +478,14 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
           return yield* refuse('head-moved', `expected ${options.headSha} found ${fetchedHead}`)
         }
 
+        // A PR branch is the lane's base for a pr-fix: it must still be what Lingtai last pushed (0130 §5, #1341).
+        if (options.expectBase !== undefined) {
+          const fetchedBase = (yield* at(['rev-parse', laneBase], mirror)).trim()
+          if (fetchedBase !== options.expectBase) {
+            return yield* refuse('pr-branch-moved', `expected ${options.expectBase} found ${fetchedBase}`)
+          }
+        }
+
         // What an earlier integration was killed in the middle of, before this one
         // adds a directory of its own: see `WORKTREE_IS_ABANDONED_AFTER`. A
         // registration whose directory is already gone is git's own `prune` to
@@ -625,7 +639,13 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
             `origin rejected the push, but ${options.base} has not moved since the fetch`,
           )
         }
-        const pushTry = at(['push', 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
+        // A pr-fix's push is leased to the head it was checked against, so a branch somebody reset after the fetch is
+        // rejected by origin rather than overwritten by a merge that descends from the old head (#1341).
+        const lease =
+          options.expectBase === undefined
+            ? []
+            : [`--force-with-lease=refs/heads/${options.base}:${options.expectBase}`]
+        const pushTry = at(['push', ...lease, 'origin', `HEAD:refs/heads/${options.base}`], cwd).pipe(
           Effect.catchTag('RepoFailed', (err) => {
             const said = classify({ platform: 'git', text: err.stderr ?? err.detail })?.kind
             return said === 'remote-error' || said === 'push-rejected'

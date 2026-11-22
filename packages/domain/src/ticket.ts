@@ -299,6 +299,11 @@ export interface TicketState {
   lifecycle: TicketLifecycle
   /** Where the ticket landed, kept after a `TicketClosed` replaces `lifecycle`; null if it never landed (0130 §4). */
   landed: { mergeCommit: string; base: string } | null
+  /**
+   * The branch the latest claim cut the attempt from, kept so a continuation uses the same one (#1341): set only by a
+   * team `lingtai:pr-fix` claim, and `null` on every other. `pr` is null when no PR was open at the claim.
+   */
+  cutFrom: { branch: string; pr: number | null } | null
 
   /** From the stream id (D4); null only on a stream that is not a ticket's. */
   project: string | null
@@ -435,6 +440,7 @@ export interface TicketState {
 export const emptyTicket: TicketState = {
   lifecycle: { status: 'backlog' },
   landed: null,
+  cutFrom: null,
   project: null,
   source: null,
   externalRef: null,
@@ -580,6 +586,8 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
         // the event reduces through the default below and changes nothing but the
         // version.
         pendingPrompt: null,
+        // A fresh claim decides the branch again; a continuation, whose payload names none, keeps the claim's own.
+        cutFrom: shape === 'claim' ? (d.cutFrom ?? null) : state.cutFrom,
         // A `TicketContinued` has no title or kind, and a claim that carries
         // nulls must not blank what an earlier one named.
         title: event.type === 'TicketClaimed' ? (d.title ?? state.title) : state.title,
@@ -893,6 +901,7 @@ export function claimTransition(
     title?: string | null
     kind?: string | null
     body?: string
+    cutFrom?: { branch: string; pr: number | null }
     children: SplitChildren
   },
 ): { ok: true; events: ToAppend<PayloadOf<'TicketClaimed'>>[] } | { ok: false; refusal: ClaimDecline } {
@@ -925,6 +934,7 @@ export function claimTransition(
           title: input.title ?? null,
           kind: input.kind ?? null,
           ...(input.body !== undefined ? { body: input.body } : {}),
+          ...(input.cutFrom !== undefined ? { cutFrom: input.cutFrom } : {}),
         }),
       },
     ],

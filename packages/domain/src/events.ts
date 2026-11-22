@@ -257,6 +257,13 @@ export const TicketClaimed = z.object({
    * the body was empty, which is `''`.
    */
   body: z.string().optional(),
+  /**
+   * The branch this attempt is cut from and lands on, when it is not `branch.personal` by default — recorded only by a
+   * team `lingtai:pr-fix` claim (0130 §5, #1341). `pr` is the PR whose branch it is, or `null` when no PR was open and
+   * the ticket is an ordinary one on `branch.personal`. Absent on every other claim, and on every claim written before
+   * this field existed.
+   */
+  cutFrom: z.object({ branch: z.string(), pr: z.number().int().nullable() }).optional(),
 })
 
 /**
@@ -2550,12 +2557,25 @@ export const PrSubmitRefused = z.object({ reason: PrRefusalReason, detail: z.str
  * @summary A PR's branch was frozen at one commit with the tickets it holds, and it is In progress.
  */
 export const PrInProgress = z.object({
-  because: z.enum(['submit', 'restart', 'retry']),
+  because: z.enum(['submit', 'restart', 'retry', 'pr-fix']),
   branch: z.string(),
   main: z.string(),
   frozenSha: z.string(),
   prBranch: z.string(),
   tickets: z.array(z.object({ ticket: z.string(), mergeCommit: z.string(), title: z.string() })),
+})
+
+/**
+ * A `lingtai:pr-fix` ticket landed on the PR's branch (#1341): `mergeCommit` is the PR branch's new head, which becomes
+ * what In progress means to push, and the PR is owed In progress again from its first step.
+ *
+ * @summary A pr-fix ticket landed on a PR's branch, so the PR is owed In progress again.
+ */
+export const PrFixLanded = z.object({
+  ticket: z.string().min(1),
+  mergeCommit: z.string().min(1),
+  /** The ticket's title, for the PR's list of what it holds; absent where it was not known. */
+  title: z.string().optional(),
 })
 
 /**
@@ -3088,6 +3108,7 @@ export const EVENTS = {
   PrSubmitRequested,
   PrSubmitRefused,
   PrInProgress,
+  PrFixLanded,
   PrStepDone,
   PrWaiting,
   PrPushed,
@@ -3218,6 +3239,7 @@ export const EVENT_AT = {
   PrSubmitRequested: ['outside'],
   PrSubmitRefused: ['outside'],
   PrInProgress: ['outside'],
+  PrFixLanded: ['outside'],
   PrStepDone: ['outside'],
   PrWaiting: ['outside'],
   PrPushed: ['outside'],

@@ -42,6 +42,22 @@ export interface PrState {
    * steps again, and its push is a fast-forward from here.
    */
   lastPushed: string | null
+  /**
+   * A pr-fix landed on the PR branch and In progress has not yet started again for it (`PrFixLanded` sets it,
+   * `PrInProgress` clears it): the serve answers it before anything else (#1341).
+   */
+  fixOwed: boolean
+  /**
+   * How many of `tickets` each commit holds (#1341): set when a head becomes the PR's — frozen, restarted, a pr-fix's
+   * landing, a sync. What an ending or a merge back covers is read from here, never from the branch as a whole.
+   */
+  covers: Readonly<Record<string, number>>
+  /** The tickets the commit a `PrMerged` named holds; the rest landed on the PR branch after it and are not merged. */
+  mergedTickets: readonly string[]
+  /** False when the merged head was never recorded: `mergedTickets` is then only what every known head held, and the rest are proven one by one (#1341). */
+  mergedExact: boolean
+  /** The tickets a successful merge back into the personal branch carried, over every merge back. */
+  mergedBackTickets: readonly string[]
   /** The draft pull request on GitHub (`PrDraftOpened`); not reset by `PrInProgress`, so a pass never opens a second. */
   host: { readonly number: number; readonly nodeId: string; readonly url: string } | null
   /** The steps recorded since the latest `PrInProgress`: a later pass through In progress starts empty. */
@@ -110,6 +126,11 @@ export const emptyPr: PrState = {
   target: null,
   tickets: [],
   lastPushed: null,
+  fixOwed: false,
+  covers: {},
+  mergedTickets: [],
+  mergedExact: true,
+  mergedBackTickets: [],
   host: null,
   steps: [],
   mergeBack: null,
@@ -137,6 +158,16 @@ function withStep(state: PrState, record: PrStepRecord): PrState {
     wait: null,
     waitSince: null,
   }
+}
+
+/** How many tickets a commit holds: what was recorded for it, else all if it is the PR's head, else those it was frozen with. */
+function heldAt(state: PrState, sha: string): number {
+  // A head never recorded has no ancestry evidence here, so it is held to the fewest tickets any recorded head held: a
+  // ticket left open for want of proof is found again, one closed without it is not (#1341).
+  const known = state.covers[sha]
+  if (known !== undefined) return known
+  const all = Object.values(state.covers)
+  return all.length === 0 ? state.tickets.length : Math.min(...all)
 }
 
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
@@ -170,11 +201,30 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         frozenSha: d.frozenSha,
         target: d.frozenSha,
         tickets: d.tickets,
+        // A restart names a head already recorded: what that head held stays what it was, not what the PR holds now.
+        covers: { ...state.covers, [d.frozenSha]: state.covers[d.frozenSha] ?? d.tickets.length },
+        fixOwed: false,
         steps: [],
         wait: null,
         waitSince: null,
         pending: null,
         granting: null,
+      }
+    }
+    case 'PrFixLanded': {
+      const d = event.data as PayloadOf<'PrFixLanded'>
+      // The landing is the PR branch's new head: it is what In progress means to push, and what the push step finds there.
+      const tickets = state.tickets.some((t) => t.ticket === d.ticket)
+        ? state.tickets
+        : [...state.tickets, { ticket: d.ticket, mergeCommit: d.mergeCommit, title: d.title ?? '' }]
+      return {
+        ...state,
+        ...at,
+        lastPushed: d.mergeCommit,
+        target: d.mergeCommit,
+        fixOwed: true,
+        tickets,
+        covers: { ...state.covers, [d.mergeCommit]: tickets.length },
       }
     }
     case 'PrStepDone': {
@@ -217,10 +267,17 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       // a resolution made once `sync` is recorded, an agent's amend of a red merge, which is the build step's (`syncedStep`); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
       const step = syncedStep(state, d.how)
+      // The sync started from `target` or from the newer `lastPushed` (a descendant of it, else no sync happens): the
+      // merge holds what the later of the two held.
+      const held = Math.max(
+        heldAt(state, state.target ?? ''),
+        state.lastPushed === null ? 0 : heldAt(state, state.lastPushed),
+      )
       return {
         ...withStep(state, { step, headSha: d.head }),
         ...at,
         target: d.head,
+        covers: { ...state.covers, [d.head]: state.covers[d.head] ?? held },
         adopted: d.how === 'clean' ? null : state.adopted,
       }
     }
@@ -236,16 +293,32 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     case 'PrMergeBackFailed': {
       const d = event.data as { prHead: string; why?: string }
       const merged = event.type === 'PrMergedBack'
+      const carried = merged ? state.tickets.slice(0, heldAt(state, d.prHead)).map((t) => t.ticket) : []
       return {
         ...state,
         ...at,
         mergeBack: { prHead: d.prHead, outcome: merged ? 'merged' : 'failed', why: merged ? null : (d.why ?? null) },
+        mergedBackTickets: [...new Set([...state.mergedBackTickets, ...carried])],
       }
     }
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
-      return { ...state, ...at, status: 'merged', wait: null, waitSince: null, pending: null, granting: null, ended }
+      const mergedTickets = state.tickets.slice(0, heldAt(state, d.headSha)).map((t) => t.ticket)
+      // A head nobody recorded (a person pushed atop the PR branch) holds an unknown number of tickets: a floor, not a count.
+      const mergedExact = state.covers[d.headSha] !== undefined || Object.keys(state.covers).length === 0
+      return {
+        ...state,
+        ...at,
+        status: 'merged',
+        wait: null,
+        waitSince: null,
+        pending: null,
+        granting: null,
+        ended,
+        mergedTickets,
+        mergedExact,
+      }
     }
     case 'PrClosed': {
       const d = event.data as PayloadOf<'PrClosed'>
@@ -367,6 +440,38 @@ export function restartTransition(state: PrState): ToAppend<PayloadOf<'PrInProgr
     branch: state.branch,
     main: state.main,
     frozenSha: state.frozenSha,
+    prBranch: state.prBranch,
+    tickets: state.tickets,
+  })
+}
+
+/**
+ * A pr-fix landed on the PR's branch (#1341): only an open PR that has begun its walk is owed In progress again, and a
+ * ticket the PR already holds appends nothing, so the in-lane append and the sweep's repair write it once.
+ */
+export function fixLandedTransition(
+  state: PrState,
+  landed: PayloadOf<'PrFixLanded'>,
+): ToAppend<PayloadOf<'PrFixLanded'>> | null {
+  if (!isOpen(state) || state.status === 'requested') return null
+  if (state.tickets.some((t) => t.ticket === landed.ticket)) return null
+  return { type: 'PrFixLanded', actor: 'conductor', data: landed }
+}
+
+/**
+ * Starts In progress again from its first step because a pr-fix landed: the target is the head the fix made, which is
+ * what the push step finds on the remote, and the tickets include the fix.
+ */
+export function fixRestartTransition(state: PrState): ToAppend<PayloadOf<'PrInProgress'>> | null {
+  if (!state.fixOwed || !isOpen(state) || state.status === 'requested') return null
+  if (state.branch === null || state.main === null || state.prBranch === null) return null
+  const head = state.lastPushed ?? state.target
+  if (head === null) return null
+  return inProgress({
+    because: 'pr-fix',
+    branch: state.branch,
+    main: state.main,
+    frozenSha: head,
     prBranch: state.prBranch,
     tickets: state.tickets,
   })

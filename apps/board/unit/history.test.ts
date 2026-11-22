@@ -321,6 +321,7 @@ const SAMPLES = {
     { mainCommit: 'b'.repeat(40), head: 'a'.repeat(40), how: 'already' },
     { mainCommit: 'b'.repeat(40), head: 'c'.repeat(40), how: 'clean' },
   ],
+  PrFixLanded: [{ ticket: '12', mergeCommit: 'd'.repeat(40) }],
   PrMergedBack: [{ prHead: 'a'.repeat(40), mergeCommit: 'c'.repeat(40), how: 'clean' }],
   SyncRoundStarted: [{ merging: 'main', commit: 'b'.repeat(40), start: 'a'.repeat(40), round: 1 }],
   SyncRoundRefused: [{ merging: 'main', commit: 'b'.repeat(40), round: 1, step: 'build', said: 'pnpm test fails' }],

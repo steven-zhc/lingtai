@@ -56,6 +56,7 @@ import {
   cutOffPromptOf,
   expandPrompt,
   integrationStream,
+  isOpen,
   parsePayload,
   stripEvidence,
   waitWords,
@@ -106,7 +107,7 @@ import {
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type Snapshot } from '@lingtai/event-store'
-import { observeSandbox } from '@lingtai/project'
+import { latestPr, observeSandbox, readPr, readUnheldFixLandings, recordPrFixLanded } from '@lingtai/project'
 import { readBacklogEffect } from '@lingtai/projector'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
@@ -296,7 +297,7 @@ import {
   resetToHead,
   restoreAfterReview,
 } from './kept-run-port.ts'
-import { labelsFor } from './labels.ts'
+import { PR_FIX_LABEL, labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
@@ -1189,7 +1190,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       log(`sandbox: running unsandboxed — ${sandboxDecision.why}`)
     }
     // Safe now, and only now: past the refusal these two are the same branch.
-    const base = branchOf(recipe)
+    const passBase = branchOf(recipe)
+    /**
+     * **The branch this attempt is cut from and lands on** (0130 §5, #1341): `branch.personal` for every claim but a
+     * team `lingtai:pr-fix` taken while a PR is open, which is that PR's branch. Decided once per attempt — in `take`
+     * for a fresh claim, off the ticket's own `cutFrom` for a continuation — and **read where it is used, never closed
+     * over**: `passBase` is what is true before a claim, `attemptBase()` after it.
+     */
+    let attemptCut = null as { readonly branch: string; readonly pr: number | null } | null
+    const attemptBase = (): string => attemptCut?.branch ?? passBase
     /**
      * **`runtime.limits` — the ceiling, and the default under every dispatch**
      * (`#314`, 0070 §5).
@@ -1358,6 +1367,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.orDie,
     )
 
+    // A continuation is the same attempt, so it keeps the branch its claim was cut from (#1341); `take` decides it
+    // again for a fresh claim, which is why this is only ever read where `continuation` is not null.
+    attemptCut = reduced.cutFrom
+
     /**
      * **Resuming a held run, read fresh off the log rather than trusted from
      * the caller** (#465, 0120 §6). `options.continuing` names only a
@@ -1421,7 +1434,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             project,
             owner: options.client.owner ?? '',
             repo: options.client.repo,
-            base,
+            base: attemptBase(),
             ...(options.token === undefined ? {} : { token: options.token }),
             ...(options.remote === undefined ? {} : { remote: options.remote }),
             home,
@@ -2375,7 +2388,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         )
         // The sentence that says which run this is, first — then what was written
         // while there was nowhere to write it, in the order it was written.
-        runLog.note('run', `${runId} · ${ticketId} · ${branch} → ${base}`)
+        runLog.note('run', `${runId} · ${ticketId} · ${branch} → ${attemptBase()}`)
         const held = beforeTheOpen
         beforeTheOpen = []
         for (const { label, detail } of held) runLog.note(label, detail)
@@ -2512,7 +2525,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * (`keepUncommittedWork`, `#468`).
        */
       const changeStart = (fallback: string = baseShaOr('HEAD')) =>
-        ownChangeStart({ git: gitAskedEffect, note: (l) => runLog.note('base', l), base, fallback })
+        ownChangeStart({ git: gitAskedEffect, note: (l) => runLog.note('base', l), base: attemptBase(), fallback })
 
       const numstat = (from?: string, to = 'HEAD') =>
         Effect.gen(function* () {
@@ -3172,7 +3185,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const merged = mergeCommit
           if (merged === null) return Effect.succeed(false)
           if (released) return Effect.succeed(true)
-          return remembered(landTicketEffect(ticketId, { mergeCommit: merged, base }, store, ticketSnapshots)).pipe(
+          return remembered(
+            landTicketEffect(ticketId, { mergeCommit: merged, base: attemptBase() }, store, ticketSnapshots),
+          ).pipe(
             // A refusal is a defect now; retried as a failure, as it was.
             Effect.catchDefect((defect) => Effect.fail(defect)),
             Effect.retry({ times: 2 }),
@@ -3253,6 +3268,26 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
               passedOver: found.skipped.find((s) => s.ref === options.issue)?.reason ?? 'not runnable',
             }
           }
+          // **The branch this attempt is cut from and lands on** (0130 §5, #1341). A continuation keeps its claim's;
+          // a fresh claim is on `branch.personal` unless it is a team `lingtai:pr-fix`, which is cut from the open PR's
+          // branch. **A failed read of the PR is never *no PR open***: it claims nothing for this look, because
+          // landing a review's fix on `branch.personal` would be landing it outside the PR.
+          if (continuation === null) {
+            attemptCut = null
+            if (modeOf(recipe) === 'team' && runnable.kind.toLowerCase().replace(/\s+/g, '-') === PR_FIX_LABEL) {
+              const read = yield* Effect.result(latestPr(project, store))
+              if (Result.isFailure(read)) return { notClaimed: `the open PR could not be read: ${whyOf(read.failure)}` }
+              const open = read.success
+              if (open !== null && isOpen(open)) {
+                // A requested PR has no branch yet, and one not yet pushed has nothing on the remote to cut from.
+                if (open.n === null || open.prBranch === null || open.lastPushed === null)
+                  return { notClaimed: `the PR branch of PR ${open.n ?? '?'} is not on the remote yet` }
+                attemptCut = { branch: open.prBranch, pr: open.n }
+              } else {
+                attemptCut = { branch: passBase, pr: null }
+              }
+            }
+          }
           // The ticket, fetched once, before anything that reads it: the
           // implementer's brief and the cold reviewer both want it, and a run still
           // costs one call for it.
@@ -3298,6 +3333,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       title: runnable.title,
                       kind: runnable.kind,
                       body: issue.body,
+                      ...(attemptCut === null ? {} : { cutFrom: attemptCut }),
                       children: options.client,
                     })
               const attempted = yield* Effect.result(attempting)
@@ -3910,12 +3946,54 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // (`publishWhatIsCommitted`).
           published = on.onSha
 
+          // A pr-fix lands on the PR's branch, which must still be what Lingtai last pushed there: read inside the lane's
+          // turn, so a landing before this one has moved it already (#1341). A read that fails is not a branch that
+          // held, and nothing is merged.
+          let expectBase: string | undefined
+          if (attemptCut !== null && attemptCut.pr !== null) {
+            // A fix an earlier landing pushed and could not tell the PR of is told first, from the log (its
+            // `TicketLanded` on this branch), so the head checked below is the PR's however many processes ago that was.
+            const mended = yield* Effect.result(
+              Effect.gen(function* () {
+                const open = yield* Effect.tryPromise({ try: () => options.client.listOpenIssues(), catch: (e) => e })
+                const current = yield* readPr(project, attemptCut!.pr!, store)
+                if (current === null) return
+                const owed = yield* readUnheldFixLandings(
+                  project,
+                  current,
+                  open.map((i) => ({ issue: String(i.number) })),
+                  store,
+                )
+                for (const fix of owed) yield* recordPrFixLanded(project, attemptCut!.pr!, fix, store)
+              }),
+            )
+            // **A repair that failed is not a head to check against**: the PR's `lastPushed` is stale, and landing against
+            // it would refuse `pr-branch-moved` for a push nobody made and hand Lingtai's own to a person. Nothing is
+            // merged; the lane's own retry asks again.
+            if (Result.isFailure(mended)) {
+              log(`PR ${attemptCut.pr}: fixes not told of were not mended: ${whyOf(mended.failure)}`)
+              return {
+                notMerged: {
+                  reason: 'unreachable',
+                  detail: `the PR could not be told of an earlier fix: ${whyOf(mended.failure)}`,
+                },
+              } as LandAnswer
+            }
+            const prRead = yield* Effect.result(readPr(project, attemptCut.pr, store))
+            if (Result.isFailure(prRead)) {
+              return {
+                notMerged: { reason: 'unexpected', detail: `the PR could not be read: ${whyOf(prRead.failure)}` },
+              } as LandAnswer
+            }
+            expectBase = prRead.success?.lastPushed ?? undefined
+          }
+
           const result = yield* repo.integrate({
             project,
             // '' when there is no owner, for `provision`'s own reason above.
             owner: options.client.owner ?? '',
             repo: options.client.repo,
-            base,
+            base: attemptBase(),
             branch,
             ticketId,
             headSha: on.onSha,
@@ -3927,9 +4005,33 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             gitEnv: options.gitEnv,
             store,
             unreachableWaits: options.unreachableWaits,
+            ...(expectBase === undefined ? {} : { expectBase }),
           })
           if (result.ok) {
             mergeCommit = result.mergeCommit
+            // The PR is told **inside the lane's turn**: a second pr-fix then reads this merge as the PR's head, and
+            // the push step never finds the branch at a commit the PR does not know (#1341). The push has happened,
+            // so a failed append is the sweep's to repair, not the landing's to fail.
+            if (attemptCut !== null && attemptCut.pr !== null) {
+              const answered = yield* Effect.result(
+                recordPrFixLanded(
+                  project,
+                  attemptCut.pr,
+                  {
+                    ticket: String(options.issue),
+                    mergeCommit: result.mergeCommit,
+                    ...(took === null ? {} : { title: took.ticket.title }),
+                  },
+                  store,
+                ).pipe(Effect.retry({ times: 4 })),
+              )
+              if (Result.isFailure(answered))
+                log(`PR ${attemptCut.pr} was not told of the fix: ${whyOf(answered.failure)}`)
+              else if (!answered.success)
+                log(
+                  `PR ${attemptCut.pr} holds ${options.issue} already or is no longer open: it stays on ${attemptBase()}`,
+                )
+            }
             return { merged: result.mergeCommit } as LandAnswer
           }
           return {
@@ -3949,7 +4051,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const land = (on: { readonly strategy: MergeStrategy; readonly onSha: string }): Effect.Effect<LandAnswer> =>
         (options.lane ?? landingLane).through(
-          integrationStream(project, base),
+          integrationStream(project, attemptBase()),
           { runId, issue: options.issue },
           {
             onWait: (behind) =>
@@ -3984,13 +4086,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        */
       const mergeBase = (toSha: string): Effect.Effect<{ head: string } | { failed: string }> =>
         Effect.gen(function* () {
-          const fetched = yield* gitAskedEffect(['fetch', 'origin', `refs/heads/${base}`])
-          if (Result.isFailure(fetched)) return { failed: `fetching ${base} failed: ${fetched.failure.detail}` }
+          const fetched = yield* gitAskedEffect(['fetch', 'origin', `refs/heads/${attemptBase()}`])
+          if (Result.isFailure(fetched))
+            return { failed: `fetching ${attemptBase()} failed: ${fetched.failure.detail}` }
           const merged = yield* gitAskedEffect([
             'merge',
             '--no-edit',
             '-m',
-            `Merge ${base} at ${toSha.slice(0, 7)} into ${branch}`,
+            `Merge ${attemptBase()} at ${toSha.slice(0, 7)} into ${branch}`,
             toSha,
           ])
           if (Result.isFailure(merged)) {
@@ -4289,11 +4392,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       yield* Effect.addFinalizer(() => Effect.sync(() => baseAbort.abort()))
       const baseIsRed = (asked: { action: string; mergedOnto: string | null }) =>
         Effect.gen(function* () {
+          // A PR branch is built by the PR's own walk before it is pushed (#1312): nothing checks it as a base, so a red
+          // one is never found here — which would release the fix for a ticket cut from `branch.personal` and never
+          // make the PR branch green (#1341).
+          if (attemptCut !== null && attemptCut.pr !== null)
+            return { notRed: `${attemptBase()} is a PR branch; the PR's own walk builds it` }
           // The ticket opened for this red asks nothing of it, however its first read of the log went (#1266):
           // an unread state is not an answer that this is not the fix ticket.
-          let named = yield* baseStateEffect({ store, project, base, recipe })
+          let named = yield* baseStateEffect({ store, project, base: attemptBase(), recipe })
           for (let again = 0; again < 3 && 'unread' in named; again++)
-            named = yield* baseStateEffect({ store, project, base, recipe })
+            named = yield* baseStateEffect({ store, project, base: attemptBase(), recipe })
           // Still unread: whether this is the fix ticket is unknown, and the cached red must not release it.
           if ('unread' in named) return { notRed: `base state not read: ${named.unread}` }
           if ('red' in named && named.red.fix?.externalRef === String(options.issue))
@@ -4301,7 +4409,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const baseSha = asked.mergedOnto ?? continuation?.diffBaseSha ?? worktree?.baseSha ?? null
           const built = yield* baseCheckQuestion({
             project,
-            base,
+            base: attemptBase(),
             // Checked below: a pass with no base commit builds nothing.
             baseSha: baseSha ?? '',
             recipe,
@@ -4334,7 +4442,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             return {
               red: {
                 command: question.command,
-                base,
+                base: attemptBase(),
                 baseSha,
                 evidence: answer.evidence,
                 boundary: answer.boundary,
@@ -4515,13 +4623,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * §2b it is the caller's and not the pass's.
        */
       const stepDeps: ActionPortDeps = {
-        base,
+        // Replaced by `attemptBase()` where `actionsAt` hands it to a declared action.
+        base: passBase,
         env: envForExtension,
         // 0108 §17 (#1222): a refusing `run:` that goes red then green asks these reads. The base is worked out when
         // the check asks, not here: `worktree` is assigned after this object is built.
         flaky: flakyPortOf({
           store,
-          stream: integrationStream(project, base),
+          stream: () => integrationStream(project, attemptBase()),
           diffPaths: () => {
             const baseSha = continuation?.diffBaseSha ?? worktree?.baseSha ?? null
             return baseSha === null ? Effect.succeed(null) : pathsBetween(`${baseSha}...HEAD`)
@@ -4667,7 +4776,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           held.push(
             makeHumanAction({
               name: 'no-merge',
-              question: `Merge ${branch} into ${base}? Every step passed, and this run was asked not to merge.`,
+              question: `Merge ${branch} into ${attemptBase()}? Every step passed, and this run was asked not to merge.`,
             }),
           )
         }
@@ -4769,7 +4878,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           return [makeQueueAction({ name: DEFAULT_ACTION.claim, ...queueOf(recipe) }, { take })]
         }
         if (step === 'admit') {
-          return [makeWorktreeAction({ name: DEFAULT_ACTION.admit, base, submodules: submodulesOf(recipe) }, { cut })]
+          return [
+            makeWorktreeAction(
+              { name: DEFAULT_ACTION.admit, base: attemptBase(), submodules: submodulesOf(recipe) },
+              { cut },
+            ),
+          ]
         }
         if (step === 'implement') {
           /**
@@ -4802,7 +4916,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }
 
       const actionsAt = (step: Step, actions: readonly StepAction[]): readonly ActionPort[] => {
-        const declared = actionPortsFromRecipe(step, actions, stepDeps)
+        // The base is the attempt's, asked when the step runs: `stepDeps` is built before a claim has decided it.
+        const declared = actionPortsFromRecipe(step, actions, { ...stepDeps, base: attemptBase() })
         // **A default replaces what would have run; a hold composes with it**
         // (0065 §3). That is why `alsoHeldAtMerge` stays outside the substitution
         // and composes either way: `--no-merge` holds a recipe that declares
@@ -5353,7 +5468,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const refusal = conflict
             ? ({
                 on: 'conflict',
-                base,
+                base: attemptBase(),
                 paths: said,
                 findings,
                 ...(merge === undefined ? {} : { merged: merge }),
@@ -5844,8 +5959,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       // no agent run. Read off the log alone (the look already decided on the mirror), and never for a
       // continuation, whose base is not the one the red record is about. A log that cannot be read is no
       // reason to skip the question: the guard at `proposed` asks again.
-      let baseState = yield* baseStateEffect({ store, project, base, recipe })
-      if ('unread' in baseState) baseState = yield* baseStateEffect({ store, project, base, recipe })
+      let baseState = yield* baseStateEffect({ store, project, base: attemptBase(), recipe })
+      if ('unread' in baseState) baseState = yield* baseStateEffect({ store, project, base: attemptBase(), recipe })
       // **The ticket opened to make this base green asks nothing about it** (#1266, 0108 §13): named by the
       // log, never by a label. A red `build` there reaches the judge as on any ticket and buys `fixRefusal`.
       const isBaseFix =
@@ -6181,7 +6296,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // and appended nothing; one transaction is what makes an
         // `EndActionsResolved{landed}` over an unrecorded landing unreachable
         // rather than merely unlikely.
-        yield* remembered(landTicketEffect(ticketId, { mergeCommit: merged, base, endPlan }, store, ticketSnapshots))
+        yield* remembered(
+          landTicketEffect(ticketId, { mergeCommit: merged, base: attemptBase(), endPlan }, store, ticketSnapshots),
+        )
         endResolved = endPlan
         // What is left is telling the issue, which reads the plan that was just
         // appended rather than the stream.
@@ -6210,12 +6327,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           github: options.client,
           ticketId,
           ...ticketSnapshots,
-          labels: labelsFor('landed', { base, main: recipe.branch.main }),
+          labels: labelsFor('landed', { base: attemptBase(), main: recipe.branch.main }),
           editEnded: true,
           appended: endResolved,
-          landed: { mergeCommit: merged, base, attempt, summary },
+          landed: { mergeCommit: merged, base: attemptBase(), attempt, summary },
         })
-        log(`landed ${merged.slice(0, 7)} on ${base}`)
+        log(`landed ${merged.slice(0, 7)} on ${attemptBase()}`)
         // **Every kept ref for this ticket, not only this run's own** (`#421`)
         // — an earlier run of the same ticket may have left one too, and a
         // landing is the one place either is ever cleaned up: the worktree
@@ -6316,7 +6433,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           store,
           tickets: githubTicketStore(options.client),
           project,
-          base,
+          base: attemptBase(),
           recipe,
           note: (message) => {
             log(message)
@@ -6462,7 +6579,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             } satisfies RunOnceResult
           }
         }
-        const said_ = waitWords(reason, { branch, base, findings })
+        const said_ = waitWords(reason, { branch, base: attemptBase(), findings })
         /**
          * **Something judged this diff and said no** — the second half of when a
          * person may be offered *merge it anyway*, and the half `onOrigin` cannot
@@ -6523,7 +6640,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
          */
         const question =
           !held && judged && onOrigin !== null
-            ? `Merge ${branch} into ${base} anyway? ${said_.line}` +
+            ? `Merge ${branch} into ${attemptBase()} anyway? ${said_.line}` +
               (whatRefused(stopped) === null ? '' : ` (\`${whatRefused(stopped)}\`)`)
             : said_.line
         /**

@@ -24,6 +24,8 @@ import {
   stepDoneTransition,
   pushedTransition,
   restartTransition,
+  fixLandedTransition,
+  fixRestartTransition,
   draftOpenedTransition,
   openedTransition,
   mergedTransition,
@@ -166,6 +168,29 @@ export const recordPrRestart = (project: string, n: number, store: EventStore) =
     project,
     n,
     (state) => restartTransition(state),
+    (_state, appended) => appended,
+  )
+
+/**
+ * A pr-fix ticket landed on the PR's branch (#1341): the PR is owed In progress again. Appends nothing for a PR that is
+ * no longer open or one that already holds the ticket, so the in-lane append and the sweep's repair write it once.
+ */
+export const recordPrFixLanded = (project: string, n: number, landed: PayloadOf<'PrFixLanded'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixLandedTransition(state, landed),
+    (_state, appended) => appended,
+  )
+
+/** In progress starts again because a pr-fix landed: from the head the fix made, tickets including it. */
+export const recordPrFixRestart = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixRestartTransition(state),
     (_state, appended) => appended,
   )
 
@@ -362,8 +387,16 @@ export function readDraftOn(
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
+    // A pr-fix the PR held when a merge back carried it, and whose PR then closed unmerged: its code is on the
+    // personal branch, so it is a draft ticket like the PR's own. Per ticket, never per branch (#1341): a later fix on
+    // the branch, or one the PR was never told of, is not on the personal branch.
+    const mergedBack = new Map<string, string>()
     for (const pr of yield* listPrs(project, store)) {
-      if (pr.status === 'refused' || pr.status === 'closed') continue
+      if (pr.status === 'closed') {
+        if (pr.prBranch !== null) for (const t of pr.mergedBackTickets) mergedBack.set(t, pr.prBranch)
+        continue
+      }
+      if (pr.status === 'refused') continue
       for (const t of pr.tickets) held.add(t.ticket)
     }
 
@@ -373,8 +406,10 @@ export function readDraftOn(
       if (held.has(issue)) continue
       const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
       const state = reduceTicket(events)
-      if (state.landed === null || state.landed.base !== personal) continue
-      const landedAt = landedSeq(events, personal)
+      if (state.landed === null) continue
+      const onBase = state.landed.base
+      if (onBase !== personal && mergedBack.get(issue) !== onBase) continue
+      const landedAt = landedSeq(events, onBase)
       if (landedAt === null || landedAt <= since) continue
       const landing = events.find((e) => e.seq === landedAt)
       landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())
@@ -382,6 +417,40 @@ export function readDraftOn(
     }
     // In the order they landed, not the order of their numbers; a tie keeps the candidates' order.
     return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
+  })
+}
+
+/**
+ * The pr-fix landings on an open PR's branch that the PR does not hold (#1341): tickets whose latest landing is on
+ * `prBranch` and are not among the PR's tickets, so a process that died between `TicketLanded` and `PrFixLanded` is
+ * mended on the next sweep. A PR's branch is named for it alone, so nothing landed there is anything but its fix.
+ */
+export function readUnheldFixLandings(
+  project: string,
+  pr: PrState,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<PayloadOf<'PrFixLanded'>[], Error> {
+  return Effect.gen(function* () {
+    const unheld: PayloadOf<'PrFixLanded'>[] = []
+    const order = new Map<string, bigint>()
+    if (pr.prBranch === null) return unheld
+    for (const { issue } of candidates) {
+      if (pr.tickets.some((t) => t.ticket === issue)) continue
+      const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
+      const state = reduceTicket(events)
+      if (state.landed === null || state.landed.base !== pr.prBranch) continue
+      const landedAt = landedSeq(events, pr.prBranch)
+      if (landedAt === null) continue
+      order.set(issue, landedAt)
+      unheld.push({
+        ticket: issue,
+        mergeCommit: state.landed.mergeCommit,
+        ...(state.title === null ? {} : { title: state.title }),
+      })
+    }
+    // In the order they landed: the PR's head must only ever move forward.
+    return unheld.sort((a, b) => Number((order.get(a.ticket) ?? 0n) - (order.get(b.ticket) ?? 0n)))
   })
 }
 

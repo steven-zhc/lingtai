@@ -41,12 +41,15 @@ import {
   recordPrPushed,
   recordPrRefused,
   recordPrRestart,
+  recordPrFixLanded,
+  recordPrFixRestart,
+  readUnheldFixLandings,
   recordPrStepDone,
   recordPrWaiting,
 } from '@lingtai/project'
 import { type Recipe, modeOf, remoteOf } from '@lingtai/recipe'
 import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
-import { Effect, Semaphore } from 'effect'
+import { Effect, Result, Semaphore } from 'effect'
 
 import { type LandingLane, landingLane } from './landing-lane.ts'
 import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
@@ -494,7 +497,13 @@ export const walkPr = (
 ): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     for (;;) {
-      const state = yield* readPr(project, n, ports.store)
+      let state = yield* readPr(project, n, ports.store)
+      // A pr-fix landed on the PR's branch (#1341): In progress starts again from its first step, on the fix's head,
+      // before anything else — a walk already under way on the old pass is answered by the target having moved.
+      if (state !== null && state.fixOwed) {
+        yield* recordPrFixRestart(project, n, ports.store)
+        state = yield* readPr(project, n, ports.store)
+      }
       if (state === null || state.status !== 'in-progress') return
       const next = steps.find((s) => !state.steps.some((r) => r.step === s.name))
       if (next === undefined) return
@@ -703,7 +712,11 @@ export const servePendingPrs = (
       )
       for (const pr of prs) {
         if (
-          (pr.status === 'requested' || pr.status === 'in-progress' || pr.pending !== null || mergeBackOwed(pr)) &&
+          (pr.status === 'requested' ||
+            pr.status === 'in-progress' ||
+            pr.pending !== null ||
+            pr.fixOwed ||
+            mergeBackOwed(pr)) &&
           pr.n !== null
         ) {
           yield* servePr(ports, project, pr.n, steps).pipe(
@@ -865,7 +878,55 @@ const closeMergedTickets = (
     if (memory.get(doneKey) === 'done') return
     const after = state.ended.seq
     let channel: IssueChannel | null = null
-    for (const t of state.tickets) {
+    // Only what the merged commit held: a fix that landed on the branch after it is not in the merge (#1341).
+    let merged = state.tickets.filter((t) => state.mergedTickets.includes(t.ticket))
+    // A merged head the PR never recorded (a person added a commit on top of the PR branch) has unknown coverage: each
+    // ticket the floor left out is closed when git proves its commit is in what merged, and asked again until it is.
+    let unproven = 0
+    if (!state.mergedExact) {
+      const left = state.tickets.filter((x) => !state.mergedTickets.includes(x.ticket))
+      // The merged head is one nobody here recorded: the mirror may not hold it yet, and an ancestry check against a
+      // commit it lacks proves nothing. Fetched before asking, on every sweep; a fetch that fails leaves them unproven.
+      const fetched = left.length === 0 ? null : yield* Effect.result(ports.fetch(project))
+      if (fetched !== null && Result.isFailure(fetched)) unproven += left.length
+      // A fetch of the branches that succeeds is not a head that arrived: a squash merge deletes the PR branch, and the
+      // mirror only mirrors branches. The head is checked for, then fetched by the PR's own ref, which the host keeps; one
+      // still absent proves nothing either way, and git's 128 for it is never read as *not an ancestor*.
+      const headRef = `refs/lingtai/pr/${state.n}/merged-head`
+      let headHere = false
+      if (fetched !== null && !Result.isFailure(fetched)) {
+        const have = () =>
+          ports.git(project, ['cat-file', '-e', `${state.ended!.headSha}^{commit}`]).pipe(
+            Effect.map((a) => a.code === 0),
+            Effect.catch(() => Effect.succeed(false)),
+          )
+        headHere = yield* have()
+        // The host's own PR number, never Lingtai's `n`; a PR with none (another remote) stays unproven.
+        if (!headHere && state.host !== null) {
+          yield* ports
+            .remote(project, ['fetch', 'origin', `+refs/pull/${state.host.number}/head:${headRef}`])
+            .pipe(Effect.catch(() => Effect.void))
+          headHere = yield* have()
+        }
+      }
+      for (const t of fetched !== null && Result.isFailure(fetched) ? [] : left) {
+        let held = false
+        for (const into of [
+          headHere ? state.ended.headSha : null,
+          state.main === null ? null : `refs/heads/${state.main}`,
+        ]) {
+          if (into === null || held) continue
+          const ask = ['merge-base', '--is-ancestor', t.mergeCommit, into] as const
+          const answer = yield* ports.git(project, ask)
+          if (answer.code === 0) held = true
+        }
+        if (held) merged = [...merged, t]
+        else unproven++
+      }
+      // Dropped only after the ancestry was asked: the ref is what kept the fetched head from being collected.
+      yield* dropRef(ports, project, headRef)
+    }
+    for (const t of merged) {
       const ticketId = ticketStream(project, t.ticket)
       const events = yield* Effect.tryPromise({ try: () => ports.store.read(ticketId), catch: asError })
       const closed = events.some(
@@ -877,7 +938,7 @@ const closeMergedTickets = (
     }
     // Only a pass that found every ticket with a recorded close is done (a failed close is `IssueUpdateFailed`).
     let all = true
-    for (const t of state.tickets) {
+    for (const t of merged) {
       const events = yield* Effect.tryPromise({
         try: () => ports.store.read(ticketStream(project, t.ticket)),
         catch: asError,
@@ -890,7 +951,15 @@ const closeMergedTickets = (
       )
         all = false
     }
-    if (all) memory.set(doneKey, 'done')
+    if (all && unproven === 0) memory.set(doneKey, 'done')
+  })
+
+/** Each pr-fix landing on the open PR's branch that the PR does not hold gets its `PrFixLanded`, once (#1341). */
+const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if (pr.n === null) return
+    const landings = yield* readUnheldFixLandings(project, pr, yield* ports.candidates(project), ports.store)
+    for (const landed of landings) yield* recordPrFixLanded(project, pr.n, landed, ports.store)
   })
 
 /**
@@ -907,7 +976,17 @@ export const learnPrEnds = (
       yield* Effect.gen(function* () {
         const latest = yield* latestPr(project, ports.store)
         if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
-          yield* learnOnePr(ports, memory, project, latest)
+          // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now,
+          // **before** the PR's end is learned — a PR merged meanwhile would refuse the request and lose the fix for good.
+          const repaired = yield* Effect.result(mendFixLandings(ports, project, latest))
+          if (Result.isFailure(repaired)) {
+            // **A repair that failed records no ending**: the PR stays open, so the next sweep repairs it first.
+            ports.log?.(`pr sweep ${project}: ${repaired.failure.message}`)
+          } else {
+            // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
+            const mended = yield* latestPr(project, ports.store)
+            if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
+          }
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {

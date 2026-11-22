@@ -503,6 +503,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
     d['how'] === 'already'
       ? `Main (${sha(d, 'mainCommit')}) was already in the PR branch`
       : `Main (${sha(d, 'mainCommit')}) was merged into the PR branch as ${sha(d, 'head')} and built`,
+  PrFixLanded: (d) => `A pr-fix ticket landed on the PR branch as ${sha(d, 'mergeCommit')}: In progress again`,
   PrMergedBack: (d) =>
     `The PR branch (${sha(d, 'prHead')}) was merged back into the personal branch as ${sha(d, 'mergeCommit')}`,
   SyncRoundStarted: (d) =>
