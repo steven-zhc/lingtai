@@ -15,7 +15,10 @@ import { TestClock } from 'effect/testing'
 import { describe, expect, it } from 'vitest'
 
 import type { CiProviderShape } from '../src/ci.ts'
-import { type PrPorts, servePr } from '../src/pr.ts'
+import { IN_PROGRESS_STEPS, type PrPorts, servePr } from '../src/pr.ts'
+
+/** `sync` and `build` are `pr-sync.test.ts`'s: the steps this file is about are the ones from `push` on. */
+const STEPS = IN_PROGRESS_STEPS.filter((s) => ['push', 'open', 'ci', 'ready'].includes(s.name))
 
 const recipeWith = (ci?: Record<string, unknown>) =>
   ({
@@ -118,12 +121,17 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
     recipe: () => Effect.succeed(recipe),
     candidates: () => Effect.succeed([{ issue: '1' }]),
     fetch: () => Effect.void,
+    merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),
+    sweep: () => Effect.void,
+    build: () => Effect.succeed({ kind: 'unknown', why: 'this test never builds' }),
+    checkedOut: () => Effect.succeed(null),
     projects: () => Effect.succeed(['lingtai']),
     tickets: () => Effect.fail(new Error('none')),
     github: () => Effect.succeed(github),
     facts: (_p, tickets) => Effect.succeed(tickets.map((ticket) => ({ ticket, open: true, spend: 0 }))),
-    git: (_p, args) => Effect.succeed({ code: 0, stdout: args[0] === 'rev-parse' ? `${FROZEN}\n` : '' }),
-    remote: (_p, args) => Effect.succeed({ code: 0, stdout: args[0] === 'ls-remote' ? `${FROZEN}\t${REF}` : '' }),
+    git: (_p, args) => Effect.succeed({ code: 0, stdout: args[0] === 'rev-parse' ? `${FROZEN}\n` : '', stderr: '' }),
+    remote: (_p, args) =>
+      Effect.succeed({ code: 0, stdout: args[0] === 'ls-remote' ? `${FROZEN}\t${REF}` : '', stderr: '' }),
     ci: () => Effect.succeed(recipe.pr?.ci?.provider === 'none' ? null : provider),
   }
 }
@@ -139,7 +147,7 @@ const aWorld = (checks: CiCheck[]): World => ({
   markFails: false,
   observed: 0,
 })
-const serve = (p: PrPorts) => Effect.runPromise(servePr(p, 'lingtai', 1))
+const serve = (p: PrPorts) => Effect.runPromise(servePr(p, 'lingtai', 1, STEPS))
 const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
 
 describe('the ci and ready steps', () => {
@@ -237,7 +245,7 @@ describe('the ci and ready steps', () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         yield* TestClock.adjust(Date.now() + 31 * 60_000)
-        yield* servePr(ports(store, w, recipeWith()), 'lingtai', 1)
+        yield* servePr(ports(store, w, recipeWith()), 'lingtai', 1, STEPS)
       }).pipe(Effect.provide(TestClock.layer())),
     )
     const s = reducePr(await store.read(prStream('lingtai', 1)))
@@ -250,7 +258,7 @@ describe('the ci and ready steps', () => {
     await Effect.runPromise(
       Effect.gen(function* () {
         yield* TestClock.adjust(Date.now() + 2 * 3_600_000)
-        yield* servePr(ports(store, w, recipeWith()), 'lingtai', 1)
+        yield* servePr(ports(store, w, recipeWith()), 'lingtai', 1, STEPS)
       }).pipe(Effect.provide(TestClock.layer())),
     )
     expect(reducePr(await store.read(prStream('lingtai', 1))).wait).toMatchObject({ reason: 'ci-timeout' })
