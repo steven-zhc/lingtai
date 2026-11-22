@@ -19,7 +19,7 @@ import { Effect, Result } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
 import { asError, backRef, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
-import { type ResolveEnd, resolveRounds } from './pr-resolve.ts'
+import { type ConflictWhy, type ResolveEnd, resolveRounds } from './pr-resolve.ts'
 import type { PrPorts, PrStep, StepAnswer } from './pr.ts'
 
 const short = (sha: string): string => sha.slice(0, 7)
@@ -205,11 +205,16 @@ export const buildStep: PrStep = {
           return { kind: 'done', headSha: target } as StepAnswer
         const adopted = synced.headSha === target
         const merge = synced.headSha
-        const wait = (reason: 'sync-red' | 'sync-unknown', detail: string): StepAnswer => ({
+        const wait = (
+          reason: 'sync-red' | 'sync-unknown' | 'sync-locked',
+          detail: string,
+          conflict?: ConflictEnd,
+        ): StepAnswer => ({
           kind: 'wait',
           reason,
           detail,
           headSha: target,
+          ...(conflict === undefined ? {} : { conflict }),
         })
 
         // The merge has to be in the mirror to be built and pushed from it; a re-cloned mirror loses it.
@@ -223,10 +228,43 @@ export const buildStep: PrStep = {
         yield* ports.sweep(project)
         const built = yield* ports.build(project, { sha: merge, base: prBranch, checkId: `pr-${n}-sync` })
         if (built.kind === 'red') {
-          return wait(
-            'sync-red',
-            `\`${built.command}\` fails on ${short(merge)}, main merged into ${prBranch}:\n${built.evidence}`,
-          )
+          const said = `\`${built.command}\` fails on ${short(merge)}, main merged into ${prBranch}:\n${built.evidence}`
+          // A head nobody merged is the person's branch, not the sync, and waits on them (0131 §3).
+          const resolver = ports.resolver
+          if (adopted || resolver === undefined || state.main === null) return wait('sync-red', said)
+          // **The merge Lingtai made, built red**: both sides were right alone and are wrong together. The agent is handed the
+          // build's output and the same rounds the conflict path spends; its answer is the merge, amended.
+          const start = yield* resolve(ports, project, `${merge}^1`)
+          const resolved = yield* resolveRounds(ports, resolver, {
+            project,
+            n,
+            merging: 'main',
+            commit: mainCommit,
+            start,
+            paths: [],
+            why: { kind: 'red', merge, command: built.command, evidence: built.evidence },
+            into: prBranch,
+            from: state.main,
+            subject: `Merge ${state.main} at ${short(mainCommit)} into ${prBranch}`,
+            buildBase: prBranch,
+            checkId: `pr-${n}-sync`,
+          })
+          if (resolved.kind === 'resolved') {
+            const keep = ['update-ref', targetRef(n), resolved.sha] as const
+            const kept = yield* ports.git(project, keep)
+            if (kept.code !== 0) return wait('sync-unknown', gitSaid(keep, kept))
+            return {
+              kind: 'done',
+              headSha: resolved.sha,
+              record: (project, n, store) =>
+                recordBranchSynced(project, n, { mainCommit, head: resolved.sha, how: 'resolved' }, store),
+            } as StepAnswer
+          }
+          if (resolved.kind === 'unknown') return wait('sync-unknown', resolved.why)
+          if (resolved.kind === 'locked') {
+            return wait('sync-locked', `${resolved.sentence}\n${spentSentence(resolved.end)}`, resolved.end)
+          }
+          return wait('sync-red', `${said}\n${spentSentence(resolved.end)}`, resolved.end)
         }
         if (built.kind === 'unknown')
           return wait('sync-unknown', `the build of ${short(merge)} could not be told: ${built.why}`)
@@ -264,7 +302,13 @@ type Back =
   | { readonly kind: 'failed'; readonly why: 'conflict' | 'red' | 'unknown' | 'lost-push'; readonly detail: string }
   | { readonly kind: 'lost' }
   /** Conflicted in the lane's turn, with an agent to ask: the rounds run outside it, and the push is a second turn. */
-  | { readonly kind: 'conflict'; readonly personalSha: string; readonly paths: readonly string[] }
+  | {
+      readonly kind: 'conflict'
+      readonly personalSha: string
+      readonly paths: readonly string[]
+      /** A clean merge that built red goes to the same agent (#1352); absent is a conflict. */
+      readonly why?: ConflictWhy
+    }
 
 /**
  * Merges a PR's last pushed commit into `branch.personal`, builds it, and pushes it — once per head, and only once the
@@ -400,10 +444,17 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         // `BaseChecked` is read as the state of that branch, and a commit that was never on it must not stand there.
         const built = yield* ports.build(project, { sha: merged.sha, base: prBranch, checkId: `pr-${n}-back` })
         if (built.kind === 'red') {
+          const detail = `\`${built.command}\` fails on ${short(merged.sha)}:\n${built.evidence}`
+          if (ports.resolver === undefined) return { kind: 'failed', why: 'red', detail } as Back
+          // The merge is kept in the mirror while the rounds run outside the lane; `resolveBack` drops the ref.
+          const keep = ['update-ref', backRef(n), merged.sha] as const
+          const kept = yield* ports.git(project, keep)
+          if (kept.code !== 0) return { kind: 'failed', why: 'unknown', detail: gitSaid(keep, kept) } as Back
           return {
-            kind: 'failed',
-            why: 'red',
-            detail: `\`${built.command}\` fails on ${short(merged.sha)}:\n${built.evidence}`,
+            kind: 'conflict',
+            personalSha,
+            paths: [],
+            why: { kind: 'red', merge: merged.sha, command: built.command, evidence: built.evidence },
           } as Back
         }
         if (built.kind === 'unknown') return { kind: 'failed', why: 'unknown', detail: built.why } as Back
@@ -487,7 +538,13 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       sha: string,
       tries: number,
     ): Effect.Effect<
-      { readonly kind: 'done' } | { readonly kind: 'again'; readonly start: string; readonly paths: readonly string[] },
+      | { readonly kind: 'done' }
+      | {
+          readonly kind: 'again'
+          readonly start: string
+          readonly paths: readonly string[]
+          readonly why?: ConflictWhy
+        },
       Error
     > =>
       Effect.gen(function* () {
@@ -515,13 +572,36 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             return { kind: 'done' } as const
           }
           const built = yield* ports.build(project, { sha: moved.sha, base: prBranch, checkId: `pr-${n}-back` })
+          if (built.kind === 'red') {
+            // The resolution's own tree, shaped as the merge of `prHead` into `personalNow` under the subject the lost-record
+            // search finds: round 1's resolution is kept, and `commit` is still `prHead`, so this is the same commit's next round.
+            const shaped = [
+              'commit-tree',
+              `${moved.sha}^{tree}`,
+              '-p',
+              personalNow,
+              '-p',
+              prHead,
+              '-m',
+              backSubject,
+            ] as const
+            const made = yield* ports.git(project, shaped)
+            const merge = made.stdout.trim()
+            const kept =
+              made.code === 0 && merge !== '' ? yield* ports.git(project, ['update-ref', backRef(n), merge]) : null
+            if (kept === null || kept.code !== 0) {
+              yield* failed('red', `\`${built.command}\` fails on ${short(moved.sha)}:\n${built.evidence}`)
+              return { kind: 'done' } as const
+            }
+            return {
+              kind: 'again',
+              start: personalNow,
+              paths: [],
+              why: { kind: 'red', merge, command: built.command, evidence: built.evidence },
+            } as const
+          }
           if (built.kind !== 'green') {
-            yield* failed(
-              built.kind === 'red' ? 'red' : 'unknown',
-              built.kind === 'red'
-                ? `\`${built.command}\` fails on ${short(moved.sha)}:\n${built.evidence}`
-                : built.why,
-            )
+            yield* failed('unknown', built.why)
             return { kind: 'done' } as const
           }
           pushing = moved.sha
@@ -543,12 +623,13 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
 
     const resolveBack = (
-      found: { readonly personalSha: string; readonly paths: readonly string[] },
+      found: { readonly personalSha: string; readonly paths: readonly string[]; readonly why?: ConflictWhy },
       resolver: NonNullable<PrPorts['resolver']>,
     ) =>
       Effect.gen(function* () {
         let start = found.personalSha
         let paths = found.paths
+        let why: ConflictWhy | undefined = found.why
         for (;;) {
           const ended: ResolveEnd = yield* resolveRounds(ports, resolver, {
             project,
@@ -557,6 +638,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             commit: prHead,
             start,
             paths,
+            ...(why === undefined ? {} : { why }),
             into: branch,
             from: prBranch,
             subject: backSubject,
@@ -565,8 +647,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           })
           if (ended.kind === 'spent') {
             yield* failed(
-              'conflict',
-              `${prBranch} (${short(prHead)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
+              why?.kind === 'red' ? 'red' : 'conflict',
+              why?.kind === 'red'
+                ? `\`${why.command}\` fails on the merge of ${prBranch} (${short(prHead)}) into ${branch}: ${spentSentence(ended.end)}`
+                : `${prBranch} (${short(prHead)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
               ended.end,
             )
             return
@@ -592,6 +676,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           if (next.kind === 'done') return
           start = next.start
           paths = next.paths
+          why = next.why
         }
       }).pipe(
         Effect.catch((err: Error) =>

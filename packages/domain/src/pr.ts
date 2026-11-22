@@ -215,7 +215,8 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       const d = event.data as PayloadOf<'BranchSynced'>
       // `already` and `resolved` are the sync step's own record (a resolution was built and reviewed inside it); a
       // clean merge is recorded by the build that passed it. The target is the commit the push step means to push.
-      const step = d.how === 'clean' ? 'build' : 'sync'
+      // A record made once `sync` is on the steps is the build's own (#1352): a red merge resolved by the agent at `build`.
+      const step = d.how === 'clean' || state.steps.some((r) => r.step === 'sync') ? 'build' : 'sync'
       return {
         ...withStep(state, { step, headSha: d.head }),
         ...at,

@@ -32,6 +32,14 @@ import { recordPrompt } from './record-prompt.ts'
 
 const short = (sha: string): string => sha.slice(0, 7)
 
+/**
+ * Why a round is bought (#1352): the merge conflicted, or it was clean and its build is red. A red round is one budget with
+ * the conflict rounds of the same commit — `merge` is the clean merge Lingtai made, stood up as it is for the agent to amend.
+ */
+export type ConflictWhy =
+  | { readonly kind: 'conflict' }
+  | { readonly kind: 'red'; readonly merge: string; readonly command: string; readonly evidence: string }
+
 /** What is being resolved: one commit merged into another, by the sync step or the merge back. */
 export interface ConflictAsk {
   readonly project: string
@@ -41,8 +49,10 @@ export interface ConflictAsk {
   readonly commit: string
   /** The commit it is merged into: the PR branch's start, or `branch.personal`'s head. */
   readonly start: string
-  /** What conflicted when the merge was first tried; the round's own stood-up merge may name more. */
+  /** What conflicted when the merge was first tried; the round's own stood-up merge may name more. Empty for a red build. */
   readonly paths: readonly string[]
+  /** Absent is a conflict, as every ask was before a red build could buy a round. */
+  readonly why?: ConflictWhy
   /** The branch merged into, for what an agent and a person read. */
   readonly into: string
   /** What is merged in, for the same readers: `main` or the PR branch. */
@@ -151,14 +161,25 @@ const oursOf = (
             yield* ports.candidates(ask.project),
             ports.store,
           )).map((t) => ({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: t.title }))
-    const found: OursTicket[] = []
+    const red = ask.why?.kind === 'red' ? ask.why : null
+    const files: { ticket: (typeof tickets)[number]; names: string[] }[] = []
     for (const t of tickets) {
       const args = ['diff', '--name-only', '-z', `${t.mergeCommit}^1`, t.mergeCommit] as const
       const touched = yield* ports.git(ask.project, args)
       if (touched.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, touched)))
-      const names = touched.stdout.split('\0').filter((p) => p !== '')
-      const both = paths.filter((p) => names.includes(p))
-      if (both.length === 0) continue
+      files.push({ ticket: t, names: touched.stdout.split('\0').filter((p) => p !== '') })
+    }
+    // A conflict names the tickets whose merge touched a conflicted path. A red build names those with a touched path the
+    // output mentions — a plain substring, the output is never parsed — and every ticket when none is (#1352).
+    const mentioned = (names: string[]) =>
+      red === null ? paths.filter((p) => names.includes(p)) : names.filter((p) => red.evidence.includes(p))
+    const matched = files.filter((f) => mentioned(f.names).length > 0)
+    const chosen =
+      red !== null && matched.length === 0
+        ? files.map((f) => ({ ...f, both: f.names }))
+        : matched.map((f) => ({ ...f, both: mentioned(f.names) }))
+    const found: OursTicket[] = []
+    for (const { ticket: t, both } of chosen) {
       const body = yield* resolver.ticketBody(ask.project, t.ticket).pipe(
         Effect.map((text): string | { readonly failed: string } => text),
         Effect.catch((err: Error) => Effect.succeed({ failed: err.message })),
@@ -181,8 +202,8 @@ const theirsOf = (
       '--no-show-signature',
       '--format=%H%x00%an%x00%s%x00',
       `${ask.start}..${ask.commit}`,
-      '--',
-      ...paths,
+      // A red build is a clean merge: the whole merged range is what the other side did.
+      ...(ask.why?.kind === 'red' ? [] : ['--', ...paths]),
     ] as const
     const answer = yield* ports.git(ask.project, args)
     if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
@@ -264,22 +285,37 @@ export const resolveRounds = (
         Effect.map((s) => ({ kind: 'spent', end: endOf(ask, paths, s.ours, s.theirs, used, last, s.ahead) }) as const),
       )
 
+    const red = ask.why?.kind === 'red' ? ask.why : null
+
     const oneRound = (round: number): Effect.Effect<Round | ResolveEnd, Error> =>
       Effect.gen(function* () {
         if (implement === null) return yield* Effect.fail(new Error('no agent at implement'))
         yield* ports.sweep(project)
         const name = `${ask.merging === 'main' ? 'pr-sync' : 'pr-back'}-${n}-${Date.now()}`
-        const stood = yield* resolver.standMerge(project, { name, at: ask.start, theirs: ask.commit })
+        const stood =
+          red === null
+            ? yield* resolver.standMerge(project, { name, at: ask.start, theirs: ask.commit })
+            : yield* resolver.standCommit(project, { name, at: red.merge })
         if (stood.kind === 'failed') {
           return { kind: 'unknown', why: `the merge could not be stood up: ${stood.text}` } as const
         }
-        if (stood.paths.length === 0) {
+        if (red !== null) {
+          // What a red round amends is the merge of `commit` into `start`: nothing else is a round about this commit.
+          const made = yield* resolver.gitIn(stood.cwd, ['rev-list', '--parents', '-n', '1', 'HEAD'])
+          const [, ...above] = made.stdout.trim().split(/\s+/)
+          if (made.code !== 0 || above.length !== 2 || above[0] !== ask.start || above[1] !== ask.commit) {
+            return {
+              kind: 'unknown',
+              why: `${short(red.merge)} is not the merge of ${short(ask.commit)} into ${short(ask.start)}`,
+            } as const
+          }
+        } else if (stood.paths.length === 0) {
           return {
             kind: 'unknown',
             why: `${ask.from} no longer conflicts with ${ask.into} at ${short(ask.start)}`,
           } as const
         }
-        paths = stood.paths
+        if (red === null) paths = stood.paths
         const cwd = stood.cwd
         const { ours, theirs } = yield* sidesNow
         const brief = {
@@ -293,6 +329,7 @@ export const resolveRounds = (
           round,
           bound,
           refusal: last,
+          ...(red === null ? {} : { red: { command: red.command, evidence: red.evidence } }),
         }
         const runId = (purpose: 'resolve' | 'review') =>
           `pr-${project}-${n}:${purpose}:${ask.merging}:${short(ask.commit)}:${round}`
@@ -564,7 +601,13 @@ export const resolveRounds = (
       const counted = yield* recordSyncRoundStarted(
         project,
         n,
-        { merging: ask.merging, commit: ask.commit, start: ask.start, round: next },
+        {
+          merging: ask.merging,
+          commit: ask.commit,
+          start: ask.start,
+          round: next,
+          ...(red === null ? {} : { why: 'red' as const }),
+        },
         ports.store,
       )
       if (!counted) continue
