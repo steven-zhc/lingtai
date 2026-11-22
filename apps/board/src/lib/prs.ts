@@ -34,6 +34,7 @@ import {
 } from './pr-page.ts'
 import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
+import type { LandedWhereRead } from './where-landed.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -180,6 +181,29 @@ export async function readPrPage(project: string): Promise<PrsRead> {
       }),
     )
     return { kind: 'team', recipe, view }
+  } catch (err) {
+    return { kind: 'failed', error: (err as Error).message }
+  }
+}
+
+/**
+ * The home page's Landed column asks, once per team project: the PRs and the draft, **every PR and never a `since`** —
+ * the draft treats a merged PR's tickets as held, so a list cut short would put a merged ticket back in the draft.
+ * A solo project reads no PR stream.
+ */
+export async function readLandedWhere(project: string): Promise<LandedWhereRead> {
+  try {
+    const state = await readProject(project)
+    if (state === null || state === undefined) return { kind: 'solo' }
+    const { recipe } = await currentRecipe(state)
+    if (modeOf(recipe) !== 'team') return { kind: 'solo' }
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        const prs = yield* readProjectPrs(project, eventStore)
+        const draft = yield* readDraftOf(project, recipe, prs)
+        return { kind: 'team', prs, draft } as const
+      }),
+    )
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }

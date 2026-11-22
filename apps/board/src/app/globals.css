@@ -781,6 +781,25 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lmeta:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+.ltag {
+  margin-left: auto; padding: 0 5px; border-radius: 2px; white-space: nowrap; flex: none;
+  font-size: 9.5px; text-decoration: none;
+}
+.ltag-branch { background: var(--accent-soft); color: var(--accent-ink); }
+.ltag-pr { background: var(--pr-soft, #e5e9f3); color: var(--pr-ink, #4a5d8a); }
+.ltag-pr:hover { text-decoration: underline; text-underline-offset: 2px; }
+.ltag-merged { background: var(--pass-soft); color: var(--pass); }
+@media (prefers-color-scheme: dark) {
+  .ltag-pr { background: var(--pr-soft, #1f2536); color: var(--pr-ink, #9fb0dc); }
+}
+.lfoot {
+  display: flex; gap: 6px; align-items: baseline; margin-top: 6px; padding: 5px 7px;
+  border: 1px dashed var(--rule-2); border-radius: 3px;
+  font-family: var(--mono); font-size: 10.5px; color: var(--muted);
+}
+.lfoot.unread { color: var(--fail); border-color: var(--fail); }
+.lfoot-link { margin-left: auto; color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
+.lfoot-link:hover { text-decoration: underline; text-underline-offset: 2px; }
 .older > summary { padding: 7px 2px 3px; font-family: var(--mono); font-size: 10.5px; }
 
 .diff {
