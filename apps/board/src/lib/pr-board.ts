@@ -84,6 +84,8 @@ export interface ColumnView {
   /** Merged only: what folds under *▸ N older*. */
   readonly older: readonly CardView[]
   readonly empty: string
+  /** Set when a PR stream could not be read and may belong here: the count is a floor and the empty line says so. */
+  readonly unread?: boolean
   readonly note: string | null
 }
 
@@ -221,6 +223,9 @@ export function prBoard(input: PrBoardInput): PrBoardView {
   const open = latest !== null && isOpen(latest) ? latest : null
   const call = callForPr(recipe)
 
+  const unreadPrs = input.prs.flatMap((r) => ('pr' in r ? [] : [r.n]))
+  const unread = unreadPrs.length > 0
+  const unreadEmpty = `PR ${unreadPrs.join(', ')} could not be read, so this may not be empty`
   const draftTickets: readonly DraftTicket[] = 'error' in input.draft ? [] : input.draft
   const draftError = 'error' in input.draft ? input.draft.error : null
 
@@ -470,7 +475,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         count: waiting.length,
         cards: waiting,
         older: [],
-        empty: 'Nothing is waiting on you.',
+        empty: unread ? unreadEmpty : 'Nothing is waiting on you.',
+        unread,
         note: null,
       },
       {
@@ -480,7 +486,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         count: review.length,
         cards: review,
         older: [],
-        empty: 'No PR is in review.',
+        empty: unread ? unreadEmpty : 'No PR is in review.',
+        unread,
         note: null,
       },
       {
@@ -490,7 +497,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         count: mergedAll.length,
         cards: mergedAll.slice(0, MERGED_OPEN),
         older: mergedAll.slice(MERGED_OPEN).filter((c): c is CardView => !c.failed),
-        empty: 'Nothing has merged yet.',
+        empty: unread ? unreadEmpty : 'Nothing has merged yet.',
+        unread,
         note: null,
       },
     ],

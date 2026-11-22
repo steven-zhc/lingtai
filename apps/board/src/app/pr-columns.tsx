@@ -93,7 +93,11 @@ function Column({ project, column }: { project: string; column: ColumnView }) {
   return (
     <section className={`pr-col ${column.tone}`} aria-label={column.title}>
       <h2>
-        {column.title} <span className="pr-n">{column.count}</span>
+        {column.title}{' '}
+        <span className="pr-n">
+          {column.count}
+          {column.unread === true ? '+' : ''}
+        </span>
       </h2>
       {column.cards.length === 0 ? <p className="pr-empty">{column.empty}</p> : null}
       {column.cards.map((c) =>
