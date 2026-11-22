@@ -1090,7 +1090,13 @@ async function CardsPart({
   if (col.id === 'landed') {
     // Once per team project on the board, never per row, and whether or not a Landed row is retained: the draft and the
     // open PR outlive the two days a row does. A solo project reads no PR stream and gets no entry.
-    const projects = [...onBoard]
+    // The projects in scope, from the register and the selection — never from the cards, which a quiet team project has none of.
+    const projects = [
+      ...new Set([
+        ...(only === undefined ? registered.flatMap((p) => (p.project === null ? [] : [p.project])) : [only]),
+        ...onBoard,
+      ]),
+    ].filter((p) => only === undefined || p === only)
     const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
     const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
     if (col.cards.length === 0)
@@ -1101,7 +1107,7 @@ async function CardsPart({
           >
             {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
           </p>
-          <LandedFoot reads={reads} showProject={onBoard.size > 1} />
+          <LandedFoot reads={reads} showProject={projects.length > 1} />
         </>
       )
     return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} reads={reads} />
