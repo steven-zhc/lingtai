@@ -86,6 +86,9 @@ export const RefusalReason = z.enum([
   // The branch on origin is not the commit the steps passed on — the lane refuses before
   // merging anything, and never retries it: a person requeues from the base.
   'head-moved',
+  // A `lingtai:pr-fix` landing found the PR's branch somewhere other than where Lingtai last pushed it — somebody
+  // pushed to it on the code host. Refused before anything is merged or pushed, for a person (0130 §5, #1341).
+  'pr-branch-moved',
 ])
 export type RefusalReason = z.infer<typeof RefusalReason>
 

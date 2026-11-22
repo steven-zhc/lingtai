@@ -11,7 +11,10 @@ import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type PrPorts, learnPrEnds, makePrHandlers, servePr } from '../src/pr.ts'
+import { IN_PROGRESS_STEPS, type PrPorts, learnPrEnds, makePrHandlers, servePr } from '../src/pr.ts'
+
+/** `push` and `open`: this file is about the sweep; `sync` and `build` are `pr-sync.test.ts`'s. */
+const PUSH_OPEN = IN_PROGRESS_STEPS.filter((s) => s.name === 'push' || s.name === 'open')
 import type { IssueChannel } from '../src/tell.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -70,17 +73,24 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     fetch: () => Effect.sync(() => void w.fetches++),
     projects: () => Effect.succeed(['lingtai']),
     tickets: () => Effect.succeed(channel),
+    merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),
+    sweep: () => Effect.void,
+    build: () => Effect.succeed({ kind: 'unknown', why: 'this test never builds' }),
+    checkedOut: () => Effect.succeed(null),
     github: () => Effect.succeed(github),
     facts: (_p, tickets) => Effect.succeed(tickets.map((ticket) => ({ ticket, open: true, spend: 0 }))),
     git: (_p, args) =>
       Effect.sync(() => {
         w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n` }
-        if (args[0] === 'cat-file') return { code: 0, stdout: '' }
-        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '' }
-        return { code: w.reach, stdout: '' }
+        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+        if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
+        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
+        return { code: w.reach, stdout: '', stderr: '' }
       }),
-    remote: (_p, args) => Effect.succeed(args[0] === 'ls-remote' ? { code: 0, stdout: '' } : { code: 0, stdout: '' }),
+    remote: (_p, args) =>
+      Effect.succeed(
+        args[0] === 'ls-remote' ? { code: 0, stdout: '', stderr: '' } : { code: 0, stdout: '', stderr: '' },
+      ),
   }
 }
 
@@ -109,7 +119,7 @@ async function inReview(recipe: Recipe = team): Promise<{ store: EventStore; w: 
   await landed(store, '2')
   await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
   const w = aWorld()
-  await Effect.runPromise(servePr(ports(store, w, recipe), 'lingtai', 1))
+  await Effect.runPromise(servePr(ports(store, w, recipe), 'lingtai', 1, PUSH_OPEN))
   w.pullCalls.length = 0
   w.gitCalls.length = 0
   w.fetches = 0
@@ -157,7 +167,7 @@ describe('the sweep learns what became of the open PR', () => {
     await sweep(ports(store, w))
     const asked = await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
     expect(asked).toEqual({ kind: 'requested', n: 2 })
-    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 2))
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 2, PUSH_OPEN))
     expect((await pr(store, 2)).tickets.map((t) => t.ticket)).toEqual(['1', '2'])
   })
 
@@ -230,7 +240,7 @@ describe('an unfinished close is retried after a later PR merges', () => {
     expect(w.closed).toEqual([])
     await landed(store, '3')
     await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
-    await Effect.runPromise(servePr(p, 'lingtai', 2))
+    await Effect.runPromise(servePr(p, 'lingtai', 2, PUSH_OPEN))
     w.pull = { ...open, merged: true, state: 'closed' }
     await sweep(p)
     broken = false
@@ -277,7 +287,7 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
       ...ports(store, w),
       remote: () => Effect.sync(() => void asked++).pipe(Effect.andThen(Effect.never)),
     }
-    await Effect.runPromise(makePrHandlers(p, undefined, 20).resume())
+    await Effect.runPromise(makePrHandlers(p, PUSH_OPEN, 20).resume())
     expect(asked).toBeGreaterThan(0)
     expect((await pr(store)).status).toBe('in-progress')
   })
@@ -289,5 +299,186 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
     const p: PrPorts = { ...ports(store, w), log: (l) => void lines.push(l) }
     await Effect.runPromise(makePrHandlers(p, undefined, 20).sweep())
     expect(lines.some((l) => l.includes('did not answer'))).toBe(false)
+  })
+})
+
+describe('a pr-fix landing on the PR branch (#1341)', () => {
+  const FIX = 'c'.repeat(40)
+  const landedOnPrBranch = async (store: EventStore, issue: string) => {
+    // The landing's base is the PR branch, not `branch.personal`; the ticket is `9<issue>`.
+    await store.append(ticketStream('lingtai', '9' + issue), 0, [
+      {
+        type: 'TicketLanded',
+        actor: 'conductor',
+        data: { mergeCommit: FIX, base: 'lingtai-team-pr-1' },
+      },
+    ])
+  }
+
+  it('the sweep tells the PR of a landing it does not hold, once', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    const fixes = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrFixLanded')
+    expect(fixes).toHaveLength(1)
+    expect(fixes[0]!.data).toMatchObject({ ticket: '93', mergeCommit: FIX })
+    await sweep(p)
+    expect((await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrFixLanded')).toHaveLength(1)
+  })
+
+  it('the serve answers it with In progress because pr-fix, on the fix head', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    await Effect.runPromise(servePr(p, 'lingtai', 1, PUSH_OPEN))
+    const inProgress = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrInProgress')
+    expect(inProgress[inProgress.length - 1]!.data).toMatchObject({ because: 'pr-fix', frozenSha: FIX })
+    expect((await pr(store)).fixOwed).toBe(false)
+  })
+
+  it('a PR merged on the host before the repair still holds the fix it was not told of', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    await sweep({
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    })
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+    expect(w.closed.sort()).toEqual([1, 2])
+  })
+
+  it('a fix just told is judged by its own head, not the head the PR had before it', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const p: PrPorts = {
+      ...base,
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+      // Only the old head reaches main; the fix's commit does not.
+      git: (project, args) =>
+        args[0] === 'merge-base' && args.includes(FROZEN)
+          ? Effect.succeed({ code: 0, stdout: '', stderr: '' })
+          : args[0] === 'merge-base'
+            ? Effect.succeed({ code: 1, stdout: '', stderr: '' })
+            : base.git(project, args),
+    }
+    await sweep(p)
+    const state = await pr(store)
+    expect(state.status).not.toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+  })
+
+  it('a host head nobody recorded closes the fix its commit reached, and keeps asking about one it cannot prove', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const p: PrPorts = {
+      ...base,
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    // A person added a commit on top of the fix, and the host merged that one; git knows the fix is in it.
+    w.pull = { ...open, state: 'closed', merged: true, headSha: 'd'.repeat(40), mergeCommitSha: 'e'.repeat(40) }
+    await sweep({
+      ...p,
+      git: (project, args) =>
+        args[0] === 'merge-base'
+          ? Effect.succeed({ code: args[2] === FIX ? 0 : 1, stdout: '', stderr: '' })
+          : base.git(project, args),
+    })
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.mergedExact).toBe(false)
+    expect(w.closed.sort()).toEqual([1, 2, 93])
+  })
+
+  it('a squash-merged head whose branch was deleted is fetched by the PR ref, and nothing closes while it is missing', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const base = ports(store, w)
+    const candidates = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
+    await sweep({ ...base, candidates })
+    const head = 'd'.repeat(40)
+    w.pull = { ...open, state: 'closed', merged: true, headSha: head, mergeCommitSha: 'e'.repeat(40) }
+    // The branch fetch succeeds without the head; only the PR's own ref brings it, and the ref is dropped afterwards.
+    let obtained = false
+    let ancestryWhileMissing = 0
+    const asked: string[][] = []
+    const p: PrPorts = {
+      ...base,
+      candidates,
+      fetch: () => Effect.void,
+      remote: (project, args) => {
+        asked.push([...args])
+        if (args[0] === 'fetch' && !gone && args[2]?.startsWith('+refs/pull/7/head:')) obtained = true
+        return base.remote(project, args)
+      },
+      git: (project, args) => {
+        if (args[0] === 'update-ref') asked.push([...args])
+        if (args[0] === 'cat-file') return Effect.succeed({ code: obtained ? 0 : 128, stdout: '', stderr: '' })
+        if (args[0] === 'merge-base') {
+          if (!obtained && args[3] === head) ancestryWhileMissing++
+          return Effect.succeed({
+            code: obtained && args[2] === FIX && args[3] === head ? 0 : 128,
+            stdout: '',
+            stderr: '',
+          })
+        }
+        return base.git(project, args)
+      },
+    }
+    // The PR ref is unavailable at first: the ticket stays open and nothing is asked of the missing head.
+    let gone = true
+    await sweep(p)
+    expect(w.closed.sort()).toEqual([1, 2])
+    expect(ancestryWhileMissing).toBe(0)
+    gone = false
+    await sweep(p)
+    expect(w.closed.sort()).toEqual([1, 2, 93])
+    expect(asked.some((a) => a[0] === 'fetch' && a[2]?.startsWith('+refs/pull/7/head:refs/lingtai/pr/1/'))).toBe(true)
+    expect(asked.some((a) => a[0] === 'fetch' && a[2]?.includes('refs/pull/1/head'))).toBe(false)
+    expect(asked.some((a) => a[0] === 'update-ref' && a[2]?.startsWith('refs/lingtai/pr/1/'))).toBe(true)
+  })
+
+  it('a repair that fails records no ending that sweep, and the next one repairs the PR first', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    const withFix = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
+    let failing = true
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => (failing ? Effect.fail(new Error('the read failed')) : withFix()),
+    }
+    await sweep(p)
+    expect(await types(store)).not.toContain('PrMerged')
+    failing = false
+    await sweep(p)
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+    expect(w.closed.sort()).toEqual([1, 2])
+  })
+
+  it('on a merged PR the landing is refused and nothing is appended', async () => {
+    const { store, w } = await inReview()
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    await sweep(ports(store, w))
+    expect((await pr(store)).status).toBe('merged')
+    const before = (await types(store)).length
+    await landedOnPrBranch(store, '3')
+    await sweep({ ...ports(store, w), candidates: () => Effect.succeed([{ issue: '1' }, { issue: '93' }]) })
+    expect(await types(store)).toHaveLength(before)
   })
 })

@@ -8,11 +8,21 @@ import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
  * nothing conducts, the sentence that says when it will be served.
  */
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, prStepRows } from '@lingtai/domain'
+import { type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
-import { type PrDraftTicket, latestPr, readPr, readPrDraft, requestPrSubmit } from '@lingtai/project'
-import { type Recipe, modeOf } from '@lingtai/recipe'
+import {
+  type PrDraftTicket,
+  type PrRequestAnswer,
+  grantPrRounds,
+  latestPr,
+  readPr,
+  readPrDraft,
+  requestPrBack,
+  requestPrRetry,
+  requestPrSubmit,
+} from '@lingtai/project'
+import { type Recipe, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { livePrPorts } from './pr-ports.ts'
@@ -92,6 +102,54 @@ const stepLines = (state: PrState): string[] =>
       `  ${row.status === 'done' ? '✓' : row.status === 'waiting' ? '!' : '·'} ${row.step}${row.headSha === null ? '' : ` @ ${row.headSha.slice(0, 7)}`}`,
   )
 
+/** The view of a waiting PR, as `lingtai pr` and the PR page both read it. A local project's checkout is `repo.remote`, a path. */
+const localCheckout = (recipe: Recipe): string | null => {
+  const remote = remoteOf(recipe)
+  return remote !== null && (remote.startsWith('/') || remote.startsWith('~')) ? remote : null
+}
+
+const waitViewOf = (state: PrState, project: string, recipe: Recipe) =>
+  prWaitOf(state, {
+    project,
+    checkout: localCheckout(recipe),
+    conflictResolutions: ceilingOf(recipe).attempt.conflictResolutions,
+  })
+
+const orUnknown = <A>(value: A | null, show: (a: A) => string): string => (value === null ? 'unknown' : show(value))
+
+/** What a person reads under a waiting PR's line: the facts first, then the ways out as commands. */
+const waitLines = (state: PrState, project: string, recipe: Recipe): string[] => {
+  const view = waitViewOf(state, project, recipe)
+  if (view === null) return []
+  const since = view.since === null ? '' : ` since ${view.since.toISOString()}`
+  if (view.kind === 'plain') {
+    return [
+      `  waiting on you at ${view.step}${since} (${view.reason}): ${view.detail}`,
+      ...(view.commands.length === 0 ? [] : ['  to go on:', ...view.commands.map((c) => `    ${c}`)]),
+    ]
+  }
+  const rounds =
+    view.roundsUsed === null || view.roundsAllowed === null
+      ? 'rounds: unknown'
+      : `${view.roundsUsed} of ${view.roundsAllowed} rounds spent`
+  return [
+    `  waiting on you at sync${since} (${view.reason}): ${view.detail.split('\n')[0] ?? ''}`,
+    `  main moved: ${orUnknown(view.mainAhead, String)} commit(s); conflicts in ${orUnknown(view.paths, (p) => p.join(', '))}; ${rounds}`,
+    ...(view.ours === null
+      ? ['  ours: unknown']
+      : ['  ours:', ...view.ours.map((o) => `    #${o.issue} ${o.title} (${o.mergeCommit.slice(0, 7)})`)]),
+    ...(view.theirs === null
+      ? ['  theirs: unknown']
+      : ['  theirs:', ...view.theirs.map((t) => `    ${t.sha.slice(0, 7)} ${t.author}: ${t.subject}`)]),
+    ...(view.lastRefusal === null ? [] : [`  last refusal at ${view.lastRefusal.step}: ${view.lastRefusal.said}`]),
+    ...(view.reason === 'sync-conflict' && view.commit !== null
+      ? [`  give the agent 3 more rounds: lingtai pr rounds ${project}`]
+      : []),
+    '  or resolve it by hand:',
+    ...view.commands.map((c) => `    ${c}`),
+  ]
+}
+
 /** The draft and the open PR, read from the log. Solo is refused by name; a failed read fails. */
 export const prReport = (project: string, world: PrWorld): Effect.Effect<PrReport, Error> =>
   Effect.gen(function* () {
@@ -126,7 +184,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
     if (open !== null && open.n !== null) {
       lines.push(
         `PR ${open.n}: ${open.status}${open.prBranch === null ? '' : ` — ${open.prBranch}`}`,
-        ...(open.wait === null ? [] : [`  waiting on you at ${open.wait.step}: ${open.wait.detail}`]),
+        ...waitLines(open, project, recipe),
         ...stepLines(open),
       )
       if (open.host !== null) lines.push(`  pull request #${open.host.number}: ${open.host.url}`)
@@ -169,6 +227,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
                 prBranch: open.prBranch,
                 frozenSha: open.frozenSha,
                 wait: open.wait,
+                waitView: waitViewOf(open, project, recipe),
                 host: open.host,
                 description,
                 steps: prStepRows(inProgressStepNames(), open),
@@ -260,3 +319,88 @@ export const chooseProject = (
 /** The registered projects' names. */
 export const registeredProjects = (): Effect.Effect<readonly string[], Error> =>
   livePrPorts(eventStore, () => {}).projects()
+
+type Ask = 'retry' | 'rounds' | 'back'
+
+/** The sentence for a request nobody has answered in time: who is conducting. */
+const unanswered = (holder: string | null, what: string): string =>
+  holder === null
+    ? `it is served when a conductor runs: lingtai start, or lingtai run`
+    : holder === 'unknown'
+      ? 'could not tell whether a conductor is running; lingtai doctor says'
+      : `${holder} is ${what}; lingtai pr says when`
+
+/**
+ * `lingtai pr retry`, `lingtai pr rounds` and `lingtai pr back` (#1314): each is a request on the PR's stream, refused
+ * synchronously where the pure transition says so (`@lingtai/project`'s appends — the CLI never writes the event itself),
+ * and otherwise waited for as Submit is: the conductor's answer is the first thing on the PR that clears the request.
+ */
+export const prRequestVerdict = (
+  ask: Ask,
+  project: string,
+  by: string,
+  world: PrWorld,
+  waitMs: number = SUBMIT_WAIT_MS,
+): Effect.Effect<Answered, Error> =>
+  Effect.gen(function* () {
+    const recipe = yield* world.recipe(project)
+    const mode = modeOf(recipe)
+    if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
+    const latest = yield* latestPr(project, world.store)
+    if (latest === null || latest.n === null || !isOpen(latest)) {
+      return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
+    }
+    const n = latest.n
+    const subject = `${project} PR ${n}`
+    const ref = { project, n, mode }
+    const conflict = latest.wait?.conflict ?? null
+    const rounds0 = latest.rounds.length
+    const asked: PrRequestAnswer =
+      ask === 'retry'
+        ? yield* requestPrRetry(ref, { by }, world.store)
+        : ask === 'back'
+          ? yield* requestPrBack(ref, { by }, world.store)
+          : yield* grantPrRounds(
+              ref,
+              { by, merging: conflict?.merging ?? 'main', commit: conflict?.commit ?? '' },
+              world.store,
+            )
+    if (asked.kind === 'refused') return refusal(1, 'refused', asked.detail, { subject })
+
+    const accepted = (detail: string, status: string | null): Answered => ({
+      code: 0,
+      verdict: { outcome: 'accepted', subject, form: 'sentence', detail, extra: { project, n, status } },
+    })
+    const until = world.now() + waitMs
+    for (;;) {
+      const state = yield* readPr(project, n, world.store)
+      if (state !== null) {
+        if (ask === 'back' && state.status === 'merged') {
+          return refusal(1, 'merged', 'the host had merged it: recorded as merged, not taken back', { subject })
+        }
+        if (ask === 'back' && state.status === 'closed') {
+          return accepted('closed; its tickets are back in Draft, still on the personal branch', state.status)
+        }
+        if (ask === 'rounds' && (state.rounds.length > rounds0 || state.status !== 'in-progress')) {
+          return state.status === 'waiting' && state.wait !== null
+            ? accepted(`the agent went again; the PR waits at ${state.wait.step} (${state.wait.reason})`, state.status)
+            : accepted('three more rounds given; the agent is resolving', state.status)
+        }
+        if (ask === 'retry' && state.pending === null) {
+          if (state.status === 'waiting' && state.wait !== null) {
+            return refusal(1, state.wait.reason, state.wait.detail, { subject })
+          }
+          return accepted('checking again — in progress', state.status)
+        }
+      }
+      if (world.now() >= until) break
+      yield* Effect.promise(() => world.sleep(POLL_MS))
+    }
+    const holder = yield* Effect.tryPromise({ try: () => world.holder(), catch: (e) => e as Error }).pipe(
+      Effect.orElseSucceed(() => 'unknown' as string | null),
+    )
+    return accepted(
+      unanswered(holder, ask === 'back' ? 'taking it back' : ask === 'retry' ? 'checking it' : 'resolving it'),
+      'waiting',
+    )
+  })

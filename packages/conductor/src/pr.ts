@@ -10,6 +10,7 @@
  */
 import {
   type CiCheck,
+  type ConflictEnd,
   type Envelope,
   type PayloadOf,
   type PrState,
@@ -22,6 +23,7 @@ import {
   ciVerdict,
   ticketStream,
 } from '@lingtai/domain'
+import type { RuntimeId, Usage } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, PermissionDenied, type PullState } from '@lingtai/github'
 import {
@@ -36,25 +38,36 @@ import {
   recordPrCiFollowing,
   recordPrChecked,
   recordPrDraftOpened,
+  recordPrHeadAdopted,
+  recordPrRetried,
+  recordPrTakenBack,
   recordPrInProgress,
   recordPrOpened,
   recordPrPushed,
   recordPrRefused,
   recordPrRestart,
+  recordPrFixLanded,
+  recordPrFixRestart,
+  readUnheldFixLandings,
   recordPrStepDone,
   recordPrWaiting,
 } from '@lingtai/project'
 import { type Recipe, ciOf, modeOf, remoteOf } from '@lingtai/recipe'
-import { Clock, Effect, Semaphore } from 'effect'
+import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
+import { Clock, Effect, Result, Semaphore } from 'effect'
 
 import { CiProvider, type CiProviderShape } from './ci.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
+import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
+import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 
 /** `git`'s answer in the project's mirror: its exit code (null when it never ran to one) and its stdout, trimmed. */
 export interface PrGitAnswer {
   readonly code: number | null
   readonly stdout: string
+  /** git's own explanation on a failure; empty on success or where git said nothing. */
+  readonly stderr: string
 }
 
 export interface PrPorts {
@@ -95,12 +108,78 @@ export interface PrPorts {
    * order the push against nothing, and a pr-fix landing (#1341) and this push are the PR branch's two writers.
    */
   readonly lane?: LandingLane
+  /**
+   * `git merge --no-ff` of `theirs` into `at` in a throwaway worktree of the mirror (`pr-sync-…` / `pr-back-…`, never
+   * `integrator-…`): the merge commit, the unmerged paths, or git's text. Pushes nothing and never fails.
+   */
+  merge(
+    project: string,
+    options: { name: string; at: string; theirs: string; message: string },
+  ): Effect.Effect<MergeInWorktreeResult>
+  /** Removes every `pr-sync-*` and `pr-back-*` worktree of the project: none can be live when a step starts. */
+  sweep(project: string): Effect.Effect<void>
+  /**
+   * The recipe's `build` at one commit: one base check per `run:` action, as a pass asks (`baseCheckQuestion`).
+   * `base` is the PR branch, never `branch.personal`: the answer is recorded on `int-{project}-{base}`, whose newest
+   * `BaseChecked` is read as the state of that branch.
+   */
+  build(project: string, options: { sha: string; base: string; checkId: string }): Effect.Effect<PrBuildAnswer, Error>
+  /** Where `branch` is checked out in a local remote, or null — a push to that branch is refused by git. */
+  checkedOut(project: string, branch: string): Effect.Effect<string | null, Error>
   /** The projects to look at on a start. */
   projects(): Effect.Effect<readonly string[], Error>
+  /**
+   * What an agent needs to resolve a PR's conflict (#1313). **Absent means no agent can**: a conflicting sync then waits on
+   * the person as it did before, and a conflicting merge back is `PrMergeBackFailed { why: 'conflict' }`.
+   */
+  readonly resolver?: ConflictResolver
   readonly log?: (line: string) => void
   /** How long the freeze waits between looks at a landing still in flight (default 1s); 0 in a test. */
   readonly landingWaitMs?: number
 }
+
+/** One agent run outside any attempt: what is dispatched, and what is handed back. */
+export interface PrDispatch {
+  readonly runtime: RuntimeId
+  readonly model?: string
+  readonly cwd: string
+  readonly prompt: string
+  readonly runId: string
+  /** The runtime's own flags (`--max-turns`, a wall clock, `--max-budget-usd`): a PR round has no hook to enforce them. */
+  readonly limits: { readonly turns?: number; readonly wallMs: number; readonly usd?: number }
+}
+
+export interface PrDispatched {
+  readonly turns: number
+  readonly durationMs: number
+  readonly costUsd: number | null
+  readonly usage?: Usage
+  readonly text: string | null
+  readonly failure: { readonly kind: string; readonly detail: string } | null
+}
+
+export interface ConflictResolver {
+  /** `git merge --no-commit --no-ff` stood up in a `pr-sync-…` / `pr-back-…` worktree, markers left. Never aborts or releases. */
+  standMerge(project: string, options: { name: string; at: string; theirs: string }): Effect.Effect<StandMergeResult>
+  /** A worktree detached at `at`, nothing merged: a clean merge that built red, for an agent to amend (#1352). Never released. */
+  standCommit(project: string, options: { name: string; at: string }): Effect.Effect<StandMergeResult>
+  /** Runs `git` in a directory other than the mirror: a round's worktree. A non-zero exit is an answer. */
+  gitIn(cwd: string, args: readonly string[]): Effect.Effect<PrGitAnswer, Error>
+  /** One run of an agent. **Not bounded like a read**: its limit is the recipe's `run.wall`. */
+  dispatch(project: string, request: PrDispatch): Effect.Effect<PrDispatched, Error>
+  /** The runtime's `--version`, or null where it could not be asked (#929). */
+  runtimeVersion(project: string, runtime: RuntimeId): Effect.Effect<string | null>
+  /** A ticket's body as claimed, or the reason it could not be read. */
+  ticketBody(project: string, ticket: string): Effect.Effect<string, Error>
+  /** The sentence for a lock that stops new work on the project (0126 §6), or null when none does. */
+  locked(project: string): Effect.Effect<string | null>
+}
+
+/** What a build of a commit came to: green, the first run that failed, or why it could not be told. */
+export type PrBuildAnswer =
+  | { readonly kind: 'green' }
+  | { readonly kind: 'red'; readonly command: string; readonly evidence: string }
+  | { readonly kind: 'unknown'; readonly why: string }
 
 /**
  * How many times the freeze looks again at a landing in flight before it gives up. The request stays `requested`, and
@@ -122,6 +201,8 @@ export type StepAnswer =
       readonly reason: PayloadOf<'PrWaiting'>['reason']
       readonly detail: string
       readonly headSha: string
+      /** What a conflict the agent did not resolve came to (#1313), for the person who must. */
+      readonly conflict?: ConflictEnd
     }
   | { readonly kind: 'again' }
   /** An earlier step's work is gone: In progress starts again from its first step. */
@@ -146,12 +227,6 @@ const permitOf = (project: string): Semaphore.Semaphore => {
   return made
 }
 
-const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
-
-/** `git` answered with a code other than the two it is expected to: the refusal's sentence. */
-const gitSaid = (args: readonly string[], answer: PrGitAnswer): string =>
-  `git ${args.join(' ')} answered ${answer.code === null ? 'nothing' : `exit ${answer.code}`}`
-
 /** Where a PR is pushed to: `github` where the recipe names no remote of its own, `none` for any other (0130 §5). */
 export const prHostOf = (recipe: Recipe): 'github' | 'none' => (remoteOf(recipe) === null ? 'github' : 'none')
 
@@ -159,19 +234,6 @@ const PUSHING_PRS = (state: PrState) => ({
   prBranch: state.prBranch,
   target: state.target ?? state.frozenSha,
 })
-
-/** The sha a ref has on the remote, matched on the whole ref: `ls-remote` answers `<sha>\t<ref>` lines. Null: absent. */
-const remoteSha = (ports: PrPorts, project: string, ref: string): Effect.Effect<string | null, Error> =>
-  Effect.gen(function* () {
-    const args = ['ls-remote', '--heads', 'origin', ref] as const
-    const answer = yield* ports.remote(project, args)
-    if (answer.code !== 0) return yield* Effect.fail(new Error(gitSaid(args, answer)))
-    for (const line of answer.stdout.split('\n')) {
-      const [sha, name] = line.trim().split('\t')
-      if (name === ref && sha !== undefined && sha !== '') return sha
-    }
-    return null
-  })
 
 type Turn = StepAnswer | { readonly kind: 'failed'; readonly error: Error }
 
@@ -203,6 +265,8 @@ const pushStep: PrStep = {
         // record that came after would say this push proved that pass's.
         const pushed = (found: 'pushed' | 'existing') =>
           recordPrPushed(project, n, { headSha: target, found }, ports.store).pipe(
+            // `PrPushed` names the target now, and the remote holds it: the ref that kept an unpushed merge has nothing left to keep.
+            Effect.andThen(dropRef(ports, project, targetRef(n))),
             Effect.as<StepAnswer>({ kind: 'done', headSha: target, record: () => Effect.void }),
           )
         const moved = (at: string | null): StepAnswer => ({
@@ -218,7 +282,10 @@ const pushStep: PrStep = {
         const at = yield* remoteSha(ports, project, ref)
         if (at === target) return yield* pushed('existing')
         if (at === null && state.lastPushed !== null) return moved(null)
-        if (at !== null && at !== state.lastPushed) return moved(at)
+        // Before the first push the frozen commit is what the sync accepted on the remote; the target descends from it.
+        if (at !== null && at !== state.lastPushed && !(state.lastPushed === null && at === state.frozenSha)) {
+          return moved(at)
+        }
 
         // The commit has to be in the mirror to be pushed from it; a re-cloned mirror loses it, and the walk is run again.
         // git exits 1 or 128 for an object it does not have; the steps that made it are done again.
@@ -546,11 +613,11 @@ const readyStep: PrStep = {
 }
 
 /**
- * **In progress, as a fixed list.** `push` and `open` here; later tickets fill the rest in 0130 §5's order — `sync` and
- * `build` (#1312) before them, `summary` (#1318) between `ci` and `ready` (#1339).
+ * **In progress, as a fixed list.** `sync`, `build` (#1312), `push`, `open`, `ci` and `ready` (#1339) here; `summary`
+ * (#1318) comes between `ci` and `ready`, in 0130 §5's order.
  * Nothing else orders them, and the PR page draws its *What Lingtai did* rows from this list and the records.
  */
-export const IN_PROGRESS_STEPS: readonly PrStep[] = [pushStep, openStep, ciStep, readyStep]
+export const IN_PROGRESS_STEPS: readonly PrStep[] = [syncStep, buildStep, pushStep, openStep, ciStep, readyStep]
 
 /**
  * The freeze of a `requested` PR: `branch.personal` at one commit, and the tickets that commit holds. A read that
@@ -632,7 +699,13 @@ export const walkPr = (
 ): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     for (;;) {
-      const state = yield* readPr(project, n, ports.store)
+      let state = yield* readPr(project, n, ports.store)
+      // A pr-fix landed on the PR's branch (#1341): In progress starts again from its first step, on the fix's head,
+      // before anything else — a walk already under way on the old pass is answered by the target having moved.
+      if (state !== null && state.fixOwed) {
+        yield* recordPrFixRestart(project, n, ports.store)
+        state = yield* readPr(project, n, ports.store)
+      }
       if (state === null || state.status !== 'in-progress') return
       const next = steps.find((s) => !state.steps.some((r) => r.step === s.name))
       if (next === undefined) return
@@ -661,7 +734,13 @@ export const walkPr = (
         yield* recordPrWaiting(
           project,
           n,
-          { step: next.name, reason: answer.reason, detail: answer.detail, headSha: answer.headSha },
+          {
+            step: next.name,
+            reason: answer.reason,
+            detail: answer.detail,
+            headSha: answer.headSha,
+            ...(answer.conflict === undefined ? {} : { conflict: answer.conflict }),
+          },
           ports.store,
         )
         return
@@ -673,6 +752,130 @@ export const walkPr = (
         yield* record(project, n, ports.store)
       }
     }
+  })
+
+/**
+ * **A retry** (*check again*, #1314), served before the walk and in the PR branch's lane turn, so a pr-fix landing on the same
+ * branch is ordered with it; it pushes nothing. What a person did on the branch is read, never assumed:
+ * - the branch is where Lingtai left it (or was never pushed and is not there): nothing to adopt, In progress walks again —
+ *   *check again* for a CI wait, or after a lock lifted;
+ * - it is somewhere else and holds the frozen commit: the head is adopted, and the walk builds it;
+ * - it does not hold the frozen commit, or is gone: the PR waits on you, `sync-rewritten`, and nothing is built;
+ * - a read that failed: `sync-unknown` with git's text — never read as *resolved*.
+ */
+const serveRetry = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const first = yield* readPr(project, n, ports.store)
+    if (first === null || first.prBranch === null || first.pending?.kind !== 'retry') return
+    const prBranch = first.prBranch
+    const ref = `refs/heads/${prBranch}`
+    const headRef = fetchedRef(n, 'head')
+
+    type Seen =
+      | { readonly kind: 'unchanged' }
+      | { readonly kind: 'adopt'; readonly head: string }
+      | { readonly kind: 'rewritten'; readonly detail: string }
+    const turn = Effect.gen(function* () {
+      const state = yield* readPr(project, n, ports.store)
+      if (state === null || state.status !== 'waiting' || state.pending?.kind !== 'retry') return
+      const frozen = state.frozenSha
+      if (frozen === null) return
+      const wait = (reason: 'sync-rewritten' | 'sync-unknown', detail: string) =>
+        recordPrWaiting(
+          project,
+          n,
+          { step: state.wait?.step ?? 'sync', reason, detail, headSha: state.target ?? frozen },
+          ports.store,
+        )
+      const gone = `${prBranch} no longer holds the frozen commit ${frozen.slice(0, 7)}`
+      const seen: Seen | string = yield* Effect.gen(function* () {
+        const at = yield* remoteSha(ports, project, ref)
+        if (at === null)
+          return state.lastPushed === null
+            ? ({ kind: 'unchanged' } as Seen)
+            : ({ kind: 'rewritten', detail: gone } as Seen)
+        if (at === state.lastPushed) return { kind: 'unchanged' } as Seen
+        yield* fetchInto(ports, project, [[ref, headRef]])
+        const verify = ['rev-parse', '--verify', '--quiet', `${headRef}^{commit}`] as const
+        const head = yield* ports.git(project, verify)
+        if (head.code !== 0) return gitSaid(verify, head)
+        const sha = head.stdout.trim()
+        const ask = ['merge-base', '--is-ancestor', frozen, sha] as const
+        const holds = yield* ports.git(project, ask)
+        if (holds.code === 1) return { kind: 'rewritten', detail: gone } as Seen
+        if (holds.code !== 0) return gitSaid(ask, holds)
+        return { kind: 'adopt', head: sha } as Seen
+      }).pipe(
+        Effect.catch((err: Error) => Effect.succeed(err.message)),
+        Effect.ensuring(dropRef(ports, project, headRef)),
+      )
+      if (typeof seen === 'string') {
+        yield* wait('sync-unknown', seen)
+        return
+      }
+      if (seen.kind === 'rewritten') {
+        yield* wait('sync-rewritten', seen.detail)
+        return
+      }
+      if (seen.kind === 'adopt') {
+        yield* recordPrHeadAdopted(project, n, { head: seen.head, by: state.pending.by }, ports.store)
+      }
+      yield* recordPrRetried(project, n, ports.store)
+    })
+
+    yield* (ports.lane ?? landingLane)
+      .through(
+        integrationStream(project, prBranch),
+        { pr: prStream(project, n) },
+        { onWait: () => Effect.void },
+        turn.pipe(Effect.catch((error: Error) => Effect.succeed({ failed: error }))),
+      )
+      .pipe(Effect.flatMap((out) => (out !== undefined && 'failed' in out ? Effect.fail(out.failed) : Effect.void)))
+  })
+
+/**
+ * **Back** (#1314): the draft is closed on the code host and the PR is `PrClosed`, which returns its tickets to Draft. They stay
+ * on `branch.personal`, nothing is reverted, and the PR branch is not deleted. A `closePull` that fails records nothing and the
+ * request is served again; a `422` that says it is closed already is recorded as closed. On another remote, or before the
+ * draft was opened, there is nothing to close and `PrClosed` alone is recorded.
+ */
+const serveBack = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const state = yield* readPr(project, n, ports.store)
+    if (state === null || state.pending?.kind !== 'back' || !isOpen(state)) return
+    const recipe = yield* ports.recipe(project)
+    if (prHostOf(recipe) === 'github' && state.host !== null) {
+      const number = state.host.number
+      const github = yield* ports.github(project)
+      // A close request's answer is not evidence of how the PR ended: the host is read, and a PR it merged is merged.
+      const merged = (host: PullState) =>
+        recordPrMerged(project, n, { how: 'host', headSha: host.headSha, mergeSha: host.mergeCommitSha }, ports.store)
+      const before = yield* github.getPull(number).pipe(Effect.mapError(asError))
+      if (before.merged) {
+        yield* merged(before)
+        return
+      }
+      if (before.state === 'open') {
+        yield* github
+          .closePull(number)
+          .pipe(
+            Effect.catch((err: unknown) =>
+              err instanceof GitHubFailed && err.status === 422 && /closed/i.test(err.detail)
+                ? Effect.void
+                : Effect.fail(asError(err)),
+            ),
+          )
+        // The close's answer says nothing of how it ended: it may have been merged after the read above, so the host says.
+        const after = yield* github.getPull(number).pipe(Effect.mapError(asError))
+        if (after.merged) {
+          yield* merged(after)
+          return
+        }
+      }
+    }
+    const headSha = state.lastPushed ?? state.target ?? state.frozenSha
+    if (headSha === null) return
+    yield* recordPrTakenBack(project, n, { headSha }, ports.store)
   })
 
 /** Serves one PR under its project's permit: re-reads, and stops unless it is still `requested` or `in-progress`. */
@@ -687,7 +890,12 @@ export const servePr = (
       const state = yield* readPr(project, n, ports.store)
       if (state === null) return
       if (state.status === 'requested') yield* freezePr(ports, project, n)
+      // A person's request is answered before the walk: a back ends the PR, and a retry says where it walks from.
+      if (state.pending?.kind === 'back') return yield* serveBack(ports, project, n)
+      if (state.pending?.kind === 'retry') yield* serveRetry(ports, project, n)
       yield* walkPr(ports, project, n, steps)
+      // A PR that reached In review is merged back into `branch.personal`, once, in that branch's lane turn.
+      yield* mergePrBack(ports, project, n)
     }),
   )
 
@@ -705,7 +913,14 @@ export const servePendingPrs = (
         Effect.catch((err: Error) => Effect.sync(() => (say(`pr resume ${project}: ${err.message}`), [] as PrState[]))),
       )
       for (const pr of prs) {
-        if ((pr.status === 'requested' || pr.status === 'in-progress') && pr.n !== null) {
+        if (
+          (pr.status === 'requested' ||
+            pr.status === 'in-progress' ||
+            pr.pending !== null ||
+            pr.fixOwed ||
+            mergeBackOwed(pr)) &&
+          pr.n !== null
+        ) {
           yield* servePr(ports, project, pr.n, steps).pipe(
             Effect.catch((err: Error) => Effect.sync(() => say(`pr resume ${project} PR ${pr.n}: ${err.message}`))),
           )
@@ -894,7 +1109,55 @@ const closeMergedTickets = (
     if (memory.get(doneKey) === 'done') return
     const after = state.ended.seq
     let channel: IssueChannel | null = null
-    for (const t of state.tickets) {
+    // Only what the merged commit held: a fix that landed on the branch after it is not in the merge (#1341).
+    let merged = state.tickets.filter((t) => state.mergedTickets.includes(t.ticket))
+    // A merged head the PR never recorded (a person added a commit on top of the PR branch) has unknown coverage: each
+    // ticket the floor left out is closed when git proves its commit is in what merged, and asked again until it is.
+    let unproven = 0
+    if (!state.mergedExact) {
+      const left = state.tickets.filter((x) => !state.mergedTickets.includes(x.ticket))
+      // The merged head is one nobody here recorded: the mirror may not hold it yet, and an ancestry check against a
+      // commit it lacks proves nothing. Fetched before asking, on every sweep; a fetch that fails leaves them unproven.
+      const fetched = left.length === 0 ? null : yield* Effect.result(ports.fetch(project))
+      if (fetched !== null && Result.isFailure(fetched)) unproven += left.length
+      // A fetch of the branches that succeeds is not a head that arrived: a squash merge deletes the PR branch, and the
+      // mirror only mirrors branches. The head is checked for, then fetched by the PR's own ref, which the host keeps; one
+      // still absent proves nothing either way, and git's 128 for it is never read as *not an ancestor*.
+      const headRef = `refs/lingtai/pr/${state.n}/merged-head`
+      let headHere = false
+      if (fetched !== null && !Result.isFailure(fetched)) {
+        const have = () =>
+          ports.git(project, ['cat-file', '-e', `${state.ended!.headSha}^{commit}`]).pipe(
+            Effect.map((a) => a.code === 0),
+            Effect.catch(() => Effect.succeed(false)),
+          )
+        headHere = yield* have()
+        // The host's own PR number, never Lingtai's `n`; a PR with none (another remote) stays unproven.
+        if (!headHere && state.host !== null) {
+          yield* ports
+            .remote(project, ['fetch', 'origin', `+refs/pull/${state.host.number}/head:${headRef}`])
+            .pipe(Effect.catch(() => Effect.void))
+          headHere = yield* have()
+        }
+      }
+      for (const t of fetched !== null && Result.isFailure(fetched) ? [] : left) {
+        let held = false
+        for (const into of [
+          headHere ? state.ended.headSha : null,
+          state.main === null ? null : `refs/heads/${state.main}`,
+        ]) {
+          if (into === null || held) continue
+          const ask = ['merge-base', '--is-ancestor', t.mergeCommit, into] as const
+          const answer = yield* ports.git(project, ask)
+          if (answer.code === 0) held = true
+        }
+        if (held) merged = [...merged, t]
+        else unproven++
+      }
+      // Dropped only after the ancestry was asked: the ref is what kept the fetched head from being collected.
+      yield* dropRef(ports, project, headRef)
+    }
+    for (const t of merged) {
       const ticketId = ticketStream(project, t.ticket)
       const events = yield* Effect.tryPromise({ try: () => ports.store.read(ticketId), catch: asError })
       const closed = events.some(
@@ -906,7 +1169,7 @@ const closeMergedTickets = (
     }
     // Only a pass that found every ticket with a recorded close is done (a failed close is `IssueUpdateFailed`).
     let all = true
-    for (const t of state.tickets) {
+    for (const t of merged) {
       const events = yield* Effect.tryPromise({
         try: () => ports.store.read(ticketStream(project, t.ticket)),
         catch: asError,
@@ -919,7 +1182,15 @@ const closeMergedTickets = (
       )
         all = false
     }
-    if (all) memory.set(doneKey, 'done')
+    if (all && unproven === 0) memory.set(doneKey, 'done')
+  })
+
+/** Each pr-fix landing on the open PR's branch that the PR does not hold gets its `PrFixLanded`, once (#1341). */
+const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    if (pr.n === null) return
+    const landings = yield* readUnheldFixLandings(project, pr, yield* ports.candidates(project), ports.store)
+    for (const landed of landings) yield* recordPrFixLanded(project, pr.n, landed, ports.store)
   })
 
 /**
@@ -936,7 +1207,17 @@ export const learnPrEnds = (
       yield* Effect.gen(function* () {
         const latest = yield* latestPr(project, ports.store)
         if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
-          yield* learnOnePr(ports, memory, project, latest)
+          // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now,
+          // **before** the PR's end is learned — a PR merged meanwhile would refuse the request and lose the fix for good.
+          const repaired = yield* Effect.result(mendFixLandings(ports, project, latest))
+          if (Result.isFailure(repaired)) {
+            // **A repair that failed records no ending**: the PR stays open, so the next sweep repairs it first.
+            ports.log?.(`pr sweep ${project}: ${repaired.failure.message}`)
+          } else {
+            // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
+            const mended = yield* latestPr(project, ports.store)
+            if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
+          }
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {

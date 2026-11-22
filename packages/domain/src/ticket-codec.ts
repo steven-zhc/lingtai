@@ -77,6 +77,7 @@ const GitHubWrite = z.strictObject({ outcome: z.enum(['updated', 'failed']), tex
 const StoredTicket = z.strictObject({
   lifecycle: Lifecycle,
   landed: z.strictObject({ mergeCommit: z.string(), base: z.string() }).nullable(),
+  cutFrom: z.strictObject({ branch: z.string(), pr: z.number().nullable() }).nullable(),
   project: z.string().nullable(),
   source: z.enum(['github-issue', 'manual', 'agent-followup']).nullable(),
   externalRef: z.string().nullable(),
@@ -192,7 +193,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 11: a wait's `resolution` carries its `note` (#1259); a version-10 snapshot lost it.
   // 12: `splitStarts` counts a ticket's splits from `SplitStarted` (#1262); a version-11 snapshot has no such list.
   // 13: `landed` keeps where a ticket landed after a `TicketClosed` (#1309); a version-12 snapshot does not know.
-  version: 13,
+  // 14: `cutFrom` keeps the branch a team pr-fix claim was cut from (#1341); a version-13 snapshot does not know.
+  version: 14,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

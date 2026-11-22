@@ -133,7 +133,7 @@ body {
    ordinary state has none.
 
    `live`, `idle`, `warn` and `sig` used to be variants of this. They went with
-   the chips that wore them: health is a dot now and the headline is not a chip,
+   the chips that wore them: health is a dot now and the bar carries no headline,
    and a style with no wearer is a style the next chip is added under. */
 .chip {
   font-family: var(--mono);
@@ -144,15 +144,15 @@ body {
    Its own colour because it is its own fact: a green health dot beside a held
    `paused` is the board saying "up to date, and going nowhere", which is the
    sentence #77 had no way to write. Not amber, and not pass/fail: the first is
-   the headline's and the second is the dot's. */
+   the Waiting lane's and the second is the dot's. */
 .chip.held { color: var(--held); border-color: var(--held); background: var(--held-soft); }
 
 /* --- the right rail -------------------------------------------------------
 
-   Health, and the headline last. A rail rather than more children
+   Health, last. A rail rather than more children
    of `.bar` so a narrow window breaks between the filters and this group rather
    than inside it, and so the whole group sits at the far edge, which is where
-   the headline has to be. */
+   health has to be. */
 .bar .rail {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
 }
@@ -210,7 +210,7 @@ body {
    on a row that is glanced at.
 
    **Pass/fail, never the accent and never amber.** Both have been separate from
-   the accent since the palette was written, and amber is the headline's alone.
+   the accent since the palette was written, and amber is the Waiting lane's, and never the bar's.
    `idle` is the third state and it is not a fault: catching up, connecting, or
    a projection nothing has built yet. */
 .bar .dot {
@@ -221,26 +221,6 @@ body {
 .bar .dot.pass { background: var(--pass); }
 .bar .dot.warn { background: var(--fail); }
 .bar .dot.idle { background: var(--rule-2); border: 1px solid var(--rule-2); }
-
-/* **The headline, and the bar's only amber.** A human being the thing waited on
-   is the one reason to look up from what you are doing, so it is the last thing
-   on the row, larger than everything else, and in the lane's own colour — so
-   "1 waiting on you" and the column it counts read as one statement.
-
-   A second amber dilutes the first, which is the entire reason the palette
-   carries the rule; the file used to state that rule 23 lines above a `chip sig`
-   holding a dollar figure. There is no second one now.
-
-   It is drawn only while something waits: with nothing waiting there is no
-   element at all, and the Waiting column's own empty line says so. */
-.bar .head.sig {
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
-  font-size: 14px; font-weight: 600; letter-spacing: -0.01em;
-  text-decoration: none;
-  color: var(--signal);
-  padding: 2px 8px; border-radius: 2px;
-  border: 1px solid var(--signal); background: var(--signal-soft);
-}
 
 /* Who paused it and why, and what the health dot has to say when it is not
    green. Truncated rather than wrapped: the bar is one line of context, and the
@@ -407,6 +387,11 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .col.hot .col-h .ct { font-size: 22px; font-weight: 500; line-height: 1; letter-spacing: 0; }
 .col.hot .cards, .col.hot .cards-in { gap: 9px; }
 
+.handled-foot { padding-top: 10px; border-top: 1px solid var(--rule-2); font-size: 12.5px; color: var(--muted); }
+.handled-foot-h { display: flex; align-items: center; gap: 7px; }
+.handled-foot-h b { color: var(--text); font-weight: 500; }
+.handled-foot-h a { margin-left: auto; color: var(--accent); }
+.handled-foot p { margin: 4px 0 0 21px; }
 .cards, .cards-in { display: flex; flex-direction: column; gap: 7px; }
 .empty {
   padding: 14px 4px; font-size: 12px; color: var(--muted); line-height: 1.6;
@@ -872,7 +857,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .closedrow > summary { cursor: pointer; }
 .closedrow > summary .outfact, .closedrow > summary .hint { margin-left: 0.5rem; color: var(--ink-2); }
 /* The Resume confirmation, which renders inside `.bar`. Not `pri`: that is a
-   solid amber, and the bar's amber is the headline's alone (#134). It confirms
+   solid amber, and the bar's amber is the Waiting lane's, and never the bar's (#134). It confirms
    lifting a hold, so it wears the hold's colour — the same one as the `paused`
    chip beside it. */
 .btn.held { color: var(--held); border-color: var(--held); background: var(--held-soft); font-weight: 600; }
@@ -1685,7 +1670,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   grid-template-columns: minmax(0, 2fr) repeat(2, minmax(12rem, 1fr));
   grid-auto-flow: row dense;
 }
-.sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-column: 1; grid-row: span 2; align-self: stretch; }
+.sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-column: 1; }
 @media (max-width: 60rem) {
   .sresolutiongrid:has(> .sresolution--recommended:not([hidden])) { grid-template-columns: minmax(0, 1fr); }
   .sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-row: auto; }
@@ -3207,7 +3192,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbx-sandboxed .sbx-mark { color: var(--accent); }
 /* Off is a grey, empty, solid outline: a dashed line breaks a 16 px outline into dots. */
 .sbx-off .sbx-shield path { fill: none; opacity: 0.6; }
-/* Degraded is the specified amber warning: its own --warn, because --signal is the headline's alone (bar.test.ts) and --held is a hold. */
+/* Degraded is the specified amber warning: its own --warn, because --signal is the Waiting lane's, and never the bar's (bar.test.ts) and --held is a hold. */
 .sbx-degraded .sbx-mark { color: var(--warn); }
 .sbx-stopped .sbx-mark { color: var(--fail); }
 .sbx-unreadable .sbx-shield path:not(.sbx-glyph) { fill: color-mix(in srgb, currentColor 40%, transparent); }
@@ -3531,7 +3516,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 @keyframes card-arrive { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 @media (prefers-reduced-motion: reduce) { .sk-bar, .ct-pulse, .arrive { animation: none; } }
 
-/* ⌘K (#908). A modal <dialog>; no amber, which is the headline's alone. */
+/* ⌘K (#908). A modal <dialog>; no amber, which is the Waiting lane's, and never the bar's. */
 dialog.palette {
   margin: 12vh auto 0;
   width: min(560px, calc(100vw - 32px));
@@ -3629,7 +3614,7 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 .redit pre.fail { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The row under the bar for a paused project (#994). Held colours only:
-   amber is the headline's alone. */
+   amber is the Waiting lane's, and never the bar's. */
 .pbanner { display: flex; flex-direction: column; gap: 4px; padding: 7px 16px; background: var(--held-soft); border-bottom: 1px solid var(--held); color: var(--held); font-size: 12.5px; }
 .pbanner b { font-weight: 600; }
 .pbanner .what a { color: var(--held); font-weight: 500; text-decoration: none; }

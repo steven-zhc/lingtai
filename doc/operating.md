@@ -884,6 +884,8 @@ Code and Codex; Lingtai launches them. The role's flags are the baseline
 configuration may narrow it, never widen it. Whether it does was measured, not
 read from the runtimes' documentation.
 
+Nothing was measured for `copilot` or `antigravity`, so none of this is claimed for them.
+
 Claude Code was measured on 2026-10-27 on darwin, with Claude Code 2.1.310,
 by `scripts/runtime-restrictions-probe.ts` (`node scripts/runtime-restrictions-probe.ts`,
 run by a person; it is not in `pnpm test`). The probe builds the argv with the

@@ -31,7 +31,14 @@
  * fixing agent is handed.
  */
 import type { Finding, FindingState, PayloadOf } from '@lingtai/domain'
-import { reduceFindingEvent, findingKey, findingsRaisedOf, isBacklogStream, parseTicketStream } from '@lingtai/domain'
+import {
+  reduceFindingEvent,
+  findingKey,
+  findingsRaisedOf,
+  isBacklogStream,
+  parsePrStream,
+  parseTicketStream,
+} from '@lingtai/domain'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
@@ -82,9 +89,11 @@ export type BacklogStatus = 'open' | 'accepted' | 'declined'
 export interface BacklogEntry {
   key: string
   project: string
-  /** The ticket the finding is about — not the one accepting it opens. */
-  issue: string
-  taskId: string
+  /** The ticket the finding is about — not the one accepting it opens. Null on a PR's. */
+  issue: string | null
+  taskId: string | null
+  /** The PR whose conflict resolution's review raised it (0130 §6). Null on a ticket's. */
+  pr: { stream: string; n: number } | null
   /** The first run whose gate raised it. */
   runId: string
   step: string
@@ -109,6 +118,18 @@ export interface BacklogEntry {
   reason: string | null
 }
 
+/** What an entry is about — one of three, so a reader never prints `#null`. */
+export type BacklogSubject =
+  | { kind: 'ticket'; issue: string; taskId: string }
+  | { kind: 'pr'; stream: string; n: number }
+  | { kind: 'unknown' }
+
+export function subjectOf(entry: Pick<BacklogEntry, 'issue' | 'taskId' | 'pr'>): BacklogSubject {
+  if (entry.pr) return { kind: 'pr', stream: entry.pr.stream, n: entry.pr.n }
+  if (entry.issue !== null && entry.taskId !== null) return { kind: 'ticket', issue: entry.issue, taskId: entry.taskId }
+  return { kind: 'unknown' }
+}
+
 export const backlogProjection: Projection = {
   name: BACKLOG_TABLE,
 
@@ -118,8 +139,10 @@ export const backlogProjection: Projection = {
       create table if not exists finding_backlog (
         project          text not null,
         key              text not null,
-        issue            text not null,
-        task_id          text not null,
+        issue            text,
+        task_id          text,
+        pr_stream        text,
+        pr_n             integer,
         run_id           text not null,
         step             text not null,
         action           text not null,
@@ -231,17 +254,28 @@ export const backlogProjection: Projection = {
             for (const raised of findingsRaisedOf(event)) {
               const minors = raised.assessment.findings.filter((f) => f.severity === 'minor')
               if (minors.length === 0) continue
-              const [link] = yield* ctx.query<{ task_id: string }>(
-                'select task_id from finding_backlog_run where run_id = $1',
-                [raised.runId],
-              )
-              const task = link ? parseTicketStream(link.task_id) : null
-              // A pass on a run nothing started names no ticket, and an entry that
-              // cannot say which ticket it is about cannot open one that cites it.
-              if (!link || !task) continue
+              // A PR's resolution review is on the PR's stream and has no RunStarted
+              // (#1313): the stream id is the subject. A `pr-` id that does not parse
+              // names nothing and is dropped, as a ticketless finding is.
+              const pr = parsePrStream(event.streamId)
+              let subject: { project: string; slot: string; issue: string | null; taskId: string | null } | null = null
+              if (pr) {
+                subject = { project: pr.project, slot: event.streamId, issue: null, taskId: null }
+              } else if (!event.streamId.startsWith('pr-')) {
+                const [link] = yield* ctx.query<{ task_id: string }>(
+                  'select task_id from finding_backlog_run where run_id = $1',
+                  [raised.runId],
+                )
+                const task = link ? parseTicketStream(link.task_id) : null
+                // A pass on a run nothing started names no ticket, and an entry that
+                // cannot say which ticket it is about cannot open one that cites it.
+                if (link && task)
+                  subject = { project: task.project, slot: task.issue, issue: task.issue, taskId: link.task_id }
+              }
+              if (!subject) continue
               for (const f of minors) {
                 const key = findingKey({
-                  issue: task.issue,
+                  issue: subject.slot,
                   step: raised.step,
                   action: raised.action,
                   file: f.file,
@@ -249,15 +283,17 @@ export const backlogProjection: Projection = {
                 })
                 yield* ctx.query(
                   `insert into finding_backlog
-                   (project, key, issue, task_id, run_id, step, action, on_sha, file, line,
+                   (project, key, issue, task_id, pr_stream, pr_n, run_id, step, action, on_sha, file, line,
                     severity, claim, failure_scenario, raised_seq, raised_at)
-                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+                 values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
                  on conflict (project, key) do nothing`,
                   [
-                    task.project,
+                    subject.project,
                     key,
-                    task.issue,
-                    link.task_id,
+                    subject.issue,
+                    subject.taskId,
+                    pr ? event.streamId : null,
+                    pr ? pr.n : null,
                     raised.runId,
                     raised.step,
                     raised.action,

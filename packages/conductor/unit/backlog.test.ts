@@ -27,6 +27,7 @@ const entry: BacklogEntry = {
   project: 'lingtai',
   issue: '135',
   taskId: 'ticket-lingtai-135',
+  pr: null,
   runId: 'pass-abc',
   step: 'proposed',
   action: 'review',
@@ -428,6 +429,22 @@ describe('acceptFinding', () => {
     expect(mine.withdrawn).toEqual(['300->301'])
   })
 
+  it('refuses a PR entry, opening nothing, when the PR stream read fails', async () => {
+    const log = fakeLog()
+    const gh = fakeGitHub()
+    const read = log.store.read.bind(log.store)
+    ;(log.store as { read: EventStore['read'] }).read = async (s: string) => {
+      if (s.startsWith('pr-')) throw new Error('db blip')
+      return read(s)
+    }
+    const prEntry: BacklogEntry = { ...entry, issue: null, taskId: null, pr: { stream: 'pr-lingtai-7', n: 7 } }
+    const r = await accept(log, githubTicketStore(gh.client), { entry: async () => prEntry })
+    expect(r.ok).toBe(false)
+    expect(r.detail).toContain('could not be read')
+    expect(gh.issues).toEqual([])
+    expect(log.typesOn(stream)).toEqual(['FindingAccepted'])
+  })
+
   it('opens nothing when a decline landed first', async () => {
     const log = fakeLog()
     const gh = fakeGitHub()
@@ -550,5 +567,31 @@ describe('findingKey across rounds', () => {
   it('is a different key when the claim is a different claim', () => {
     expect(findingKey({ ...round1, claim: 'the bar is unread' })).not.toBe(findingKey(round1))
     expect(findingKey({ ...round1, file: 'packages/projector/src/backlog.ts' })).not.toBe(findingKey(round1))
+  })
+})
+
+describe('proposalFor on a PR entry', () => {
+  const prEntry: BacklogEntry = { ...entry, issue: null, taskId: null, pr: { stream: 'pr-lingtai-7', n: 7 } }
+  const decision = { kind: 'bug', labels: [] }
+
+  it('cites the PR, its branch, the host number and the resolution commit', () => {
+    const body = proposalFor(prEntry, decision, new Date(0), {
+      branch: 'me',
+      main: 'main',
+      prBranch: 'me-pr-7',
+      host: { number: 42, nodeId: 'n', url: 'u' },
+    }).body
+    expect(body).toContain('PR 7')
+    expect(body).toContain('me-pr-7')
+    expect(body).toContain('code host #42')
+    expect(body).toContain('f'.repeat(12))
+    expect(body).not.toContain('#null')
+    expect(body).not.toContain('ticket:')
+  })
+
+  it('still names the PR stream with no PR state', () => {
+    const body = proposalFor(prEntry, decision, new Date(0), null).body
+    expect(body).toContain('pr-lingtai-7')
+    expect(body).not.toContain('#null')
   })
 })

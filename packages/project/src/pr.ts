@@ -24,6 +24,8 @@ import {
   stepDoneTransition,
   pushedTransition,
   restartTransition,
+  fixLandedTransition,
+  fixRestartTransition,
   draftOpenedTransition,
   ciSkippedTransition,
   ciFollowingTransition,
@@ -31,7 +33,19 @@ import {
   openedTransition,
   mergedTransition,
   closedTransition,
+  backClosedTransition,
+  retryTransition,
+  adoptTransition,
+  grantTransition,
+  retryRequestTransition,
+  backRequestTransition,
+  type PrRequest,
   waitTransition,
+  syncedTransition,
+  syncRoundTransition,
+  syncRefusalTransition,
+  mergedBackTransition,
+  mergeBackFailedTransition,
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
@@ -160,6 +174,29 @@ export const recordPrRestart = (project: string, n: number, store: EventStore) =
     (_state, appended) => appended,
   )
 
+/**
+ * A pr-fix ticket landed on the PR's branch (#1341): the PR is owed In progress again. Appends nothing for a PR that is
+ * no longer open or one that already holds the ticket, so the in-lane append and the sweep's repair write it once.
+ */
+export const recordPrFixLanded = (project: string, n: number, landed: PayloadOf<'PrFixLanded'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixLandedTransition(state, landed),
+    (_state, appended) => appended,
+  )
+
+/** In progress starts again because a pr-fix landed: from the head the fix made, tickets including it. */
+export const recordPrFixRestart = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => fixRestartTransition(state),
+    (_state, appended) => appended,
+  )
+
 /** A step answered `done`, on the head it ran on. A step already recorded appends nothing. */
 export const recordPrStepDone = (project: string, n: number, done: PayloadOf<'PrStepDone'>, store: EventStore) =>
   transitionPr(
@@ -237,6 +274,46 @@ export const recordPrOpened = (project: string, n: number, opened: PayloadOf<'Pr
     project,
     n,
     (state) => openedTransition(state, opened),
+    (_state, appended) => appended,
+  )
+
+/** Main is in the PR's commit (already, or merged and built). A step already recorded appends nothing. */
+export const recordBranchSynced = (project: string, n: number, synced: PayloadOf<'BranchSynced'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncedTransition(state, synced),
+    (_state, appended) => appended,
+  )
+
+/** The merge back pushed `branch.personal`. Once per head. */
+export const recordPrMergedBack = (project: string, n: number, merged: PayloadOf<'PrMergedBack'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergedBackTransition(state, merged),
+    (state, appended): 'recorded' | 'already' | 'refused' =>
+      appended
+        ? 'recorded'
+        : state.mergeBack?.prHead === merged.prHead && state.mergeBack.outcome === 'merged'
+          ? 'already'
+          : 'refused',
+  )
+
+/** The merge back did not complete; with `unknown` it is not known whether the push landed, and the head stays owed. Once per head. */
+export const recordPrMergeBackFailed = (
+  project: string,
+  n: number,
+  failed: PayloadOf<'PrMergeBackFailed'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => mergeBackFailedTransition(state, failed),
     (_state, appended) => appended,
   )
 
@@ -353,8 +430,16 @@ export function readDraftOn(
     const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
 
     const held = new Set<string>()
+    // A pr-fix the PR held when a merge back carried it, and whose PR then closed unmerged: its code is on the
+    // personal branch, so it is a draft ticket like the PR's own. Per ticket, never per branch (#1341): a later fix on
+    // the branch, or one the PR was never told of, is not on the personal branch.
+    const mergedBack = new Map<string, string>()
     for (const pr of yield* listPrs(project, store)) {
-      if (pr.status === 'refused' || pr.status === 'closed') continue
+      if (pr.status === 'closed') {
+        if (pr.prBranch !== null) for (const t of pr.mergedBackTickets) mergedBack.set(t, pr.prBranch)
+        continue
+      }
+      if (pr.status === 'refused') continue
       for (const t of pr.tickets) held.add(t.ticket)
     }
 
@@ -364,8 +449,10 @@ export function readDraftOn(
       if (held.has(issue)) continue
       const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
       const state = reduceTicket(events)
-      if (state.landed === null || state.landed.base !== personal) continue
-      const landedAt = landedSeq(events, personal)
+      if (state.landed === null) continue
+      const onBase = state.landed.base
+      if (onBase !== personal && mergedBack.get(issue) !== onBase) continue
+      const landedAt = landedSeq(events, onBase)
       if (landedAt === null || landedAt <= since) continue
       const landing = events.find((e) => e.seq === landedAt)
       landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())
@@ -375,3 +462,163 @@ export function readDraftOn(
     return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
   })
 }
+
+/**
+ * The pr-fix landings on an open PR's branch that the PR does not hold (#1341): tickets whose latest landing is on
+ * `prBranch` and are not among the PR's tickets, so a process that died between `TicketLanded` and `PrFixLanded` is
+ * mended on the next sweep. A PR's branch is named for it alone, so nothing landed there is anything but its fix.
+ */
+export function readUnheldFixLandings(
+  project: string,
+  pr: PrState,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<PayloadOf<'PrFixLanded'>[], Error> {
+  return Effect.gen(function* () {
+    const unheld: PayloadOf<'PrFixLanded'>[] = []
+    const order = new Map<string, bigint>()
+    if (pr.prBranch === null) return unheld
+    for (const { issue } of candidates) {
+      if (pr.tickets.some((t) => t.ticket === issue)) continue
+      const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
+      const state = reduceTicket(events)
+      if (state.landed === null || state.landed.base !== pr.prBranch) continue
+      const landedAt = landedSeq(events, pr.prBranch)
+      if (landedAt === null) continue
+      order.set(issue, landedAt)
+      unheld.push({
+        ticket: issue,
+        mergeCommit: state.landed.mergeCommit,
+        ...(state.title === null ? {} : { title: state.title }),
+      })
+    }
+    // In the order they landed: the PR's head must only ever move forward.
+    return unheld.sort((a, b) => Number((order.get(a.ticket) ?? 0n) - (order.get(b.ticket) ?? 0n)))
+  })
+}
+
+/**
+ * A round of the conflict agent starts (#1313): appended **before** the agent is dispatched, and answers whether this call
+ * appended it. A round already counted for the commit (a second appender read the same head) appends nothing and answers
+ * false, so the agent is not started twice for one round.
+ */
+export const recordSyncRoundStarted = (
+  project: string,
+  n: number,
+  round: PayloadOf<'SyncRoundStarted'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRoundTransition(state, round),
+    (_state, appended) => appended,
+  )
+
+/** A started round was refused (#1313): on the log, so a restart and the end of the rounds read it and not memory. */
+export const recordSyncRoundRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'SyncRoundRefused'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => syncRefusalTransition(state, refusal),
+    (_state, appended) => appended,
+  )
+
+/** Which PR a person's request is about, and whether its project is team: a solo project has none. */
+export interface PrRef {
+  readonly project: string
+  readonly n: number
+  readonly mode: 'solo' | 'team'
+}
+
+/** What a request came to: appended for the conductor to serve, or the sentence that says why not. */
+export type PrRequestAnswer = { kind: 'appended' } | { kind: 'refused'; detail: string }
+
+/**
+ * Reads the PR, asks the pure transition, and appends what it decides at the version read — the shape of `pauseProject`.
+ * **Nothing here writes the event itself**: a refusal appends nothing and says why.
+ */
+const requestOnPr = <E>(
+  store: EventStore,
+  pr: PrRef,
+  transition: (state: PrState | null) => PrRequest<E>,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  withOneRetry(
+    Effect.gen(function* () {
+      const events = yield* readPrEvents(pr.project, pr.n, store)
+      const state = events.length === 0 ? null : reducePr(events)
+      const decided = transition(state)
+      if (decided.kind === 'refused') return { kind: 'refused', detail: decided.detail } as PrRequestAnswer
+      yield* Effect.tryPromise({
+        try: () => store.append(prStream(pr.project, pr.n), state?.version ?? 0, [decided.event]),
+        catch: (e) => e,
+      })
+      return { kind: 'appended' } as PrRequestAnswer
+    }),
+  )
+
+/** *Give the agent 3 more rounds* for the commit the wait is about (#1314). */
+export const grantPrRounds = (
+  pr: PrRef,
+  grant: { by: string; merging: 'main' | 'back'; commit: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => grantTransition(state, pr.mode, pr.project, grant))
+
+/** *Check again* (`lingtai pr retry`, #1314). */
+export const requestPrRetry = (
+  pr: PrRef,
+  request: { by: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => retryRequestTransition(state, pr.mode, pr.project, request.by))
+
+/** *Back*: close the draft and return the PR's tickets to Draft (#1314). */
+export const requestPrBack = (
+  pr: PrRef,
+  request: { by: string },
+  store: EventStore,
+): Effect.Effect<PrRequestAnswer, Error> =>
+  requestOnPr(store, pr, (state) => backRequestTransition(state, pr.mode, pr.project, request.by))
+
+/** The conductor served a retry without a head to adopt: In progress starts again from its first step. */
+export const recordPrRetried = (project: string, n: number, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => retryTransition(state),
+    (_state, appended) => appended,
+  )
+
+/** The conductor adopted the head a person pushed to the PR branch. */
+export const recordPrHeadAdopted = (
+  project: string,
+  n: number,
+  adopted: PayloadOf<'PrHeadAdopted'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => adoptTransition(state, adopted),
+    (_state, appended) => appended,
+  )
+
+/** A back was served: the PR is closed, with or without a pull request on a code host to close. */
+export const recordPrTakenBack = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => backClosedTransition(state, closed),
+    (_state, appended) => appended,
+  )

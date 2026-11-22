@@ -48,6 +48,22 @@
     "reason": "A whole-log scan for spend since a time, to check projection lag; it reduces no stream (plan §1.6)."
   },
   {
+    "file": "apps/cli/src/pr-ports.ts",
+    "function": "ticketBody",
+    "type": "TicketClaimed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the body recorded when the ticket was claimed, for the conflict agent's brief: the issue on GitHub may have been edited since."
+  },
+  {
+    "file": "apps/cli/src/pr-ports.ts",
+    "function": "ticketBody",
+    "type": "TicketContinued",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the body recorded when the ticket was claimed, for the conflict agent's brief: the issue on GitHub may have been edited since."
+  },
+  {
     "file": "apps/cli/src/split-run.ts",
     "function": "onSplitStarted",
     "type": "SplitStarted",
@@ -110,6 +126,14 @@
     "count": 1,
     "class": "select",
     "reason": "Reads the base's records of one command, to see whether a failing test failed there before; one event type, nothing reduced (0108 §17)."
+  },
+  {
+    "file": "packages/conductor/src/pr-resolve.ts",
+    "function": "oneRound",
+    "type": "StepEnded",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds whether a round's review StepEnded is already on the PR's stream, so an append whose acknowledgement was lost is not made twice; reduces nothing (#1313)."
   },
   {
     "file": "packages/conductor/src/pr.ts",

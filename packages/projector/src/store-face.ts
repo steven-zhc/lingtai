@@ -20,6 +20,7 @@ import type {
   Projection,
   ProjectionContext,
   ProjectionContextPort,
+  ProjectionLog,
   ProjectionRow,
   ProjectionsPort,
   ProjectionStore,
@@ -103,8 +104,19 @@ export function createFace(projection: Projection, ctx: ProjectionContext) {
   return Effect.runPromise(projection.create(fromPromiseContext(ctx)))
 }
 
-export function reduceFace(projection: Projection, events: readonly Envelope[], ctx: ProjectionContext) {
-  return Effect.runPromise(projection.reduce(events, fromPromiseContext(ctx)))
+export function reduceFace(
+  projection: Projection,
+  events: readonly Envelope[],
+  ctx: ProjectionContext,
+  log: ProjectionLog = NO_LOG,
+) {
+  return Effect.runPromise(projection.reduce(events, fromPromiseContext(ctx), log))
+}
+
+/** A reduce handed no log: a row of an older shape stops it, as it did before #1348. */
+const NO_LOG: ProjectionLog = {
+  read: () => Effect.die(new Error('no log was handed to this reduce')),
+  note: () => {},
 }
 
 /** The promise `ProjectionContext` a reducer holds, over the port's. */

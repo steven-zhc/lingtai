@@ -375,6 +375,12 @@ export interface GitHub {
   markReadyForReview(nodeId: string): E<void>
 
   /**
+   * Closes a pull request without merging it (`PATCH /pulls/{number} { state: 'closed' }`, #1314): the one write to a pull
+   * request's state Lingtai makes. A pull request already closed answers 422, which the caller reads.
+   */
+  closePull(number: number): E<void>
+
+  /**
    * Opens a **draft** pull request from `head` into `base`. A repository whose plan has no draft pull requests
    * answers 422 and that is the caller's to read: this never opens a ready one instead.
    */
@@ -1176,6 +1182,10 @@ export const makeGitHub = (
           if (raw.data?.markPullRequestReadyForReview?.pullRequest?.isDraft !== false) {
             return yield* new GitHubFailed(0, path, `${nodeId} is still a draft after markPullRequestReadyForReview`)
           }
+        }),
+
+        closePull: Effect.fn('github.closePull')(function* (number: number) {
+          yield* asPullCall('write', send<unknown>('PATCH', `${repoPath}/pulls/${number}`, { state: 'closed' }))
         }),
 
         openDraftPull: Effect.fn('github.openDraftPull')(function* (input: {

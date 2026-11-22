@@ -13,6 +13,7 @@ import type { Answerer, ProblemKind } from '@lingtai/domain'
 import { readSpend, readTicketReport, type SpendRow, type TicketReportRow } from '@lingtai/projector'
 
 import { isProblemKind } from './handled.ts'
+import { rereadTicket } from './snapshot-writer.ts'
 import { lagOf, type SpendCurrency } from './spend.ts'
 
 export type ReportParams = Record<string, string | string[] | undefined>
@@ -193,7 +194,7 @@ export async function currentReport(
   // Lags before the rows (see `currentSpend`): rows newer than their lag is safe, the reverse is not.
   const [ticketReport, spend] = await Promise.all([lagOf('ticket_report'), lagOf('spend')])
   const [tickets, rows] = await Promise.all([
-    readTicketReport(project === null ? {} : { project }),
+    readTicketReport(project === null ? { reread: rereadTicket } : { project, reread: rereadTicket }),
     readSpend(project === null ? { since } : { project, since }),
   ])
   return { tickets, spend: rows, currency: { ticketReport, spend } }
@@ -333,7 +334,9 @@ export const PURPOSE_SERIES: Series[] = [
 export const purposeSeriesOf = (purpose: string): number =>
   Math.max(
     0,
-    PURPOSE_SERIES.findIndex((s) => s.key === (purpose === 'Triage' || purpose === 'Discussion' ? 'Other' : purpose)),
+    PURPOSE_SERIES.findIndex(
+      (s) => s.key === (purpose === 'Triage' || purpose === 'Discussion' || purpose === 'Pr' ? 'Other' : purpose),
+    ),
   )
 
 // --- geometry --------------------------------------------------------------------

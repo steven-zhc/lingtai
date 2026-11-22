@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 一个 PR 的一生（ADR 0131 的流程图）</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<style>
+/* VOICE   calm and exact, the board's own
+   IDEA    the PR page's five states, with In progress opened up into its ten steps
+   PICTURE one rail of the five states across the top; under it the ten steps, each with where a failure goes and what a rework does
+   COLOUR  teal = Lingtai goes on by itself, amber = an agent at work, red = waiting on you, blue = the team on the code host, green = merged
+   TYPE    IBM Plex Sans + Mono, tokens from style.css (the board's) */
+body{font:14.5px/1.55 var(--sans),"PingFang SC",sans-serif}
+.lc-wrap{max-width:1220px;margin:0 auto;padding:26px 24px 48px}
+h1{font-size:24px;margin:0 0 4px}
+.lc-lede{color:var(--ink-2);margin:0 0 20px}
+code{font:12.5px var(--mono)}
+
+/* the five states: one track, used by the rail and the line under it */
+.lc-rail,.lc-under{--track:1fr 24px 1.2fr 24px 1fr 24px 1fr 24px 1fr;display:grid;grid-template-columns:var(--track)}
+.lc-rail{align-items:stretch;margin-bottom:8px}
+.lc-state{background:var(--surface);border:1px solid var(--rule);border-top:3px solid var(--rule-2);border-radius:3px;padding:10px 12px}
+.lc-state b{display:block;font-size:15px}
+.lc-state span{font-size:12.5px;color:var(--muted)}
+.lc-state.lc-work{border-top-color:var(--accent)}
+.lc-state.lc-wait{border-top-color:var(--fail)}
+.lc-state.lc-team{border-top-color:var(--review)}
+.lc-state.lc-done{border-top-color:var(--pass)}
+.lc-arrow{display:grid;place-items:center;color:var(--rule-2);font:600 16px var(--mono)}
+.lc-under{margin-bottom:22px;font-size:12.5px;color:var(--muted)}
+.lc-under div{padding:6px 4px 0}
+
+/* the ten steps of In progress */
+.lc-steps{background:var(--surface);border:1px solid var(--rule);border-radius:3px;overflow:hidden}
+.lc-steps h2{margin:0;padding:10px 14px;font:600 13px var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--accent-ink);background:var(--accent-soft);border-bottom:1px solid var(--rule)}
+.lc-row{display:grid;grid-template-columns:44px 1fr 1.5fr 1.65fr 1.1fr;gap:14px;padding:11px 14px;border-bottom:1px solid var(--rule);align-items:start}
+.lc-row:last-child{border-bottom:0}
+.lc-row.lc-head{padding:7px 14px;font:600 11.5px var(--mono);letter-spacing:.05em;color:var(--muted);background:var(--surface-2)}
+.lc-n{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;background:var(--accent-soft);color:var(--accent-ink);font:600 12.5px var(--mono)}
+.lc-name{font-weight:600}
+.lc-what{color:var(--ink-2);font-size:13.5px}
+.lc-outs{display:flex;flex-direction:column;gap:5px}
+.lc-out{font-size:13px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:baseline}
+.lc-out i{font-style:normal;color:var(--muted);white-space:nowrap}
+.lc-none{font-size:13px;color:var(--muted)}
+.lc-again{font-size:13px;color:var(--accent-ink);border-left:2px solid var(--accent-soft);padding-left:9px}
+.lc-again.lc-skip{color:var(--muted)}
+.lc-pill{display:inline-block;flex-shrink:0;font:500 12px var(--sans);padding:1px 8px;border-radius:3px;white-space:nowrap}
+.lc-pill.lc-wait{background:var(--fail-soft);color:var(--fail)}
+.lc-pill.lc-agent{background:var(--signal-soft);color:var(--signal)}
+.lc-pill.lc-on{background:var(--accent-soft);color:var(--accent-ink)}
+.lc-pill.lc-team{background:var(--review-soft);color:var(--review)}
+.lc-new{font:600 10.5px var(--mono);letter-spacing:.05em;color:#fff;background:var(--accent);border-radius:2px;padding:0 5px;margin-left:6px;vertical-align:2px;white-space:nowrap}
+
+/* after the ten steps, and around them */
+.lc-band{margin-top:10px;padding:10px 14px;background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--accent);border-radius:3px;font-size:13.5px;color:var(--ink-2)}
+.lc-band.lc-loop{border:1px dashed var(--accent)}
+.lc-band ul{margin:6px 0 0;padding-left:18px}
+.lc-after{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:22px}
+.lc-box{background:var(--surface);border:1px solid var(--rule);border-left:3px solid var(--rule-2);border-radius:3px;padding:12px 14px}
+.lc-box h3{margin:0 0 6px;font-size:14.5px}
+.lc-box p{margin:0;font-size:13.5px;color:var(--ink-2)}
+.lc-box.lc-team{border-left-color:var(--review)}
+.lc-box.lc-done{border-left-color:var(--pass)}
+.lc-legend{display:flex;gap:16px;flex-wrap:wrap;margin:18px 0 0;font-size:12.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="lc-wrap">
+  <h1>一个 PR 的一生</h1>
+  <p class="lc-lede">ADR 0131 的流程图。上面一排是 PR 页的五个状态；下面把 <b>In progress</b> 展开成十步，每一步写出它做什么、走不下去时去哪里、返工时做什么。
+  文中“Submit”是人点的提交按钮，“提交”是 git 的 commit。标了 <span class="lc-new">新</span> 的是 2026-11-21、22 新定的规则。</p>
+
+  <div class="lc-rail">
+    <div class="lc-state"><b>Draft</b><span>落在个人分支、还没进 PR 的票；随票落地而增长</span></div>
+    <div class="lc-arrow">→</div>
+    <div class="lc-state lc-work"><b>In progress</b><span>人点 Submit 之后，灵台按下面十步做</span></div>
+    <div class="lc-arrow">⇄</div>
+    <div class="lc-state lc-wait"><b>Waiting on you</b><span>某一步需要人来定，说明原因</span></div>
+    <div class="lc-arrow">→</div>
+    <div class="lc-state lc-team"><b>In review</b><span>在代码平台上，团队评审</span></div>
+    <div class="lc-arrow">→</div>
+    <div class="lc-state lc-done"><b>Merged</b><span>团队合进 main；灵台关掉它的票</span></div>
+  </div>
+  <div class="lc-under">
+    <div>只有人能 Submit；一次只开一个 PR，其它票照常落地</div><div></div>
+    <div>能自己走的情况灵台接着走（见每行），只有标红的才去 Waiting on you</div><div></div>
+    <div>你可以：再给 agent 三轮；自己在 PR 分支上解决后点“再检查一次”（<code>lingtai pr retry</code>）；或退回 Draft。其它工作不停</div><div></div>
+    <div>团队的评论只在平台上，灵台不读</div><div></div>
+    <div>灵台不合并，只是得知：git 可达，或平台报告</div>
+  </div>
+
+  <div class="lc-steps">
+    <h2>In progress · 十步</h2>
+    <div class="lc-row lc-head"><div></div><div>步骤</div><div>做什么</div><div>走不下去</div><div>返工时 <span class="lc-new">新</span></div></div>
+
+    <div class="lc-row"><div class="lc-n">1</div><div class="lc-name">冻结个人分支</div>
+      <div class="lc-what">把个人分支此刻的提交定为这个 PR 的内容</div>
+      <div class="lc-outs"><div class="lc-none">—</div></div>
+      <div class="lc-again lc-skip">不做：PR 的内容就是 PR 分支，个人分支上的新票不进来</div></div>
+
+    <div class="lc-row"><div class="lc-n">2</div><div class="lc-name">合进 main</div>
+      <div class="lc-what">main 已经是祖先就跳过；否则在合并通道里合进来</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>冲突</i><span class="lc-pill lc-agent">解冲突 agent</span> 按 main 的每个提交计轮数；改完过 build 和 review，没过算下一轮</div>
+        <div class="lc-out"><i>轮数用完</i><span class="lc-pill lc-wait">Waiting on you</span></div></div>
+      <div class="lc-again"><b>从这里重新走</b>：PR 开着时 main 可能已经往前走了</div></div>
+
+    <div class="lc-row"><div class="lc-n">3</div><div class="lc-name">build</div>
+      <div class="lc-what">合完的结果先 build，绿了才能推</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>合进了东西后红</i><span class="lc-pill lc-agent">解冲突 agent</span> 轮数和解冲突共用；改完过 build 和 review，没过算下一轮 <span class="lc-new">新</span></div>
+        <div class="lc-out"><i>轮数用完</i><span class="lc-pill lc-wait">Waiting on you</span></div>
+        <div class="lc-out"><i>什么都没合进就红</i><span class="lc-pill lc-wait">Waiting on you</span> 个人分支本身是坏的</div></div>
+      <div class="lc-again">做；红了同左</div></div>
+
+    <div class="lc-row"><div class="lc-n">4</div><div class="lc-name">合进别人的提交 <span class="lc-new">新</span></div>
+      <div class="lc-what">fetch 远端的 PR 分支；别人在灵台上次推的提交之上加了提交，就合进来，合完再 build</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>第一次 Submit</i>远端还没有 PR 分支，跳过</div>
+        <div class="lc-out"><i>冲突 / 合完红</i><span class="lc-pill lc-agent">解冲突 agent</span> 和第 2、3 步同一套，轮数共用</div>
+        <div class="lc-out"><i>轮数用完</i><span class="lc-pill lc-wait">Waiting on you</span></div>
+        <div class="lc-out"><i>force-push</i><span class="lc-pill lc-wait">Waiting on you</span> 不合，可能把对方删掉的提交加回去</div>
+        <div class="lc-out"><i>分支被删</i><span class="lc-pill lc-wait">Waiting on you</span></div></div>
+      <div class="lc-again">做：这时远端已经有 PR 分支，它才真正起作用</div></div>
+
+    <div class="lc-row"><div class="lc-n">5</div><div class="lc-name">标题和摘要 <span class="lc-new">新位置</span></div>
+      <div class="lc-what"><code>pr:</code> agent 写标题和摘要，在开 PR 之前；描述的其余部分（票、<code>Closes #…</code>、合并提交、花费）从日志生成</div>
+      <div class="lc-outs"><div class="lc-out"><i>项目被锁</i>不写摘要，用第一张票的标题照开，说明原因</div></div>
+      <div class="lc-again lc-skip">不做：第一版留着</div></div>
+
+    <div class="lc-row"><div class="lc-n">6</div><div class="lc-name">推送 PR 分支</div>
+      <div class="lc-what"><code>&lt;branch.personal&gt;-pr-&lt;n&gt;</code>，在合并通道里推；第一次 Submit 时，这是它第一次到服务器上</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>中途重启</i>先找已有的 PR 分支，记下找到的</div>
+        <div class="lc-out"><i>结果不明</i>看一次远端，绝不盲推第二次</div></div>
+      <div class="lc-again">第 2 或 4 步合进了东西才推，否则不做</div></div>
+
+    <div class="lc-row"><div class="lc-n">7</div><div class="lc-name">开草稿 PR</div>
+      <div class="lc-what">以草稿开出，标题和摘要已经是正式的；项目自己的 CI 照常在上面跑</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>中途重启</i>先按分支找已有的 PR，绝不开第二个</div>
+        <div class="lc-out"><i>平台不支持草稿</i><span class="lc-pill lc-wait">Waiting on you</span> 不开成 ready 的 PR</div></div>
+      <div class="lc-again lc-skip">不做：PR 已经开着，按分支找到它</div></div>
+
+    <div class="lc-row"><div class="lc-n">8</div><div class="lc-name">CI</div>
+      <div class="lc-what">读当前 head 上的检查，只算 recipe 要求的那些。项目没有 pull request 的 workflow，就没有这一步</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>红</i><span class="lc-pill lc-wait">Waiting on you</span> 写出失败的检查；人在平台上重跑后点“再检查一次”</div>
+        <div class="lc-out"><i>30 分钟没启动 / 超时</i><span class="lc-pill lc-wait">Waiting on you</span></div></div>
+      <div class="lc-again">做：看新 head 上的检查</div></div>
+
+    <div class="lc-row"><div class="lc-n">9</div><div class="lc-name">补充摘要 <span class="lc-new">新</span></div>
+      <div class="lc-what">只写第一版之后发生的事：第 4 步合进来的别人的提交，落地的 pr-fix 票（要求改什么、怎么改的）。不读平台上的评论</div>
+      <div class="lc-outs"><div class="lc-out"><i>没有新东西</i>跳过，不花钱</div></div>
+      <div class="lc-again">做：把这张 pr-fix 票和别人推的提交补进去</div></div>
+
+    <div class="lc-row"><div class="lc-n">10</div><div class="lc-name">标 ready</div>
+      <div class="lc-what">先再读一次 head <span class="lc-new">新</span>：还是 CI 检查过的那个提交，就标 ready</div>
+      <div class="lc-outs">
+        <div class="lc-out"><i>head 变了</i><span class="lc-pill lc-on">回到第 8 步</span> 跟着新 head 的 CI，不进 Waiting on you <span class="lc-new">新</span></div>
+        <div class="lc-out"><i>没变</i><span class="lc-pill lc-team">In review</span></div></div>
+      <div class="lc-again">平台上已是 ready，什么都不做，不退回草稿；PR 页回到 In review</div></div>
+  </div>
+
+  <div class="lc-band"><b>每轮 In progress 走完：合回个人分支</b>（第一次 Submit 和每次返工之后都做一次，下一个 PR 就带着这些修改）
+    <ul>
+      <li>合回前先 build；有冲突或 build 红，交给解冲突 agent，和第 2 步同一套，轮数共用</li>
+      <li>推送结果不明时记 <code>unknown</code>：不知道推上去没有，仍然欠着，下次再看 <span class="lc-new">新</span></li>
+      <li>灵台的合并提交已经在个人分支的历史里（不只是顶端），就算合回成功；直接记下，不重新 build <span class="lc-new">新</span></li>
+      <li>git 的报错原因（stderr）带进记录，Waiting on you 能说清为什么 <span class="lc-new">新</span></li>
+    </ul></div>
+
+  <div class="lc-band lc-loop"><span class="lc-pill lc-on">返工</span> pr-fix 票落地到 PR 分支（推之前先按第 4 步合进别人的提交）→ PR 回到 <b>In progress</b>，<b>从第 2 步重新走</b>，按右列做 → 合回个人分支 → 回到 <b>In review</b> <span class="lc-new">新</span></div>
+
+  <div class="lc-after">
+    <div class="lc-box lc-team"><h3>团队要求修改</h3>
+      <p>评论只在平台上，灵台不读；PR 留在 <b>In review</b>。人开一张 <code>lingtai:pr-fix</code> 票，做的时候 PR 也还在 In review。
+      它排在所有票前面，从 PR 分支切出、落在 PR 分支上；落地时发现分支被别人推过，就把别人的提交一起合进来；有冲突按这张票自己的合并冲突处理（它的修复轮会先合进 PR 分支） <span class="lc-new">新</span>。
+      落地后 PR 回到 <b>In progress</b>，从第 2 步重新走；平台上的 PR 一直是 ready，不退回草稿 <span class="lc-new">新</span>。</p></div>
+    <div class="lc-box lc-done"><h3>合进 main 之后</h3>
+      <p>灵台得知合并（git 可达，或平台报告），PR 进 <b>Merged</b>，关掉它的票。squash 合并且分支被删时，按分支名抓不到最后的 head，
+      就按 <code>refs/pull/&lt;平台的 PR 编号&gt;/head</code> 去抓，用完删掉；两种都抓不到，算“未证实”，不关票 <span class="lc-new">新</span>。</p></div>
+    <div class="lc-box"><h3>关闭但没合并</h3>
+      <p>PR 回到 <b>Draft</b>；票留在个人分支上，什么都不回滚。在平台上重新打开的 PR 不再跟踪。</p></div>
+  </div>
+
+  <div class="lc-legend">
+    <span><span class="lc-pill lc-on">灵台</span> 灵台自己接着走，或回到某一步</span>
+    <span><span class="lc-pill lc-agent">agent</span> agent 在干活，花钱计入当天上限</span>
+    <span><span class="lc-pill lc-wait">Waiting on you</span> 等你：再给三轮 / 自己解决后再检查一次 / 退回 Draft</span>
+    <span><span class="lc-pill lc-team">In review</span> 交给团队</span>
+  </div>
+</div>
+</body>
+</html>

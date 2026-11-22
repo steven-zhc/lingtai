@@ -386,6 +386,12 @@ function selectModel(
   )
 }
 
+/** The prompt an ACP agent is sent: a schema it cannot be forced to answer in is asked for in the text (#1300, 019 E8). */
+export const withReplyShape = (prompt: string, schema: Readonly<Record<string, unknown>> | undefined): string =>
+  schema === undefined
+    ? prompt
+    : `${prompt}\n\n## How to reply\n\nReply with one JSON object and nothing else, matching this JSON Schema exactly:\n\n\`\`\`json\n${JSON.stringify(schema, null, 1)}\n\`\`\`\n`
+
 export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, request: RunRequest) {
   const profile = options.profile ?? COPILOT_PROFILE
   const binary = options.binary ?? profile.command
@@ -415,6 +421,13 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
     Effect.callback<RunOutcome>((resume) => {
       const trace = request.log
       const note = (label: string, detail?: string) => trace?.note(label, detail)
+      const prompt = withReplyShape(request.prompt, request.outputSchema)
+      if (prompt !== request.prompt) {
+        note(
+          'reply shape',
+          `appended the output schema, ${Buffer.byteLength(prompt) - Buffer.byteLength(request.prompt)} bytes`,
+        )
+      }
       const child = spawnAgent(spawn, launch.command, launch.args, { cwd: request.cwd, env: launch.env })
       const ledger = createToolLedger()
       const chunks: string[] = []
@@ -595,7 +608,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
               send(socketPath, hookRunId, {
                 hook_event_name: 'UserPromptSubmit',
                 session_id: sessionId,
-                prompt: request.prompt,
+                prompt,
               }).then(
                 (reply) => {
                   if (!reply.allow)
@@ -611,7 +624,7 @@ export const acpRun = Effect.fn('agent.run')(function* (options: AcpOptions, req
             .then(() => unlessWall())
             .then(() => {
               phase = 'prompting'
-              return ctx.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: request.prompt }] })
+              return ctx.request('session/prompt', { sessionId, prompt: [{ type: 'text', text: prompt }] })
             })
         })
         .then(

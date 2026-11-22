@@ -38,8 +38,21 @@ export {
   type MirrorOptions,
 } from './mirror.ts'
 export {
+  PR_WORKTREE_PREFIXES,
+  mergeInWorktree,
+  standMergeUp,
+  standCommitUp,
+  sweepPrWorktrees,
+  type GitPort,
+  type StandMergeResult,
+  type MergeInWorktreeOptions,
+  type MergeInWorktreeResult,
+} from './pr-sync.ts'
+export {
   baseMovedOn,
+  checkedOutAt,
   integrateEffect,
+  isLocalRemote,
   type BaseMoved,
   type IntegrateOptions,
   type IntegrateResult,

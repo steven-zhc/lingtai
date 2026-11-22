@@ -61,3 +61,67 @@ describe('HandledCard', () => {
     expect((html.match(/class="you"/g) ?? []).length).toBe(1)
   })
 })
+
+describe('HandledFootnote (#1345)', () => {
+  const base = { needed: 0, percent: 100, marks: [] }
+  const more = { kinds: 1, problems: 1, hint: 'x' }
+  it('says what was solved in words, with no colour', async () => {
+    const { HandledFootnote } = await import('../src/app/handled-card')
+    const html = renderToStaticMarkup(
+      <HandledFootnote
+        todayHref="/report?window=today"
+        today={{
+          ...base,
+          solved: 12,
+          kinds: [
+            { kind: 'review-fixed', count: 5 },
+            { kind: 'base-moved', count: 3 },
+            { kind: 'conflict', count: 2 },
+            { kind: 'build', count: 1 },
+          ],
+          more,
+        }}
+      />,
+    )
+    expect(html).toContain('solved without you today')
+    expect(html).toContain('5 review fixes · 3 re-merged · 2 combined · 1 build fix')
+    expect(html).toContain('+1 more')
+    expect(html).toContain('href="/report?window=today"')
+    expect(html).not.toContain('style=')
+    expect(html).not.toContain('background')
+  })
+  it('leaves out a kind without a label and draws nothing for zero solved', async () => {
+    const { HandledFootnote } = await import('../src/app/handled-card')
+    const html = renderToStaticMarkup(
+      <HandledFootnote
+        todayHref="/r"
+        today={{
+          ...base,
+          solved: 3,
+          kinds: [
+            { kind: 'other', count: 2 },
+            { kind: 'stopped', count: 1 },
+          ],
+          more: null,
+        }}
+      />,
+    )
+    expect(html).toContain('1 restarted')
+    expect(html).not.toContain('other')
+    expect(
+      renderToStaticMarkup(<HandledFootnote todayHref="/r" today={{ ...base, solved: 0, kinds: [], more: null }} />),
+    ).toBe('')
+  })
+})
+
+describe('handledIfCurrent', () => {
+  const some = kinds([['build', 1, 0]])
+  it('is null for a failed or lagging read, never a zero', async () => {
+    const { handledIfCurrent } = await import('../src/lib/handled-today')
+    expect(handledIfCurrent({ error: 'x', lag: 0 }, some)).toBeNull()
+    expect(handledIfCurrent({ lag: 3 }, some)).toBeNull()
+    expect(handledIfCurrent({ lag: null }, some)).toBeNull()
+    expect(handledIfCurrent({ lag: 0 }, kinds([['build', 0, 0]]))).toBeNull()
+    expect(handledIfCurrent({ lag: 0 }, some)?.solved).toBe(1)
+  })
+})

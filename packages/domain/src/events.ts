@@ -257,6 +257,13 @@ export const TicketClaimed = z.object({
    * the body was empty, which is `''`.
    */
   body: z.string().optional(),
+  /**
+   * The branch this attempt is cut from and lands on, when it is not `branch.personal` by default — recorded only by a
+   * team `lingtai:pr-fix` claim (0130 §5, #1341). `pr` is the PR whose branch it is, or `null` when no PR was open and
+   * the ticket is an ordinary one on `branch.personal`. Absent on every other claim, and on every claim written before
+   * this field existed.
+   */
+  cutFrom: z.object({ branch: z.string(), pr: z.number().int().nullable() }).optional(),
 })
 
 /**
@@ -695,6 +702,18 @@ export const SpentFor = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('Judge'), when: StoredJudgeWhen }),
   z.object({ _tag: z.literal('Triage'), waitId: WaitId }),
   z.object({ _tag: z.literal('Discussion') }),
+  /**
+   * An agent run on a PR's own stream (#1313, 0130 §6): the conflict agent (`resolve`) and the reviewer of its
+   * resolution (`review`), one per round. `merging` and `commit` name what was being merged and `round` which try this
+   * was. #1318's summary agent files under the same member with `purpose: 'summary'`.
+   */
+  z.object({
+    _tag: z.literal('Pr'),
+    purpose: z.enum(['resolve', 'review']),
+    merging: z.enum(['main', 'back']),
+    commit: z.string().min(1),
+    round: z.number().int().positive(),
+  }),
 ])
 export type SpentFor = z.infer<typeof SpentFor>
 
@@ -2538,12 +2557,25 @@ export const PrSubmitRefused = z.object({ reason: PrRefusalReason, detail: z.str
  * @summary A PR's branch was frozen at one commit with the tickets it holds, and it is In progress.
  */
 export const PrInProgress = z.object({
-  because: z.enum(['submit', 'restart']),
+  because: z.enum(['submit', 'restart', 'retry', 'pr-fix']),
   branch: z.string(),
   main: z.string(),
   frozenSha: z.string(),
   prBranch: z.string(),
   tickets: z.array(z.object({ ticket: z.string(), mergeCommit: z.string(), title: z.string() })),
+})
+
+/**
+ * A `lingtai:pr-fix` ticket landed on the PR's branch (#1341): `mergeCommit` is the PR branch's new head, which becomes
+ * what In progress means to push, and the PR is owed In progress again from its first step.
+ *
+ * @summary A pr-fix ticket landed on a PR's branch, so the PR is owed In progress again.
+ */
+export const PrFixLanded = z.object({
+  ticket: z.string().min(1),
+  mergeCommit: z.string().min(1),
+  /** The ticket's title, for the PR's list of what it holds; absent where it was not known. */
+  title: z.string().optional(),
 })
 
 /**
@@ -2563,7 +2595,34 @@ const PrWaitReason = z.enum([
   'ci-red',
   'ci-none-started',
   'ci-timeout',
+  'sync-conflict',
+  'sync-red',
+  'sync-unknown',
+  'sync-rewritten',
+  'sync-locked',
 ])
+
+/**
+ * What a conflict the agent did not resolve came to, for the person who must (#1313): what was merged, where it
+ * conflicted, what each side meant, how many rounds were spent and what refused the last. #1314 reads this and never git.
+ */
+export const ConflictEnd = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  paths: z.array(z.string()),
+  ours: z.array(z.object({ number: z.string(), title: z.string(), mergeCommit: z.string() })),
+  theirs: z.array(z.object({ sha: z.string(), author: z.string(), subject: z.string() })),
+  /**
+   * Which side could not be read, and why. **An empty `ours` or `theirs` with this set is unknown, not none**: a failed read
+   * of the tickets or the commits is never recorded as there being nothing.
+   */
+  unread: z.object({ ours: z.string().nullable(), theirs: z.string().nullable() }).nullable().optional(),
+  /** How far `main` moved: every commit in the range, not only those touching a conflicted path. Null: could not be counted. */
+  mainAhead: z.number().int().nonnegative().nullable().optional(),
+  roundsUsed: z.number().int().nonnegative(),
+  last: z.object({ step: z.enum(['build', 'review', 'answer']), said: z.string() }).nullable(),
+})
+export type ConflictEnd = z.infer<typeof ConflictEnd>
 
 /**
  * A step could not go on without a person: the PR is Waiting on you, at `step`, on `headSha`.
@@ -2575,6 +2634,8 @@ export const PrWaiting = z.object({
   reason: PrWaitReason,
   detail: z.string(),
   headSha: z.string().min(1),
+  /** Set when the wait is a conflict the agent did not resolve (#1313); absent on every other wait. */
+  conflict: ConflictEnd.nullable().optional(),
 })
 
 /**
@@ -2660,6 +2721,78 @@ export const PrOpened = z.object({
 })
 
 /**
+ * `origin/<branch.main>` is in the PR's commit (0130 §6): `already` when it was an ancestor of `head` (the PR's start
+ * commit, nothing merged), `clean` when it was merged into a throwaway worktree and **the merge passed the recipe's
+ * `build`**, `resolved` when the conflict agent resolved it (#1313). `head` becomes the PR's `target`; nothing here
+ * pushes it — the `push` step does, in the lane's turn.
+ *
+ * @summary Main is in a PR's commit: it already was, or it was merged and built clean; the merge is the PR's target.
+ */
+export const BranchSynced = z.object({
+  mainCommit: z.string().min(1),
+  head: z.string().min(1),
+  how: z.enum(['already', 'clean', 'resolved']),
+})
+
+/**
+ * The PR branch at `prHead` was merged into `branch.personal`, built, and pushed as `mergeCommit` (0130 §6), so the
+ * person's next tickets are cut from a branch that holds `main` and every `lingtai:pr-fix` change.
+ *
+ * @summary A PR's branch was merged back into the personal branch, built and pushed.
+ */
+export const PrMergedBack = z.object({
+  prHead: z.string().min(1),
+  mergeCommit: z.string().min(1),
+  how: z.enum(['clean', 'resolved']),
+})
+
+/**
+ * The merge of a PR's branch back into `branch.personal` did not complete; with `unknown` it is not known whether the push landed, and the head stays owed. **The PR's own state
+ * does not change**: it is in review either way, and what conflicts is met at the next submit's sync.
+ *
+ * @summary Merging a PR's branch back into the personal branch did not complete; with why unknown, whether the push landed is not known.
+ */
+export const PrMergeBackFailed = z.object({
+  prHead: z.string().min(1),
+  why: z.enum(['conflict', 'red', 'unknown', 'lost-push', 'locked']),
+  detail: z.string(),
+  /** Set when the merge back conflicted and the agent did not resolve it (#1313). */
+  conflict: ConflictEnd.nullable().optional(),
+})
+
+/**
+ * One round of the conflict agent on a PR (#1313, 0130 §6): `commit` is being merged into `start` — a `main` commit
+ * into the PR branch (`main`), or the PR's head into `branch.personal` (`back`). **Appended before the agent is
+ * dispatched, and never refunded**: 0108 §8 resets no counter on a restart, so the rounds used for a commit are the
+ * count of these events for it.
+ *
+ * @summary A round of the conflict agent started on a PR: one commit merged into another, round n, for a conflict or a red build of a clean merge.
+ */
+export const SyncRoundStarted = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  start: z.string().min(1),
+  round: z.number().int().positive(),
+  /** Why the round was bought (#1352): absent is a `conflict`, as every round was before a red build could buy one. */
+  why: z.enum(['conflict', 'red']).optional(),
+})
+
+/**
+ * A round of the conflict agent was refused (#1313): by its answer, its build or its review. **Appended when the round ends**,
+ * so the refusal that bought the next round — and the last one, when the rounds are spent — is on the log beside the
+ * count, and a restarted conductor reads it from there and never from memory.
+ *
+ * @summary A round of the conflict agent was refused, and what refused it.
+ */
+export const SyncRoundRefused = z.object({
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  round: z.number().int().positive(),
+  step: z.enum(['build', 'review', 'answer']),
+  said: z.string(),
+})
+
+/**
  * The PR was merged: `how` says whether git found its head on `branch.main` or the code host said so (a squash or
  * rebase merge leaves nothing reachable). `mergeSha` is the host's merge commit, null when git answered. Terminal.
  *
@@ -2677,6 +2810,42 @@ export const PrMerged = z.object({
  * @summary A PR was closed on the code host without merging; its tickets return to Draft.
  */
 export const PrClosed = z.object({ headSha: z.string().min(1) })
+
+/**
+ * A person gave the conflict agent three more rounds for one commit (#1314, 0130 §6). **A grant belongs to the commit it
+ * names**: the next `main` commit starts at the recipe's bound again.
+ *
+ * @summary A person gave the conflict agent three more rounds for one commit of main.
+ */
+export const PrRoundsGranted = z.object({
+  by: z.string(),
+  merging: z.enum(['main', 'back']),
+  commit: z.string().min(1),
+  rounds: z.literal(3),
+})
+
+/**
+ * A person asked for a waiting PR to be checked again (#1314): the conductor takes the PR branch's head as pushed, if it
+ * still holds the frozen commit, and walks In progress again.
+ *
+ * @summary A person asked for a waiting PR to be checked again, after resolving it by hand or re-running a workflow.
+ */
+export const PrRetryRequested = z.object({ by: z.string() })
+
+/**
+ * The PR branch's head was pushed by a person, held the frozen commit, and became the PR's own (#1314): the one exception
+ * to *the branch must be what Lingtai last pushed*.
+ *
+ * @summary A head a person pushed to the PR branch was adopted as the PR's last pushed commit.
+ */
+export const PrHeadAdopted = z.object({ head: z.string().min(1), by: z.string() })
+
+/**
+ * A person asked for the PR to be taken back to Draft (#1314): the draft is closed on the code host and the tickets return.
+ *
+ * @summary A person asked to take a PR back: close the draft and return its tickets to Draft.
+ */
+export const PrBackRequested = z.object({ by: z.string() })
 
 /**
  * An account (a runtime's, or `github`) met its limit. `until` is when the runtime said it
@@ -2991,6 +3160,7 @@ export const EVENTS = {
   PrSubmitRequested,
   PrSubmitRefused,
   PrInProgress,
+  PrFixLanded,
   PrStepDone,
   PrWaiting,
   PrPushed,
@@ -2999,8 +3169,17 @@ export const EVENTS = {
   PrCiFollowing,
   PrChecked,
   PrOpened,
+  BranchSynced,
+  PrMergedBack,
+  PrMergeBackFailed,
+  SyncRoundStarted,
+  SyncRoundRefused,
   PrMerged,
   PrClosed,
+  PrRoundsGranted,
+  PrRetryRequested,
+  PrHeadAdopted,
+  PrBackRequested,
   AccountLimitReached,
   AccountLimitLifted,
   Reconciled,
@@ -3115,6 +3294,7 @@ export const EVENT_AT = {
   PrSubmitRequested: ['outside'],
   PrSubmitRefused: ['outside'],
   PrInProgress: ['outside'],
+  PrFixLanded: ['outside'],
   PrStepDone: ['outside'],
   PrWaiting: ['outside'],
   PrPushed: ['outside'],
@@ -3123,8 +3303,17 @@ export const EVENT_AT = {
   PrCiFollowing: ['outside'],
   PrChecked: ['outside'],
   PrOpened: ['outside'],
+  BranchSynced: ['outside'],
+  PrMergedBack: ['outside'],
+  PrMergeBackFailed: ['outside'],
+  SyncRoundStarted: ['outside'],
+  SyncRoundRefused: ['outside'],
   PrMerged: ['outside'],
   PrClosed: ['outside'],
+  PrRoundsGranted: ['outside'],
+  PrRetryRequested: ['outside'],
+  PrHeadAdopted: ['outside'],
+  PrBackRequested: ['outside'],
   AccountLimitReached: ['claim', ...AGENT_STEPS, 'end', 'outside'],
   AccountLimitLifted: ['outside'],
   Reconciled: ['outside'],

@@ -37,6 +37,11 @@ back inside the denied state directory (`allowRead`, `policy.ts:127`). That the
 denied whole and the allowed back hold, and that a git commit in the worktree
 works, is measured in 017.
 
+**A Copilot run, and no other, also reaches `*.githubcopilot.com` and writes
+`~/.copilot`** (`COPILOT_NETWORK` and `COPILOT_HOME_FOLDER`,
+`packages/agent/src/sandbox-facts.ts`). Its telemetry hosts, such as
+`telemetry.individual.githubcopilot.com`, are refused.
+
 **Writes are an allowlist** (`filesystemFor`, `policy.ts:120-146`): the
 worktree, the mirror, the temp directories (`/tmp`, `/private/tmp` on macOS, and
 `$TMPDIR`), the project's cache directory, and the project's `write`. Anywhere
@@ -138,14 +143,17 @@ and `agents/`, but no MCP servers, plugins, `settings.json` or login.
 ## The Copilot token
 
 A sandboxed Copilot run is handed a token you make once: a fine-grained personal
-access token (`github_pat_…`) with the *Copilot Requests* account permission. A
+access token (`github_pat_…`), owned by your own account, with only the
+*Copilot Requests* account permission. It is not `gh`'s login: that can reach
+your repositories, and this token cannot. A
 classic `ghp_` token is silently ignored by Copilot, so the command refuses it by
 name:
 
     lingtai token copilot
 
 This asks for the token at a hidden prompt and saves it as `copilot.github_token`
-in `~/.lingtai/config.yml` (`apps/cli/src/copilot-token.ts`). The variable
+in `~/.lingtai/config.yml` (`apps/cli/src/copilot-token.ts`; set the key by hand
+as `copilot.github_token` if you prefer). The variable
 `LINGTAI_COPILOT_GITHUB_TOKEN` is read first, and wins over the file. Only the
 token's shape is checked, not its permission or expiry.
 
@@ -181,6 +189,13 @@ not count.
   *stopped* until the host can sandbox. Setup never writes this, so you choose
   it.
 
+**Antigravity cannot run sandboxed on any host** in this release
+(`UNSANDBOXABLE_RUNTIMES`, `packages/domain/src/events.ts:147`). With
+`required: false` it runs unsandboxed and is marked. With `required: true` the
+recipe is refused: *"names `agent: antigravity` — antigravity cannot run
+sandboxed in this release — set `sandbox.required: false`, or name another
+agent"*.
+
 If a host loses the sandbox in the middle of an attempt under `required: true`,
 the attempt fails with no fix round.
 
@@ -192,6 +207,8 @@ Do not read the sandbox as more than this (ADR 0127 §18):
   holds a long-lived token. It can reach only allowlisted hosts, and revoking it
   is yours to do.
 - **Codex's login is readable to a Codex run** (`~/.codex/auth.json`).
+- **The Copilot token is readable to a Copilot run**, which reaches only
+  `*.githubcopilot.com` beyond the allowlist. Revoking it is yours to do.
 - **A refused file read is not reported.** `srt` reports a refused connection and
   does not report a refused file access, so the run sees an error and you see
   nothing.
