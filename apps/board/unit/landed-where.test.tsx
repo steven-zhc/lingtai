@@ -80,4 +80,16 @@ describe('projects without a retained row, beside one with rows', () => {
     const html = renderToStaticMarkup(<LandedFoot reads={new Map()} showProject={false} registryUnread />)
     expect(html).toContain('where these are could not be read')
   })
+  it('names the project when several are in scope though only one has a read', () => {
+    const html = renderToStaticMarkup(
+      <Landed
+        cards={[card('#1', 'a')]}
+        showProject={false}
+        issue={() => null}
+        reads={new Map([['b', team]])}
+        footShowProject
+      />,
+    )
+    expect(html).toContain('<span class="proj">b</span>')
+  })
 })

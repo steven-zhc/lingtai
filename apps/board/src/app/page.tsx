@@ -638,12 +638,15 @@ export function Landed({
   issue,
   reads = new Map(),
   registryUnread = false,
+  footShowProject = false,
 }: {
   cards: BoardCard[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
   reads?: ReadonlyMap<string, LandedWhereRead>
   registryUnread?: boolean
+  /** The projects in scope are several, whichever of them have rows: a foot line then names its project. */
+  footShowProject?: boolean
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
@@ -669,7 +672,11 @@ export function Landed({
           {rows(older)}
         </details>
       ) : null}
-      <LandedFoot reads={reads} showProject={showProject || reads.size > 1} registryUnread={registryUnread} />
+      <LandedFoot
+        reads={reads}
+        showProject={showProject || footShowProject || reads.size > 1}
+        registryUnread={registryUnread}
+      />
     </>
   )
 }
@@ -1134,6 +1141,7 @@ async function CardsPart({
         issue={ticket}
         reads={reads}
         registryUnread={registryUnread}
+        footShowProject={projects.length > 1}
       />
     )
   }
