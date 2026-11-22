@@ -715,9 +715,10 @@ const closeMergedTickets = (
             Effect.catch(() => Effect.succeed(false)),
           )
         headHere = yield* have()
-        if (!headHere) {
+        // The host's own PR number, never Lingtai's `n`; a PR with none (another remote) stays unproven.
+        if (!headHere && state.host !== null) {
           yield* ports
-            .remote(project, ['fetch', 'origin', `+refs/pull/${state.n}/head:${headRef}`])
+            .remote(project, ['fetch', 'origin', `+refs/pull/${state.host.number}/head:${headRef}`])
             .pipe(Effect.catch(() => Effect.void))
           headHere = yield* have()
         }
@@ -791,12 +792,15 @@ export const learnPrEnds = (
         if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
           // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now,
           // **before** the PR's end is learned — a PR merged meanwhile would refuse the request and lose the fix for good.
-          yield* mendFixLandings(ports, project, latest).pipe(
-            Effect.catch((err: Error) => Effect.sync(() => ports.log?.(`pr sweep ${project}: ${err.message}`))),
-          )
-          // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
-          const mended = yield* latestPr(project, ports.store)
-          if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
+          const repaired = yield* Effect.result(mendFixLandings(ports, project, latest))
+          if (Result.isFailure(repaired)) {
+            // **A repair that failed records no ending**: the PR stays open, so the next sweep repairs it first.
+            ports.log?.(`pr sweep ${project}: ${repaired.failure.message}`)
+          } else {
+            // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
+            const mended = yield* latestPr(project, ports.store)
+            if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
+          }
         }
         const prs = yield* listPrs(project, ports.store)
         for (const merged of prs.filter((p) => p.status === 'merged')) {

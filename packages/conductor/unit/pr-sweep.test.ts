@@ -420,7 +420,7 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
       fetch: () => Effect.void,
       remote: (project, args) => {
         asked.push([...args])
-        if (args[0] === 'fetch' && !gone) obtained = true
+        if (args[0] === 'fetch' && !gone && args[2]?.startsWith('+refs/pull/7/head:')) obtained = true
         return base.remote(project, args)
       },
       git: (project, args) => {
@@ -445,8 +445,29 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     gone = false
     await sweep(p)
     expect(w.closed.sort()).toEqual([1, 2, 93])
-    expect(asked.some((a) => a[0] === 'fetch' && a[2]?.startsWith('+refs/pull/1/head:refs/lingtai/pr/1/'))).toBe(true)
+    expect(asked.some((a) => a[0] === 'fetch' && a[2]?.startsWith('+refs/pull/7/head:refs/lingtai/pr/1/'))).toBe(true)
+    expect(asked.some((a) => a[0] === 'fetch' && a[2]?.includes('refs/pull/1/head'))).toBe(false)
     expect(asked.some((a) => a[0] === 'update-ref' && a[2]?.startsWith('refs/lingtai/pr/1/'))).toBe(true)
+  })
+
+  it('a repair that fails records no ending that sweep, and the next one repairs the PR first', async () => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
+    const withFix = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
+    let failing = true
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => (failing ? Effect.fail(new Error('the read failed')) : withFix()),
+    }
+    await sweep(p)
+    expect(await types(store)).not.toContain('PrMerged')
+    failing = false
+    await sweep(p)
+    const state = await pr(store)
+    expect(state.status).toBe('merged')
+    expect(state.tickets.map((t) => t.ticket)).toContain('93')
+    expect(w.closed.sort()).toEqual([1, 2])
   })
 
   it('on a merged PR the landing is refused and nothing is appended', async () => {
