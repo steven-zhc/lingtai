@@ -9,12 +9,15 @@ What changed for you, in the order you meet it:
 
 1. Every installation of the GitHub App is asked to approve two new read
    permissions, once.
-2. The hold label is `lingtai:hold`, not `agent:hold`.
-3. A recipe says `branch.main` where it said `base`, and `take: all` where it
-   said `take: both`.
+2. A recipe says `branch.main` where it said `base`, and `take: all` where it
+   said `take: both`. The old spellings are refused, so this comes before any
+   restart.
+3. The hold label is `lingtai:hold`, not `agent:hold`.
 4. A recipe may say `mode: team`. A recipe that names no mode is `solo`.
 
-Do them in this order. The first two have a wrong order that costs you.
+Do them in this order. A wrong order costs you: a daemon restarted onto a recipe
+that still has an old spelling takes nothing, and a hold label renamed out of
+order unholds tickets.
 
 ## 1. Approve the App's two new permissions
 
@@ -34,13 +37,40 @@ matters, and looking only at the installation shows nothing to approve:
    Set **Checks** and **Statuses** to *Read-only*.
 2. Accept them on the **installation**: GitHub emails the account that owns it,
    and the installation's settings page shows the request.
-3. Run `lingtai add` for a repository, or `lingtai doctor`, to confirm the gap has
-   closed. The table of every permission is in [GitHub](github.md#one-app-and-it-is-not-a-person),
+3. Run `lingtai add` for a repository to confirm the gap has closed: it checks the
+   installation's permissions by name and refuses naming any still missing.
+   `lingtai doctor` does not check them yet, so a quiet doctor proves nothing here. The table of every permission is in [GitHub](github.md#one-app-and-it-is-not-a-person),
    and [operating](operating.md) has the setup for a new App.
 
 A person using `gh` rather than an App has nothing to approve.
 
-## 2. Rename the hold label, in this order
+## 2. Let `lingtai doctor` rewrite the old spellings
+
+Three spellings in a recipe were renamed:
+
+| Before | Now |
+|---|---|
+| `repo.base`, or `base` under an `admit` entry's `worktree:` | `branch.main` |
+| `take: both` | `take: all` |
+| `init --base <branch>` on the command line | `init --main <branch>` |
+
+A recipe that still writes one is **refused** by 0.16 when it resolves, with a
+sentence naming the key and the fix, so a daemon restarted onto it takes nothing:
+do this step before restarting for anything else on this page. `lingtai doctor`
+names each one it finds, by key, and `lingtai doctor --fix` rewrites them as a
+**new recipe change on the project's log**. `init --base` is likewise refused in
+favour of `--main`.
+
+```bash
+lingtai doctor            # names the old spellings
+lingtai doctor --fix      # rewrites them as a new recipe change
+lingtai restart "0.16 recipe"
+```
+
+Restart once the recipe is fixed: the daemon holds the recipe it started with. See
+[`doc/cli.md`](cli.md) for the flags.
+
+## 3. Rename the hold label, in this order
 
 Every hold Lingtai writes is now `lingtai:hold`, and a hold is only what the
 project's recipe **excludes**. A ticket holding `agent:hold` is held only while
@@ -55,9 +85,15 @@ The right order, done by you and not by an agent:
    On GitHub, with `gh`:
 
    ```bash
-   gh issue list --label agent:hold --state open --json number --jq '.[].number' |
+   gh label create lingtai:hold --description "held by a person" 2>/dev/null || true
+   gh issue list --label agent:hold --state open --limit 1000 --json number --jq '.[].number' |
      xargs -I{} gh issue edit {} --add-label lingtai:hold
    ```
+
+   `gh issue edit --add-label` needs the label to exist, so the first line creates
+   it (harmless where it already does), and `--limit` lifts `gh issue list`'s
+   default of 30. Count what is left: `gh issue list --label agent:hold --state open
+   --limit 1000 --json number,labels` should show `lingtai:hold` on every one.
 
    On the local ticket store you do nothing: the store's own migration adds
    `lingtai:hold` to every ticket that has `agent:hold` the first time it is
@@ -77,32 +113,6 @@ The right order, done by you and not by an agent:
 The board and `lingtai backlog` write `lingtai:hold` from 0.16 on, and a
 person's own `lingtai:` label survives Lingtai's label writes. [Operating](operating.md)
 has the long account of what a hold is and is not.
-
-## 3. Let `lingtai doctor` rewrite the old spellings
-
-Three spellings in a recipe were renamed:
-
-| Before | Now |
-|---|---|
-| `repo.base`, or `base` under an `admit` entry's `worktree:` | `branch.main` |
-| `take: both` | `take: all` |
-| `init --base <branch>` on the command line | `init --main <branch>` |
-
-`lingtai doctor` names each one it finds, by key. `lingtai doctor --fix` rewrites
-them, and it does it as a **new recipe change on the project's log**: a change
-already on the log is never rewritten, and the resolver reads an old one's `base`
-as `branch.main` when it replays history. After the fix, and in any recipe
-written after 0.16, the old spellings are **refused**, with a sentence naming
-the key and the fix, and `init --base` is refused in favour of `--main`.
-
-```bash
-lingtai doctor            # names the old spellings
-lingtai doctor --fix      # rewrites them as a new recipe change
-lingtai restart "0.16 recipe"
-```
-
-Run the restart afterwards: the daemon holds the recipe it started with. See
-[`doc/cli.md`](cli.md) for the flags.
 
 ## 4. Switching to team, if you want it
 

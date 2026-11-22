@@ -134,7 +134,7 @@ states:
   (`lingtai pr rounds`), mend it by hand and check again (`lingtai pr retry`), or
   take the PR back to Draft (`lingtai pr back`), which closes it on the code host.
 - **In review.** Open on the code host and ready, because the build is green and
-  so was CI, on the commit that is now the PR's head. The team reviews it there.
+  the CI the project asked for passed (or the project has none), on the commit that is now the PR's head. The team reviews it there.
 - **Merged.** The team merged it into `main`, and every ticket it held is closed.
   A PR the team closes without merging goes back to Draft.
 

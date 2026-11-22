@@ -259,7 +259,8 @@ pr:
   that writes them is refused by name.
 
 The old spellings `repo.base`, `steps.admit[*].worktree.base` and `take: both`
-are refused in a recipe written after 0.16, naming the key and the fix.
+are refused by 0.16 when the recipe resolves, naming the key and the fix, so a
+project made before 0.16 must have them rewritten before its daemon restarts.
 [Upgrading to 0.16](upgrading-to-0.16.md) says how `lingtai doctor --fix`
 rewrites them.
 

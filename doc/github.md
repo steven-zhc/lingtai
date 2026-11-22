@@ -277,9 +277,11 @@ has the states). On GitHub:
   a PR's own branch, `<branch.personal>-pr-<n>`, and nothing else.
 - **The PR is opened as a draft pull request**, so the project's own
   `pull_request` workflows run on it unchanged, and is marked ready only when
-  every check on its head has passed and the head is still the commit that
-  passed. A project with no workflow on pull requests has no CI step, and the PR
-  page says so. A red run waits on you: you re-run it on GitHub and check again,
+  the checks the project counts have passed on its head (`pr.ci.required`, or
+  every check where it names none; a neutral or skipped result passes) and the
+  head is still the commit that passed. A project with no workflow on pull
+  requests, or with `pr.ci.provider: none`, has no CI step: the PR is marked
+  ready without CI being read, and the PR page says so. A red run waits on you: you re-run it on GitHub and check again,
   because Lingtai never re-runs a workflow.
 - **What the team does there is read back.** A merged PR closes every ticket it
   held; one closed without merging goes back to Draft. Lingtai finds out on the
