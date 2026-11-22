@@ -8,7 +8,7 @@ import { type CiCheck, prStepRows, prStream, reducePr, ticketStream } from '@lin
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
-import { recordPrInProgress, requestPrSubmit } from '@lingtai/project'
+import { recordPrInProgress, requestPrRetry, requestPrSubmit } from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { TestClock } from 'effect/testing'
@@ -200,7 +200,7 @@ describe('the ci and ready steps', () => {
     expect((await types(store)).slice(-2)).toEqual(['PrChecked', 'PrOpened'])
   })
 
-  it('a red run waits on ci-red naming the failing check, and a restart after it turns green goes on', async () => {
+  it('a red run waits on ci-red naming the failing check, and a retry after it turns green goes on', async () => {
     const store = await frozen()
     const w = aWorld([check('unit', 'success'), check('e2e / chromium', 'failure')])
     const p = ports(store, w, recipeWith())
@@ -216,26 +216,15 @@ describe('the ci and ready steps', () => {
 
     // *Check again*: the PR goes through In progress again and the checks are read afresh.
     w.checks = [check('unit', 'success'), check('e2e / chromium', 'success')]
-    // #1314's retry is not built: it appends the PrInProgress the way `restartTransition` does, from a waiting PR.
-    const before = await store.read(prStream('lingtai', 1))
-    await store.append(prStream('lingtai', 1), before.length, [
-      {
-        type: 'PrInProgress',
-        actor: 'human:steven',
-        data: {
-          because: 'restart',
-          branch: 'lingtai-team',
-          main: 'main',
-          frozenSha: FROZEN,
-          prBranch: 'lingtai-team-pr-1',
-          tickets: [{ ticket: '1', mergeCommit: 'm1', title: 't' }],
-        },
-      },
-    ])
+    await Effect.runPromise(requestPrRetry({ project: 'lingtai', n: 1, mode: 'team' }, { by: 'human:steven' }, store))
     await serve(p)
     s = reducePr(await store.read(prStream('lingtai', 1)))
     expect(s.status).toBe('in-review')
-    const checked = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrChecked')
+    const events = await store.read(prStream('lingtai', 1))
+    expect(events.map((e) => e.type)).not.toContain('PrHeadAdopted')
+    const because = events.filter((e) => e.type === 'PrInProgress').map((e) => (e.data as { because: string }).because)
+    expect(because.at(-1)).toBe('retry')
+    const checked = events.filter((e) => e.type === 'PrChecked')
     expect(checked.map((e) => (e.data as { verdict: string }).verdict)).toEqual(['red', 'green'])
   })
 
