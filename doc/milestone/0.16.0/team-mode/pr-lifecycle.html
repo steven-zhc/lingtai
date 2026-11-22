@@ -183,7 +183,7 @@ code{font:12.5px var(--mono)}
       落地后 PR 回到 <b>In progress</b>，从第 2 步重新走；平台上的 PR 一直是 ready，不退回草稿 <span class="lc-new">新</span>。</p></div>
     <div class="lc-box lc-done"><h3>合进 main 之后</h3>
       <p>灵台得知合并（git 可达，或平台报告），PR 进 <b>Merged</b>，关掉它的票。squash 合并且分支被删时，按分支名抓不到最后的 head，
-      就按 <code>refs/pull/&lt;n&gt;/head</code> 去抓，用完删掉；两种都抓不到，算“未证实”，不关票 <span class="lc-new">新</span>。</p></div>
+      就按 <code>refs/pull/&lt;平台的 PR 编号&gt;/head</code> 去抓，用完删掉；两种都抓不到，算“未证实”，不关票 <span class="lc-new">新</span>。</p></div>
     <div class="lc-box"><h3>关闭但没合并</h3>
       <p>PR 回到 <b>Draft</b>；票留在个人分支上，什么都不回滚。在平台上重新打开的 PR 不再跟踪。</p></div>
   </div>
