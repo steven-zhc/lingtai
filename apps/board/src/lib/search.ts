@@ -166,7 +166,7 @@ export function buildIndex({
           ...(pr.host === null ? [] : [String(pr.host)]),
           title,
           pr.branch ?? '',
-          ...pr.tickets.map((t) => `#${t}`),
+          ...pr.tickets.flatMap((t) => [t, `#${t}`]),
         ],
         number: pr.host === null ? { value: String(pr.n), hash: false } : { value: String(pr.host), hash: true },
       })
@@ -193,14 +193,21 @@ export function fuzzy(q: string, label: string): { span: number; start: number }
   const letters = q.replace(/\s+/g, '').toLowerCase()
   if (letters === '') return null
   const text = label.toLowerCase()
-  let at = -1
-  let start = -1
-  for (const ch of letters) {
-    at = text.indexOf(ch, at + 1)
-    if (at < 0) return null
-    if (start < 0) start = at
+  let best: { span: number; start: number } | null = null
+  for (let from = text.indexOf(letters[0] as string); from >= 0; from = text.indexOf(letters[0] as string, from + 1)) {
+    let at = from
+    let ok = true
+    for (let k = 1; k < letters.length; k++) {
+      at = text.indexOf(letters[k] as string, at + 1)
+      if (at < 0) {
+        ok = false
+        break
+      }
+    }
+    if (!ok) break
+    if (best === null || at - from < best.span) best = { span: at - from, start: from }
   }
-  return { span: at - start, start }
+  return best
 }
 
 /** The shortest query that fuzzy-matches: two letters would light every title. */
@@ -235,7 +242,9 @@ export function search(index: Index, query: string): Entry[] {
     return out
   }
   const num = numberQuery(q)
-  for (const g of GROUPS) {
+  // `pr 88` asks for a PR: its group leads.
+  const order = num?.kind === 'pr' ? ['PRs' as const, ...GROUPS.filter((g) => g !== 'PRs')] : GROUPS
+  for (const g of order) {
     const ranked: { e: Entry; r: [number, number, number]; i: number }[] = []
     index.entries.forEach((e, i) => {
       if (e.group !== g) return

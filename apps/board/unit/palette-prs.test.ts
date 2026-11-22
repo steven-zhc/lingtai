@@ -95,3 +95,29 @@ describe('a failed PR read', () => {
     expect(i.entries.filter((e) => e.group === 'PRs')).toHaveLength(1)
   })
 })
+
+describe('ranking regressions', () => {
+  it('pr 88 puts the PR before a ticket whose title matches', () => {
+    const i = buildIndex({
+      tasks: [card('12', 'follow up on PR 88')],
+      projects: [],
+      prs: new Map([['lingtai', [p88]]]),
+    })
+    expect(search(i, 'pr 88')[0]?.href).toBe('/pr/lingtai/3')
+  })
+  it('a bare number ranks the holding PR above an unrelated one', () => {
+    const i = buildIndex({
+      tasks: [card('43', 't')],
+      projects: [],
+      prs: new Map([['lingtai', [pr({ n: 1, host: 143, name: 'PR #143' }), p88]]]),
+    })
+    expect(search(i, '43').map((e) => e.href)).toEqual(['/task/ticket-lingtai-43', '/pr/lingtai/3', '/pr/lingtai/1'])
+  })
+  it('fuzzy finds the tightest window, not the first start', () => {
+    const i = buildIndex({
+      tasks: [card('1', 'start'), card('2', 'search results: sort')],
+      projects: [],
+    })
+    expect(search(i, 'srt').map((e) => e.href)).toEqual(['/task/ticket-lingtai-2', '/task/ticket-lingtai-1'])
+  })
+})
