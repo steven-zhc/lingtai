@@ -229,7 +229,8 @@ function rank(e: Entry, q: string, num: NumberQuery | null): [number, number, nu
 }
 
 /**
- * The results for a query, flat, in group order and at most `PER_GROUP` from
+ * The results for a query, flat, in group order (`pr <n>` puts PRs first; the palette
+ * draws groups in the order they appear here) and at most `PER_GROUP` from
  * each. An empty query lists the pages and projects and no tickets.
  */
 export function search(index: Index, query: string): Entry[] {

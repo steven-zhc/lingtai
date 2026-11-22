@@ -121,3 +121,14 @@ describe('ranking regressions', () => {
     expect(search(i, 'srt').map((e) => e.href)).toEqual(['/task/ticket-lingtai-2', '/task/ticket-lingtai-1'])
   })
 })
+
+describe('displayed order is keyboard order', () => {
+  it('pr 88 leads with the PR even when a ticket title matches', () => {
+    const i = buildIndex({
+      tasks: [card('12', 'follow up on PR 88')],
+      projects: [],
+      prs: new Map([['lingtai', [p88]]]),
+    })
+    expect(search(i, 'pr 88').map((e) => e.group)).toEqual(['PRs', 'Tickets'])
+  })
+})

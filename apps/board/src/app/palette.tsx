@@ -16,7 +16,6 @@ import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import {
-  GROUPS,
   type Entry,
   type GoState,
   type Index,
@@ -82,7 +81,7 @@ export function PaletteView({
         <p className="empty">nothing matches “{query.trim()}”</p>
       ) : null}
       <ul className="palette-list" role="listbox" id={LIST} aria-label="Results">
-        {GROUPS.flatMap((g) => {
+        {[...new Set(results.map((e) => e.group))].flatMap((g) => {
           const rows = results.flatMap((e, i) => (e.group === g ? [{ e, i }] : []))
           if (rows.length === 0) return []
           return [
