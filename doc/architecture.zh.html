@@ -685,6 +685,7 @@
     <ul class="rules">
       <li><b>只有 conductor 写「活」的事。</b> <span>认领、闸口判定、并入、落地。别的都不许。</span></li>
       <li><b>看板也写。</b> <span>批准、驳回、豁免都是追加。看板不是只读的 —— 它是人的决定进入日志的地方。</span></li>
+      <li><b>团队项目的 PR 有自己的流。</b> <span>0.16：<code>pr-{project}-{n}</code>，与 ticket 流、attempt 流并列（<a href="decisions/0131-a-pr-goes-from-draft-to-merged.md">0131</a>）。它的请求 —— 提交、再检查一次、多给几轮、退回草稿 —— 由看板或 CLI 追加，由 conductor 来处理，如同处理一场讨论；其余一切，它的步骤和状态，都由 conductor 追加。得知团队已合并或关闭它，靠的是 daemon 的巡检：在自己的定时器上读那一个打开的 PR 一次，不在 attempt 之内。</span></li>
       <li><b>代理经由 hook 写。</b> <span>一个跑在 unix 套接字上的瘦二进制；conductor 代它追加，actor 记为 run id。</span></li>
       <li><b>投影从不往日志里写。</b> <span>它们读日志，维护自己的表。会追加的投影就是历史的第二作者。</span></li>
       <li><b>投影只有一个。</b> <span><code>task_view</code>。一份「只有一项的清单」，唯一的作用就是让人能写出一个投影、又悄悄把它漏在清单外 —— 没有表、没有检查点、也没有会失败的检查。要加第二个，就公开地按名字加，否则它不存在。</span></li>
@@ -950,7 +951,7 @@
           <tr><th>存储</th><th>装什么</th><th>谁写</th><th>可重建</th></tr>
         </thead>
         <tbody>
-          <tr><td class="k">events</td><td>关于 Lingtai 做过什么的每一个事实</td><td class="who">conductor、看板、CLI、代理</td><td class="who">不 —— 它就是源头</td></tr>
+          <tr><td class="k">events</td><td>关于 Lingtai 做过什么的每一个事实 —— 每个 ticket、每个 attempt 一条流，团队项目里每个 PR 也有一条（<code>pr-{project}-{n}</code>）</td><td class="who">conductor、看板、CLI、代理</td><td class="who">不 —— 它就是源头</td></tr>
           <tr><td class="k">checkpoints</td><td>那个投影读到哪儿了</td><td class="who">projector，在折叠自己的事务里</td><td class="who">可以</td></tr>
           <tr><td class="k">task_view</td><td>看板上的卡片</td><td class="who">projector，别无他者</td><td class="who">可以 —— <code>lingtai projection rebuild task_view</code></td></tr>
           <tr><td class="k">daemon_status</td><td>心跳</td><td class="who">daemon</td><td class="who">刻意放在日志之外</td></tr>

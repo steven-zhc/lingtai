@@ -298,17 +298,19 @@ Go to **Settings → Developer settings → GitHub Apps → New GitHub App**
 | **Webhook → Active** | **Uncheck it.** Webhooks arrive with [#28](https://github.com/steven-zhc/lingtai/issues/28); until then there is nothing listening and a failing delivery is noise. |
 | **Where can this App be installed** | *Only on this account.* |
 
-Then, under **Repository permissions**, set exactly these five:
+Then, under **Repository permissions**, set exactly these seven:
 
 | Permission | Level | What Lingtai does with it |
 |---|---|---|
-| **Issues** | Read and write | reading work items, writing `agent:*` labels and comments |
+| **Issues** | Read and write | reading work items, writing `lingtai:*` labels and comments |
 | **Contents** | Read and write | cloning, pushing `agent/*`, merging into the base branch |
 | **Pull requests** | Read and write | opening and reading pull requests |
 | **Workflows** | Read and write | pushing changes to `.github/workflows` |
+| **Checks** | Read-only | reading a PR's check runs (0.16) |
+| **Statuses** | Read-only | reading a PR's commit statuses (0.16) |
 | **Metadata** | Read-only | mandatory; GitHub selects it for you |
 
-Leave every other permission at *No access*. `lingtai add` checks these five by name
+Leave every other permission at *No access*. `lingtai add` checks these seven by name
 and refuses to onboard a repository that is missing one, so a gap becomes a
 message at onboarding rather than a 403 in the middle of a merge.
 
@@ -642,7 +644,7 @@ says the work item is over. `lingtai close` is still how you end one.
   five minutes) or when an attempt settles or completes — never at once.
 - No web page. A ticket's `url` is always `null`, so a board card has no link.
 - No dependencies. `blockedBy` is always `0`; hold a chain by hand with
-  `agent:hold`.
+  `lingtai:hold`.
 - No assignee, so a recipe's `assignee: mine` matches nothing.
 - No delete — close a ticket instead.
 - `lingtai ticket close`'s reason is accepted and not stored.
@@ -814,7 +816,7 @@ on, and an agent was dispatched against groundwork that did not exist (#131).
 Record a chain with GitHub's own **blocked by** on the issue, not as a table in
 a body: prose is for people and the queue cannot read it. Nothing is stored on
 this side — the ticket is offered again the turn after the last blocker closes,
-exactly as removing `agent:hold` works.
+exactly as removing `lingtai:hold` works.
 
 A closed blocker does not hold anything, and a repository whose GitHub reports
 no dependencies at all is told so once rather than having every ticket quietly
@@ -2105,11 +2107,11 @@ An attempt that lands while the notes below are still being taken is exactly the
 gap this order closes, and it closes it only once that row says the daemon
 stopped.
 
-**`agent:hold` holds nothing by itself — it holds only what a project's own
+**`lingtai:hold` holds nothing by itself — it holds only what a project's own
 recipe excludes, and most don't.** `considerIssue` skips a label only when
 `excludeOf`'s answer names it (`packages/conductor/src/discover.ts:200`,
 `const excluded = new Set(queue.exclude...)`, where that `queue` is already
-`excludeOf`'s resolved answer); there is no hold `agent:hold` or any other
+`excludeOf`'s resolved answer); there is no hold `lingtai:hold` or any other
 label gets for free. **`excludeOf` reads one of two places, never both**
 (`packages/recipe/src/settings.ts:296-297`, `takeAt(recipe)?.exclude ??
 recipe.source.exclude`): a `queue:` block the recipe declares at `claim`
@@ -2117,7 +2119,7 @@ recipe.source.exclude`): a `queue:` block the recipe declares at `claim`
 it has one, or `source.exclude` only where it declares none. `EXCLUDE`
 defaults to `[]` (`packages/recipe/src/recipe.ts:1074`), the default preset
 writes nothing to it, and this page's own earlier example recipe is
-`exclude: [blocked, needs-design]` — no `agent:hold` in it. Check every project you are
+`exclude: [blocked, needs-design]` — no `lingtai:hold` in it. Check every project you are
 about to hold against, before trusting the label on anything:
 
 ```bash
@@ -2125,7 +2127,7 @@ pnpm lingtai status
 ```
 
 and read each project's `excludes` line — it is `excludeOf`'s own answer, so
-it is correct whichever spelling the recipe uses. If `agent:hold` is not on
+it is correct whichever spelling the recipe uses. If `lingtai:hold` is not on
 it, add it in that project's `~/.lingtai/<project>/recipe.yml`: under
 `source.exclude` **only if the recipe declares no `queue:` block at
 `claim`**; where it does declare one, add it to that block's own `exclude:`
@@ -2154,13 +2156,13 @@ this way claims nothing and starts no attempt.
 
 **Note what is held, then hold it against the reset too.** A reset forgets
 which work items the log remembers as blocked, and the queue does not leave a
-held item alone on its own — it takes `agent:hold`, not a memory of why, and
+held item alone on its own — it takes `lingtai:hold`, not a memory of why, and
 only on a project whose recipe excludes it, per the check above. For every
 issue the board shows as held, before anything else:
 
 - read its ref, its `agent/<n>` branch (if any) and the question or diagnosis
   it is held on;
-- put `agent:hold` on the GitHub issue, so a queue running against the emptied
+- put `lingtai:hold` on the GitHub issue, so a queue running against the emptied
   log does not offer it again the turn after the reset. [010](experiments/010-the-log-before-the-second-reset.md)
   is what skipping this looks like: *"the log no longer knew that #120, #155
   and #156 had landed, so the queue offered them again as runnable."*
@@ -2197,7 +2199,7 @@ select project, issue from task_view where state in ('landed', 'closed');
 
 For every row this returns, close the GitHub issue — the work is already
 merged, or a person already decided against it, and there is nothing left to
-hold — or put `agent:hold` on it if you are not ready to close it yet. Either
+hold — or put `lingtai:hold` on it if you are not ready to close it yet. Either
 keeps it off the queue the reset would otherwise hand it back to.
 
 **Note which projects are registered.** `ProjectConfigured` is also inside
@@ -2496,7 +2498,7 @@ pnpm lingtai pause <project>
 ```
 
 None of `projection rebuild`, `add` or `doctor` below needs a daemon running.
-**Do not bring one back — `service start` included — until `agent:hold` is on
+**Do not bring one back — `service start` included — until `lingtai:hold` is on
 every issue *Before*'s held-items note or its landed/closed note left held.**
 That is what actually keeps a freshly started daemon from claiming work during
 this section; the pause by itself does not.
@@ -2540,7 +2542,7 @@ pnpm lingtai doctor
 ```
 
 **log: predates the Hold event** should now read `ok`, since nothing in the
-freshly emptied log predates anything. Put `agent:hold` back only on the
+freshly emptied log predates anything. Put `lingtai:hold` back only on the
 issues that should still stay held — the reset does not know which those
 were; *Before*'s held-items note says which, and so does its landed/closed
 note, for any issue you chose to hold there rather than close. Only now —
@@ -2559,7 +2561,7 @@ recipes and the environment files are all untouched.
 - **What landed, and what was closed.** The log no longer knows which issues
   were merged or which a person decided against, so the queue offers them
   again as runnable — the exact failure [010](experiments/010-the-log-before-the-second-reset.md)
-  recorded, and the reason this section's *Before* step asks for `agent:hold`
+  recorded, and the reason this section's *Before* step asks for `lingtai:hold`
   rather than a note on its own.
 - **What is held.** A question a person was answering, or a diagnosis a run
   left behind, is gone with the `WorkItemBlocked` row that carried it — which

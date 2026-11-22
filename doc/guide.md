@@ -87,7 +87,7 @@ about GitHub issues.
   with an open blocker and takes it again on its own once the last blocker
   closes (`packages/conductor/src/discover.ts:219`, `blocked-by`; its comment at
   `:212-214` says it counts *open* blockers, not total).
-- Hold by default with `agent:hold`, and remove it from what you have read. It
+- Hold by default with `lingtai:hold`, and remove it from what you have read. It
   works only because it is in `source.exclude`; a label you have not put there
   excludes nothing.
 - For the first runs against a repository, use
@@ -254,7 +254,7 @@ information about the ticket before you raise it. The values and defaults are in
   split, `personAsks` for how often it asks you. They are counted on the
   attempt's or the ticket's own stream and no restart resets them
   ([reference](reference.md#what-an-attempt-may-spend--runtimelimits-the-recipes)).
-  Read the ledger early and use `agent:hold`.
+  Read the ledger early and use `lingtai:hold`.
 
 `source.backoff` stops blind retries: the old harness re-ran #58 and #59 five
 times for roughly $29 exactly that way
