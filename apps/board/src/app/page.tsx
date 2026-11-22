@@ -596,12 +596,15 @@ export function LandedRow({
 export function LandedFoot({
   reads,
   showProject,
+  registryUnread = false,
 }: {
   reads: ReadonlyMap<string, LandedWhereRead>
   showProject: boolean
+  registryUnread?: boolean
 }) {
   return (
     <>
+      {registryUnread ? <div className="lfoot unread">where these are could not be read</div> : null}
       {[...reads.entries()].map(([project, read]) => {
         const foot = footLine(read)
         if (foot === null) return null
@@ -634,11 +637,13 @@ export function Landed({
   showProject,
   issue,
   reads = new Map(),
+  registryUnread = false,
 }: {
   cards: BoardCard[]
   showProject: boolean
   issue: (card: BoardCard) => string | null
   reads?: ReadonlyMap<string, LandedWhereRead>
+  registryUnread?: boolean
 }) {
   const rows = (some: BoardCard[]) => (
     <ul className="landed">
@@ -664,7 +669,7 @@ export function Landed({
           {rows(older)}
         </details>
       ) : null}
-      <LandedFoot reads={reads} showProject={showProject} />
+      <LandedFoot reads={reads} showProject={showProject || reads.size > 1} registryUnread={registryUnread} />
     </>
   )
 }
@@ -724,14 +729,20 @@ type LockRead = Awaited<ReturnType<typeof readProjectLocks>>
  */
 function startReads(param: string | undefined) {
   const board = loadBoard(param)
-  const registered = timed('projects.read', () => readRegistered()).catch(() => [])
+  const registeredRead = timed('projects.read', () => readRegistered())
+  const registered = registeredRead.catch(() => [])
+  // A failed register read is [] above; this says so, so a quiet team project is reported unread rather than left out.
+  const registeredUnread = registeredRead.then(
+    () => false,
+    () => true,
+  )
   const control = timed('events.control', () => readControlOnce())
   const settled = Promise.all([board, control])
   const day = settled.then(() =>
     timed('spend.day', () => control.then((c) => readDayReading(undefined, c)), { failed: (r) => r.day === null }),
   )
   const lags = board.then(() => timed('projections.lag', () => projectionLag()).then(footerLags, () => null))
-  return { board, registered, control, day, lags }
+  return { board, registered, registeredUnread, control, day, lags }
 }
 type Reads = ReturnType<typeof startReads>
 
@@ -1002,11 +1013,12 @@ async function CardsPart({
   queue: Promise<GithubQueue>
   projectKey: string
 }) {
-  const [board, registered, control, lockRead] = await Promise.all([
+  const [board, registered, control, lockRead, registeredUnread] = await Promise.all([
     ctx.reads.board,
     ctx.reads.registered,
     ctx.reads.control,
     ctx.locks,
+    ctx.reads.registeredUnread,
   ])
   const col = board.columns.find((c) => c.id === id)
   if (col === undefined) return null
@@ -1099,6 +1111,7 @@ async function CardsPart({
     ].filter((p) => only === undefined || p === only)
     const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
     const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
+    const registryUnread = only === undefined && registeredUnread
     if (col.cards.length === 0)
       return (
         <>
@@ -1107,10 +1120,22 @@ async function CardsPart({
           >
             {emptyNote(col.id, control.paused, only, locksInScope, allPaused, new Date(), uses)}
           </p>
-          <LandedFoot reads={reads} showProject={projects.length > 1} />
+          <LandedFoot
+            reads={reads}
+            showProject={projects.length > 1 || reads.size > 1}
+            registryUnread={registryUnread}
+          />
         </>
       )
-    return <Landed cards={col.cards} showProject={onBoard.size > 1} issue={ticket} reads={reads} />
+    return (
+      <Landed
+        cards={col.cards}
+        showProject={onBoard.size > 1}
+        issue={ticket}
+        reads={reads}
+        registryUnread={registryUnread}
+      />
+    )
   }
   if (col.cards.length === 0) {
     return (

@@ -64,3 +64,20 @@ describe('a team project with no retained Landed row', () => {
     expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
   })
 })
+
+describe('projects without a retained row, beside one with rows', () => {
+  it('names the project on every foot line when several have one', () => {
+    const html = render(
+      new Map([
+        ['lingtai', team],
+        ['other', team],
+      ]),
+    )
+    expect(html).toContain('<span class="proj">lingtai</span>')
+    expect(html).toContain('<span class="proj">other</span>')
+  })
+  it('says the register could not be read', () => {
+    const html = renderToStaticMarkup(<LandedFoot reads={new Map()} showProject={false} registryUnread />)
+    expect(html).toContain('where these are could not be read')
+  })
+})
