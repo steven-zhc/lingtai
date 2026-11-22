@@ -599,10 +599,11 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         // landed after it, and no sha is stored anywhere. `-z` for the reason the
         // conflict branch gives above.
         const fork = yield* at(['merge-base', laneBase, laneBranch], mirror)
-        // A pr-fix cut from the head Lingtai last pushed (`expectBase`) that others pushed on top of is landed on as fetched
-        // (0131 §4, #1353): that movement is what the ancestry check above allowed, and a conflict is the ordinary one below.
-        const forkedAtExpected = options.expectBase !== undefined && fork === options.expectBase
-        if (fork !== localBase && !forkedAtExpected) {
+        // A pr-fix landing on a PR branch lands on the base as fetched (0131 §4, #1353): the ancestry check above allowed
+        // exactly that movement, whatever commit the ticket forked at. Only the first try — the recompute after a lost push
+        // runs without the right to push, so a base that moved again is refused `base-moved` as on any other base.
+        const landsOnFetched = push && options.expectBase !== undefined
+        if (fork !== localBase && !landsOnFetched) {
           const names = (range: string) =>
             at(['diff', '--name-only', '-z', range], mirror).pipe(
               Effect.map((out) => out.split('\0').filter((p) => p.length > 0)),

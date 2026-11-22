@@ -75,6 +75,14 @@ describe('the lane lands on a PR branch that still holds what Lingtai last pushe
     expect(push).toContain(`--force-with-lease=refs/heads/feature-pr-1:${fetched}`)
   })
 
+  it('lands when the ticket forked at a commit others pushed, past what Lingtai last pushed', async () => {
+    const fetched = 'e'.repeat(40)
+    const fake = fakeGit(0, fetched, 'd'.repeat(40))
+    const result = await land(fake, moved)
+    expect(result).not.toMatchObject({ reason: 'base-moved' })
+    expect(fake.calls.find((a) => a[0] === 'push')).toContain(`--force-with-lease=refs/heads/feature-pr-1:${fetched}`)
+  })
+
   it('goes on past the check when the base is where it was expected', async () => {
     const fake = fakeGit()
     const result = await land(fake, sha)
