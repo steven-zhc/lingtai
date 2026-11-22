@@ -72,6 +72,7 @@ import {
   changeRecipe,
   grantPrRounds,
   requestPrRetry,
+  editPrSummary,
   requestPrSubmit,
 } from '@lingtai/project'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
@@ -96,6 +97,13 @@ import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
 async function project(name: string) {
   const state = await readProject(name)
   if (!state?.owner) throw new Error(`no project named "${name}" — run lingtai add first`)
+  return state
+}
+
+/** A registered project, ownerless or not: a local team-mode project records no owner and its PRs are still its own. */
+async function registeredProject(name: string) {
+  const state = await readProject(name)
+  if (!state) throw new Error(`no project named "${name}" — run lingtai add first`)
   return state
 }
 
@@ -688,14 +696,14 @@ async function projectLock(verb: 'pause' | 'resume', project: string): Promise<A
  * button was, and a stale page is refused by the command itself (*PR 7 is no longer waiting*), never acted on.
  */
 async function prRef(name: string, n: number) {
-  const state = await project(name)
+  const state = await registeredProject(name)
   const { recipe } = await currentRecipe(state)
   return { recipe, ref: { project: name, n, mode: modeOf(recipe) } }
 }
 
 export async function submitPrNow(input: { project: string }): Promise<ActionResult> {
   try {
-    const state = await project(input.project)
+    const state = await registeredProject(input.project)
     const { recipe } = await currentRecipe(state)
     const answer = await Effect.runPromise(requestPrSubmit(input.project, modeOf(recipe), actor(), eventStore))
     revalidatePath('/', 'layout')
@@ -733,6 +741,22 @@ export async function retryPrNow(input: { project: string; n: number }): Promise
     const answer = await Effect.runPromise(requestPrRetry(ref, { by: actor() }, eventStore))
     revalidatePath('/', 'layout')
     return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'checking again' }
+  } catch (err) {
+    return { ok: false, detail: (err as Error).message }
+  }
+}
+
+/**
+ * *Save* the summary (#1318): the summary alone — the generated rest of the description is never the person's to edit.
+ * **This appends a request for the daemon, which regenerates the description and puts it on the code host**: nothing here
+ * asks GitHub, so the page says *saved* and not *pushed* until the log says the push happened.
+ */
+export async function savePrSummaryNow(input: { project: string; n: number; summary: string }): Promise<ActionResult> {
+  try {
+    const { ref } = await prRef(input.project, input.n)
+    const answer = await Effect.runPromise(editPrSummary(ref, { by: actor(), summary: input.summary }, eventStore))
+    revalidatePath('/', 'layout')
+    return answer.kind === 'refused' ? { ok: false, detail: answer.detail } : { ok: true, detail: 'summary saved' }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
   }

@@ -9,10 +9,12 @@
 import { inProgressStepNames } from '@lingtai/conductor'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { prStream } from '@lingtai/domain'
+import { type PrState, isOpen, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
-import { type PrDraftTicket, readPr, readPrDraft, readProject } from '@lingtai/project'
+import { type GitHub, makeGitHub } from '@lingtai/github'
+import { type PrDraftTicket, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
 import { type Recipe, modeOf } from '@lingtai/recipe'
@@ -20,7 +22,16 @@ import { Effect } from 'effect'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 
-import { type PrBoardView, type PrRead, prBoard } from './pr-board.ts'
+import { type FixTicket, type PrBoardView, type PrRead, prBoard, prName } from './pr-board.ts'
+import {
+  type HostRead,
+  type PrPageView,
+  generatedBody,
+  githubHosted,
+  prFixTicketLink,
+  prPage,
+  ticketsOnGitHub,
+} from './pr-page.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -74,6 +85,44 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
     return pr !== null && pr.status === 'waiting' ? 1 : 0
   })
 
+/**
+ * The draft, decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as such where
+ * the draft would be, while every PR that was read is still drawn. **Never an empty draft** for a read that failed. The PRs
+ * board and a PR's page both ask here, so the two cannot decide the draft differently.
+ */
+export const readDraftOf = (
+  project: string,
+  recipe: Recipe,
+  prs: readonly PrRead[],
+): Effect.Effect<PrDraftTicket[] | { error: string }> => {
+  const unread = prs.find((r) => !('pr' in r))
+  if (unread !== undefined) return Effect.succeed({ error: `PR ${unread.n} could not be read` })
+  return Effect.gen(function* () {
+    const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
+      Effect.mapError(failed),
+    )
+    return yield* readPrDraft(
+      project,
+      recipe,
+      cards.map((c) => ({ issue: c.issue })),
+      eventStore,
+      prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
+    )
+  }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
+}
+
+/** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
+export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
+  Effect.gen(function* () {
+    const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
+    const spend = new Map<number, number>()
+    for (const row of rows) {
+      if (row.costUsd === null) continue
+      for (const n of ns) if (row.streamId === prStream(project, n)) spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
+    }
+    return spend
+  })
+
 /** What the board knows of a project's PRs, or why it could not be known. */
 export type PrsRead =
   | { readonly kind: 'solo'; readonly recipe: Recipe }
@@ -97,38 +146,24 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const prs = yield* readProjectPrs(project, eventStore)
-        // The draft is decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as
-        // such where the draft would be, while every PR that was read is still drawn. Never an empty draft.
-        const unread = prs.find((r) => !('pr' in r))
-        const draft: PrDraftTicket[] | { error: string } =
-          unread !== undefined
-            ? { error: `PR ${unread.n} could not be read` }
-            : yield* Effect.gen(function* () {
-                const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
-                  Effect.mapError(failed),
-                )
-                return yield* readPrDraft(
-                  project,
-                  recipe,
-                  cards.map((c) => ({ issue: c.issue })),
-                  eventStore,
-                  prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
-                )
-              }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
-        const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
-        const spend = new Map<number, number>()
-        for (const row of rows) {
-          if (row.costUsd === null) continue
-          for (const read of prs) {
-            if (row.streamId === prStream(project, read.n)) spend.set(read.n, (spend.get(read.n) ?? 0) + row.costUsd)
-          }
-        }
+        const draft = yield* readDraftOf(project, recipe, prs)
+        const spend = yield* spendByPr(
+          project,
+          prs.map((r) => r.n),
+        )
         const waitingForServe = prs.some((r) => 'pr' in r && r.pr.status === 'requested')
         const holder = waitingForServe
           ? yield* Effect.tryPromise({ try: () => conductorLockHolder(), catch: failed }).pipe(
               Effect.orElseSucceed(() => 'unknown' as string | null),
             )
           : null
+        const fixHref = (name: string | null): FixTicket | null =>
+          prFixTicketLink({
+            project,
+            owner: state.owner,
+            github: ticketsOnGitHub(recipe),
+            name: name ?? 'the PR',
+          })
         return prBoard({
           project,
           recipe,
@@ -137,7 +172,8 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           stepNames: inProgressStepNames(),
           spend,
           servedWords: servedWords(holder),
-          newFixHref: `https://github.com/${state.owner}/${project}/issues/new?labels=${encodeURIComponent('lingtai:pr-fix')}`,
+          newFixHref: fixHref(null),
+          newFixFor: (pr) => fixHref(prName(pr)),
         })
       }),
     )
@@ -178,4 +214,194 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   if (modeOf(recipe) !== 'team') return viewsFor(project)
   const waiting = await Effect.runPromise(waitingPrs(project, eventStore)).catch(() => null)
   return viewsFor(project, { waiting })
+}
+
+/** How long a page waits for one ticket's state on GitHub before it says *unknown*. */
+const ISSUE_READ_BUDGET = '3 seconds'
+
+/** The project's GitHub, or null where there is no App, no owner or the client could not be made: never a failure. */
+const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub | null> => {
+  if (owner === null || owner === '' || !hasGitHubAuth()) return Effect.succeed(null)
+  return makeGitHub({ auth: githubClientAuth(), owner, repo: project }).pipe(Effect.orElseSucceed(() => null))
+}
+
+/**
+ * What the description reads of each ticket, as the daemon's `facts` port does: whether it is still open on GitHub, and what
+ * its runs cost (`null` where any run's cost is unreported, or the read failed). The PR's own stream is not a ticket's.
+ */
+const ticketFacts = (
+  project: string,
+  tickets: readonly string[],
+  github: GitHub | null,
+): Effect.Effect<{ ticket: string; open: boolean | null; spend: number | null }[]> =>
+  Effect.forEach(
+    tickets,
+    (ticket) =>
+      Effect.gen(function* () {
+        // The log's half first and never waiting on GitHub: the issue read runs beside it, in parallel with every other
+        // ticket's, and a slow or failed one is unknown after `ISSUE_READ_BUDGET` rather than holding the page.
+        const openRead =
+          github === null || !/^\d+$/.test(ticket)
+            ? Effect.succeed(null)
+            : github.getIssue(Number(ticket)).pipe(
+                Effect.map((issue): boolean | null => issue.state === 'open'),
+                Effect.timeout(ISSUE_READ_BUDGET),
+                Effect.orElseSucceed(() => null),
+              )
+        // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
+        const rows = yield* readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(
+          Effect.orElseSucceed(() => null),
+        )
+        const open = yield* openRead
+        const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
+        const spend =
+          own === null || own.length === 0 || own.some((r) => r.costUsd === null)
+            ? null
+            : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+        return { ticket, open, spend }
+      }),
+    { concurrency: 'unbounded' },
+  )
+
+/** What one PR's page knows, or why it could not be known. */
+export type PrDetailRead =
+  | { readonly kind: 'solo'; readonly recipe: Recipe }
+  | { readonly kind: 'unknown' }
+  | { readonly kind: 'failed'; readonly error: string }
+  | { readonly kind: 'none' }
+  | {
+      readonly kind: 'team'
+      readonly recipe: Recipe
+      readonly view: PrPageView
+      readonly status: PrState['status']
+      /** The host's number, only while the log says the PR is open there: the one thing the render asks the host. */
+      readonly ask: number | null
+    }
+
+/**
+ * The page's one read: `n` is Lingtai's id, or `next` for the draft. The PR's events are read once and folded, and kept —
+ * the history and each step's duration need them. **A failed read is `failed` with its words, never *no such PR*.**
+ */
+export async function readPrDetail(project: string, n: number | 'next'): Promise<PrDetailRead> {
+  let state: Awaited<ReturnType<typeof readProject>>
+  try {
+    state = await readProject(project)
+  } catch (err) {
+    return { kind: 'failed', error: (err as Error).message }
+  }
+  // A local project legitimately records no owner: it is registered all the same.
+  if (state === null || state === undefined) return { kind: 'unknown' }
+  try {
+    const { recipe } = await currentRecipe(state)
+    if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
+    return await Effect.runPromise(
+      Effect.gen(function* () {
+        const stepNames = inProgressStepNames()
+        const now = new Date()
+        if (n === 'next') {
+          const prs = yield* readProjectPrs(project, eventStore)
+          const draft = yield* readDraftOf(project, recipe, prs)
+          const latest = [...prs].reverse().find((r): r is { n: number; pr: PrState } => 'pr' in r)?.pr ?? null
+          const view = prPage({
+            project,
+            recipe,
+            owner: state.owner ?? null,
+            pr: null,
+            events: [],
+            draft,
+            open: latest !== null && isOpen(latest) ? latest : null,
+            spend: null,
+            stepNames,
+            now,
+          })
+          return { kind: 'team', recipe, view, status: null, ask: null } as const
+        }
+        const events = yield* readPrEvents(project, n, eventStore)
+        if (events.length === 0) return { kind: 'none' } as const
+        const pr = reducePr(events)
+        // The spend the page says is the PR's whole: its tickets' runs and its own. A part that could not be read leaves the
+        // total unknown — never `$0`, and never one part presented as the sum.
+        // Only the log here: whether a ticket is still open is GitHub's, and `readGeneratedBody` asks it in a streamed part, so
+        // no request to the host holds the page back.
+        const facts = yield* ticketFacts(
+          project,
+          pr.tickets.map((t) => t.ticket),
+          null,
+        )
+        const own = yield* spendByPr(project, [n]).pipe(
+          Effect.map((m) => m.get(n) ?? 0),
+          Effect.orElseSucceed(() => null),
+        )
+        const tickets = facts.some((f) => f.spend === null) ? null : facts.reduce((sum, f) => sum + (f.spend ?? 0), 0)
+        const spend = own === null || tickets === null ? null : own + tickets
+        const view = prPage({
+          project,
+          recipe,
+          owner: state.owner ?? null,
+          pr,
+          events,
+          draft: [],
+          open: null,
+          spend,
+          spendParts: { tickets, pr: own },
+          facts,
+          stepNames,
+          now,
+        })
+        const ask = githubHosted(recipe) && pr.host !== null && isOpen(pr) ? pr.host.number : null
+        return { kind: 'team', recipe, view, status: pr.status, ask } as const
+      }),
+    )
+  } catch (err) {
+    const words = (err as Error).message
+    return { kind: 'failed', error: n === 'next' ? words : `${prStream(project, n)}: ${words}` }
+  }
+}
+
+/**
+ * The one request a render makes of the code host: this PR's state, by the fields read. A failure is its words, never
+ * *closed*. The client is the one every other read builds — `githubClientForEffect`'s own auth and repository, as the
+ * Effect face `getPull` is on — so there is no second way of minting an installation token.
+ */
+export async function readHostPull(project: string, number: number): Promise<HostRead> {
+  try {
+    const state = await readProject(project)
+    if (state === null || state === undefined) return { kind: 'failed', reason: `no project named ${project}` }
+    if (!hasGitHubAuth()) return { kind: 'failed', reason: 'no GitHub App configured' }
+    if (!state.owner) return { kind: 'failed', reason: 'no owner recorded for this project' }
+    const options = { auth: githubClientAuth(), owner: state.owner, repo: project }
+    return await Effect.runPromise(
+      makeGitHub(options).pipe(
+        Effect.flatMap((github) => github.getPull(number)),
+        Effect.map((pull): HostRead => ({ kind: 'ok', state: pull.state, merged: pull.merged, draft: pull.draft })),
+        Effect.catch((err) =>
+          Effect.succeed<HostRead>({ kind: 'failed', reason: err instanceof Error ? err.message : String(err) }),
+        ),
+      ),
+    )
+  } catch (err) {
+    return { kind: 'failed', reason: (err as Error).message }
+  }
+}
+
+/**
+ * The generated rest of the description with each ticket's open state asked of its host — the one part of the page that
+ * waits on GitHub, streamed after everything the log answers. A ticket whose read is slow or fails is unknown, never closed.
+ */
+export async function readGeneratedBody(project: string, n: number): Promise<string> {
+  const state = await readProject(project)
+  if (state === null || state === undefined) throw new Error(`no project named ${project}`)
+  const { recipe } = await currentRecipe(state)
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const pr = reducePr(yield* readPrEvents(project, n, eventStore))
+      const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
+      const facts = yield* ticketFacts(
+        project,
+        pr.tickets.map((t) => t.ticket),
+        github,
+      )
+      return generatedBody(pr, facts)
+    }),
+  )
 }
