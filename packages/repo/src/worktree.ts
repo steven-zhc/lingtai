@@ -211,7 +211,20 @@ export const provisionWorktreeEffect = Effect.fn('repo.provision')(function* (
     // held pass left is gone once its scope closes, and this is where it is
     // re-cut from — the branch, not the base, because what is being continued
     // is the diff an approval was about, not a fresh one.
-    const baseSha = options.at ?? (yield* gitEffect(['rev-parse', options.base], { ...run, cwd: mirror }))
+    const baseSha =
+      options.at ??
+      (yield* gitEffect(['rev-parse', options.base], { ...run, cwd: mirror }).pipe(
+        Effect.catch((failure) =>
+          // Exit 1 of `--verify --quiet` is *absent*; anything else is a failure to read and stays as it was (#1358).
+          gitEffect(['rev-parse', '--verify', '--quiet', `refs/heads/${options.base}`], { ...run, cwd: mirror }).pipe(
+            Effect.matchEffect({
+              onSuccess: () => Effect.fail(failure),
+              onFailure: (probe) =>
+                Effect.fail(probe.exitCode === 1 ? new RepoFailed({ ...failure, baseAbsent: true }) : failure),
+            }),
+          ),
+        ),
+      ))
     const remoteHead = yield* gitEffect(['rev-parse', '--verify', `refs/heads/${options.branch}`], {
       ...run,
       cwd: mirror,

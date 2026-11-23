@@ -298,6 +298,7 @@ import {
 } from './kept-run-port.ts'
 import { PR_FIX_LABEL, labelsFor } from './labels.ts'
 import { type LandingLane, landingLane } from './landing-lane.ts'
+import { type PersonalBranchPort } from './personal-branch.ts'
 import { AgentHost, Repo } from './ports.ts'
 import { currentRecipeEffect } from './projects.ts'
 import { copilotTokenSignedIn, signedInHere } from './projects.ts'
@@ -604,6 +605,11 @@ export interface RunOnceOptions {
   stepRedoWaits?: readonly Duration.Input[]
   /** Overrides the clone source. The tests point it at a local repository. */
   remote?: string
+  /**
+   * **Makes a team project's `branch.personal` when the remote has none** (#1358) — asked only after the cut
+   * found its base absent, in team mode, for the action's own base. Absent: the cut refuses as it always did.
+   */
+  personalBranch?: PersonalBranchPort
   /**
    * False stops after the gates, with the branch pushed and every verdict
    * recorded, and asks a person for the merge.
@@ -3445,41 +3451,62 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             headGone = releasedHead.cannot
             return { notCut: `the saved head cannot be continued: ${releasedHead.cannot}` }
           }
-          const provisioned = yield* Effect.result(
-            repo.provision({
-              project,
-              // '' when there is no owner: `remote` is always set then —
-              // `ownerlessClient` (`./ownerless.ts`) refuses a recipe naming
-              // no `repo.remote` before either of its two callers, `run.ts`
-              // and `apps/cli/src/conduct.ts`'s `conductWork`, builds this
-              // client — so `ProvisionOptions.owner` is read only to build
-              // the `github.com` URL `remote` pre-empts.
-              owner: options.client.owner ?? '',
-              repo: options.client.repo,
-              base: spec.base,
-              branch,
-              runId,
-              submodules: spec.submodules,
-              plantAt: recipe.env.plantAt,
-              env: env.values,
-              token: options.token,
-              home,
-              remote: options.remote,
-              gitEnv: options.gitEnv,
-              // srt's stand-in names, so `git add -A` works inside it (#1152); no key under any other decision.
-              ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
-              // **A continuation re-cuts at the sha the approval was about,
-              // never the base** (#465) — the worktree a held pass left is
-              // gone once its scope closed, and `provisionWorktree`'s own
-              // `at` check refuses rather than silently taking a branch that
-              // has moved since.
-              ...(continuation !== null
-                ? releasedHead !== undefined
-                  ? { at: releasedHead.at, atRef: releasedHead.atRef }
-                  : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
-                : {}),
-            }),
+          const provision = Effect.suspend(() =>
+            Effect.result(
+              repo.provision({
+                project,
+                // '' when there is no owner: `remote` is always set then —
+                // `ownerlessClient` (`./ownerless.ts`) refuses a recipe naming
+                // no `repo.remote` before either of its two callers, `run.ts`
+                // and `apps/cli/src/conduct.ts`'s `conductWork`, builds this
+                // client — so `ProvisionOptions.owner` is read only to build
+                // the `github.com` URL `remote` pre-empts.
+                owner: options.client.owner ?? '',
+                repo: options.client.repo,
+                base: spec.base,
+                branch,
+                runId,
+                submodules: spec.submodules,
+                plantAt: recipe.env.plantAt,
+                env: env.values,
+                token: options.token,
+                home,
+                remote: options.remote,
+                gitEnv: options.gitEnv,
+                // srt's stand-in names, so `git add -A` works inside it (#1152); no key under any other decision.
+                ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
+                // **A continuation re-cuts at the sha the approval was about,
+                // never the base** (#465) — the worktree a held pass left is
+                // gone once its scope closed, and `provisionWorktree`'s own
+                // `at` check refuses rather than silently taking a branch that
+                // has moved since.
+                ...(continuation !== null
+                  ? releasedHead !== undefined
+                    ? { at: releasedHead.at, atRef: releasedHead.atRef }
+                    : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                  : {}),
+              }),
+            ),
           )
+          let provisioned = yield* provision
+          if (
+            Result.isFailure(provisioned) &&
+            provisioned.failure.baseAbsent === true &&
+            options.personalBranch !== undefined &&
+            continuation === null &&
+            modeOf(recipe) === 'team' &&
+            recipe.branch.personal !== undefined &&
+            spec.base === recipe.branch.personal
+          ) {
+            // The remote has no `branch.personal`, which the person stated by writing it in the recipe (#1358). Made
+            // from `branch.main`'s tip, never moved; a read that failed makes nothing and the cut refuses as it did.
+            const ensured = yield* Effect.result(options.personalBranch(spec.base, recipe.branch.main))
+            if (Result.isFailure(ensured)) return { notCut: ensured.failure.message }
+            if ('made' in ensured.success) {
+              log(`made ${spec.base} at ${ensured.success.made.slice(0, 7)} from ${recipe.branch.main}`)
+            }
+            provisioned = yield* provision
+          }
           if (Result.isFailure(provisioned)) {
             if (releasedHead !== undefined && provisioned.failure.stale === true) headGone = provisioned.failure.detail
             return { notCut: provisioned.failure.detail }

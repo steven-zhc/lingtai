@@ -19,10 +19,15 @@ import {
   readAccount,
   servePendingPrs,
 } from '@lingtai/conductor'
+import {
+  ensurePersonalBranch,
+  ensurePersonalBranchOnRemote,
+  type PersonalBranchPort,
+} from '@lingtai/conductor/personal-branch'
 import { ratesSettled } from '@lingtai/conductor/rate-snapshot'
 import { lockedEffect, makeGuard, readControlEffect } from '@lingtai/daemon'
 import { accountWords, type ControlState, type ProjectState } from '@lingtai/domain'
-import { githubClientAuth, hasGitHubAuth, repoRoot } from '@lingtai/env'
+import { githubClientAuth, hasGitHubAuth, repoRoot, stateDir } from '@lingtai/env'
 import { eventStore, log as theLog, type EventStore } from '@lingtai/event-store'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
 import { listPrs, readProject } from '@lingtai/project'
@@ -329,6 +334,8 @@ interface CommonPassOptions {
   log: (line: string) => void
   /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`). */
   remote?: string
+  /** Makes `branch.personal` when the remote has none (#1358). */
+  personalBranch?: PersonalBranchPort
 }
 
 export function run(
@@ -535,6 +542,7 @@ export function run(
           promptVersion: `ticket@${prompt.length}`,
           log,
           remote,
+          personalBranch: ensurePersonalBranchOnRemote({ remote, project: options.project, home: stateDir() }),
         }
       } else {
         // Bound here, not read off the outer `let`: a closure below must not
@@ -575,6 +583,17 @@ export function run(
           sandbox: processSandbox,
           promptVersion: `ticket@${prompt.length}`,
           log,
+          // A team project's `branch.personal` the remote has none of is made at `branch.main`'s tip (#1358).
+          personalBranch: (branch, from) =>
+            ensurePersonalBranch(
+              {
+                branchExists: (n) => Effect.tryPromise(() => owned.branchExists(n)),
+                refSha: (n) => Effect.tryPromise(() => owned.refSha(n)),
+                createBranch: (n, sha) => Effect.tryPromise(() => owned.createBranch(n, sha)),
+              },
+              branch,
+              from,
+            ),
         }
       }
 

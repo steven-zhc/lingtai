@@ -41,6 +41,7 @@ import { Effect } from 'effect'
 import { fetchedHead, lookAtBase, passOverBaseRed } from './base-red.ts'
 import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } from './conduct.ts'
 import { runnableNowEffect } from './discover.ts'
+import type { PersonalBranchPort } from './personal-branch.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
 import type { Slots } from './slots.ts'
@@ -83,6 +84,8 @@ export interface ScheduleOptions {
   store?: EventStore
   gitEnv?: NodeJS.ProcessEnv
   remote?: string
+  /** Makes a team project's `branch.personal` when the remote has none (#1358). */
+  personalBranch?: PersonalBranchPort
   /** Aborts between items. A run already in flight finishes. */
   signal?: AbortSignal
   /**
@@ -335,6 +338,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
               ...(options.store === undefined ? {} : { store: options.store }),
               ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
               ...(options.remote === undefined ? {} : { remote: options.remote }),
+              ...(options.personalBranch === undefined ? {} : { personalBranch: options.personalBranch }),
               log: options.log,
             }),
           ).then(
@@ -398,6 +402,7 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         ...(options.store === undefined ? {} : { store: options.store }),
         ...(options.gitEnv === undefined ? {} : { gitEnv: options.gitEnv }),
         ...(options.remote === undefined ? {} : { remote: options.remote }),
+        ...(options.personalBranch === undefined ? {} : { personalBranch: options.personalBranch }),
         log: options.log,
       })
 
