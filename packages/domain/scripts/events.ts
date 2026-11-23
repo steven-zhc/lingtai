@@ -286,7 +286,7 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
   },
   {
     event: 'PrDraftTicketAdded',
-    why: "returned from a transition; nothing appends it yet",
+    why: 'returned from a transition; nothing appends it yet',
     file: 'packages/domain/src/pr.ts',
     anchor: "type: 'PrDraftTicketAdded',",
   },
