@@ -771,6 +771,7 @@ const mergeIntoPersonal = (
             subject: subjectOf(theirs),
             buildBase: prBranch,
             checkId,
+            ...(back ? {} : { catchUp: true }),
           })
           if (ended.kind === 'spent') {
             yield* failed(

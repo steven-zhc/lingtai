@@ -435,6 +435,24 @@ describe('resolveRounds, the sequences a review refused', () => {
     expect(w.dispatched).toEqual([])
   })
 
+  it('a merge back in flight when the PR merges stops its next round, and the catch-up on the same commit still runs', async () => {
+    const store = await inProgress()
+    const v = (await state(store)).version
+    await store.append(prStream('lingtai', 1), v, [
+      { type: 'PrMerged', actor: 'conductor', data: { how: 'git', headSha: FROZEN, mergeSha: null } },
+    ])
+    const back = { ...askSync(FROZEN), merging: 'back' as const, from: 'lingtai-pr-1', into: 'lingtai-team' }
+    const stale = aWorld()
+    const end = await resolve(store, stale, back)
+    expect(end.kind).toBe('unknown')
+    expect(stale.dispatched).toEqual([])
+    expect((await state(store)).rounds).toEqual([])
+
+    const catchUp = aWorld()
+    await resolve(store, catchUp, { ...back, catchUp: true })
+    expect(catchUp.dispatched.length).toBeGreaterThan(0)
+  })
+
   it('a lock that comes up during the first of two reviewers stops the second', async () => {
     const store = await inProgress()
     const w = aWorld()

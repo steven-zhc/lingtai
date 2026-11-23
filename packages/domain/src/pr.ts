@@ -1142,8 +1142,9 @@ export function syncRoundTransition(
 
 /**
  * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back; and on a merged PR, only
- * for the catch-up while it is owed (#1371). **A PR that was closed, or merged with nothing owed, is not, and that is a refusal
- * that will never lift** — a caller must stop, not read and try again.
+ * for the catch-up while it is owed (#1371). **A PR that was closed is not, for good. A merged one with no catch-up owed is not
+ * either, for now:** a catch-up waiting on a person is owed again once rounds are granted or a retry is asked, so a caller
+ * stops this operation but must not record that nothing will ever be counted there.
  *
  * On a merged PR the merge back is no longer owed (`mergeBackOwed` is in review only), so every `back` round there is the
  * catch-up's. The commit is deliberately not compared with the heads this PR pushed: `main` may be fast-forwarded to one.
