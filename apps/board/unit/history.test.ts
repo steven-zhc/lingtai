@@ -301,6 +301,7 @@ const SAMPLES = {
   ProjectRecovered: [{ project: 'lingtai', ref: null, codeSha: null }],
   ProjectPaused: [{ project: 'lingtai', by: 'human:steven' }],
   ProjectResumed: [{ project: 'lingtai', by: 'human:steven' }],
+  PrDraftTicketAdded: [{ ticket: 'lingtai#1', mergeCommit: SHA, from: null }],
   PrSubmitRequested: [{ by: 'human:steven' }],
   PrSubmitRefused: [{ reason: 'nothing-landed', detail: 'no ticket has landed' }],
   PrInProgress: [

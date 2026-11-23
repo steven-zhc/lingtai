@@ -13,7 +13,7 @@ import type { Envelope, ToAppend } from './envelope.ts'
 import type { PayloadOf } from './events.ts'
 import { parsePrStream } from './streams.ts'
 
-export type PrStatus = 'requested' | 'in-progress' | 'waiting' | 'in-review' | 'refused' | 'merged' | 'closed'
+export type PrStatus = 'draft' | 'requested' | 'in-progress' | 'waiting' | 'in-review' | 'refused' | 'merged' | 'closed'
 
 /** One step's outcome as recorded: the step, and the commit it ran on. */
 export interface PrStepRecord {
@@ -37,6 +37,8 @@ export interface PrState {
    */
   target: string | null
   tickets: PayloadOf<'PrInProgress'>['tickets']
+  /** The tickets in the draft (`PrDraftTicketAdded`), in the order they joined; `PrInProgress` empties it. */
+  draft: readonly PayloadOf<'PrDraftTicketAdded'>[]
   /**
    * The commit last put on the PR branch (`PrPushed`). **`PrInProgress` does not reset it**: a pr-fix pass starts its
    * steps again, and its push is a fast-forward from here.
@@ -169,6 +171,7 @@ export const emptyPr: PrState = {
   frozenSha: null,
   target: null,
   tickets: [],
+  draft: [],
   lastPushed: null,
   fixOwed: false,
   covers: {},
@@ -233,6 +236,20 @@ function heldAt(state: PrState, sha: string): number {
 export function reducePrEvent(state: PrState, event: Envelope): PrState {
   const at = { version: event.version, lastSeq: event.seq }
   switch (event.type) {
+    case 'PrDraftTicketAdded': {
+      const d = event.data as PayloadOf<'PrDraftTicketAdded'>
+      const named = parsePrStream(event.streamId)
+      const at0 = state.draft.findIndex((t) => t.ticket === d.ticket)
+      const entry = { ticket: d.ticket, mergeCommit: d.mergeCommit, from: d.from }
+      return {
+        ...state,
+        ...at,
+        status: state.status ?? 'draft',
+        project: named?.project ?? state.project,
+        n: named?.n ?? state.n,
+        draft: at0 < 0 ? [...state.draft, entry] : state.draft.map((t, i) => (i === at0 ? entry : t)),
+      }
+    }
     case 'PrSubmitRequested': {
       const d = event.data as PayloadOf<'PrSubmitRequested'>
       const named = parsePrStream(event.streamId)
@@ -247,7 +264,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrSubmitRefused': {
       const d = event.data as PayloadOf<'PrSubmitRefused'>
-      return { ...state, ...at, status: 'refused', refusal: d }
+      return { ...state, ...at, status: state.draft.length > 0 ? 'draft' : 'refused', refusal: d }
     }
     case 'PrInProgress': {
       const d = event.data as PayloadOf<'PrInProgress'>
@@ -261,6 +278,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         frozenSha: d.frozenSha,
         target: d.frozenSha,
         tickets: d.tickets,
+        draft: [],
         // A restart names a head already recorded: what that head held stays what it was, not what the PR holds now.
         covers: { ...state.covers, [d.frozenSha]: state.covers[d.frozenSha] ?? d.tickets.length },
         fixOwed: false,
@@ -549,7 +567,7 @@ export function prName(project: string, n: number): string {
   return `PR ${n} of ${project}`
 }
 
-export type SubmitRefusal = { kind: 'refused'; reason: 'solo' | 'open-pr'; detail: string }
+export type SubmitRefusal = { kind: 'refused'; reason: 'solo' | 'open-pr' | 'nothing-landed'; detail: string }
 
 /**
  * Whether a Submit may start a PR: refused `solo` where the project lands on `branch.main` itself, and `open-pr`
@@ -560,6 +578,8 @@ export function requestSubmit(
   mode: 'solo' | 'team',
   project: string,
   by: string,
+  /** False when the caller found no draft to submit. */
+  foundDraft = true,
 ): { kind: 'request'; event: ToAppend<PayloadOf<'PrSubmitRequested'>> } | SubmitRefusal {
   if (mode === 'solo') {
     return { kind: 'refused', reason: 'solo', detail: `${project} lands on its main branch itself; there is no PR` }
@@ -571,7 +591,19 @@ export function requestSubmit(
       detail: `${prName(project, previous.n)} is open (${previous.status}); submit again once it is merged or closed`,
     }
   }
+  if (!foundDraft) {
+    return { kind: 'refused', reason: 'nothing-landed', detail: `${project} has no landed ticket in a draft to submit` }
+  }
   return { kind: 'request', event: { type: 'PrSubmitRequested', actor: by, data: { by } } }
+}
+
+/** A ticket joins the draft: while there is no PR yet, in the draft, or asked to submit; nothing otherwise. */
+export function addDraftTicket(
+  state: PrState,
+  ticket: PayloadOf<'PrDraftTicketAdded'>,
+): ToAppend<PayloadOf<'PrDraftTicketAdded'>> | null {
+  if (state.status !== null && state.status !== 'draft' && state.status !== 'requested') return null
+  return { type: 'PrDraftTicketAdded', actor: 'conductor', data: ticket }
 }
 
 const inProgress = (data: PayloadOf<'PrInProgress'>): ToAppend<PayloadOf<'PrInProgress'>> => ({

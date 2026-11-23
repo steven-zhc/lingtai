@@ -42,6 +42,7 @@ export interface SearchPr {
 }
 
 export const PR_WORD: Record<PrStatus, string> = {
+  draft: 'draft',
   requested: 'requested',
   'in-progress': 'in progress',
   waiting: 'waiting on you',
