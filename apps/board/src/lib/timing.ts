@@ -48,7 +48,9 @@ const ordered = (entries: readonly Entry[]): Timing[] =>
  * Runs `fn` in a scope that collects every `timed` read it makes, in start
  * order, inside a span `page <label>` (#787) that those reads become the
  * children of. Under Next the active span is not the request span (Next
- * activates render spans of its own, which the exporter drops), so `OnlyScope`
+ * activates render spans of its own, which the exporter drops except two sanitized
+ * copies, `next.render-body` and `next.start-response`, whose meaning is
+ * in `telemetry.ts`), so `OnlyScope`
  * re-parents this span onto the request span, which it forwards as a stripped
  * copy (#883); with no request span (a unit test) it is a root. The span carries no attribute
  * — the label is a route pattern, never an id.
