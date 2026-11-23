@@ -51,7 +51,7 @@ const unlessInterrupted =
   (say: (message: string) => void) =>
   (cause: Cause.Cause<unknown>): Effect.Effect<void> =>
     Cause.hasInterruptsOnly(cause)
-      ? Effect.failCause(cause)
+      ? Effect.failCause(cause as Cause.Cause<never>)
       : Effect.sync(() => say((Cause.squash(cause) as Error)?.message ?? String(Cause.squash(cause))))
 
 const recordProject = (project: string, options: OwedLandingsOptions, log: (line: string) => void) =>
