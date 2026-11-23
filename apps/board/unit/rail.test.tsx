@@ -1008,6 +1008,7 @@ describe('the eight states', () => {
     expect(CSS).toMatch(/\.running-ask \.chat\s*\{[^}]*flex-direction:\s*row/)
     expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll[^{]*\{[^}]*order:\s*-1/)
     expect(CSS).toMatch(/\.running-ask \.chat > \.chatcontext[^{]*\{[^}]*order:\s*-1/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll\s*\{[^}]*max-height:/)
   })
 
   /**
