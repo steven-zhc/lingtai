@@ -70,7 +70,8 @@ says three kinds for exactly that reason. The other labels in this repo
 
 Add **`lingtai:hold`** unless you mean an agent to take it now. Self-hosting runs
 one unheld ticket at a time, so an unheld ticket is one you are asking the next
-queue pass to claim.
+queue pass to claim. In team mode a ticket is also taken only once it is assigned
+to `steven-zhc` (`source.assignee`, `take: mine`).
 
 **A chain goes in GitHub's own *blocked by*, never in the body.** The queue
 orders by kind and then by number, so a dependent ticket of a higher-priority
@@ -148,8 +149,10 @@ four rows above and shows an unrecognised table as a link only (0118 §2).
 
 ## Running Lingtai on Lingtai
 
-**This repository merges its own work unattended, and that is configuration
-rather than a gap.** `merge:` is `[]` — nothing is declared there, so nothing
+**This repository is a team project (`mode: team`, since 2026-11-22): tickets
+assigned to `steven-zhc` land on `steven-zhc/studio` unattended, and `main` moves
+only when the operator submits and merges a PR (#1363 was the first) — and that
+is configuration rather than a gap.** `merge:` is `[]` — nothing is declared there, so nothing
 holds. Declare a `human:` action at **`proposed:`** and the pass runs it: #58 was
 fixed, and the test that pins it is `conductor/unit/conduct-a-whole-pass.test.ts`'s
 *holds at a person the recipe declared before the lane, with no --no-merge
@@ -171,7 +174,7 @@ written beside it would be asked about a merge the same list had already made.
 a hold declared at `proposed:` is reached unprompted, one step before anything
 lands. **And the lane is the last action at `merge:`**: anything written after one
 is refused too (0065 §8), because a check that fails there fails about a change
-already on `main`.
+already on the branch the lane lands on.
 
 So the question to ask before a run is not *did I pass the flag* but *what do
 `proposed:` and `merge:` say today*, and `lingtai add` prints the answer.
@@ -218,8 +221,9 @@ not serve is refused by name when it resolves and `conduct.ts` answers
 at all — the refusal says which step the plugin does serve.
 
 **There is no exception, and `tamper` is not one.** What stands between an agent
-and `main` here is `build` and `review` — the build and the cold reviewer — and
-neither is a person. `merge: []` means nothing holds at the merge point; neither
+and `steven-zhc/studio` here is `build` and `review` — the build and the cold
+reviewer — and neither is a person; `main` moves only when the operator submits
+and merges the PR. `merge: []` means nothing holds at the merge point; neither
 of those two holds anything for a *person* either.
 
 `tamper` (#31) is built, tested, and **has lost its subject**: since #180 the
@@ -396,10 +400,11 @@ opens directly, as #364 was. It runs `pnpm typecheck` and
 `HOME=/nonexistent pnpm test` on `pull_request`, on push to `main`, and on
 `workflow_dispatch`; it is the unit half only, never `pnpm test:integration`,
 for the same reason nobody runs that half as part of a ticket. It carries no
-`LINGTAI_*` secret. **It is deliberately not a required status check on
-`main`**: the merge lane is `git merge --no-ff` into the base and a push
-(`packages/actions/src/merge-action.ts:47`), never a pull request, so a
-required check here would refuse every landing the conductor makes.
+`LINGTAI_*` secret. **`check` is what a PR to `main` waits on**, through the recipe's
+`pr.ci.required: [check]`. The merge lane lands on `steven-zhc/studio` with
+`git merge --no-ff` and a push (`packages/actions/src/merge-action.ts:47`), never
+a pull request, so a required check on that branch would refuse every landing the
+conductor makes.
 
 **Since #275 the integration half runs on a SQLite file of its own by
 default, and only a named few files still assert Postgres itself** — the

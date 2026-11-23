@@ -51,12 +51,13 @@ A person using `gh` rather than an App has nothing to approve.
 
 ## 2. Let `lingtai doctor` rewrite the old spellings
 
-Three spellings in a recipe were renamed:
+Four spellings in a recipe were renamed:
 
 | Before | Now |
 |---|---|
 | `repo.base`, or `base` under an `admit` entry's `worktree:` | `branch.main` |
 | `take: both` | `take: all` |
+| `runtime.assignee` | `source.assignee` |
 | `init --base <branch>` on the command line | `init --main <branch>` |
 
 A recipe that still writes one is **refused** by 0.16 when it resolves, with a
@@ -65,6 +66,10 @@ do this step before restarting for anything else on this page. `lingtai doctor`
 names each one it finds, by key, and `lingtai doctor --fix` rewrites them as a
 **new recipe change on the project's log**. `init --base` is likewise refused in
 favour of `--main`.
+
+`--fix` moves `runtime.assignee` as a block, `login` and `take` together, under
+`source:`, and rewrites `take: both` to `all` in the same change. A recipe that
+writes both keys keeps `source.assignee` and loses `runtime.assignee`.
 
 ```bash
 lingtai doctor            # names the old spellings
@@ -145,7 +150,7 @@ branch:
   main: main
   personal: steven-zhc/steven-s-macbook-pro
 
-runtime:
+source:
   assignee:
     login: steven-zhc
     take: mine

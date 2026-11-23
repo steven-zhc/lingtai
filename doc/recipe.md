@@ -42,7 +42,7 @@ top-level blocks, and the steps are one of them.
 | You chose | Where it is written | Step it acts at |
 |---|---|---|
 | Whether this project is solo or team, and which branches | `mode`, `branch.main`, `branch.personal`; `repo.remote` for where it is pushed | `admit` cuts from the landing branch, `merge` lands on it |
-| Whose tickets are taken | `take` under `runtime.assignee` (or the `queue:` entry at `claim`) | `claim` |
+| Whose tickets are taken | `take` under `source.assignee` (or the `queue:` entry at `claim`) | `claim` |
 | Which agent, and how much it may spend | `agent:` on the `implement` entry (`runtime.agent` when `implement` is empty); `runtime.limits` | `implement` |
 | How a worktree is made ready | `steps.prepared` | `prepared` |
 | What must pass before review | `steps.build` | `build` |
@@ -217,11 +217,13 @@ branch:
   main: main
   personal: steven-zhc/steven-s-macbook-pro
 
-runtime:
-  agent: claude-code
+source:
   assignee:
     login: steven-zhc
     take: mine
+
+runtime:
+  agent: claude-code
 
 pr:
   agent: claude-code
@@ -237,7 +239,7 @@ pr:
   it. It is refused by name if git would not accept it as a branch name, or if it
   is `branch.main` ignoring case. The landing branch is one value, read from
   the mode alone: there is no key for the merge lane.
-- **`take`** is `all`, `mine` or `unassigned`, written under `runtime.assignee`
+- **`take`** is `all`, `mine` or `unassigned`, written under `source.assignee`
   or, where the recipe declares a `queue:` at `claim`, under that entry's
   `assignee`. `both` is the old spelling of `all`. On GitHub, *mine* is an issue
   assigned to `login`, so a team recipe on GitHub needs the `login`; on the

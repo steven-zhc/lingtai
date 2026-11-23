@@ -1166,7 +1166,7 @@ written as a stand-in.
 | `refs:` | — same, and the only effect that **deletes**: the `agent/<n>-attempt-<k>` refs a landed ticket's abandoned approaches left on `origin`, with `branch: true` taking `agent/<n>` too. Its `when:` is `landed` and the schema admits no other value | a GitHub client that can list and delete refs |
 | `worktree:` | — it cuts the branch the attempt owns, at `admit`, and reports the head the rest of the attempt is judged against. Two fields: `base`, which is the branch the work is cut from and lands on, and `submodules`, which is **required** — a block that named only the base would take `false` from a schema and override `repo.submodules` in silence | the mirror, and the cut (`provisionWorktree`), which the conductor hands it |
 | `merge:` | — it lands that branch. **`merge` reads it** (`#270`): one field, `strategy`, whose enum has one legal value because `integrate.ts` offers one, and the step reports the lane's own `reason` and decides nothing. **A legal list is checks, then the lane** — `merge: [{name: smoke, run: pnpm smoke}, {name: land it, merge: {strategy: merge-commit}}]`, and the lane alone is legal too. Both ways of getting it wrong are refused when the recipe resolves (0065 §8): anything written *after* a lane would run on a change already on the base, and a step written with checks and **no** lane would pass having landed nothing — releasing the ticket and buying a second agent for the same diff. `merge: []` is neither of those, so it resolves — and **it still merges**: the conductor sees an empty list and an omitted key as the same thing, so the default lane runs (`conduct.ts`'s `defaultsAt`, and `conduct-a-whole-attempt.test.ts`'s *lands onto main with `merge: []`*). 0065 §6's *`[]` runs nothing* is decided and not built, so an empty `merge:` is **not** the way to stop landing unattended — that is a `human:` at `proposed:` | the mirror, and the `base` it is *handed* |
-| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, of which the first three are `source:`'s own and the fourth is `runtime.assignee`'s — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue turn**'s field, and that turn runs before an attempt exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
+| `queue:` | — it picks which ticket is taken, and whether this machine may take it. **`claim` reads it** (`#269`): four fields, `kinds` `exclude` `backoff` `assignee`, all four of which are `source:`'s own (`source.assignee` since #1356) — and **all four are required**, because a block naming only its kinds would replace the other three in silence (`submodules`' rule on `worktree:`). One entry per step — a second `queue:` is refused by name, because the pipeline stops at the first action that did *not* pass and so two would read as *both must agree* rather than *first wins*. `backoff` rides on the block without being read here: it is the **queue turn**'s field, and that turn runs before an attempt exists to have steps | a GitHub client, the labels its `kinds` names, and for `assignee` this machine's login |
 | `judge:` | — it says which step is next when something refuses. **`proposed` reads it** (`#274`): one entry per `when:`, and the router takes the one whose direction matches | the set of steps the workflow offers it, and for nine of the fourteen directions an agent — `red` and `verify-failed` are answered by the `same-worktree` built-in and `base-moved` by `merge-the-base` (#593), which spend nothing, `already-done` is a rule's move (`check-done`, #1251: `review` checks the implementer's evidence at the base) and never asks a judge, and `sandbox-refused` is never judged at all (#1157): allowing a host or installing the sandbox is the operator's, so a `judge:` at it is refused when the recipe resolves. **The other nine cost a run each time they arrive**, and only where you declare a runtime for them — `#471`'s seven included, since `#472` wires `nextOf` to propose all of them: declare nothing and they reach a person, free, as they always did; declare one and it is asked every time the direction arrives. See §`judge:` below |
 | `backlog:` | — it says what a severity costs: at or below the bar a finding is filed and buys no round. No step reads it yet | nothing, and that is the reading to budget from — filing spends no agent |
 
@@ -1311,19 +1311,21 @@ agree is 0053's *one decision across two sources*, one level down. 0046 §3's
 argument for the setting being the machine's does not survive the move either:
 the recipe **is** that person's setting, written by them and outside the managed
 repository, and that sentence cannot tell two files inside `~/.lingtai/` apart.
-Where a person *writes* it moved with `#373`: `runtime.assignee` is now the
+Where a person *writes* it moved with `#373`: `runtime.assignee` became the
 recipe's own v1 spelling, and the machine file refuses it by name instead of
-merging it in, which is 0063 §4 done for this one key. Every reader still asks
-`assigneeOf` in `packages/recipe/src/settings.ts`, so the move cost that one
-file and none of its callers.
+merging it in, which is 0063 §4 done for this one key; `#1356` then moved it to
+`source.assignee`, beside the other three, and `runtime.assignee` is an old
+spelling that `lingtai doctor --fix` rewrites. Every reader still asks
+`assigneeOf` in `packages/recipe/src/settings.ts`, so neither move cost more
+than that one file and none of its callers.
 
-**Three of `queue:`'s four fields *are* `source:`'s three fields, and there is
-one declaration of them** — `KINDS`, `EXCLUDE` and `BACKOFF` in `recipe.ts`,
+**All four of `queue:`'s fields *are* `source:`'s four fields, and there is
+one declaration of each** — `KINDS`, `EXCLUDE` and `BACKOFF` in `recipe.ts`,
 which both shapes read. `source:` is the v1 spelling and the plugin is the v2
 one; sharing the schemas rather than copying them is what stops *what is a kind*
-having two answers while both exist. The fourth is deliberately *not* in
-`source:`: a `source.assignee` no file has ever held and nothing reads would be a
-key accepted and dropped, which is 0016 §4 exactly.
+having two answers while both exist. The fourth, `assignee`, joined them with
+`#1356`: `source.assignee` is the one spelling, and `runtime.assignee` is an old
+one that `oldSpellingsIn` refuses (`packages/recipe/src/resolve.ts`).
 
 **A `queue:` block must name all four, and that is the one way it differs from
 `source:`** (`#269`). `source:` defaults `exclude` to `[]` and `backoff` to `1h`,
@@ -1334,8 +1336,8 @@ otherwise replace a configured hold list with `[]` while `source:` sat unread tw
 blocks up — an `lingtai:hold` ticket claimed and an agent dispatched on work a
 person was holding, which is exactly the *quietly wrong* this step can be. So the
 three that would have been silent are refused by name, and `assignee: { take:
-both }` is how a machine that names nobody writes what an absent
-`runtime.assignee` has always selected.
+all }` is how a machine that names nobody writes what an absent
+`source.assignee` has always selected.
 
 What `queue:` deliberately does **not** declare is the half worth reading:
 
