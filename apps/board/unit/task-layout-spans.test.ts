@@ -5,7 +5,7 @@
  */
 import { emptyControl } from '@lingtai/domain'
 import { machineFileFrom } from '@lingtai/env'
-import { ROOT_CONTEXT, SpanStatusCode, context, trace, type Span } from '@opentelemetry/api'
+import { ROOT_CONTEXT, SpanStatusCode, context, trace } from '@opentelemetry/api'
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -62,7 +62,7 @@ vi.mock('../src/lib/task.ts', async (orig) => ({
 import TaskLayout from '../src/app/task/[id]/layout.tsx'
 import { controlObserve } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
-import { ApiContext, traced } from '../src/lib/timing.ts'
+import { traced, tracedEffect } from '../src/lib/timing.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
@@ -185,20 +185,26 @@ describe('TaskLayout stages (#1361)', () => {
   it('keeps two overlapping renders apart: one lock read each, its own account fiber and control read', async () => {
     let release!: () => void
     const opened = new Promise<void>((resolve) => (release = resolve))
-    const fibers: (Span | undefined)[] = []
     h.loadProjects.mockImplementation(async () => (await opened, [project]))
     h.readControl.mockImplementation(async (_stream: unknown, opts: { observe: ReturnType<typeof controlObserve> }) => {
       await opened
-      await opts.observe.read('events', async () => 0)
-      opts.observe.reduce(() => 0)
+      // Called from no span at all, as the store's fiber is when another render's dispatcher resumes it.
+      await context.with(ROOT_CONTEXT, async () => {
+        await opts.observe.read('events', async () => 0)
+        opts.observe.reduce(() => 0)
+      })
       return emptyControl
     })
-    // The account read's fiber carries the context of the `locks.account` span of its own render.
+    // The account read suspends before it reaches its seam, and the seam is a span of the fiber's own
+    // (`tracedEffect`, as `events.read` is): only `boardTracer` makes a promise under it start there, since the
+    // context the fiber was started in is the account's, not the seam's.
     h.accountsFor.mockImplementation(() =>
       Effect.gen(function* () {
-        const own = yield* ApiContext
-        fibers.push(own === undefined ? undefined : trace.getSpan(own))
-        yield* Effect.promise(() => traced('probe.account', async () => 0))
+        yield* Effect.promise(() => opened)
+        yield* tracedEffect(
+          'probe.seam',
+          Effect.promise(() => traced('probe.account', async () => 0)),
+        )
         return new Map()
       }),
     )
@@ -212,14 +218,14 @@ describe('TaskLayout stages (#1361)', () => {
     expect(reads).toHaveLength(2)
     expect(new Set(reads.map((r) => idOf(parentOf(all, r)!))).size).toBe(2)
     expect(h.readControl).toHaveBeenCalledTimes(2)
-    expect(fibers).toHaveLength(2)
     for (const read of reads) {
       const kids = childrenOf(all, read)
       const snapshot = kids.find((s) => s.name === 'control.snapshot')!
       expect(childrenOf(all, snapshot).map((s) => s.name)).toEqual(['control.events', 'control.reduce'])
       const account = kids.find((s) => s.name === 'locks.account')!
-      expect(childrenOf(all, account).map((s) => s.name)).toEqual(['probe.account'])
-      expect(fibers.map((f) => f?.spanContext().spanId)).toContain(idOf(account))
+      const seam = childrenOf(all, account)
+      expect(seam.map((s) => s.name)).toEqual(['probe.seam'])
+      expect(childrenOf(all, seam[0]!).map((s) => s.name)).toEqual(['probe.account'])
     }
   })
 })
