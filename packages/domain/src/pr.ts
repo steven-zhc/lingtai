@@ -1300,8 +1300,7 @@ export function retryRequestTransition(
   const no = waitingOnCatchUp && state?.pending === null ? null : notAskable(state, mode, project)
   if (no !== null) return no
   if (state === null || state.n === null) return refused(`${project} has no PR open`)
-  if (waitingOnCatchUp) return { kind: 'request', event: { type: 'PrRetryRequested', actor: by, data: { by } } }
-  if (state.status !== 'waiting') {
+  if (!waitingOnCatchUp && state.status !== 'waiting') {
     return refused(
       `${prName(project, state.n)} is ${state.status}, not waiting on you; there is nothing to check again`,
     )
