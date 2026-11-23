@@ -13,7 +13,6 @@ import {
   declaredEnvironment,
   endStepRan,
   limitsRow,
-  recipeGovernsItsBase,
   recipeRow,
   runtimeAuth,
   settingsSources,
@@ -283,23 +282,5 @@ describe('per-project rows through declaredEnvironment', () => {
     expect(row.status).toBe('fail')
     PLAIN(row.title)
     expect(row.fix).toBeUndefined()
-  })
-})
-
-describe('base: <project>', () => {
-  const recipe = recipeOf(RECIPE)
-
-  it('gives an owned project the command, and a --local one none', async () => {
-    const owned = { project: 'alpha', owner: 'acme', base: 'develop' } as ProjectState
-    const local = { project: 'alpha', owner: null, base: 'develop' } as ProjectState
-    const [a] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([owned]), { recipe }))
-    const [b] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([local]), { recipe }))
-    expect(a).toMatchObject({ name: 'base: alpha', status: 'fail', fix: 'lingtai add acme/alpha --main main' })
-    expect(b).toMatchObject({ name: 'base: alpha', status: 'fail' })
-    expect(b!.fix).toBeUndefined()
-    for (const row of [a!, b!]) {
-      PLAIN(row.title)
-      expect(firstLine(row)).not.toContain('Re-register')
-    }
   })
 })

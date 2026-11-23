@@ -1,14 +1,13 @@
 /**
  * Doctor's per-project rows on a project with no owner (#357).
  *
- * `declaredEnvironment` and `recipeGovernsItsBase` used to `continue` past any
+ * `declaredEnvironment` used to `continue` past any
  * project with `owner: null` — `if (!project.project || !project.owner)
  * continue` — so a project registered from a directory (#394) got no row at
- * all, and no row reads as nothing wrong. Neither function ever needed the
- * owner for anything but the slug in a base divergence's remedy sentence:
+ * all, and no row reads as nothing wrong. It never needed the
+ * owner for anything:
  * `currentRecipe`, `resolveAgentEnv`, `extensionRow`, `limitsRow` and
- * `dispatchedAuthRow` all take the project name alone, and `baseDivergence`
- * compares two recorded values that the owner plays no part in.
+ * `dispatchedAuthRow` all take the project name alone.
  *
  * Through the `recipe`/`agentEnv`/`runtimes` seams on `DoctorReach` (#242),
  * so this never opens `~/.lingtai`, reads a real `~/.claude/settings.json` or
@@ -23,7 +22,7 @@ import { ProjectFiles } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type DoctorReach, declaredEnvironment, recipeGovernsItsBase } from '../src/doctor.ts'
+import { type DoctorReach, declaredEnvironment } from '../src/doctor.ts'
 
 /**
  * A `RecipeFor` over the real `resolveLocalRecipe`, with an injected `read`
@@ -77,15 +76,6 @@ const RECIPE_OK = `
 version: 2
 branch: { main: main }
 repo: { remote: git@example.com:esctest/esctest.git }
-source: { kinds: [bug], exclude: [], tickets: db }
-env: { required: [], plantAt: .env.local }
-runtime: { name: x, prompt: y, agent: claude-code }
-steps: {}
-`
-
-const RECIPE_NO_REMOTE = `
-version: 2
-branch: { main: main }
 source: { kinds: [bug], exclude: [], tickets: db }
 env: { required: [], plantAt: .env.local }
 runtime: { name: x, prompt: y, agent: claude-code }
@@ -288,51 +278,6 @@ describe('declaredEnvironment, a project with no owner', () => {
 
     expect(rows).toEqual([
       { name: 'env: (unnamed)', status: 'skip', detail: 'no repository name recorded — re-run lingtai add' },
-    ])
-  })
-})
-
-describe('recipeGovernsItsBase, a project with no owner', () => {
-  it('is ok when the registered base agrees with the recipe, even with no repo.remote', async () => {
-    // The restart-gating watch-out: a legacy owner-less GitHub project whose
-    // bases agree must not fail for having no remote — that question belongs
-    // to the `recipe:` row, not this one.
-    const recipe = recipeOf(RECIPE_NO_REMOTE)
-    const state = { project: 'esctest', owner: null, base: 'main' } as ProjectState
-
-    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
-
-    expect(row?.name).toBe('base: esctest')
-    expect(row?.status).toBe('ok')
-  })
-
-  it('fails, naming --local <dir>, when a --local project disagrees with its recipe', async () => {
-    const recipe = recipeOf(RECIPE_OK)
-    const state = { project: 'esctest', owner: null, base: 'develop' } as ProjectState
-
-    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
-
-    expect(row?.name).toBe('base: esctest')
-    expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('lingtai add --local <dir> --main main')
-  })
-
-  it('fails, naming <owner>/project, for an owner-less project with no remote', async () => {
-    const recipe = recipeOf(RECIPE_NO_REMOTE)
-    const state = { project: 'esctest', owner: null, base: 'develop' } as ProjectState
-
-    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state]), { recipe }))
-
-    expect(row?.status).toBe('fail')
-    expect(row?.detail).toContain('lingtai add <owner>/esctest --main main')
-  })
-
-  it('skips rather than continuing past a project with no name recorded', async () => {
-    const state = { project: null, owner: null, base: null } as ProjectState
-    const rows = await Effect.runPromise(recipeGovernsItsBase({}, () => Effect.succeed([state])))
-
-    expect(rows).toEqual([
-      { name: 'base: (unnamed)', status: 'skip', detail: 'no repository name recorded — re-run lingtai add' },
     ])
   })
 })

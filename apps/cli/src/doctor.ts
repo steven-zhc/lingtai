@@ -157,9 +157,6 @@ import {
 import type { HostAnswer, HostFactsEffect, HostVerdict, ResolvedRecipe, SignedIn } from '@lingtai/recipe'
 import {
   UNBOUNDED,
-  baseDivergence,
-  branchOf,
-  branchKeyOf,
   ceilingOf,
   declaresTurnsOn,
   isBuiltInJudge,
@@ -167,7 +164,6 @@ import {
   type OldSpelling,
   RecipeInvalidError,
   RecipeMissingError,
-  remoteOf,
   sandboxDecision,
   sourceHashOf,
   verdictOf,
@@ -1304,7 +1300,7 @@ export interface DoctorReach {
    * real (#212).
    */
   sea: () => SeaProbe
-  /** As `currentRecipeEffect` resolves it — `declaredEnvironment`, `recipeGovernsItsBase` and `projectFiltersOnce` all read one injected source (#357). */
+  /** As `currentRecipeEffect` resolves it — `declaredEnvironment` and `projectFiltersOnce` all read one injected source (#357). */
   recipe: RecipeForEffect
   /** As `resolveAgentEnv` reads it, for `declaredEnvironment`. */
   agentEnv: typeof resolveAgentEnv
@@ -3594,108 +3590,6 @@ export function declaredEnvironment(
 }
 
 /**
- * Per project: is the branch the rules are read from the branch they govern?
- *
- * `runOnce` refuses this at `stage: "recipe"` and `lingtai add` refuses to
- * record it, so a project onboarded from here on cannot be in this state. A
- * project registered *before* those existed can be, and nothing else would say
- * so: the divergence is invisible until a run merges into `branch.main` under
- * gates it read from somewhere else, and every event that run writes is
- * internally consistent — `StepsResolved` carries the hash of the recipe it
- * obeyed, so `steps: end ran on what landed` compares a plan against itself and
- * finds nothing wrong. Comparing the plan's *origin* to the merge
- * target is the only thing that sees it, and this is where that happens without
- * waiting for a run to pay for it.
- *
- * **A failure, and one with no repair behind it.** Both branches are recorded
- * decisions and doctor never writes; which one is meant is a person's answer,
- * given by re-running `lingtai add --base`.
- */
-export function recipeGovernsItsBase(
-  env: NodeJS.ProcessEnv,
-  load: LoadProjects = () => loadProjectsEffect(),
-  reach: LookupReach = {},
-): Effect.Effect<CheckResult[]> {
-  return Effect.gen(function* () {
-    const name = 'recipe: the rules and the merge target are one branch'
-    // No App is needed to compare them: the recipe is this machine's file (#180).
-    // No owner either (#357): the comparison is `state.base` against the
-    // recipe's own `branch.main`, read straight from the recorded registration —
-    // no fetch, no GitHub call, nothing beyond what registration already wrote.
-
-    const projects = yield* recovering(load(), () => null)
-    if (projects === null) {
-      return [{ name, status: 'skip' as const, detail: 'the project streams could not be read' }]
-    }
-    if (projects.length === 0) {
-      return [{ name, status: 'ok' as const, detail: 'no project has a recorded base to disagree with a recipe yet' }]
-    }
-
-    const recipeFor = recipeLookup(reach)
-    const results: CheckResult[] = []
-    for (const project of projects) {
-      if (!project.project) {
-        results.push({
-          name: `base: ${project.project ?? '(unnamed)'}`,
-          status: 'skip',
-          detail: 'no repository name recorded — re-run lingtai add',
-        })
-        continue
-      }
-      const label = `base: ${project.project}`
-      yield* recovering(
-        Effect.gen(function* () {
-          const resolved = yield* recipeFor(project, undefined)
-          // The slug `baseDivergence` splices after `lingtai add ` in its own
-          // "Re-register:" sentence — a GitHub project names it `owner/repo`; a
-          // `--local` one has no owner to name and no directory recorded on
-          // `ProjectState` either, so `<dir>` is what the operator fills in
-          // (`conduct.ts`'s own convention, `#352`); and an owner-less project
-          // with no `repo.remote` is a GitHub project registered before
-          // `ProjectConfigured` carried an owner — only the remote tells the two
-          // apart (`init.ts`'s own `unrecorded`, `#352`).
-          const slug =
-            project.owner !== null
-              ? `${project.owner}/${project.project}`
-              : remoteOf(resolved.recipe) !== null
-                ? '--local <dir>'
-                : `<owner>/${project.project}`
-          const divergence = baseDivergence(resolved, slug)
-          results.push(
-            divergence
-              ? {
-                  name: label,
-                  status: 'fail',
-                  title: `${project.project}'s rules and merge target differ`,
-                  // The refusal `runOnce` and `add` share, its command on a line of its own.
-                  detail: divergence.replace('. Re-register:', '.\nRe-register:'),
-                  // A `--local` or owner-less slug is a placeholder; a command with one would not run.
-                  ...(project.owner !== null ? { fix: `lingtai add ${slug} --main ${branchOf(resolved.recipe)}` } : {}),
-                }
-              : {
-                  name: label,
-                  status: 'ok',
-                  // The key as this recipe writes it: since `#268` the base may be
-                  // `worktree:`'s at `admit`, and a row naming the other line is a
-                  // row that sends a reader to something nothing reads.
-                  detail:
-                    `read from ${resolved.ref}, and ` +
-                    `${branchKeyOf(resolved.recipe)} says ${branchOf(resolved.recipe)}`,
-                },
-          )
-        }),
-        (err) => {
-          // A skip, not a second failure: an unreadable recipe is already red in the
-          // check above, and the comparison genuinely could not be made.
-          results.push({ name: label, status: 'skip', detail: `no recipe to compare — ${(err as Error).message}` })
-        },
-      )
-    }
-    return results
-  })
-}
-
-/**
  * Is the Node running this command at or above `.node-version`'s major — the
  * floor `check.yml` actually tests since #430, where the floor `engines`
  * named until then was not.
@@ -4257,7 +4151,6 @@ export function runDoctor(
       Effect.sync(() => pushAll(recipeSpellings(filters))),
     )
     yield* step('declared environment', declaredEnvironment(env, loadE, reach).pipe(Effect.map(pushAll)))
-    yield* step('recipe bases', recipeGovernsItsBase(env, loadE, reach).pipe(Effect.map(pushAll)))
     yield* step('settings', settingsSources(reach.settings).pipe(Effect.map(push)))
     yield* step('runtimes', runtimeAuth(reach.runtimes).pipe(Effect.map(push)))
     yield* step(

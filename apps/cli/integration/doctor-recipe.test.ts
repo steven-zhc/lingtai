@@ -11,11 +11,10 @@ import { join } from 'node:path'
 
 import { projectFilterEffect } from '@lingtai/conductor/filter'
 import type { ProjectState } from '@lingtai/domain'
-import { fakeSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 
-import { declaredEnvironment, recipeClientFor, recipeGovernsItsBase, recipeRow } from '../src/doctor.ts'
+import { declaredEnvironment, recipeClientFor, recipeRow } from '../src/doctor.ts'
 
 const RECIPE = `
 version: 2
@@ -128,7 +127,7 @@ describe('the recipe row, with no App configured', () => {
    * The rows under it read the same file, so they run on the same machine
    * rather than skipping for an App nothing in them asks.
    */
-  it('checks the declared environment and the base against that same file', async () => {
+  it('checks the declared environment against that same file', async () => {
     const state = { project: 'app', owner: 'me', base: 'develop' } as ProjectState
     const load = () => Effect.succeed([state])
 
@@ -136,28 +135,5 @@ describe('the recipe row, with no App configured', () => {
     expect(envRows.map((r) => r.name)).toContain('env: app')
     for (const row of envRows) expect(row.detail).not.toContain('no App configured')
     expect(envRows.find((r) => r.name === 'env: app')?.status).toBe('ok')
-
-    const [base] = await Effect.runPromise(recipeGovernsItsBase({}, load))
-    expect(base?.name).toBe('base: app')
-    // Registered against develop, and the machine's recipe says main.
-    expect(base?.status).toBe('fail')
-    expect(base?.detail).toContain('develop')
-  })
-
-  /** The host answer comes through `DoctorReach`, as `signedIn` does, so a doctor test never spawns (#1147). */
-  it('asks the host through DoctorReach, and only for a required sandbox', async () => {
-    const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
-    const load = () => Effect.succeed([state])
-    const host = fakeSandboxHost({ can: false, sentences: ['bwrap not found'] })
-    const reach = { sandboxHost: host.host, hostFacts: host.hostFacts }
-
-    await Effect.runPromise(recipeGovernsItsBase({}, load, reach))
-    expect(host.asked.host).toBe(0)
-
-    await writeFile(join(home, 'app', 'recipe.yml'), `${RECIPE}sandbox:\n  required: true\n`)
-    const [row] = await Effect.runPromise(recipeGovernsItsBase({}, load, reach))
-    expect(host.asked.host).toBe(1)
-    expect(row?.detail).toContain('sandbox.required: this recipe requires a sandbox')
-    expect(row?.detail).toContain('bwrap not found')
   })
 })

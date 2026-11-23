@@ -27,7 +27,7 @@ import { failed, plainWhen } from './files.ts'
 import type { Plugin } from './plugin.ts'
 import { applyPreset } from './presets.ts'
 import { DiscussAgent, PLUGINS, Recipe, discloseSteps } from './recipe.ts'
-import { assigneeOf, branchKeyOf, branchOf, modeOf, ticketSourceOf } from './settings.ts'
+import { assigneeOf, modeOf, ticketSourceOf } from './settings.ts'
 
 /** Where a project's recipe lives, by convention and without exception. */
 export const RECIPE_PATH = '.lingtai/config.yaml'
@@ -664,37 +664,4 @@ export function unknownKeys(raw: unknown): string[] {
           `${declared.join(', ')}. Nothing here was applied; move the block under the key ` +
           'that does run it, or delete it',
     )
-}
-
-/**
- * The comparison nothing was making: does the recipe read from a ref name that
- * same ref as the branch it governs?
- *
- * Two different branches were both called "the base". `resolveRecipe` reads from
- * one — the branch recorded at `lingtai add` — and `branchOf` inside the file
- * it returns names another, which is what the worktree is cut from and what the
- * merge goes back into. When they disagree the run is right about everything
- * except the rules: it merges into `branchOf`'s branch under steps read from somewhere
- * else. A `human:` action at `merge` declared on one branch and not the other is
- * then a control that is declared and does not run.
- *
- * No audit after the fact can see that. `StepsResolved` is written from the same
- * recipe the run obeyed and carries that recipe's hash, so plan and execution
- * agree perfectly; it is the plan's *origin* that is wrong. Only this comparison,
- * made before anything is claimed, catches it — see
- * doc/decisions-archive/0005-config-in-target-repo.md, which assumed one base.
- *
- * Returns the refusal rather than throwing, and never repairs: every caller says
- * it in its own vocabulary — a refused run stage, a failed onboarding, a red
- * doctor check — and none of them may pick a winner between the two branches.
- */
-export function baseDivergence(resolved: ResolvedRecipe, slug: string): string | null {
-  const declared = branchOf(resolved.recipe)
-  if (declared === resolved.ref) return null
-  return (
-    // The key `branchOf` reads, by mode: `branch.personal` in team, `branch.main` in solo.
-    `recipe read from ${resolved.ref} declares ${branchKeyOf(resolved.recipe)}: ${declared} — ` +
-    'the rules and the merge target are different branches. ' +
-    `Re-register: lingtai add ${slug} --main ${declared}`
-  )
 }
