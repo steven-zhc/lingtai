@@ -84,7 +84,7 @@ describe('the team form (#1325)', () => {
 
   it('writes mode, the personal branch and the assignee', () => {
     const paths = setupChanges(base).map((c) => c.path.join('.'))
-    expect(paths).toEqual(expect.arrayContaining(['mode', 'branch.personal', 'runtime.assignee']))
+    expect(paths).toEqual(expect.arrayContaining(['mode', 'branch.personal', 'source.assignee']))
   })
 
   it('a retry as solo removes branch.personal rather than leaving it', () => {
@@ -95,7 +95,7 @@ describe('the team form (#1325)', () => {
     })
     expect(solo.find((c) => c.path.join('.') === 'mode')?.value).toBe('solo')
     // and Team's assignee filter goes with it: Solo takes every ticket
-    expect(solo.find((c) => c.path.join('.') === 'runtime.assignee')?.value).toEqual({ take: 'all' })
+    expect(solo.find((c) => c.path.join('.') === 'source.assignee')?.value).toEqual({ take: 'all' })
   })
 
   it('suggests a fix for a name git refuses', () => {

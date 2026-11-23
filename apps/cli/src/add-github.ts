@@ -25,6 +25,7 @@
 import { hostname } from 'node:os'
 
 import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
+import { makePersonalBranch as sharedMakePersonalBranch } from '@lingtai/conductor/personal-branch'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
@@ -221,7 +222,14 @@ export const makePersonalBranch = (
   name: string,
   from: string,
 ): Effect.Effect<void, unknown> =>
-  lift(() => client.refSha(from)).pipe(Effect.flatMap((sha) => lift(() => client.createBranch(name, sha))))
+  sharedMakePersonalBranch(
+    {
+      refSha: (n) => lift(() => client.refSha(n)),
+      createBranch: (n, sha) => lift(() => client.createBranch(n, sha)),
+    },
+    name,
+    from,
+  ).pipe(Effect.asVoid)
 
 /** A number is an exit code: the add stops there. Otherwise the add goes on. */
 export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (

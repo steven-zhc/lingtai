@@ -243,14 +243,14 @@ export const resolveLocalRecipeEffect = Effect.fn('recipe.resolve-local')(functi
   // only once the recipe has resolved, because which spelling it used is a
   // fact `originIn` only has an answer for afterwards. A `claim` `queue:`
   // that names it is the source for both halves, whichever one it wrote;
-  // otherwise each half asks `runtime.assignee.<key>` on its own, so a file
+  // otherwise each half asks `source.assignee.<key>` on its own, so a file
   // that wrote only `login` still reads `take: all ← default`.
   const rule = assigneeOf(recipe)
   const atStep = recipe.steps.claim.some((action) => 'queue' in action) ? from('steps.claim') : null
-  provenance['runtime.assignee.take'] =
-    `${selectionOf(recipe).mode === 'team' ? 'mine' : (rule?.take ?? 'all')}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.take')}`
-  provenance['runtime.assignee.login'] =
-    `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('runtime.assignee.login')}`
+  provenance['source.assignee.take'] =
+    `${selectionOf(recipe).mode === 'team' ? 'mine' : (rule?.take ?? 'all')}${PROVENANCE_ARROW}${atStep ?? from('source.assignee.take')}`
+  provenance['source.assignee.login'] =
+    `${rule?.login ?? '(none)'}${PROVENANCE_ARROW}${atStep ?? from('source.assignee.login')}`
 
   return { ...resolved, ref: options.base ?? branchOf(resolved.recipe), provenance }
 })

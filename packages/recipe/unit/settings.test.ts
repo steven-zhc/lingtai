@@ -108,7 +108,7 @@ describe('the accessors', () => {
 
     const mine = Recipe.parse({
       ...WRITTEN,
-      runtime: { assignee: { login: 'steven-zhc', take: 'mine' } },
+      source: { ...WRITTEN.source, assignee: { login: 'steven-zhc', take: 'mine' } },
     })
     expect(assigneeOf(mine)).toEqual({ login: 'steven-zhc', take: 'mine' })
   })
@@ -533,7 +533,7 @@ async function sources(dir: URL): Promise<URL[]> {
  * of the guard is to fail while an accessor is *missing*, which it cannot do if
  * the list it walks is the list of accessors that exist.
  *
- * **`runtime.assignee` is the seventh, and it arrived from a different ADR**
+ * **`source.assignee` is the seventh, and it arrived from a different ADR**
  * (`#244`, [0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md)
  * §3): `assignee` is a field of `queue:` rather than a plugin beside it, which
  * makes it a setting that moves onto a step exactly as the other six do. It
@@ -548,7 +548,7 @@ async function sources(dir: URL): Promise<URL[]> {
  * or a space — which is every mention of them in prose and in a refusal — do
  * not.
  */
-const MOVING = /\w\.(runtime\.(limits|assignee)|repo\.(base|submodules|remote)|source\.(kinds|exclude|backoff))\b/
+const MOVING = /\w\.(runtime\.limits|repo\.(base|submodules|remote)|source\.(kinds|exclude|backoff|assignee))\b/
 
 describe('nothing reaches past them', () => {
   it('has no reader of a moving setting outside settings.ts', async () => {

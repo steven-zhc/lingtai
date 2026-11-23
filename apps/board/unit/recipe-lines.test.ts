@@ -155,10 +155,10 @@ describe('recipeLines', () => {
 })
 
 describe('modeLines (#1326)', () => {
-  const RUNTIME = (assignee: string) =>
-    `runtime: { agent: claude-code, ${assignee}limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }`
+  const RUNTIME = () =>
+    `runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }`
   const yaml = (head: string, assignee = '') =>
-    `version: 2\n${head}\nrepo: { submodules: false }\nenv: { required: [], plantAt: .env.local }\nsteps: {}\n${RUNTIME(assignee)}\n`
+    `version: 2\n${head.replace('exclude: [agent:hold] }', `exclude: [agent:hold], ${assignee.replace(/, $/, '')} }`)}\nrepo: { submodules: false }\nenv: { required: [], plantAt: .env.local }\nsteps: {}\n${RUNTIME()}\n`
   const read = async (text: string) => modeLines((await resolveRecipe(async () => text, 'main')).recipe)
   const text = (m: ReturnType<typeof modeLines>) => m.lines.map((l) => `${l.label}: ${l.says}`).join('\n')
   const GH = 'source: { kinds: [bug], exclude: [agent:hold] }'

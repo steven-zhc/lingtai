@@ -98,7 +98,7 @@ PR is a person deciding a body of work is ready for the team.
    `mine` or `unassigned` (`both` is renamed `all`, migrated with `base` in §2).
    Team mode takes `mine`; `all` or `unassigned` in a team recipe is refused by
    name. *Mine* is the source's answer: on GitHub, an issue whose assignees
-   include `queue.assignee.login`, which `lingtai add` asks for when Lingtai
+   include `source.assignee.login` (or `queue.assignee.login` at `claim`), which `lingtai add` asks for when Lingtai
    acts as a GitHub App and knows no person's login; on the local store, **every
    ticket** — local tickets are one person's — so team mode works there whole
    and is the way to try it with nothing shared. A solo machine passes over an

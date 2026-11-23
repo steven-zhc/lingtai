@@ -1,23 +1,3 @@
-/**
- * What the board's step 2 of "add a repository" reads and writes (#971): the
- * proposal behind the form, the preview beside it, and the one write.
- *
- * **The page's server half is these Effects and nothing else.** The proposal is
- * `proposeSetup` over live readers; the preview is `previewSetup` over the
- * answers built by `setupAnswers`; the write is `applySetup` with a registration
- * that is the one `lingtai add` makes (`add` for a GitHub repository, `addLocal`
- * for a directory). The page hands in plain form answers and never a
- * `RecipeChange[]`.
- *
- * **A local directory's tickets are `db`.** `proposeSetup` proposes `github` for
- * a directory whose `origin` is on GitHub, but the registration of a directory
- * is `owner: null` and `ownerlessRefusal` (`filter.ts`) refuses every pass of an
- * ownerless project whose recipe says `github` — so `localTicketsOf` is where
- * the page overrides it, and #977 deletes that function with the rule.
- *
- * **Every read is an Effect.** The ports `@lingtai/setup` types are Effects, so
- * each member here is one.
- */
 import { readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
@@ -54,6 +34,27 @@ import {
 import { Effect } from 'effect'
 
 import { addEffect, addLocalEffect } from './onboard.ts'
+/**
+ * What the board's step 2 of "add a repository" reads and writes (#971): the
+ * proposal behind the form, the preview beside it, and the one write.
+ *
+ * **The page's server half is these Effects and nothing else.** The proposal is
+ * `proposeSetup` over live readers; the preview is `previewSetup` over the
+ * answers built by `setupAnswers`; the write is `applySetup` with a registration
+ * that is the one `lingtai add` makes (`add` for a GitHub repository, `addLocal`
+ * for a directory). The page hands in plain form answers and never a
+ * `RecipeChange[]`.
+ *
+ * **A local directory's tickets are `db`.** `proposeSetup` proposes `github` for
+ * a directory whose `origin` is on GitHub, but the registration of a directory
+ * is `owner: null` and `ownerlessRefusal` (`filter.ts`) refuses every pass of an
+ * ownerless project whose recipe says `github` — so `localTicketsOf` is where
+ * the page overrides it, and #977 deletes that function with the rule.
+ *
+ * **Every read is an Effect.** The ports `@lingtai/setup` types are Effects, so
+ * each member here is one.
+ */
+import { ensurePersonalBranch } from './personal-branch.ts'
 import { asFailure } from './port-face.ts'
 import { sandboxHostHere } from './projects.ts'
 import { signedInHere } from './projects.ts'
@@ -379,20 +380,8 @@ export function liveMakePersonal(target: SetupTarget): NonNullable<AddPorts['mak
     return (form) =>
       Effect.gen(function* () {
         const g = yield* githubFor(target.owner, target.repo)
-        const exists = yield* g
-          .branchExists(form.personal)
-          .pipe(
-            Effect.mapError(
-              (e) =>
-                new Error(
-                  `could not read whether ${form.personal} exists on GitHub — nothing was made: ${reasonOf(e)}`,
-                ),
-            ),
-          )
-        if (exists) return 'exists' as const
-        const sha = yield* g.refSha(form.base)
-        yield* g.createBranch(form.personal, sha)
-        return 'made' as const
+        const ensured = yield* ensurePersonalBranch(g, form.personal, form.base)
+        return 'exists' in ensured ? ('exists' as const) : ('made' as const)
       }).pipe(Effect.mapError((e) => (e instanceof Error ? e : new Error(reasonOf(e)))))
   }
   return (form) =>

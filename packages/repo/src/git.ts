@@ -94,6 +94,8 @@ export class RepoFailed extends Data.TaggedError('RepoFailed')<{
   readonly stderr?: string
   /** The continuation's saved head is not where it was recorded (`provision`'s `at` check), so it cannot be continued (#1205). */
   readonly stale?: boolean
+  /** `refs/heads/<base>` is not in the mirror after its fetch: the branch the pass was told to cut from does not exist (#1358). */
+  readonly baseAbsent?: boolean
 }> {
   /** So a face's rejection reads as `execFile`'s own error did. */
   override get message(): string {

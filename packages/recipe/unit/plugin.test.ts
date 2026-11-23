@@ -759,8 +759,8 @@ describe('the one `claim` holds', () => {
    * the four values this step selects on, so all four are required and the
    * refusal names the key to add.
    *
-   * **And the fourth is absent from `source:` however it is written**, which is
-   * what keeps it from growing a `source.assignee` nothing reads.
+   * **And the fourth is not in `SOURCE_FIELDS`**: the top-level `source:` adds
+   * it as `source.assignee`, optional (#1356), which a `queue:` must still name.
    */
   it("shares `source:`'s three fields and refuses a `queue:` that names only some", () => {
     expect(queuePlugin.declares).toEqual(['name', 'queue'])
@@ -775,7 +775,7 @@ describe('the one `claim` holds', () => {
       name: 'what to work on',
       queue: whole,
     })
-    expect(Object.keys(Recipe.shape.source.shape)).not.toContain('assignee')
+    expect(Object.keys(Recipe.shape.source.shape)).toContain('assignee')
 
     // The same three values under `source:`, where the two defaults live and
     // where a file that says nothing goes on meaning what it always did.

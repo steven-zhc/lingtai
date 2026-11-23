@@ -164,11 +164,11 @@ export function kindsChanges(kinds: readonly string[], rawClaim: readonly unknow
 
 /**
  * The queue's assignee rule, written where `assigneeOf` reads it (`settings.ts`:
- * `takeAt(recipe)?.assignee ?? recipe.runtime.assignee`), for `kindsChanges`'
+ * `takeAt(recipe)?.assignee ?? recipe.source.assignee`), for `kindsChanges`'
  * reason: a recipe that declares its queue at `claim` would take a
- * `runtime.assignee` write and keep taking every issue without a word. A queue
+ * `source.assignee` write and keep taking every issue without a word. A queue
  * entry at `claim` has its `assignee` rewritten in place; otherwise it is
- * `runtime.assignee`.
+ * `source.assignee`.
  */
 export function assigneeChanges(
   rule: { login?: string; take: 'mine' | 'all' },
@@ -176,7 +176,7 @@ export function assigneeChanges(
 ): RecipeChange[] {
   const claim = rawClaim ?? []
   const queueIndex = claim.findIndex(isQueueEntry)
-  if (queueIndex === -1) return [{ path: ['runtime', 'assignee'], value: { ...rule } }]
+  if (queueIndex === -1) return [{ path: ['source', 'assignee'], value: { ...rule } }]
   return [
     {
       path: ['steps', 'claim'],

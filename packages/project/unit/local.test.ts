@@ -374,12 +374,14 @@ steps:
   })
 
   /** Whose tickets this project takes (0046 §2, #181) — the recipe's since `#373`. */
-  describe('runtime.assignee', () => {
+  const withAssignee = (body: string) => RECIPE.replace('  kinds: [bug]\n', `  kinds: [bug]\n  assignee:\n${body}`)
+
+  describe('source.assignee', () => {
     it('is absent when neither file says anything — `both`, and the hash is unchanged', async () => {
       const resolved = await Effect.runPromise(resolveLocalRecipeEffect('app', withMachine(undefined)))
-      expect(resolved.recipe.runtime).not.toHaveProperty('assignee')
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe('all ← default')
-      expect(resolved.provenance?.['runtime.assignee.login']).toBe('(none) ← default')
+      expect(resolved.recipe.source).not.toHaveProperty('assignee')
+      expect(resolved.provenance?.['source.assignee.take']).toBe('all ← default')
+      expect(resolved.provenance?.['source.assignee.login']).toBe('(none) ← default')
 
       // Built by hand with the same `agent`/`limits` merge and no `assignee`
       // key at all — `.optional()`, never `.default({})` (0104 §6). A resolve
@@ -394,31 +396,31 @@ steps:
 
     it("takes the recipe's v1 spelling, both halves named back to the recipe", async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n    take: mine\n`,
+        [recipePath('app', HOME)]: withAssignee(`    login: alice\n    take: mine\n`),
       })
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'mine' })
-      expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe(`mine ← ${recipePath('app', HOME)}`)
+      expect(resolved.recipe.source.assignee).toEqual({ login: 'alice', take: 'mine' })
+      expect(resolved.provenance?.['source.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
+      expect(resolved.provenance?.['source.assignee.take']).toBe(`mine ← ${recipePath('app', HOME)}`)
     })
 
     it('defaults `take` to both when only a login is named', async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    login: alice\n`,
+        [recipePath('app', HOME)]: withAssignee(`    login: alice\n`),
       })
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.recipe.runtime.assignee).toEqual({ login: 'alice', take: 'all' })
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe('all ← default')
-      expect(resolved.provenance?.['runtime.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
+      expect(resolved.recipe.source.assignee).toEqual({ login: 'alice', take: 'all' })
+      expect(resolved.provenance?.['source.assignee.take']).toBe('all ← default')
+      expect(resolved.provenance?.['source.assignee.login']).toBe(`alice ← ${recipePath('app', HOME)}`)
     })
 
     it("refuses `mine` with no login, naming the recipe's path and not the machine file's", async () => {
       const read = files({
-        [recipePath('app', HOME)]: `${RECIPE}runtime:\n  assignee:\n    take: mine\n`,
+        [recipePath('app', HOME)]: withAssignee(`    take: mine\n`),
       })
       try {
         await Effect.runPromise(
@@ -428,7 +430,7 @@ steps:
       } catch (err) {
         expect(err).toBeInstanceOf(RecipeInvalidError)
         expect(String(err)).toContain(recipePath('app', HOME))
-        expect(String(err)).toMatch(/runtime\.assignee\.login: take: mine needs a login/)
+        expect(String(err)).toMatch(/source\.assignee\.login: take: mine needs a login/)
         expect(String(err)).not.toContain('config.yml')
       }
     })
@@ -442,8 +444,8 @@ steps:
       const resolved = await Effect.runPromise(
         resolveLocalRecipeEffect('app', { home: HOME, ...skipSandboxHost, signedIn: signed('claude-code'), read }),
       )
-      expect(resolved.provenance?.['runtime.assignee.take']).toBe(`unassigned ← ${recipePath('app', HOME)}`)
-      expect(resolved.provenance?.['runtime.assignee.login']).toBe(`(none) ← ${recipePath('app', HOME)}`)
+      expect(resolved.provenance?.['source.assignee.take']).toBe(`unassigned ← ${recipePath('app', HOME)}`)
+      expect(resolved.provenance?.['source.assignee.login']).toBe(`(none) ← ${recipePath('app', HOME)}`)
     })
 
     it('is refused in the machine file by name, machine-wide and per project', async () => {

@@ -431,13 +431,10 @@ export function remoteOf(recipe: Recipe): string | null {
 }
 
 /**
- * Whose tickets this project takes — **`queue:`'s fourth field**, and the one
- * whose v1 name is not `source:`'s
- * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3).
- *
- * The other three are written under `source:` and this is written under
- * `runtime:`, both in the recipe since `#373` (0063 §4) — before that it was
- * the machine file's, and this is the file that move edits. `#244` is the
+ * Whose tickets this project takes — **`queue:`'s fourth field**. At the top
+ * level it is `source.assignee`, beside the other three (#1356); `runtime.assignee`
+ * is an old spelling that `oldSpellingsIn` refuses and `lingtai doctor --fix`
+ * rewrites. It was the machine file's before `#373` (0063 §4) moved it into the recipe. `#244` is the
  * ticket that found the readers — `assigneeSkip`'s caller in `discover.ts`,
  * `describeFilter` and the board's reading — each reaching in by hand, which
  * is why they now ask here instead.
@@ -449,11 +446,11 @@ export function remoteOf(recipe: Recipe): string | null {
  *
  * **A declared `queue:` must name it**, so the `??` below is a spelling and not
  * a fallback, exactly as `submodulesOf`'s is: there is no third answer between
- * *the step said* and *`runtime:` said*, and a block that named only its
+ * *the step said* and *`source:` said*, and a block that named only its
  * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
-export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
-  return takeAt(recipe)?.assignee ?? recipe.runtime.assignee
+export function assigneeOf(recipe: Recipe): Recipe['source']['assignee'] {
+  return takeAt(recipe)?.assignee ?? recipe.source.assignee
 }
 
 /**
@@ -469,7 +466,7 @@ export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
  * reading of the recipe says it took.
  *
  * **`assignee` is the one value this fills in, because the block requires it and
- * `runtime.assignee` is absent from some recipes.** `EVERYONE` is what an
+ * `source.assignee` is absent from some recipes.** `EVERYONE` is what an
  * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
  * `rule?.take ?? "all"` — so writing it here selects identically and says out
  * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
@@ -503,7 +500,7 @@ export function selectionOf(recipe: Recipe): Selection {
 }
 
 /**
- * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
+ * What an unwritten `source.assignee` selects — **every issue, whoever it is
  * assigned to**, which is how the queue behaved before it read an assignee at
  * all (`assigneeSkip`).
  */

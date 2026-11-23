@@ -1006,12 +1006,12 @@ export const mergePlugin = definePlugin('merge', {
  * person was holding. So the schemas below are declared without their defaults
  * and `SOURCE_FIELDS` adds them; `QUEUE_FIELDS` takes them bare.
  *
- * **`assignee` is not here, and that is the same rule kept rather than broken**
- * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3). It
- * is a field of `queue:`, and its v1 spelling is `runtime.assignee` below, in
- * this same file — not `source.assignee`, which no file has ever held.
- * Putting it in `source:` too would invent a third spelling that nothing reads,
- * which is the silently-dropped key 0016 §4 is about.
+ * **`assignee` is not in `SOURCE_FIELDS`, because `QUEUE_FIELDS` shares them
+ * and a `queue:` must name its own.** The top-level `source:` object adds it
+ * below as `source.assignee`, optional; `queue.assignee` is the step's spelling,
+ * and `runtime.assignee` is an old spelling that `oldSpellingsIn` refuses
+ * (#1356) — there is no alias, since two spellings read would need a precedence
+ * nobody decided.
  */
 /**
  * Labels of yours that mark an issue as work, **most wanted first**.
@@ -1202,10 +1202,10 @@ export type AssigneeRule = z.infer<typeof AssigneeRule>
  * `submodules`' rule on `worktree:` kept rather than restated (`#268`, `#269`).
  * A block is *the four values this step selects on*, so a person who writes one
  * to narrow the kinds cannot silently lose the hold list to a `[]`, the backoff
- * to an hour, or `runtime.assignee` to `all`: the three that would have been
+ * to an hour, or `source.assignee` to `all`: the three that would have been
  * quiet are refused by name instead, and the refusal names the key to add.
  * `assignee: { take: all }` is how a machine with nobody named writes what an
- * absent `runtime.assignee` has always meant — spelled out, because the whole
+ * absent `source.assignee` has always meant — spelled out, because the whole
  * failure this step can have is being quietly wrong about which ticket it took.
  */
 const QUEUE_FIELDS = {
@@ -3222,10 +3222,11 @@ export const Recipe = z
     // spelling a file used is `settings.ts`'s one question, and a recipe that
     // declares nothing at `claim` is selected on exactly these three.
     //
-    // The fourth is `assignee`, and it is deliberately not here: its v1 spelling
-    // is `runtime.assignee` below, in this same file, and a `source.assignee`
-    // nothing reads would be a key accepted and dropped.
-    source: z.object(SOURCE_FIELDS),
+    // The fourth is `assignee`, added on this object rather than in
+    // `SOURCE_FIELDS` (which `QUEUE_FIELDS` shares, and whose own `assignee` is
+    // required). Optional, absent meaning `all`, so a recipe that says nothing
+    // hashes as it did. `runtime.assignee` is its old spelling (#1356).
+    source: z.object({ ...SOURCE_FIELDS, assignee: AssigneeRule.optional() }),
 
     /**
      * What the run cannot proceed without.
@@ -3469,29 +3470,6 @@ export const Recipe = z
           attempt: { refusalFixes: 6, conflictResolutions: 6 },
           ticket: { newAttempts: 2 },
         }),
-      /**
-       * Which issues this project takes, by their assignee
-       * ([0046](../../../doc/decisions-archive/0046-lingtai-is-personal.md) §2, #181).
-       *
-       * **This is `queue:`'s `assignee` field under its v1 name**
-       * ([0063](../../../doc/decisions-archive/0063-every-setting-is-the-recipes.md) §3),
-       * and `assigneeOf` in `settings.ts` is what every reader asks. 0063 §3
-       * settles that it is one of the four settings that decide which ticket is
-       * taken rather than a plugin beside them; §4 is what moves where a person
-       * writes it, and since `#373` it has: this is written here, in the
-       * recipe, rather than on the machine.
-       *
-       * **The recipe's, and refused on the machine file by name** —
-       * `resolveLocalRecipe` reads it from here untouched, and a machine file
-       * that still writes `runtime.assignee` or `projects.<p>.runtime.assignee`
-       * is refused rather than merged in.
-       *
-       * **Optional, and absent is `both`** — every ticket, assigned or not, which
-       * is how the queue behaved before an assignee was read and what somebody
-       * working alone expects. Optional rather than defaulted so that a recipe
-       * that says nothing hashes and emits exactly as it did.
-       */
-      assignee: AssigneeRule.optional(),
       /**
        * How much an agent is told, in characters and rows
        * ([0029](../../../doc/decisions-archive/0029-the-prompt-budget-is-the-recipes.md)).
