@@ -30,18 +30,19 @@ import {
 import { machineDayCeiling } from '@lingtai/env'
 import { type EventStore, eventStore } from '@lingtai/event-store'
 import { loadProjects, pauseProject, readProjectStateEffect, resumeProject } from '@lingtai/project'
+import { SpanStatusCode, context, trace, type Span } from '@opentelemetry/api'
 import { Context, Effect } from 'effect'
 import { cache } from 'react'
 
 import type { ActionResult } from './diff.ts'
 import { accountsHolding, ceilingToday, isPaused } from './lock-marks.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
-import { traced, tracedSync } from './timing.ts'
+import { ApiContext, boardTracer, traced, tracedSync } from './timing.ts'
 
 const run = Effect.runPromiseWith(Context.empty())
 
 /** The registered projects, read once however many places of one render ask. */
-export const readRegistered = cache(() => loadProjects())
+export const readRegistered = cache(() => traced('projects.load', () => loadProjects()))
 
 /**
  * `ctl-conductor`, read once however many places of one render ask (#1006).
@@ -53,17 +54,23 @@ export const readControlOnce = cache(async () => {
   // One span for the read, with a child for each store call and for the fold, and whether a snapshot
   // served it (#1144). The store's own pool is not the projection pool: a `control.*` span is
   // everything the read took, a wait for a connection included.
-  return traced('control.snapshot', (span) =>
-    readControl(undefined, {
-      writer,
-      observe: {
-        read: (step, run) => traced(`control.${step}`, () => run()),
-        reduce: (run) => tracedSync('control.reduce', run),
-        served: (snapshot) => span.setAttribute('lingtai.snapshot', snapshot),
-      },
-    }),
-  )
+  return traced('control.snapshot', (span) => readControl(undefined, { writer, observe: controlObserve(span) }))
 })
+
+/**
+ * The observer of one control read, bound to the context it started in. Effect
+ * resumes fibers from one shared dispatcher, so two reads in flight at once
+ * would hand a stage whichever context scheduled the batch (#1360).
+ */
+export function controlObserve(span: Span | undefined) {
+  const ctx = context.active()
+  return {
+    read: <T>(step: string, run: () => Promise<T>): Promise<T> =>
+      context.with(ctx, () => traced(`control.${step}`, () => run())),
+    reduce: <T>(run: () => T): T => context.with(ctx, () => tracedSync('control.reduce', run)),
+    served: (snapshot: boolean) => span?.setAttribute('lingtai.snapshot', snapshot),
+  }
+}
 
 export type HeldProject = { project: string; locks: readonly Lock[] }
 export type ProjectLocks =
@@ -95,38 +102,50 @@ function configuredCeiling(): number | undefined {
 }
 
 /** Every registered project that something holds, ordered by name. Never `[]` for a failure. */
-export const readProjectLocks = cache(async (): Promise<ProjectLocks> => {
-  try {
-    const [projects, control] = await Promise.all([
-      readRegistered(),
-      readControlOnce().then(
-        (state) => ({ state }),
-        (err: unknown) => ({ problem: problemOf(err) }),
-      ),
-    ])
-    const state = 'state' in control ? control.state : undefined
-    const held: HeldProject[] = []
-    const uses = new Map<string, readonly Account[]>()
-    for (const project of projects) {
-      // A failed `acct-` read fails the whole read: unknown is never *not limited*.
-      const accounts = await run(accountsFor(eventStore, project))
-      const locks = locksOn({ project, control: state, accounts })
-      if (project.project !== null && runtimeAccounts([...accounts.keys()]).length > 0)
-        uses.set(project.project, [...accounts.keys()].sort())
-      if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
+export const readProjectLocks = cache((): Promise<ProjectLocks> =>
+  traced('locks.read', async (span): Promise<ProjectLocks> => {
+    try {
+      const [projects, control] = await Promise.all([
+        readRegistered(),
+        readControlOnce().then(
+          (state) => ({ state }),
+          (err: unknown) => ({ problem: problemOf(err) }),
+        ),
+      ])
+      const state = 'state' in control ? control.state : undefined
+      const held: HeldProject[] = []
+      const uses = new Map<string, readonly Account[]>()
+      for (const project of projects) {
+        // A failed `acct-` read fails the whole read: unknown is never *not limited*.
+        const accounts = await traced('locks.account', (account) =>
+          run(
+            accountsFor(eventStore, project).pipe(
+              Effect.withTracer(boardTracer),
+              Effect.provideService(ApiContext, trace.setSpan(context.active(), account)),
+            ),
+          ),
+        )
+        const locks = locksOn({ project, control: state, accounts })
+        if (project.project !== null && runtimeAccounts([...accounts.keys()]).length > 0)
+          uses.set(project.project, [...accounts.keys()].sort())
+        if (project.project !== null && locks.length > 0) held.push({ project: project.project, locks })
+      }
+      held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))
+      // The problem's text is never exported: a flag says the read was partial.
+      if ('problem' in control) span.setAttribute('lingtai.control_failed', true)
+      return {
+        ok: true,
+        held,
+        uses,
+        ceiling: state === undefined ? undefined : ceilingFacts(state, new Date(), configuredCeiling()),
+        ...('problem' in control ? { controlProblem: control.problem } : {}),
+      }
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR })
+      return { ok: false, problem: problemOf(err) }
     }
-    held.sort((a, b) => (a.project < b.project ? -1 : a.project > b.project ? 1 : 0))
-    return {
-      ok: true,
-      held,
-      uses,
-      ceiling: state === undefined ? undefined : ceilingFacts(state, new Date(), configuredCeiling()),
-      ...('problem' in control ? { controlProblem: control.problem } : {}),
-    }
-  } catch (err) {
-    return { ok: false, problem: problemOf(err) }
-  }
-})
+  }),
+)
 
 export type BannerRow =
   | { kind: 'ceiling'; facts: NonNullable<CeilingFacts['reached']> }

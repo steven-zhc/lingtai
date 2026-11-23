@@ -247,7 +247,10 @@ export default async function TaskLayout({
   const taskId = decodeURIComponent(id)
   // **A 404 rests on what needs no GitHub** (0118 §2, #113): an id that is not
   // `ticket-<project>-<n>`, or a project Lingtai was never told about.
-  if (!(await knowable(taskId))) notFound()
+  // Each stage is a `measure`, since only a `page ` span is re-parented onto the request (#1361);
+  // the `notFound()` calls stay outside, so Next's throw is not a failed stage.
+  const [known] = await measure(() => knowable(taskId), { label: '/task preflight' })
+  if (!known) notFound()
   // Started here, before `loadTask` is awaited, in a `measure` of its own: the
   // page is sent when the log and the database have answered, and what only the
   // issue's answer knows streams in after it. Started inside `loadTask` its reads
@@ -255,7 +258,10 @@ export default async function TaskLayout({
   const github = measure(() => loadTaskAnswer(taskId), { label: '/task github' }).then(([answer]) => answer)
   const [[task, timings], projects] = await Promise.all([
     measure(() => loadTask(taskId), { label: '/task' }),
-    readRegistered().catch(() => []),
+    measure(() => readRegistered(), { label: '/task projects' }).then(
+      ([registered]) => registered,
+      () => [],
+    ),
   ])
   if (!task) notFound()
   const project = task.ticket?.project ?? undefined
@@ -275,7 +281,7 @@ export default async function TaskLayout({
           task={task}
           github={github}
           registered={registered}
-          pause={await pauseSlot(project)}
+          pause={(await measure(() => pauseSlot(project), { label: '/task locks' }))[0]}
           banner={<LockBanner project={project} />}
         >
           {children}
