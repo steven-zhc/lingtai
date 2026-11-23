@@ -135,9 +135,11 @@ PR is a person deciding a body of work is ready for the team.
    `branch.personal` and how Lingtai learns what the team did are
    [0131](0131-a-pr-goes-from-draft-to-merged.md).
 
-6. **`main` is brought in when a PR is submitted or reworked, and only then** —
-   the sync, its build and the agent that resolves a conflict are
-   [0131](0131-a-pr-goes-from-draft-to-merged.md) §3.
+6. **`main` is brought in when a PR is submitted or reworked, and once more
+   into `branch.personal` after the PR merges** — the sync, its build and the
+   agent that resolves a conflict are
+   [0131](0131-a-pr-goes-from-draft-to-merged.md) §3, and the catch-up after
+   the merge is 0131 §10, *Merged*. Nothing else brings it in.
 
 7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or a PR
