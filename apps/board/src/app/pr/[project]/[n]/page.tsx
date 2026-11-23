@@ -100,8 +100,8 @@ export default async function Page({ params }: { params: Promise<{ project: stri
         <Suspense fallback={null}>
           <Detail project={name} n={n} />
         </Suspense>
-        <FooterFetched />
       </main>
+      <FooterFetched />
     </Follow>
   )
 }
