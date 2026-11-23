@@ -34,6 +34,7 @@ import {
 } from './pr-page.ts'
 import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
+import { measure, timed } from './timing.ts'
 import type { LandedWhereRead } from './where-landed.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
@@ -502,3 +503,14 @@ export const readSearchPrs = (
     }
     return { prs, problems }
   })
+
+/** `/pr/<project>`'s load, inside `measure` so its trace has a `page` span and a `pr.board` under it (#1375). */
+export const loadPrBoard = (project: string, read: (project: string) => Promise<PrsRead> = readPrPage) =>
+  measure(() => timed('pr.board', () => read(project)), { label: '/pr' })
+
+/** `/pr/<project>/<n>`'s load, measured the same way. */
+export const loadPrDetail = (
+  project: string,
+  n: number | 'next',
+  read: (project: string, n: number | 'next') => Promise<PrDetailRead> = readPrDetail,
+) => measure(() => timed('pr.detail', () => read(project, n)), { label: '/pr detail' })
