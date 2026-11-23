@@ -71,6 +71,7 @@ import {
   ConcurrencyError,
   decodeRow,
   type EventStore,
+  prepareAppendAll,
   RetiredEventTypeError,
   UnknownEventTypeError,
 } from '../src/event-store.ts'
@@ -183,6 +184,30 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
       // — ordinary data round-trips unchanged, and it is the one path `plant`
       // never takes.
       return written.map((r) => decodeRow(r, r.at))
+    },
+
+    async appendAll(batches) {
+      // Every batch validated, then every version asked, before any row is
+      // pushed: a conflict on a later stream must leave the earlier one alone.
+      const prepared = prepareAppendAll(batches)
+      const written = prepared.filter((b) => b.rows.length > 0)
+      for (const b of written) {
+        if (versionOf(b.streamId) !== b.expectedVersion) {
+          throw new ConcurrencyError(
+            b.streamId,
+            b.expectedVersion,
+            b.rows.map((r) => r.version),
+          )
+        }
+      }
+      return prepared.map((b) => {
+        const stored = b.rows.map((r) => {
+          seq += 1n
+          return { ...r, seq, at: now() }
+        })
+        log.push(...stored)
+        return stored.map((r) => decodeRow(r, r.at))
+      })
     },
 
     clear() {

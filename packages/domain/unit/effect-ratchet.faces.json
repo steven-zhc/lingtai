@@ -202,6 +202,11 @@
     "fn": "appendFace",
     "until": "0101 §7",
     "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
+  },  {
+    "file": "packages/event-store/src/store-face.ts",
+    "fn": "appendAllFace",
+    "until": "0101 §7",
+    "why": "the promise `EventStore` the board holds as `eventStore` and `log.store` (`promiseStore` fills every method of it): apps/board/src/lib/task.ts, apps/board/src/app/actions.ts, apps/board/src/app/api/webhook/route.ts, apps/board/src/app/api/stream/route.ts"
   },
   {
     "file": "packages/event-store/src/store-face.ts",

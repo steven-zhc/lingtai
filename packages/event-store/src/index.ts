@@ -59,6 +59,7 @@ export {
   createEventStore,
   Events,
   type EventsPort,
+  type StreamBatch,
   LogPredatesHoldError,
   logPredatesHoldEffect,
   SchemaVersionUnsupportedError,
