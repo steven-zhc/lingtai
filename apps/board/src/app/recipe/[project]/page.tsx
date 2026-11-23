@@ -327,7 +327,7 @@ export function Recipe({
                rendered as though there were simply nothing to do (#76).
 
                And the file named is the one at fault. `gates:` in the machine
-               file, a `source.assignee` written there since it moved to the
+               file, a `runtime.assignee` written there since it moved to the
                recipe (#373), and two runtimes signed in with nothing naming
                one all stop this resolve with the recipe perfectly readable;
                a page that said *the recipe could not be read* would have its

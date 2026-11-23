@@ -35,6 +35,12 @@ import { defaultStore, readProjectStateEffect } from './state.ts'
 export type ChangeInput =
   | {
       changes: readonly RecipeChange[]
+      /**
+       * Changes derived from the file's text as this call reads it, appended after `changes`. For an edit whose
+       * value is the file's own (a move), so it is never a value captured by an earlier read of a file that has
+       * since changed. Absent, the changes are applied as given.
+       */
+      derive?: (text: string | null) => readonly RecipeChange[]
       /** A comment above each block, used only when the file is created. */
       said?: Said
     }
@@ -124,7 +130,7 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
       ...(input.said === undefined ? {} : { said: input.said }),
     })
     current = draft.text()
-    yield* draft.set(input.changes)
+    yield* draft.set([...input.changes, ...(input.derive?.(current) ?? [])])
     text = draft.text() as string
   } else {
     current = yield* files.read(path)
