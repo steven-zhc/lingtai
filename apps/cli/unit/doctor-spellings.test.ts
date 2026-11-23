@@ -70,7 +70,7 @@ describe('recipeSpellings', () => {
     const [row] = recipeSpellings([failed('app', refused())])
     expect(row).toMatchObject({ name: 'recipe: app spelling', status: 'fail', fix: 'lingtai doctor --fix' })
     expect(row!.detail).toContain('repo.base: write `branch: { main: <value> }`')
-    expect(row!.detail).toContain('runtime.assignee.take: both: write `take: all`')
+    expect(row!.detail).toContain('runtime.assignee: write it as `source.assignee`')
     expect(row!.detail).toContain('lingtai doctor --fix')
   })
 
@@ -89,11 +89,11 @@ describe('fixOldSpellings', () => {
     const text = w.disk.get(recipePath('app', HOME))!
     expect(text).toContain('# keep me')
     expect(text).toContain('# stays')
-    expect(text).toContain('# on the take')
     expect(text).not.toContain('# goes')
     const after = resolveSource(text, 'main', 'recipe.yml')
     expect(after.recipe.branch.main).toBe('develop')
-    expect(after.recipe.runtime.assignee?.take).toBe('all')
+    expect(after.recipe.source.assignee?.take).toBe('all')
+    expect(text).not.toContain('runtime.assignee')
     expect(await w.events('app')).toEqual([expect.objectContaining({ by: 'human:me' })])
 
     const appended = (await w.store.read(projectStream('app'))).length

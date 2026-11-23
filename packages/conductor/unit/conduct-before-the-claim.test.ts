@@ -400,8 +400,8 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
 describe('a project switched to team by its recipe', () => {
   it('is not refused at the recipe, and its worktree is cut from the personal branch', async () => {
     const team = RECIPE.replace('branch: { main: main }', 'mode: team\nbranch: { main: main, personal: p }').replace(
-      'runtime: {',
-      'runtime: { assignee: { login: me, take: mine },',
+      'source: {',
+      'source: { assignee: { login: me, take: mine },',
     )
     const store = memoryStore()
     const did: string[] = []

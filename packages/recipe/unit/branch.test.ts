@@ -255,12 +255,12 @@ describe('the changes an old spelling carries', () => {
   const FILES = [
     '# the base\nrepo:\n  base: develop # where it lands\n  submodules: true\n',
     '# comment\nrepo:\n  base: other\n  submodules: true\nsteps:\n  admit:\n    - name: cut\n      worktree:\n        base: develop\n        submodules: true\n',
-    '# runtime\nbranch:\n  main: develop\nruntime:\n  agent: claude-code\n  assignee:\n    take: both\nsteps:\n  claim:\n    - name: take\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: both\n',
+    '# runtime\nbranch:\n  main: develop\nruntime:\n  agent: claude-code\nsteps:\n  claim:\n    - name: take\n      queue:\n        kinds: [bug]\n        exclude: []\n        backoff: 1h\n        assignee:\n          take: both\n',
   ]
   for (const [i, head] of FILES.entries()) {
     it(`rewrite fixture ${i} to a file that resolves`, () => {
       const source = head.includes('agent: claude-code')
-        ? `version: 2\n${head}source: { kinds: [bug] }\nenv: { plantAt: .env.local }\n`
+        ? `version: 2\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\n${head}`
         : `version: 2\n${head}${TAIL}`
       const found = oldSpellingsIn(parseYaml(source))
       expect(found.length).toBeGreaterThan(0)
