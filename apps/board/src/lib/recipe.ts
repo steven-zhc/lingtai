@@ -385,7 +385,7 @@ export async function recipeOfAttempt(
  *
  * **And it is not always the recipe's file.** Two files decide one project, so
  * three of the ways this resolve can fail leave `recipe.yml` perfectly
- * readable: `gates:` in the machine file, a `runtime.assignee` written
+ * readable: `gates:` in the machine file, a `source.assignee` written
  * there since it moved to the recipe (`#373`), and two runtimes signed in
  * with nothing naming one — which 0046 §3 treats as an expected state and not
  * a mistake. A page that answered all three with *the recipe could not be
@@ -930,7 +930,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     {
       name: 'assignee',
       says: describeAssignee(assigneeOf(recipe), selectionOf(recipe)),
-      keys: ['runtime.assignee.take', 'runtime.assignee.login'],
+      keys: ['source.assignee.take', 'source.assignee.login'],
     },
     {
       name: 'the steps',

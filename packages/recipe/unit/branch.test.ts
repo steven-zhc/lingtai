@@ -20,7 +20,7 @@ runtime:
   agent: claude-code
 `
 
-const TAIL_ME = TAIL.replace('agent: claude-code', 'agent: claude-code\n  assignee: { login: me }')
+const TAIL_ME = TAIL.replace('kinds: [bug]', 'kinds: [bug]\n  assignee: { login: me }')
 
 const resolve = (head: string, tail = TAIL) => resolveSource(`version: 2\n${head}${tail}`, 'main', 'recipe.yml')
 
@@ -62,8 +62,7 @@ describe('mode, branch and pr', () => {
 
   it('team mode takes only mine: a written take: all or unassigned is refused, an absent one is not (#1310)', () => {
     const team = 'mode: team\nbranch: { main: main, personal: me/box }\n'
-    const withRuntime = (assignee: string) =>
-      TAIL.replace('agent: claude-code', `agent: claude-code\n  assignee: ${assignee}`)
+    const withRuntime = (assignee: string) => TAIL.replace('kinds: [bug]', `kinds: [bug]\n  assignee: ${assignee}`)
     const refused = (head: string, tail: string) => {
       try {
         resolve(head, tail)
@@ -74,9 +73,9 @@ describe('mode, branch and pr', () => {
       throw new Error('resolved')
     }
     expect(refused(team, withRuntime('{ login: me, take: all }'))).toContain('mode: team takes your own')
-    expect(refused(team, withRuntime('{ login: me, take: unassigned }'))).toContain('runtime.assignee.take')
+    expect(refused(team, withRuntime('{ login: me, take: unassigned }'))).toContain('source.assignee.take')
     expect(refused(team, TAIL)).toContain('login')
-    // A declared `queue:` governs `assigneeOf`, so the refusal names its key and not `runtime`'s.
+    // A declared `queue:` governs `assigneeOf`, so the refusal names its key and not `source`'s.
     const declared = TAIL.replace(
       'runtime:',
       'steps:\n  claim:\n    - { name: q, queue: { kinds: [bug], exclude: [], backoff: 1h, assignee: {} } }\nruntime:',
@@ -86,7 +85,7 @@ describe('mode, branch and pr', () => {
     expect(modeOf(resolve(team, withRuntime('{ login: me, take: mine }')).recipe)).toBe('team')
     expect(refused('branch: { main: main }\n', withRuntime('{ take: mine }'))).toContain('needs a login')
     // A solo recipe that names only a login still takes everyone: no refusal, and nothing renamed.
-    expect(resolve('branch: { main: main }\n', withRuntime('{ login: me }')).recipe.runtime.assignee).toEqual({
+    expect(resolve('branch: { main: main }\n', withRuntime('{ login: me }')).recipe.source.assignee).toEqual({
       login: 'me',
       take: 'all',
     })
@@ -178,7 +177,7 @@ describe('the old spellings are refused by name', () => {
     for (const s of err.spellings) expect(s.changes).toEqual([{ path: ['branch', 'main'], value: 'develop' }])
   })
 
-  it('refuses take: both at runtime and at claim', () => {
+  it('refuses take: both at runtime.assignee (moved, as all) and at claim', () => {
     const text =
       'version: 2\nbranch: { main: develop }\nsource: { kinds: [bug] }\nenv: { plantAt: .env.local }\n' +
       'runtime:\n  agent: claude-code\n  assignee: { take: both }\n' +
@@ -192,13 +191,30 @@ describe('the old spellings are refused by name', () => {
       throw new Error('resolved')
     })()
     expect(err).toBeInstanceOf(OldSpellingRefusedError)
-    expect(err.spellings.map((s) => s.at)).toEqual([
-      'runtime.assignee.take: both',
-      'steps.claim[0].queue.assignee.take: both',
+    expect(err.spellings.map((s) => s.at)).toEqual(['runtime.assignee', 'steps.claim[0].queue.assignee.take: both'])
+    expect(err.spellings.find((s) => s.at === 'runtime.assignee')!.changes).toEqual([
+      { path: ['source', 'assignee'], value: { take: 'all' } },
+      { path: ['runtime', 'assignee'], value: undefined },
     ])
-    expect(err.problems[0]).toBe(
-      'runtime.assignee.take: both: write `take: all` (0130 §3), or run `lingtai doctor --fix`',
-    )
+  })
+
+  it('moves runtime.assignee to source.assignee, keeping the login, and keeps source.assignee when both are written (#1356)', () => {
+    const one = oldSpellingsIn({ runtime: { agent: 'claude-code', assignee: { login: 'me', take: 'mine' } } })
+    expect(one).toHaveLength(1)
+    expect(one[0]!.at).toBe('runtime.assignee')
+    expect(one[0]!.sentence).toContain('source.assignee')
+    expect(one[0]!.sentence).toContain('lingtai doctor --fix')
+    expect(one[0]!.changes).toEqual([
+      { path: ['source', 'assignee'], value: { login: 'me', take: 'mine' } },
+      { path: ['runtime', 'assignee'], value: undefined },
+    ])
+    const both = oldSpellingsIn({
+      source: { assignee: { login: 'bob' } },
+      runtime: { assignee: { login: 'me' } },
+    })
+    expect(both.map((s) => s.at)).toEqual(['runtime.assignee'])
+    expect(both[0]!.changes).toEqual([{ path: ['runtime', 'assignee'], value: undefined }])
+    expect(oldSpellingsIn({ source: { assignee: { login: 'bob' } }, runtime: {} })).toEqual([])
   })
 
   it("refuses a file that writes branch and an old base, and its fix keeps the file's own branch.main", () => {

@@ -6,7 +6,7 @@
  *
  * **The recipe answers every question about a run.** Which runtime a step uses
  * is `agent:` on that step, or `runtime.agent` beside `steps:` for the steps that
- * name none (`#372`); whose tickets a project takes is `runtime.assignee`
+ * name none (`#372`); whose tickets a project takes is `source.assignee`
  * (`#373`); what a pass may spend is `runtime.limits` (`#375`). Both files sit
  * on one machine, so a machine-wide default under a per-project file answered
  * nothing a person could read off the recipe.
@@ -115,7 +115,7 @@ function stepsRefusal(at: string, project: string, home: string): string {
 function runtimeRefusal(at: string, project: string, home: string): string {
   return (
     `${at}: how a project's work is run is not configured in the machine file — it is configured in the ` +
-    `recipe, ${recipeFileIn(home, project)}: \`runtime.agent\` (or \`agent:\` on a step), \`runtime.assignee\` ` +
+    `recipe, ${recipeFileIn(home, project)}: \`runtime.agent\` (or \`agent:\` on a step), \`source.assignee\` ` +
     'and `runtime.limits`. Nothing here was applied; move it there if it is meant to apply'
   )
 }

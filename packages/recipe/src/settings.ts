@@ -452,8 +452,8 @@ export function remoteOf(recipe: Recipe): string | null {
  * *the step said* and *`runtime:` said*, and a block that named only its
  * kinds cannot silently hand this machine somebody else's tickets (`#269`).
  */
-export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
-  return takeAt(recipe)?.assignee ?? recipe.runtime.assignee
+export function assigneeOf(recipe: Recipe): Recipe['source']['assignee'] {
+  return takeAt(recipe)?.assignee ?? recipe.source.assignee
 }
 
 /**
@@ -469,7 +469,7 @@ export function assigneeOf(recipe: Recipe): Recipe['runtime']['assignee'] {
  * reading of the recipe says it took.
  *
  * **`assignee` is the one value this fills in, because the block requires it and
- * `runtime.assignee` is absent from some recipes.** `EVERYONE` is what an
+ * `source.assignee` is absent from some recipes.** `EVERYONE` is what an
  * absent rule has always meant at the one place that reads it — `assigneeSkip`'s
  * `rule?.take ?? "all"` — so writing it here selects identically and says out
  * loud what a pasted `queue:` must then write. The *reading* of an absent rule is
@@ -503,7 +503,7 @@ export function selectionOf(recipe: Recipe): Selection {
 }
 
 /**
- * What an unwritten `runtime.assignee` selects — **every issue, whoever it is
+ * What an unwritten `source.assignee` selects — **every issue, whoever it is
  * assigned to**, which is how the queue behaved before it read an assignee at
  * all (`assigneeSkip`).
  */

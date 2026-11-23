@@ -328,7 +328,7 @@ const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'obj
 
 /** One old spelling a file wrote: where, the sentence that refuses it, and the edit that ends it. */
 export interface OldSpelling {
-  /** `repo.base`, `steps.admit[0].worktree.base`, `runtime.assignee.take: both`. */
+  /** `repo.base`, `steps.admit[0].worktree.base`, `runtime.assignee`. */
   readonly at: string
   /** The refusal's sentence, naming the key, the fix and `lingtai doctor --fix`. */
   readonly sentence: string
@@ -344,7 +344,8 @@ const DOCTOR_FIX = 'or run `lingtai doctor --fix`'
  * holds the old names:
  *
  * - `repo.base` and `steps.admit[*].worktree.base` → `branch.main`;
- * - `take: both` at `runtime.assignee` or `steps.claim[*].queue.assignee` → `all`.
+ * - `take: both` at `steps.claim[*].queue.assignee` → `all`;
+ * - `runtime.assignee` → `source.assignee` (#1356), its `take: both` → `all` in the same change.
  *
  * Pure. `[]` for a file in the new spelling or one that is not a mapping. The one
  * reader the refusal, `lingtai doctor`'s row and `--fix` all stand on, so the
@@ -400,7 +401,25 @@ export function oldSpellingsIn(raw: unknown): OldSpelling[] {
       })
     }
   }
-  takeBoth(raw['runtime'], 'runtime', ['runtime'])
+  const runtime = isRecord(raw['runtime']) ? raw['runtime'] : null
+  if (runtime !== null && 'assignee' in runtime) {
+    const rule = runtime['assignee']
+    const source = isRecord(raw['source']) ? raw['source'] : null
+    const kept = source !== null && 'assignee' in source
+    const changes: RecipeChange[] = []
+    if (!kept) {
+      const moved = isRecord(rule) && rule['take'] === 'both' ? { ...rule, take: 'all' } : rule
+      changes.push({ path: ['source', 'assignee'], value: moved })
+    }
+    changes.push({ path: ['runtime', 'assignee'], value: undefined })
+    out.push({
+      at: 'runtime.assignee',
+      sentence: kept
+        ? `runtime.assignee: \`source.assignee\` is already written and is kept; delete \`runtime.assignee\`, ${DOCTOR_FIX}`
+        : `runtime.assignee: write it as \`source.assignee\` (whose tickets are taken is the source's), ${DOCTOR_FIX}`,
+      changes,
+    })
+  }
   if (steps !== null && Array.isArray(steps['claim'])) {
     ;(steps['claim'] as unknown[]).forEach((action, i) => {
       if (isRecord(action)) {
@@ -412,15 +431,15 @@ export function oldSpellingsIn(raw: unknown): OldSpelling[] {
 }
 
 /**
- * The two places a recipe can write `assignee`, as the file wrote them — `runtime.assignee` and each
+ * The two places a recipe can write `assignee`, as the file wrote them — `source.assignee` and each
  * `steps.claim[i].queue.assignee` — with the parsed rule beside it.
  */
 function assigneeHolders(raw: unknown): { at: string; assignee: Record<string, unknown> }[] {
   const out: { at: string; assignee: Record<string, unknown> }[] = []
   if (!isRecord(raw)) return out
-  const runtime = raw['runtime']
-  if (isRecord(runtime) && isRecord(runtime['assignee'])) {
-    out.push({ at: 'runtime.assignee', assignee: runtime['assignee'] })
+  const source = raw['source']
+  if (isRecord(source) && isRecord(source['assignee'])) {
+    out.push({ at: 'source.assignee', assignee: source['assignee'] })
   }
   const steps = raw['steps']
   if (isRecord(steps) && Array.isArray(steps['claim'])) {
@@ -457,17 +476,17 @@ function assigneeRefusals(recipe: Recipe, raw: unknown): string[] {
     }
     if (github && assigneeOf(recipe)?.login === undefined) {
       // The key that governs is the declared `queue:`'s when there is one (`assigneeOf`), and writing
-      // `runtime.assignee.login` beside it would change nothing.
+      // `source.assignee.login` beside it would change nothing.
       const at = recipe.steps.claim.findIndex((action) => 'queue' in action)
-      const key = at === -1 ? 'runtime.assignee.login' : `steps.claim[${at}].queue.assignee.login`
+      const key = at === -1 ? 'source.assignee.login' : `steps.claim[${at}].queue.assignee.login`
       out.push(`${key}: mode: team on GitHub takes the issues assigned to this machine's login; write \`${key}\``)
     }
     return out
   }
   if (github) {
-    const { runtime } = recipe
+    const { source } = recipe
     const rules: { at: string; login: string | undefined; take: string }[] = [
-      { at: 'runtime.assignee', login: runtime.assignee?.login, take: runtime.assignee?.take ?? 'all' },
+      { at: 'source.assignee', login: source.assignee?.login, take: source.assignee?.take ?? 'all' },
     ]
     recipe.steps.claim.forEach((action, i) => {
       if ('queue' in action) {
