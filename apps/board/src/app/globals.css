@@ -3789,9 +3789,16 @@ button.navlink { font-family: inherit; cursor: pointer; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }
 
-/* The ask under a running card is one line: note, input, button side by side. */
-.running-ask .chat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; min-height: 0; }
-.running-ask .chat > .chatscroll { flex-basis: 100%; }
+/* The ask under a running card is one line: note, input, button side by side.
+   The direction is written out because the base .chat is a column, and #1290's
+   rule read as a row without being one. A full-width child needs its own order. */
+.running-ask .chat { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; min-height: 0; }
+.running-ask .chat > .chatscroll, .running-ask .chat > .chatcontext { flex-basis: 100%; order: -1; }
+.running-ask .chat > .refusal { flex-basis: 100%; }
+/* A wrapping row does not shrink its lines, so the conversation is bounded by its own
+   height rather than the pane's; it scrolls inside that, and the ask stays reachable. */
+.running-ask .chat > .chatscroll { max-height: 14rem; }
+.running-ask .chat { overflow-y: auto; }
 .running-ask .chat .chatask { display: flex; flex: 1 1 20rem; align-items: center; gap: 0.5rem; }
 .running-ask .chat .chatask textarea { flex: 1; min-height: 0; height: 2rem; resize: vertical; }
 

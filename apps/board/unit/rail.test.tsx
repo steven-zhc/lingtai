@@ -1004,6 +1004,13 @@ describe('the eight states', () => {
     expect(CSS).toMatch(/\.scell\.t-pending\s*\{[^}]*background:\s*var\(--rule\)/)
   })
 
+  it('the ask under a running card is a row, with the full-width children ordered first (#1366)', () => {
+    expect(CSS).toMatch(/\.running-ask \.chat\s*\{[^}]*flex-direction:\s*row/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll[^{]*\{[^}]*order:\s*-1/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatcontext[^{]*\{[^}]*order:\s*-1/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll\s*\{[^}]*max-height:/)
+  })
+
   /**
    * **A question and broken machinery are drawn apart** (`#296`, and the ticket's
    * own `Done when`).
