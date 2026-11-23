@@ -101,6 +101,7 @@ import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@l
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
+import { SpanStatusCode, context, trace } from '@opentelemetry/api'
 import { cache } from 'react'
 
 import {
@@ -115,7 +116,7 @@ import {
 import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
-import { readProjectLocks } from './locks.ts'
+import { controlObserve, readProjectLocks } from './locks.ts'
 import { prHolding, prName, type PrRead } from './pr-board.ts'
 import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
 import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
@@ -142,7 +143,7 @@ import {
   type Purpose,
   type SpendCurrency,
 } from './spend.ts'
-import { timed } from './timing.ts'
+import { timed, traced, tracedSync } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
 
 export interface Finding {
@@ -1865,7 +1866,11 @@ export function groupHistory(
  * has never been told about: **the two things a 404 may rest on**, because
  * neither needs GitHub to decide (`knowable`).
  */
-async function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise<TicketBase | null> {
+function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise<TicketBase | null> {
+  return traced('ticket.base', () => loadTicketBaseOf(taskId, own))
+}
+
+async function loadTicketBaseOf(taskId: string, own: readonly Envelope[]): Promise<TicketBase | null> {
   const parsed = parseTicketStream(taskId)
   if (!parsed) return null
   const { project, issue } = parsed
@@ -1874,7 +1879,7 @@ async function loadTicketBase(taskId: string, own: readonly Envelope[]): Promise
   if (!state) return null
 
   const reduced = reduceTicket(own)
-  const tickets = await currentRecipe(state)
+  const tickets = await traced('ticket.recipe', () => currentRecipe(state))
     .then((r) => ticketSourceOf(r.recipe))
     .catch(() => null)
   return {
@@ -2113,9 +2118,10 @@ export function heldRunOf(life: TicketLifecycle): string | null {
  * layout's reductions and the queue's `paused` (0118 §2). Never rejects.
  */
 const readConductor = cache(() =>
-  timed('events.control', async () => readControl(undefined, { writer: await boardWriterOrNone() })).catch(
-    () => emptyControl,
-  ),
+  timed('events.control', async () => {
+    const writer = await boardWriterOrNone()
+    return readControl(undefined, { writer, observe: controlObserve(trace.getActiveSpan()) })
+  }).catch(() => emptyControl),
 )
 
 /** The ticket's own stream, read once however many segments of one render ask (#885). */
@@ -2132,7 +2138,9 @@ const readOwn = cache((taskId: string) => timed('events.task', () => eventStore.
  * and any array a caller built would never hit. The project comes from the id
  * (`parseTicketStream`), never from GitHub, so a tab reads no issue to learn it.
  */
-export const readAttempts = cache(async (taskId: string) => {
+export const readAttempts = cache((taskId: string) => traced('attempts.read', () => readAttemptsOnce(taskId)))
+
+async function readAttemptsOnce(taskId: string) {
   const own = await readOwn(taskId)
 
   // Every claim, and not the last one. A task can be claimed several times —
@@ -2156,19 +2164,24 @@ export const readAttempts = cache(async (taskId: string) => {
   const spend = spendFold.rows
 
   // Each stream is reduced once; everything below draws from these states.
-  const states = claims.map((_, i) => reduceAttempt(streams[i] ?? []))
-  // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
-  const heldRun = heldRunOf(ticketState.lifecycle)
-  const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
-  const reduced = claims.map((c, i) =>
-    presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, null), c.runId === heldRun, branch),
-  )
+  const { states, reduced, plain } = tracedSync('attempts.reduce', () => {
+    const states = claims.map((_, i) => reduceAttempt(streams[i] ?? []))
+    // Held here: the ticket is stopped at a wait **this** attempt's run asked (D13).
+    const heldRun = heldRunOf(ticketState.lifecycle)
+    const branch = ticketState.externalRef === null ? '' : agentBranchOf(ticketState.externalRef)
+    const reduced = claims.map((c, i) =>
+      presentAttempt(states[i]!, c, i + 1, progressOf(states[i]!, undefined, null), c.runId === heldRun, branch),
+    )
+    return { states, reduced, plain: standingOf(own, reduced) }
+  })
   const standing = await (async () => {
-    const plain = standingOf(own, reduced)
     if (ticketState.lifecycle.status !== 'satisfied' && plain.reason?._tag !== 'SatisfiedUnconfirmed') return plain
     const named = parseTicketStream(taskId)?.project ?? null
     // A project that cannot be read leaves the base unnamed, never guessed (#1252).
-    const base = named === null ? null : ((await readProject(named).catch(() => null))?.base ?? null)
+    const base =
+      named === null
+        ? null
+        : ((await traced('attempts.base', () => readProject(named)).catch(() => null))?.base ?? null)
     return withSatisfiedContext(
       plain,
       ticketState.lifecycle,
@@ -2241,7 +2254,7 @@ export const readAttempts = cache(async (taskId: string) => {
   }
 
   return { own, ticketState, claims, streams, states, spendFold, standing, runs, limits }
-})
+}
 
 /** The newest event on an attempt's stream, in the Events list's words (#918). */
 function newestEvent(
@@ -2264,11 +2277,19 @@ async function inFlightFor(
   project: string,
 ): Promise<InFlight | null> {
   if (state !== 'queued') return null
+  return traced('task.in-flight', async (span) => {
+    const found = await inFlightOnce(lane, project)
+    if (found === null) span.setStatus({ code: SpanStatusCode.ERROR })
+    return found
+  })
+}
+
+async function inFlightOnce(lane: Awaited<ReturnType<typeof readTasks>>, project: string): Promise<InFlight | null> {
   try {
     const ceilingSet = machineDayCeiling() !== undefined
     let concurrency: number | undefined
     if (ceilingSet) {
-      const loaded = await readProject(project).catch(() => null)
+      const loaded = await traced('report.project', () => readProject(project)).catch(() => null)
       // `currentRecipe` is the local read: `projectFilter` would build a GitHub
       // client first, and the log's half must not wait for (or fail with) GitHub.
       if (loaded) concurrency = concurrencyOf((await currentRecipe(loaded)).recipe)
@@ -2285,9 +2306,17 @@ async function inFlightFor(
  */
 async function startEstimateFor(state: string, project: string, now: Date): Promise<StartEstimate | null> {
   if (state !== 'queued') return null
+  return traced('task.start-estimate', async (span) => {
+    const found = await startEstimateOnce(project, now)
+    if (found === null || 'failure' in found) span.setStatus({ code: SpanStatusCode.ERROR })
+    return found
+  })
+}
+
+async function startEstimateOnce(project: string, now: Date): Promise<StartEstimate | null> {
   let typical
   try {
-    typical = typicalAttemptMs(await readTicketReport({ project }), now)
+    typical = typicalAttemptMs(await traced('report.read', () => readTicketReport({ project })), now)
   } catch (err) {
     return { failure: (err as Error).message }
   }
@@ -2298,7 +2327,11 @@ async function startEstimateFor(state: string, project: string, now: Date): Prom
       ceilingUsd === undefined
         ? false
         : ceilingReached(
-            daySpend(await readSpend({ since: startOfLocalDay(now) }), now, readRateSnapshot()),
+            daySpend(
+              await traced('spend.day', () => readSpend({ since: startOfLocalDay(now) })),
+              now,
+              readRateSnapshot(),
+            ),
             ceilingUsd,
           )
   } catch {
@@ -2393,12 +2426,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       try {
         const state = await readProject(ticket.project)
         if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
-        const client =
+        const client = await traced('task.fix-work.client', async () =>
           state.owner === null
             ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
             : hasGitHubAuth()
               ? (await projectClient(state)).client
-              : null
+              : null,
+        )
         if (client === null) throw new Error('no GitHub App configured')
         const remote = await timed('github.ref', () => client.refSha(`heads/${saved.ref}`))
         standing.fixWork =
@@ -2426,12 +2460,13 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       try {
         const state = await readProject(ticket.project)
         if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
-        const client =
+        const client = await traced('task.rerun.client', async () =>
           state.owner === null
             ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
             : hasGitHubAuth()
               ? (await projectClient(state)).client
-              : null
+              : null,
+        )
         if (client === null) throw new Error('no GitHub App configured')
         const remote = await timed('github.ref', () => client.refSha(`heads/${rerun.ref}`))
         standing.rerunWork =
@@ -2456,12 +2491,15 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       status.result.cause.plan !== null
     const started = reduceTicket(own).splitStarts.includes(waitId)
     if (planned || started) {
-      const state = await readProject(ticket.project)
-      const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
+      const { tickets, daemon: seen } = await traced('task.split', async () => {
+        const state = await readProject(ticket.project)
+        const tickets = state === null ? 'github' : ticketSourceOf((await currentRecipe(state)).recipe)
+        return { state, tickets, daemon: await readStatus() }
+      })
       // A beating daemon says the process is up, not that a writer is: a writer whose last append failed has left
       // the daemon beating and the log silent. So *writing* also needs the split to have done something on the log
       // lately; a quiet one reads *interrupted*, which the daemon's next look finishes.
-      const daemon = await readStatus()
+      const daemon = seen
       const active = splitActivityOf(own, waitId)
       standing.split = {
         progress: splitProgressOf(own, {
@@ -2661,7 +2699,7 @@ export async function loadTaskAnswer(taskId: string): Promise<TaskAnswer> {
   const parsed = parseTicketStream(taskId)
   if (!parsed) return { ticket, outgoing: null, queued: null }
   try {
-    const [shared, control] = await Promise.all([readAttempts(taskId), readConductor()])
+    const [shared, control] = await traced('attempts.wait', () => Promise.all([readAttempts(taskId), readConductor()]))
     const { own, streams, standing } = shared
     if (ticket.found === false && own.length === 0) return { ticket, outgoing: null, queued: null }
     const reduced = reduceTicket(own)
@@ -2676,7 +2714,7 @@ export async function loadTaskAnswer(taskId: string): Promise<TaskAnswer> {
     }
     // The ticket's project's locks, from the read the banner on this page makes
     // too. Null is a read that failed — never `[]`, which says nothing holds it.
-    const lockRead = standing.state === 'queued' ? await readProjectLocks() : null
+    const lockRead = standing.state === 'queued' ? await traced('locks.wait', () => readProjectLocks()) : null
     const locks =
       lockRead === null
         ? []
