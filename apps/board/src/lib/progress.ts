@@ -132,13 +132,9 @@ export type StepState =
   | 'waived'
 
 /**
- * One action's own verdict, so a point holding more than one can be drawn as
- * the sequence it is.
- *
- * `proposed` holds `build` and `review`, and a single fill over the pair says
- * *half of this point* with no way to tell which half. This is what let the
- * card's `N passed` counter go: a count of actions and a position in a sequence
- * were the same fact at two granularities, and only one of them has a shape.
+ * One action's own verdict. The rail draws one cell per step and does not draw
+ * these; they are what a cell's hover title lists and what names the action a
+ * refusal came from.
  */
 export interface ActionProgress {
   name: string
@@ -155,7 +151,7 @@ export interface StepProgress {
    * anything the log recorded here that the plan did not name — an approval at
    * a point the recipe leaves empty is the ordinary case of that.
    *
-   * Empty only where the point is: a `skipped` point has no cells to draw.
+   * Empty only where the point is `skipped`.
    */
   actions: readonly ActionProgress[]
 }
@@ -272,9 +268,10 @@ export function elapsed(ms: number): string {
 /**
  * One point's state, from what the plan said and what the log reports.
  *
- * Ordered worst-first, the way the card's stripe is: a failure is the answer
- * even when something after it also ran, and a point still running outranks the
- * ones that have already passed.
+ * A step in flight is `running` whatever an earlier round left on it, so a fix
+ * round that returns to a step is not drawn red for its whole length. Below
+ * that, `failed` outranks everything settled: a failure is the answer even when
+ * something after it also ran.
  */
 function stateOf(
   step: Step,
@@ -342,8 +339,8 @@ function stateOf(
   // so it is `skipped` before this rule is asked, and an empty `actions` list
   // is never an accusation.
   if (onRecord && step !== 'end' && seen.length === 0) return 'never-ran'
-  if (seen.includes('failed')) return 'failed'
   if (seen.includes('running')) return 'running'
+  if (seen.includes('failed')) return 'failed'
   const settled = seen.filter((s) => s === 'passed' || s === 'waived')
   // Fewer verdicts than actions means the point is part-way through, which is
   // not the same as done — the pipeline stops at the first refusal, so a point

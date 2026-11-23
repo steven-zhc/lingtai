@@ -48,9 +48,11 @@ describe('where the footer is mounted', () => {
     'app/report/page.tsx',
     'app/backlog/page.tsx',
     'app/recipe/[project]/page.tsx',
+    'app/pr/[project]/page.tsx',
+    'app/pr/[project]/[n]/page.tsx',
   ]
-  it.each(mounted)('%s ends in <FooterFetched', (file) => {
-    expect(read(file)).toContain('<FooterFetched')
+  it.each(mounted)('%s mounts <FooterFetched /> after </main>, never inside it', (file) => {
+    expect(read(file)).toMatch(/<\/main>\s*<FooterFetched \/>/)
   })
 
   it('is on no setup page, nor the store-refused screen', () => {

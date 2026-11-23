@@ -613,9 +613,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   margin: 0; padding: 0; list-style: none;
 }
 .seg { display: grid; gap: 2px; min-width: 0; }
-/* One cell per planned action, so a step holding `build` and `review` is half
-   a bar when half of it has run — the granularity the `N passed` counter had
-   and the flattened row did not. A step the recipe left empty draws one cell. */
+/* One cell per step, toned by the step's own state. */
 .sbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 5px; }
 .scell { display: block; border-radius: 1px; background: var(--rule); }
 .scell.t-pass { background: var(--pass); }
@@ -3478,11 +3476,11 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .pr-chip.running { color: #9c5a08; }
 .pr-chip.pending { color: #6c7aa3; }
 .pr-chip.skipped { color: #9c5a08; border-style: dashed; }
-.pr-rail { list-style: none; margin: 0.5rem 0; padding: 0 0 0 1rem; position: relative; }
-.pr-rail::before { content: ''; position: absolute; left: 0.3rem; top: 0.2rem; bottom: 0.2rem; width: 3px; background: #c4cce4; border-radius: 2px; }
+.pr-rail { --rail-x: calc(0.3rem + 1.5px); --rail-pad: 1rem; list-style: none; margin: 0.5rem 0; padding: 0 0 0 var(--rail-pad); position: relative; }
+.pr-rail::before { content: ''; position: absolute; left: calc(var(--rail-x) - 1.5px); top: 0.2rem; bottom: 0.2rem; width: 3px; background: #c4cce4; border-radius: 2px; }
 .pr-rail.cut::before { background: repeating-linear-gradient(#c4cce4 0 3px, transparent 3px 6px); }
 .pr-slip { position: relative; margin: 0.25rem 0; }
-.pr-dot { position: absolute; left: -1.05rem; top: 0.35rem; width: 8px; height: 8px; border-radius: 50%; background: #2f3d63; }
+.pr-dot { position: absolute; left: calc(var(--rail-x) - var(--rail-pad) - 4px); top: 0.35rem; width: 8px; height: 8px; border-radius: 50%; background: #2f3d63; }
 .pr-card.merged .pr-dot { background: #2c7a4c; }
 .pr-slip-id { color: #6c7aa3; }
 .pr-fix { font-size: 0.7rem; color: #9c5a08; }
@@ -3791,9 +3789,16 @@ button.navlink { font-family: inherit; cursor: pointer; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }
 
-/* The ask under a running card is one line: note, input, button side by side. */
-.running-ask .chat { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; min-height: 0; }
-.running-ask .chat > .chatscroll { flex-basis: 100%; }
+/* The ask under a running card is one line: note, input, button side by side.
+   The direction is written out because the base .chat is a column, and #1290's
+   rule read as a row without being one. A full-width child needs its own order. */
+.running-ask .chat { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 0.4rem 1rem; min-height: 0; }
+.running-ask .chat > .chatscroll, .running-ask .chat > .chatcontext { flex-basis: 100%; order: -1; }
+.running-ask .chat > .refusal { flex-basis: 100%; }
+/* A wrapping row does not shrink its lines, so the conversation is bounded by its own
+   height rather than the pane's; it scrolls inside that, and the ask stays reachable. */
+.running-ask .chat > .chatscroll { max-height: 14rem; }
+.running-ask .chat { overflow-y: auto; }
 .running-ask .chat .chatask { display: flex; flex: 1 1 20rem; align-items: center; gap: 0.5rem; }
 .running-ask .chat .chatask textarea { flex: 1; min-height: 0; height: 2rem; resize: vertical; }
 

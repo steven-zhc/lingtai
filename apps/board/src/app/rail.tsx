@@ -91,7 +91,10 @@ function segTitle(p: StepProgress): string {
   if (p.state === 'asked') {
     return `${p.step}: ${p.planned.join(', ')} — its agent stopped and asked something (0058 §3c)`
   }
-  return `${p.step}: ${p.actions.map((a) => `${a.name} ${a.state}`).join(', ')}`
+  const named = p.actions.filter((a) => a.name !== '')
+  const verdicts = named.map((a) => `${a.name} ${a.state}`).join(', ')
+  if (p.state === 'running') return `${p.step}: running${verdicts === '' ? '' : ` — ${verdicts}`}`
+  return `${p.step}: ${verdicts}`
 }
 
 /**
@@ -126,13 +129,10 @@ function segTitle(p: StepProgress): string {
  * against that assertion rather than a fact the code keeps. A step opened without
  * touching this line leaves it false and nothing fails.
  *
- * **One cell per action.** `prepared: [install]` draws one; a step holding two
- * actions draws two, each with its own verdict, so a step that is half done
- * looks half done. That is what let `N passed` go from the
- * counters above: a count of actions and a position in a sequence were the same
- * fact at two granularities, and only one of them has a shape. A step the
- * recipe left empty draws a single dashed cell — it keeps its place in the
- * sequence without claiming anything happened in it.
+ * **One cell per step.** Each step is a single cell toned by its own state; the
+ * verdict of each action in it is in the cell's title. A step the recipe left
+ * empty draws a dashed cell — it keeps its place in the sequence without
+ * claiming anything happened in it.
  */
 export function Segs({
   steps,
@@ -156,9 +156,7 @@ export function Segs({
       {steps.map((p) => (
         <li key={p.step} className={`seg s-${p.state}`} title={segTitle(p)}>
           <span className="sbar">
-            {(p.actions.length === 0 ? [{ name: p.step, state: p.state }] : p.actions).map((a) => (
-              <span key={a.name} className={`scell ${CELL_TONE[a.state]}`} />
-            ))}
+            <span className={`scell ${CELL_TONE[p.state]}`} />
           </span>
           {labels ? <span className={`slab ${labelTone(p, at)}`}>{p.step}</span> : null}
           {labels && p.step !== at && times?.[p.step] !== undefined ? (

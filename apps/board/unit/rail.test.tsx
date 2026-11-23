@@ -639,7 +639,7 @@ describe('a running card', () => {
     expect(html).not.toContain('1 passed')
     // `proposed` is `build` and `review`, plus the running step's own
     // unnamed placeholder cell — neither action is reached yet.
-    expect(cellsAt(html, 'proposed')).toEqual(['t-pending', 't-pending', 't-run'])
+    expect(cellsAt(html, 'proposed')).toEqual(['t-run'])
     expect(cellsAt(html, 'prepared')).toEqual(['t-pass'])
   })
 
@@ -774,7 +774,7 @@ describe('a card stopped on a person', () => {
     expect(html).not.toContain('between steps')
     expect(html).not.toContain('the agent has finished and no step has started yet')
     // The rail itself is unchanged and honest: the gates it drew all passed.
-    expect(cellsAt(html, 'proposed')).toEqual(['t-pass', 't-pass'])
+    expect(cellsAt(html, 'proposed')).toEqual(['t-pass'])
     // And the reason is on the card, one line down, from the row's wait.
     expect(html).toContain('conflict: base moved')
   })
@@ -829,7 +829,7 @@ describe('a card answering a refusal', () => {
     expect(html).not.toContain('build refused')
     // The segment is red all the same. The bar reports the verdict; the
     // sentence reports who is waiting on what.
-    expect(cellsAt(html, 'proposed')).toEqual(['t-fail', 't-pending'])
+    expect(cellsAt(html, 'proposed')).toEqual(['t-fail'])
   })
 
   /**
@@ -847,7 +847,7 @@ describe('a card answering a refusal', () => {
     expect(labels(html).filter(([tone]) => tone === 'l-at')).toEqual([['l-at', 'implement']])
     // And the refused segment stays red: the round is answering that verdict,
     // not replacing it.
-    expect(cellsAt(html, 'proposed')).toEqual(['t-fail', 't-pending'])
+    expect(cellsAt(html, 'proposed')).toEqual(['t-fail'])
   })
 
   /**
@@ -1002,6 +1002,13 @@ describe('the eight states', () => {
     expect(CSS).toMatch(/\.scell\.t-never\s*\{[^}]*repeating-linear-gradient/)
     expect(CSS).toMatch(/\.scell\.t-skipped\s*\{[^}]*background:\s*transparent[^}]*dashed/)
     expect(CSS).toMatch(/\.scell\.t-pending\s*\{[^}]*background:\s*var\(--rule\)/)
+  })
+
+  it('the ask under a running card is a row, with the full-width children ordered first (#1366)', () => {
+    expect(CSS).toMatch(/\.running-ask \.chat\s*\{[^}]*flex-direction:\s*row/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll[^{]*\{[^}]*order:\s*-1/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatcontext[^{]*\{[^}]*order:\s*-1/)
+    expect(CSS).toMatch(/\.running-ask \.chat > \.chatscroll\s*\{[^}]*max-height:/)
   })
 
   /**
