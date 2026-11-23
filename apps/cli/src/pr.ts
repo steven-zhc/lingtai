@@ -420,12 +420,24 @@ export const prRequestVerdict = (
         if (ask === 'back' && state.status === 'closed') {
           return accepted('closed; its tickets are back in Draft, still on the personal branch', state.status)
         }
-        if (ask === 'rounds' && (state.rounds.length > rounds0 || state.status !== 'in-progress')) {
+        if (latest.status === 'merged' && state.status === 'merged') {
+          // A merged PR's request is served by the catch-up alone, and it is answered by what the catch-up came to: a round
+          // that started, or a record that is no longer the failure the request released. The open PR's rules below read a
+          // status and a pending that mean nothing here.
+          const was = state.catchUp
+          if (ask === 'rounds' && state.rounds.length > rounds0) {
+            return accepted('three more rounds given; the agent is resolving', state.status)
+          }
+          if (was !== null && !was.released) {
+            return catchUpWaits(state)
+              ? refusal(1, was.why ?? 'catch-up', catchUpLine(state), { subject })
+              : accepted(catchUpLine(state), state.status)
+          }
+        } else if (ask === 'rounds' && (state.rounds.length > rounds0 || state.status !== 'in-progress')) {
           return state.status === 'waiting' && state.wait !== null
             ? accepted(`the agent went again; the PR waits at ${state.wait.step} (${state.wait.reason})`, state.status)
             : accepted('three more rounds given; the agent is resolving', state.status)
-        }
-        if (ask === 'retry' && state.pending === null) {
+        } else if (ask === 'retry' && state.pending === null) {
           if (state.status === 'waiting' && state.wait !== null) {
             return refusal(1, state.wait.reason, state.wait.detail, { subject })
           }
@@ -440,7 +452,7 @@ export const prRequestVerdict = (
     )
     return accepted(
       unanswered(holder, ask === 'back' ? 'taking it back' : ask === 'retry' ? 'checking it' : 'resolving it'),
-      'waiting',
+      latest.status === 'merged' ? 'merged' : 'waiting',
     )
   })
 
