@@ -3,18 +3,27 @@
  * `main` is merged in a throwaway worktree and built before it is anyone's target; nothing but `push` writes the PR
  * branch; and what the merge back pushes is `branch.personal` and nothing else.
  */
-import { integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { catchUpOwed, integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub } from '@lingtai/github'
-import { recordBranchSynced, recordPrOpened, recordPrPushed, recordPrRestart, requestPrSubmit } from '@lingtai/project'
+import {
+  recordBranchSynced,
+  recordPrCaughtUp,
+  recordPrCatchUpFailed,
+  recordPrMerged,
+  recordPrOpened,
+  recordPrPushed,
+  recordPrRestart,
+  requestPrSubmit,
+} from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createLandingLane } from '../src/landing-lane.ts'
-import { mergePrBack } from '../src/pr-sync.ts'
+import { catchUpPersonal, mergePrBack } from '../src/pr-sync.ts'
 import { type PrBuildAnswer, type PrPorts, type PrStep, IN_PROGRESS_STEPS, servePr } from '../src/pr.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -705,5 +714,170 @@ describe('the merge back', () => {
     await Effect.runPromise(Deferred.succeed(building, void 0))
     await Promise.all([back, landing])
     expect(order).toEqual(['back', 'landing'])
+  })
+})
+
+/** A PR that merged on the host while In review: `main` holds its head, and the personal branch has not caught up. */
+async function merged(): Promise<EventStore> {
+  const store = await inReview()
+  await Effect.runPromise(recordPrMerged('lingtai', 1, { how: 'host', headSha: FROZEN, mergeSha: MERGE }, store))
+  return store
+}
+
+describe('the catch-up', () => {
+  const run = (store: EventStore, w: World, extra: Partial<PrPorts> = {}) =>
+    Effect.runPromise(catchUpPersonal(ports(store, w, extra), 'lingtai', 1))
+
+  it('is owed by a merged PR only, and merges the tip of main once, built, pushing only the personal branch', async () => {
+    const store = await merged()
+    expect(catchUpOwed(await state(store))).toBe(true)
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    await run(store, w)
+
+    expect(w.merges).toHaveLength(1)
+    expect(w.merges[0]).toMatchObject({
+      at: PERSONAL,
+      theirs: MAIN,
+      message: `Merge main at ${MAIN.slice(0, 7)} into lingtai-team after PR 1`,
+    })
+    expect(w.builds).toEqual([{ sha: BACK, base: 'lingtai-team-pr-1', checkId: 'pr-1-catch-up' }])
+    expect(pushesOf(w)).toEqual([['push', 'origin', `${BACK}:refs/heads/lingtai-team`]])
+    expect(pushesOf(w).flat().join(' ')).not.toContain('refs/heads/main')
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last).toMatchObject({ type: 'PrCaughtUp', data: { mainSha: MAIN, mergeCommit: BACK } })
+    expect(catchUpOwed(await state(store))).toBe(false)
+
+    // Once: a second call, and a second record, append nothing.
+    const before = (await store.read(prStream('lingtai', 1))).length
+    await run(store, w)
+    await Effect.runPromise(recordPrCaughtUp('lingtai', 1, { mainSha: OTHER, mergeCommit: null }, store))
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    expect(pushesOf(w)).toHaveLength(1)
+  })
+
+  it('is not owed while the PR is in review or closed', async () => {
+    expect(catchUpOwed(await state(await inReview()))).toBe(false)
+  })
+
+  it('records the tip as already had, and pushes nothing, when main is in the personal branch', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = () => true
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN, mergeCommit: null },
+    })
+  })
+
+  it('a conflict without an agent records conflict, which is not owed again until a retry', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    w.mergeAnswer = () => ({ kind: 'conflict', paths: ['a.ts'] })
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { mainSha: MAIN, why: 'conflict' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(false)
+    await run(store, w)
+    expect(w.merges).toHaveLength(1)
+  })
+
+  it('a red build records red and pushes nothing', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    w.buildAnswer = () => Effect.succeed({ kind: 'red', command: 'pnpm test', evidence: 'boom' })
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'red' },
+    })
+  })
+
+  it('a fetch that fails is unknown, stays owed, and is tried again', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'fetch' ? Effect.succeed({ code: 1, stdout: '', stderr: 'down' }) : p.remote(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'unknown' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+    await run(store, w)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrCaughtUp')
+  })
+
+  it('a push of ours found in the personal branch history is recorded, and not merged again', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({
+                  code: 0,
+                  stdout: `${BACK} ${PERSONAL} ${MAIN}\tMerge main at ${MAIN.slice(0, 7)} into lingtai-team after PR 1\n`,
+                  stderr: '',
+                })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(w.merges).toEqual([])
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN, mergeCommit: BACK },
+    })
+  })
+
+  it('a locked project starts none, records locked, and stays owed', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const resolver = { locked: () => Effect.succeed('the day ceiling is reached') } as unknown as PrPorts['resolver']
+    await run(store, w, { resolver })
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'locked' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+  })
+
+  it('a failure waits on a retry: recorded retry makes it owed again, and the failure repeats append once', async () => {
+    const store = await merged()
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, { mainSha: MAIN, why: 'red', detail: 'x' }, store))
+    const len = (await store.read(prStream('lingtai', 1))).length
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, { mainSha: MAIN, why: 'red', detail: 'y' }, store))
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(len)
+    expect(catchUpOwed(await state(store))).toBe(false)
   })
 })

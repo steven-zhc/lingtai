@@ -123,6 +123,7 @@ export const PR_EVENTS = [
   'PrBackRequested',
   'PrSummaryEdited',
   'PrFixLanded',
+  'PrMerged',
   'TicketLanded',
   'TicketReleased',
   'TicketClosed',
