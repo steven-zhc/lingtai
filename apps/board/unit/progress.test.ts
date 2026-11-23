@@ -218,6 +218,20 @@ describe('where a run has got to', () => {
     expect(progress?.now).toBeNull()
   })
 
+  it("reads a step in flight as running over an earlier round's failure, and as failed once it is not", () => {
+    const failed = [
+      ...timeline(),
+      at('2026-09-04T17:34:00Z', 'StepEnded', ended('proposed', [verdictAction('build', 'refused', '2 tests failed')])),
+    ]
+    const again = [...failed, at('2026-09-04T17:40:00Z', 'StepStarted', started('proposed', 1))]
+
+    const inFlight = progressOf(reduceAttempt(again), PLAN)?.steps ?? []
+    expect(stateOf(inFlight, 'proposed')).toBe('running')
+    // The title lists the planned action, never the unnamed in-flight entry.
+    expect(inFlight.find((p) => p.step === 'proposed')?.actions.map((a) => a.name)).toContain('build')
+    expect(stateOf(progressOf(reduceAttempt(failed), PLAN)?.steps ?? [], 'proposed')).toBe('failed')
+  })
+
   /**
    * **A question and a crash are two states on this rail** (`#296`, 0058 §3c).
    *

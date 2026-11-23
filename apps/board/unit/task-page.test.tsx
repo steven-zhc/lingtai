@@ -792,22 +792,13 @@ describe('the rail on the task page', () => {
     expect(rank).not.toContain(' / ')
   })
 
-  /**
-   * **Since `#502` neither named action reads as specifically running** —
-   * there is no action-level `StepStarted` any more, so `progressOf`
-   * cannot say which of `build`/`review` is the one in flight; both read
-   * `pending`. A third cell appears after them: the placeholder `StepStarted`
-   * sets `verdicts['proposed:']` (empty action name) to `running`, and
-   * `progressOf` draws that as an "extra" action the plan did not name.
-   */
-  it("draws proposed's build and review as two pending cells, plus the running placeholder", () => {
+  /** A step is one cell, however many actions it plans; the running one is lit. */
+  it('draws proposed as one running cell however many actions it plans', () => {
     const rank = opening(page(building(PLAN)))
     const proposed = rank.match(
       /<li class="seg s-running"[^>]*><span class="sbar">((?:<span class="scell[^"]*"><\/span>)+)<\/span>/,
     )
-    expect(proposed?.[1]).toBe(
-      '<span class="scell t-pending"></span><span class="scell t-pending"></span><span class="scell t-run"></span>',
-    )
+    expect(proposed?.[1]).toBe('<span class="scell t-run"></span>')
   })
 
   it("is the board's own Rail, imported by the board and the attempt tab and defined in neither", () => {

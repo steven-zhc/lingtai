@@ -613,9 +613,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   margin: 0; padding: 0; list-style: none;
 }
 .seg { display: grid; gap: 2px; min-width: 0; }
-/* One cell per planned action, so a step holding `build` and `review` is half
-   a bar when half of it has run — the granularity the `N passed` counter had
-   and the flattened row did not. A step the recipe left empty draws one cell. */
+/* One cell per step, toned by the step's own state. */
 .sbar { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 1px; height: 5px; }
 .scell { display: block; border-radius: 1px; background: var(--rule); }
 .scell.t-pass { background: var(--pass); }
