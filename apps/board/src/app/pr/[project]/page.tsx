@@ -79,8 +79,8 @@ export default async function Page({ params }: { params: Promise<{ project: stri
         <Suspense fallback={<Skeleton shape="card" count={5} />}>
           <Board project={name} />
         </Suspense>
-        <FooterFetched />
       </main>
+      <FooterFetched />
     </Follow>
   )
 }
