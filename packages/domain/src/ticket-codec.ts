@@ -194,7 +194,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 12: `splitStarts` counts a ticket's splits from `SplitStarted` (#1262); a version-11 snapshot has no such list.
   // 13: `landed` keeps where a ticket landed after a `TicketClosed` (#1309); a version-12 snapshot does not know.
   // 14: `cutFrom` keeps the branch a team pr-fix claim was cut from (#1341); a version-13 snapshot does not know.
-  version: 14,
+  // 15: a `TicketLanded` after a `TicketClosed` sets `landed` and leaves the lifecycle closed (#1397); a version-14 snapshot kept it null.
+  version: 15,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

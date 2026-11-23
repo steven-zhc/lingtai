@@ -958,6 +958,17 @@ export function landedSeq(events: readonly Envelope[], base: string): bigint | n
   return seq
 }
 
+/** One ticket's landing on a lane, as `landingsStarted` reads it; `base` is the success event's own, `null` otherwise. */
+export interface LandingStarted {
+  ticketId: string
+  mergeCommit: string | null
+  base: string | null
+  /** The global order of the success event, `null` otherwise: which of a ticket's landings on two lanes is later. */
+  seq: bigint | null
+  unexpected: boolean
+  headSha: string | null
+}
+
 /**
  * A lane's landings that have begun and are not over: per ticket, its last integration event. An attempt with no
  * terminal is `mergeCommit: null` (the push may or may not have happened); a success carries the commit it pushed.
@@ -967,9 +978,7 @@ export function landedSeq(events: readonly Envelope[], base: string): bigint | n
  * whether the push happened is a question git answers, never the ticket's lifecycle (releasing or closing a ticket
  * does not take back pushed code).
  */
-export function landingsStarted(
-  laneEvents: readonly Envelope[],
-): { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] {
+export function landingsStarted(laneEvents: readonly Envelope[]): LandingStarted[] {
   const last = new Map<string, Envelope>()
   const heads = new Map<string, string>()
   /** An earlier attempt whose push may have happened and that no terminal answered; a later attempt does not erase it. */
@@ -1003,26 +1012,29 @@ export function landingsStarted(
       open.delete(ticketId)
     }
   }
-  const started: { ticketId: string; mergeCommit: string | null; unexpected: boolean; headSha: string | null }[] = []
+  const started: LandingStarted[] = []
   for (const [ticketId, e] of last) {
     const headSha = heads.get(ticketId) ?? null
-    if (e.type === 'IntegrationAttempted') started.push({ ticketId, mergeCommit: null, unexpected: false, headSha })
+    if (e.type === 'IntegrationAttempted')
+      started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: false, headSha })
     if (e.type === 'IntegrationSucceeded') {
       started.push({
         ticketId,
         mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit,
+        base: (e.data as PayloadOf<'IntegrationSucceeded'>).base,
+        seq: e.seq,
         unexpected: false,
         headSha,
       })
     }
     if (e.type === 'IntegrationRefused' && (e.data as { reason?: string }).reason === 'unexpected') {
-      started.push({ ticketId, mergeCommit: null, unexpected: true, headSha })
+      started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: true, headSha })
     }
     // An earlier attempt left uncertain stays owed beside whatever the last event says: a retry's refusal
     // (`no-commits`, because the first push is already on the base) is no proof the first pushed nothing.
     for (const earlier of uncertain.get(ticketId) ?? []) {
       if (!started.some((x) => x.ticketId === ticketId && x.headSha === earlier)) {
-        started.push({ ticketId, mergeCommit: null, unexpected: true, headSha: earlier })
+        started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: true, headSha: earlier })
       }
     }
   }

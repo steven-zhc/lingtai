@@ -100,6 +100,7 @@ import { withDaemonStore } from './choose.ts'
 import { CONTROL_STREAM } from './control.ts'
 import { type ConvergeOptions, convergeIssuesEffect } from './converge.ts'
 import { DAEMON_LOCK_KEY } from './lock.ts'
+import { recordOwedLandingsEffect } from './owed-landings.ts'
 import type { DaemonStore } from './store.ts'
 
 const execFile = promisify(execFileCb)
@@ -798,6 +799,18 @@ export const findOrphanClaudeDirsEffect = Effect.fn('daemon.findOrphanClaudeDirs
 export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options: ReconcileOptions = {}) {
   const log = options.log ?? (() => {})
   const store = logOf(options)
+
+  // The one write that comes first, on purpose: the landings a dead conductor owed (#1397). The claim scan below
+  // must see a ticket as `landed` or it releases it, and the worktree scan must see it too, so what is written first
+  // is what the reads that follow have to read. It never fails the start.
+  yield* recordOwedLandingsEffect({
+    projects: options.projects ?? [],
+    store,
+    read: readOf(options),
+    withStreams: (fn) => withStreams(options, fn),
+    dryRun: options.dryRun,
+    log,
+  })
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.
