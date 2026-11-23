@@ -238,6 +238,19 @@ branch, the review's changes, and the merge back. One topic, one ADR.
     - **Closed without merging**: the PR moves back to *Draft*; its tickets stay
       on `branch.personal`; nothing is reverted. A closed PR reopened on the code
       host is not followed.
+    - **Merged: the personal branch catches up with `main`, once.** After the
+      PR is recorded merged, the tip of `origin/<branch.main>`, read after a
+      fetch in the landing lane's turn, is merged into `branch.personal` under
+      `Merge <main> at <sha7> into <personal> after PR <n>`, built, and pushed to
+      `refs/heads/<personal>` and nothing that names `branch.main`. It is the
+      merge back's machinery with `main`'s tip as the commit: a push whose record
+      was lost is found in the branch's history and recorded; a conflict or a red
+      build goes to the conflict agent's rounds (counted as `back`, for that
+      commit) and then waits on a person, who gives more rounds or retries
+      (`lingtai pr rounds`, `lingtai pr retry`); a read that fails, or a paused
+      or locked project, is `unknown` or `locked` and stays owed. `main` already
+      in the branch is `PrCaughtUp` with no merge commit. It runs once per PR
+      and is never a watcher on `main`.
     - **One PR at a time, and work never stops for it.** While a PR is open —
       in progress, waiting on you or in review — Lingtai goes on taking tickets
       and landing them on `branch.personal`; they gather in *Draft*, and *Submit*
@@ -306,7 +319,8 @@ branch, the review's changes, and the merge back. One topic, one ADR.
   by the conductor as a discussion's are (submit, retry, more rounds, back);
   its states (in progress, waiting, opened, ready, merged, closed); its syncs
   (`BranchSynced { mainCommit, how: clean | resolved }`) and their rounds; and
-  the merge back (`PrMergedBack`, `PrMergeBackFailed`). No lock is added: a PR
+  the merge back (`PrMergedBack`, `PrMergeBackFailed`) and the catch-up
+  (`PrCaughtUp`, `PrCatchUpFailed`). No lock is added: a PR
   waiting on you stops nothing else. No ticket event is added — a
   `lingtai:pr-fix` ticket's claim records the PR branch it is cut from, as a
   field of the claim.
