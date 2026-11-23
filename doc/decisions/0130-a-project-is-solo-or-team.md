@@ -161,8 +161,10 @@ PR is a person deciding a body of work is ready for the team.
 - The PR's events, on its own stream `pr-{project}-{n}`, are 0131's. No ticket
   event is added — a `lingtai:pr-fix` ticket's claim records the PR branch it is
   cut from, as a field of the claim; `TicketLanded` gains no new position.
-- This repository runs solo: it is Lingtai's own repository and merges its own
-  work unattended (CLAUDE.md, *Running Lingtai on Lingtai*).
+- This repository is a team project, since 2026-11-22: tickets assigned to
+  `steven-zhc` land on `steven-zhc/studio` unattended, and `main` moves only when
+  the operator submits and merges a PR (CLAUDE.md, *Running Lingtai on
+  Lingtai*).
 - Left for later (`doc/milestone/later/`): watching `main`'s own CI (a red
   `main` named before a submit, and on the board); bringing `main` into
   `branch.personal` whenever it moves; a blocker that has landed on the branch
