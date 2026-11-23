@@ -120,7 +120,7 @@ const transitionPr = <A>(
 /** What a Submit came to. */
 export type SubmitAnswer =
   | { kind: 'requested'; n: number }
-  | { kind: 'refused'; reason: 'solo' | 'open-pr'; detail: string }
+  | { kind: 'refused'; reason: 'solo' | 'open-pr' | 'nothing-landed'; detail: string }
 
 /**
  * A person asks for the personal branch to be submitted. Refused `solo` and `open-pr` without appending; otherwise

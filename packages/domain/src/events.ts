@@ -2540,6 +2540,18 @@ export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string
  */
 export const PrSubmitRequested = z.object({ by: z.string() })
 
+/**
+ * A ticket joined the PR's draft (ADR 0131 §2): `from` is the PR that handed the ticket back, or null for a landing.
+ * Adding a ticket twice is adding it once, and the later merge commit stands.
+ *
+ * @summary A ticket joined a PR's draft: its merge commit, and the PR that handed it back (null for a landing).
+ */
+export const PrDraftTicketAdded = z.object({
+  ticket: z.string(),
+  mergeCommit: z.string(),
+  from: z.number().int().nullable(),
+})
+
 /** Why a submit was refused; a closed set a reader can switch on. */
 const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'git'])
 
@@ -3226,6 +3238,7 @@ export const EVENTS = {
   ProjectRecovered,
   ProjectPaused,
   ProjectResumed,
+  PrDraftTicketAdded,
   PrSubmitRequested,
   PrSubmitRefused,
   PrInProgress,
@@ -3365,6 +3378,7 @@ export const EVENT_AT = {
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],
   ProjectResumed: ['outside'],
+  PrDraftTicketAdded: ['outside'],
   PrSubmitRequested: ['outside'],
   PrSubmitRefused: ['outside'],
   PrInProgress: ['outside'],
