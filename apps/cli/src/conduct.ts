@@ -39,10 +39,15 @@ import {
   type Slots,
   githubLimitPort,
 } from '@lingtai/conductor'
+import {
+  ensurePersonalBranch,
+  ensurePersonalBranchOnRemote,
+  type PersonalBranchPort,
+} from '@lingtai/conductor/personal-branch'
 import { readControlEffect } from '@lingtai/daemon'
 import { type ControlState, type ProjectState, turnTransition } from '@lingtai/domain'
 import { waitMoves } from '@lingtai/domain/wait'
-import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot } from '@lingtai/env'
+import { githubClientAuth, hasGitHubAuth, machineDayCeiling, repoRoot, stateDir } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog } from '@lingtai/event-store'
 import type { SnapshotWriter } from '@lingtai/event-store/snapshot-writer'
 import { createGitHubClient, type CreateClientOptions, type GitHubClient } from '@lingtai/github'
@@ -208,6 +213,8 @@ interface CommonPassOptions {
   log: (line: string) => void
   /** Set only for a project with no owner — `ownerlessClient`'s own remote (`#352`, `#355`). */
   remote?: string
+  /** Makes `branch.personal` when the remote has none (#1358). */
+  personalBranch?: PersonalBranchPort
   snapshotWriter?: Pick<SnapshotWriter, 'offer'>
 }
 
@@ -280,6 +287,11 @@ export function conductWork(
           prompt: options.prompt,
           promptVersion: `ticket@${options.prompt.length}`,
           remote,
+          personalBranch: ensurePersonalBranchOnRemote({
+            remote,
+            project: name,
+            home: stateDir(),
+          }),
           ...(options.merge === undefined ? {} : { merge: options.merge }),
           ...(options.snapshotWriter ? { snapshotWriter: options.snapshotWriter } : {}),
           log: options.log,
@@ -325,6 +337,17 @@ export function conductWork(
           // A function, not a snapshot: an installation token lasts an hour and a
           // run's wall limit is two.
           token: () => passClient.token(),
+          // A team project's `branch.personal` the remote has none of is made at `branch.main`'s tip (#1358).
+          personalBranch: (branch, from) =>
+            ensurePersonalBranch(
+              {
+                branchExists: (n) => Effect.tryPromise(() => passClient.branchExists(n)),
+                refSha: (n) => Effect.tryPromise(() => passClient.refSha(n)),
+                createBranch: (n, sha) => Effect.tryPromise(() => passClient.createBranch(n, sha)),
+              },
+              branch,
+              from,
+            ),
           hookBinary: options.hookBinary,
           sandbox: processSandbox,
           prompt: options.prompt,

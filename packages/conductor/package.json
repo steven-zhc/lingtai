@@ -29,6 +29,7 @@
     "./report": "./src/report.ts",
     "./branches": "./src/branches.ts",
     "./arms": "./src/arms.ts",
+    "./personal-branch": "./src/personal-branch.ts",
     "./labels": "./src/labels.ts",
     "./tell": "./src/tell.ts",
     "./prompt": "./src/prompt.ts",
