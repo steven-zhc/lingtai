@@ -60,6 +60,9 @@ const recordProject = (project: string, options: OwedLandingsOptions, log: (line
     const lanes = yield* options.withStreams((it) =>
       it.streams({ prefixes: [`int-${project}-%`], types: ['IntegrationSucceeded'] }),
     )
+    // A ticket can have a success on more than one lane (a retry on another base): only its latest, by the log's
+    // global order, is the landing it holds, so an older one on a lane that sorts later is history and not owed.
+    const latest = new Map<string, { mergeCommit: string; base: string; seq: bigint }>()
     for (const lane of lanes) {
       const events = yield* Effect.tryPromise({ try: () => store.read(lane), catch: (e) => e })
       for (const started of landingsStarted(events)) {
@@ -70,21 +73,27 @@ const recordProject = (project: string, options: OwedLandingsOptions, log: (line
           log(`left the landing of ${ticketId} at ${mergeCommit} alone: it is not ${project}'s on ${lane}`)
           continue
         }
-        const ticket = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options.read)
-        if (ticket.landed?.mergeCommit === mergeCommit) continue
-        if (options.dryRun) {
-          log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
-          continue
-        }
-        yield* landTicketEffect(ticketId, { mergeCommit, base }, store, options.read).pipe(
-          Effect.andThen(() =>
-            Effect.sync(() =>
-              log(`recorded the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`),
-            ),
-          ),
-          Effect.catchCause(unlessInterrupted((m) => log(`could not record the landing of ${ticketId}: ${m}`))),
-        )
+        const { seq } = started
+        if (seq === null) continue
+        const held = latest.get(ticketId)
+        if (held === undefined || seq > held.seq) latest.set(ticketId, { mergeCommit, base, seq })
       }
+    }
+    for (const [ticketId, { mergeCommit, base }] of latest) {
+      const ticket = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options.read)
+      if (ticket.landed?.mergeCommit === mergeCommit) continue
+      if (options.dryRun) {
+        log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
+        continue
+      }
+      yield* landTicketEffect(ticketId, { mergeCommit, base }, store, options.read).pipe(
+        Effect.andThen(() =>
+          Effect.sync(() =>
+            log(`recorded the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`),
+          ),
+        ),
+        Effect.catchCause(unlessInterrupted((m) => log(`could not record the landing of ${ticketId}: ${m}`))),
+      )
     }
   })
 

@@ -165,6 +165,55 @@ describe('the landings a dead conductor owed', () => {
     expect(await typesOf(store, foreign)).toEqual(['TicketClaimed'])
   })
 
+  it("compares only the ticket's latest success across lanes, not an older one on a lane that sorts later", async () => {
+    const { store, daemonStore } = await world()
+    const OLD = integrationStream(PROJECT, 'z-old')
+    const NEW = integrationStream(PROJECT, 'a-new')
+    const A = 'c'.repeat(40)
+    await store.append(OLD, 0, [attempted(OWED), succeeded(OWED, A, 'z-old')] as never)
+    await store.append(NEW, 0, [attempted(OWED), succeeded(OWED, MERGE, 'a-new')] as never)
+    await store.append(OWED, 0, aLanding(makeStream(OWED), MERGE, 'a-new'))
+    const run = () =>
+      Effect.runPromise(
+        recordOwedLandingsEffect({
+          projects: [projectOf(PROJECT)],
+          store,
+          read: {},
+          withStreams: (fn) => fn(daemonStore),
+        }),
+      )
+
+    await run()
+    await run()
+
+    expect(await typesOf(store, OWED)).toEqual(['TicketLanded'])
+    expect(await Effect.runPromise(landingsInFlight(PROJECT, 'a-new', store))).toEqual([])
+  })
+
+  it('records a landing for a ticket closed since, once', async () => {
+    const { store, daemonStore } = await world()
+    await store.append(OWED, 0, [
+      ...aClaim(makeStream(OWED), 'r1', DEAD),
+      { type: 'TicketClosed', actor: 'human:someone', data: { by: 'someone', reason: 'done' } },
+    ] as never)
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    const run = () =>
+      Effect.runPromise(
+        recordOwedLandingsEffect({
+          projects: [projectOf(PROJECT)],
+          store,
+          read: {},
+          withStreams: (fn) => fn(daemonStore),
+        }),
+      )
+
+    await run()
+    await run()
+
+    expect((await typesOf(store, OWED)).filter((t) => t === 'TicketLanded')).toHaveLength(1)
+    expect(await Effect.runPromise(landingsInFlight(PROJECT, BASE, store))).toEqual([])
+  })
+
   it('runs before the release in reconcile: the landed ticket stays, a really dead claim is released', async () => {
     const { store, daemonStore } = await world()
     await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
