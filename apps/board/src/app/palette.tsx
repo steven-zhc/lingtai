@@ -104,6 +104,11 @@ export function PaletteView({
           ]
         })}
       </ul>
+      <p className="palette-keys">
+        <kbd>↑↓</kbd> select · <kbd>↵</kbd> open · <kbd className="k-mac">⌘↵</kbd>
+        <kbd className="k-pc">Ctrl ↵</kbd> new tab · <kbd>esc</kbd> close · <kbd>#</kbd> a number · <kbd>G T</kbd> /{' '}
+        <kbd>G P</kbd> / <kbd>G S</kbd> go
+      </p>
     </div>
   )
 }
