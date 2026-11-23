@@ -12,8 +12,8 @@ import { ensurePersonalBranch, lsRemoteReading, type PersonalBranchPort } from '
 import { RECIPE, fakeGitHub, fakePorts, issue, memoryStore, once, project, runtime } from '../test/one-attempt.ts'
 
 const TEAM = RECIPE.replace('branch: { main: main }', 'mode: team\nbranch: { main: main, personal: p }').replace(
-  'runtime: {',
-  'runtime: { assignee: { login: me, take: mine },',
+  'source: {',
+  'source: { assignee: { login: me, take: mine },',
 )
 
 const pass = async (recipe: string, personalBranch: PersonalBranchPort | undefined, absent: boolean) => {

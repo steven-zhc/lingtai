@@ -116,7 +116,7 @@ const NOT_OFFERED: Record<SkipReason, string> = {
   publishing: 'it is a split child still being published, and comes back when the split is read back',
   // The board does not read the mirror, so it never draws this one; #1215 words it (#1208).
   'base-red': "the project's base is red and has not moved",
-  // The assignee, as the recipe's `runtime.assignee` reads it (#181, #373).
+  // The assignee, as the recipe's `source.assignee` reads it (#181, #373).
   'assigned-elsewhere': 'it is assigned to somebody else',
   unassigned: 'it is assigned to nobody, and this machine takes only its own',
   'assigned-to-me': 'it is assigned to you, and this machine takes only unassigned work',

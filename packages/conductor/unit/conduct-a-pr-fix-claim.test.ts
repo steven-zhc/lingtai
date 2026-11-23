@@ -15,10 +15,10 @@ mode: team
 branch: { main: main, personal: lingtai-team }
 pr: {}
 repo: { submodules: false }
-source: { kinds: [bug], exclude: [] }
+source: { kinds: [bug], exclude: [], assignee: { login: me } }
 env: { required: [], plantAt: .env.local }
 steps: {}
-runtime: { agent: claude-code, assignee: { login: me }, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
+runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: { refusalFixes: 2, conflictResolutions: 2 }, ticket: { newAttempts: 0 } } }
 `
 
 const FROZEN = 'f'.repeat(40)

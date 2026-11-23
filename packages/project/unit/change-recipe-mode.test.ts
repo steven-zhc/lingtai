@@ -18,6 +18,8 @@ branch:
   main: main
 source:
   kinds: [bug]
+  assignee:
+    login: me
 env:
   plantAt: .env.local
 steps:
@@ -25,8 +27,8 @@ steps:
     - name: build
       run: pnpm test
 `
-const TEAM = `mode: team\n${BODY.replace('main: main', 'main: main\n  personal: team')}runtime:\n  assignee:\n    login: me\n`
-const SOLO = `mode: solo\n${BODY}runtime:\n  assignee:\n    login: me\n`
+const TEAM = `mode: team\n${BODY.replace('main: main', 'main: main\n  personal: team')}`
+const SOLO = `mode: solo\n${BODY}`
 const NONE = BODY
 
 async function ticket(store: EventStore, issue: string, base: string, closed = false) {

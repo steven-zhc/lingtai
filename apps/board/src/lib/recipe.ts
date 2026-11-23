@@ -930,7 +930,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     {
       name: 'assignee',
       says: describeAssignee(assigneeOf(recipe), selectionOf(recipe)),
-      keys: ['runtime.assignee.take', 'runtime.assignee.login'],
+      keys: ['source.assignee.take', 'source.assignee.login'],
     },
     {
       name: 'the steps',

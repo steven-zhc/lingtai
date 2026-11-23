@@ -107,7 +107,7 @@ in the source.
    about how a project's work is run is in it.** Which runtime runs is the
    recipe's: `agent:` on a step, and `runtime.agent` beside `steps:` for the
    steps that name none (`#372`); whose tickets a project takes is
-   `queue.assignee` or the v1 `runtime.assignee` (`#373`); what an attempt may spend
+   `queue.assignee` or `source.assignee` (`#373`); what an attempt may spend
    is `runtime.limits` (`#375`). `packages/recipe/src/local.ts` refuses a
    machine file that writes `steps:`, `runtime:` or `projects:`, naming the
    recipe, rather than silently dropping a key nothing reads. When the recipe

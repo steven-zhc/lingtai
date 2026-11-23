@@ -161,6 +161,7 @@ import {
   declaresTurnsOn,
   isBuiltInJudge,
   OldSpellingRefusedError,
+  oldSpellingsIn,
   type OldSpelling,
   RecipeInvalidError,
   RecipeMissingError,
@@ -174,6 +175,7 @@ import { installFor } from '@lingtai/sandbox'
 import { remedyFor } from '@lingtai/setup'
 import { Cause, Effect, Redacted } from 'effect'
 import pg from 'pg'
+import { parse as parseYaml } from 'yaml'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { readDaySpend } from './day-ceiling.ts'
@@ -2540,10 +2542,23 @@ export function fixOldSpellings(
             } satisfies SpellingFix
           }
           const lines = spellingLines(refused)
-          const changes = refused.flatMap((s) => s.changes)
+          // `runtime.assignee`'s move carries the file's own value, so it is derived again from the text
+          // `changeRecipe` reads, not kept from this read: a file migrated since must not get the old rule back.
+          const changes = refused.filter((s) => s.at !== 'runtime.assignee').flatMap((s) => s.changes)
           const result = yield* changeRecipe(
             project,
-            { changes },
+            {
+              changes,
+              derive: (text) => {
+                try {
+                  return oldSpellingsIn(parseYaml(text ?? ''))
+                    .filter((s) => s.at === 'runtime.assignee')
+                    .flatMap((s) => s.changes)
+                } catch {
+                  return []
+                }
+              },
+            },
             {
               by: options.by,
               ...(options.store === undefined ? {} : { store: options.store }),

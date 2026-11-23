@@ -4826,7 +4826,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
        * tickets opened their keys; the branches below are in **step order**, which
        * is the order a reader of a pass meets them, and the two disagree only
        * because `claim` moved last. It took the item in its body, from `source:`
-       * and `runtime.assignee`, where no recipe could see, name or replace it. Now
+       * and `source.assignee`, where no recipe could see, name or replace it. Now
        * the body is empty and this is what an unconfigured `claim` runs — the same
        * action a declared `queue:` builds, over the same four values, because
        * `queueOf` is the one place that knows which spelling a file used. So *the

@@ -70,7 +70,7 @@ describe('recipeSpellings', () => {
     const [row] = recipeSpellings([failed('app', refused())])
     expect(row).toMatchObject({ name: 'recipe: app spelling', status: 'fail', fix: 'lingtai doctor --fix' })
     expect(row!.detail).toContain('repo.base: write `branch: { main: <value> }`')
-    expect(row!.detail).toContain('runtime.assignee.take: both: write `take: all`')
+    expect(row!.detail).toContain('runtime.assignee: write it as `source.assignee`')
     expect(row!.detail).toContain('lingtai doctor --fix')
   })
 
@@ -89,11 +89,11 @@ describe('fixOldSpellings', () => {
     const text = w.disk.get(recipePath('app', HOME))!
     expect(text).toContain('# keep me')
     expect(text).toContain('# stays')
-    expect(text).toContain('# on the take')
     expect(text).not.toContain('# goes')
     const after = resolveSource(text, 'main', 'recipe.yml')
     expect(after.recipe.branch.main).toBe('develop')
-    expect(after.recipe.runtime.assignee?.take).toBe('all')
+    expect(after.recipe.source.assignee?.take).toBe('all')
+    expect(text).not.toContain('runtime.assignee')
     expect(await w.events('app')).toEqual([expect.objectContaining({ by: 'human:me' })])
 
     const appended = (await w.store.read(projectStream('app'))).length
@@ -101,6 +101,48 @@ describe('fixOldSpellings', () => {
     expect(second).toMatchObject({ outcome: 'nothing' })
     expect(w.disk.get(recipePath('app', HOME))).toBe(text)
     expect((await w.store.read(projectStream('app'))).length).toBe(appended)
+  })
+
+  it('does not restore a stale runtime.assignee over a file migrated after doctor read it (#1356)', async () => {
+    const file = (assignee: string) =>
+      `version: 2\nbranch:\n  main: main\nsource:\n  kinds: [bug]\n${assignee}env:\n  plantAt: .env.local\nruntime:\n  agent: claude-code\n`
+    const alice = file('').replace('runtime:\n', 'runtime:\n  assignee:\n    login: alice\n')
+    const bob = file('  assignee:\n    login: bob\n')
+    const w = world({ [recipePath('app', HOME)]: alice })
+    const path = recipePath('app', HOME)
+    const [out] = (await Effect.runPromise(
+      fixOldSpellings(
+        () => Effect.succeed([{ project: 'app' } as ProjectState]),
+        {
+          recipe: () =>
+            Effect.try({
+              try: () => {
+                try {
+                  return resolveSource(w.disk.get(path)!, 'main', 'recipe.yml')
+                } finally {
+                  // another writer migrates the file between doctor's read and the write
+                  w.disk.set(path, bob)
+                }
+              },
+              catch: (err) => err as Error,
+            }),
+        },
+        {
+          by: 'human:me',
+          store: w.store,
+          home: HOME,
+        },
+      ).pipe(
+        Effect.provideService(ProjectFiles, {
+          read: async (p) => w.disk.get(p) ?? null,
+          replace: async (p, t) => void w.disk.set(p, t),
+        }),
+      ),
+    ))!
+    expect(out).toMatchObject({ outcome: 'written' })
+    const text = w.disk.get(path)!
+    expect(resolveSource(text, 'main', 'recipe.yml').recipe.source.assignee?.login).toBe('bob')
+    expect(text).not.toContain('alice')
   })
 
   it('rewrites take: both at a claim queue, which the intermediate widening parse used to refuse', async () => {

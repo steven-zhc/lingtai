@@ -103,7 +103,7 @@ describe('askRecipe in team mode, on GitHub (#1324)', () => {
     const changes = result.answers.changes.map((c) => `${c.path.join('.')}=${JSON.stringify(c.value)}`)
     expect(changes).toContain('mode="team"')
     expect(changes).toContain('branch.personal="steven-zhc/foundry"')
-    expect(changes).toContain('runtime.assignee={"login":"steven-zhc","take":"mine"}')
+    expect(changes).toContain('source.assignee={"login":"steven-zhc","take":"mine"}')
   })
 
   it('no writes nothing and registers nothing, and says how to make it by hand', async () => {
