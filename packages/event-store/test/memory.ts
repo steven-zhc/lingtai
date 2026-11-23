@@ -200,14 +200,21 @@ export function createMemoryEventStore(options: { now?: () => Date } = {}): Memo
           )
         }
       }
-      return prepared.map((b) => {
+      // Decode (which can throw) everything first, on a local seq, and publish
+      // to the log and the counter only once every batch has decoded.
+      let next = seq
+      const all: (typeof log)[number][] = []
+      const results = prepared.map((b) => {
         const stored = b.rows.map((r) => {
-          seq += 1n
-          return { ...r, seq, at: now() }
+          next += 1n
+          return { ...r, seq: next, at: now() }
         })
-        log.push(...stored)
+        all.push(...stored)
         return stored.map((r) => decodeRow(r, r.at))
       })
+      seq = next
+      log.push(...all)
+      return results
     },
 
     clear() {

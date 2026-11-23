@@ -312,6 +312,26 @@ export function describeEventStoreContract(
         expect(await s.read(b)).toEqual([])
       })
 
+      it('writes nothing when a later batch fails to decode after the earlier ones were built', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+        const c = freshStream()
+
+        await expect(
+          s.appendAll([
+            { streamId: a, expectedVersion: 0, events: [claimed('a-1')] },
+            { streamId: b, expectedVersion: 0, events: [{ ...claimed('b-1'), schemaVer: 999 }] },
+            { streamId: c, expectedVersion: 0, events: [claimed('c-1')] },
+          ]),
+        ).rejects.toThrow()
+
+        expect(await s.head(a)).toBe(0)
+        expect(await s.head(b)).toBe(0)
+        expect(await s.head(c)).toBe(0)
+        expect(await s.read(b)).toEqual([])
+      })
+
       it('refuses a stream id that appears in two batches', async () => {
         const s = await store()
         const a = freshStream()
