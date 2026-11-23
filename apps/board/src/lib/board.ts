@@ -79,7 +79,7 @@ import {
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
 import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
-import { SpanStatusCode } from '@opentelemetry/api'
+import { SpanStatusCode, context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
 import {
@@ -104,7 +104,7 @@ import {
   type Bill,
   type SpendCurrency,
 } from './spend.ts'
-import { timed, traced } from './timing.ts'
+import { ApiContext, boardTracer, timed, traced, tracedEffect } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
 import type { Explain } from './why-read.ts'
 
@@ -990,31 +990,39 @@ export async function askProject(
 ): Promise<ProjectQueue> {
   const select = options.select ?? selectRunnable
   const explain = options.explain
+  // The caller's span (`queue.project`), taken here because the run below resumes elsewhere (#1359).
+  const active = context.active()
   try {
     // One run for every read, so the board's count of `Effect.run*` does not grow (#1216).
     return await Effect.runPromise(
       Effect.gen(function* () {
-        const listing = yield* Effect.tryPromise({
-          try: () =>
-            runnableNow({
-              client: filter.tickets,
-              queue: queueOf(filter.recipe),
-              selection: selectionOf(filter.recipe),
-            }),
-          catch: (err) => err,
-        }).pipe(
+        const listing = yield* tracedEffect(
+          'queue.list',
+          Effect.tryPromise({
+            try: () =>
+              runnableNow({
+                client: filter.tickets,
+                queue: queueOf(filter.recipe),
+                selection: selectionOf(filter.recipe),
+              }),
+            catch: (err) => err,
+          }),
+        ).pipe(
           Effect.map((found) => ({ ok: true as const, found })),
           Effect.catch((err: unknown) => Effect.succeed({ ok: false as const, err })),
         )
         // **A red base passes the queue over here as it does at the conductor** (`schedule.ts`): without a
         // look the board drew tickets runnable that no pass would take. No look is a project not explained.
-        const look = explain === undefined ? null : yield* explain.look(filter)
+        const look = explain === undefined ? null : yield* tracedEffect('queue.look', explain.look(filter))
         if (!listing.ok) {
           // GitHub did not answer: the roots that need none of it (a lock, the daemon, a drain) still stand.
           const why =
             explain === undefined || look === null
               ? null
-              : yield* explain.why({ filter, look, offered: null, seen: null, runnable: [], blocked: [] })
+              : yield* tracedEffect(
+                  'queue.explain',
+                  explain.why({ filter, look, offered: null, seen: null, runnable: [], blocked: [] }),
+                )
           return {
             state: 'unanswered',
             filter,
@@ -1024,28 +1032,37 @@ export async function askProject(
         }
         const found = listing.found
         const offered = look === null ? found : passOverBaseRed(look, found).offered
-        const select_ = (refs: typeof found.runnable) =>
-          Effect.tryPromise(() =>
-            select({
-              project: filter.project,
-              offered: refs,
-              kinds: filter.kinds,
-              mode: modeOf(filter.recipe),
-              backoffMs: filter.backoffMs,
-            }),
+        const select_ = (name: string, refs: typeof found.runnable) =>
+          tracedEffect(
+            name,
+            Effect.tryPromise(() =>
+              select({
+                project: filter.project,
+                offered: refs,
+                kinds: filter.kinds,
+                mode: modeOf(filter.recipe),
+                backoffMs: filter.backoffMs,
+              }),
+            ),
           )
-        const runnable = yield* select_(offered.runnable)
+        const runnable = yield* select_('queue.select', offered.runnable)
         const kept = new Set(offered.runnable.map((r) => String(r.ref)))
         const passedBase = found.runnable.filter((r) => !kept.has(String(r.ref)))
         // Still queued, so still on the column: the base holds them, and the line says so.
-        const baseHeld = passedBase.length === 0 ? [] : yield* select_(passedBase)
-        const blocked = yield* readBlockersEffect(filter, offered.skipped, options.now ?? Date.now)
+        const baseHeld = passedBase.length === 0 ? [] : yield* select_('queue.select-base', passedBase)
+        const blocked = yield* tracedEffect(
+          'queue.blockers',
+          readBlockersEffect(filter, offered.skipped, options.now ?? Date.now),
+        )
         const why =
           explain === undefined || look === null
             ? null
-            : yield* explain.why({ filter, look, offered: found, seen: offered, runnable, blocked })
+            : yield* tracedEffect(
+                'queue.explain',
+                explain.why({ filter, look, offered: found, seen: offered, runnable, blocked }),
+              )
         return { state: 'listed', filter, offered, runnable, blocked, baseHeld, why } satisfies ProjectQueue
-      }),
+      }).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, active)),
     )
   } catch (err) {
     // The recipe resolved and GitHub still would not answer — a rate limit, a

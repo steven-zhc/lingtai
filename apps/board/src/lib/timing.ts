@@ -1,7 +1,8 @@
 import { AsyncLocalStorage } from 'node:async_hooks'
 import { performance } from 'node:perf_hooks'
 
-import { type Span, SpanStatusCode, trace } from '@opentelemetry/api'
+import { type Context as ApiCtx, type Span, SpanStatusCode, context, trace } from '@opentelemetry/api'
+import { Context, Effect, Exit, Tracer } from 'effect'
 
 /**
  * Names and times every read a page makes (#774). **Server only**: this
@@ -177,6 +178,51 @@ export function tracedSync<T>(name: string, fn: () => T, attributes?: SpanAttrib
     }
   })
 }
+
+/**
+ * The OpenTelemetry context an Effect fiber belongs to (#1359). Effect resumes
+ * fibers from one shared dispatcher, so AsyncLocalStorage alone would hand a
+ * stage whichever context scheduled the batch; the fiber carries its own.
+ */
+export const ApiContext = Context.Reference<ApiCtx | undefined>('lingtai-board/ApiContext', {
+  defaultValue: () => undefined,
+})
+
+/** The key a fiber evaluates a primitive by (`Tracer.EffectPrimitive`). */
+const EVALUATE = '~effect/Effect/evaluate'
+
+/**
+ * Runs every primitive of a fiber with its `ApiContext` active, so an api span
+ * started in a promise underneath finds its stage as parent. Effect's own spans
+ * stay native and export nothing (shared packages start none, 1144).
+ */
+export const boardTracer: Tracer.Tracer = Tracer.make({
+  span: (options) => Tracer.nativeTracer.span(options),
+  context: (primitive, fiber) => {
+    const ctx = fiber.getRef(ApiContext)
+    return ctx === undefined ? primitive[EVALUATE](fiber) : context.with(ctx, () => primitive[EVALUATE](fiber))
+  },
+})
+
+/**
+ * `traced` for an Effect: a board-owned span around `effect`, ended when it
+ * settles, with the span's context carried on the fiber. A failure marks it
+ * ERROR; the cause is never read (it may carry a URL).
+ */
+export const tracedEffect = <A, E, R>(name: string, effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.gen(function* () {
+    const base = (yield* ApiContext) ?? context.active()
+    const span = trace.getTracer('lingtai-board').startSpan(name, {}, base)
+    return yield* effect.pipe(
+      Effect.provideService(ApiContext, trace.setSpan(base, span)),
+      Effect.onExit((exit) =>
+        Effect.sync(() => {
+          if (Exit.isFailure(exit)) span.setStatus({ code: SpanStatusCode.ERROR })
+          span.end()
+        }),
+      ),
+    )
+  })
 
 /** The list in Server-Timing syntax: `events.task;dur=8, github.issue;dur=723`. */
 export function serverTiming(timings: readonly Timing[]): string {
