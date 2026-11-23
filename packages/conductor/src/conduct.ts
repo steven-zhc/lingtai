@@ -3451,40 +3451,42 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             headGone = releasedHead.cannot
             return { notCut: `the saved head cannot be continued: ${releasedHead.cannot}` }
           }
-          const provision = Effect.result(
-            repo.provision({
-              project,
-              // '' when there is no owner: `remote` is always set then —
-              // `ownerlessClient` (`./ownerless.ts`) refuses a recipe naming
-              // no `repo.remote` before either of its two callers, `run.ts`
-              // and `apps/cli/src/conduct.ts`'s `conductWork`, builds this
-              // client — so `ProvisionOptions.owner` is read only to build
-              // the `github.com` URL `remote` pre-empts.
-              owner: options.client.owner ?? '',
-              repo: options.client.repo,
-              base: spec.base,
-              branch,
-              runId,
-              submodules: spec.submodules,
-              plantAt: recipe.env.plantAt,
-              env: env.values,
-              token: options.token,
-              home,
-              remote: options.remote,
-              gitEnv: options.gitEnv,
-              // srt's stand-in names, so `git add -A` works inside it (#1152); no key under any other decision.
-              ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
-              // **A continuation re-cuts at the sha the approval was about,
-              // never the base** (#465) — the worktree a held pass left is
-              // gone once its scope closed, and `provisionWorktree`'s own
-              // `at` check refuses rather than silently taking a branch that
-              // has moved since.
-              ...(continuation !== null
-                ? releasedHead !== undefined
-                  ? { at: releasedHead.at, atRef: releasedHead.atRef }
-                  : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
-                : {}),
-            }),
+          const provision = Effect.suspend(() =>
+            Effect.result(
+              repo.provision({
+                project,
+                // '' when there is no owner: `remote` is always set then —
+                // `ownerlessClient` (`./ownerless.ts`) refuses a recipe naming
+                // no `repo.remote` before either of its two callers, `run.ts`
+                // and `apps/cli/src/conduct.ts`'s `conductWork`, builds this
+                // client — so `ProvisionOptions.owner` is read only to build
+                // the `github.com` URL `remote` pre-empts.
+                owner: options.client.owner ?? '',
+                repo: options.client.repo,
+                base: spec.base,
+                branch,
+                runId,
+                submodules: spec.submodules,
+                plantAt: recipe.env.plantAt,
+                env: env.values,
+                token: options.token,
+                home,
+                remote: options.remote,
+                gitEnv: options.gitEnv,
+                // srt's stand-in names, so `git add -A` works inside it (#1152); no key under any other decision.
+                ...(sandboxDecision.kind === 'sandboxed' ? { exclude: standInExcludes } : {}),
+                // **A continuation re-cuts at the sha the approval was about,
+                // never the base** (#465) — the worktree a held pass left is
+                // gone once its scope closed, and `provisionWorktree`'s own
+                // `at` check refuses rather than silently taking a branch that
+                // has moved since.
+                ...(continuation !== null
+                  ? releasedHead !== undefined
+                    ? { at: releasedHead.at, atRef: releasedHead.atRef }
+                    : { at: continuation.onSha, ...(continuation.grantRef ? { atRef: continuation.grantRef } : {}) }
+                  : {}),
+              }),
+            ),
           )
           let provisioned = yield* provision
           if (
