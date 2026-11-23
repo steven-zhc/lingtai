@@ -62,7 +62,7 @@ vi.mock('../src/lib/task.ts', async (orig) => ({
 import TaskLayout from '../src/app/task/[id]/layout.tsx'
 import { controlObserve } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
-import { traced, tracedEffect } from '../src/lib/timing.ts'
+import { ApiContext, traced, tracedEffect } from '../src/lib/timing.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
@@ -198,9 +198,16 @@ describe('TaskLayout stages (#1361)', () => {
     // The account read suspends before it reaches its seam, and the seam is a span of the fiber's own
     // (`tracedEffect`, as `events.read` is): only `boardTracer` makes a promise under it start there, since the
     // context the fiber was started in is the account's, not the seam's.
+    const carried: (string | undefined)[] = []
     h.accountsFor.mockImplementation(() =>
       Effect.gen(function* () {
-        yield* Effect.promise(() => opened)
+        // Resumed from a callback made in no span at all, as another render's dispatcher would resume it: the
+        // ambient context here is the root's, so only the `ApiContext` the read provided names the account.
+        yield* Effect.callback<void>((resume) => {
+          void opened.then(() => context.with(ROOT_CONTEXT, () => setImmediate(() => resume(Effect.void))))
+        })
+        // The context the read put on the fiber is the account's own span: what the seams below start under.
+        carried.push(trace.getSpan((yield* ApiContext) ?? ROOT_CONTEXT)?.spanContext().spanId)
         yield* tracedEffect(
           'probe.seam',
           Effect.promise(() => traced('probe.account', async () => 0)),
@@ -218,6 +225,7 @@ describe('TaskLayout stages (#1361)', () => {
     expect(reads).toHaveLength(2)
     expect(new Set(reads.map((r) => idOf(parentOf(all, r)!))).size).toBe(2)
     expect(h.readControl).toHaveBeenCalledTimes(2)
+    expect(carried.slice().sort()).toEqual(named(all, 'locks.account').map(idOf).sort())
     for (const read of reads) {
       const kids = childrenOf(all, read)
       const snapshot = kids.find((s) => s.name === 'control.snapshot')!

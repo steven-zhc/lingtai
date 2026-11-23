@@ -15,7 +15,7 @@ import { eventStore } from '@lingtai/event-store'
 import { loadProjects, readProject } from '@lingtai/project'
 import { readSpend, readTicketReport } from '@lingtai/projector'
 import { readTasks } from '@lingtai/projector/task-view'
-import { SpanStatusCode, context, trace } from '@opentelemetry/api'
+import { ROOT_CONTEXT, SpanStatusCode, context, trace } from '@opentelemetry/api'
 import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -163,8 +163,11 @@ beforeEach(async () => {
     _s: unknown,
     opts: { observe?: { read: Function; reduce: Function } },
   ) => {
-    await opts.observe?.read('events', async () => 0)
-    opts.observe?.reduce(() => 0)
+    // From no span at all, as the store's fiber is when another render's dispatcher resumes it.
+    await context.with(ROOT_CONTEXT, async () => {
+      await opts.observe?.read('events', async () => 0)
+      opts.observe?.reduce(() => 0)
+    })
     return emptyControl
   }) as unknown as typeof readControl)
   h.readFile.mockResolvedValue('template')
