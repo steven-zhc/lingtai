@@ -184,11 +184,11 @@ describe('TaskLayout stages (#1361)', () => {
 
   it('keeps two overlapping renders apart: one lock read each, its own account fiber and control read', async () => {
     let release!: () => void
-    const gate = new Promise<void>((resolve) => (release = resolve))
+    const opened = new Promise<void>((resolve) => (release = resolve))
     const fibers: (Span | undefined)[] = []
-    h.loadProjects.mockImplementation(async () => (await gate, [project]))
+    h.loadProjects.mockImplementation(async () => (await opened, [project]))
     h.readControl.mockImplementation(async (_stream: unknown, opts: { observe: ReturnType<typeof controlObserve> }) => {
-      await gate
+      await opened
       await opts.observe.read('events', async () => 0)
       opts.observe.reduce(() => 0)
       return emptyControl
