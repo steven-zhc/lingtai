@@ -9,7 +9,11 @@ its states and board, the ten steps Lingtai takes between *Submit* and the
 team's review, where each step goes when it cannot finish, how a change the
 review asks for comes back through them, and how Lingtai learns what the team
 did. The flow is drawn in
-[`doc/milestone/0.16.0/team-mode/pr-lifecycle.html`](../milestone/0.16.0/team-mode/pr-lifecycle.html).
+[`doc/milestone/0.16.0/team-mode/pr-lifecycle.html`](../milestone/0.16.0/team-mode/pr-lifecycle.html),
+and what each state does to the three branches — `main`, the PR branch and
+`branch.personal` — in
+[`doc/milestone/0.16.0/team-mode/pr-branches.html`](../milestone/0.16.0/team-mode/pr-branches.html),
+the drawing a PR's page shows.
 
 ## Context
 
