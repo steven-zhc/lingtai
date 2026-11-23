@@ -12,9 +12,16 @@
  * Every answer a step cannot give is a wait the person reads; a step never fails (0130 §6: *the PR waits on you,
  * saying why, and nothing else stops*). This file imports `pr.ts`'s types and nothing of its values.
  */
-import { type ConflictEnd, type PrState, integrationStream, prStream } from '@lingtai/domain'
+import { type ConflictEnd, type PrState, catchUpOwed, integrationStream, prStream } from '@lingtai/domain'
 import { PermissionDenied } from '@lingtai/github'
-import { readPr, recordBranchSynced, recordPrMergeBackFailed, recordPrMergedBack } from '@lingtai/project'
+import {
+  readPr,
+  recordBranchSynced,
+  recordPrCatchUpFailed,
+  recordPrCaughtUp,
+  recordPrMergeBackFailed,
+  recordPrMergedBack,
+} from '@lingtai/project'
 import { Effect, Result } from 'effect'
 
 import { landingLane } from './landing-lane.ts'
@@ -317,6 +324,8 @@ type Back =
   | { readonly kind: 'nothing' }
   | { readonly kind: 'failed'; readonly why: 'conflict' | 'red' | 'unknown' | 'lost-push'; readonly detail: string }
   | { readonly kind: 'lost' }
+  /** A failure that was recorded already: nothing more is said. */
+  | { readonly kind: 'handled' }
   /** Conflicted in the lane's turn, with an agent to ask: the rounds run outside it, and the push is a second turn. */
   | {
       readonly kind: 'conflict'
@@ -333,35 +342,90 @@ type Back =
  * either way, and what conflicts is met at the next submit's sync.
  */
 export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
+  mergeIntoPersonal(ports, project, n, 'back')
+
+/**
+ * **The catch-up** (#1371, 0131 §10): after a PR is recorded merged, the tip of `origin/<branch.main>` is merged into
+ * `branch.personal` once, built, and pushed — the merge back's machinery with `main`'s tip as the commit. A project the
+ * resolver says is locked (a pause, the day's ceiling, a usage limit) starts none: that is `locked`, still owed.
+ */
+export const catchUpPersonal = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
+    const state = yield* readPr(project, n, ports.store)
+    if (state === null || !catchUpOwed(state) || state.main === null) return
+    if (ports.resolver !== undefined) {
+      const stopped = yield* Effect.result(ports.resolver.locked(project))
+      if (Result.isSuccess(stopped) && stopped.success !== null) {
+        // `main`'s tip is not read yet: what stood last is the commit named, and the branch's own name before any.
+        yield* recordPrCatchUpFailed(
+          project,
+          n,
+          { mainSha: state.catchUp?.mainSha ?? state.main, why: 'locked', detail: stopped.success },
+          ports.store,
+        )
+        return
+      }
+    }
+    yield* mergeIntoPersonal(ports, project, n, 'catch-up')
+  })
+
+const mergeIntoPersonal = (
+  ports: PrPorts,
+  project: string,
+  n: number,
+  kind: 'back' | 'catch-up',
+): Effect.Effect<void, Error> =>
+  Effect.gen(function* () {
+    const back = kind === 'back'
+    const owed = (state: PrState) => (back ? mergeBackOwed(state) : catchUpOwed(state))
     const first = yield* readPr(project, n, ports.store)
-    if (first === null || !mergeBackOwed(first)) return
+    if (first === null || !owed(first)) return
     const { branch, main, prBranch } = first
-    const prHead = first.lastPushed
-    if (branch === null || main === null || prBranch === null || prHead === null) return
-    const backSubject = `Merge ${prBranch} into ${branch}`
+    if (branch === null || main === null || prBranch === null) return
+    // The commit being merged: the PR's last pushed head, or — for the catch-up — `main`'s tip once it is read.
+    const owedHead = back ? first.lastPushed : main
+    if (owedHead === null) return
+    let theirs: string = owedHead
+    const fromName = back ? prBranch : main
+    const checkId = back ? `pr-${n}-back` : `pr-${n}-catch-up`
+    const subjectOf = (commit: string) =>
+      back ? `Merge ${prBranch} into ${branch}` : `Merge ${main} at ${short(commit)} into ${branch} after PR ${n}`
+    const subjectTail = ` into ${branch} after PR ${n}`
     const failed = (
       why: 'conflict' | 'red' | 'unknown' | 'lost-push' | 'locked',
       detail: string,
       conflict?: ConflictEnd,
     ) =>
-      recordPrMergeBackFailed(
-        project,
-        n,
-        { prHead, why, detail, ...(conflict === undefined ? {} : { conflict }) },
-        ports.store,
-      )
+      back
+        ? recordPrMergeBackFailed(
+            project,
+            n,
+            { prHead: owedHead, why, detail, ...(conflict === undefined ? {} : { conflict }) },
+            ports.store,
+          )
+        : recordPrCatchUpFailed(
+            project,
+            n,
+            { mainSha: theirs, why, detail, ...(conflict === undefined ? {} : { conflict }) },
+            ports.store,
+          )
+
+    /** Records the merge that was pushed: the merge back's head, or the catch-up (a null commit: nothing to push). */
+    const recordMerged = (mergeCommit: string | null, how: 'clean' | 'resolved') =>
+      back
+        ? recordPrMergedBack(project, n, { prHead: owedHead, mergeCommit: mergeCommit ?? '', how }, ports.store)
+        : recordPrCaughtUp(project, n, { mainSha: theirs, mergeCommit }, ports.store)
 
     // A merge back that pushed and was not recorded is never success: the PR has no record of the head (#1354). While the
     // PR is in review that is `unknown`, still owed; for any other status the log line is the whole record.
     const refusedRecord = (answer: 'recorded' | 'already' | 'refused', mergeCommit: string) =>
-      answer !== 'refused'
+      answer !== 'refused' || !back
         ? Effect.void
         : Effect.gen(function* () {
             ports.log?.(
-              `pr ${n} merge back pushed ${short(mergeCommit)}; the PR has no record of ${short(prHead)}, so it is not counted as merged back`,
+              `pr ${n} merge back pushed ${short(mergeCommit)}; the PR has no record of ${short(owedHead)}, so it is not counted as merged back`,
             )
-            yield* failed('unknown', `pushed ${short(mergeCommit)}; the PR has no record of ${short(prHead)}`).pipe(
+            yield* failed('unknown', `pushed ${short(mergeCommit)}; the PR has no record of ${short(owedHead)}`).pipe(
               Effect.catch(() => Effect.void),
             )
           })
@@ -413,6 +477,11 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         yield* ports.sweep(project)
         yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
         const personalSha = yield* resolve(ports, project, fetchedRef(n, 'personal'))
+        // The catch-up merges `main`'s tip as it is found now, read in this turn after a fetch (#1371).
+        if (!back) {
+          yield* fetchInto(ports, project, [[`refs/heads/${main}`, fetchedRef(n, 'main')]])
+          theirs = yield* resolve(ports, project, fetchedRef(n, 'main'))
+        }
         // A merge of ours that is on `branch.personal` is a push that landed whose record was lost. It is found in
         // `branch.personal`'s own history — a merge of this head under our subject — and not in a ref of the mirror,
         // which is disposable and gone after a re-clone. A read that fails is unsure, never absence.
@@ -420,10 +489,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           'log',
           '--merges',
           '--parents',
-          '--format=%H %P',
+          back ? '--format=%H %P' : '--format=%H %P%x09%s',
           '--fixed-strings',
           '--grep',
-          backSubject,
+          back ? subjectOf(theirs) : subjectTail,
           '-n',
           '200',
           personalSha,
@@ -431,23 +500,31 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         const logged = yield* ports.git(project, found)
         if (logged.code !== 0) return yield* Effect.fail(new Error(gitSaid(found, logged)))
         for (const line of logged.stdout.split('\n')) {
-          const [sha, , second] = line.trim().split(' ')
-          if (sha === undefined || sha === '' || second !== prHead) continue
+          const [ids = '', subject] = line.trim().split('\t')
+          const [sha, , second] = ids.split(' ')
+          if (sha === undefined || sha === '' || second === undefined) continue
+          // The catch-up is once per PR, so any merge of ours for it counts, whichever tip of `main` it took; the subject
+          // is held to the whole sentence (`PR 1` is not `PR 12`).
+          const ours = back
+            ? second === theirs
+            : subject === undefined || (subject.startsWith('Merge ') && subject.endsWith(subjectTail))
+          if (!ours) continue
           // A merge of this head under our subject is the push that landed whose record was lost: it is recorded as
           // found, not rebuilt — the build that passed it is the one that pushed it, and a rebuild now would judge a
           // merge that is already on the branch by a recipe or an environment that may have changed since.
+          theirs = second
           return { kind: 'merged', mergeCommit: sha } as Back
         }
-        const have = yield* ports.git(project, ['cat-file', '-e', `${prHead}^{commit}`])
+        const have = yield* ports.git(project, ['cat-file', '-e', `${theirs}^{commit}`])
         if (have.code !== 0) {
           const absent = (have.code === 1 || have.code === 128) && have.stderr.trim() === ''
           const detail = absent
-            ? `${short(prHead)} is not in the mirror`
-            : `${short(prHead)} could not be read in the mirror (${gitSaid(['cat-file', '-e', `${prHead}^{commit}`], have)})`
+            ? `${short(theirs)} is not in the mirror`
+            : `${short(theirs)} could not be read in the mirror (${gitSaid(['cat-file', '-e', `${theirs}^{commit}`], have)})`
           return { kind: 'failed', why: 'unknown', detail } as Back
         }
         // Already in `branch.personal` with no merge of ours to show for it: nothing is owed and nothing is claimed.
-        if (yield* isAncestor(ports, project, prHead, personalSha)) return { kind: 'nothing' } as Back
+        if (yield* isAncestor(ports, project, theirs, personalSha)) return { kind: 'nothing' } as Back
 
         const where = yield* ports.checkedOut(project, branch)
         if (where !== null) {
@@ -455,24 +532,24 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         }
 
         const merged = yield* ports.merge(project, {
-          name: `pr-back-${n}-${Date.now()}`,
+          name: `pr-${back ? 'back' : 'catchup'}-${n}-${Date.now()}`,
           at: personalSha,
-          theirs: prHead,
-          message: backSubject,
+          theirs,
+          message: subjectOf(theirs),
         })
         if (merged.kind === 'conflict') {
           if (ports.resolver !== undefined) return { kind: 'conflict', personalSha, paths: merged.paths } as Back
           return {
             kind: 'failed',
             why: 'conflict',
-            detail: `${prBranch} (${short(prHead)}) conflicts with ${branch} in:\n${merged.paths.join('\n')}`,
+            detail: `${fromName} (${short(theirs)}) conflicts with ${branch} in:\n${merged.paths.join('\n')}`,
           } as Back
         }
         if (merged.kind === 'failed') return { kind: 'failed', why: 'unknown', detail: merged.text } as Back
 
         // Built before it is pushed (0130 §6). `base` is the PR branch: `branch.personal`'s own stream's newest
         // `BaseChecked` is read as the state of that branch, and a commit that was never on it must not stand there.
-        const built = yield* ports.build(project, { sha: merged.sha, base: prBranch, checkId: `pr-${n}-back` })
+        const built = yield* ports.build(project, { sha: merged.sha, base: prBranch, checkId })
         if (built.kind === 'red') {
           const detail = `\`${built.command}\` fails on ${short(merged.sha)}:\n${built.evidence}`
           if (ports.resolver === undefined) return { kind: 'failed', why: 'red', detail } as Back
@@ -490,7 +567,10 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         if (built.kind === 'unknown') return { kind: 'failed', why: 'unknown', detail: built.why } as Back
 
         return yield* pushIt(merged.sha, tries)
-      }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))))
+      }).pipe(
+        Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'personal'))),
+        Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'main'))),
+      )
 
     const turn = Effect.gen(function* () {
       // Re-read inside the turn: a landing that held the lane first may have changed what is owed.
@@ -507,7 +587,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
           ),
         ),
       )
-      if (state === null || !mergeBackOwed(state) || state.lastPushed !== prHead) return
+      if (state === null || !owed(state) || (back && state.lastPushed !== owedHead)) return
       // Only what is read and tried up to the push is caught here: a read that failed pushed nothing, and is said on
       // the PR's stream. What comes after the push is outside it — a record that fails then must never be turned into
       // a failure that says nothing was pushed.
@@ -522,13 +602,24 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             Effect.catch((again: Error) =>
               Effect.sync(() => void ports.log?.(`pr ${n} merge back: ${err.message}; recording it: ${again.message}`)),
             ),
-            Effect.as({ kind: 'nothing' } as Back),
+            Effect.as({ kind: 'handled' } as Back),
           ),
         ),
       )
       // A conflict with an agent to ask leaves the lane's turn: the rounds are not run in it, and the push is a second turn.
       if (decided.kind === 'conflict') return decided
-      if (decided.kind === 'lost' || decided.kind === 'nothing') return
+      if (decided.kind === 'lost' || decided.kind === 'handled') return
+      if (decided.kind === 'nothing') {
+        // The merge back owes nothing more; the catch-up says `main` was already there, or it would stay owed for ever.
+        if (!back) {
+          yield* recordMerged(null, 'clean').pipe(
+            Effect.catch((err: Error) =>
+              Effect.sync(() => void ports.log?.(`pr ${n} catch-up: recording it: ${err.message}`)),
+            ),
+          )
+        }
+        return
+      }
       if (decided.kind === 'failed') {
         yield* failed(decided.why, decided.detail).pipe(
           Effect.catch((err: Error) =>
@@ -539,9 +630,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
       }
       // The merge is pushed. A record that fails here leaves it unrecorded: the next serve finds the merge in
       // `branch.personal`'s history and records it, without a rebuild.
-      const recorded = yield* Effect.result(
-        recordPrMergedBack(project, n, { prHead, mergeCommit: decided.mergeCommit, how: 'clean' }, ports.store),
-      )
+      const recorded = yield* Effect.result(recordMerged(decided.mergeCommit, 'clean'))
       if (Result.isFailure(recorded)) {
         ports.log?.(
           `pr ${n} merge back pushed ${short(decided.mergeCommit)}; recording it: ${asError(recorded.failure).message}`,
@@ -580,7 +669,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
     > =>
       Effect.gen(function* () {
         const state = yield* readPr(project, n, ports.store)
-        if (state === null || !mergeBackOwed(state) || state.lastPushed !== prHead) return { kind: 'done' } as const
+        if (state === null || !owed(state) || (back && state.lastPushed !== owedHead)) return { kind: 'done' } as const
         yield* ports.sweep(project)
         yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
         const personalNow = yield* resolve(ports, project, fetchedRef(n, 'personal'))
@@ -602,7 +691,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             yield* failed('unknown', moved.text)
             return { kind: 'done' } as const
           }
-          const built = yield* ports.build(project, { sha: moved.sha, base: prBranch, checkId: `pr-${n}-back` })
+          const built = yield* ports.build(project, { sha: moved.sha, base: prBranch, checkId })
           if (built.kind === 'red') {
             // The resolution's own tree, shaped as the merge of `prHead` into `personalNow` under the subject the lost-record
             // search finds: round 1's resolution is kept, and `commit` is still `prHead`, so this is the same commit's next round.
@@ -612,9 +701,9 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
               '-p',
               personalNow,
               '-p',
-              prHead,
+              theirs,
               '-m',
-              backSubject,
+              subjectOf(theirs),
             ] as const
             const made = yield* ports.git(project, shaped)
             const merge = made.stdout.trim()
@@ -648,9 +737,7 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
         if (pushed.kind === 'lost') return yield* pushResolution(sha, 1)
         if (pushed.kind === 'failed') yield* failed(pushed.why, pushed.detail)
         if (pushed.kind === 'merged') {
-          const recorded = yield* Effect.result(
-            recordPrMergedBack(project, n, { prHead, mergeCommit: pushed.mergeCommit, how: 'resolved' }, ports.store),
-          )
+          const recorded = yield* Effect.result(recordMerged(pushed.mergeCommit, 'resolved'))
           if (Result.isFailure(recorded)) {
             ports.log?.(
               `pr ${n} merge back pushed ${short(pushed.mergeCommit)}; recording it: ${asError(recorded.failure).message}`,
@@ -675,22 +762,22 @@ export const mergePrBack = (ports: PrPorts, project: string, n: number): Effect.
             project,
             n,
             merging: 'back',
-            commit: prHead,
+            commit: theirs,
             start,
             paths,
             ...(why === undefined ? {} : { why }),
             into: branch,
-            from: prBranch,
-            subject: backSubject,
+            from: fromName,
+            subject: subjectOf(theirs),
             buildBase: prBranch,
-            checkId: `pr-${n}-back`,
+            checkId,
           })
           if (ended.kind === 'spent') {
             yield* failed(
               why?.kind === 'red' ? 'red' : 'conflict',
               why?.kind === 'red'
-                ? `\`${why.command}\` fails on the merge of ${prBranch} (${short(prHead)}) into ${branch}:\n${why.evidence}\n${spentSentence(ended.end)}`
-                : `${prBranch} (${short(prHead)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
+                ? `\`${why.command}\` fails on the merge of ${fromName} (${short(theirs)}) into ${branch}:\n${why.evidence}\n${spentSentence(ended.end)}`
+                : `${fromName} (${short(theirs)}) conflicts with ${branch}: ${spentSentence(ended.end)}`,
               ended.end,
             )
             return

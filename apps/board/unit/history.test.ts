@@ -344,6 +344,8 @@ const SAMPLES = {
   SyncRoundStarted: [{ merging: 'main', commit: 'b'.repeat(40), start: 'a'.repeat(40), round: 1 }],
   SyncRoundRefused: [{ merging: 'main', commit: 'b'.repeat(40), round: 1, step: 'build', said: 'pnpm test fails' }],
   PrMergeBackFailed: [{ prHead: 'a'.repeat(40), why: 'red', detail: 'pnpm test fails' }],
+  PrCaughtUp: [{ mainSha: 'b'.repeat(40), mergeCommit: 'c'.repeat(40) }],
+  PrCatchUpFailed: [{ mainSha: 'b'.repeat(40), why: 'red', detail: 'pnpm test fails' }],
   PrMerged: [{ how: 'host', headSha: 'a'.repeat(40), mergeSha: null }],
   PrClosed: [{ headSha: 'a'.repeat(40) }],
   PrRoundsGranted: [{ by: 'steven', merging: 'main', commit: 'b'.repeat(40), rounds: 3 }],

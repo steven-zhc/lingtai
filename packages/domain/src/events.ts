@@ -2782,6 +2782,30 @@ export const PrMergeBackFailed = z.object({
 })
 
 /**
+ * After a PR merged, the tip of `branch.main` was merged into `branch.personal`, built and pushed, once (#1371, the catch-up).
+ * `mergeCommit` is null when `mainSha` was already in the personal branch and nothing was pushed.
+ *
+ * @summary After a PR merged, the tip of main was brought into the personal branch once, or was already there.
+ */
+export const PrCaughtUp = z.object({
+  mainSha: z.string().min(1),
+  mergeCommit: z.string().min(1).nullable(),
+})
+
+/**
+ * The catch-up of the personal branch with `main` did not complete; `unknown` and `locked` stay owed and are tried again, any
+ * other waits on a person's grant or retry. The same `why` set as `PrMergeBackFailed`.
+ *
+ * @summary Catching the personal branch up with main did not complete.
+ */
+export const PrCatchUpFailed = z.object({
+  mainSha: z.string().min(1),
+  why: z.enum(['conflict', 'red', 'unknown', 'lost-push', 'locked']),
+  detail: z.string(),
+  conflict: ConflictEnd.nullable().optional(),
+})
+
+/**
  * One round of the conflict agent on a PR (#1313, 0130 §6): `commit` is being merged into `start` — a `main` commit
  * into the PR branch (`main`), or the PR's head into `branch.personal` (`back`). **Appended before the agent is
  * dispatched, and never refunded**: 0108 §8 resets no counter on a restart, so the rounds used for a commit are the
@@ -3242,6 +3266,8 @@ export const EVENTS = {
   PrOutsideMerged,
   PrMergedBack,
   PrMergeBackFailed,
+  PrCaughtUp,
+  PrCatchUpFailed,
   SyncRoundStarted,
   SyncRoundRefused,
   PrMerged,
@@ -3381,6 +3407,8 @@ export const EVENT_AT = {
   PrOutsideMerged: ['outside'],
   PrMergedBack: ['outside'],
   PrMergeBackFailed: ['outside'],
+  PrCaughtUp: ['outside'],
+  PrCatchUpFailed: ['outside'],
   SyncRoundStarted: ['outside'],
   SyncRoundRefused: ['outside'],
   PrMerged: ['outside'],

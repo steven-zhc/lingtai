@@ -86,6 +86,18 @@ export interface PrState {
     readonly why: string | null
   } | null
   /**
+   * What the catch-up of `branch.personal` with `main` after the merge came to (`PrCaughtUp`, `PrCatchUpFailed`, #1371).
+   */
+  catchUp: {
+    readonly mainSha: string
+    readonly outcome: 'caught-up' | 'failed'
+    readonly why: string | null
+    readonly mergeCommit: string | null
+    readonly conflict?: PayloadOf<'PrCatchUpFailed'>['conflict']
+    /** A failure that waited on a person, and has since been granted rounds or asked to retry: owed again. */
+    readonly released: boolean
+  } | null
+  /**
    * The rounds of the conflict agent started on this PR, oldest first (`SyncRoundStarted`, #1313). **`PrInProgress`
    * does not reset it** — 0108 §8: *no counter is reset inside its scope, not by a restart* — so the rounds used for a
    * commit are always the count of what is here for it.
@@ -183,6 +195,7 @@ export const emptyPr: PrState = {
   following: null,
   steps: [],
   mergeBack: null,
+  catchUp: null,
   rounds: [],
   refusals: [],
   wait: null,
@@ -424,6 +437,25 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         mergedBackTickets: [...new Set([...state.mergedBackTickets, ...carried])],
       }
     }
+    case 'PrCaughtUp':
+    case 'PrCatchUpFailed': {
+      const d = event.data as PayloadOf<'PrCaughtUp'> & Partial<PayloadOf<'PrCatchUpFailed'>>
+      const ok = event.type === 'PrCaughtUp'
+      return {
+        ...state,
+        ...at,
+        // A retry asked of a merged PR is consumed by the catch-up: nothing else serves it.
+        pending: state.status === 'merged' ? null : state.pending,
+        catchUp: {
+          mainSha: d.mainSha,
+          outcome: ok ? 'caught-up' : 'failed',
+          why: ok ? null : (d.why ?? null),
+          mergeCommit: ok ? (d.mergeCommit ?? null) : null,
+          ...(d.conflict === undefined || d.conflict === null ? {} : { conflict: d.conflict }),
+          released: false,
+        },
+      }
+    }
     case 'PrMerged': {
       const d = event.data as PayloadOf<'PrMerged'>
       const ended = { how: d.how, headSha: d.headSha, mergeSha: d.mergeSha, seq: event.seq, at: event.at }
@@ -460,6 +492,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       return {
         ...state,
         ...at,
+        catchUp: releaseCatchUp(state, d.merging === 'back' && d.commit === state.catchUp?.mainSha),
         grants: [...state.grants, d],
         status: walks ? 'in-progress' : state.status,
         wait: walks ? null : state.wait,
@@ -469,7 +502,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
     }
     case 'PrRetryRequested': {
       const d = event.data as PayloadOf<'PrRetryRequested'>
-      return { ...state, ...at, pending: { kind: 'retry', by: d.by, seq: event.seq } }
+      return {
+        ...state,
+        ...at,
+        catchUp: releaseCatchUp(state, true),
+        pending: { kind: 'retry', by: d.by, seq: event.seq },
+      }
     }
     case 'PrBackRequested': {
       const d = event.data as PayloadOf<'PrBackRequested'>
@@ -528,6 +566,12 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
       return { ...state, ...at }
   }
 }
+
+/** A merged PR whose catch-up failed on a person is owed it again once they have granted rounds or asked to retry. */
+const releaseCatchUp = (state: PrState, asked: boolean): PrState['catchUp'] =>
+  asked && state.status === 'merged' && state.catchUp?.outcome === 'failed'
+    ? { ...state.catchUp, released: true }
+    : state.catchUp
 
 export function reducePr(events: readonly Envelope[]): PrState {
   return events.reduce(reducePrEvent, emptyPr)
@@ -756,6 +800,43 @@ export function mergeBackFailedTransition(
   const was = state.mergeBack
   if (was?.prHead === failed.prHead && (was.outcome === 'merged' || was.why === failed.why)) return null
   return { type: 'PrMergeBackFailed', actor: 'conductor', data: failed }
+}
+
+/**
+ * After the merge, the personal branch was caught up with `main` once (#1371). Only a merged PR has one; a second answer
+ * appends nothing, whatever its sha.
+ */
+export function caughtUpTransition(
+  state: PrState,
+  caught: PayloadOf<'PrCaughtUp'>,
+): ToAppend<PayloadOf<'PrCaughtUp'>> | null {
+  if (state.status !== 'merged' || state.catchUp?.outcome === 'caught-up') return null
+  return { type: 'PrCaughtUp', actor: 'conductor', data: caught }
+}
+
+/** The catch-up did not complete; once per answer, as `mergeBackFailedTransition`. */
+export function catchUpFailedTransition(
+  state: PrState,
+  failed: PayloadOf<'PrCatchUpFailed'>,
+): ToAppend<PayloadOf<'PrCatchUpFailed'>> | null {
+  if (state.status !== 'merged') return null
+  const was = state.catchUp
+  if (was !== null && (was.outcome === 'caught-up' || (was.mainSha === failed.mainSha && was.why === failed.why)))
+    return null
+  return { type: 'PrCatchUpFailed', actor: 'conductor', data: failed }
+}
+
+/**
+ * Whether a merged PR's personal branch is still owed the catch-up: none recorded, or the last one `unknown` or `locked`
+ * (tried again), or one that waited on a person and has since been granted rounds or asked to retry.
+ */
+export const catchUpOwed = (state: PrState): boolean => {
+  if (state.status !== 'merged') return false
+  const was = state.catchUp
+  if (was === null) return true
+  if (was.outcome === 'caught-up') return false
+  if (was.why === 'unknown' || was.why === 'locked') return true
+  return was.released
 }
 
 /** The draft pull request is open; a step already recorded since the latest `PrInProgress` appends nothing. */
@@ -1049,7 +1130,7 @@ export function syncRoundTransition(
   state: PrState,
   round: PayloadOf<'SyncRoundStarted'>,
 ): ToAppend<PayloadOf<'SyncRoundStarted'>> | null {
-  if (!conflictOpen(state)) return null
+  if (!conflictOpen(state, round.merging, round.commit)) return null
   const used = state.rounds.filter((r) => r.merging === round.merging && r.commit === round.commit).length
   if (round.round !== used + 1) return null
   return { type: 'SyncRoundStarted', actor: 'conductor', data: round }
@@ -1059,14 +1140,22 @@ export function syncRoundTransition(
  * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back. A PR that was merged or
  * closed meanwhile is not, and **that is a refusal that will never lift** — a caller must stop, not read and try again.
  */
-export const conflictOpen = (state: PrState): boolean => walking(state) || state.status === 'in-review'
+export const conflictOpen = (state: PrState, merging?: 'main' | 'back' | 'outside', commit?: string): boolean =>
+  walking(state) ||
+  state.status === 'in-review' ||
+  // The catch-up's rounds (#1371): counted under `back` for `main`'s tip, never for a head this PR pushed.
+  (state.status === 'merged' &&
+    merging === 'back' &&
+    commit !== undefined &&
+    state.covers[commit] === undefined &&
+    catchUpOwed(state))
 
 /** A started round was refused (#1313): once per round, and only on a PR a round may still be counted on. */
 export function syncRefusalTransition(
   state: PrState,
   refusal: PayloadOf<'SyncRoundRefused'>,
 ): ToAppend<PayloadOf<'SyncRoundRefused'>> | null {
-  if (!conflictOpen(state)) return null
+  if (!conflictOpen(state, refusal.merging, refusal.commit)) return null
   const same = (r: { merging: string; commit: string; round: number }) =>
     r.merging === refusal.merging && r.commit === refusal.commit && r.round === refusal.round
   if (!state.rounds.some(same) || state.refusals.some(same)) return null
@@ -1105,6 +1194,13 @@ function notAskable(
   return null
 }
 
+/** A merged PR whose catch-up failed on something a person can answer: rounds or a retry are accepted. */
+const catchUpWaits = (state: PrState): boolean =>
+  state.status === 'merged' &&
+  state.catchUp?.outcome === 'failed' &&
+  (state.catchUp.why === 'conflict' || state.catchUp.why === 'red' || state.catchUp.why === 'lost-push') &&
+  !state.catchUp.released
+
 /** The rounds a person gave for one commit: the sum of the grants that name it. */
 export const grantedFor = (state: PrState, merging: 'main' | 'back' | 'outside', commit: string): number =>
   state.grants.filter((g) => g.merging === merging && g.commit === commit).reduce((sum, g) => sum + g.rounds, 0)
@@ -1120,7 +1216,8 @@ export function grantTransition(
   project: string,
   grant: { by: string; merging: 'main' | 'back' | 'outside'; commit: string },
 ): PrRequest<PayloadOf<'PrRoundsGranted'>> {
-  const no = notAskable(state, mode, project)
+  const waitingOnCatchUp = mode === 'team' && state !== null && state.n !== null && catchUpWaits(state)
+  const no = waitingOnCatchUp && state?.pending === null ? null : notAskable(state, mode, project)
   if (no !== null) return no
   if (state === null || state.n === null) return refused(`${project} has no PR open`)
   const name = prName(project, state.n)
@@ -1139,6 +1236,14 @@ export function grantTransition(
     state.granting.merging === grant.merging &&
     state.granting.commit === grant.commit
   ) {
+    return granted
+  }
+  if (waitingOnCatchUp && state.catchUp !== null && (state.catchUp.why === 'conflict' || state.catchUp.why === 'red')) {
+    if (grant.merging !== 'back' || grant.commit !== state.catchUp.mainSha) {
+      return refused(
+        `${name} now waits on the catch-up with main at ${state.catchUp.mainSha.slice(0, 7)}, not ${grant.commit.slice(0, 7)}: read it again`,
+      )
+    }
     return granted
   }
   if (state.status !== 'waiting' || state.wait === null)
@@ -1191,9 +1296,11 @@ export function retryRequestTransition(
   project: string,
   by: string,
 ): PrRequest<PayloadOf<'PrRetryRequested'>> {
-  const no = notAskable(state, mode, project)
+  const waitingOnCatchUp = mode === 'team' && state !== null && state.n !== null && catchUpWaits(state)
+  const no = waitingOnCatchUp && state?.pending === null ? null : notAskable(state, mode, project)
   if (no !== null) return no
   if (state === null || state.n === null) return refused(`${project} has no PR open`)
+  if (waitingOnCatchUp) return { kind: 'request', event: { type: 'PrRetryRequested', actor: by, data: { by } } }
   if (state.status !== 'waiting') {
     return refused(
       `${prName(project, state.n)} is ${state.status}, not waiting on you; there is nothing to check again`,
