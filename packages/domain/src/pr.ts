@@ -1195,7 +1195,7 @@ function notAskable(
 }
 
 /** A merged PR whose catch-up failed on something a person can answer: rounds or a retry are accepted. */
-const catchUpWaits = (state: PrState): boolean =>
+export const catchUpWaits = (state: PrState): boolean =>
   state.status === 'merged' &&
   state.catchUp?.outcome === 'failed' &&
   (state.catchUp.why === 'conflict' || state.catchUp.why === 'red' || state.catchUp.why === 'lost-push') &&

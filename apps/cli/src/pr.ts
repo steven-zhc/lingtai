@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises'
 
 import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type PrState, catchUpWaits, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import {
@@ -186,6 +186,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
         `PR ${ended.n}: ${ended.status}${ended.host === null ? '' : ` (pull request #${ended.host.number})`}${by} at ${ended.ended.at.toISOString()}`,
       )
     }
+    if (ended !== null && ended.status === 'merged') lines.push(catchUpLine(ended))
     if (open !== null && open.n !== null) {
       lines.push(
         `PR ${open.n}: ${open.status}${open.prBranch === null ? '' : ` — ${open.prBranch}`}`,
@@ -327,6 +328,21 @@ export const registeredProjects = (): Effect.Effect<readonly string[], Error> =>
 
 type Ask = 'retry' | 'rounds' | 'back'
 
+/** The catch-up of the personal branch with `main` after a merge (#1371): what it came to, or what it is owed. */
+const catchUpLine = (state: PrState): string => {
+  const was = state.catchUp
+  const personal = state.branch ?? 'the personal branch'
+  if (was === null) return 'catch-up owed'
+  if (was.outcome === 'caught-up') {
+    return was.mergeCommit === null
+      ? `already had ${was.mainSha.slice(0, 7)}`
+      : `caught up ${personal} with ${state.main ?? 'main'} at ${was.mainSha.slice(0, 7)}`
+  }
+  return was.why === 'conflict' || was.why === 'red' || was.why === 'lost-push'
+    ? `catch-up waiting: ${was.why}`
+    : 'catch-up owed'
+}
+
 /** The sentence for a request nobody has answered in time: who is conducting. */
 const unanswered = (holder: string | null, what: string): string =>
   holder === null
@@ -352,7 +368,7 @@ export const prRequestVerdict = (
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
     const latest = yield* latestPr(project, world.store)
-    if (latest === null || latest.n === null || !isOpen(latest)) {
+    if (latest === null || latest.n === null || !(isOpen(latest) || catchUpWaits(latest))) {
       return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     }
     const n = latest.n
@@ -367,7 +383,11 @@ export const prRequestVerdict = (
           ? yield* requestPrBack(ref, { by }, world.store)
           : yield* grantPrRounds(
               ref,
-              { by, merging: conflict?.merging ?? 'main', commit: conflict?.commit ?? '' },
+              {
+                by,
+                merging: latest.status === 'merged' ? 'back' : (conflict?.merging ?? 'main'),
+                commit: latest.status === 'merged' ? (latest.catchUp?.mainSha ?? '') : (conflict?.commit ?? ''),
+              },
               world.store,
             )
     if (asked.kind === 'refused') return refusal(1, 'refused', asked.detail, { subject })
