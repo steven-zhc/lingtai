@@ -40,7 +40,7 @@ import {
   type TriageResult,
   type TriageStatus,
 } from '@lingtai/domain/wait'
-import { eventStore, log } from '@lingtai/event-store'
+import { eventStore, log, type EventStore, type SnapshotReadOptions } from '@lingtai/event-store'
 import { loadAllProjects } from '@lingtai/project'
 import type { SpendRow } from '@lingtai/projector'
 /**
@@ -104,7 +104,7 @@ import {
   type Bill,
   type SpendCurrency,
 } from './spend.ts'
-import { ApiContext, boardTracer, timed, traced, tracedEffect } from './timing.ts'
+import { ApiContext, boardTracer, timed, traced, tracedEffect, tracedSync } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
 import type { Explain } from './why-read.ts'
 
@@ -1600,6 +1600,37 @@ export async function standingSystemLines(
   return new Map(lines.flatMap((l) => (l === null ? [] : [l])))
 }
 
+/**
+ * One card's attempt state, with a span for each phase of its snapshot read and whether a snapshot served it (#1360).
+ *
+ * The phase spans are bound to this card's own `attempt.state` context, not to whichever context is active when
+ * a hook runs: the cards read in one `Promise.all` and Effect resumes their fibers from one shared dispatcher, so
+ * the active context at `tail`, `recheck`, `full` and `reduce` may belong to another card.
+ *
+ * Boundary: an `attempt.<step>` span is everything that store call took, its own pool wait included. It is
+ * neither SQL time nor a measured connection wait; the projection pool's `db.acquire` does not measure the event
+ * store's pool. `reducer.decode`, `reducer.encode` plus the writer's offer, and time a resumed fiber waits for the
+ * dispatcher run inside `attempt.state` but outside every phase, so the time its children do not cover is that
+ * work and scheduling, not database time. `lingtai.snapshot` is absent where the read failed before it was known.
+ */
+export function readAttemptState(
+  store: Pick<EventStore, 'readTypes' | 'read'>,
+  runId: string,
+  read: SnapshotReadOptions,
+): Promise<AttemptState> {
+  return traced('attempt.state', (span) => {
+    const ctx = context.active()
+    return readState(store, attemptReducer, runId, 'all', {
+      ...read,
+      observe: {
+        read: (step, run) => context.with(ctx, () => traced(`attempt.${step}`, () => run())),
+        reduce: (run) => context.with(ctx, () => tracedSync('attempt.reduce', run)),
+        served: (snapshot) => span.setAttribute('lingtai.snapshot', snapshot),
+      },
+    })
+  })
+}
+
 async function laneProgress(
   tasks: readonly TaskCard[],
   plans: ReadonlyMap<string, StepPlan>,
@@ -1626,9 +1657,7 @@ async function laneProgress(
   const reduced = await Promise.all([
     ...railed.map(async ({ task, ending }) => {
       try {
-        const state = await traced('attempt.state', () =>
-          readState(eventStore, attemptReducer, task.runId as string, 'all', read),
-        )
+        const state = await readAttemptState(eventStore, task.runId as string, read)
         // The saved head rides on the read already made, for the waiting cards
         // only; the remote-ref check stays in the action (#647).
         const progress = progressOf(state, plans.get(task.project), ending)
@@ -1641,9 +1670,7 @@ async function laneProgress(
     }),
     ...headOnly.map(async (task) => {
       try {
-        const state = await traced('attempt.state', () =>
-          readState(eventStore, attemptReducer, task.runId as string, 'all', read),
-        )
+        const state = await readAttemptState(eventStore, task.runId as string, read)
         return [task.taskId, null, headOf(task, state), null] as const
       } catch {
         return [task.taskId, null, null, null] as const
