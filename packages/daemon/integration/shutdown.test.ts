@@ -45,6 +45,7 @@ function storeOf(events: { type: string; data: unknown }[]): EventStore {
     head: async () => envelopes.length,
     readTypes: async (_stream, types) => envelopes.filter((e) => types.includes(e.type as never)),
     append: async () => [],
+    appendAll: async () => [],
     readAll: async () => [],
   }
 }
@@ -210,6 +211,9 @@ describe('asking for and ending a drain', () => {
           appended.push({ type: e.type, data: e.data })
         }
         return []
+      },
+      appendAll: async () => {
+        throw new Error('appendAll: not used by this fake')
       },
       readAll: async () => [],
     }

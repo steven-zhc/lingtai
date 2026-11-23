@@ -150,6 +150,9 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
     async readTypes(streamId: string, types: readonly string[], fromVersion = 1) {
       return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion && types.includes(e.type))
     },
+    async appendAll() {
+      throw new Error('appendAll: not used by this fake')
+    },
     async readAll() {
       return []
     },
