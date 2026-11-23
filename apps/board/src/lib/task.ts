@@ -101,7 +101,7 @@ import { readRateSnapshot, readSpend, readTicketReport, type SpendRow } from '@l
 import { readTasks, type TaskCard } from '@lingtai/projector/task-view'
 import { concurrencyOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { mirrorBranchSha, mirrorPathFor, refSha } from '@lingtai/repo'
-import { SpanStatusCode, context, trace } from '@opentelemetry/api'
+import { SpanStatusCode, trace } from '@opentelemetry/api'
 import { cache } from 'react'
 
 import {
