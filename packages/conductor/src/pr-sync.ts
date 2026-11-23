@@ -485,6 +485,7 @@ const mergeIntoPersonal = (
         // A merge of ours that is on `branch.personal` is a push that landed whose record was lost. It is found in
         // `branch.personal`'s own history — a merge of this head under our subject — and not in a ref of the mirror,
         // which is disposable and gone after a re-clone. A read that fails is unsure, never absence.
+        const mainTip = theirs
         const found = [
           'log',
           '--merges',
@@ -503,11 +504,14 @@ const mergeIntoPersonal = (
           const [ids = '', subject] = line.trim().split('\t')
           const [sha, , second] = ids.split(' ')
           if (sha === undefined || sha === '' || second === undefined) continue
-          // The catch-up is once per PR, so any merge of ours for it counts, whichever tip of `main` it took; the subject
-          // is held to the whole sentence (`PR 1` is not `PR 12`).
+          // The catch-up is once per PR, so a merge of ours for it counts whichever tip of `main` it took — but it is ours
+          // only if its subject is the whole sentence we write for its second parent (`PR 1` is not `PR 12`, and a
+          // missing subject is not ours) and that parent is a commit of `main`, which is what the claim names.
           const ours = back
             ? second === theirs
-            : subject === undefined || (subject.startsWith('Merge ') && subject.endsWith(subjectTail))
+            : subject !== undefined &&
+              subject === subjectOf(second) &&
+              (yield* isAncestor(ports, project, second, mainTip))
           if (!ours) continue
           // A merge of this head under our subject is the push that landed whose record was lost: it is recorded as
           // found, not rebuilt — the build that passed it is the one that pushed it, and a rebuild now would judge a

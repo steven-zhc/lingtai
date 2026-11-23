@@ -869,6 +869,44 @@ describe('the catch-up', () => {
     })
   })
 
+  it.each([
+    [
+      'a subject that names another commit of main',
+      `Merge main at ${'b'.repeat(7)} into lingtai-team after PR 1`,
+      MAIN,
+    ],
+    ['a subject on another branch', `Merge feature into personal after PR 1`, 'f'.repeat(40)],
+    ['no subject', undefined, MAIN],
+    ['a second parent that is not main', `Merge main at ${'f'.repeat(7)} into lingtai-team after PR 1`, 'f'.repeat(40)],
+  ])('a merge under %s is not ours: the catch-up is still owed and is done', async (_name, subject, second) => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({
+                  code: 0,
+                  stdout: `${BACK} ${PERSONAL} ${second}${subject === undefined ? '' : `\t${subject}`}\n`,
+                  stderr: '',
+                })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(w.merges.length).toBe(1)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN },
+    })
+  })
+
   it('a locked project starts none, records locked, and stays owed', async () => {
     const store = await merged()
     const w = aWorld()
