@@ -391,6 +391,46 @@ describe('the conductor runs the agent the recipe names, or nothing', () => {
 })
 
 /**
+ * **A project registered solo and switched to team by its recipe is conducted** (#1357).
+ *
+ * The recorded base (`main`) is a copy of what was registered; the recipe is the
+ * file on the machine. Nothing compares the two, so the worktree is cut from
+ * `branchOf(recipe)`, which in team mode is `branch.personal`.
+ */
+describe('a project switched to team by its recipe', () => {
+  it('is not refused at the recipe, and its worktree is cut from the personal branch', async () => {
+    const team = RECIPE.replace('branch: { main: main }', 'mode: team\nbranch: { main: main, personal: p }').replace(
+      'runtime: {',
+      'runtime: { assignee: { login: me, take: mine },',
+    )
+    const store = memoryStore()
+    const did: string[] = []
+    const client = fakeGitHub([], team)
+    client.getIssue = async () => ({ ...issue, assignees: ['me'] })
+    client.listOpenIssues = async () => [{ ...issue, assignees: ['me'] }]
+
+    const result = await once(
+      {
+        project: { ...project, base: 'main' },
+        client,
+        runtime,
+        issue: 7,
+        hookBinary: '/tmp/fake/lingtai-hook',
+        prompt: 'fix {{issue}}',
+        home: '/tmp/fake-home',
+        store,
+        signedIn: async () => [],
+      },
+      fakePorts(did, store),
+    )
+
+    expect(result).not.toMatchObject({ stage: 'recipe' })
+    expect((result as { detail?: string }).detail ?? '').not.toContain('the rules and the merge target')
+    expect(did).toContain('cut from origin/p')
+  })
+})
+
+/**
  * **The `claim` step declining is not a person's problem, and it must not be
  * written down as one.**
  *

@@ -55,7 +55,8 @@ export interface LocalRecipeOptions extends SandboxHostOptions {
   /**
    * The branch this project was registered against, which becomes `ref`. The
    * file has no branch of its own, so the recipe's `branch.main` stands in when
-   * nothing was recorded — and `baseDivergence` still compares the two.
+   * nothing was recorded. It is printed and nothing decides from it: the
+   * landing branch is `branchOf(recipe)`.
    */
   base?: string | null
   /** Reads a file; null when it is not there. */

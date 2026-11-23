@@ -17,15 +17,7 @@ import {
   permissionGaps,
 } from '@lingtai/github'
 import { registerProject, recipePath, HOST_FOR_SAVING, loadProject } from '@lingtai/project'
-import {
-  RECIPE_PATH,
-  baseDivergence,
-  branchOf,
-  branchKeyOf,
-  resolveRecipe,
-  type ReadAtRef,
-  type ResolvedRecipe,
-} from '@lingtai/recipe'
+import { branchOf, type ResolvedRecipe } from '@lingtai/recipe'
 /**
  * `lingtai add <owner>/<repo>` — the whole of onboarding.
  *
@@ -197,73 +189,6 @@ export const recheckEffect = Effect.fn('onboard.recheck')(function* (
     installed: true,
     detail: why === '' ? `${recorded.project} could not be registered` : why,
   } satisfies Rechecked as Rechecked
-})
-
-/** The recipe that governs, or the reason this command will not pick one. */
-export type Governing =
-  | { ok: true; resolved: ResolvedRecipe; adoptedFrom: string | null }
-  | { ok: false; refusal: string }
-
-/**
- * Find the recipe from a branch; take the base from the recipe.
- *
- * `from.ref` is only where to look. What comes back is resolved at
- * `branchOf(recipe)` and nowhere else, so the base recorded by `lingtai add` is
- * a copy of the file's and never a second decision beside it (#75). Three
- * outcomes, one per row of the ticket's table:
- *
- * - the file at `from.ref` declares that same branch — nothing to reconcile;
- * - it declares another and nobody named `from.ref` — bootstrap: read it again
- *   there, and take that;
- * - it declares another and a person named `from.ref` — refuse. Two people have
- *   now stated the base, and only one of them owns that decision under
- *   [0005](../../../doc/decisions-archive/0005-config-in-target-repo.md); this command
- *   is not entitled to overrule either of them silently.
- *
- * The first read throws (`RecipeMissingError`, `RecipeInvalidError`) so the
- * caller can say the "nothing named a base" sentence about it. The second is
- * returned as a refusal instead: it is a branch this command chose to follow,
- * and the message has to say that is what happened.
- */
-export const governingEffect = Effect.fn('onboard.governing')(function* (
-  read: ReadAtRef,
-  from: { ref: string; named: boolean },
-  slug: string,
-) {
-  const resolved = yield* lift(() => resolveRecipe(read, from.ref))
-  const declared = branchOf(resolved.recipe)
-  // The key as this recipe writes it: `branch.main` or `branch.personal`
-  // by mode (0130 §2).
-  const wrote = branchKeyOf(resolved.recipe)
-  if (declared === from.ref) return { ok: true, resolved, adoptedFrom: null } as Governing
-
-  if (from.named) {
-    return {
-      ok: false,
-      refusal:
-        `--main ${from.ref}, but ${RECIPE_PATH} there declares ${wrote}: ${declared}. ` +
-        `--main says which branch to read the recipe from; ${wrote} says which branch ` +
-        'it governs, and this command will not overrule either. ' +
-        `Re-run without --main to take ${declared} from the recipe, ` +
-        `or fix ${wrote} on ${from.ref}.`,
-    } as Governing
-  }
-
-  const atDeclared = yield* lift(() => resolveRecipe(read, declared)).pipe(
-    Effect.catch((err) =>
-      Effect.succeed(
-        `${RECIPE_PATH} on ${from.ref} declares ${wrote}: ${declared}, ` +
-          `so the recipe was read from ${declared} — ${err.message}`,
-      ),
-    ),
-  )
-  if (typeof atDeclared === 'string') return { ok: false, refusal: atDeclared } as Governing
-  // The file it points at has to point at itself. A chain is not a bootstrap:
-  // one hop is "the default branch is not the base", two is a recipe that
-  // disagrees with the branch it is on, which is `baseDivergence` exactly.
-  const divergence = baseDivergence(atDeclared, slug)
-  if (divergence) return { ok: false, refusal: divergence } as Governing
-  return { ok: true, resolved: atDeclared, adoptedFrom: from.ref } as Governing
 })
 
 const liveLookup = (owner: string, repo: string): Promise<Installation> => installationForRepo(githubApp(), owner, repo)

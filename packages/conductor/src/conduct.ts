@@ -229,7 +229,6 @@ import { readBacklogEffect } from '@lingtai/projector'
  */
 import {
   backoffOf,
-  baseDivergence,
   branchOf,
   ceilingOf,
   modeOf,
@@ -1092,22 +1091,6 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 ),
         },
       })
-    }
-    // The ref the rules came from and the branch they say they govern have to be
-    // one branch. It refuses rather than picking a winner: both are recorded
-    // decisions, and nothing here repairs a recorded decision silently (0024 §3).
-    const divergence = baseDivergence(
-      resolved,
-      // `baseDivergence` splices this straight after `lingtai add ` in its
-      // own "Re-register:" sentence. A bare repo name there sets `--github`
-      // (`addCommand`, `apps/cli/src/lingtai.ts:538-540`), which is wrong for
-      // a project with no owner — and `ProjectState` never recorded the local
-      // directory `--local` needs, so `<dir>` names what the operator must
-      // fill in rather than a value this pass has (`#352`).
-      options.client.owner === null ? `--local <dir>` : `${options.client.owner}/${options.client.repo}`,
-    )
-    if (divergence) {
-      return { ok: false, ticketId: null, runId: null, stage: 'recipe', detail: divergence }
     }
     // The agent the recipe resolved to is the agent that runs, or nothing runs
     // (0046 §3). Before the claim, for the same reason as the refusals around it.

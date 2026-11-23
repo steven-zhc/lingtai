@@ -2149,11 +2149,10 @@ by four checks and two names.
 **Six more run once per configured project**, so the total depends on how many
 there are: `recipe: resolves for every project`,
 `env: declared names, and which layer`, `env: <project> extensions`,
-`runtime: <project> limits`, `runtime: <project> signed in` and
-`recipe: the rules and the merge target are one branch`. Each reports under the
+`runtime: <project> limits` and `runtime: <project> signed in`. Each reports under the
 project's own name (`recipe: lingtai`, `env: lingtai`,
 `env: lingtai extensions`, `runtime: lingtai limits`,
-`runtime: lingtai signed in`, `base: lingtai`) when it has something to say
+`runtime: lingtai signed in`) when it has something to say
 about that project in particular.
 
 `env: <project> extensions` is 0037 §1's half: what each `run:` action and each

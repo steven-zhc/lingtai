@@ -109,7 +109,7 @@ const reach: DoctorReach = {
   sea: () => ({ can: true }),
   ...fakeSandbox(),
   // Never reached on this machine: `load` below resolves to no projects, so
-  // nothing in `declaredEnvironment`, `recipeGovernsItsBase` or
+  // nothing in `declaredEnvironment` or
   // `projectFiltersOnce` calls either of these.
   recipe: () => {
     throw new Error('no project is registered — nothing should resolve a recipe')

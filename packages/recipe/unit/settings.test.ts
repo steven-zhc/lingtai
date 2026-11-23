@@ -222,8 +222,7 @@ describe('the accessors', () => {
    * **And the three readings that print the key name get the one the file uses**
    * (`#268`).
    *
-   * `baseDivergence`'s refusal, `lingtai doctor`'s base row and `lingtai add`'s
-   * disagreement all end with *fix this key* — so a message naming `repo.base` at
+   * `lingtai add`'s disagreement ends with *fix this key* — so a message naming `repo.base` at
    * a recipe that declares `worktree:` at `admit` sends a person to a line the
    * conductor does not read, which is the reader-drift this file's guard is about
    * arriving through a sentence instead.
