@@ -114,6 +114,17 @@ describe('PaletteView', () => {
     expect(pending.match(/class="[^"]*sk-line/g)).toHaveLength(3)
     expect(pending).not.toContain('nothing matches')
   })
+  it('ends with one line naming its keys, outside the listbox, with both platform forms', () => {
+    for (const idx of [index, null, 'pending' as const]) {
+      const html = renderToStaticMarkup(<PaletteView index={idx} query="" selected={0} problems={[]} />)
+      const after = html.slice(html.indexOf('</ul>', html.indexOf('role="listbox"')) + 5)
+      expect(after).toContain('class="palette-keys"')
+      const text = after.replace(/<[^>]*>/g, '')
+      for (const w of ['select', 'open', 'new tab', 'close', '#', 'G T', 'G P', 'G S']) expect(text).toContain(w)
+      expect(after).toContain('k-mac')
+      expect(after).toContain('k-pc')
+    }
+  })
   it('says nothing matches only for a real answer', () => {
     const html = renderToStaticMarkup(<PaletteView index={index} query="zzzz" selected={0} problems={[]} />)
     expect(html).toContain('nothing matches')
