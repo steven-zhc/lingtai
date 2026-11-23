@@ -134,26 +134,6 @@ describe('the lock read (#1361)', () => {
     expect(parentOf(all, named(all, 'locks.read')[0]!)!.name).toBe('page /task github')
   })
 
-  it('keeps two overlapping renders apart: one read each, each under its own stage', async () => {
-    let release!: () => void
-    const gate = new Promise<void>((resolve) => (release = resolve))
-    h.accountsFor.mockImplementation(() => Effect.promise(() => gate).pipe(Effect.as(new Map())))
-    const a = render(() => measure(() => readProjectLocks(), { label: '/task locks' }))
-    const b = render(() => measure(() => readProjectLocks(), { label: '/task locks' }))
-    release()
-    await Promise.all([a, b])
-    const all = await spans()
-    expect(h.readControl).toHaveBeenCalledTimes(2)
-    const reads = named(all, 'locks.read')
-    expect(reads).toHaveLength(2)
-    const stages = reads.map((r) => parentOf(all, r)!)
-    expect(new Set(stages.map(idOf)).size).toBe(2)
-    for (const r of reads) {
-      const accounts = named(all, 'locks.account').filter((s) => parentOf(all, s) === r)
-      expect(accounts).toHaveLength(1)
-    }
-  })
-
   it('marks a failed read and flags the partial control read without exporting a message', async () => {
     h.readControl.mockRejectedValue(new Error('postgres://user:pw@host/db is down'))
     const [read] = await render(() => measure(() => readProjectLocks(), { label: '/task locks' }))

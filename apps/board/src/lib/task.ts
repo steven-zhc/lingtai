@@ -2308,7 +2308,9 @@ async function startEstimateFor(state: string, project: string, now: Date): Prom
   if (state !== 'queued') return null
   return traced('task.start-estimate', async (span) => {
     const found = await startEstimateOnce(project, now)
-    if (found === null || 'failure' in found) span.setStatus({ code: SpanStatusCode.ERROR })
+    // A ceiling that could not be read is a value (`ceilingReached: null`), not a throw: the stage still failed.
+    if (found === null || 'failure' in found || found.ceilingReached === null)
+      span.setStatus({ code: SpanStatusCode.ERROR })
     return found
   })
 }
@@ -2426,13 +2428,17 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       try {
         const state = await readProject(ticket.project)
         if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
-        const client = await traced('task.fix-work.client', async () =>
-          state.owner === null
-            ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
-            : hasGitHubAuth()
-              ? (await projectClient(state)).client
-              : null,
-        )
+        const client = await traced('task.fix-work.client', async (span) => {
+          const built =
+            state.owner === null
+              ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+              : hasGitHubAuth()
+                ? (await projectClient(state)).client
+                : null
+          // No App configured is thrown just below, outside the stage: it ends as the failure it is first.
+          if (built === null) span.setStatus({ code: SpanStatusCode.ERROR })
+          return built
+        })
         if (client === null) throw new Error('no GitHub App configured')
         const remote = await timed('github.ref', () => client.refSha(`heads/${saved.ref}`))
         standing.fixWork =
@@ -2460,13 +2466,17 @@ export async function loadTask(taskId: string): Promise<TaskDetail | null> {
       try {
         const state = await readProject(ticket.project)
         if (!state) throw new Error(`no project named "${ticket.project}" — run lingtai add first`)
-        const client = await traced('task.rerun.client', async () =>
-          state.owner === null
-            ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
-            : hasGitHubAuth()
-              ? (await projectClient(state)).client
-              : null,
-        )
+        const client = await traced('task.rerun.client', async (span) => {
+          const built =
+            state.owner === null
+              ? (await ownerlessClient(state, (await currentRecipe(state)).recipe)).client
+              : hasGitHubAuth()
+                ? (await projectClient(state)).client
+                : null
+          // No App configured is thrown just below, outside the stage: it ends as the failure it is first.
+          if (built === null) span.setStatus({ code: SpanStatusCode.ERROR })
+          return built
+        })
         if (client === null) throw new Error('no GitHub App configured')
         const remote = await timed('github.ref', () => client.refSha(`heads/${rerun.ref}`))
         standing.rerunWork =

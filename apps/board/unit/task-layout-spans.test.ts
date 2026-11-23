@@ -1,0 +1,243 @@
+/**
+ * The task layout's stages (#1361), through `TaskLayout` itself: the preflight, the registered projects, the
+ * lock read and the issue's answer, with the real `readProjectLocks`/`readRegistered`/`pauseSlot` underneath
+ * and only the outside world (project register, control log, accounts, the two loaders) faked.
+ */
+import { emptyControl } from '@lingtai/domain'
+import { machineFileFrom } from '@lingtai/env'
+import { ROOT_CONTEXT, SpanStatusCode, context, trace, type Span } from '@opentelemetry/api'
+import { InMemorySpanExporter, type ReadableSpan } from '@opentelemetry/sdk-trace-base'
+import { Effect } from 'effect'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+
+const h = vi.hoisted(() => ({
+  // React's `cache` memoizes only inside a server render; a map per simulated render stands in for it.
+  renders: null as unknown as import('node:async_hooks').AsyncLocalStorage<Map<unknown, unknown>>,
+  loadProjects: vi.fn(),
+  readProject: vi.fn(),
+  readControl: vi.fn(),
+  accountsFor: vi.fn(),
+  loadTask: vi.fn(),
+  loadTaskAnswer: vi.fn(),
+}))
+
+vi.mock('react', async (orig) => {
+  const { AsyncLocalStorage } = await import('node:async_hooks')
+  h.renders = new AsyncLocalStorage()
+  return {
+    ...(await orig<object>()),
+    cache: <A extends unknown[], R>(fn: (...args: A) => R) => {
+      return (...args: A): R => {
+        const memo = h.renders.getStore()
+        if (memo === undefined) return fn(...args)
+        const key = JSON.stringify(args)
+        const slot = memo.get(fn) as Map<string, R> | undefined
+        const seen = slot ?? new Map<string, R>()
+        memo.set(fn, seen)
+        if (!seen.has(key)) seen.set(key, fn(...args))
+        return seen.get(key)!
+      }
+    },
+  }
+})
+vi.mock('next/navigation', () => ({
+  notFound: () => {
+    throw new Error('NEXT_NOT_FOUND')
+  },
+}))
+vi.mock('@lingtai/project', async (orig) => ({
+  ...(await orig<object>()),
+  loadProjects: h.loadProjects,
+  readProject: h.readProject,
+}))
+vi.mock('@lingtai/daemon/control', async (orig) => ({ ...(await orig<object>()), readControl: h.readControl }))
+vi.mock('@lingtai/conductor', async (orig) => ({ ...(await orig<object>()), accountsFor: h.accountsFor }))
+vi.mock('../src/lib/snapshot-writer.ts', () => ({ boardWriterOrNone: vi.fn(async () => undefined) }))
+vi.mock('../src/lib/task.ts', async (orig) => ({
+  ...(await orig<object>()),
+  loadTask: h.loadTask,
+  loadTaskAnswer: h.loadTaskAnswer,
+}))
+
+import TaskLayout from '../src/app/task/[id]/layout.tsx'
+import { controlObserve } from '../src/lib/locks.ts'
+import { installTracing } from '../src/lib/telemetry.ts'
+import { ApiContext, traced } from '../src/lib/timing.ts'
+
+const none = machineFileFrom('/h/config.yml', null)
+const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
+
+let exporter: InMemorySpanExporter
+let flush: () => Promise<void>
+const spans = async (): Promise<ReadableSpan[]> => {
+  await flush()
+  return exporter.getFinishedSpans()
+}
+const idOf = (s: ReadableSpan) => s.spanContext().spanId
+const named = (all: ReadableSpan[], name: string) => all.filter((s) => s.name === name)
+const parentOf = (all: ReadableSpan[], s: ReadableSpan) => all.find((p) => idOf(p) === s.parentSpanContext?.spanId)
+const childrenOf = (all: ReadableSpan[], s: ReadableSpan) => all.filter((c) => c.parentSpanContext?.spanId === idOf(s))
+const render = <T>(fn: () => Promise<T>): Promise<T> => h.renders.run(new Map(), fn)
+
+const project = { project: 'p', owner: 'o' }
+const detail = { ticket: { project: 'p' } }
+const layout = (id = 'ticket-p-7') => TaskLayout({ params: Promise.resolve({ id }), children: null })
+const paused = (element: Awaited<ReturnType<typeof layout>>) =>
+  (element as unknown as { props: { children: { props: { children: { props: { pause: unknown } } } }[] } }).props
+    .children[1]!.props.children.props.pause
+
+beforeEach(async () => {
+  vi.clearAllMocks()
+  exporter = new InMemorySpanExporter()
+  const installed = await installTracing(on, none, exporter)
+  flush = () => installed!.forceFlush()
+  h.loadProjects.mockResolvedValue([project])
+  // The project's register is read by the preflight: a span under the stage proves it ran inside it.
+  h.readProject.mockImplementation(() => traced('probe.preflight', async () => project))
+  h.readControl.mockResolvedValue(emptyControl)
+  h.accountsFor.mockImplementation(() => Effect.succeed(new Map()))
+  h.loadTask.mockImplementation(async () => detail)
+  h.loadTaskAnswer.mockImplementation(async () => ({ ticket: { found: true }, outgoing: null, queued: null }))
+})
+
+afterEach(() => {
+  trace.disable()
+  context.disable()
+})
+
+describe('TaskLayout stages (#1361)', () => {
+  it('measures the preflight, the projects and the lock read as stages, each read once under the stage that asked', async () => {
+    await render(layout)
+    const all = await spans()
+    const stage = (label: string) => named(all, `page /task ${label}`)[0]!
+    expect(parentOf(all, named(all, 'probe.preflight')[0]!)).toBe(stage('preflight'))
+    expect(parentOf(all, named(all, 'projects.load')[0]!)).toBe(stage('projects'))
+    const lock = named(all, 'locks.read')[0]!
+    expect(parentOf(all, lock)).toBe(stage('locks'))
+    expect(childrenOf(all, lock).map((s) => s.name)).toEqual(
+      expect.arrayContaining(['control.snapshot', 'locks.account']),
+    )
+    expect(named(all, 'locks.read')).toHaveLength(1)
+    expect(named(all, 'projects.load')).toHaveLength(1)
+    expect(h.loadProjects).toHaveBeenCalledTimes(1)
+    expect(h.readControl).toHaveBeenCalledTimes(1)
+    expect(h.accountsFor).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the order: preflight, then the issue’s answer beside the loader, the locks after both reads', async () => {
+    const order: string[] = []
+    const was = h.readProject.getMockImplementation()!
+    h.readProject.mockImplementation((...args: unknown[]) => (order.push('preflight'), was(...args)))
+    h.loadTaskAnswer.mockImplementation(
+      async () => (order.push('github'), { ticket: {}, outgoing: null, queued: null }),
+    )
+    h.loadTask.mockImplementation(async () => (order.push('task'), detail))
+    h.loadProjects.mockImplementation(async () => (order.push('projects'), [project]))
+    h.accountsFor.mockImplementation(() => (order.push('locks'), Effect.succeed(new Map())))
+    await render(layout)
+    expect(order[0]).toBe('preflight')
+    expect(order.slice(1, 4).sort()).toEqual(['github', 'projects', 'task'])
+    expect(order[4]).toBe('locks')
+    const all = await spans()
+    // `getFinishedSpans` is in the order spans ended: the locks stage waits for the stages before it.
+    const end = (label: string) => all.indexOf(named(all, `page /task ${label}`.trim())[0]!)
+    expect(end('preflight')).toBeLessThan(end('projects'))
+    expect(end('projects')).toBeLessThan(end('locks'))
+    expect(end('')).toBeLessThan(end('locks'))
+  })
+
+  it('sends the page before the issue answers, and closes the github stage when it settles', async () => {
+    let answer!: () => void
+    h.loadTaskAnswer.mockImplementation(
+      () =>
+        new Promise((resolve) => (answer = () => resolve({ ticket: { found: true }, outgoing: null, queued: null }))),
+    )
+    const element = await render(layout)
+    expect(element).toBeDefined()
+    expect(named(await spans(), 'page /task github')).toHaveLength(0)
+    answer()
+    await new Promise((resolve) => setImmediate(resolve))
+    expect(named(await spans(), 'page /task github')).toHaveLength(1)
+  })
+
+  it('does not fail the preflight stage for a 404, and starts nothing after it', async () => {
+    h.readProject.mockResolvedValue(null)
+    await expect(render(layout)).rejects.toThrow('NEXT_NOT_FOUND')
+    const all = await spans()
+    expect(named(all, 'page /task preflight')[0]!.status.code).not.toBe(SpanStatusCode.ERROR)
+    expect(h.loadTask).not.toHaveBeenCalled()
+    expect(h.loadTaskAnswer).not.toHaveBeenCalled()
+    expect(named(all, 'page /task locks')).toHaveLength(0)
+  })
+
+  it('marks the projects stage and the lock read failed, and keeps the layout’s fallbacks', async () => {
+    h.loadProjects.mockRejectedValue(new Error('postgres://user:pw@host/db is down'))
+    const element = await render(layout)
+    const all = await spans()
+    expect(named(all, 'page /task projects')[0]!.status.code).toBe(SpanStatusCode.ERROR)
+    expect(named(all, 'projects.load')[0]!.status.code).toBe(SpanStatusCode.ERROR)
+    expect(named(all, 'locks.read')[0]!.status).toEqual({ code: SpanStatusCode.ERROR })
+    // An unreadable lock read draws no pause button, as before.
+    expect(paused(element)).toBeUndefined()
+    expect(JSON.stringify(all.map((s) => [s.name, s.attributes, s.events, s.status]))).not.toMatch(/postgres|pw@/)
+  })
+
+  it('keeps two overlapping renders apart: one lock read each, its own account fiber and control read', async () => {
+    let release!: () => void
+    const gate = new Promise<void>((resolve) => (release = resolve))
+    const fibers: (Span | undefined)[] = []
+    h.loadProjects.mockImplementation(async () => (await gate, [project]))
+    h.readControl.mockImplementation(async (_stream: unknown, opts: { observe: ReturnType<typeof controlObserve> }) => {
+      await gate
+      await opts.observe.read('events', async () => 0)
+      opts.observe.reduce(() => 0)
+      return emptyControl
+    })
+    // The account read's fiber carries the context of the `locks.account` span of its own render.
+    h.accountsFor.mockImplementation(() =>
+      Effect.gen(function* () {
+        const own = yield* ApiContext
+        fibers.push(own === undefined ? undefined : trace.getSpan(own))
+        yield* Effect.promise(() => traced('probe.account', async () => 0))
+        return new Map()
+      }),
+    )
+    const a = render(layout)
+    const b = render(layout)
+    await new Promise((resolve) => setImmediate(resolve))
+    release()
+    await Promise.all([a, b])
+    const all = await spans()
+    const reads = named(all, 'locks.read')
+    expect(reads).toHaveLength(2)
+    expect(new Set(reads.map((r) => idOf(parentOf(all, r)!))).size).toBe(2)
+    expect(h.readControl).toHaveBeenCalledTimes(2)
+    expect(fibers).toHaveLength(2)
+    for (const read of reads) {
+      const kids = childrenOf(all, read)
+      const snapshot = kids.find((s) => s.name === 'control.snapshot')!
+      expect(childrenOf(all, snapshot).map((s) => s.name)).toEqual(['control.events', 'control.reduce'])
+      const account = kids.find((s) => s.name === 'locks.account')!
+      expect(childrenOf(all, account).map((s) => s.name)).toEqual(['probe.account'])
+      expect(fibers.map((f) => f?.spanContext().spanId)).toContain(idOf(account))
+    }
+  })
+})
+
+describe('controlObserve (#1360)', () => {
+  it('binds the stages of a control read to the context it was made in, however late they run', async () => {
+    let observe!: ReturnType<typeof controlObserve>
+    await traced('read A', async (span) => {
+      observe = controlObserve(span)
+    })
+    // Called from no span at all, as a fiber resumed by another render's dispatcher would be.
+    await context.with(ROOT_CONTEXT, async () => {
+      await observe.read('events', async () => 1)
+      observe.reduce(() => 1)
+    })
+    const all = await spans()
+    const root = named(all, 'read A')[0]!
+    expect(named(all, 'control.events').map((s) => parentOf(all, s))).toEqual([root])
+    expect(named(all, 'control.reduce').map((s) => parentOf(all, s))).toEqual([root])
+  })
+})

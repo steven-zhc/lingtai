@@ -141,7 +141,12 @@ export async function outgoingFor(input: {
     return refused(`no prompt template at ${path}`)
   }
 
-  const state = await traced('prompt.project', () => readProject(ticket.project)).catch(() => null)
+  const state = await traced('prompt.project', async (span) => {
+    const found = await readProject(ticket.project)
+    // A project nobody registered is a refusal below: the stage ends as one before it.
+    if (found === null) span.setStatus({ code: SpanStatusCode.ERROR })
+    return found
+  }).catch(() => null)
   if (!state) return refused(`${ticket.project} is not a registered project`)
   // Never throws, and its `problem` is already one line. The recipe is here for
   // two things, not one: `runtime.budget` — how much of the earlier attempts
@@ -161,11 +166,13 @@ export async function outgoingFor(input: {
   const arms =
     input.streams.length === 0
       ? null
-      : await traced('prompt.arms', () =>
-          traced('prompt.client', () => githubClientFor(state)).then((client) =>
-            armsOnOrigin(client, agentBranch(ticket.ref)),
-          ),
-        ).catch(() => null)
+      : await traced('prompt.arms', async (span) => {
+          const client = await traced('prompt.client', () => githubClientFor(state))
+          const found = await armsOnOrigin(client, agentBranch(ticket.ref))
+          // `armsOnOrigin` answers a failed lookup with null rather than a throw: the stage still failed.
+          if (found === null) span.setStatus({ code: SpanStatusCode.ERROR })
+          return found
+        }).catch(() => null)
 
   const body = ticket.body
   return tracedSync('prompt.compose', () => {
