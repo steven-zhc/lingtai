@@ -5,14 +5,15 @@
  */
 import { hasGitHubAuth } from '@lingtai/env'
 import Link from 'next/link'
-import { Suspense } from 'react'
+import { Suspense, type ReactNode } from 'react'
 
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { soloSentence } from '@/lib/pr-board.ts'
-import { placeViewsOf, readPrDetail } from '@/lib/prs.ts'
+import { loadPrDetail, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
+import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../../../footer-fetched'
 import { Follow } from '../../../live'
@@ -25,26 +26,33 @@ export const dynamic = 'force-dynamic'
 
 async function Detail({ project, n }: { project: string; n: number | 'next' | null }) {
   if (n === null) return <p className="pr-note">There is no PR numbered like that.</p>
-  const read = await readPrDetail(project, n)
-  if (read.kind === 'unknown') return <p className="pr-note">No project named {project} is registered here.</p>
+  const [read, timings] = await loadPrDetail(project, n)
+  const withMeta = (node: ReactNode) => (
+    <>
+      <TimingMeta timings={timings} />
+      {node}
+    </>
+  )
+  if (read.kind === 'unknown')
+    return withMeta(<p className="pr-note">No project named {project} is registered here.</p>)
   if (read.kind === 'none')
-    return (
+    return withMeta(
       <p className="pr-note">
         {project} has no PR {n}.
-      </p>
+      </p>,
     )
   if (read.kind === 'failed') {
-    return (
+    return withMeta(
       <p className="pr-refusal" role="alert">
         PR {n} of {project} could not be read: {read.error}
-      </p>
+      </p>,
     )
   }
   if (read.kind === 'solo') {
-    return (
+    return withMeta(
       <p className="pr-note">
         {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
-      </p>
+      </p>,
     )
   }
   const host =
@@ -59,7 +67,7 @@ async function Detail({ project, n }: { project: string; n: number | 'next' | nu
         <PrGeneratedStream project={project} n={n} />
       </Suspense>
     )
-  return <PrDetail project={project} view={read.view} host={host} generated={generated} />
+  return withMeta(<PrDetail project={project} view={read.view} host={host} generated={generated} />)
 }
 
 export default async function Page({ params }: { params: Promise<{ project: string; n: string }> }) {

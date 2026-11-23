@@ -1,5 +1,11 @@
 import { machineFileFrom } from '@lingtai/env'
-import { readThroughSnapshot, type SnapshotReadObserver } from '@lingtai/event-store'
+import {
+  fromPromiseStore,
+  promiseStore,
+  readThroughSnapshot,
+  setReadObserver,
+  type SnapshotReadObserver,
+} from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { setRequestObserver } from '@lingtai/github'
 import { context, trace } from '@opentelemetry/api'
@@ -45,12 +51,15 @@ vi.mock('../src/lib/spend.ts', async (orig) => ({
 }))
 vi.mock('../src/lib/snapshot-writer.ts', () => ({ boardWriterOrNone: vi.fn(async () => undefined) }))
 
+import { discovered } from '../../../packages/event-store/test/support.ts'
 import { githubJson } from '../../../packages/github/src/app.ts'
 import { createGhReader } from '../../../packages/github/src/gh-reader.ts'
 import { githubQueue, loadBoard, type AskableFilter } from '../src/lib/board.ts'
 import { readControlOnce } from '../src/lib/locks.ts'
+import { loadPrBoard, loadPrDetail } from '../src/lib/prs.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
 import { measure, timed, traced } from '../src/lib/timing.ts'
+import { installTraceSeams } from '../src/lib/trace-seams.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
 const on = { LINGTAI_TELEMETRY_OTLP_ENDPOINT: 'http://collector:4318/v1/traces' } as unknown as NodeJS.ProcessEnv
@@ -72,6 +81,7 @@ beforeEach(async () => {
 
 afterEach(() => {
   setRequestObserver(undefined)
+  setReadObserver(undefined)
   trace.disable()
   context.disable()
   vi.unstubAllGlobals()
@@ -252,4 +262,40 @@ it('timed names its span and enters the timing meta; traced makes a span and no 
   expect(timings.map((t) => t.name)).toEqual(['x'])
   const names = (await spans()).map((s) => s.name)
   expect(names).toEqual(expect.arrayContaining(['x', 'y']))
+})
+
+describe('the event store read seam', () => {
+  it('exports an events.read span with the stream kind and count, and never the id', async () => {
+    installTraceSeams()
+    const memory = createMemoryEventStore()
+    await memory.append('ticket-secret-9', 0, [discovered('x')])
+    const store = promiseStore(fromPromiseStore(memory))
+    await trace.getTracer('lingtai-board').startActiveSpan('page /x', async (page) => {
+      await store.read('ticket-secret-9')
+      page.end()
+    })
+    const all = await spans()
+    const read = all.filter((s) => s.name === 'events.read')
+    expect(read).toHaveLength(1)
+    expect(read[0]!.attributes['lingtai.stream']).toBe('ticket')
+    expect(read[0]!.attributes['lingtai.count']).toBe(1)
+    expect(JSON.stringify(read[0]!.attributes)).not.toContain('secret')
+    expect(parentOf(all, read[0]!)?.name).toBe('page /x')
+  })
+})
+
+describe('the PR pages', () => {
+  it('load inside a page span, with pr.board and pr.detail under it', async () => {
+    await loadPrBoard('p', async () => ({ kind: 'unknown' }))
+    await loadPrDetail('p', 1, async () => ({ kind: 'unknown' }))
+    const all = await spans()
+    for (const [page, child] of [
+      ['page /pr', 'pr.board'],
+      ['page /pr detail', 'pr.detail'],
+    ] as const) {
+      const c = all.filter((s) => s.name === child)
+      expect(c).toHaveLength(1)
+      expect(parentOf(all, c[0]!)?.name).toBe(page)
+    }
+  })
 })

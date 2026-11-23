@@ -11,8 +11,9 @@ import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { soloSentence } from '@/lib/pr-board.ts'
-import { placeViewsOf, readPrPage } from '@/lib/prs.ts'
+import { loadPrBoard, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
+import { TimingMeta } from '@/lib/timing-meta'
 
 import { FooterFetched } from '../../footer-fetched'
 import { Follow } from '../../live'
@@ -24,23 +25,41 @@ import { Skeleton } from '../../skeleton'
 export const dynamic = 'force-dynamic'
 
 async function Board({ project }: { project: string }) {
-  const read = await readPrPage(project)
-  if (read.kind === 'unknown') return <p className="pr-note">No project named {project} is registered here.</p>
+  const [read, timings] = await loadPrBoard(project)
+  const meta = <TimingMeta timings={timings} />
+  if (read.kind === 'unknown')
+    return (
+      <>
+        {meta}
+        <p className="pr-note">No project named {project} is registered here.</p>
+      </>
+    )
   if (read.kind === 'failed') {
     return (
-      <p className="pr-refusal" role="alert">
-        The PRs of {project} could not be read: {read.error}
-      </p>
+      <>
+        {meta}
+        <p className="pr-refusal" role="alert">
+          The PRs of {project} could not be read: {read.error}
+        </p>
+      </>
     )
   }
   if (read.kind === 'solo') {
     return (
-      <p className="pr-note">
-        {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
-      </p>
+      <>
+        {meta}
+        <p className="pr-note">
+          {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
+        </p>
+      </>
     )
   }
-  return <PrColumns project={project} view={read.view} />
+  return (
+    <>
+      {meta}
+      <PrColumns project={project} view={read.view} />
+    </>
+  )
 }
 
 export default async function Page({ params }: { params: Promise<{ project: string }> }) {

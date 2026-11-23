@@ -1,10 +1,11 @@
+import { setReadObserver } from '@lingtai/event-store'
 import { setRequestObserver } from '@lingtai/github'
 import { setAcquireObserver } from '@lingtai/projector'
 
 import { traced } from './timing.ts'
 
 /**
- * Hands the shared packages their one way to be measured (#1144). **They start
+ * Hands the shared packages (the GitHub client, the projector's pool, the event store's reads) their one way to be measured (#1144). **They start
  * no spans of their own**: the board exports only its own scope, and the daemon
  * exports every one, so a span begun inside a package would miss this trace and
  * land in every pass's. Each package offers a seam that does nothing until
@@ -25,6 +26,18 @@ export function installTraceSeams(): void {
       info.page === undefined
         ? { 'lingtai.method': info.method }
         : { 'lingtai.method': info.method, 'lingtai.page': info.page },
+    ),
+  )
+  // One span for each stream a render reads, by kind and never by id (#1375).
+  setReadObserver((info, run) =>
+    traced(
+      'events.read',
+      (span) =>
+        run((events) => {
+          // Set only once the read returned: a failed read has no count, never `0`.
+          span.setAttribute('lingtai.count', events)
+        }),
+      { 'lingtai.stream': info.kind },
     ),
   )
   // A sibling inside the read's own span: how long the read waited for one of the pool's connections.
