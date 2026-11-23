@@ -207,7 +207,8 @@
       "flags": [
         "--file",
         "--json",
-        "--no-color"
+        "--no-color",
+        "--pr"
       ],
       "json": 1
     },

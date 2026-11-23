@@ -814,14 +814,18 @@ export function caughtUpTransition(
   return { type: 'PrCaughtUp', actor: 'conductor', data: caught }
 }
 
-/** The catch-up did not complete; once per answer, as `mergeBackFailedTransition`. */
+/** The catch-up did not complete; once per answer, as `mergeBackFailedTransition` — and once more after each retry or grant, which renews the attempt. */
 export function catchUpFailedTransition(
   state: PrState,
   failed: PayloadOf<'PrCatchUpFailed'>,
 ): ToAppend<PayloadOf<'PrCatchUpFailed'>> | null {
   if (state.status !== 'merged') return null
   const was = state.catchUp
-  if (was !== null && (was.outcome === 'caught-up' || (was.mainSha === failed.mainSha && was.why === failed.why)))
+  // A released failure is a renewed attempt (a retry or a grant): the same answer again is news, and returns the catch-up to waiting.
+  if (
+    was !== null &&
+    (was.outcome === 'caught-up' || (!was.released && was.mainSha === failed.mainSha && was.why === failed.why))
+  )
     return null
   return { type: 'PrCatchUpFailed', actor: 'conductor', data: failed }
 }
@@ -1137,18 +1141,17 @@ export function syncRoundTransition(
 }
 
 /**
- * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back. A PR that was merged or
- * closed meanwhile is not, and **that is a refusal that will never lift** — a caller must stop, not read and try again.
+ * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back; and on a merged PR, only
+ * for the catch-up while it is owed (#1371). **A PR that was closed, or merged with nothing owed, is not, and that is a refusal
+ * that will never lift** — a caller must stop, not read and try again.
+ *
+ * On a merged PR the merge back is no longer owed (`mergeBackOwed` is in review only), so every `back` round there is the
+ * catch-up's. The commit is deliberately not compared with the heads this PR pushed: `main` may be fast-forwarded to one.
  */
 export const conflictOpen = (state: PrState, merging?: 'main' | 'back' | 'outside', commit?: string): boolean =>
   walking(state) ||
   state.status === 'in-review' ||
-  // The catch-up's rounds (#1371): counted under `back` for `main`'s tip, never for a head this PR pushed.
-  (state.status === 'merged' &&
-    merging === 'back' &&
-    commit !== undefined &&
-    state.covers[commit] === undefined &&
-    catchUpOwed(state))
+  (state.status === 'merged' && merging === 'back' && commit !== undefined && catchUpOwed(state))
 
 /** A started round was refused (#1313): once per round, and only on a PR a round may still be counted on. */
 export function syncRefusalTransition(

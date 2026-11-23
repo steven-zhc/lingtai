@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises'
 
 import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, catchUpWaits, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type PrState, catchUpOwed, catchUpWaits, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import {
@@ -19,6 +19,7 @@ import {
   editPrSummary,
   grantPrRounds,
   latestPr,
+  listPrs,
   readPr,
   readPrDraft,
   requestPrBack,
@@ -163,7 +164,8 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       const detail = solo(project, recipe)
       return { code: 1, lines: [detail], json: { outcome: 'refused', reason: 'solo', detail } }
     }
-    const latest = yield* latestPr(project, world.store)
+    const prs = yield* listPrs(project, world.store)
+    const latest = prs[prs.length - 1] ?? null
     const open = latest !== null && isOpen(latest) ? latest : null
     const draft: readonly PrDraftTicket[] = yield* readPrDraft(
       project,
@@ -187,6 +189,11 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       )
     }
     if (ended !== null && ended.status === 'merged') lines.push(catchUpLine(ended))
+    // An older merged PR whose catch-up is still owed or waiting is not hidden by a newer PR (#1371): each is named by its number.
+    for (const older of prs) {
+      if (older === latest || older.n === null || older.status !== 'merged') continue
+      if (catchUpOwed(older) || catchUpWaits(older)) lines.push(`PR ${older.n}: ${catchUpLine(older)}`)
+    }
     if (open !== null && open.n !== null) {
       lines.push(
         `PR ${open.n}: ${open.status}${open.prBranch === null ? '' : ` — ${open.prBranch}`}`,
@@ -362,13 +369,20 @@ export const prRequestVerdict = (
   by: string,
   world: PrWorld,
   waitMs: number = SUBMIT_WAIT_MS,
+  /** `--pr <n>`: the PR the request is about; absent is the open one, else the latest merged PR waiting on its catch-up. */
+  target: number | null = null,
 ): Effect.Effect<Answered, Error> =>
   Effect.gen(function* () {
     const recipe = yield* world.recipe(project)
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
-    const latest = yield* latestPr(project, world.store)
-    if (latest === null || latest.n === null || !(isOpen(latest) || catchUpWaits(latest))) {
+    const prs = yield* listPrs(project, world.store)
+    const askable = (pr: PrState): boolean => pr.n !== null && (isOpen(pr) || catchUpWaits(pr))
+    const latest =
+      target !== null
+        ? (prs.find((pr) => pr.n === target) ?? null)
+        : (prs.findLast((pr) => isOpen(pr)) ?? prs.findLast((pr) => catchUpWaits(pr)) ?? prs[prs.length - 1] ?? null)
+    if (latest === null || latest.n === null || !askable(latest)) {
       return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     }
     const n = latest.n

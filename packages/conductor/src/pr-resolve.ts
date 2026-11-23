@@ -576,7 +576,7 @@ export const resolveRounds = (
     for (;;) {
       const state = yield* readPr(project, n, ports.store)
       if (state === null) return yield* Effect.fail(new Error(`${stream} has no events`))
-      // A PR merged or closed meanwhile refuses every round for good: stop here, holding nothing, rather than read it again.
+      // A PR closed meanwhile, or merged with no catch-up owed, refuses every round for good: stop here, holding nothing, rather than read it again.
       if (!conflictOpen(state, ask.merging, ask.commit)) {
         return { kind: 'unknown', why: `the PR is ${state.status} now: no more rounds are counted on it` } as const
       }

@@ -386,6 +386,9 @@ const now = Command.make(
 
 const prProject = Argument.String('project').pipe(Argument.optional)
 
+/** `--pr <n>`: which PR a request is about, when a newer one is open and an older merged one waits on its catch-up. */
+const prNumber = Flag.Int('pr').pipe(Flag.optional)
+
 const prSubmit = Command.make('submit', { project: prProject, json, noColor }, (args) =>
   answerWith('pr submit', args, () =>
     Effect.gen(function* () {
@@ -397,7 +400,7 @@ const prSubmit = Command.make('submit', { project: prProject, json, noColor }, (
   ),
 ).pipe(Command.withDescription('freeze the personal branch into a PR'))
 
-const prRetry = Command.make('retry', { project: prProject, json, noColor }, (args) =>
+const prRetry = Command.make('retry', { project: prProject, pr: prNumber, json, noColor }, (args) =>
   answerWith('pr retry', args, () =>
     Effect.gen(function* () {
       const pr = yield* lift(() => import('./pr.ts'))
@@ -408,12 +411,14 @@ const prRetry = Command.make('retry', { project: prProject, json, noColor }, (ar
         chosen.project,
         `human:${process.env['USER'] ?? 'operator'}`,
         pr.livePrWorld(),
+        undefined,
+        args.pr._tag === 'Some' ? args.pr.value : null,
       )
     }),
   ),
 ).pipe(Command.withDescription('check a waiting PR again: take the branch as you left it, build it, go on'))
 
-const prRounds = Command.make('rounds', { project: prProject, json, noColor }, (args) =>
+const prRounds = Command.make('rounds', { project: prProject, pr: prNumber, json, noColor }, (args) =>
   answerWith('pr rounds', args, () =>
     Effect.gen(function* () {
       const pr = yield* lift(() => import('./pr.ts'))
@@ -424,6 +429,8 @@ const prRounds = Command.make('rounds', { project: prProject, json, noColor }, (
         chosen.project,
         `human:${process.env['USER'] ?? 'operator'}`,
         pr.livePrWorld(),
+        undefined,
+        args.pr._tag === 'Some' ? args.pr.value : null,
       )
     }),
   ),
