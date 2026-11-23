@@ -1134,35 +1134,39 @@ export function syncRoundTransition(
   state: PrState,
   round: PayloadOf<'SyncRoundStarted'>,
 ): ToAppend<PayloadOf<'SyncRoundStarted'>> | null {
-  if (!conflictOpen(state, round.merging, round.commit)) return null
+  // Judged on the state this append is made against, never on an earlier read: a `PrMerged` that lands meanwhile turns an
+  // in-flight merge back's round away, and a catch-up's round is refused until the PR has merged.
+  if (!conflictOpen(state, round.catchUp === true)) return null
+  if (round.catchUp === true && round.merging !== 'back') return null
   const used = state.rounds.filter((r) => r.merging === round.merging && r.commit === round.commit).length
   if (round.round !== used + 1) return null
   return { type: 'SyncRoundStarted', actor: 'conductor', data: round }
 }
 
 /**
- * Whether a conflict round may still be counted on this PR: walking, or In review for the merge back; and on a merged PR, only
- * for the catch-up while it is owed (#1371). **A PR that was closed is not, for good. A merged one with no catch-up owed is not
- * either, for now:** a catch-up waiting on a person is owed again once rounds are granted or a retry is asked, so a caller
- * stops this operation but must not record that nothing will ever be counted there.
+ * Whether a conflict round may still be counted on this PR: walking or In review for the merge back (and the sync with
+ * `main`); on a merged PR, only the catch-up's (`catchUp`), and only while it is owed (#1371). **A PR that was closed is not,
+ * for good. A merged one with no catch-up owed is not either, for now:** a catch-up waiting on a person is owed again once
+ * rounds are granted or a retry is asked, so a caller stops this operation but must not record that nothing will ever be
+ * counted there.
  *
- * On a merged PR the merge back is no longer owed (`mergeBackOwed` is in review only), so every `back` round there is the
- * catch-up's. The commit is deliberately not compared with the heads this PR pushed: `main` may be fast-forwarded to one.
+ * The two operations are told apart by the round's own marker and the PR's status, both on the log: a merge back's round
+ * (`catchUp` false) is refused once the PR is merged, and a catch-up's is refused before it. The commit is deliberately not
+ * compared with the heads this PR pushed: `main` may be fast-forwarded to one.
  */
-export const conflictOpen = (state: PrState, merging?: 'main' | 'back' | 'outside', commit?: string): boolean =>
-  walking(state) ||
-  state.status === 'in-review' ||
-  (state.status === 'merged' && merging === 'back' && commit !== undefined && catchUpOwed(state))
+export const conflictOpen = (state: PrState, catchUp = false): boolean =>
+  catchUp ? state.status === 'merged' && catchUpOwed(state) : walking(state) || state.status === 'in-review'
 
-/** A started round was refused (#1313): once per round, and only on a PR a round may still be counted on. */
+/** A started round was refused (#1313): once per round, and only on a PR a round of its operation may still be counted on. */
 export function syncRefusalTransition(
   state: PrState,
   refusal: PayloadOf<'SyncRoundRefused'>,
 ): ToAppend<PayloadOf<'SyncRoundRefused'>> | null {
-  if (!conflictOpen(state, refusal.merging, refusal.commit)) return null
   const same = (r: { merging: string; commit: string; round: number }) =>
     r.merging === refusal.merging && r.commit === refusal.commit && r.round === refusal.round
-  if (!state.rounds.some(same) || state.refusals.some(same)) return null
+  const started = state.rounds.find(same)
+  if (started === undefined || state.refusals.some(same)) return null
+  if (!conflictOpen(state, started.catchUp === true)) return null
   return { type: 'SyncRoundRefused', actor: 'conductor', data: refusal }
 }
 

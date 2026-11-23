@@ -7,6 +7,7 @@ import {
   catchUpOwed,
   catchUpWaits,
   conflictOpen,
+  syncRoundTransition,
   integrationStream,
   prStream,
   reducePr,
@@ -917,12 +918,25 @@ describe('the catch-up', () => {
     expect(catchUpWaits(now)).toBe(true)
   })
 
-  it('conflict rounds are open for the catch-up even when main was fast-forwarded to a head this PR pushed', async () => {
+  it("a merged PR owed its catch-up opens the catch-up's rounds and nothing else, whatever main was fast-forwarded to", async () => {
     const store = await merged()
     const now = await state(store)
     const heads = { ...now, covers: { ...now.covers, [MAIN]: 0 } }
-    expect(conflictOpen(heads, 'back', MAIN)).toBe(true)
-    // Nothing else a merged PR serves: not the PR's own sync, not a catch-up already done.
-    expect(conflictOpen(heads, 'main', MAIN)).toBe(false)
+    expect(conflictOpen(heads, true)).toBe(true)
+    // Not the merge back's or the sync's: the PR has merged.
+    expect(conflictOpen(heads, false)).toBe(false)
+  })
+
+  it('a merge back round that reaches the log after PrMerged is refused, and a catch-up round before it is too', async () => {
+    const store = await merged()
+    const now = await state(store)
+    const round = { merging: 'back' as const, commit: MAIN, start: 'steven/studio', round: 1 }
+    expect(syncRoundTransition(now, round)).toBeNull()
+    expect(syncRoundTransition(now, { ...round, catchUp: true })).not.toBeNull()
+    // The catch-up's rounds are `back` rounds only.
+    expect(syncRoundTransition(now, { ...round, merging: 'main', catchUp: true })).toBeNull()
+    const open = { ...now, status: 'in-review' as const }
+    expect(syncRoundTransition(open, round)).not.toBeNull()
+    expect(syncRoundTransition(open, { ...round, catchUp: true })).toBeNull()
   })
 })

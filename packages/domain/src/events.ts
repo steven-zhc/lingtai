@@ -2820,6 +2820,11 @@ export const SyncRoundStarted = z.object({
   round: z.number().int().positive(),
   /** Why the round was bought (#1352): absent is a `conflict`, as every round was before a red build could buy one. */
   why: z.enum(['conflict', 'red']).optional(),
+  /**
+   * The round is the catch-up's (#1371), not the merge back's: both are `back`, and the PR's own state is what tells them
+   * apart when a `PrMerged` lands between a read and this append. Absent is the merge back, as every round was before.
+   */
+  catchUp: z.boolean().optional(),
 })
 
 /**

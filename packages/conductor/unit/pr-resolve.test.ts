@@ -453,6 +453,28 @@ describe('resolveRounds, the sequences a review refused', () => {
     expect(catchUp.dispatched.length).toBeGreaterThan(0)
   })
 
+  it('a PrMerged that lands while a merge back is between its guard and its round counts no round for it', async () => {
+    const store = await inProgress()
+    const back = { ...askSync(FROZEN), merging: 'back' as const, from: 'lingtai-pr-1', into: 'lingtai-team' }
+    const w = aWorld()
+    // The sweep records the merge while the resolver is asked about its lock: after the guard read the PR in progress.
+    const racing: ConflictResolver = {
+      ...resolverFor(store, w),
+      locked: () =>
+        Effect.promise(async () => {
+          const v = (await state(store)).version
+          await store.append(prStream('lingtai', 1), v, [
+            { type: 'PrMerged', actor: 'conductor', data: { how: 'git', headSha: FROZEN, mergeSha: null } },
+          ])
+          return null
+        }),
+    }
+    const end = await Effect.runPromise(resolveRounds(ports(store, w), racing, back))
+    expect(end.kind).toBe('unknown')
+    expect(w.dispatched).toEqual([])
+    expect((await state(store)).rounds).toEqual([])
+  })
+
   it('a lock that comes up during the first of two reviewers stops the second', async () => {
     const store = await inProgress()
     const w = aWorld()

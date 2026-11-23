@@ -580,7 +580,7 @@ export const resolveRounds = (
       if (state === null) return yield* Effect.fail(new Error(`${stream} has no events`))
       // A PR closed meanwhile stops every round; a merged one stops the merge back's (its resolution is discarded, and the
       // catch-up waits behind this resolver), and the catch-up's only while none is owed — a grant or a retry reopens it.
-      if (!conflictOpen(state, ask.merging, ask.commit) || (state.status === 'merged' && ask.catchUp !== true)) {
+      if (!conflictOpen(state, ask.catchUp === true)) {
         return { kind: 'unknown', why: `the PR is ${state.status} now: no more rounds are counted on it` } as const
       }
       // A review whose `StepEnded` committed and whose refusal did not (a stop between the two writes) is refused here, from
@@ -617,6 +617,7 @@ export const resolveRounds = (
           start: ask.start,
           round: next,
           ...(red === null ? {} : { why: 'red' as const }),
+          ...(ask.catchUp === true ? { catchUp: true } : {}),
         },
         ports.store,
       )
