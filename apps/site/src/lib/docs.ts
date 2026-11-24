@@ -59,8 +59,7 @@ export const DOCS_PUBLIC = false
  * command guide the tutorial ends on (#545) — `recipe` — the guide to the file `init` wrote (#544) — and `plugins` — the parent page and the
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
- * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from `guide` (#1383). `connect-github` is chapter 3, your own repository on GitHub (#1382). `solo` is chapter 11, solo mode (#1410). Nothing else in `doc/` has been through
+ * sandbox band links to (#809). `checks-and-spend` is chapter 9, what is checked, who reviews, and what a run and a day may spend (#1386). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from the old best-practices page (#1383). `connect-github` is chapter 3, your own repository on GitHub (#1382). `solo` is chapter 11, solo mode (#1410). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -81,7 +80,7 @@ export const PUBLIC_SLUGS = [
   'requirements',
   'safety',
   'solo',
-  'guide',
+  'checks-and-spend',
   'upgrading-to-0.16',
   'from-symphony',
   'plugins',
@@ -143,6 +142,7 @@ export const BOOK: BookRow[] = [
   { n: 6, part: 'Every day', file: 'tickets.md' },
   { n: 7, part: 'Every day', file: 'when-it-fails.md' },
   { n: 8, part: 'Fit it to your project', file: 'recipe.md' },
+  { n: 9, part: 'Fit it to your project', file: 'checks-and-spend.md' },
   { n: 10, part: 'Fit it to your project', file: 'safety.md' },
   { n: 11, part: 'Fit it to your project', file: 'solo.md' },
 ]
@@ -191,7 +191,6 @@ export const SECTIONS: Section[] = [
     note: 'Pages off the reading path.',
     files: [
       'tutorial-more.md',
-      'guide.md',
       'from-symphony.md',
       'why.md',
       'operating.md',

@@ -20,7 +20,7 @@ A local repository and one agent, which is what the tutorial's Part 1 uses
 - macOS or Linux, with `git` and `ps`.
 - **One** of Claude Code or Codex, installed and signed in (GitHub Copilot CLI
   and Antigravity are optional extras for `implement` alone; see
-  [the guide](guide.md#copilot-or-antigravity-at-implement)), and every role in
+  [where each agent may be named](reference.md#where-each-agent-may-be-named)), and every role in
   the recipe set to it: `discuss.agent` defaults to `claude-code`, so a
   Codex-only setup must say so there or it ends up needing `claude`.
 - The installer's own needs: `curl`, `sh`, `tar`, and `shasum` or `sha256sum`.
@@ -103,6 +103,8 @@ it.
 | A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Put the `codex_text` block from `config.example.yml` in `~/.lingtai/config.yml` (the example file itself is never read), or export it as `LINGTAI_CODEX_TEXT_*` variables (`packages/env/src/index.ts:187`) | `discuss: <project> codex ready` and `triage: <project> codex ready` |
 | A Claude token, for a sandboxed run | A project is sandboxed and a role runs `claude-code`: the login in `~/.claude/.credentials.json` is denied to the run | The run uses a long-lived token instead ([below](#tokens-for-a-sandboxed-run)) | None |
 | A Copilot token, for a sandboxed run | A project is sandboxed and a step names `copilot` | The run is handed a fine-grained token instead of `gh`'s login ([below](#tokens-for-a-sandboxed-run)) | None |
+| Copilot's own login, for an unsandboxed run | A step names `copilot` and the project is not sandboxed | The agent runs as you | `copilot login`, or `gh`'s own login |
+| An Antigravity login | A step names `antigravity` | The sign-in lives in the keychain, so run `agy acp --login` in your GUI login session, not over ssh | None |
 | Postgres credentials | `database.url` is set | Part of the URL | `postgres: pooled connection` |
 | A Telegram bot | A `telegram` subscriber is in your recipe | To post as | None |
 
