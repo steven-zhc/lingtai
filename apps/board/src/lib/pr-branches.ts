@@ -403,6 +403,7 @@ export function prBranches(
       }
       case 'PrCaughtUp': {
         const d = e.data as PayloadOf<'PrCaughtUp'>
+        nowNode = null
         if (d.mergeCommit === null) {
           words.push('already caught up')
           break
@@ -413,7 +414,6 @@ export function prBranches(
           w?.n ?? 0,
         )
         edges.push({ from: main.id, to: node.id, kind: 'catch-up', state: 'done' })
-        nowNode = null
         break
       }
       case 'PrCatchUpFailed': {
@@ -524,7 +524,7 @@ export function prBranches(
           from: dots[0]!.id,
           to: dots[dots.length - 1]!.id,
         }
-  const fallback = [...kept].reverse().find((n) => !n.hidden && n.kind !== 'todo') ?? null
+  const fallback = [...kept].reverse().find((n) => !n.hidden && n.kind !== 'todo' && n.kind !== 'waiting') ?? null
   const nowId =
     nowNode !== null && ids.has((nowNode as BranchNode).id) ? (nowNode as BranchNode).id : (fallback?.id ?? null)
   return {

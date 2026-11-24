@@ -407,6 +407,19 @@ describe('the edges of the builder', () => {
     expect(b.nodes.find((n) => n.id === b.now)?.kind).not.toBe('waiting')
   })
 
+  it('a catch-up that finds nothing to merge also clears the failure now stood at', () => {
+    const m = model([
+      ...inReview,
+      mergedBack(),
+      ['PrMerged', { how: 'host', headSha: '0ab635bffff', mergeSha: '1234567aaaa' }],
+      ['PrCatchUpFailed', { mainSha: '7654321bbbb', why: 'locked', detail: 'x' }],
+      ['PrCaughtUp', { mainSha: '7654321bbbb', mergeCommit: null }],
+    ])
+    expect(m.words).toContain('already caught up')
+    expect(m.nodes.find((n) => n.id === m.now)?.label).not.toBe('catch-up: agent locked out')
+    expect(m.nodes.find((n) => n.id === m.now)?.kind).not.toBe('waiting')
+  })
+
   it('a PR with no events yet draws nothing but lanes', () => {
     const m = model([['PrSubmitRequested', { by: 'human:steven' }]])
     expect(m.nodes).toEqual([])
