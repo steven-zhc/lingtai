@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · what Submit PR shows, from the click to the first step (0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* The PRs board's own rules, copied from apps/board/src/app/globals.css (.pr-*), so the frames look like the page. */
+.pr-page{background:#f2f4fa;padding:14px 16px 18px}
+.pr-strip{margin:0 0 12px;color:#44507a;font-size:13.5px}
+.pr-strip b{color:#2f3d63}
+.pr-cols{display:grid;grid-template-columns:1.15fr 1fr 1fr 1fr .9fr;gap:14px;align-items:start}
+.pr-col h2{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 8px;color:#44507a}
+.pr-col.waiting h2{color:var(--fail)}
+.pr-n{opacity:.7;font-weight:400}
+.pr-empty,.pr-note{color:#6c7aa3;font-size:12.5px;margin:6px 0}
+.pr-card{background:#fff;border:1px solid #d5dbec;border-radius:6px;margin-bottom:11px;overflow:hidden}
+.pr-head{display:flex;align-items:center;gap:7px;padding:6px 10px;background:#2f3d63;color:#fff}
+.pr-name{font-weight:600;flex:1}
+.pr-pill{font-size:11px;border:1px solid currentColor;border-radius:99px;padding:0 7px}
+.pr-pill.pulse{animation:pr-pulse 1.6s ease-in-out infinite}
+@keyframes pr-pulse{50%{opacity:.45}}
+.pr-count{font-size:12px;opacity:.85}
+.pr-card.draft .pr-head{background:#e3e8f5;color:#2f3d63;border-bottom:1px dashed #6c7aa3}
+.pr-card.draft{border:1px dashed #6c7aa3}
+.pr-card.progress .pr-head{background:#9c5a08}
+.pr-card.queued .pr-head{background:#b98a4a}
+.pr-body{padding:8px 10px 10px;font-size:13px}
+.pr-sub{margin:3px 0;color:#44507a}
+.pr-sub.warn{color:var(--signal);background:var(--signal-soft);border-radius:3px;padding:4px 7px}
+.pr-sub.warn code{font-size:12px}
+.pr-chips{display:flex;flex-wrap:wrap;gap:5px;margin:7px 0}
+.pr-chip{border:1px solid #d5dbec;border-radius:4px;padding:0 6px;font-size:12px;font-family:var(--mono)}
+.pr-chip.done{color:#2c7a4c}.pr-chip.running{color:#9c5a08;border-color:#9c5a08}.pr-chip.pending{color:#6c7aa3}
+.pr-rail{--rail-x:calc(.3rem + 1.5px);--rail-pad:1rem;list-style:none;margin:8px 0;padding:0 0 0 var(--rail-pad);position:relative}
+.pr-rail::before{content:'';position:absolute;left:calc(var(--rail-x) - 1.5px);top:.2rem;bottom:.2rem;width:3px;background:#c4cce4;border-radius:2px}
+.pr-rail.cut::before{background:repeating-linear-gradient(#c4cce4 0 3px,transparent 3px 6px)}
+.pr-slip{position:relative;margin:4px 0}
+.pr-dot{position:absolute;left:calc(var(--rail-x) - var(--rail-pad) - 4px);top:.4rem;width:8px;height:8px;border-radius:50%;background:#2f3d63}
+.pr-rail.cut .pr-dot{background:#fff;border:2px solid #2f3d63}
+.pr-slip-id{color:#6c7aa3}
+.pr-slip.more{color:#6c7aa3}
+.pr-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;align-items:center}
+.pr-btn{font:inherit;font-size:13px;border:1px solid #2f3d63;background:#fff;color:#2f3d63;border-radius:4px;padding:2px 10px}
+.pr-btn.primary{background:#2f3d63;color:#fff}
+.pr-btn:disabled{opacity:.45}
+.pr-btn.busy{opacity:1;background:#2f3d63;color:#fff;display:inline-flex;gap:7px;align-items:center}
+.spin{width:11px;height:11px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pr-why,.pr-refusal{flex-basis:100%;margin:3px 0 0;font-size:12.5px;color:#6c7aa3}
+.pr-refusal{color:var(--fail)}
+.toast{display:flex;gap:8px;align-items:center;margin:0 0 12px;padding:7px 11px;border-radius:4px;background:var(--pass-soft);color:var(--pass);font-size:13px}
+.toast a{color:var(--pass);text-decoration:underline}
+.arrive{outline:2px solid #e0b86b;outline-offset:2px}
+
+/* the mock's own chrome */
+.fh{display:flex;align-items:baseline;gap:10px;max-width:1240px;margin:30px auto 6px;padding:0 8px}
+.fh .n{font:600 12px var(--mono);color:var(--accent-ink)}
+.fh h2{margin:0;font-size:16px}
+.fh .tag{font:600 11px var(--mono);border-radius:3px;padding:1px 7px;background:var(--fail-soft);color:var(--fail)}
+.fh .tag.new{background:var(--pass-soft);color:var(--pass)}
+.why{max-width:1240px;margin:0 auto 10px;padding:0 8px;font-size:13.5px;color:#3a4a50}
+.why li{margin:2px 0}
+.cut-note{font:11.5px var(--mono);color:#8a6a2a}
+header.top{max-width:1240px;margin:26px auto 0;padding:0 8px}
+header.top h1{font-size:21px;margin:0 0 6px}
+</style>
+</head>
+<body>
+
+<header class="top">
+<h1>Submit PR：从点击到第一步，页面每一刻都说清楚发生了什么</h1>
+<div class="why">
+<p>操作者 2026-11-23 19:55 在 PRs 页面点了 Submit PR：按钮变灰，页面没有任何变化；过一会儿卡片变成 <i>"submitted — lingtai daemon pid 75233 on studio is freezing it"</i>，按钮没了，还留在 Draft 列，而 In progress 写着 <i>"No PR is being built."</i>。<b>帧 00 是今天的样子，01–05 是提议。</b></p>
+<p>规则只有三条：</p>
+<ol>
+<li><b>点击当下就有回答。</b>按钮写 <code>Submitting…</code>；回答到了，成功就说 <i>PR 3 submitted</i>，被拒就把理由写在按钮的位置（今天成功的回答被丢掉：<code>pr-buttons.tsx:19-21</code> 只显示 refusal，<code>actions.ts:712</code> 的 <code>PR n submitted</code> 没人读）。</li>
+<li><b>提交了就是一个 PR，不再是草稿。</b>请求一被记下（PR 流的 <code>requested</code>），卡片就以 <i>PR 3</i> 的身份出现在 In progress，状态 <i>queued</i>；Draft 列回到"之后落地的票"。</li>
+<li><b>说人话，说下一步。</b>不写 pid 和 "freezing"。写何时提交、在等谁、要是没人接（daemon 没在跑）就写出要跑的命令。</li>
+</ol>
+</div>
+</header>
+
+<!-- ─────────────────────────── 00 today ─────────────────────────── -->
+<div class="fh"><span class="n">00</span><h2>Today — after the click, and a minute later</h2><span class="tag">today</span></div>
+<div class="why">左：点击后按钮变灰，其它都不变。右：一分钟后，卡片仍在 Draft，按钮消失，一句内部话；In progress 说没有 PR。</div>
+<div class="frame"><div class="pr-page">
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · 13 tickets not in a PR yet</div>
+<div class="pr-cols">
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">13</span></h2>
+  <div class="pr-card draft"><div class="pr-head"><span class="pr-name">Next PR</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">landed on steven-zhc/studio, not yet on main</p>
+    <p class="pr-sub">submit: brings main in, builds, pushes, runs CI on a GitHub draft PR, writes the summary (≤ 20 turns, 5 min)</p>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1399</span> docs(0112): the book's chapters 2 and 3…</li><li class="pr-slip more">+ 11 more</li></ul>
+    <div class="pr-actions"><button class="pr-btn primary" disabled>Submit PR</button></div>
+   </div></div>
+ </div>
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">13</span> <span class="cut-note">· a minute later</span></h2>
+  <div class="pr-card draft"><div class="pr-head"><span class="pr-name">Next PR</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">submitted — lingtai daemon pid 75233 on studio is freezing it</p>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip more">+ 12 more</li></ul>
+   </div></div>
+ </div>
+ <div class="pr-col"><h2>In progress <span class="pr-n">0</span></h2><p class="pr-empty">No PR is being built.</p></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+<!-- ─────────────────────────── 01 the click ─────────────────────────── -->
+<div class="fh"><span class="n">01</span><h2>The click — until the board answers</h2><span class="tag new">proposed</span></div>
+<div class="why">按钮写 <code>Submitting…</code> 带转圈，保持主色，不是"灰掉"。这一刻只有几百毫秒：board 只记下请求，不做构建。</div>
+<div class="frame"><div class="pr-page">
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · 13 tickets not in a PR yet</div>
+<div class="pr-cols">
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">13</span></h2>
+  <div class="pr-card draft"><div class="pr-head"><span class="pr-name">Next PR</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">landed on steven-zhc/studio, not yet on main</p>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1399</span> docs(0112): the book's chapters 2 and 3…</li><li class="pr-slip more">+ 11 more</li></ul>
+    <div class="pr-actions"><button class="pr-btn busy" disabled><span class="spin"></span>Submitting…</button></div>
+   </div></div>
+ </div>
+ <div class="pr-col"><h2>In progress <span class="pr-n">0</span></h2><p class="pr-empty">No PR is being built.</p></div>
+ <div class="pr-col waiting"><h2>Waiting on you <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+<!-- ─────────────────────────── 02 queued ─────────────────────────── -->
+<div class="fh"><span class="n">02</span><h2>Submitted — PR 3 is queued for the daemon</h2><span class="tag new">proposed</span></div>
+<div class="why">
+<ul>
+<li>页面顶上一行确认：<i>PR 3 submitted</i>，带到 PR 页面的链接。它留在页面上，直到 PR 3 开始第一步。</li>
+<li>卡片立刻是 <b>PR 3</b>，在 <b>In progress</b>，标头浅一档、pill 写 <i>queued</i>。所有步骤都显示为待做，没有一个亮。</li>
+<li>票的线是虚的，写 <i>13 so far — fixed when it starts</i>：冻结发生在 daemon 接手时，在那之前落地的票也会进来（<code>freezeTransition</code> 只从 <code>requested</code> 出发）。</li>
+<li>Draft 列空了，写清楚为什么，没有 Submit 按钮（一次一个 PR）。</li>
+</ul>
+</div>
+<div class="frame"><div class="pr-page">
+<div class="toast">✓ <b>PR 3 submitted</b> at 19:55 — it starts when the daemon next looks for work. <a href="#">Open PR 3</a></div>
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · PR 3 queued</div>
+<div class="pr-cols">
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">0</span></h2>
+  <p class="pr-empty">Nothing has landed since PR 3 was submitted. Tickets that land now join PR 3 until it starts, then the next PR.</p>
+ </div>
+ <div class="pr-col">
+  <h2>In progress <span class="pr-n">1</span></h2>
+  <div class="pr-card queued arrive"><div class="pr-head"><span class="pr-name">PR 3</span><span class="pr-pill pulse">queued</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">submitted 19:55 by you · waiting for the daemon to start it</p>
+    <div class="pr-chips"><span class="pr-chip pending">sync ·</span><span class="pr-chip pending">build ·</span><span class="pr-chip pending">outside ·</span><span class="pr-chip pending">summary ·</span><span class="pr-chip pending">push ·</span><span class="pr-chip pending">open ·</span><span class="pr-chip pending">ci ·</span><span class="pr-chip pending">ready ·</span></div>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1399</span> docs(0112): the book's chapters 2 and 3…</li><li class="pr-slip more">+ 11 more · 13 so far — fixed when it starts</li></ul>
+   </div></div>
+ </div>
+ <div class="pr-col waiting"><h2>Waiting on you <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+<!-- ─────────────────────────── 03 started ─────────────────────────── -->
+<div class="fh"><span class="n">03</span><h2>The daemon starts it — the first step lights</h2><span class="tag new">proposed</span></div>
+<div class="why">同一张卡，同一位置，只换状态：标头变成 In progress 的颜色，pill 写 <i>in progress</i>，<code>sync …</code> 亮起，票的线变实（已冻结，写出 head）。顶上的确认行消失。</div>
+<div class="frame"><div class="pr-page">
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · PR 3 in progress</div>
+<div class="pr-cols">
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">0</span></h2>
+  <p class="pr-empty">Nothing has landed since PR 3 started.</p>
+ </div>
+ <div class="pr-col">
+  <h2>In progress <span class="pr-n">1</span></h2>
+  <div class="pr-card progress"><div class="pr-head"><span class="pr-name">PR 3</span><span class="pr-pill pulse">in progress</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">submitted 19:55 · started 19:57 · frozen at 5ca19bf</p>
+    <div class="pr-chips"><span class="pr-chip running">sync …</span><span class="pr-chip pending">build ·</span><span class="pr-chip pending">outside ·</span><span class="pr-chip pending">summary ·</span><span class="pr-chip pending">push ·</span><span class="pr-chip pending">open ·</span><span class="pr-chip pending">ci ·</span><span class="pr-chip pending">ready ·</span></div>
+    <ul class="pr-rail"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1399</span> docs(0112): the book's chapters 2 and 3…</li><li class="pr-slip more">+ 11 more</li></ul>
+   </div></div>
+ </div>
+ <div class="pr-col waiting"><h2>Waiting on you <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+<!-- ─────────────────────────── 04 no daemon ─────────────────────────── -->
+<div class="fh"><span class="n">04</span><h2>Submitted, but no daemon is running — say what starts it</h2><span class="tag new">proposed</span></div>
+<div class="why">和帧 02 一样的卡，只多一行提醒，写出要跑的命令。看不出 daemon 在不在（读失败）时写 <i>could not tell whether a daemon is running — <code>lingtai doctor</code> says</i>，不当作"没在跑"。这两句话今天已经有（<code>servedWords</code>，<code>prs.ts:214-219</code>），只是换个位置。</div>
+<div class="frame"><div class="pr-page">
+<div class="toast">✓ <b>PR 3 submitted</b> at 19:55. <a href="#">Open PR 3</a></div>
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · PR 3 queued</div>
+<div class="pr-cols">
+ <div class="pr-col"><h2>Draft <span class="pr-n">0</span></h2><p class="pr-empty">Nothing has landed since PR 3 was submitted.</p></div>
+ <div class="pr-col">
+  <h2>In progress <span class="pr-n">1</span></h2>
+  <div class="pr-card queued"><div class="pr-head"><span class="pr-name">PR 3</span><span class="pr-pill">queued</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">submitted 19:55 by you</p>
+    <p class="pr-sub warn">No daemon is running, so nothing will start it. Start one: <code>lingtai start</code></p>
+    <div class="pr-chips"><span class="pr-chip pending">sync ·</span><span class="pr-chip pending">build ·</span><span class="pr-chip pending">…</span></div>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip more">+ 12 more · 13 so far — fixed when it starts</li></ul>
+   </div></div>
+ </div>
+ <div class="pr-col waiting"><h2>Waiting on you <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+<!-- ─────────────────────────── 05 refused ─────────────────────────── -->
+<div class="fh"><span class="n">05</span><h2>Refused — the card stays the draft, the reason where the button was</h2><span class="tag new">proposed</span></div>
+<div class="why">被拒（比如页面过期、草稿已空）就不产生 PR：卡片留在 Draft，按钮回来，理由写在按钮下面。这一帧和今天一样，列出来是为了说明它不变。</div>
+<div class="frame"><div class="pr-page">
+<div class="pr-strip"><b>steven-zhc/studio → main</b> · 13 tickets not in a PR yet</div>
+<div class="pr-cols">
+ <div class="pr-col">
+  <h2>Draft <span class="pr-n">13</span></h2>
+  <div class="pr-card draft"><div class="pr-head"><span class="pr-name">Next PR</span><span class="pr-count">13 tickets</span></div>
+   <div class="pr-body">
+    <p class="pr-sub">landed on steven-zhc/studio, not yet on main</p>
+    <ul class="pr-rail cut"><li class="pr-slip"><span class="pr-dot"></span><span class="pr-slip-id">#1362</span> feat(board): sanitized render…</li><li class="pr-slip more">+ 12 more</li></ul>
+    <div class="pr-actions"><button class="pr-btn primary">Submit PR</button><p class="pr-refusal" role="alert">Not submitted: nothing has landed on steven-zhc/studio that a PR does not hold — the page was out of date.</p></div>
+   </div></div>
+ </div>
+ <div class="pr-col"><h2>In progress <span class="pr-n">0</span></h2><p class="pr-empty">No PR is being built.</p></div>
+ <div class="pr-col waiting"><h2>Waiting on you <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>In review <span class="pr-n">0</span></h2></div>
+ <div class="pr-col"><h2>Merged <span class="pr-n">2</span></h2></div>
+</div></div></div>
+
+</body>
+</html>
