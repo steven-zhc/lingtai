@@ -133,7 +133,8 @@ describe('the tutorial stays a first-run path', () => {
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(body).not.toContain('$VISUAL')
     expect(body).not.toContain('--land hold')
-    expect(body).toContain('(tutorial-more.md)')
+    expect(body).toContain('(team.md)')
+    expect(body).not.toContain('tutorial-more.md')
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)
@@ -275,12 +276,11 @@ describe('where a link inside a document goes', () => {
     expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(recipe.md)')
   })
 
-  it('publishes the concepts page, built from doc/, and links it from the tutorial', async () => {
+  it('publishes the concepts page, built from doc/', async () => {
     const served = await servable()
     const served$ = (file: string) => served.includes(file)
     expect(served).toContain('concepts.md')
     expect(resolveHref('tutorial.md', 'concepts.md', served$)).toBe('/docs/concepts/')
-    expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(concepts.md)')
     const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
     expect(body).toContain('(img/concepts.svg)')
     await expect(readFile(path.join(docRoot, 'img/concepts.svg'), 'utf8')).resolves.toContain('<svg')
