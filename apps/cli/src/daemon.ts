@@ -611,7 +611,8 @@ export function daemonCommand(
       // nothing ever obeyed it, and the command waiting for the lock waited for ever.
       const triageHashes = new Map<string, string>()
       // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-      const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
+      const startedAt = new Date()
+      const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, { startedAt }) })
       const locked = lockedEffect(guard)
       const scanTriage = (project: string, triage: Triage | null): Effect.Effect<void> =>
         catchUpChangedTriage(

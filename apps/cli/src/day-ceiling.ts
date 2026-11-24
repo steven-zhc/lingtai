@@ -45,19 +45,23 @@ export const spendStallIn = (
   lags: readonly ProjectionLag[],
   now: Date,
   store: EventStore,
+  startedAt?: Date,
 ): Effect.Effect<string | null, unknown> =>
   Effect.gen(function* () {
-    if (lags.some((l) => l.name === 'spend')) return spendStall(lags, now)
+    if (lags.some((l) => l.name === 'spend')) return spendStall(lags, now, startedAt)
     return (yield* runSpentToday(store, now))
       ? 'the spend projection has never checkpointed and the log has spend from today'
       : null
   })
 
 /** The sentence for a `spend` row that is behind and quiet, or null; a missing row is `spendStallIn`'s. */
-export function spendStall(lags: readonly ProjectionLag[], now: Date): string | null {
+export function spendStall(lags: readonly ProjectionLag[], now: Date, startedAt?: Date): string | null {
   const row = lags.find((l) => l.name === 'spend')
   if (row === undefined || row.lag <= 0n) return null
-  const quiet = row.updatedAt === null ? null : now.getTime() - row.updatedAt.getTime()
+  // Quiet is measured from the later of the checkpoint and this process's start (#1016):
+  // behind only since the start is catching up, not stopped.
+  const since = Math.max(row.updatedAt?.getTime() ?? -Infinity, startedAt?.getTime() ?? -Infinity)
+  const quiet = Number.isFinite(since) ? now.getTime() - since : null
   if (quiet !== null && quiet <= STALL_AFTER_MS) return null
   const moved = quiet === null ? 'has never moved' : `last moved ${ago(quiet)} ago`
   return `the spend projection is ${row.lag} behind and ${moved}`
@@ -68,6 +72,8 @@ export interface DayCeilingPorts {
   lags?: () => Effect.Effect<readonly ProjectionLag[], unknown>
   rows?: (since: Date) => ReturnType<typeof readSpendEffect>
   now?: () => Date
+  /** When this process began following the log; a projection behind only since then is catching up (#1016). */
+  startedAt?: Date
   /** A sentence while `spend` is being rebuilt (#680); null otherwise. */
   rebuilding?: (lags: readonly ProjectionLag[]) => string | null
   /** How many rebuilds have begun; a change across the read means the read may be of a table being rebuilt. */
@@ -103,7 +109,7 @@ export function ceilingPort(store: EventStore | undefined, ports: DayCeilingPort
         // a half-built table as healthy; the hold is the rebuild saying so.
         const stall =
           (ports.rebuilding ?? spendRebuildHold)(lags) ??
-          (yield* unless(spendStallIn(lags, (ports.now ?? (() => now))(), store ?? eventStore)))
+          (yield* unless(spendStallIn(lags, (ports.now ?? (() => now))(), store ?? eventStore, ports.startedAt)))
         if (stall !== null) return yield* Effect.fail(new CeilingUnchecked({ why: stall }))
         const rows = yield* unless(
           Effect.suspend(() => (ports.rows ?? ((since: Date) => readSpendEffect({ since })))(startOfLocalDay(now))),

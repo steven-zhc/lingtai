@@ -67,6 +67,21 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
     expect(spendStall([spend(2n, null)], now)).toMatch(/has never moved/)
   })
 
+  it('measures quiet from this process start when it is later than the checkpoint (#1016)', async () => {
+    const day = 25 * 3600_000
+    const at = (ms: number) => new Date(now.getTime() - ms)
+    expect(spendStall([spend(1n, day)], now, at(10_000))).toBeNull()
+    expect(spendStall([spend(1n, day)], now, at(120_000))).toMatch(/1 behind/)
+    expect(spendStall([spend(1n, day)], now)).toMatch(/1 behind/)
+    expect(spendStall([spend(1n, null)], now, at(10_000))).toBeNull()
+    expect(
+      await spendUnchecked(createMemoryEventStore(), {
+        ...ports(() => Effect.succeed([spend(1n, day)])),
+        startedAt: at(10_000),
+      }),
+    ).toBeNull()
+  })
+
   it('does not call a caught-up row stalled', () => {
     expect(spendStall([spend(0n, 10 * 60_000)], now)).toBeNull()
   })
