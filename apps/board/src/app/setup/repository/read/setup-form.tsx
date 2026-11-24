@@ -227,14 +227,8 @@ export function SetupForm({ view }: { view: ReadView }) {
           editor={
             <span>
               <label className="wiz-row">
-                <input
-                  type="radio"
-                  checked={tickets === 'github'}
-                  disabled={view.githubOff !== null}
-                  onChange={() => setTickets('github')}
-                />
+                <input type="radio" checked={tickets === 'github'} onChange={() => setTickets('github')} />
                 github
-                {view.githubOff !== null ? <span className="wiz-tag">{view.githubOff}</span> : null}
               </label>
               <label className="wiz-row">
                 <input type="radio" checked={tickets === 'db'} onChange={() => setTickets('db')} />

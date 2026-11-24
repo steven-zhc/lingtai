@@ -41,12 +41,12 @@ describe('proposeSetup', () => {
     expect(p.personApprovesMerge).toBe(false)
   })
 
-  it('a local path with a GitHub origin proposes that remote’s issues — while add --local still writes db', async () => {
+  it('a local path with a GitHub origin keeps db and says how to take that remote’s issues', async () => {
     const p = await run({ kind: 'local', path: '/w/widget' }, readers())
-    expect(p.tickets).toMatchObject({
-      known: true,
-      value: { source: 'github', repository: { owner: 'acme', repo: 'widget' } },
-    })
+    expect(p.tickets).toMatchObject({ known: true, value: { source: 'db', repository: null } })
+    const because = p.tickets.known ? p.tickets.because : ''
+    expect(because).toContain('acme/widget')
+    expect(because).toContain('lingtai add acme/widget')
   })
 
   it('a local path whose origin is not GitHub, or that has none, proposes local tickets', async () => {
