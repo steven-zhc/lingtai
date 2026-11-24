@@ -438,6 +438,19 @@ still carrying a `repair` block is **refused by name** rather than ignored —
 default while its own file said otherwise. The two old ceilings do not add up to
 the new one, so nothing migrates it for you.
 
+### what a PR summary may spend — `pr:`, the recipe's
+
+`pr:` configures the agent that writes a PR's title and summary, and a solo recipe that writes it is refused. Defaults are read off the schema and `ciOf`.
+
+| Key | Default | Where |
+|---|---|---|
+| `pr.limits.turns` | `20` | `packages/recipe/src/recipe.ts:3009` |
+| `pr.limits.wall` | `5m` | `packages/recipe/src/recipe.ts:3011` |
+| `pr.limits.usd` | none: it spends outside any attempt, so each run counts against the day's ceiling | `Pr` carries no `usd` |
+| `pr.ci.timeout` | `60m` | `packages/recipe/src/settings.ts:278` |
+| `pr.ci.required` | every check on the PR's head; an empty list is refused | `packages/recipe/src/settings.ts:277` |
+| `pr.ci.provider: jenkins` | refused in 0.16; its credentials are `jenkins.user` and `jenkins.token` in `~/.lingtai/config.yml`, never the recipe | `packages/recipe/src/resolve.ts:546` |
+
 ### what triage may spend — `triage:`
 
 `triage:` names the agent that explains a hold ([0118](decisions/0118-a-hold-explains-itself.md) §3).
