@@ -23,6 +23,11 @@ git clone https://github.com/steven-zhc/chapter-garden.git
 lingtai init --local chapter-garden
 ```
 
+The defaults turn the sandbox on, and with it on `init` runs `claude setup-token`
+once, which opens a browser to sign in. If you skip it, the first ticket fails
+until you run `lingtai token claude`; see
+[requirements](requirements.md#tokens-for-a-sandboxed-run).
+
 If your shell cannot find `lingtai`, add `~/.local/bin` to your `PATH`; the
 installer edits no shell profile.
 
