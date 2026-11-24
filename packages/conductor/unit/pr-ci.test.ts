@@ -120,7 +120,6 @@ const ports = (store: EventStore, w: World, recipe: Recipe): PrPorts => {
   return {
     store,
     recipe: () => Effect.succeed(recipe),
-    candidates: () => Effect.succeed([{ issue: '1' }]),
     fetch: () => Effect.void,
     merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),
     sweep: () => Effect.void,

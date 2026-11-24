@@ -57,7 +57,7 @@ import { lift, recovering } from './exit.ts'
 import { configPath } from './init.ts'
 import { trackLiveSpend } from './live-spend.ts'
 import { symbol } from './output.ts'
-import { draftPorts, livePrPorts } from './pr-ports.ts'
+import { livePrPorts } from './pr-ports.ts'
 import { pauseProjects, resumeProjects } from './project-pause.ts'
 import { PROJECTIONS } from './projection.ts'
 import { startRates } from './rates.ts'
@@ -540,7 +540,6 @@ export function daemonCommand(
         projections: PROJECTIONS.map((p) => p.name),
         projects: registered,
         github: { projects: registered, clients },
-        draft: draftPorts(eventStore),
         writer: writer ?? undefined,
       }).pipe(
         // Reported, never fatal. Refusing to start because a directory could not be

@@ -21,7 +21,7 @@ import { parseFindings, verdictFor } from '@lingtai/actions'
 import { DIFF_FLAGS, type ConflictEnd, type PayloadOf, type PrState, prStream } from '@lingtai/domain'
 import { parsePayload } from '@lingtai/domain'
 import { conflictOpen, conflictRoundsLeft, grantedFor, lastRefusalOf } from '@lingtai/domain'
-import { readPr, readPrDraft, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
+import { readDraftTickets, readPr, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
 import { type Recipe, ceilingOf, numericTurns, parseDuration } from '@lingtai/recipe'
 import { Effect, Result } from 'effect'
 
@@ -158,12 +158,11 @@ const oursOf = (
     const tickets =
       ask.merging !== 'back'
         ? (state?.tickets ?? [])
-        : (yield* readPrDraft(
-            ask.project,
-            yield* ports.recipe(ask.project),
-            yield* ports.candidates(ask.project),
-            ports.store,
-          )).map((t) => ({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: t.title }))
+        : (yield* readDraftTickets(ask.project, ports.store)).map((t) => ({
+            ticket: t.ticket,
+            mergeCommit: t.mergeCommit,
+            title: t.title,
+          }))
     const red = ask.why?.kind === 'red' ? ask.why : null
     const files: { ticket: (typeof tickets)[number]; names: string[] }[] = []
     for (const t of tickets) {

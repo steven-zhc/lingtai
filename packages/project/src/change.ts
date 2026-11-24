@@ -28,7 +28,7 @@ import { recordFileRecipe } from './commands.ts'
 import { draftRecipe } from './draft.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
-import { type PrDraftTicket, isTeamSource, listPrs, readDraftOn } from './pr.ts'
+import { isTeamSource, listPrs, readDraft } from './pr.ts'
 import { defaultStore, readProjectStateEffect } from './state.ts'
 
 /** What to change: a draft's changes, or the text a person typed over the text their page loaded. */
@@ -58,16 +58,11 @@ export interface ChangeOptions {
   by: string
   store?: EventStore
   home?: string
-  /**
-   * The cards that may have landed on `branch.personal`, for a team → solo save to decide the draft from. Never the
-   * board's two-day window. Absent, such a save is refused: unknown is not empty.
-   */
-  candidates?: (project: string) => Effect.Effect<readonly { readonly issue: string }[], Error>
 }
 
 const SHOWN_TICKETS = 5
 
-/** The personal branch a team recipe's text names, falling back to its `branch.main` as `readPrDraft` does. */
+/** The personal branch a team recipe's text names, falling back to its `branch.main`; the refusal's wording only. */
 function personalOf(source: string): string {
   try {
     const raw = parseYaml(source) as { branch?: { personal?: unknown; main?: unknown } } | null
@@ -81,7 +76,11 @@ function personalOf(source: string): string {
 }
 
 /** The refusal's sentence: the switch, what holds it, and the way out. Both halves when both hold. */
-export function modeSwitchMessage(personal: string, open: readonly PrState[], draft: readonly PrDraftTicket[]): string {
+export function modeSwitchMessage(
+  personal: string,
+  open: readonly PrState[],
+  draft: readonly { readonly ticket: string }[],
+): string {
   const parts: string[] = []
   if (open.length > 0) {
     const names = open.map(
@@ -179,17 +178,9 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
   // Only team → solo reads the log for tickets and PRs; every other save costs what it did.
   if (current !== null && isTeamSource(current) && !isTeamSource(text)) {
     const personal = personalOf(current)
-    if (options.candidates === undefined) {
-      return {
-        ok: false,
-        reason: 'mode-switch',
-        message: `mode: team → solo is refused here: this caller cannot read what has landed on ${personal} — switch the mode on /recipe`,
-      } as SaveRecipeTextResult
-    }
     // A failed read fails the change: never *nothing open*.
     const open = (yield* listPrs(project, store)).filter(isOpen)
-    const candidates = yield* options.candidates(project)
-    const draft = yield* readDraftOn(project, personal, candidates, store)
+    const draft = yield* readDraft(project, store)
     if (open.length > 0 || draft.length > 0) {
       return {
         ok: false,
