@@ -4,7 +4,7 @@ Pick solo when nobody else works on the repository. `lingtai add` asks `Does any
 
 What changes from those chapters:
 
-- Every ticket with a kind label and no hold is taken. Nothing has to be assigned to you.
+- Every ticket with a kind label and no hold is taken, and a new solo recipe asks for no assignee. A recipe switched from team keeps its `source.assignee.take`, so with `mine` an unassigned ticket is still skipped; set it to `all` to drop that.
 - Work lands on `branch.main`.
 - A landed ticket is closed.
 - There is no PR page and no `lingtai pr` step: `lingtai pr submit` is refused in a solo project.
@@ -14,7 +14,7 @@ What changes from those chapters:
 Solo always lands on `branch.main`. What differs is the value `lingtai add` writes there, so the answer depends on how the project was added.
 
 - **A local project** (`init --local`, `add --local`): `lingtai-base`, a branch made from the one you have checked out when it is absent. Solo does not change that, so a first project where you answer `solo` still lands on `lingtai-base`, as in team. `--main <branch>` names another.
-- **A GitHub project**: the repository's default branch, usually `main`. `--base <branch>` names another.
+- **A GitHub project**: the repository's default branch, usually `main`. `--main <branch>` names another; `--base` is refused.
 
 In both, the value is in the recipe, and editing `branch.main` there moves it.
 

@@ -180,6 +180,8 @@ describe('solo is chapter 11, solo mode', () => {
     expect(headingsOf(body).some((h) => h.depth === 2 && h.text === 'Next')).toBe(false)
     expect(body).toContain('lingtai-base')
     expect(body).toContain('branch.main')
+    expect(body).not.toContain('--base <') // add-github refuses --base
+    expect(body).toContain('source.assignee.take') // solo keeps a configured take
   })
 })
 
