@@ -1304,7 +1304,7 @@ const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.E
   })
 
 /**
- * The sweep's read (#1317): for each project, the latest PR if it is open, asked about once; then the tickets of the
+ * The sweep's read (#1317): for each project, the open PR (the highest not in `draft`, which may sit below a draft), asked about once; then the tickets of the
  * merged PRs closed. One project's failure is that project's.
  */
 export const learnPrEnds = (

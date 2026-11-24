@@ -55,7 +55,7 @@ import {
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store/store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
@@ -177,6 +177,14 @@ export const requestPrSubmit = (
       const decided = requestSubmit(openAmong(prs), mode, project, by, top?.status === 'draft')
       if (decided.kind === 'refused') return decided
       const target = draftOf(prs)
+      // `listPrs` reads the streams one after another, so a PR read early may have moved while a later one was read.
+      // Every stream below the target is read again; one that moved fails this attempt as a lost race, to read afresh.
+      for (const pr of prs) {
+        if (pr.n === null || pr.n === target.n) continue
+        const stream = prStream(project, pr.n)
+        const head = yield* Effect.tryPromise({ try: () => store.head(stream), catch: failed })
+        if (head !== pr.version) return yield* Effect.fail(new ConcurrencyError(stream, pr.version, [head]))
+      }
       yield* Effect.tryPromise({
         try: () => store.append(prStream(project, target.n), target.version, [decided.event]),
         catch: (e) => e,

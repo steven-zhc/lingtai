@@ -211,6 +211,31 @@ describe('requestPrSubmit', () => {
     ])
   })
 
+  it('a PR read early that moves while a later one is read: the Submit reads again and is refused open-pr', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    let moved = false
+    const racing: EventStore = {
+      ...store,
+      read: async (stream, ...rest) => {
+        const events = await store.read(stream, ...rest)
+        if (!moved && stream === prStream('lingtai', 1)) {
+          moved = true
+          // Another Submit, the freeze and a landing into a new draft, all after PR 1 was read as a draft.
+          await run(requestPrSubmit('lingtai', 'team', 'human:b', store))
+          await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
+          await addToDraft(store, 2, '2')
+        }
+        return events
+      },
+    }
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:a', racing))).toMatchObject({
+      kind: 'refused',
+      reason: 'open-pr',
+    })
+    expect(await store.head(prStream('lingtai', 2))).toBe(1)
+  })
+
   it('does not take a project stream for a PR: prj- and pr- share two letters', async () => {
     const store = createMemoryEventStore()
     await recipeChanged(store, 'mode: team\n', 0)
