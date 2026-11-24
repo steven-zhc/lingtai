@@ -32,6 +32,134 @@
     "reason": "Chooses how one field of one event is rendered, and keeps no state (plan §1.3)."
   },
   {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "BranchSynced",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrBackRequested",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrCatchUpFailed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrCaughtUp",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrClosed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrFixLanded",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrHeadAdopted",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrInProgress",
+    "count": 2,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrMergeBackFailed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrMerged",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrMergedBack",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrOpened",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrOutsideMerged",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "prBranches",
+    "type": "PrStepDone",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads this PR's events in order to place one node or line of its drawing (#1373); the PR's state is `reducePr`'s and the drawing keeps only what the log says, rebuilt on each render."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "waitOf",
+    "type": "PrInProgress",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds the wait the latest walk stopped at when the PR was closed there, to draw its red node; the PR's state is `reducePr`'s and this keeps none."
+  },
+  {
+    "file": "apps/board/src/lib/pr-branches.ts",
+    "function": "waitOf",
+    "type": "PrWaiting",
+    "count": 1,
+    "class": "select",
+    "reason": "Finds the wait the latest walk stopped at when the PR was closed there, to draw its red node; the PR's state is `reducePr`'s and this keeps none."
+  },
+  {
     "file": "apps/board/src/lib/pr-page.ts",
     "function": "lastPass",
     "type": "PrInProgress",

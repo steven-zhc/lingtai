@@ -41,7 +41,12 @@ export interface BranchEdge {
 }
 
 export interface BranchModel {
-  readonly lanes: { readonly main: string; readonly personal: string; readonly pr: string | null; readonly gone: boolean }
+  readonly lanes: {
+    readonly main: string
+    readonly personal: string
+    readonly pr: string | null
+    readonly gone: boolean
+  }
   readonly nodes: readonly BranchNode[]
   readonly edges: readonly BranchEdge[]
   /** The tickets' brace under the personal lane: its words and the two nodes it spans. */
@@ -62,7 +67,14 @@ export interface BranchOptions {
 const TICKET_DOTS = 5
 const WALKS_SHOWN = 3
 const short = (sha: string | null): string => (sha === null ? '?' : sha.slice(0, 7))
-const STEP_WORD: Record<string, string> = { sync: 'sync', build: 'build', ci: 'CI', push: 'push', open: 'open', ready: 'ready' }
+const STEP_WORD: Record<string, string> = {
+  sync: 'sync',
+  build: 'build',
+  ci: 'CI',
+  push: 'push',
+  open: 'open',
+  ready: 'ready',
+}
 
 interface Walk {
   readonly n: number
@@ -80,7 +92,12 @@ export function prBranches(
   draft: readonly DraftTicket[] | { readonly error: string },
   opts: BranchOptions,
 ): BranchModel | null {
-  const lanes = { main: pr?.main ?? opts.main, personal: pr?.branch ?? opts.personal, pr: pr?.prBranch ?? null, gone: false }
+  const lanes = {
+    main: pr?.main ?? opts.main,
+    personal: pr?.branch ?? opts.personal,
+    pr: pr?.prBranch ?? null,
+    gone: false,
+  }
   if (pr === null) {
     if ('error' in draft) return null
     const shown = draft.slice(0, TICKET_DOTS)
@@ -140,7 +157,13 @@ export function prBranches(
     return null
   }
 
-  const syncNode = (w: Walk, kind: BranchNode['kind'], label: string, sha: string | null, state: BranchEdge['state']) => {
+  const syncNode = (
+    w: Walk,
+    kind: BranchNode['kind'],
+    label: string,
+    sha: string | null,
+    state: BranchEdge['state'],
+  ) => {
     const main = add({ lane: 'main', kind: 'main', label: '', sha: null }, w.n)
     const node = add({ lane: 'pr', kind, label, sha }, w.n)
     const edge: BranchEdge = { from: main.id, to: node.id, kind: 'sync', state }
@@ -168,10 +191,16 @@ export function prBranches(
         if (r.step === 'build') last = add({ lane: 'pr', kind: 'done', label: 'build ✓', sha: r.headSha }, w.n)
         else if (r.step === 'push')
           last = add(
-            { lane: 'pr', kind: 'done', label: pr.host === null ? 'pushed' : `pushed · #${pr.host.number}`, sha: r.headSha },
+            {
+              lane: 'pr',
+              kind: 'done',
+              label: pr.host === null ? 'pushed' : `pushed · #${pr.host.number}`,
+              sha: r.headSha,
+            },
             w.n,
           )
-        else if (r.step === 'ci' && !done('ready')) last = add({ lane: 'pr', kind: 'done', label: 'CI ✓', sha: r.headSha }, w.n)
+        else if (r.step === 'ci' && !done('ready'))
+          last = add({ lane: 'pr', kind: 'done', label: 'CI ✓', sha: r.headSha }, w.n)
         else if (r.step === 'ready')
           last = add({ lane: 'pr', kind: 'done', label: done('ci') ? 'CI ✓ · ready' : 'ready', sha: r.headSha }, w.n)
         continue
@@ -184,7 +213,11 @@ export function prBranches(
         if (r.step === 'sync' && w.sync === null) {
           const conflictMain = wait.conflict?.merging === 'main' ? wait.conflict.commit : null
           const s = syncNode(w, 'waiting', label, null, 'red')
-          nodes[nodes.indexOf(s.main)] = { ...s.main, sha: conflictMain, label: conflictMain === null ? '' : short(conflictMain) }
+          nodes[nodes.indexOf(s.main)] = {
+            ...s.main,
+            sha: conflictMain,
+            label: conflictMain === null ? '' : short(conflictMain),
+          }
           last = s.node
           nowNode = s.node
         } else {
@@ -214,7 +247,16 @@ export function prBranches(
     if (first) {
       const shown = d.tickets.slice(0, TICKET_DOTS)
       for (const t of shown)
-        add({ lane: 'personal', kind: 'ticket', label: `#${t.ticket}`, sha: t.mergeCommit, title: `#${t.ticket} ${t.title}` }, 0)
+        add(
+          {
+            lane: 'personal',
+            kind: 'ticket',
+            label: `#${t.ticket}`,
+            sha: t.mergeCommit,
+            title: `#${t.ticket} ${t.title}`,
+          },
+          0,
+        )
       frozen = add({ lane: 'personal', kind: 'done', label: `${short(d.frozenSha)} frozen`, sha: d.frozenSha }, 0)
     }
     const w: Walk = { n: walks.length + 1, sync: null, how: null, ready: false, tail: null, closed: false }
@@ -233,6 +275,9 @@ export function prBranches(
       case 'PrInProgress':
         if (w !== null) closeWalk(w)
         start(e, w === null)
+        break
+      case 'PrOpened':
+        if (w !== null && (e.data as PayloadOf<'PrOpened'>).host !== 'none') w.ready = true
         break
       case 'PrStepDone': {
         const d = e.data as PayloadOf<'PrStepDone'>
@@ -253,11 +298,21 @@ export function prBranches(
           if (d.how === 'already') {
             // Nothing was merged: main's commit is drawn, and no line from it.
             const main = add(
-              { lane: 'main', kind: 'main', label: `${short(d.mainCommit)} — already in your branch`, sha: d.mainCommit },
+              {
+                lane: 'main',
+                kind: 'main',
+                label: `${short(d.mainCommit)} — already in your branch`,
+                sha: d.mainCommit,
+              },
               w.n,
             )
             w.tail = add({ lane: 'pr', kind: 'done', label: 'sync: nothing to merge', sha: d.head, tone: 'mut' }, w.n)
-            w.sync = { node: w.tail, main, edge: { from: main.id, to: w.tail.id, kind: 'sync', state: 'done' }, done: true }
+            w.sync = {
+              node: w.tail,
+              main,
+              edge: { from: main.id, to: w.tail.id, kind: 'sync', state: 'done' },
+              done: true,
+            }
           } else {
             const s = syncNode(w, 'done', `${short(d.head)} sync`, d.head, 'done')
             nodes[nodes.indexOf(s.main)] = { ...s.main, label: short(d.mainCommit), sha: d.mainCommit }
@@ -280,28 +335,38 @@ export function prBranches(
         const d = e.data as PayloadOf<'PrOutsideMerged'>
         const first = d.commits[0]
         const more = d.commits.length - 1 + d.omitted
-        const label = first === undefined ? short(d.head) : `${short(first.sha)} · ${first.author}${more > 0 ? ` +${more}` : ''}`
+        const label =
+          first === undefined ? short(d.head) : `${short(first.sha)} · ${first.author}${more > 0 ? ` +${more}` : ''}`
         w.tail = add({ lane: 'pr', kind: 'outside', label, sha: d.head, tone: 'sig' }, w.n)
         break
       }
       case 'PrHeadAdopted': {
         if (w === null) break
         const d = e.data as PayloadOf<'PrHeadAdopted'>
-        w.tail = add({ lane: 'pr', kind: 'outside', label: `${short(d.head)} · ${d.by}`, sha: d.head, tone: 'sig' }, w.n)
+        w.tail = add(
+          { lane: 'pr', kind: 'outside', label: `${short(d.head)} · ${d.by}`, sha: d.head, tone: 'sig' },
+          w.n,
+        )
         break
       }
       case 'PrFixLanded': {
         if (w === null) break
         closeWalk(w)
         const d = e.data as PayloadOf<'PrFixLanded'>
-        w.tail = add({ lane: 'pr', kind: 'ticket', label: `#${d.ticket} pr-fix`, sha: d.mergeCommit, title: d.title }, w.n)
+        w.tail = add(
+          { lane: 'pr', kind: 'ticket', label: `#${d.ticket} pr-fix`, sha: d.mergeCommit, title: d.title },
+          w.n,
+        )
         break
       }
       case 'PrMergedBack': {
         if (w === null) break
         closeWalk(w)
         const d = e.data as PayloadOf<'PrMergedBack'>
-        const node = add({ lane: 'personal', kind: 'done', label: `${short(d.mergeCommit)} merged back`, sha: d.mergeCommit }, w.n)
+        const node = add(
+          { lane: 'personal', kind: 'done', label: `${short(d.mergeCommit)} merged back`, sha: d.mergeCommit },
+          w.n,
+        )
         if (w.tail !== null) edges.push({ from: w.tail.id, to: node.id, kind: 'back', state: 'done' })
         backHeads.add(d.prHead)
         mergedBackCount++
@@ -313,7 +378,14 @@ export function prBranches(
         closeWalk(w)
         const d = e.data as PayloadOf<'PrMergeBackFailed'>
         const node = add(
-          { lane: 'personal', kind: 'waiting', label: `merge back: ${WAIT_WORDS_BACK[d.why]}`, sha: d.prHead, tone: 'red', title: d.detail },
+          {
+            lane: 'personal',
+            kind: 'waiting',
+            label: `merge back: ${WAIT_WORDS_BACK[d.why]}`,
+            sha: d.prHead,
+            tone: 'red',
+            title: d.detail,
+          },
           w.n,
         )
         if (w.tail !== null) edges.push({ from: w.tail.id, to: node.id, kind: 'back', state: 'red' })
@@ -328,7 +400,10 @@ export function prBranches(
           break
         }
         const main = add({ lane: 'main', kind: 'main', label: short(d.mainSha), sha: d.mainSha }, w?.n ?? 0)
-        const node = add({ lane: 'personal', kind: 'done', label: 'caught up with main', sha: d.mergeCommit }, w?.n ?? 0)
+        const node = add(
+          { lane: 'personal', kind: 'done', label: 'caught up with main', sha: d.mergeCommit },
+          w?.n ?? 0,
+        )
         edges.push({ from: main.id, to: node.id, kind: 'catch-up', state: 'done' })
         break
       }
@@ -336,7 +411,14 @@ export function prBranches(
         const d = e.data as PayloadOf<'PrCatchUpFailed'>
         const main = add({ lane: 'main', kind: 'main', label: short(d.mainSha), sha: d.mainSha }, w?.n ?? 0)
         const node = add(
-          { lane: 'personal', kind: 'waiting', label: `catch-up: ${WAIT_WORDS_BACK[d.why]}`, sha: null, tone: 'red', title: d.detail },
+          {
+            lane: 'personal',
+            kind: 'waiting',
+            label: `catch-up: ${WAIT_WORDS_BACK[d.why]}`,
+            sha: null,
+            tone: 'red',
+            title: d.detail,
+          },
           w?.n ?? 0,
         )
         edges.push({ from: main.id, to: node.id, kind: 'catch-up', state: 'red' })
@@ -352,7 +434,12 @@ export function prBranches(
         const d = e.data as PayloadOf<'PrMerged'>
         const end = add({ lane: 'pr', kind: 'done', label: '', sha: d.headSha, hidden: true }, w.n)
         const into = add(
-          { lane: 'main', kind: 'merged', label: d.mergeSha === null ? 'merged' : `${short(d.mergeSha)} merged`, sha: d.mergeSha },
+          {
+            lane: 'main',
+            kind: 'merged',
+            label: d.mergeSha === null ? 'merged' : `${short(d.mergeSha)} merged`,
+            sha: d.mergeSha,
+          },
           w.n,
         )
         edges.push({ from: end.id, to: into.id, kind: 'merge', state: 'done' })
@@ -363,10 +450,17 @@ export function prBranches(
         closeWalk(w)
         const d = e.data as PayloadOf<'PrClosed'>
         closedNode = add(
-          { lane: 'pr', kind: 'todo', label: `× closed${backRequested ? ' by lingtai pr back' : ''}`, sha: d.headSha, tone: 'mut' },
+          {
+            lane: 'pr',
+            kind: 'todo',
+            label: `× closed${backRequested ? ' by lingtai pr back' : ''}`,
+            sha: d.headSha,
+            tone: 'mut',
+          },
           w.n,
         )
-        if (mergedBackCount === 0) add({ lane: 'personal', kind: 'todo', label: 'the tickets are Draft again', sha: null, tone: 'mut' }, w.n)
+        if (mergedBackCount === 0)
+          add({ lane: 'personal', kind: 'todo', label: 'the tickets are Draft again', sha: null, tone: 'mut' }, w.n)
         else if (lastMergedBack !== null) {
           const m: { node: BranchNode; index: number } = lastMergedBack
           nodes[m.index] = { ...m.node, label: `${m.node.label} — stays`, tone: 'sig' }
@@ -413,12 +507,16 @@ export function prBranches(
     shownT === 0 || dots.length === 0
       ? null
       : {
-          text: `${pr.status === 'merged' ? 'closed' : 'in this PR'}: ${tickets.slice(0, shownT).map((t) => `#${t.ticket}`).join(' ')}${tickets.length > shownT ? ` +${tickets.length - shownT}` : ''}`,
+          text: `${pr.status === 'merged' ? 'closed' : 'in this PR'}: ${tickets
+            .slice(0, shownT)
+            .map((t) => `#${t.ticket}`)
+            .join(' ')}${tickets.length > shownT ? ` +${tickets.length - shownT}` : ''}`,
           from: dots[0]!.id,
           to: dots[dots.length - 1]!.id,
         }
   const fallback = [...kept].reverse().find((n) => !n.hidden && n.kind !== 'todo') ?? null
-  const nowId = nowNode !== null && ids.has((nowNode as BranchNode).id) ? (nowNode as BranchNode).id : (fallback?.id ?? null)
+  const nowId =
+    nowNode !== null && ids.has((nowNode as BranchNode).id) ? (nowNode as BranchNode).id : (fallback?.id ?? null)
   return {
     lanes: { ...lanes, gone: closedNode !== null },
     nodes: kept,
@@ -493,7 +591,8 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
           moved = true
         }
       }
-      for (const chain of chains) for (let k = 1; k < chain.length; k++) raise(chain[k]!, xs[chain[k - 1]!]! + Math.min(GAP, step))
+      for (const chain of chains)
+        for (let k = 1; k < chain.length; k++) raise(chain[k]!, xs[chain[k - 1]!]! + Math.min(GAP, step))
       for (const [a, b] of links) {
         const dy = dyOf(a, b)
         raise(b, xs[a]! + dy)
@@ -519,7 +618,10 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
   })
   const at = new Map(laid.map((n) => [n.id, n]))
   const prXs = laid.filter((n) => n.lane === 'pr').map((n) => n.x)
-  const brace = model.brace === null ? null : { text: model.brace.text, x1: at.get(model.brace.from)!.x - 8, x2: at.get(model.brace.to)!.x + 8 }
+  const brace =
+    model.brace === null
+      ? null
+      : { text: model.brace.text, x1: at.get(model.brace.from)!.x - 8, x2: at.get(model.brace.to)!.x + 8 }
   return {
     lanes: model.lanes,
     words: model.words,

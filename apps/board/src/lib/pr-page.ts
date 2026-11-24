@@ -25,8 +25,8 @@ import {
 import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
 import { summarise } from './history.ts'
-import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
 import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
+import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
