@@ -108,9 +108,22 @@ const recordProject = (
         log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
         continue
       }
-      // The pass bound its own decision to the success event; only an event from before it did falls back to the log.
-      const personal = draft === null ? personalAt(seq) : null
-      const joins = draft ?? (personal !== null && base === personal)
+      // The pass bound its own decision to the success event. An event from before that cannot say which recipe the pass
+      // resolved, only that it was one in force between the ticket's claim and the success: the landing joins if its base
+      // was the personal branch of any of them, so an edit made mid-pass cannot drop it from the draft.
+      let joins = draft
+      if (joins === null) {
+        const ticketEvents = yield* Effect.tryPromise({ try: () => store.read(ticketId), catch: (e) => e })
+        const claimed = ticketEvents.filter((e) => e.type === 'TicketClaimed' && e.seq < seq).at(-1)?.seq ?? seq
+        const inForce = [
+          personalAt(claimed),
+          ...history
+            .filter((e) => e.type === 'ProjectRecipeChanged' && e.seq >= claimed && e.seq < seq)
+            .map((e) => personalAt(e.seq + 1n)),
+          personalAt(seq),
+        ]
+        joins = inForce.some((personal) => personal !== null && base === personal)
+      }
       yield* landTicketEffect(
         ticketId,
         { mergeCommit, base, draft: joins ? { project: name } : null },
