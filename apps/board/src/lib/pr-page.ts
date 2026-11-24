@@ -25,6 +25,7 @@ import {
 import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
 import { summarise } from './history.ts'
+import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
 import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
@@ -152,13 +153,8 @@ export interface PrPageView {
   readonly sub: string
   readonly poster: { readonly word: string; readonly where: string; readonly line: string }
   readonly strip: readonly StripState[]
-  readonly drawing: {
-    readonly main: string
-    readonly personal: string
-    readonly prBranch: string | null
-    readonly dots: readonly PageTicket[]
-    readonly more: number
-  }
+  /** The three branches as the events draw them (#1373); null where it cannot be drawn rather than drawn empty. */
+  readonly drawing: Drawing | null
   readonly steps: readonly PageStep[]
   readonly stepsNote: string | null
   readonly tickets: readonly PageTicket[]
@@ -484,6 +480,20 @@ export function generatedBody(pr: PrState, facts: PrPageInput['facts']): string 
   ).body
 }
 
+/** The drawing's width: the card's, as a viewBox; the SVG scales to it and nothing scrolls sideways. */
+const DRAWING_WIDTH = 1000
+
+function drawingOf(
+  pr: PrState | null,
+  events: readonly Envelope[],
+  input: PrPageInput,
+  main: string,
+  personal: string,
+): Drawing | null {
+  const model = prBranches(pr, events, input.draft, { main, personal, stepNames: input.stepNames })
+  return model === null ? null : layoutBranches(model, DRAWING_WIDTH)
+}
+
 /** The page's whole text for one PR, or for the draft when `pr` is null. */
 export function prPage(input: PrPageInput): PrPageView {
   const { project, recipe, pr, events } = input
@@ -494,7 +504,6 @@ export function prPage(input: PrPageInput): PrPageView {
 
   const name = prName(pr)
   const all = slipsOf(pr)
-  const dots = all.slice(-3)
   const lastEvent = events[events.length - 1]?.at ?? null
   const hostOpen = github && pr.host !== null && isOpen(pr)
   const where = hostOpen ? 'ON GITHUB' : ''
@@ -641,7 +650,7 @@ export function prPage(input: PrPageInput): PrPageView {
       .join(' · '),
     poster,
     strip: stripOf(pr),
-    drawing: { main, personal, prBranch: pr.prBranch, dots, more: Math.max(0, all.length - dots.length) },
+    drawing: drawingOf(pr, events, input, main, personal),
     steps: stepRows(pr, events, input.stepNames, recipe),
     stepsNote: pr.status === 'requested' ? 'not started: it is served when a conductor runs' : null,
     tickets: all,
@@ -672,7 +681,6 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
     title: t.title,
     fix: false,
   }))
-  const dots = tickets.slice(-3)
   const buttons: Button[] = []
   if (error === null) {
     buttons.push({
@@ -690,7 +698,7 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
     sub: `${personal} → ${main} · ${error === null ? plural(tickets.length, 'ticket', 'tickets') : 'tickets unknown'}`,
     poster: { word: 'DRAFT', where: 'ON YOUR MACHINE', line: 'ON YOUR MACHINE' },
     strip: stripOf(null),
-    drawing: { main, personal, prBranch: null, dots, more: Math.max(0, tickets.length - dots.length) },
+    drawing: drawingOf(null, [], input, main, personal),
     steps: [],
     stepsNote: null,
     tickets,
