@@ -33,6 +33,7 @@ import {
   integrationStream,
   landingsStarted,
   projectStream,
+  reduceProject,
   ticketReducer,
   ticketStreamsOf,
   type ProjectState,
@@ -73,12 +74,9 @@ const recordProject = (
     // A landing on a team project's `branch.personal` joins the draft with the ticket, as the live pass writes it, and
     // a landing on any other base (a PR's fix) does not. Which branch was `branch.personal` is the recipe the landing
     // was made under, not today's: the recipe texts the project stream recorded, each in force from its own seq.
-    const recipes = (yield* Effect.tryPromise({ try: () => store.read(projectStream(name)), catch: (e) => e }))
-      .filter((e) => e.type === 'ProjectRecipeChanged')
-      .map((e) => ({ seq: e.seq, source: (e.data as { source: string }).source }))
+    const history = yield* Effect.tryPromise({ try: () => store.read(projectStream(name)), catch: (e) => e })
     const personalAt = (seq: bigint): string | null => {
-      const inForce = recipes.findLast((r) => r.seq < seq) ?? recipes[0]
-      const source = inForce?.source ?? project.recipe?.source
+      const source = reduceProject(history.filter((e) => e.seq < seq)).recipe?.source ?? project.recipe?.source
       return source === undefined ? null : draftBranchOf(source)
     }
     const lanes = yield* options.withStreams((it) =>
