@@ -343,7 +343,8 @@ export function run(
   log: (line: string) => void = console.log,
   world: RunWorld = liveRunWorld(options, log),
 ): Effect.Effect<number> {
-  const locked = lockedFor(options.store, options.dayCeiling)
+  const startedAt = new Date()
+  const locked = lockedFor(options.store, { startedAt, ...options.dayCeiling })
   const servePrs = servePendingPrs(livePrPorts(options.store ?? eventStore, log, locked), [options.project])
   /** Whether a PR of this project is waiting to be served; a failed read says no, and the next conductor serves it. */
   const prOwed = listPrs(options.project, options.store ?? eventStore).pipe(

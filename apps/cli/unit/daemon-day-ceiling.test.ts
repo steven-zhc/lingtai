@@ -14,7 +14,7 @@ describe('the daemon and the daily ceiling', () => {
   })
 
   it('asks the ceiling through its one guard, built with a ceiling port', () => {
-    expect(source).toMatch(/makeGuard\(\{ store: eventStore, ceiling: ceilingPort\(undefined, \{\}\) \}\)/)
+    expect(source).toMatch(/makeGuard\(\{ store: eventStore, ceiling: ceilingPort\(undefined, \{ startedAt \}\) \}\)/)
     expect(source.match(/\bmakeGuard\(/g)).toHaveLength(1)
   })
 })
