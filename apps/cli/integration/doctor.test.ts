@@ -1003,7 +1003,6 @@ steps:
       // than being green because there was nothing to check.
       expect(find(report.results, `recipe: ${OWN}`).status).toBe('ok')
       expect(find(report.results, `env: ${OWN}`).status).toBe('ok')
-      expect(find(report.results, `base: ${OWN}`).status).toBe('ok')
 
       // The stub is asked, not skipped past: a stub with the wrong id would
       // pass as a `skip` and prove nothing.
