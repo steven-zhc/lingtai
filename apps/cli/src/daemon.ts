@@ -403,6 +403,8 @@ export function daemonCommand(
 ): Effect.Effect<number> {
   return Effect.scoped(
     Effect.gen(function* () {
+      // When this process began following the log, taken before the lock, the load and the reconciliation (#1016).
+      const startedAt = new Date()
       const controlRead = daemonControlRead(writer)
       const trace = verbose ? (line: string) => console.log(line) : () => {}
       yield* startTracing()
@@ -610,7 +612,7 @@ export function daemonCommand(
       // nothing ever obeyed it, and the command waiting for the lock waited for ever.
       const triageHashes = new Map<string, string>()
       // One `locked`, asked by every gate that starts an agent (0126 §5); it caches nothing.
-      const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, {}) })
+      const guard = makeGuard({ store: eventStore, ceiling: ceilingPort(undefined, { startedAt }) })
       const locked = lockedEffect(guard)
       const scanTriage = (project: string, triage: Triage | null): Effect.Effect<void> =>
         catchUpChangedTriage(

@@ -61,6 +61,7 @@ import type { DiscussionView, StandingState } from '@/lib/task'
 
 import { askDiscussion, concludeChat } from './actions.ts'
 import { useFollowing } from './live.tsx'
+import { MarkdownField } from './markdown-field.tsx'
 import { useLogTail, type TailState } from './run-log.tsx'
 import { useTriageDraft } from './triage-picks.tsx'
 
@@ -599,17 +600,6 @@ export function Discussion({
     }
   }, [])
 
-  const input = useRef<HTMLTextAreaElement | null>(null)
-  // Grows with what is typed, to the bound `.chatask textarea` sets, and then
-  // scrolls in itself — so a long question takes room from the conversation
-  // only up to a point (#173).
-  useEffect(() => {
-    const box = input.current
-    if (!box) return
-    box.style.height = 'auto'
-    box.style.height = `${box.scrollHeight + box.offsetHeight - box.clientHeight}px`
-  }, [question])
-
   const run = (action: () => Promise<{ ok: boolean; detail: string }>) => {
     setBusy(true)
     setRefusal(null)
@@ -835,18 +825,19 @@ export function Discussion({
           </div>
 
           <div className="chatask">
-            <textarea
-              ref={input}
+            {/* Grows with what is typed, to the bound `.chatask .cm-scroller` sets, and then scrolls in itself —
+                so a long question takes room from the conversation only up to a point (#173). */}
+            <MarkdownField
               rows={2}
               value={question}
-              onChange={(e) => setQuestion(e.target.value)}
+              onChange={setQuestion}
               onKeyDown={(e) =>
                 onAskKey(
                   {
                     key: e.key,
                     shiftKey: e.shiftKey,
-                    isComposing: e.nativeEvent.isComposing,
-                    keyCode: e.nativeEvent.keyCode,
+                    isComposing: e.isComposing,
+                    keyCode: e.keyCode,
                     preventDefault: () => e.preventDefault(),
                   },
                   busy,

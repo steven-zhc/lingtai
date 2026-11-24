@@ -3,6 +3,8 @@
 import { triageAnswersText, type TriagePick, type TriageQuestion, type WaitId } from '@lingtai/domain'
 import { createContext, useContext, useState, type ReactNode } from 'react'
 
+import { MarkdownField } from './markdown-field.tsx'
+
 /** Triage's picks and the agent's own are kept apart (#1253): one state, two maps. */
 type Picks = {
   waitId: WaitId | null
@@ -298,7 +300,11 @@ export function TriageChoices({
       {ownChosen ? (
         <label className="triage-own">
           <span>Your own answer</span>
-          <textarea value={selected.own} onChange={(event) => draft?.setOwn(index, event.target.value, source)} />
+          <MarkdownField
+            aria-label="Your own answer"
+            value={selected.own}
+            onChange={(text) => draft?.setOwn(index, text, source)}
+          />
         </label>
       ) : null}
     </fieldset>

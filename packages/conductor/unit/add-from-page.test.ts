@@ -8,11 +8,11 @@ import type { ProjectState } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
-import { keptSentence, LINGTAI_BASE, type Proposal, type SetupForm, SetupWriteError } from '@lingtai/setup'
+import { keptSentence, LINGTAI_BASE, type SetupForm, SetupWriteError } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { addProject, exclusiveAdd, localTicketsOf, previewOf } from '../src/add-from-page.ts'
+import { addProject, exclusiveAdd, previewOf } from '../src/add-from-page.ts'
 
 const WHO = () => ({ by: 'human:me', store: createMemoryEventStore() })
 const HOME = '/home/me/.lingtai'
@@ -199,23 +199,6 @@ describe('previewOf (#971)', () => {
     const out = await run(previewOf(FORM, { home: HOME }).pipe(Effect.provideService(ProjectFiles, f)))
     expect(out).toEqual({ text: expect.stringContaining('agent: claude-code') })
     expect(f.store.size).toBe(0)
-  })
-})
-
-describe('localTicketsOf (#977 deletes it)', () => {
-  const proposal = (repository: { owner: string; repo: string } | null) =>
-    ({
-      tickets: { known: true, value: { source: repository === null ? 'db' : 'github', repository }, because: 'x' },
-    }) as unknown as Proposal
-
-  it('reads db for a directory whose origin is on GitHub, and says why', () => {
-    const t = localTicketsOf(proposal({ owner: 'a', repo: 'b' }))
-    expect(t.source).toBe('db')
-    expect(t.because).toContain('#977')
-  })
-
-  it('reads db for a directory with no GitHub origin', () => {
-    expect(localTicketsOf(proposal(null)).source).toBe('db')
   })
 })
 

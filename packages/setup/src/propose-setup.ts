@@ -21,6 +21,9 @@ import { remedyFor, runtimeStateSentence, type RuntimeFound } from './runtimes.t
 import { type SandboxInstall, type SandboxProposal } from './sandbox-step.ts'
 import { githubSlugOfRemote, ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
+/** The line for a local path with no GitHub origin; the CLI tells it from the GitHub-origin line by it. */
+export const NO_GITHUB_ORIGIN = 'no GitHub origin, so Lingtai keeps its own tickets'
+
 export type Line<T> = { known: true; value: T; because: string } | { known: false; reason: string; default: T }
 
 export type SetupTarget = { kind: 'github'; owner: string; repo: string } | { kind: 'local'; path: string }
@@ -248,13 +251,15 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
               value: { source: ticketSourceOf(null, history.value), repository },
               because: 'kept: the log already has tickets for this project',
             }
-          : repository !== null
+          : target.kind === 'github'
             ? { known: true, value: { source: 'github', repository }, because: 'the repository is on GitHub' }
-            : {
-                known: true,
-                value: { source: 'db', repository: null },
-                because: 'no GitHub origin, so Lingtai keeps its own tickets',
-              }
+            : repository !== null
+              ? {
+                  known: true,
+                  value: { source: 'db', repository: null },
+                  because: `${repository.owner}/${repository.repo} is on GitHub; a local directory keeps Lingtai's own tickets — to work from that repository's issues, run \`lingtai add ${repository.owner}/${repository.repo}\``,
+                }
+              : { known: true, value: { source: 'db', repository: null }, because: NO_GITHUB_ORIGIN }
 
     const sandbox: SandboxProposal | null =
       readers.host === undefined

@@ -86,6 +86,14 @@ describe('parseImplementOutcome', () => {
       expect(parseImplementOutcome(`done\n\`\`\`text\n${J}`)).toBeNull()
       expect(parseImplementOutcome(`${fence(J)}\n\`\`\`json\n${J}`)).toBeNull()
     })
+    it('reads an Implemented with keys of its own beside it (#1371), and keeps Disputed strict', () => {
+      const extra = '{"outcome":"Implemented","commit":"dc6ecaba0","findings":[{"id":1,"status":"fixed"}]}'
+      expect(parseImplementOutcome(fence(extra))).toEqual({ declared: imp, form: 'fence' })
+      expect(parseImplementOutcome(`done\n${extra}`)).toEqual({ declared: imp, form: 'last-line' })
+      expect(
+        parseImplementOutcome(fence('{"outcome":"Disputed","findings":[{"index":1,"why":"no","extra":1}]}')),
+      ).toBeNull()
+    })
     it('counts a json fence that ends the message once', () => {
       expect(parseImplementOutcome(`x\n\`\`\`json\n${J}\n\`\`\``)?.form).toBe('json-fence')
     })
