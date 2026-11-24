@@ -1,24 +1,31 @@
-/** A recorded brief ends with the new redo paragraph, never two (#1246). */
+/** A recorded brief carries the new redo paragraph near its top, never two (#1246, #1404). */
 import { describe, expect, it } from 'vitest'
 
-import { redoParagraph, withRedoParagraph } from '../src/index.ts'
+import { ENDING_MARK, redoParagraph, withRedoParagraph } from '../src/index.ts'
 
 describe('withRedoParagraph', () => {
   const now = redoParagraph({ why: 'a person asked to redo it', startedAt: 'a1', head: 'b2' })
+  const open = `${ENDING_MARK} of JSON; says where.**\n**The second line.**\n\n`
 
-  it('appends the paragraph to a brief that has none, and leaves it alone with none to add', () => {
-    expect(withRedoParagraph('the brief', now)).toBe(`the brief\n\n${now}`)
+  it('puts the paragraph at the top of a brief that has none, and leaves it alone with none to add', () => {
+    expect(withRedoParagraph('the brief', now)).toBe(`${now}\n\nthe brief`)
+    expect(withRedoParagraph(`${open}the brief`, now)).toBe(`${open}${now}\n\nthe brief`)
     expect(withRedoParagraph('the brief', null)).toBe('the brief')
   })
 
-  it('replaces the paragraph a cut-off redo already carried', () => {
+  it('replaces the paragraph a cut-off redo already carried, in the new layout', () => {
     const before = redoParagraph({ why: 'a crash', startedAt: 'x', head: 'y' })
-    expect(withRedoParagraph(`the brief\n\n${before}`, now)).toBe(`the brief\n\n${now}`)
+    expect(withRedoParagraph(`${open}${before}\n\nthe brief`, now)).toBe(`${open}${now}\n\nthe brief`)
+  })
+
+  it('strips the trailing paragraph of a brief recorded before it moved, and places the new one at the top', () => {
+    const before = redoParagraph({ why: 'a crash', startedAt: 'x', head: 'y' }).replace('below', 'above')
+    expect(withRedoParagraph(`${open}the brief\n\n${before}`, now)).toBe(`${open}${now}\n\nthe brief`)
   })
 
   it('keeps quoted text that merely starts alike, and the requirements after it', () => {
     const brief = 'Do this.\n\nThis step was interrupted (quoted); more text.\n\nAlso do that.'
-    expect(withRedoParagraph(brief, now)).toBe(`${brief}\n\n${now}`)
+    expect(withRedoParagraph(brief, now)).toBe(`${now}\n\n${brief}`)
   })
 })
 
@@ -31,14 +38,14 @@ describe('redoParagraph with an unreadable outcome (#1398)', () => {
     expect(p).toContain('No outcome could be read from it.')
     expect(
       p.endsWith(
-        '    ```outcome\n    {"outcome": "Implemented"}\n    ```\n\nor another block as the brief above shows it.',
+        '    ```outcome\n    {"outcome": "Implemented"}\n    ```\n\nor another block as the brief below shows it.',
       ),
     ).toBe(true)
   })
-  it('replaces a recorded brief that ends in the paragraph with exactly one', () => {
+  it('replaces a recorded brief that opens with the paragraph with exactly one', () => {
     const first = withRedoParagraph('brief', redoParagraph({ ...note, unread: 'one' }))
     const second = withRedoParagraph(first, redoParagraph({ ...note, unread: 'two' }))
-    expect(second).toBe(`brief\n\n${redoParagraph({ ...note, unread: 'two' })}`)
-    expect(withRedoParagraph(first, redoParagraph(note))).toBe(`brief\n\n${redoParagraph(note)}`)
+    expect(second).toBe(`${redoParagraph({ ...note, unread: 'two' })}\n\nbrief`)
+    expect(withRedoParagraph(first, redoParagraph(note))).toBe(`${redoParagraph(note)}\n\nbrief`)
   })
 })

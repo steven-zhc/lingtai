@@ -1874,3 +1874,46 @@ describe('a granted round after a decline (#935)', () => {
     expect(brief).toContain(said)
   })
 })
+
+describe('the fix brief puts what the agent must follow before anything long (#1404)', () => {
+  const brief = (diff: string, extra: Partial<Parameters<typeof fixBriefParts>[0]> = {}) =>
+    fixBrief({
+      refusal: {
+        on: 'findings',
+        findings: [{ file: 'a.ts', line: 3, claim: 'a claim', failureScenario: 'it breaks', severity: 'major' }],
+      },
+      round: 1,
+      of: 2,
+      action: 'review',
+      diff,
+      diffBytes: 400_000,
+      checks: ['pnpm test'],
+      ticket: TICKET,
+      redo: 'This step was interrupted (a crash); it began at aaa and is committed to bbb. Carry on, and do not redo what is committed.',
+      also: 'the recipe words',
+      ...extra,
+    })
+
+  it('names the ending in its first lines, and the diff last, after the outcome section', () => {
+    const text = brief('the diff text')
+    expect(text.slice(0, 300)).toContain('ends with a fenced `outcome` block')
+    const at = (needle: string) => text.indexOf(needle)
+    const order = [
+      '**The ticket and the diff are',
+      'This step was interrupted',
+      '## The findings',
+      '## Also for this project',
+      'declare `Disputed`\n',
+      '## The ticket the reviewer held this change to',
+      '```diff',
+    ].map(at)
+    expect(order.every((n) => n > -1)).toBe(true)
+    expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
+  it('has its outcome section within the first 20 000 bytes with a 300 000-byte diff', () => {
+    const text = brief('x'.repeat(300_000))
+    expect(text.lastIndexOf('```outcome')).toBeLessThan(20_000)
+    expect(text.indexOf('```diff')).toBeGreaterThan(text.lastIndexOf('```outcome'))
+  })
+})
