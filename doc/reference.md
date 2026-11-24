@@ -444,8 +444,11 @@ the new one, so nothing migrates it for you.
 
 | Key | Default | Where |
 |---|---|---|
-| `pr.limits.turns` | `20` | `packages/recipe/src/recipe.ts:3009` |
-| `pr.limits.wall` | `5m` | `packages/recipe/src/recipe.ts:3011` |
+| `pr.agent` | `runtime.agent`, where that runtime can run with no tools (`claude-code` or `codex`); a written `agent` must be one of those two, because a PR summary runs with no tools | `packages/recipe/src/recipe.ts:2927` (`DiscussAgent`), `:3005` |
+| `pr.model` | absent: the runtime's own default, handed over as written | `packages/recipe/src/recipe.ts:283`, `:3006` |
+| `pr.prompt` | absent: the fixed brief alone; written, it is appended to the brief and never replaces it | `packages/recipe/src/recipe.ts:285`, `:3007` |
+| `pr.limits.turns` | `20` | `packages/recipe/src/recipe.ts:3010` |
+| `pr.limits.wall` | `5m` | `packages/recipe/src/recipe.ts:3013` |
 | `pr.limits.usd` | none: it spends outside any attempt, so each run counts against the day's ceiling | `Pr` carries no `usd` |
 | `pr.ci.timeout` | `60m` | `packages/recipe/src/settings.ts:278` |
 | `pr.ci.required` | every check on the PR's head; an empty list is refused | `packages/recipe/src/settings.ts:277` |

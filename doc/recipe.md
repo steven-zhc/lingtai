@@ -13,16 +13,17 @@ the change, what checks it, and whether a person approves before it lands.
 
 It is **outside your repository**, so a change to it never appears in a diff.
 That is not a sandbox: an agent runs with your user's file access, so keep
-tickets from asking one to edit it. You may edit
-it by hand, and the project's log (`prj-{project}`) records every version and who
-made it. **Nothing writes the file from the log**: if it is missing, the
-project's attempts stop until you put one back.
+tickets from asking one to edit it. You may edit it by hand. The project's log
+(`prj-{project}`) records each version Lingtai reads, and who made it; a hand
+edit is recorded the next time anything reads the file, so two saves between
+reads leave only the second, and text the schema refuses is recorded nowhere.
+**Nothing writes the file from the log**: if it is missing, attempts stop until
+you put one back.
 
 ## What a choice becomes
 
 An attempt has ten fixed steps: `claim`, `admit`, `prepared`, `design`,
-`implement`, `build`, `review`, `proposed`, `merge`, `end`. The steps are one
-block of the file.
+`implement`, `build`, `review`, `proposed`, `merge`, `end`. The steps are one block.
 
 | You chose | Where it is written | Step it acts at |
 |---|---|---|
@@ -40,7 +41,7 @@ says what team changes.
 ## An excerpt
 
 This is the recipe `init` wrote in [Going further](tutorial-more.md), trimmed to
-the keys this page discusses. It is a whole recipe, and you can paste it:
+the keys discussed here. It is a whole recipe:
 
 ```yaml
 version: 2
@@ -91,8 +92,7 @@ To switch the implementer, change the `agent:` on the `implement` entry. An
 uses when `implement` is empty.
 
 `runtime.limits` is absent, and that is fine: a key you leave out takes its
-default, and `lingtai doctor` prints each value with `← default` or the file it
-came from. The numbers are in [the reference](reference.md).
+default, and `lingtai doctor` prints each value with `← default` or its file. The numbers are in [the reference](reference.md).
 
 ## Declared, or the default
 
@@ -136,8 +136,8 @@ lingtai doctor
 
 The project's row reads `✓ recipe: chapter-garden`, followed by a short hash of
 the resolved recipe. The hash changes when the file does, so a different one
-confirms the edit was read. Doctor proves the file is legal; it does not say
-whether a landing is held, so read `steps.proposed` again.
+confirms the edit was read. Doctor proves the file is legal, not that a landing is held; read
+`steps.proposed` again.
 
 The mistake to expect is putting the same `human:` under `merge:`. Doctor
 refuses it, in the same row:
@@ -150,12 +150,12 @@ refuses it, in the same row:
 ```
 
 `human:` serves `proposed` and nothing else. A running daemon reads the file again
-at the next attempt, so an edit applies without a restart. That works both ways:
-delete a hold and the next attempt can land unattended.
+at the next attempt, so an edit applies without a restart, both ways: delete a hold
+and the next attempt can land unattended.
 
 ### Using your own repository?
 
-Setup suggests install and build commands from the stack at the repository root:
+Setup suggests install and build commands for the stack at the repository root:
 Node, Python, Go, Java or Rust. A Python project with only `requirements.txt`
 gets a note asking you to type the install command, not a suggestion.
 
