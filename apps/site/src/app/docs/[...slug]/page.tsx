@@ -5,9 +5,12 @@ import { notFound } from 'next/navigation'
 import {
   decidedOn,
   decisionsByNumber,
+  type BookRow,
+  chapterTitle,
   GITHUB_BLOB,
   headingsOf,
   ledeOf,
+  neighboursOf,
   readDoc,
   servable,
   treeOf,
@@ -95,6 +98,16 @@ export default async function DocPage({ params }: Params) {
   const headings = headingsOf(doc.body)
   const parts = await decisionStatus(slug)
   const tree = await treeOf()
+  const served = new Set(files.map((file) => slugOf(file)))
+  const book = tree.find((group) => group.id === 'book')?.entries ?? []
+  const labelOf = (row: BookRow | null) => {
+    const entry = row === null ? undefined : book.find((each) => each.slug === slugOf(row.file))
+    return row === null || entry === undefined ? null : { slug: entry.slug, label: chapterTitle(entry.n, entry.title) }
+  }
+  const near = neighboursOf(slug, served)
+  const chapters = book.some((entry) => entry.slug === slug)
+    ? { previous: labelOf(near.previous), next: labelOf(near.next) }
+    : null
   const decided = slug.startsWith('decisions/') ? decidedOn(doc.body) : null
 
   return (
@@ -124,6 +137,24 @@ export default async function DocPage({ params }: Params) {
                     at build time. The file is the document; this page is a projection of it, and never a copy — which
                     is why the fix for anything wrong on it is a pull request against that file.
                   </p>
+                )}
+                {chapters !== null && (
+                  <nav
+                    className="source"
+                    aria-label="Chapters"
+                    style={{ display: 'flex', justifyContent: 'space-between', gap: 16 }}
+                  >
+                    <span>
+                      {chapters.previous !== null && (
+                        <Link href={`/docs/${chapters.previous.slug}/`}>← {chapters.previous.label}</Link>
+                      )}
+                    </span>
+                    <span>
+                      {chapters.next !== null && (
+                        <Link href={`/docs/${chapters.next.slug}/`}>{chapters.next.label} →</Link>
+                      )}
+                    </span>
+                  </nav>
                 )}
               </article>
               <Contents headings={headings} />
