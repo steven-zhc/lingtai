@@ -46,8 +46,11 @@ export type Declared =
 const OPENS = /^[ \t]*```outcome[ \t]*$/gm
 const CLOSES = /^[ \t]*```[ \t]*$/m
 
+// `Implemented` carries nothing, so keys an agent adds beside it (`commit`, a findings recap) are dropped rather than
+// voiding the block: #1371 lost a finished fix round to `{"outcome":"Implemented","commit":…}`. Its guard is the
+// head moving (`decideImplementOutcome`), not its shape. The three that carry content stay strict.
 const Block = z.discriminatedUnion('outcome', [
-  z.strictObject({ outcome: z.literal('Implemented') }),
+  z.object({ outcome: z.literal('Implemented') }),
   z.strictObject({
     outcome: z.literal('Disputed'),
     findings: z.array(z.strictObject({ index: z.number().int(), why: z.string().min(1) })).min(1),
