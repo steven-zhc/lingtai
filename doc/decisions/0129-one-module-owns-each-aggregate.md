@@ -96,6 +96,18 @@ What recurs where there is no owner:
    decisions; a decision whose follow-up has not happened yet reads as
    *decided, follow-up pending*.
 
+   **Three decisions write a ticket's or a PR's stream and a second PR's
+   stream in one transaction**, through the store's `appendAll`
+   ([0100](0100-one-append-only-log.md) §3): a landing on `branch.personal`
+   (the ticket, and the draft PR), a freeze (the PR, and the next draft for the
+   tickets it did not keep), and a PR closed without merging (the PR, and the
+   draft for its tickets) — [0131](0131-a-pr-goes-from-draft-to-merged.md) §1.
+   A reaction would leave a time when a ticket has landed and no PR names it,
+   and a freeze that read the draft then would leave out code its commit holds.
+   Each stream's events still come from its own aggregate's transition, at the
+   version read; a conflict on either stream writes neither. No other decision
+   may use `appendAll`.
+
 6. **A decision reads the aggregate's reduce.** A projection is for listing and
    showing; a store query may find which streams to look at. Whatever is
    decided — what to claim, whether an update converged, whether a finding may

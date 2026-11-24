@@ -9,7 +9,11 @@ its states and board, the ten steps Lingtai takes between *Submit* and the
 team's review, where each step goes when it cannot finish, how a change the
 review asks for comes back through them, and how Lingtai learns what the team
 did. The flow is drawn in
-[`doc/milestone/0.16.0/team-mode/pr-lifecycle.html`](../milestone/0.16.0/team-mode/pr-lifecycle.html).
+[`doc/milestone/0.16.0/team-mode/pr-lifecycle.html`](../milestone/0.16.0/team-mode/pr-lifecycle.html),
+and what each state does to the three branches — `main`, the PR branch and
+`branch.personal` — in
+[`doc/milestone/0.16.0/team-mode/pr-branches.html`](../milestone/0.16.0/team-mode/pr-branches.html),
+the drawing a PR's page shows.
 
 ## Context
 
@@ -27,7 +31,28 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 
    | Draft | In progress | Waiting on you | In review | Merged |
    |---|---|---|---|---|
-   | what has landed on `branch.personal` and no PR holds yet; it grows as tickets land | Lingtai is taking the ten steps of §2 | a step cannot go on without a person, and says why | open for review on the code host; the team reviews it there | the team merged it into `main`; its tickets are closed |
+   | the PR that is not submitted yet: the tickets landed on `branch.personal` that it holds; it grows as tickets land | Lingtai is taking the ten steps of §2 | a step cannot go on without a person, and says why | open for review on the code host; the team reviews it there | the team merged it into `main`; its tickets are closed |
+
+   **The draft is a PR in the `draft` state, not a list computed on a read.**
+   It is the highest-numbered PR while that PR is in `draft`; when the highest
+   is in any other state, the draft has no stream yet and its number is the
+   highest plus one. No event creates a draft and no process keeps one in
+   existence. Its tickets are events on its own stream, `PrDraftTicketAdded {
+   ticket, mergeCommit, from }`, where `from` is the PR that handed the ticket
+   back, or null for a landing. Adding a ticket twice is adding it once, and the
+   later merge commit stands.
+   - **A landing on `branch.personal` writes two streams in one transaction**:
+     `TicketLanded` on the ticket's and `PrDraftTicketAdded` on the draft's
+     ([0129](0129-one-module-owns-each-aggregate.md) §5,
+     [0100](0100-one-append-only-log.md) §3). The target is the highest PR while
+     it is in `draft` or `requested`, and the next number otherwise. A version
+     conflict on the target's stream is answered by finding the target again and
+     writing again, with no limit and one log line each time: the push has
+     happened, and the landing must be recorded.
+   - A ticket an open PR already holds that lands on `branch.personal` again is
+     added to the draft like any landing; the next PR carries the second landing.
+   - A landing on a PR branch (§8) and a solo project's landing write nothing
+     on a draft.
 
    **A PR is a release of a body of work**: what reaches *In review* has passed
    the unit build on `main`'s latest, has no conflict with it, holds every commit
@@ -36,14 +61,19 @@ branch, the review's changes, and the merge back. One topic, one ADR.
    the tickets' wants — 0.17) join the same sequence.
 
 2. **Only the person submits, and *In progress* is ten steps in a fixed order.**
-   *Submit* (a button on the draft card, or `lingtai pr submit`) moves the PR to
-   *In progress*. Lingtai never submits on its own and never merges. A step
+   *Submit* (a button on the draft card, or `lingtai pr submit`) is a request on
+   the draft's own stream and moves it to *In progress*. With no ticket in the
+   draft there is no stream, and *Submit* is refused at once and records
+   nothing. A *Submit* the conductor refuses after it was recorded — nothing the
+   frozen commit holds, the personal branch missing, git failing — returns the
+   PR to `draft` with its tickets and the reason; it uses no number. Lingtai
+   never submits on its own and never merges. A step
    either goes on by itself, buys an agent's round, or moves the PR to *Waiting
    on you* — and only the outcomes named so in this table wait on a person:
 
    | # | Step | What it does | When it cannot go on |
    |---|---|---|---|
-   | 1 | Freeze | fixes `branch.personal` at one commit as the PR's content | — |
+   | 1 | Freeze | fixes `branch.personal` at one commit as the PR's content; keeps the draft's tickets whose merge commit that commit holds, and hands the rest to the next draft in the same transaction | — |
    | 2 | Bring `main` in | nothing when `main` is already an ancestor; otherwise merged in the merge lane's turn (§3) | a conflict → the conflict agent; its rounds spent → **waiting on you** |
    | 3 | Build | the result is built before it is pushed | red after a merge → the conflict agent (§3); red with nothing merged → **waiting on you** |
    | 4 | Others' commits | fetches the remote PR branch and merges in what others pushed (§4); nothing to do on the first submit | a conflict or a red build → the conflict agent; a force-push or a deleted branch → **waiting on you** |
@@ -65,7 +95,7 @@ branch, the review's changes, and the merge back. One topic, one ADR.
    again* (`lingtai pr retry`), which takes the head the person pushed — if it
    still holds the frozen commit — and goes on from step 2 (`lingtai pr rounds`
    gives the rounds from a terminal); or *take it back to Draft*, which closes the
-   PR on the code host and leaves its tickets in *Draft* for the next one.
+   PR on the code host and hands its tickets to the draft, for the next one.
 
 3. **`main` is brought in when a PR is submitted or reworked, and only then.**
    The sync is PR work: it runs on the PR branch, as step 2, at *Submit* and at
@@ -235,13 +265,17 @@ branch, the review's changes, and the merge back. One topic, one ADR.
      *waiting on you* says why.
 
 10. **The rest of a PR's life.**
-    - **Closed without merging**: the PR moves back to *Draft*; its tickets stay
-      on `branch.personal`; nothing is reverted. A closed PR reopened on the code
+    - **Closed without merging**: the PR is `closed`, and in the same
+      transaction each of its tickets is added to the draft, naming the PR it
+      came from — a pr-fix ticket a merge back carried onto `branch.personal`
+      among them. The code stays on `branch.personal`; nothing is reverted. A closed PR reopened on the code
       host is not followed.
     - **One PR at a time, and work never stops for it.** While a PR is open —
       in progress, waiting on you or in review — Lingtai goes on taking tickets
-      and landing them on `branch.personal`; they gather in *Draft*, and *Submit*
-      is refused, saying which PR is open, until that one is merged or closed.
+      and landing them on `branch.personal`; they gather in the draft, which is
+      the next number, and *Submit* is refused, saying which PR is open, until
+      that one is merged or closed. A landing recorded after the freeze fails on
+      the frozen PR's stream version and is written to the next number.
       Stacked PRs are later (`doc/milestone/later/`): a PR closed under another
       would carry its refused tickets up, a squash merge below leaves the one
       above with duplicate commits, and every rework below ripples up.
@@ -304,6 +338,7 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 - The PR page's *Merged* column is the PR history.
 - New events, all on the PR's stream `pr-{project}-{n}`: its requests, served
   by the conductor as a discussion's are (submit, retry, more rounds, back);
+  its tickets while it is a draft (`PrDraftTicketAdded`);
   its states (in progress, waiting, opened, ready, merged, closed); its syncs
   (`BranchSynced { mainCommit, how: clean | resolved }`) and their rounds; and
   the merge back (`PrMergedBack`, `PrMergeBackFailed`). No lock is added: a PR
