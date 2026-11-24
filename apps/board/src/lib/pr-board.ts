@@ -19,7 +19,13 @@ export interface DraftTicket {
   readonly title: string
 }
 
-export type Tone = 'draft' | 'progress' | 'waiting' | 'review' | 'merged'
+/** Whether a conductor holds the lock: `unknown` when that could not be read, never taken as `none`. */
+export type Daemon = 'running' | 'none' | 'unknown'
+
+/** The clock time of an instant, UTC as the PR page prints it. */
+export const clock = (d: Date): string => d.toISOString().slice(11, 16)
+
+export type Tone = 'draft' | 'progress' | 'queued' | 'waiting' | 'review' | 'merged'
 
 export interface Slip {
   readonly ticket: string
@@ -98,6 +104,14 @@ export interface ColumnView {
 }
 
 export interface PrBoardView {
+  /** The `✓ PR n submitted` line, drawn from the log while the latest PR is `requested`; null otherwise. */
+  readonly submitted: {
+    readonly n: number
+    readonly at: string | null
+    readonly href: string
+    /** Whether a daemon is known to be running, which decides the sentence after the time. */
+    readonly daemon: Daemon
+  } | null
   readonly strip: { readonly branches: string; readonly notInPr: string; readonly mainNote: string }
   readonly columns: readonly ColumnView[]
   /** PRs waiting on the person: what `PRs` on the place line counts. */
@@ -235,8 +249,10 @@ export interface PrBoardInput {
   readonly stepNames: readonly string[]
   /** Reported spend on each PR's stream, by `n`; absent is unknown. */
   readonly spend: ReadonlyMap<number, number>
-  /** What a submitted-and-unserved PR says about who is serving it. */
-  readonly servedWords: string
+  /** Whether a daemon holds the conductor lock, for a submitted-and-unserved PR. */
+  readonly daemon: Daemon
+  /** The viewing actor, so a queued card says *by you*. */
+  readonly viewer: string
   /** Where *New pr-fix ticket* goes, or null where the repository has no owner on record. */
   readonly newFixHref: FixTicket | null
   /** The same, for one PR: its name is in the prefilled title. Absent, `newFixHref` serves every PR. */
@@ -293,32 +309,28 @@ export function prBoard(input: PrBoardInput): PrBoardView {
   const refused = latest !== null && latest.status === 'refused' ? latest : null
   if (draftError !== null) {
     draftCards.push({ failed: true, key: 'draft', n: 0, text: `The draft could not be read: ${draftError}` })
-  } else if (draftTickets.length > 0 || requested !== null) {
+  } else if (requested === null && draftTickets.length > 0) {
     const all = draftTickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: false }))
     const { slips, more } = shown(all)
     const sub: string[] = []
     const buttons: Button[] = []
-    if (requested !== null) {
-      sub.push(`submitted — ${input.servedWords}`)
-    } else {
+    sub.push(
+      open !== null
+        ? `landed on ${personal} since ${prName(open)} was submitted`
+        : `landed on ${personal}, not yet on ${main}`,
+    )
+    if (refused?.refusal != null) sub.push(`the last submit was refused: ${refused.refusal.detail}`)
+    buttons.push({
+      kind: 'submit',
+      label: 'Submit PR',
+      ...(open === null
+        ? {}
+        : { disabled: `one PR at a time — submit opens once ${prName(open)} is merged or closed` }),
+    })
+    if (open === null) {
       sub.push(
-        open !== null
-          ? `landed on ${personal} since ${prName(open)} was submitted`
-          : `landed on ${personal}, not yet on ${main}`,
+        `submit: brings ${main} in, builds, pushes, runs CI on a GitHub draft PR, writes the summary (≤ ${call.turns} turns, ${Math.round(call.wallMs / 60_000)} min)`,
       )
-      if (refused?.refusal != null) sub.push(`the last submit was refused: ${refused.refusal.detail}`)
-      buttons.push({
-        kind: 'submit',
-        label: 'Submit PR',
-        ...(open === null
-          ? {}
-          : { disabled: `one PR at a time — submit opens once ${prName(open)} is merged or closed` }),
-      })
-      if (open === null) {
-        sub.push(
-          `submit: brings ${main} in, builds, pushes, runs CI on a GitHub draft PR, writes the summary (≤ ${call.turns} turns, ${Math.round(call.wallMs / 60_000)} min)`,
-        )
-      }
     }
     draftCards.push({
       key: 'draft',
@@ -358,13 +370,62 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       continue
     }
     const pr = read.pr
-    if (pr.status === 'in-progress') {
+    if (pr.status === 'requested') {
+      // The tickets of a queued PR are the draft's: it has none of its own until the freeze (ADR 0131 §1).
+      const all = draftTickets.map((t) => ({ ticket: t.ticket, title: t.title, fix: false }))
+      const { slips, more } = shown(all)
+      const by =
+        pr.requestedBy === null
+          ? ''
+          : pr.requestedBy === input.viewer
+            ? ' by you'
+            : ` by ${pr.requestedBy.replace(/^human:/, '')}`
+      const submittedAt = pr.requestedAt === null ? '' : ` ${clock(pr.requestedAt)}`
+      const line = `submitted${submittedAt}${by}${input.daemon === 'running' ? ' · waiting for the daemon to start it' : ''}`
+      const buttons: Button[] = []
+      if (input.daemon === 'none') {
+        buttons.push({
+          kind: 'command',
+          label: 'No daemon is running, so nothing will start it. Start one',
+          command: 'lingtai start',
+          note: 'it picks the PR up when it next looks for work',
+        })
+      } else if (input.daemon === 'unknown') {
+        buttons.push({
+          kind: 'command',
+          label: 'could not tell whether a daemon is running',
+          command: 'lingtai doctor',
+          note: 'says',
+        })
+      }
+      progress.push(
+        cardOf(pr, 'queued', {
+          pill: 'queued',
+          sub: [line],
+          chips: chipsOf(pr, input.stepNames),
+          buttons,
+          ...(draftError !== null
+            ? { slips: [], more: 0, count: null, meta: ['tickets: unknown'] }
+            : { slips, more, count: all.length > SLIPS_SHOWN ? plural(all.length, 'ticket', 'tickets') : null }),
+        }),
+      )
+    } else if (pr.status === 'in-progress') {
       const fix = pr.fixesLanded.length > 0 && pr.steps.length === 0
       progress.push(
         cardOf(pr, 'progress', {
           name: fix ? `${prName(pr)} · pr-fix` : prName(pr),
-          pill: 'CI',
-          sub: [`then merged back once into ${personal}`, ...(pr.host !== null ? [] : ['not yet a GitHub draft'])],
+          pill: 'in progress',
+          sub: [
+            [
+              pr.requestedAt === null ? null : `submitted ${clock(pr.requestedAt)}`,
+              pr.startedAt === null ? null : `started ${clock(pr.startedAt)}`,
+              pr.frozenSha === null ? null : `frozen at ${pr.frozenSha.slice(0, 7)}`,
+            ]
+              .filter((x): x is string => x !== null)
+              .join(' · '),
+            `then merged back once into ${personal}`,
+            ...(pr.host !== null ? [] : ['not yet a GitHub draft']),
+          ].filter((x) => x !== ''),
           chips: chipsOf(pr, input.stepNames),
         }),
       )
@@ -479,13 +540,28 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     })
   }
 
+  const notInPr =
+    requested !== null
+      ? `PR ${requested.n ?? 0} queued`
+      : draftError !== null
+        ? 'tickets not in a PR: unknown'
+        : open !== null && draftTickets.length === 0
+          ? `${prName(open)} ${open.status === 'in-progress' ? 'in progress' : open.status === 'waiting' ? 'waiting on you' : 'in review'}`
+          : `${plural(draftTickets.length, 'ticket', 'tickets')} not in a PR yet`
+
   return {
+    submitted:
+      requested === null
+        ? null
+        : {
+            n: requested.n ?? 0,
+            at: requested.requestedAt === null ? null : clock(requested.requestedAt),
+            href: href(project, requested.n ?? 0),
+            daemon: input.daemon,
+          },
     strip: {
       branches: `${personal} → ${main}`,
-      notInPr:
-        draftError === null
-          ? `${plural(draftTickets.length, 'ticket', 'tickets')} not in a PR yet`
-          : 'tickets not in a PR: unknown',
+      notInPr,
       mainNote: `${main} is brought in at the next submit`,
     },
     waiting: waitingCount,
@@ -497,7 +573,12 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         count: draftCards.length === 0 || draftError !== null ? 0 : draftTickets.length,
         cards: draftCards,
         older: [],
-        empty: 'Lingtai keeps taking tickets; they gather here.',
+        empty:
+          requested !== null
+            ? `Nothing has landed since ${prName(requested)} was submitted. Tickets that land now join ${prName(requested)} until it starts, then the next PR.`
+            : open !== null && draftError === null
+              ? `Nothing has landed since ${prName(open)} started.`
+              : 'Lingtai keeps taking tickets; they gather here.',
         note: null,
       },
       {

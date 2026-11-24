@@ -495,7 +495,6 @@ export function prPage(input: PrPageInput): PrPageView {
   const name = prName(pr)
   const all = slipsOf(pr)
   const dots = all.slice(-3)
-  const first = events[0]?.at ?? null
   const lastEvent = events[events.length - 1]?.at ?? null
   const hostOpen = github && pr.host !== null && isOpen(pr)
   const where = hostOpen ? 'ON GITHUB' : ''
@@ -634,7 +633,7 @@ export function prPage(input: PrPageInput): PrPageView {
     sub: [
       `${pr.prBranch ?? '?'} → ${pr.main ?? main}`,
       `Lingtai PR ${pr.n ?? '?'}`,
-      first === null ? null : `submitted ${day(first)}`,
+      pr.requestedAt === null ? null : `submitted ${day(pr.requestedAt)}`,
       plural(all.length, 'ticket', 'tickets'),
       spendNote,
     ]

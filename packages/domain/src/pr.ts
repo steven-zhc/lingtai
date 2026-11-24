@@ -27,6 +27,10 @@ export interface PrState {
   project: string | null
   n: number | null
   requestedBy: string | null
+  /** When the latest submit was requested (`PrSubmitRequested`); null before one. */
+  requestedAt: Date | null
+  /** When the daemon first started it (the first `PrInProgress`); a pr-fix or restart does not move it. */
+  startedAt: Date | null
   /** `branch.personal` and `branch.main` as they were at the freeze. */
   branch: string | null
   main: string | null
@@ -177,6 +181,8 @@ export const emptyPr: PrState = {
   project: null,
   n: null,
   requestedBy: null,
+  requestedAt: null,
+  startedAt: null,
   branch: null,
   main: null,
   prBranch: null,
@@ -273,6 +279,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         project: named?.project ?? state.project,
         n: named?.n ?? state.n,
         requestedBy: d.by,
+        requestedAt: event.at,
       }
     }
     case 'PrSubmitRefused': {
@@ -285,6 +292,7 @@ export function reducePrEvent(state: PrState, event: Envelope): PrState {
         ...state,
         ...at,
         status: 'in-progress',
+        startedAt: state.startedAt ?? event.at,
         branch: d.branch,
         main: d.main,
         prBranch: d.prBranch,

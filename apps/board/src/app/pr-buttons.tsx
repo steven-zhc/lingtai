@@ -13,6 +13,7 @@ import { moreRoundsNow, retryPrNow, submitPrNow } from './actions.ts'
 export function PrButtons({ project, n, buttons }: { project: string; n: number | null; buttons: readonly Button[] }) {
   const [pending, startTransition] = useTransition()
   const [refusal, setRefusal] = useState<string | null>(null)
+  const [clicked, setClicked] = useState<string | null>(null)
   if (buttons.length === 0) return null
   const run = (go: () => Promise<{ ok: boolean; detail: string }>) => {
     setRefusal(null)
@@ -37,9 +38,11 @@ export function PrButtons({ project, n, buttons }: { project: string; n: number 
             key={b.label}
             type="button"
             className={b.kind === 'submit' ? 'pr-btn primary' : 'pr-btn'}
+            aria-busy={pending && clicked === b.label && b.kind === 'submit' ? true : undefined}
             disabled={pending || b.disabled !== undefined}
             title={b.disabled}
-            onClick={() =>
+            onClick={() => {
+              setClicked(b.label)
               run(() =>
                 b.kind === 'submit'
                   ? submitPrNow({ project })
@@ -47,9 +50,16 @@ export function PrButtons({ project, n, buttons }: { project: string; n: number 
                     ? moreRoundsNow({ project, n, merging: b.grant.merging, commit: b.grant.commit })
                     : retryPrNow({ project, n: n ?? 0 }),
               )
-            }
+            }}
           >
-            {b.label}
+            {pending && clicked === b.label && b.kind === 'submit' ? (
+              <>
+                <span className="pr-spin" aria-hidden="true" />
+                Submitting…
+              </>
+            ) : (
+              b.label
+            )}
           </button>
         ),
       )}
