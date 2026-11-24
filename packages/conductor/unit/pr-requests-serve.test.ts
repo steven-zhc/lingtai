@@ -188,6 +188,43 @@ describe('a back, served', () => {
     expect(await state(store)).toMatchObject({ status: 'closed', pending: null })
   })
 
+  it('hands the PR’s tickets to the draft in the same transaction as PrClosed', async () => {
+    const store = createMemoryEventStore()
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
+    await run(
+      recordPrInProgress(
+        'lingtai',
+        1,
+        {
+          branch: 'lingtai-team',
+          main: 'main',
+          frozenSha: FROZEN,
+          tickets: [
+            { ticket: '1', mergeCommit: 'm1', title: 't1' },
+            { ticket: '2', mergeCommit: 'm2', title: 't2' },
+          ],
+        },
+        store,
+      ),
+    )
+    await run(
+      recordPrWaiting('lingtai', 1, { step: 'sync', reason: 'sync-red', detail: 'red', headSha: FROZEN }, store),
+    )
+    await run(requestPrBack(ref, { by: 'human:steven' }, store))
+    await run(servePr(ports(store, aWorld()), 'lingtai', 1, []))
+    expect((await state(store)).status).toBe('closed')
+    const next = reducePr(await store.read(prStream('lingtai', 2)))
+    expect(next.status).toBe('draft')
+    expect(next.draft).toEqual([
+      { ticket: '1', mergeCommit: 'm1', from: 1 },
+      { ticket: '2', mergeCommit: 'm2', from: 1 },
+    ])
+    // A second serve writes nothing on either stream.
+    const heads = [await store.head(prStream('lingtai', 1)), await store.head(prStream('lingtai', 2))]
+    await run(servePr(ports(store, aWorld()), 'lingtai', 1, []))
+    expect([await store.head(prStream('lingtai', 1)), await store.head(prStream('lingtai', 2))]).toEqual(heads)
+  })
+
   it('a closePull that fails records nothing, and the request is served again', async () => {
     const store = await drafted(true)
     const w = aWorld({ closeFails: new GitHubFailed(502, 'pulls/7', 'bad gateway') })
