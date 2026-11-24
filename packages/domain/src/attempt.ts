@@ -773,6 +773,24 @@ export function cutOffPromptOf(
 }
 
 /**
+ * **A redo that was waiting when the run stopped** (#1398): the last `StepRedone` of the run, when no `StepStarted`
+ * came after it. `said` is what that row recorded, the tail of the message that could not be read. Null otherwise.
+ */
+export function pendingRedoOf(
+  runEvents: readonly Envelope[],
+): { readonly step: 'design' | 'implement' | 'review'; readonly said: string } | null {
+  for (let i = runEvents.length - 1; i >= 0; i--) {
+    const event = runEvents[i]!
+    if (event.type === 'StepStarted') return null
+    if (event.type !== 'StepRedone' && event.type !== 'StepRerunInPlace') continue
+    const d = event.data as PayloadOf<'StepRedone'>
+    if (d.unread !== true) return null
+    return d.step === 'design' || d.step === 'implement' || d.step === 'review' ? { step: d.step, said: d.said } : null
+  }
+  return null
+}
+
+/**
  * The sha `step` began at on its latest arrival in this attempt (#1246): the last `StepStarted` that names one.
  * A redo writes the value it was handed, so every redo of one arrival reads the same sha; a fix round's arrival
  * is a new head and writes its own. Null where no row carries it (an attempt begun before the field).

@@ -141,7 +141,16 @@ turn limit, so every idiom it adopts is paid for again on every run.
      `Layer.succeed(Tracer.Tracer, bridgedTracer)`), exporting over OTLP/HTTP. A span carries
      no URL, no token, no title and no body; the one identifying attribute it may
      carry is `lingtai.ticket`, the issue number. The board's own read spans
-     (`apps/board/src/lib/telemetry.ts`) follow the same rules.
+     (`apps/board/src/lib/telemetry.ts`) follow the same rules. Beside the
+     sanitized request copy there is one more explicit exception: two Next
+     phase spans, `AppRender.getBodyResult` → `next.render-body` and
+     `NextNodeServer.startResponse` → `next.start-response`, copied under fixed
+     names with no attribute, event, link or message, and only under an
+     exported request on a measured route (`/`, `/task/[id]` and its tabs).
+     `next.start-response` is an instant (first bytes written) and
+     `next.render-body` ends when React finishes rendering, so stream delivery,
+     backpressure and disconnect stay unmeasured; the contract is the header of
+     `telemetry.ts` (Next 16.3.3).
    - `runOnce` (`conduct.ts`) and `runQueue` (`schedule.ts`) are `Effect`s that
      need `Repo | AgentHost`. The hosts provide the layer and the CLI's one run
      executes them (`apps/cli/src/conduct.ts`, `apps/cli/src/run.ts`).

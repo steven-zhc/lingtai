@@ -313,6 +313,12 @@ export const ReleaseCause = z.discriminatedUnion('_tag', [
     step: z.enum(['design', 'implement', 'review']),
     runtime: RuntimeId,
   }),
+  /**
+   * The conductor stopped while a step waited to be redone after an unreadable outcome (#1398). The
+   * attempt stays the ticket's: the next claim redoes `step` on the saved head, and the redo's brief
+   * quotes the `StepRedone.said` of the wait it interrupted.
+   */
+  z.object({ _tag: z.literal('StepRedoPending'), runId: z.string(), step: z.enum(['design', 'implement', 'review']) }),
 ])
 export type ReleaseCause = z.infer<typeof ReleaseCause>
 
@@ -1763,6 +1769,8 @@ export const StepRedone = z.object({
   waitMs: z.number().int().nonnegative(),
   /** Written by #1224–#1249 rows only; nothing reads it since #1249 (`stepRedos` is the bound), kept so old rows parse. */
   askedAgain: z.boolean().optional(),
+  /** Set where `said` is the tail of a message no outcome could be read from (#1398): only such a redo quotes it again after a stop. */
+  unread: z.boolean().optional(),
 })
 
 /**
@@ -2540,6 +2548,18 @@ export const ProjectPaused = z.object({ project: z.string().min(1), by: z.string
  */
 export const PrSubmitRequested = z.object({ by: z.string() })
 
+/**
+ * A ticket joined the PR's draft (ADR 0131 §2): `from` is the PR that handed the ticket back, or null for a landing.
+ * Adding a ticket twice is adding it once, and the later merge commit stands.
+ *
+ * @summary A ticket joined a PR's draft: its merge commit, and the PR that handed it back (null for a landing).
+ */
+export const PrDraftTicketAdded = z.object({
+  ticket: z.string(),
+  mergeCommit: z.string(),
+  from: z.number().int().nullable(),
+})
+
 /** Why a submit was refused; a closed set a reader can switch on. */
 const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'git'])
 
@@ -3226,6 +3246,7 @@ export const EVENTS = {
   ProjectRecovered,
   ProjectPaused,
   ProjectResumed,
+  PrDraftTicketAdded,
   PrSubmitRequested,
   PrSubmitRefused,
   PrInProgress,
@@ -3365,6 +3386,7 @@ export const EVENT_AT = {
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],
   ProjectResumed: ['outside'],
+  PrDraftTicketAdded: ['outside'],
   PrSubmitRequested: ['outside'],
   PrSubmitRefused: ['outside'],
   PrInProgress: ['outside'],

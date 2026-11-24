@@ -3677,6 +3677,13 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 }
 .palette-opt.on { background: var(--accent-soft); color: var(--accent-ink); }
 .palette-detail { color: var(--muted); font-size: 11px; white-space: nowrap; }
+/* The key line at the foot. The dialog is mounted under <body>, outside `.bar`, so it carries its own
+   Mac/PC switch: the Mac label until `Palette` sets `data-os` on <html>. */
+.palette-keys { margin: 0; font-size: 11px; color: var(--muted); }
+.palette-keys kbd { font-family: var(--mono); font-size: 10.5px; }
+.palette-keys .k-pc { display: none; }
+html[data-os="pc"] .palette-keys .k-pc { display: inline; }
+html[data-os="pc"] .palette-keys .k-mac { display: none; }
 @media (prefers-reduced-motion: reduce) { dialog.palette, .palette-opt { transition: none !important; } }
 
 /* Step 2 of adding a repository (#971): the lines on the left, the recipe it writes on the right. */

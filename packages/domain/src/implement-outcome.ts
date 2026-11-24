@@ -15,7 +15,12 @@ import { AskedQuestions, TriageQuestion, askedText } from './triage.ts'
 export const ImplementOutcome = z.discriminatedUnion('_tag', [
   z.object({ _tag: z.literal('Implemented') }),
   /** Nothing usable was declared, or what was declared did not hold. Redone by rule. */
-  z.object({ _tag: z.literal('AgentFailed'), why: z.string().optional() }),
+  z.object({
+    _tag: z.literal('AgentFailed'),
+    why: z.string().optional(),
+    /** The final message's tail where no outcome could be read from it (#1398): kept apart from `why`, which `wallOf` reads. */
+    said: z.string().optional(),
+  }),
   z.object({
     _tag: z.literal('Disputed'),
     findings: z.array(z.object({ index: z.number().int(), why: z.string() })),
@@ -76,23 +81,92 @@ function blockOf(body: string): Declared | null {
   }
 }
 
-/**
- * The outcome the final message declares, or `null` for *nothing declared*. Every
- * ```` ```outcome ```` fence is read; two that disagree, an unclosed one and JSON that does not
- * parse are `null` — the safe side, a redo bounded by `stepRedos`.
- */
-export function parseImplementOutcome(text: string | null): Declared | null {
-  const answer = text ?? ''
-  const found: (Declared | null)[] = []
-  for (const open of answer.matchAll(OPENS)) {
-    const inside = answer.slice(open.index + open[0].length)
-    const closed = CLOSES.exec(inside)
-    found.push(closed === null ? null : blockOf(inside.slice(0, closed.index).trim()))
+/** Which form the outcome was read from (#1398). */
+export type OutcomeForm = 'fence' | 'json-fence' | 'last-line' | 'bare-word'
+
+const JSON_OPENS = /^[ \t]*```json[ \t]*$/gm
+
+/** A JSON object with an own `outcome` key: the only JSON that claims to be an outcome. Whether its name is one of the four is `Block`'s to say, so an unknown name invalidates the message. */
+function looksLikeOutcome(body: string): boolean {
+  let json: unknown
+  try {
+    json = JSON.parse(body)
+  } catch {
+    return false
   }
+  if (typeof json !== 'object' || json === null || Array.isArray(json)) return false
+  return Object.hasOwn(json, 'outcome')
+}
+
+/** Whether the line at `index` sits inside a fence, closed or not: a fence opens at any ``` line and only a bare ``` closes it. */
+function insideFence(lines: readonly string[], index: number): boolean {
+  let open = false
+  for (const l of lines.slice(0, index)) {
+    if (open) open = !/^[ \t]*```[ \t]*$/.test(l.replace(/\r$/, ''))
+    else open = /^[ \t]*```/.test(l)
+  }
+  return open
+}
+
+interface Candidate {
+  readonly at: number
+  readonly form: OutcomeForm
+  readonly declared: Declared | null
+}
+
+/**
+ * The outcome the final message declares, and the form it was read from, or `null` for *nothing
+ * declared*. Candidates are every ```` ```outcome ```` fence, every ```` ```json ```` fence holding an
+ * outcome object, and an outcome object alone on the last line; a bare `Implemented` in an outcome
+ * fence is read too. The last decides and all must agree: two that disagree, an unclosed fence and
+ * JSON that does not parse are `null` — the safe side, a redo bounded by `stepRedos`.
+ */
+export function parseImplementOutcome(text: string | null): { declared: Declared; form: OutcomeForm } | null {
+  const answer = text ?? ''
+  const found: Candidate[] = []
+  for (const open of answer.matchAll(OPENS)) {
+    const start = open.index + open[0].length
+    const inside = answer.slice(start)
+    const closed = CLOSES.exec(inside)
+    if (closed === null) {
+      found.push({ at: open.index, form: 'fence', declared: null })
+      continue
+    }
+    const body = inside.slice(0, closed.index).trim()
+    found.push(
+      body === 'Implemented'
+        ? { at: open.index, form: 'bare-word', declared: { _tag: 'Implemented' } }
+        : { at: open.index, form: 'fence', declared: blockOf(body) },
+    )
+  }
+  for (const open of answer.matchAll(JSON_OPENS)) {
+    const start = open.index + open[0].length
+    const inside = answer.slice(start)
+    const closed = CLOSES.exec(inside)
+    const body = (closed === null ? inside : inside.slice(0, closed.index)).trim()
+    if (!looksLikeOutcome(body)) continue
+    if (closed === null) {
+      found.push({ at: open.index, form: 'json-fence', declared: null })
+      continue
+    }
+    found.push({ at: open.index, form: 'json-fence', declared: blockOf(body) })
+  }
+  const lines = answer.split('\n')
+  let end = lines.length
+  while (end > 0 && lines[end - 1]!.trim() === '') end--
+  if (end > 0) {
+    const line = lines[end - 1]!.trim()
+    const at = lines.slice(0, end - 1).reduce((n, l) => n + l.length + 1, 0)
+    if (line.startsWith('{') && looksLikeOutcome(line) && !insideFence(lines, end - 1))
+      found.push({ at, form: 'last-line', declared: blockOf(line) })
+  }
+  found.sort((x, y) => x.at - y.at)
   const last = found.at(-1)
-  if (last === undefined || last === null) return null
-  const key = JSON.stringify(last)
-  return found.every((f) => f !== null && JSON.stringify(f) === key) ? last : null
+  if (last === undefined || last.declared === null) return null
+  const key = JSON.stringify(last.declared)
+  return found.every((f) => f.declared !== null && JSON.stringify(f.declared) === key)
+    ? { declared: last.declared, form: last.form }
+    : null
 }
 
 export interface DecideInput {

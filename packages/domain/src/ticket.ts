@@ -514,7 +514,11 @@ export function reduceTicketEvent(prior: TicketState, event: Envelope): TicketSt
    * a closed item's card does not go stale; only its lifecycle is settled.
    */
   if (stated.lifecycle.status === 'closed' && LIFECYCLE_EVENTS.has(event.type)) {
-    return { ...stated, ...at, since: prior.since ?? event.at }
+    const kept = { ...stated, ...at, since: prior.since ?? event.at }
+    // A landing recorded after the close is still pushed code: the lifecycle stays `closed`, `landed` is what it names.
+    if (event.type !== 'TicketLanded') return kept
+    const d = event.data as PayloadOf<'TicketLanded'>
+    return { ...kept, landed: { mergeCommit: d.mergeCommit, base: d.base } }
   }
 
   // #831: any lifecycle event other than the move itself ends the move, except the first
@@ -942,7 +946,7 @@ export function claimTransition(
 }
 
 /** The causes of a release whose attempt the next claim continues rather than restarts (#1205, #1211). */
-export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit', 'BaseRed']
+export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit', 'BaseRed', 'StepRedoPending']
 
 /**
  * The release the ticket's newest claim ended in, when its cause is one the next claim continues — else null.
@@ -963,7 +967,7 @@ export function continuableRelease(state: Pick<TicketState, 'claims'>): { runId:
 export function releasesOf(
   ticketEvents: readonly Envelope[],
   runId: string,
-  cause: 'AccountLimit' | 'BaseRed',
+  cause: 'AccountLimit' | 'BaseRed' | 'StepRedoPending',
 ): number {
   return ticketEvents.filter((event) => {
     if (event.type !== 'TicketReleased') return false

@@ -21,3 +21,24 @@ describe('withRedoParagraph', () => {
     expect(withRedoParagraph(brief, now)).toBe(`${brief}\n\n${now}`)
   })
 })
+
+describe('redoParagraph with an unreadable outcome (#1398)', () => {
+  const note = { why: 'the agent did not finish: x', startedAt: 'aaa', head: 'bbb' }
+  it('quotes the tail and the block, and leaves a crash redo as it was', () => {
+    expect(redoParagraph(note)).not.toContain('No outcome')
+    const p = redoParagraph({ ...note, unread: 'all done\n```\nImplemented' })
+    expect(p).toContain('    all done\n    ```\n    Implemented')
+    expect(p).toContain('No outcome could be read from it.')
+    expect(
+      p.endsWith(
+        '    ```outcome\n    {"outcome": "Implemented"}\n    ```\n\nor another block as the brief above shows it.',
+      ),
+    ).toBe(true)
+  })
+  it('replaces a recorded brief that ends in the paragraph with exactly one', () => {
+    const first = withRedoParagraph('brief', redoParagraph({ ...note, unread: 'one' }))
+    const second = withRedoParagraph(first, redoParagraph({ ...note, unread: 'two' }))
+    expect(second).toBe(`brief\n\n${redoParagraph({ ...note, unread: 'two' })}`)
+    expect(withRedoParagraph(first, redoParagraph(note))).toBe(`brief\n\n${redoParagraph(note)}`)
+  })
+})

@@ -33,7 +33,15 @@ import type { DatabaseSync, SQLInputValue, StatementSync } from 'node:sqlite'
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
 import { Deferred, Effect, Schedule } from 'effect'
 
-import { ConcurrencyError, decodeRow, type EventStore, type EventsPort, prepareAppend } from './event-store.ts'
+import {
+  ConcurrencyError,
+  decodeRow,
+  type EventStore,
+  type EventsPort,
+  prepareAppend,
+  prepareAppendAll,
+  type StreamBatch,
+} from './event-store.ts'
 import type { Log } from './log.ts'
 import type { LogQueries, QueriesPort, UnconvergedUpdate } from './queries.ts'
 import { makeSqlSnapshots, type SnapshotStore } from './snapshots.ts'
@@ -267,6 +275,60 @@ export function makeSqliteEvents(db: DatabaseSync): EventsPort {
                 streamId,
                 expectedVersion,
                 rows.map((r) => r.version),
+                { cause: err },
+              ),
+            )
+          }
+          throw err
+        }
+      })
+    }),
+
+    appendAll: Effect.fn('EventStore.appendAll')(function* (batches: readonly StreamBatch[]) {
+      // A throw here is a defect: nothing has been written.
+      const prepared = prepareAppendAll(batches)
+      const written = prepared.filter((b) => b.rows.length > 0)
+      if (written.length === 0) return prepared.map((): Envelope[] => [])
+
+      // One synchronous thunk for the whole call, with no `yield*` between
+      // BEGIN and COMMIT — the reason `append`'s says. `current` is the batch
+      // being written, so a conflict names its stream.
+      return yield* Effect.suspend((): Effect.Effect<Envelope[][], ConcurrencyError> => {
+        let current = 0
+        db.exec('BEGIN IMMEDIATE')
+        try {
+          const lists = written.map((b, i) => {
+            current = i
+            return b.rows.map((r) =>
+              toEnvelope(
+                insert.get(
+                  r.streamId,
+                  r.version,
+                  r.type,
+                  r.schemaVer,
+                  JSON.stringify(r.data),
+                  r.actor,
+                  r.causation,
+                ) as unknown as SqliteRow,
+              ),
+            )
+          })
+          db.exec('COMMIT')
+          const byStream = new Map(written.map((b, i) => [b.streamId, lists[i]!]))
+          return Effect.succeed(prepared.map((b) => byStream.get(b.streamId) ?? []))
+        } catch (err) {
+          try {
+            db.exec('ROLLBACK')
+          } catch {
+            // Nothing left to roll back.
+          }
+          if (isVersionConflict(err)) {
+            const b = written[current]!
+            return Effect.fail(
+              new ConcurrencyError(
+                b.streamId,
+                b.expectedVersion,
+                b.rows.map((r) => r.version),
                 { cause: err },
               ),
             )

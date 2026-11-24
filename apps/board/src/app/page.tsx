@@ -1116,7 +1116,9 @@ async function CardsPart({
         ...onBoard,
       ]),
     ].filter((p) => only === undefined || p === only)
-    const answers = await Promise.all(projects.map(async (p) => [p, await readLandedWhere(p)] as const))
+    const answers = await Promise.all(
+      projects.map(async (p) => [p, await timed('pr.landed-where', () => readLandedWhere(p))] as const),
+    )
     const reads = new Map(answers.filter(([, r]) => r.kind !== 'solo'))
     const registryUnread = only === undefined && registeredUnread
     if (col.cards.length === 0)

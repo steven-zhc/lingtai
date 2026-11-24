@@ -40,6 +40,7 @@ import { createHash } from 'node:crypto'
 import type { AnswerRecord, AttemptEnding, Envelope, Finding, AttemptState } from '@lingtai/domain'
 import {
   headOf,
+  pendingRedoOf,
   reviewSummaryOf,
   reduceAttempt,
   rerunHeadOf,
@@ -711,6 +712,16 @@ export function releasedHeadOf(runEvents: readonly Envelope[]): ReleasedHead {
   if (!('atBase' in head)) return head
   const base = diffBaseShaOf(runEvents)
   return base === null ? { cannot: 'the attempt recorded no base commit' } : { at: base, atRef: null }
+}
+
+/**
+ * **The redo a stop interrupted, where the next claim can continue it** (#1398): `pendingRedoOf`, and only while the run
+ * recorded a head to re-cut. A redo's head is saved before its `StepRedone` is written; where that save did not land
+ * the run has none, `releasedHeadOf` says so, and a release naming the redo would be one nothing can continue.
+ */
+export function continuableRedoOf(runEvents: readonly Envelope[]): ReturnType<typeof pendingRedoOf> {
+  const pending = pendingRedoOf(runEvents)
+  return pending !== null && !('cannot' in releasedHeadOf(runEvents)) ? pending : null
 }
 
 /**

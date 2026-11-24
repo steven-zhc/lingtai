@@ -944,6 +944,8 @@ export interface AttemptOptions {
   readonly stepRedoWaits?: readonly Duration.Input[]
   /** `AttemptPortOptions.resetToHead`, as a promise (#1245). */
   readonly resetToHead?: () => Promise<{ readonly head: string } | { readonly failed: string }>
+  /** `AttemptPortOptions.saveHead`, as a promise (#1398). */
+  readonly saveHead?: () => Promise<{ readonly failed: string } | null>
   /**
    * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
    * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
@@ -1060,6 +1062,8 @@ export interface AttemptOptions {
       readonly accountReruns: number
       readonly why: string
       readonly startedAt?: string
+      /** The tail of the unreadable message the interrupted redo was about to quote (#1398). */
+      readonly unread?: string
     }
     /**
      * **The first visit of `step` continues what a person answered** (#1254, 0108 §22): the step asked, the answers are in
@@ -1187,6 +1191,13 @@ export interface AttemptPortOptions {
    * so an attempt handed none ends a redo at a person.
    */
   readonly resetToHead?: () => Effect.Effect<{ readonly head: string } | { readonly failed: string }>
+  /**
+   * **Records the head a redo after an unreadable outcome will reset to, before its `StepRedone` is written** (#1398): a process killed
+   * during the wait finalizes nothing, so the head the next claim continues from must already be on the run's
+   * stream. An attempt handed none records none, and a stop during its wait is then not continued. `failed` names a
+   * save that did not leave a head the next claim can continue from: the redo is then not written (it ends at a person).
+   */
+  readonly saveHead?: () => Effect.Effect<{ readonly failed: string } | null>
   /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
   readonly conflictEvidence?: (baseSha: string) => Effect.Effect<{
     readonly fromSha: string
@@ -1231,6 +1242,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
     ...(mergeBase === undefined ? {} : { mergeBase: (toSha: string) => Effect.promise(() => mergeBase(toSha)) }),
     ...(options.stepRedoWaits === undefined ? {} : { stepRedoWaits: options.stepRedoWaits }),
     ...(resetToHead === undefined ? {} : { resetToHead: () => Effect.promise(() => resetToHead()) }),
+    ...(options.saveHead === undefined ? {} : { saveHead: () => Effect.promise(() => options.saveHead!()) }),
     ...(baseIsRed === undefined
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
@@ -1514,7 +1526,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly startedAt?: string
     } | null = null
     /** The one place `StepRedone` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input) =>
+    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input, unread = false) =>
       options.emit({
         type: 'StepRedone',
         data: {
@@ -1523,6 +1535,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           rerun: retry,
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
+          ...(unread ? { unread: true } : {}),
         },
       })
     const roundLimit =
@@ -1785,13 +1798,13 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly visit: NonNullable<typeof lastVisit>
       readonly retry: number
       readonly said: string
+      /** The tail of a final message no outcome could be read from (#1398): the redo's brief quotes it. */
+      readonly unread?: string
       readonly why: string
       readonly wait: Duration.Input
     }): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         stepRedosSpent = redo.retry
-        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
-        if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const cannot = (detail: string): boolean => {
           const ending: StepDidNotFinish = {
             ending: 'did-not-finish',
@@ -1805,6 +1818,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           end = unansweredEnd(redo.step, { runId: options.context.runId }, ending)
           return false
         }
+        // Only a redo that quotes an unreadable message has a tail a stop must keep (#1398). A save that did not
+        // leave a head to continue from writes no `StepRedone`: a stop during the wait would release with no cause.
+        const saved = redo.unread !== undefined && options.saveHead !== undefined ? yield* options.saveHead() : null
+        if (saved !== null) return cannot(`its head could not be saved before the wait — ${saved.failed}`)
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.unread !== undefined)
+        if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const reset =
           options.resetToHead === undefined
             ? { failed: 'this attempt was handed no way to reset the worktree' }
@@ -1839,6 +1858,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               why: redo.why,
               startedAt: earlier?.startedAt ?? redo.visit.startedAt ?? redo.visit.context.onSha,
               head: reset.head,
+              ...(redo.unread === undefined ? {} : { unread: redo.unread }),
             },
           },
         }
@@ -2465,6 +2485,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   why: accountRerun.why,
                   startedAt: accountRerun.startedAt ?? onSha,
                   head: onSha,
+                  ...(accountRerun.unread === undefined ? {} : { unread: accountRerun.unread }),
                 },
               }
             : options.from?.answered !== undefined &&
@@ -2729,6 +2750,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             decided.yields === 'commit' &&
             decided.result._tag === 'Completed' &&
             decided.result.outcome?._tag === 'AgentFailed'
+          const unread =
+            failed && decided?.result._tag === 'Completed' && decided.result.outcome?._tag === 'AgentFailed'
+              ? decided.result.outcome.said
+              : undefined
           const again = failed
             ? (() => {
                 const redo = redoAgentFailed(stepRedosSpent)
@@ -2741,7 +2766,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               step: at,
               visit: { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt },
               retry,
-              said: reason.detail,
+              said: unread ?? reason.detail,
+              ...(unread === undefined ? {} : { unread }),
               why: failed
                 ? `the agent did not finish: ${reason.detail}`
                 : again.expected

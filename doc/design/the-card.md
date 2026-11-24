@@ -252,12 +252,12 @@ launched with.
 
 ## What was settled, and how
 
-**`N passed` goes, and the segment carries what it said.** `prepared: [install]`
-is one action, so *1 passed* **was** *prepared went green*; `proposed` holds
-`build` and `review`, so there it was half a step and said so nowhere. The bar
-draws **one cell per planned action**, each with its own verdict, which is the
-granularity the counter had and the flattened row did not — so `proposed` with a
-running build and an unreached review is visibly half a step. All four counters
+**`N passed` goes, and the cell's title and the refusal line say what it said.**
+The bar draws **one cell per step**, toned by that step's own state. The verdict
+of each action in a step is read in two places: the cell's `title`, which lists
+the actions as `name state`, and the `step:action refused` line, which names the
+first action that failed, in step order, and is the one place a single action's
+verdict is printed on the card without hovering. All four counters
 go with it and not `passed` alone: *failed*, *waived* and *approved* are the
 same fact at the same two granularities, and keeping three of the four would
 have left a reader deciding which list to believe.
