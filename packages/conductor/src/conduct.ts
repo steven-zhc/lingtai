@@ -1196,6 +1196,14 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
     let attemptCut = null as { readonly branch: string; readonly pr: number | null } | null
     const attemptBase = (): string => attemptCut?.branch ?? passBase
     /**
+     * **A landing on `branch.personal` joins the draft in the same transaction** (ADR 0131 §1, `landTicketEffect`).
+     * Null for a solo project and for a pr-fix, whose base is the PR's branch.
+     */
+    const draftOfLanding = (): { project: string } | null =>
+      modeOf(recipe) === 'team' && recipe.branch.personal !== undefined && attemptBase() === recipe.branch.personal
+        ? { project }
+        : null
+    /**
      * **`runtime.limits` — the ceiling, and the default under every dispatch**
      * (`#314`, 0070 §5).
      *
@@ -3195,7 +3203,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (merged === null) return Effect.succeed(false)
           if (released) return Effect.succeed(true)
           return remembered(
-            landTicketEffect(ticketId, { mergeCommit: merged, base: attemptBase() }, store, ticketSnapshots),
+            landTicketEffect(
+              ticketId,
+              { mergeCommit: merged, base: attemptBase(), draft: draftOfLanding() },
+              store,
+              ticketSnapshots,
+            ),
           ).pipe(
             // A refusal is a defect now; retried as a failure, as it was.
             Effect.catchDefect((defect) => Effect.fail(defect)),
@@ -6360,7 +6373,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // `EndActionsResolved{landed}` over an unrecorded landing unreachable
         // rather than merely unlikely.
         yield* remembered(
-          landTicketEffect(ticketId, { mergeCommit: merged, base: attemptBase(), endPlan }, store, ticketSnapshots),
+          landTicketEffect(
+            ticketId,
+            { mergeCommit: merged, base: attemptBase(), endPlan, draft: draftOfLanding() },
+            store,
+            ticketSnapshots,
+          ),
         )
         endResolved = endPlan
         // What is left is telling the issue, which reads the plan that was just
