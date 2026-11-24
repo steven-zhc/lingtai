@@ -5,7 +5,8 @@
  * `pr.ts`), append at the version read, and on a lost race re-read and ask again once. **No process store is reached
  * from here** — every function takes `store` — because the board imports this package.
  *
- * Every later PR ticket adds its commands to this file; nothing else appends to a `pr-` stream.
+ * Every later PR ticket adds its commands to this file; nothing else appends to a `pr-` stream, except that
+ * `draftBatchFor` hands one batch to `landTicketEffect`, which writes it beside the ticket's own (0129 §5).
  */
 import {
   type Envelope,
@@ -28,6 +29,8 @@ import {
   fixLandedTransition,
   fixRestartTransition,
   draftOpenedTransition,
+  addDraftTicket,
+  emptyPr,
   ciSkippedTransition,
   ciFollowingTransition,
   checkedTransition,
@@ -57,7 +60,7 @@ import {
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
-import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
+import { ConcurrencyError, type EventStore, type StreamBatch } from '@lingtai/event-store/store'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
@@ -122,6 +125,28 @@ const draftOf = (prs: readonly PrState[]): { n: number; version: number; state: 
     return { n: top.n ?? prs.length, version: top.version, state: top.status }
   }
   return { n: (top.n ?? prs.length) + 1, version: 0, state: null }
+}
+
+/**
+ * The batch that adds a landed ticket to the draft, **not an append**: the caller writes it with the ticket's own
+ * (ADR 0131 §1). The stream is `draftTarget`'s, at the version it was read at; the event is the PR's own transition.
+ * A transition that declines is a defect — `draftTarget` never names a PR in a status that refuses.
+ */
+export function draftBatchFor(
+  project: string,
+  input: { ticket: string; mergeCommit: string; from: number | null },
+  store: EventStore,
+): Effect.Effect<StreamBatch, Error> {
+  return Effect.gen(function* () {
+    const prs = yield* listPrs(project, store)
+    const target = draftOf(prs)
+    const top = prs[prs.length - 1]
+    const state = target.state === null || top === undefined ? emptyPr : top
+    const event = addDraftTicket(state, input)
+    if (event === null)
+      return yield* Effect.die(new Error(`the draft of ${project} refused a ticket in ${state.status}`))
+    return { streamId: prStream(project, target.n), expectedVersion: target.version, events: [event] }
+  })
 }
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
