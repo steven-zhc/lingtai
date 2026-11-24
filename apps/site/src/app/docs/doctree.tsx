@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import type { TreeGroup } from '@/lib/docs'
+import { chapterTitle, type TreeGroup } from '@/lib/docs'
 
 /**
  * Every published page, beside the page — so that going from `agent:` to `run:`
@@ -27,7 +27,7 @@ export function DocTree({ groups, current }: { groups: TreeGroup[]; current: str
                     title={entry.title}
                     aria-current={entry.slug === current ? 'page' : undefined}
                   >
-                    {entry.title}
+                    {chapterTitle(entry.n, entry.title)}
                   </Link>
                 </li>
               ))}
