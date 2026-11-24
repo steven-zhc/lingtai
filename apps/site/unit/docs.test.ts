@@ -124,6 +124,23 @@ const proseOf = (text: string) =>
     .trim()
     .split(/\s+/).length
 
+describe('connect-github is chapter 3, your own repository', () => {
+  it('stays between 600 and 800 words, ends on Next, and sets no second home', async () => {
+    const body = await readFile(path.join(docRoot, 'connect-github.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1382
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .at(-1)?.text,
+    ).toBe('Next')
+    expect(body).toContain('(concepts.md)')
+    expect(body).not.toContain('export LINGTAI_HOME')
+    expect(body).not.toContain('--base')
+  })
+})
+
 describe('concepts is chapter 4, one attempt', () => {
   it('stays between 600 and 800 words, in four sections, ending at the board', async () => {
     const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
@@ -209,30 +226,24 @@ describe('the tutorial stays a first-run path', () => {
     ])
   })
 
-  it('keeps the options, the hold, the refusal and GitHub on the second page', async () => {
+  it('keeps the options, the hold and the refusal on the second page', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial-more.md'), 'utf8')
     expect(body).not.toContain('<details')
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(await servable()).toContain('tutorial-more.md')
     const hold = body.indexOf('\n## Hold every attempt')
     const refusal = body.indexOf('\n## Watch a check refuse')
-    const github = body.indexOf('\n## Part 2')
+    expect(body).not.toContain('## Part 2')
+    expect(body).not.toContain('--base')
     expect(hold).toBeGreaterThan(0)
     expect(refusal).toBeGreaterThan(hold)
-    expect(github).toBeGreaterThan(refusal)
     expect(proseOf(body.slice(hold, refusal)), 'the hold has become a manual').toBeLessThan(400) // #1061
-    expect(proseOf(body.slice(refusal, github)), 'the refusal step has become a manual').toBeLessThan(350)
-    expect(proseOf(body.slice(github)), 'the GitHub half has become a reference manual').toBeLessThan(600)
+    expect(proseOf(body.slice(refusal)), 'the refusal step has become a manual').toBeLessThan(350)
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)
         .map((h) => h.text),
-    ).toEqual([
-      'What each init option means',
-      'Hold every attempt for approval',
-      'Watch a check refuse',
-      'Part 2 — Move the project to GitHub',
-    ])
+    ).toEqual(['What each init option means', 'Hold every attempt for approval', 'Watch a check refuse'])
   })
 
   it('keeps the repository-detection list on the recipe page, with no disclosure', async () => {
@@ -566,7 +577,7 @@ describe('the book', () => {
 
   it('gives the chapters either side of one', () => {
     const near = neighboursOf('concepts', all)
-    expect(near.previous?.file).toBe('team.md')
+    expect(near.previous?.file).toBe('connect-github.md')
     expect(near.next?.file).toBe('board.md')
     expect(neighboursOf('board', all).previous?.file).toBe('concepts.md')
     expect(neighboursOf('board', all).next?.file).toBe('tickets.md')
@@ -583,7 +594,7 @@ describe('the book', () => {
   it('skips a chapter that is not served', () => {
     const without = new Set(all)
     without.delete('concepts')
-    expect(neighboursOf('team', without).next?.file).toBe('board.md')
+    expect(neighboursOf('team', without).next?.file).toBe('connect-github.md')
     expect(neighboursOf('when-it-fails', without).previous?.file).toBe('tickets.md')
     expect(neighboursOf('concepts', without)).toEqual({ previous: null, next: null })
   })

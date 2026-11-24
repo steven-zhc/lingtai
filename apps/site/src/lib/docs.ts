@@ -60,7 +60,7 @@ export const DOCS_PUBLIC = false
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
  * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from `guide` (#1383). `solo` is chapter 11, solo mode (#1410). Nothing else in `doc/` has been through
+ * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from `guide` (#1383). `connect-github` is chapter 3, your own repository on GitHub (#1382). `solo` is chapter 11, solo mode (#1410). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -71,6 +71,7 @@ export const PUBLIC_SLUGS = [
   'tutorial',
   'tutorial-more',
   'team',
+  'connect-github',
   'concepts',
   'board',
   'tickets',
@@ -122,7 +123,7 @@ export interface Section {
  */
 /**
  * The book: the chapters ADR 0112 §13 lists, in that order. `n` is the chapter's
- * number in that table, so chapter 4 is 4 while 3 is unwritten.
+ * number in that table, so chapter 4 is 4 whatever the neighbours are.
  *
  * Only files that exist today. A chapter ticket adds its own row here and its
  * slug to `PUBLIC_SLUGS`; a row before its file fails the unit test, by name.
@@ -136,6 +137,7 @@ export interface BookRow {
 export const BOOK: BookRow[] = [
   { n: 1, part: 'Get started', file: 'tutorial.md' },
   { n: 2, part: 'Get started', file: 'team.md' },
+  { n: 3, part: 'Get started', file: 'connect-github.md' },
   { n: 4, part: 'Understand it', file: 'concepts.md' },
   { n: 5, part: 'Understand it', file: 'board.md' },
   { n: 6, part: 'Every day', file: 'tickets.md' },

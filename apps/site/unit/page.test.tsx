@@ -102,11 +102,12 @@ describe("the home page's argument", () => {
     expect(bar).toMatch(/<summary>Docs<\/summary>/)
     const menu = bar.slice(bar.indexOf('<details'), bar.indexOf('</details>'))
     const hrefs = [...menu.matchAll(/href="([^"]*)"/g)].map((m) => m[1])
-    // #1061: tutorial-more is public but is reached from the tutorial, not the menu; #1295: so is when-it-fails, listed in the Guides; #1330: and upgrading-to-0.16; #1343: and team, which the tutorial ends on; #1380: and board, reached through the book; #1383: and tickets, the same; #1410: and solo.
+    // #1061: tutorial-more is public but is reached from the tutorial, not the menu; #1295: so is when-it-fails, listed in the Guides; #1330: and upgrading-to-0.16; #1343: and team, which the tutorial ends on; #1380: and board, reached through the book; #1383: and tickets, the same; #1410: and solo; #1382: and connect-github.
     const inMenu = PUBLIC_SLUGS.filter(
       (s) =>
         s !== 'tutorial-more' &&
         s !== 'team' &&
+        s !== 'connect-github' &&
         s !== 'when-it-fails' &&
         s !== 'upgrading-to-0.16' &&
         s !== 'board' &&
@@ -138,6 +139,7 @@ describe("the home page's argument", () => {
       'tutorial',
       'tutorial-more',
       'team',
+      'connect-github',
       'concepts',
       'board',
       'tickets',
