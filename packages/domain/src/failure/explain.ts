@@ -276,7 +276,7 @@ const RUN_OWNER: Record<RunFailureKind, FailureOwner> = {
   aborted: 'lingtai',
   'no-commits': 'lingtai',
   // The recipe calls a run that needs this many turns *"a ticket that was
-  // scoped wrong"*, and guide.md reads the limit firing as *the ticket was
+  // scoped wrong"*, and checks-and-spend.md reads the limit firing as *the ticket was
   // wrong* (`#89`). The ticket is the repository's, and Lingtai did what the
   // recipe asked — so a card calling this Lingtai's would send somebody to
   // look for a fault that is not there. The owner buys nothing either way

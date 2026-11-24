@@ -157,6 +157,29 @@ describe('concepts is chapter 4, one attempt', () => {
   })
 })
 
+describe('checks-and-spend is chapter 9, what is checked and what is spent', () => {
+  it('stays between 600 and 800 words, in four sections and a Next, and keeps the ceiling', async () => {
+    const body = await readFile(path.join(docRoot, 'checks-and-spend.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1386
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual([
+      'What goes at build:',
+      'Who reviews',
+      'What a run and a day may spend',
+      'Where you see what was spent',
+      'Next',
+    ])
+    expect(body).toContain('(safety.md)')
+    expect(body).toContain('Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.')
+    expect(body).toContain('limits.day_usd')
+  })
+})
+
 describe('safety is chapter 10, what an agent can reach', () => {
   it('stays between 600 and 800 words, in four sections and a Next, and keeps every limit', async () => {
     const body = await readFile(path.join(docRoot, 'safety.md'), 'utf8')
@@ -331,10 +354,10 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('tutorial.md', 'when-it-fails.md', (f) => served.includes(f))).toBe('/docs/when-it-fails/')
   })
 
-  it('publishes the best practices page', async () => {
+  it('publishes the checks and spend page', async () => {
     const served = await servable()
-    expect(served).toContain('guide.md')
-    expect(resolveHref('tutorial.md', 'guide.md', (f) => served.includes(f))).toBe('/docs/guide/')
+    expect(served).toContain('checks-and-spend.md')
+    expect(resolveHref('tutorial.md', 'checks-and-spend.md', (f) => served.includes(f))).toBe('/docs/checks-and-spend/')
   })
 
   it('publishes the recipe guide beside the tutorial without publishing the reference', async () => {
