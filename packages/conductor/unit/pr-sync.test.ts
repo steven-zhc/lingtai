@@ -1,13 +1,32 @@
-import { integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
-import type { GitHub } from '@lingtai/github'
-import { recordBranchSynced, recordPrOpened, recordPrPushed, recordPrRestart } from '@lingtai/project'
 /**
  * `sync` and `build`, In progress's first two steps, and the merge back into `branch.personal` (#1312, 0130 §6):
  * `main` is merged in a throwaway worktree and built before it is anyone's target; nothing but `push` writes the PR
  * branch; and what the merge back pushes is `branch.personal` and nothing else.
  */
+import {
+  catchUpOwed,
+  catchUpWaits,
+  conflictOpen,
+  syncRoundTransition,
+  integrationStream,
+  prStream,
+  reducePr,
+  ticketStream,
+} from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import type { EventStore } from '@lingtai/event-store/store'
+import type { GitHub } from '@lingtai/github'
+import {
+  recordBranchSynced,
+  recordPrCaughtUp,
+  recordPrCatchUpFailed,
+  recordPrMerged,
+  recordPrOpened,
+  recordPrPushed,
+  grantPrRounds,
+  recordPrRestart,
+  requestPrRetry,
+} from '@lingtai/project'
 import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
@@ -15,7 +34,7 @@ import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { createLandingLane } from '../src/landing-lane.ts'
-import { mergePrBack } from '../src/pr-sync.ts'
+import { catchUpPersonal, mergePrBack } from '../src/pr-sync.ts'
 import { type PrBuildAnswer, type PrPorts, type PrStep, IN_PROGRESS_STEPS, servePr } from '../src/pr.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -707,5 +726,287 @@ describe('the merge back', () => {
     await Effect.runPromise(Deferred.succeed(building, void 0))
     await Promise.all([back, landing])
     expect(order).toEqual(['back', 'landing'])
+  })
+})
+
+/** A PR that merged on the host while In review: `main` holds its head, and the personal branch has not caught up. */
+async function merged(): Promise<EventStore> {
+  const store = await inReview()
+  await Effect.runPromise(recordPrMerged('lingtai', 1, { how: 'host', headSha: FROZEN, mergeSha: MERGE }, store))
+  return store
+}
+
+describe('the catch-up', () => {
+  const run = (store: EventStore, w: World, extra: Partial<PrPorts> = {}) =>
+    Effect.runPromise(catchUpPersonal(ports(store, w, extra), 'lingtai', 1))
+
+  it('is owed by a merged PR only, and merges the tip of main once, built, pushing only the personal branch', async () => {
+    const store = await merged()
+    expect(catchUpOwed(await state(store))).toBe(true)
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    await run(store, w)
+
+    expect(w.merges).toHaveLength(1)
+    expect(w.merges[0]).toMatchObject({
+      at: PERSONAL,
+      theirs: MAIN,
+      message: `Merge main at ${MAIN.slice(0, 7)} into lingtai-team after PR 1`,
+    })
+    expect(w.builds).toEqual([{ sha: BACK, base: 'lingtai-team-pr-1', checkId: 'pr-1-catch-up' }])
+    expect(pushesOf(w)).toEqual([['push', 'origin', `${BACK}:refs/heads/lingtai-team`]])
+    expect(pushesOf(w).flat().join(' ')).not.toContain('refs/heads/main')
+    const last = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(last).toMatchObject({ type: 'PrCaughtUp', data: { mainSha: MAIN, mergeCommit: BACK } })
+    expect(catchUpOwed(await state(store))).toBe(false)
+
+    // Once: a second call, and a second record, append nothing.
+    const before = (await store.read(prStream('lingtai', 1))).length
+    await run(store, w)
+    await Effect.runPromise(recordPrCaughtUp('lingtai', 1, { mainSha: OTHER, mergeCommit: null }, store))
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(before)
+    expect(pushesOf(w)).toHaveLength(1)
+  })
+
+  it('is not owed while the PR is in review or closed', async () => {
+    expect(catchUpOwed(await state(await inReview()))).toBe(false)
+  })
+
+  it('records the tip as already had, and pushes nothing, when main is in the personal branch', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = () => true
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN, mergeCommit: null },
+    })
+  })
+
+  it('a conflict without an agent records conflict, which is not owed again until a retry', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    w.mergeAnswer = () => ({ kind: 'conflict', paths: ['a.ts'] })
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { mainSha: MAIN, why: 'conflict' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(false)
+    await run(store, w)
+    expect(w.merges).toHaveLength(1)
+  })
+
+  it('a red build records red and pushes nothing', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    w.buildAnswer = () => Effect.succeed({ kind: 'red', command: 'pnpm test', evidence: 'boom' })
+    await run(store, w)
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'red' },
+    })
+  })
+
+  it('a fetch that fails is unknown, stays owed, and is tried again', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          remote: (project, args) =>
+            args[0] === 'fetch' ? Effect.succeed({ code: 1, stdout: '', stderr: 'down' }) : p.remote(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'unknown' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+    await run(store, w)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)!.type).toBe('PrCaughtUp')
+  })
+
+  it('a push of ours found in the personal branch history is recorded, and not merged again', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({
+                  code: 0,
+                  stdout: `${BACK} ${PERSONAL} ${MAIN}\tMerge main at ${MAIN.slice(0, 7)} into lingtai-team after PR 1\n`,
+                  stderr: '',
+                })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(w.merges).toEqual([])
+    expect(pushesOf(w)).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN, mergeCommit: BACK },
+    })
+  })
+
+  it.each([
+    [
+      'a subject that names another commit of main',
+      `Merge main at ${'b'.repeat(7)} into lingtai-team after PR 1`,
+      MAIN,
+    ],
+    ['a subject on another branch', `Merge feature into personal after PR 1`, 'f'.repeat(40)],
+    ['no subject', undefined, MAIN],
+    ['a second parent that is not main', `Merge main at ${'f'.repeat(7)} into lingtai-team after PR 1`, 'f'.repeat(40)],
+  ])('a merge under %s is not ours: the catch-up is still owed and is done', async (_name, subject, second) => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const p = ports(store, w)
+    await Effect.runPromise(
+      catchUpPersonal(
+        {
+          ...p,
+          git: (project, args) =>
+            args[0] === 'log'
+              ? Effect.succeed({
+                  code: 0,
+                  stdout: `${BACK} ${PERSONAL} ${second}${subject === undefined ? '' : `\t${subject}`}\n`,
+                  stderr: '',
+                })
+              : p.git(project, args),
+        },
+        'lingtai',
+        1,
+      ),
+    )
+    expect(w.merges.length).toBe(1)
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCaughtUp',
+      data: { mainSha: MAIN },
+    })
+  })
+
+  it('a locked project starts none, records locked, and stays owed', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const resolver = { locked: () => Effect.succeed('the day ceiling is reached') } as unknown as PrPorts['resolver']
+    await run(store, w, { resolver })
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'locked' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+  })
+
+  it('a pause that arrives while the catch-up queues behind a landing stops it: nothing is built or pushed', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const lane = createLandingLane()
+    const release = Deferred.makeUnsafe<void>()
+    const held = Deferred.makeUnsafe<void>()
+    let paused: string | null = null
+    const resolver = { locked: () => Effect.sync(() => paused) } as unknown as PrPorts['resolver']
+    const ticket = Effect.runPromise(
+      lane.through(
+        integrationStream('lingtai', 'lingtai-team'),
+        { runId: 'r1', issue: 2 },
+        { onWait: () => Effect.void },
+        Deferred.succeed(held, void 0).pipe(Effect.andThen(Deferred.await(release))),
+      ),
+    )
+    await Effect.runPromise(Deferred.await(held))
+    const catching = run(store, w, { lane, resolver })
+    await new Promise((r) => setTimeout(r, 10))
+    paused = 'paused by an operator'
+    await Effect.runPromise(Deferred.succeed(release, void 0))
+    await Promise.all([ticket, catching])
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'locked' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+  })
+
+  it('a failure repeats append once, while it waits', async () => {
+    const store = await merged()
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, { mainSha: MAIN, why: 'red', detail: 'x' }, store))
+    const len = (await store.read(prStream('lingtai', 1))).length
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, { mainSha: MAIN, why: 'red', detail: 'y' }, store))
+    expect((await store.read(prStream('lingtai', 1))).length).toBe(len)
+    expect(catchUpOwed(await state(store))).toBe(false)
+  })
+
+  it('the same failure after a retry or a grant is a new answer: released clears, the wait returns', async () => {
+    const store = await merged()
+    const ref = { project: 'lingtai', n: 1, mode: 'team' as const }
+    const failure = { mainSha: MAIN, why: 'conflict' as const, detail: 'x' }
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, failure, store))
+    expect(catchUpWaits(await state(store))).toBe(true)
+
+    // A retry: owed again, the pending request stands until the attempt answers.
+    await Effect.runPromise(requestPrRetry(ref, { by: 'human:a' }, store))
+    expect(catchUpOwed(await state(store))).toBe(true)
+    expect((await state(store)).pending).not.toBeNull()
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, failure, store))
+    let now = await state(store)
+    expect(catchUpOwed(now)).toBe(false)
+    expect(catchUpWaits(now)).toBe(true)
+    expect(now.pending).toBeNull()
+
+    // A grant for the same commit: the same again.
+    await Effect.runPromise(grantPrRounds(ref, { by: 'human:a', merging: 'back', commit: MAIN }, store))
+    expect(catchUpOwed(await state(store))).toBe(true)
+    await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, failure, store))
+    now = await state(store)
+    expect(catchUpOwed(now)).toBe(false)
+    expect(catchUpWaits(now)).toBe(true)
+  })
+
+  it("a merged PR owed its catch-up opens the catch-up's rounds and nothing else, whatever main was fast-forwarded to", async () => {
+    const store = await merged()
+    const now = await state(store)
+    const heads = { ...now, covers: { ...now.covers, [MAIN]: 0 } }
+    expect(conflictOpen(heads, true)).toBe(true)
+    // Not the merge back's or the sync's: the PR has merged.
+    expect(conflictOpen(heads, false)).toBe(false)
+  })
+
+  it('a merge back round that reaches the log after PrMerged is refused, and a catch-up round before it is too', async () => {
+    const store = await merged()
+    const now = await state(store)
+    const round = { merging: 'back' as const, commit: MAIN, start: 'steven/studio', round: 1 }
+    expect(syncRoundTransition(now, round)).toBeNull()
+    expect(syncRoundTransition(now, { ...round, catchUp: true })).not.toBeNull()
+    // The catch-up's rounds are `back` rounds only.
+    expect(syncRoundTransition(now, { ...round, merging: 'main', catchUp: true })).toBeNull()
+    const open = { ...now, status: 'in-review' as const }
+    expect(syncRoundTransition(open, round)).not.toBeNull()
+    expect(syncRoundTransition(open, { ...round, catchUp: true })).toBeNull()
   })
 })

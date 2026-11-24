@@ -5,7 +5,8 @@
  * `pr.ts`), append at the version read, and on a lost race re-read and ask again once. **No process store is reached
  * from here** — every function takes `store` — because the board imports this package.
  *
- * Every later PR ticket adds its commands to this file; nothing else appends to a `pr-` stream.
+ * Every later PR ticket adds its commands to this file; nothing else appends to a `pr-` stream, except that
+ * `draftBatchFor` hands one batch to `landTicketEffect`, which writes it beside the ticket's own (0129 §5).
  */
 import {
   type Envelope,
@@ -28,12 +29,15 @@ import {
   fixLandedTransition,
   fixRestartTransition,
   draftOpenedTransition,
+  addDraftTicket,
+  emptyPr,
   ciSkippedTransition,
   ciFollowingTransition,
   checkedTransition,
   openedTransition,
   mergedTransition,
   closedTransition,
+  ticketsHandedBack,
   backClosedTransition,
   retryTransition,
   adoptTransition,
@@ -48,6 +52,8 @@ import {
   syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
+  caughtUpTransition,
+  catchUpFailedTransition,
   summaryWrittenTransition,
   summaryNotWrittenTransition,
   descriptionPushedTransition,
@@ -55,7 +61,7 @@ import {
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
-import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
+import { ConcurrencyError, type EventStore, type StreamBatch } from '@lingtai/event-store/store'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
@@ -120,6 +126,28 @@ const draftOf = (prs: readonly PrState[]): { n: number; version: number; state: 
     return { n: top.n ?? prs.length, version: top.version, state: top.status }
   }
   return { n: (top.n ?? prs.length) + 1, version: 0, state: null }
+}
+
+/**
+ * The batch that adds a landed ticket to the draft, **not an append**: the caller writes it with the ticket's own
+ * (ADR 0131 §1). The stream is `draftTarget`'s, at the version it was read at; the event is the PR's own transition.
+ * A transition that declines is a defect — `draftTarget` never names a PR in a status that refuses.
+ */
+export function draftBatchFor(
+  project: string,
+  input: { ticket: string; mergeCommit: string; from: number | null },
+  store: EventStore,
+): Effect.Effect<StreamBatch, Error> {
+  return Effect.gen(function* () {
+    const prs = yield* listPrs(project, store)
+    const target = draftOf(prs)
+    const top = prs[prs.length - 1]
+    const state = target.state === null || top === undefined ? emptyPr : top
+    const event = addDraftTicket(state, input)
+    if (event === null)
+      return yield* Effect.die(new Error(`the draft of ${project} refused a ticket in ${state.status}`))
+    return { streamId: prStream(project, target.n), expectedVersion: target.version, events: [event] }
+  })
 }
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
@@ -194,29 +222,82 @@ export const requestPrSubmit = (
   )
 
 /** The serve refused a request it found it could not honour. */
-export const recordPrRefused = (project: string, n: number, refusal: PayloadOf<'PrSubmitRefused'>, store: EventStore) =>
-  transitionPr(
-    store,
-    project,
-    n,
-    (state) => refuseTransition(state, refusal),
-    (_state, appended) => appended,
-  )
+export const recordPrRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'PrSubmitRefused'>,
+  store: EventStore,
+  decided?: PrState,
+): Effect.Effect<boolean, Error> =>
+  decided !== undefined
+    ? // Pinned: the refusal was decided against this snapshot, so it is written at its version or not at all.
+      Effect.gen(function* () {
+        const next = refuseTransition(decided, refusal)
+        if (next === null) return false
+        yield* Effect.tryPromise({
+          try: () => store.append(prStream(project, n), decided.version, [next]),
+          catch: (e) => e,
+        })
+        return true
+      }).pipe(Effect.mapError((e) => (e instanceof ConcurrencyError ? e : failed(e))))
+    : transitionPr(
+        store,
+        project,
+        n,
+        (state) => refuseTransition(state, refusal),
+        (_state, appended) => appended,
+      )
 
-/** The freeze: In progress, with the branch's commit and the tickets it holds. */
+type Batches = Parameters<EventStore['appendAll']>[0] extends readonly (infer B)[] ? B[] : never
+
+/** One `PrDraftTicketAdded` per ticket, through the domain's guard, for a stream that is in no state yet. */
+const draftEvents = (tickets: readonly PayloadOf<'PrDraftTicketAdded'>[]): ToAppend[] =>
+  tickets.flatMap((t) => {
+    const added = addDraftTicket(reducePr([]), t)
+    return added === null ? [] : [added]
+  })
+
+/**
+ * The freeze: In progress, with the branch's commit and the tickets it holds.
+ *
+ * With `decided`, the write is pinned to the version of the `PrState` the freeze asked git about: `PrInProgress` on
+ * stream `n` at that version, and the tickets the commit does not hold on stream `n + 1` (the next draft), in one
+ * `appendAll`. **No retry in here, and no read of PR `n`**: a landing between the freeze's read and its write moves
+ * stream `n`, the write fails with a `ConcurrencyError`, and the caller reads, asks git and decides again. Nothing to
+ * hand over is today's single append. Without `decided` it reads the PR itself and hands nothing over.
+ */
 export const recordPrInProgress = (
   project: string,
   n: number,
   frozen: Parameters<typeof freezeTransition>[1],
   store: EventStore,
-) =>
-  transitionPr(
-    store,
-    project,
-    n,
-    (state) => freezeTransition(state, frozen),
-    (_state, appended) => appended,
-  )
+  decided?: { state: PrState; notKept: readonly PayloadOf<'PrDraftTicketAdded'>[] },
+): Effect.Effect<boolean, Error> => {
+  if (decided === undefined) {
+    return transitionPr(
+      store,
+      project,
+      n,
+      (state) => freezeTransition(state, frozen),
+      (_state, appended) => appended,
+    )
+  }
+  return Effect.gen(function* () {
+    const event = freezeTransition(decided.state, frozen)
+    if (event === null) return false
+    const handed = draftEvents(decided.notKept)
+    const batches: Batches = [
+      { streamId: prStream(project, n), expectedVersion: decided.state.version, events: [event] },
+    ]
+    if (handed.length > 0) {
+      const next = prStream(project, n + 1)
+      const head = yield* Effect.tryPromise({ try: () => store.head(next), catch: failed })
+      batches.push({ streamId: next, expectedVersion: head, events: handed })
+    }
+    yield* Effect.tryPromise({ try: () => store.appendAll(batches), catch: (e) => e })
+    return true
+  }).pipe(Effect.mapError((e) => (e instanceof ConcurrencyError ? e : failed(e))))
+}
 
 /** In progress starts again from its first step, on the same freeze. */
 export const recordPrRestart = (project: string, n: number, store: EventStore) =>
@@ -387,6 +468,32 @@ export const recordPrMergeBackFailed = (
     (_state, appended) => appended,
   )
 
+/** The personal branch was caught up with `main` after the merge (#1371). Once per PR; the answer says whether it was already there. */
+export const recordPrCaughtUp = (project: string, n: number, caught: PayloadOf<'PrCaughtUp'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => caughtUpTransition(state, caught),
+    (state, appended): 'recorded' | 'already' | 'refused' =>
+      appended ? 'recorded' : state.catchUp?.outcome === 'caught-up' ? 'already' : 'refused',
+  )
+
+/** The catch-up did not complete; `unknown` and `locked` stay owed. Once per answer. */
+export const recordPrCatchUpFailed = (
+  project: string,
+  n: number,
+  failed: PayloadOf<'PrCatchUpFailed'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => catchUpFailedTransition(state, failed),
+    (_state, appended) => appended,
+  )
+
 /** The PR was found merged. A PR already merged or closed appends nothing. */
 export const recordPrMerged = (project: string, n: number, merged: PayloadOf<'PrMerged'>, store: EventStore) =>
   transitionPr(
@@ -397,15 +504,37 @@ export const recordPrMerged = (project: string, n: number, merged: PayloadOf<'Pr
     (_state, appended) => appended,
   )
 
-/** The PR was found closed without merging; it holds no tickets from here on. */
-export const recordPrClosed = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
-  transitionPr(
-    store,
-    project,
-    n,
-    (state) => closedTransition(state, closed),
-    (_state, appended) => appended,
+/**
+ * A PR ends without merging: its `PrClosed` and, in the same `appendAll`, its tickets handed back to the draft
+ * (`ticketsHandedBack`) on the draft's own stream, each naming this PR. Reads, decides and writes as one unit inside
+ * one retry: a `ConcurrencyError` on either stream writes neither, and both are read again. Answers whether it closed.
+ */
+const closeAndHandBack = (
+  store: EventStore,
+  project: string,
+  n: number,
+  transition: (state: PrState) => ToAppend<PayloadOf<'PrClosed'>> | null,
+): Effect.Effect<boolean, Error> =>
+  withOneRetry(
+    Effect.gen(function* () {
+      const prs = yield* listPrs(project, store)
+      const state = prs.find((p) => p.n === n)
+      if (state === undefined) return false
+      const closed = transition(state)
+      if (closed === null) return false
+      const target = draftOf(prs)
+      const handed = draftEvents(ticketsHandedBack(state))
+      const batches: Batches = [{ streamId: prStream(project, n), expectedVersion: state.version, events: [closed] }]
+      if (handed.length > 0)
+        batches.push({ streamId: prStream(project, target.n), expectedVersion: target.version, events: handed })
+      yield* Effect.tryPromise({ try: () => store.appendAll(batches), catch: (e) => e })
+      return true
+    }),
   )
+
+/** The PR was found closed without merging: its tickets go back to the draft in the same transaction. */
+export const recordPrClosed = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
+  closeAndHandBack(store, project, n, (state) => closedTransition(state, closed))
 
 /** A step needs a person. The same wait twice appends nothing. */
 export const recordPrWaiting = (project: string, n: number, wait: PayloadOf<'PrWaiting'>, store: EventStore) =>
@@ -488,6 +617,60 @@ export function readPrDraft(
     if (modeOf(recipe) !== 'team') return []
     return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store, prs)
   })
+}
+
+/** The most times `backfillDraft` reads and decides again after the stream moved under it. */
+const BACKFILL_ATTEMPTS = 3
+
+/**
+ * **Temporary** (#1394): writes onto the draft's stream each ticket the computed draft holds and the stream lacks, and
+ * returns how many it appended. Those tickets landed before any landing wrote `PrDraftTicketAdded`. It is the last
+ * caller of the computed draft (`readPrDraft`) and goes with it; keep it in one function with one call site.
+ *
+ * The PR streams are read once per attempt and the list serves both `wanted` and the target. One `append`, at the
+ * version read: all of a project's tickets or none. A `ConcurrencyError` reads again and decides again, up to three
+ * times, then fails. A failed read fails the backfill, never "an empty draft". Solo projects append nothing.
+ *
+ * `candidates` come from the board's projection, which may lag at a start: a ticket landed and not yet projected is
+ * missing from `wanted`, so it is only ever under-added, and the next start picks it up.
+ */
+export function backfillDraft(
+  project: string,
+  recipe: Recipe,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<number, Error> {
+  const once = Effect.gen(function* () {
+    if (modeOf(recipe) !== 'team') return 0
+    const prs = yield* listPrs(project, store)
+    const wanted = yield* readPrDraft(project, recipe, candidates, store, prs)
+    const target = draftOf(prs)
+    const top = prs[prs.length - 1]
+    const state = target.state === null || top === undefined ? emptyPr : top
+    const have = new Set((target.state === null || top === undefined ? [] : top.draft).map((t) => t.ticket))
+    const events: NonNullable<ReturnType<typeof addDraftTicket>>[] = []
+    for (const t of wanted) {
+      if (have.has(t.ticket)) continue
+      const event = addDraftTicket(state, { ticket: t.ticket, mergeCommit: t.mergeCommit, from: null })
+      if (event === null)
+        return yield* Effect.die(new Error(`the draft of ${project} refused a ticket in ${state.status}`))
+      events.push(event)
+    }
+    if (events.length === 0) return 0
+    yield* Effect.tryPromise({
+      try: () => store.append(prStream(project, target.n), target.version, events),
+      catch: (err) => err,
+    }).pipe(Effect.mapError((err) => (err instanceof ConcurrencyError ? err : failed(err))))
+    return events.length
+  })
+  const attempt = (left: number): Effect.Effect<number, Error> =>
+    once.pipe(
+      Effect.catchIf(
+        (err): err is ConcurrencyError => err instanceof ConcurrencyError && left > 1,
+        () => attempt(left - 1),
+      ),
+    )
+  return attempt(BACKFILL_ATTEMPTS)
 }
 
 /** The draft against a named personal branch: `readPrDraft` without the recipe, for a caller that holds only text. */
@@ -686,15 +869,9 @@ export const recordPrHeadAdopted = (
     (_state, appended) => appended,
   )
 
-/** A back was served: the PR is closed, with or without a pull request on a code host to close. */
+/** A back was served: the PR is closed, with or without a pull request on a code host to close; its tickets go back to the draft. */
 export const recordPrTakenBack = (project: string, n: number, closed: PayloadOf<'PrClosed'>, store: EventStore) =>
-  transitionPr(
-    store,
-    project,
-    n,
-    (state) => backClosedTransition(state, closed),
-    (_state, appended) => appended,
-  )
+  closeAndHandBack(store, project, n, (state) => backClosedTransition(state, closed))
 
 /**
  * The `pr:` agent's answer (#1318). **The person's words win a race**: where a `PrSummaryEdited` landed after the version

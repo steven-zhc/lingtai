@@ -136,9 +136,11 @@ PR is a person deciding a body of work is ready for the team.
    `branch.personal` and how Lingtai learns what the team did are
    [0131](0131-a-pr-goes-from-draft-to-merged.md).
 
-6. **`main` is brought in when a PR is submitted or reworked, and only then** —
-   the sync, its build and the agent that resolves a conflict are
-   [0131](0131-a-pr-goes-from-draft-to-merged.md) §3.
+6. **`main` is brought in when a PR is submitted or reworked, and once more
+   into `branch.personal` after the PR merges** — the sync, its build and the
+   agent that resolves a conflict are
+   [0131](0131-a-pr-goes-from-draft-to-merged.md) §3, and the catch-up after
+   the merge is 0131 §10, *Merged*. Nothing else brings it in.
 
 7. **In team mode nothing Lingtai does pushes `branch.main`.** The merge lane,
    the sync, `lingtai pr` and every other path push `branch.personal` or a PR
@@ -159,6 +161,9 @@ PR is a person deciding a body of work is ready for the team.
   source (`doc/milestone/later/ticket-sources.md`).
 - `lingtai:landed` is a label Lingtai writes and `lingtai:pr-fix` one a person
   sets, both under 0116 §5's prefix.
+- After a PR is recorded merged, the tip of `origin/<branch.main>` — not only
+  the merge commit — is merged into `branch.personal` once, built, and pushed to
+  that branch alone, with the merge back's rules (0131 §10, *Merged*).
 - The PR's events, on its own stream `pr-{project}-{n}`, are 0131's. No ticket
   event is added — a `lingtai:pr-fix` ticket's claim records the PR branch it is
   cut from, as a field of the claim; `TicketLanded` gains no new position.
@@ -167,6 +172,7 @@ PR is a person deciding a body of work is ready for the team.
   the operator submits and merges a PR (CLAUDE.md, *Running Lingtai on
   Lingtai*).
 - Left for later (`doc/milestone/later/`): watching `main`'s own CI (a red
-  `main` named before a submit, and on the board); bringing `main` into
-  `branch.personal` whenever it moves; a blocker that has landed on the branch
+  `main` named before a submit, and on the board); following every move of
+  `main` into `branch.personal` (the one catch-up after a merge is done, below);
+  a blocker that has landed on the branch
   no longer blocking; a revert ticket. What is later for a PR is listed in 0131.

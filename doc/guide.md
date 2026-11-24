@@ -2,9 +2,6 @@
 
 ## TL;DR
 
-- [Write the ticket as the prompt](#write-the-ticket-as-the-prompt): the issue body is pasted whole into the agent's prompt, so write it to be worked from.
-- [Size it for one attempt](#size-it-for-one-attempt): one ticket, one attempt, a result you can check in one sitting.
-- [Order and release](#order-and-release): a kind label sets priority, a chain goes in *blocked by*, and nothing is released unread.
 - [Choose a model for each role](#choose-a-model-for-each-role): a recipe names a runtime and model per role, and a reviewer from another family has other blind spots.
 - [Gate what has failed](#gate-what-has-failed): keep the gates that refuse, delete the ones that never do, and watch each one fail once.
 - [Set the limits](#set-the-limits): treat each limit as an alarm with a reason, and read one that fires as news about the ticket.
@@ -12,92 +9,6 @@
 The habits that make Lingtai cheap and predictable. Every section is its rule,
 a short *do this* list and one figure that shows why. The settings themselves
 are in [`reference.md`](reference.md#policy--every-number-that-decides-behaviour).
-
-## Write the ticket as the prompt
-
-**The rule.** The issue body *is* the agent's prompt, pasted whole:
-`prompts/ticket.md:5` is `{{body}}`. Since #643 a fix of a refusal and the cold
-reviewer read it too (`packages/conductor/src/conduct.ts:3929` puts the body
-into the fix brief). What the body leaves undecided, the agent guesses and the
-reviewer refuses.
-
-**Do this.**
-
-- Open with a four-row table: **Problem**, **Want**, **Fix**, **Watch out**.
-  **Watch out** is the trap: what costs money, fails silently, or has been got
-  wrong before. Leave the row out when there is no trap.
-- Under a rule, **Evidence**: the exact output, and `file.ts:line` for every
-  claim about the code. A claim nobody found the line for does not go in.
-- **Edges**: one line per case and its rule. **Out of scope**: what a reviewer
-  must not hold the ticket to.
-- **Done when**, as checkboxes that a person or a test can check.
-- **Related**, saying what the other ticket *decided*. Give every issue a kind
-  label: `packages/conductor/src/discover.ts:205` skips one with none
-  (`skip: "no-kind"`).
-
-`implement`'s brief asks the agent to **commit each piece that works as it
-finishes it**, so a run that is cut off is redone from its head and loses only the
-piece in progress (`packages/conductor/src/prompt.ts:400`). Write the ticket so that
-its pieces can be committed one at a time.
-
-On 2026-11-01 two passes of #811 failed because the reviewer chased a race with a
-projection rebuild; one line under *Out of scope* would have said it was not
-wanted.
-
-## Size it for one attempt
-
-**The rule.** One ticket, one attempt, and a result you can check in one sitting.
-Before you file, ask: *can I name the shape of the diff that would close this?*
-If the honest answer is *it depends what the agent finds*, it is research wearing
-a ticket's clothes, and a run is the most expensive way to do research.
-
-**Do this.**
-
-- Split along seams. A ticket that makes four decisions is four tickets.
-- Give documentation its own ticket. A documentation requirement added to a
-  code ticket grows it every round.
-- If a ticket touches the same files as another, make it wait for the other.
-- If the ticket turns on a fact about a dependency, say how to check that fact.
-  If you cannot say how, that uncertainty is the item: file it as one.
-
-A ticket still too big for one run is **split by the system, once** (`ticketSplits`):
-triage's plan opens up to 8 children, and the parent keeps its `## Done when`
-and waits behind them. When the last child closes it is taken once more, and that
-list is what it is checked against. So the parent's `## Done when` is the
-contract; write it as if nobody will read the children.
-
-On 2026-09-29 with the same configuration, `implement` cost $0.92 for a 27-turn
-ticket (#317) and $17.24 for a 239-turn one (#308); switching the model from Opus
-to Sonnet was worth about 2.19× per turn, so ticket size is the bigger lever.
-
-## Order and release
-
-**The rule.** The kind label decides priority, a chain goes in GitHub's own
-*blocked by*, and nothing is released that you have not read. These rules are
-about GitHub issues.
-
-**Do this.**
-
-- Give every issue a kind label. The recipe's `source.kinds` is the vocabulary,
-  the filter and the priority order at once; currently `bug`, `tech-debt`,
-  `feature`, `documentation`, in that order, and the earlier kind wins when an
-  issue carries two.
-- Put a chain in *blocked by*, never in the body. The queue passes over a ticket
-  with an open blocker and takes it again on its own once the last blocker
-  closes (`packages/conductor/src/discover.ts:219`, `blocked-by`; its comment at
-  `:212-214` says it counts *open* blockers, not total).
-- Hold by default with `lingtai:hold`, and remove it from what you have read. It
-  works only because it is in `source.exclude`; a label you have not put there
-  excludes nothing.
-- For the first runs against a repository, use
-  `lingtai run <project> --issue <n> --no-merge`: discovery, claim, worktree,
-  agent and gates, and then it stops and asks.
-- To decide something first, `lingtai ask <project> --issue <n> "<question>"`
-  holds the ticket and `lingtai answer` hands it back with the answer on the
-  record; `lingtai now <project> --issue <n>` jumps the backoff.
-
-A well-written ticket with no kind label is invisible: guessing a kind would put
-unclassified issues at the front of the queue.
 
 ## Choose a model for each role
 

@@ -14,6 +14,7 @@ import {
   type Envelope,
   type PayloadOf,
   type PrState,
+  GENERATED_SECTIONS,
   isOpen,
   prDescription,
   prStepRows,
@@ -469,14 +470,18 @@ const checkRows = (pr: PrState): PageCheck[] =>
 
 /** The generated rest of the description: what the daemon regenerates from the log, under the person's summary. */
 export function generatedBody(pr: PrState, facts: PrPageInput['facts']): string {
-  return prDescription({
-    title: null,
-    summary: null,
-    tickets: pr.tickets.map((t) => {
-      const read = facts?.find((f) => f.ticket === t.ticket)
-      return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
-    }),
-  }).body
+  return prDescription(
+    {
+      title: null,
+      // Only whether there is a summary: it decides what the tickets section writes, and its text is not shown here.
+      summary: pr.summary?.text ?? null,
+      tickets: pr.tickets.map((t) => {
+        const read = facts?.find((f) => f.ticket === t.ticket)
+        return { ...t, open: read?.open ?? null }
+      }),
+    },
+    GENERATED_SECTIONS,
+  ).body
 }
 
 /** The page's whole text for one PR, or for the draft when `pr` is null. */
@@ -490,7 +495,6 @@ export function prPage(input: PrPageInput): PrPageView {
   const name = prName(pr)
   const all = slipsOf(pr)
   const dots = all.slice(-3)
-  const first = events[0]?.at ?? null
   const lastEvent = events[events.length - 1]?.at ?? null
   const hostOpen = github && pr.host !== null && isOpen(pr)
   const where = hostOpen ? 'ON GITHUB' : ''
@@ -629,7 +633,7 @@ export function prPage(input: PrPageInput): PrPageView {
     sub: [
       `${pr.prBranch ?? '?'} → ${pr.main ?? main}`,
       `Lingtai PR ${pr.n ?? '?'}`,
-      first === null ? null : `submitted ${day(first)}`,
+      pr.requestedAt === null ? null : `submitted ${day(pr.requestedAt)}`,
       plural(all.length, 'ticket', 'tickets'),
       spendNote,
     ]

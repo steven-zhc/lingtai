@@ -226,7 +226,7 @@ async function act(){
     else{$('syncn1').textContent='Brought main into your branch';$('syncn2').textContent='clean merge';}
     $('synctxt').textContent='✓';$('synccirc').setAttribute('stroke','#2c7a4c');$('synctxt').setAttribute('fill','#2c7a4c');
     card('prep','PR · in progress','summary · build ✓ · frozen at c55e01b');
-    await type($('dd'),"Adds chapter 9 of The Sun's Ninth Minute and sorts\nthe bookshelf by latest chapter.\n"+(conflict?"\nWhile syncing with main, a conflict in shelf.ts\nwas resolved: main renamed byTitle; kept it.\n":"")+"\n---\nCloses #41 · Closes #43 · Closes #44\nMade with Lingtai · $3.17");
+    await type($('dd'),"Adds chapter 9 of The Sun's Ninth Minute and sorts\nthe bookshelf by latest chapter.\n"+(conflict?"\nWhile syncing with main, a conflict in shelf.ts\nwas resolved: main renamed byTitle; kept it.\n":"")+"\n---\nCloses #41 · Closes #43 · Closes #44\nMade with Lingtai · 3 tickets");
     await wait(700);
     step=2;render();
     draw('tieUp');$('ghglow').classList.remove('glow');void $('ghglow').getBBox();$('ghglow').classList.add('glow');

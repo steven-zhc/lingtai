@@ -381,6 +381,18 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'PrMergeBackFailed',",
   },
   {
+    event: 'PrCaughtUp',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrCaughtUp',",
+  },
+  {
+    event: 'PrCatchUpFailed',
+    why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrCatchUpFailed',",
+  },
+  {
     event: 'SyncRoundStarted',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -639,6 +651,8 @@ export const STREAMS = {
   PrFixLanded: ['pr-'],
   PrMergedBack: ['pr-'],
   PrMergeBackFailed: ['pr-'],
+  PrCaughtUp: ['pr-'],
+  PrCatchUpFailed: ['pr-'],
   SyncRoundStarted: ['pr-'],
   SyncRoundRefused: ['pr-'],
   PrMerged: ['pr-'],

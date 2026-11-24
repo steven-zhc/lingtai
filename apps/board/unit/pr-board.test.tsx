@@ -40,7 +40,8 @@ const input = (prs: PrRead[], draft = [tk(1), tk(2)]): PrBoardInput => ({
   draft,
   stepNames: STEPS,
   spend: new Map(),
-  servedWords: 'it is served when a conductor runs',
+  daemon: 'running',
+  viewer: 'human:me',
   newFixHref: { kind: 'link', href: 'https://example.test/new' },
 })
 const col = (view: ReturnType<typeof prBoard>, id: string) => view.columns.find((c) => c.id === id)!
@@ -102,11 +103,75 @@ describe('prBoard', () => {
     expect(col(v, 'draft').empty).toBe('Lingtai keeps taking tickets; they gather here.')
   })
 
-  it('keeps a requested PR on the draft, saying who serves it, and never as in progress', () => {
-    const v = prBoard(input([{ n: 1, pr: pr(1, { status: 'requested' }) }]))
-    expect(cards(v, 'draft')[0]!.sub[0]).toContain('submitted — it is served when a conductor runs')
-    expect(cards(v, 'draft')[0]!.buttons).toEqual([])
-    expect(col(v, 'progress').cards).toEqual([])
+  const queuedPr = (over: Partial<PrState> = {}) =>
+    pr(3, { status: 'requested', requestedBy: 'human:me', requestedAt: new Date('2026-11-24T19:55:00Z'), ...over })
+
+  it('draws a requested PR as a queued card in In progress, every step pending, with an empty Draft', () => {
+    const v = prBoard(input([{ n: 3, pr: queuedPr() }]))
+    const card = cards(v, 'progress')[0]!
+    expect(card).toMatchObject({ pill: 'queued', tone: 'queued', name: 'PR 3' })
+    expect(card.sub).toEqual(['submitted 19:55 by you · waiting for the daemon to start it'])
+    expect(card.chips.every((c) => c.status === 'pending')).toBe(true)
+    expect(card.slips.map((x) => x.ticket)).toEqual(['1', '2'])
+    expect(col(v, 'draft')).toMatchObject({ count: 0, cards: [] })
+    expect(col(v, 'draft').empty).toBe(
+      'Nothing has landed since PR 3 was submitted. Tickets that land now join PR 3 until it starts, then the next PR.',
+    )
+    expect(v.submitted).toEqual({ n: 3, at: '19:55', href: '/pr/p/3', daemon: 'running' })
+    expect(v.strip.notInPr).toBe('PR 3 queued')
+    expect(JSON.stringify(v)).not.toMatch(/pid|freezing/)
+  })
+
+  it('says to start a daemon when none runs, and never takes unknown as none', () => {
+    const none = prBoard({ ...input([{ n: 3, pr: queuedPr() }]), daemon: 'none' })
+    expect(cards(none, 'progress')[0]!.sub[0]).toBe('submitted 19:55 by you')
+    expect(cards(none, 'progress')[0]!.buttons[0]).toMatchObject({ kind: 'command', command: 'lingtai start' })
+    const unknown = prBoard({ ...input([{ n: 3, pr: queuedPr() }]), daemon: 'unknown' })
+    expect(cards(unknown, 'progress')[0]!.buttons[0]).toMatchObject({ kind: 'command', command: 'lingtai doctor' })
+    expect(JSON.stringify(unknown)).not.toContain('No daemon is running')
+  })
+
+  it('leaves out what the fold does not have: no by, no time', () => {
+    const v = prBoard(input([{ n: 3, pr: queuedPr({ requestedBy: null, requestedAt: null }) }]))
+    expect(cards(v, 'progress')[0]!.sub[0]).toBe('submitted · waiting for the daemon to start it')
+    expect(v.submitted?.at).toBeNull()
+    const other = prBoard(input([{ n: 3, pr: queuedPr({ requestedBy: 'human:ann' }) }]))
+    expect(cards(other, 'progress')[0]!.sub[0]).toContain('submitted 19:55 by ann')
+  })
+
+  it('draws a queued card with no tickets known when the draft could not be read', () => {
+    const v = prBoard({ ...input([{ n: 3, pr: queuedPr() }]), draft: { error: 'boom' } })
+    const card = cards(v, 'progress')[0]!
+    expect(card.slips).toEqual([])
+    expect(card.meta).toContain('tickets: unknown')
+    expect(cards(v, 'draft')[0]).toMatchObject({ failed: true })
+  })
+
+  it('draws the started card in place: in progress, the times, the frozen commit, no confirmation line', () => {
+    const started = pr(3, {
+      status: 'in-progress',
+      requestedAt: new Date('2026-11-24T19:55:00Z'),
+      startedAt: new Date('2026-11-24T19:57:00Z'),
+      frozenSha: '5ca19bf0123456',
+      tickets: [tk(1)],
+    })
+    const v = prBoard(input([{ n: 3, pr: started }], []))
+    const card = cards(v, 'progress')[0]!
+    expect(card.pill).toBe('in progress')
+    expect(card.sub[0]).toBe('submitted 19:55 · started 19:57 · frozen at 5ca19bf')
+    expect(v.submitted).toBeNull()
+    expect(col(v, 'draft').empty).toBe('Nothing has landed since PR 3 started.')
+    expect(v.strip.notInPr).toBe('PR 3 in progress')
+  })
+
+  it('does not call a waiting or in-review PR in progress on the strip', () => {
+    for (const [status, words] of [
+      ['waiting', 'PR 3 waiting on you'],
+      ['in-review', 'PR 3 in review'],
+    ] as const) {
+      const v = prBoard(input([{ n: 3, pr: pr(3, { status, tickets: [tk(1)] }) }], []))
+      expect(v.strip.notInPr).toBe(words)
+    }
   })
 
   it('draws a PR in progress with its steps from the conductor’s list', () => {

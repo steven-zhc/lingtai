@@ -9,6 +9,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
+  backfillDraft,
   landingsInFlight,
   latestPr,
   listPrs,
@@ -401,5 +402,76 @@ describe('landings in flight', () => {
     ])
     const owed = await run(landingsInFlight('lingtai', 'lingtai-team', store))
     expect(owed.map((o) => o.headSha).sort()).toEqual(['h1', 'h2'])
+  })
+})
+
+describe('backfillDraft (#1394)', () => {
+  const cands = [{ issue: '1' }, { issue: '2' }, { issue: '3' }, { issue: '4' }]
+  const teamStore = async () => {
+    const store = createMemoryEventStore()
+    await recipeChanged(store, 'mode: team\n', 0)
+    return store
+  }
+
+  it('writes the three landed tickets onto PR 1, in landing order, with from: null', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(3)
+    const pr = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(pr.status).toBe('draft')
+    expect(pr.draft.map((t) => [t.ticket, t.from])).toEqual([
+      ['1', null],
+      ['2', null],
+      ['3', null],
+    ])
+  })
+
+  it('a second call appends nothing and returns 0', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await run(backfillDraft('lingtai', team, cands, store))
+    const head = await store.head(prStream('lingtai', 1))
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(0)
+    expect(await store.head(prStream('lingtai', 1))).toBe(head)
+  })
+
+  it('appends only the tickets the stream lacks', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await addToDraft(store, 1, '2')
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(2)
+    const pr = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(pr.draft.map((t) => t.ticket).sort()).toEqual(['1', '2', '3'])
+  })
+
+  it('a ticket landed since an in-review PR goes to the next number', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await addToDraft(store, 1, '1')
+    await addToDraft(store, 1, '2')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(
+      recordPrInProgress(
+        'lingtai',
+        1,
+        frozen([
+          { ticket: '1', mergeCommit: 'm1', title: 't' },
+          { ticket: '2', mergeCommit: 'm2', title: 't' },
+        ]),
+        store,
+      ),
+    )
+    expect(await store.head(prStream('lingtai', 2))).toBe(0)
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(1)
+    const two = reducePr(await store.read(prStream('lingtai', 2)))
+    expect(two.draft.map((t) => t.ticket)).toEqual(['3'])
+    expect(await store.head(prStream('lingtai', 1))).toBeGreaterThan(0)
+  })
+
+  it('a solo project appends nothing', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1', 'lingtai-team')
+    expect(await run(backfillDraft('lingtai', solo, cands, store))).toBe(0)
+    expect(await store.head(prStream('lingtai', 1))).toBe(0)
   })
 })

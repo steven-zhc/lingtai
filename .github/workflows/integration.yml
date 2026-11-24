@@ -1,5 +1,6 @@
-# The integration half, after every merge into main (#963) — T11 of
-# doc/design/the-pipeline.md, 0060 §1's other half.
+# The integration half, after every merge into main (#963) and on every pull
+# request into main (#1403) — T11 of doc/design/the-pipeline.md, 0060 §1's
+# other half.
 #
 # Two legs of one job, because `LINGTAI_TEST_DATABASE_URL` picks the store for
 # every integration file, not only the `ON_POSTGRES` ones
@@ -12,20 +13,28 @@
 # `LINGTAI_DATABASE_URL`: the service container is the only database and dies
 # with the job. The URL is the container's own port — no pooler (#157).
 #
-# Not a required check on `main`: the merge lane lands by `git merge` and a
-# push, never a pull request (see check.yml).
+# No GitHub branch-protection rule requires these checks: the merge lane lands
+# on the studio branch by `git merge` and a push, never a pull request (see
+# check.yml). In team mode `main` moves only by a PR, and what that PR waits on
+# is Lingtai's own CI step, `pr.ci.required` in the conducting recipe.
 #
-# A red run is reported by the `report` job alone, so two legs cannot each
-# open an issue. The issue is `bug` + `lingtai:hold`: a person reads it first.
+# A red run on `main` is reported by the `report` job alone, so two legs cannot
+# each open an issue. The issue is `bug` + `lingtai:hold`: a person reads it
+# first. A PR's red run shows as a failed check on the PR and nowhere else:
+# `report` does not run for a pull request, so #1124 never hears of it.
 name: integration
 
 on:
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
+# Per ref: a PR's run is `refs/pull/<n>/merge`, so a new push to the PR cancels
+# its own older run and never `main`'s.
 concurrency:
-  group: integration-main
+  group: integration-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -112,7 +121,7 @@ jobs:
 
   report:
     needs: integration
-    if: always() && github.ref == 'refs/heads/main'
+    if: always() && github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
