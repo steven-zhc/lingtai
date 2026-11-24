@@ -277,6 +277,7 @@ import {
   landedOnBaseOf,
   priorAttemptsFromState,
   releasedHeadOf,
+  continuableRedoOf,
   type ReleasedHead,
 } from './attempts.ts'
 import { baseCheckFor, baseCheckQuestion } from './base-check.ts'
@@ -6032,6 +6033,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           gitAskedEffect(['rev-parse', 'HEAD']).pipe(
             Effect.map((r) => (Result.isSuccess(r) ? r.success.trim() : null)),
           ),
+        // The redo's head is on the run's stream before its wait begins, so a kill during it can be continued (#1398).
+        saveHead: () => publishWhatIsCommitted.pipe(Effect.asVoid),
         resetToHead: () =>
           Effect.gen(function* () {
             // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left
@@ -6843,11 +6846,19 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.ensuring(
         Effect.gen(function* () {
           // Interrupted while a step waited to be redone: the next claim redoes it and quotes what it was to (#1398).
-          // A read that rejects is a failure here, not a defect, so the release below still happens, as before.
+          // A stream that cannot be read is not a stream with no redo in it: the read is asked again, and where it
+          // still fails nothing is released, so the claim is the dead-worker scan's, which reads the stream itself.
           const events = yield* Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
-            Effect.orElseSucceed(() => []),
+            Effect.retry({ times: 2 }),
+            Effect.result,
           )
-          const pending = pendingRedoOf(events)
+          if (Result.isFailure(events)) {
+            log(
+              `the run was interrupted and its stream could not be read, so its claim is left to the scan: ${whyOf(events.failure)}`,
+            )
+            return
+          }
+          const pending = continuableRedoOf(events.success)
           yield* release(
             'the run was interrupted',
             pending === null ? null : { _tag: 'StepRedoPending', runId, step: pending.step },

@@ -59,7 +59,6 @@ import {
   claimTransition,
   continueTransition,
   parsePayload,
-  pendingRedoOf,
   releaseTransition,
   cut,
   ticketReducer,
@@ -75,7 +74,7 @@ import {
 import { type StepAction } from '@lingtai/recipe'
 import { Cause, Effect, Exit, Result } from 'effect'
 
-import { editHash } from '../attempts.ts'
+import { continuableRedoOf, editHash } from '../attempts.ts'
 import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
 import { recordPrompt } from '../record-prompt.ts'
 import type { Tickets } from '../ticket-store.ts'
@@ -326,22 +325,25 @@ export function releaseDeadWorkerEffect(
   return releaseWith(ticketId, { by: 'dead-worker', ...input }, store, options)
 }
 
-/** The release a dead worker's claim gets: `StepRedoPending` where the worker's run stopped at a redo's wait. */
+/**
+ * The release a dead worker's claim gets: `StepRedoPending` where the worker's run stopped at a redo's wait. A run
+ * stream that cannot be read fails the release rather than answering "no redo": a release with no cause is final, and
+ * the next scan reads the stream again.
+ */
 function readRunEvents(
   store: EventStore,
   runId: string,
   released: readonly ToAppend<PayloadOf<'TicketReleased'>>[],
-): Effect.Effect<readonly ToAppend<PayloadOf<'TicketReleased'>>[]> {
+): Effect.Effect<readonly ToAppend<PayloadOf<'TicketReleased'>>[], unknown> {
   return Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
     Effect.map((runEvents) => {
-      const pending = pendingRedoOf(runEvents)
+      const pending = continuableRedoOf(runEvents)
       if (pending === null) return released
       return released.map((e) => ({
         ...e,
         data: { ...e.data, cause: { _tag: 'StepRedoPending' as const, runId, step: pending.step } },
       }))
     }),
-    Effect.orElseSucceed(() => released),
   )
 }
 
@@ -360,8 +362,8 @@ function releaseWith(
     const decided = releaseTransition(state, input)
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
     // A worker that died while its run waited to be redone could not say so itself (#1398): the run's own stream
-    // does, so the release names the redo it interrupted and the next claim continues it. A read that fails leaves
-    // the release as it was, with no cause.
+    // does, so the release names the redo it interrupted and the next claim continues it. A read that fails fails
+    // the release: it is made again, where an unreadable stream released with no cause would never be asked again.
     const events =
       input.by === 'dead-worker' && state.lifecycle.status === 'claimed'
         ? yield* readRunEvents(store, state.lifecycle.runId, decided.events)

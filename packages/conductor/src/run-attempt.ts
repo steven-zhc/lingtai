@@ -944,6 +944,8 @@ export interface AttemptOptions {
   readonly stepRedoWaits?: readonly Duration.Input[]
   /** `AttemptPortOptions.resetToHead`, as a promise (#1245). */
   readonly resetToHead?: () => Promise<{ readonly head: string } | { readonly failed: string }>
+  /** `AttemptPortOptions.saveHead`, as a promise (#1398). */
+  readonly saveHead?: () => Promise<void>
   /**
    * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
    * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
@@ -1189,6 +1191,12 @@ export interface AttemptPortOptions {
    * so an attempt handed none ends a redo at a person.
    */
   readonly resetToHead?: () => Effect.Effect<{ readonly head: string } | { readonly failed: string }>
+  /**
+   * **Records the head a redo after an unreadable outcome will reset to, before its `StepRedone` is written** (#1398): a process killed
+   * during the wait finalizes nothing, so the head the next claim continues from must already be on the run's
+   * stream. An attempt handed none records none, and a stop during its wait is then not continued.
+   */
+  readonly saveHead?: () => Effect.Effect<void>
   /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
   readonly conflictEvidence?: (baseSha: string) => Effect.Effect<{
     readonly fromSha: string
@@ -1233,6 +1241,7 @@ export function attemptPortsFrom(options: AttemptOptions): AttemptPortOptions {
     ...(mergeBase === undefined ? {} : { mergeBase: (toSha: string) => Effect.promise(() => mergeBase(toSha)) }),
     ...(options.stepRedoWaits === undefined ? {} : { stepRedoWaits: options.stepRedoWaits }),
     ...(resetToHead === undefined ? {} : { resetToHead: () => Effect.promise(() => resetToHead()) }),
+    ...(options.saveHead === undefined ? {} : { saveHead: () => Effect.promise(() => options.saveHead!()) }),
     ...(baseIsRed === undefined
       ? {}
       : { baseIsRed: (asked: BaseIsRedAsked) => Effect.promise(() => baseIsRed(asked)) }),
@@ -1794,6 +1803,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     }): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         stepRedosSpent = redo.retry
+        // Only a redo that quotes an unreadable message has a tail a stop must keep (#1398).
+        if (redo.unread !== undefined && options.saveHead !== undefined) yield* options.saveHead()
         yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
         if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const cannot = (detail: string): boolean => {

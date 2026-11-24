@@ -49,12 +49,21 @@ describe('releaseDeadWorkerEffect', () => {
       const released = (await store.read(ticketId)).filter((e) => e.type === 'TicketReleased')
       return (released[0]!.data as { cause: unknown }).cause
     }
-    const redone = async (store: Awaited<ReturnType<typeof claimedBy>>) => {
+    const redone = async (store: Awaited<ReturnType<typeof claimedBy>>, saved = true) => {
       const e = makeStream('pass-run1')
-      await store.append('pass-run1', 0, [
-        e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 }),
-      ])
+      // The head is saved before the redo's row is written, and a run killed during the wait has no other record of it.
+      const refs = e('RunRefsPublished', {
+        branch: 'agent/9',
+        arm: 'arm/9',
+        headSha: 'abc1234',
+        outcome: 'published',
+        detail: null,
+      })
+      const redo = e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 })
+      await store.append('pass-run1', 0, saved ? [refs, redo] : [redo])
     }
+    const releases = async (store: Awaited<ReturnType<typeof claimedBy>>) =>
+      (await store.read(ticketId)).filter((e) => e.type === 'TicketReleased')
 
     it('is released with the cause the next claim continues, from the run’s own stream', async () => {
       const store = await claimedBy('dead:1', 'pass-run1')
@@ -66,13 +75,25 @@ describe('releaseDeadWorkerEffect', () => {
       expect(await causeOf(await claimedBy('dead:1', 'pass-run1'))).toBeNull()
     })
 
-    it('is still released, with no cause, where the run’s stream cannot be read', async () => {
+    it('is released with no cause where the redo has no saved head to continue from', async () => {
+      const store = await claimedBy('dead:1', 'pass-run1')
+      await redone(store, false)
+      expect(await causeOf(store)).toBeNull()
+    })
+
+    it('is not released where the run’s stream cannot be read, and is where the store recovers', async () => {
       const store = await claimedBy('dead:1', 'pass-run1')
       await redone(store)
       const read = store.read.bind(store)
       store.read = (stream, ...rest) =>
         stream === 'pass-run1' ? Promise.reject(new Error('transient')) : read(stream, ...rest)
-      expect(await causeOf(store)).toBeNull()
+      const failed = await Effect.runPromise(
+        Effect.result(releaseDeadWorkerEffect(ticketId, { mine: 'me:1', lock: 'l' }, store)),
+      )
+      expect(failed._tag).toBe('Failure')
+      expect(await releases(store)).toHaveLength(0)
+      store.read = read
+      expect(await causeOf(store)).toEqual({ _tag: 'StepRedoPending', runId: 'pass-run1', step: 'implement' })
     })
   })
 })
