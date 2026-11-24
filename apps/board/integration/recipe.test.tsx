@@ -245,11 +245,11 @@ describe("what a project's recipe says today", () => {
     expect(render(view)).toContain(`recipe ${view.configHash.slice(0, 12)} · base main`)
   })
 
-  /** `repo.base` and `env.required` are in no row above, and are here. */
+  /** `branch.main` and `env.required` are in no row above, and are here. */
   it("carries doctor's whole provenance block, not only the rows it grouped", async () => {
     const html = render(await projectRecipe(state))
 
-    expect(html).toContain('repo.base')
+    expect(html).toContain('branch.main')
     expect(html).toContain('env.required')
     expect(html).toContain('runtime.limits.ticket.newAttempts')
   })
@@ -442,7 +442,8 @@ describe('the writer is one place', () => {
     expect(render({ ...broken, text: null })).not.toContain('<textarea')
     const machine = render({ ok: false, project: 'app', at: '/y', fault: 'machine', problem: 'no', text: null })
     expect(fields(machine)).toBe(false)
-    expect(machine).not.toContain('<button')
+    // Not '<button': the bar draws its own Search control on every view (cda0797).
+    expect(machine).not.toContain('Edit</button>')
   })
 
   it('opens on the file text for a recipe that will not parse, so it can be repaired', async () => {
