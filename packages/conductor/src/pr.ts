@@ -23,6 +23,7 @@ import {
   prDescription,
   prStream,
   ciVerdict,
+  reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
 import type { RuntimeId, Usage } from '@lingtai/domain'
@@ -35,7 +36,7 @@ import {
   recordPrClosed,
   recordPrMerged,
   readPr,
-  readPrDraft,
+  withOneRetry,
   recordPrCiSkipped,
   recordPrCiFollowing,
   recordPrChecked,
@@ -777,20 +778,42 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
       yield* Effect.sleep(ports.landingWaitMs ?? 1000)
     }
 
-    const draft = yield* readPrDraft(project, recipe, yield* ports.candidates(project), ports.store)
-    const held: PayloadOf<'PrInProgress'>['tickets'] = []
-    for (const t of draft) {
-      const ask = ['merge-base', '--is-ancestor', t.mergeCommit, frozenSha] as const
-      const answer = yield* ports.git(project, ask)
-      // 0 yes, 1 no; anything else is git failing, never *not an ancestor*.
-      if (answer.code === 0) held.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: t.title })
-      else if (answer.code !== 1) return yield* refuse('git', gitSaid(ask, answer))
-    }
-    if (held.length === 0) {
-      return yield* refuse('nothing-landed', `no ticket has landed on ${personal} that a PR does not already hold`)
-    }
-
-    yield* recordPrInProgress(project, n, { branch: personal, main, frozenSha, tickets: held }, ports.store)
+    // The candidates are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
+    // at: a landing between the read and the write moves the stream, the write fails, and the whole block runs once
+    // more — reads the list, asks git, decides — so a list that lacks a ticket the commit holds is never frozen.
+    // A ticket landed after `frozenSha` is not an ancestor on the second pass either, and goes to the next draft.
+    yield* withOneRetry(
+      Effect.gen(function* () {
+        const state = yield* readPr(project, n, ports.store)
+        if (state === null) return
+        const held: PayloadOf<'PrInProgress'>['tickets'] = []
+        const notKept: PayloadOf<'PrDraftTicketAdded'>[] = []
+        for (const t of state.draft) {
+          const ask = ['merge-base', '--is-ancestor', t.mergeCommit, frozenSha] as const
+          const answer = yield* ports.git(project, ask)
+          // 0 yes, 1 no; anything else is git failing, never *not an ancestor*.
+          if (answer.code === 0) {
+            const events = yield* Effect.tryPromise({
+              try: () => ports.store.read(ticketStream(project, t.ticket)),
+              catch: asError,
+            })
+            held.push({
+              ticket: t.ticket,
+              mergeCommit: t.mergeCommit,
+              title: reduceTicket(events).title ?? `#${t.ticket}`,
+            })
+          } else if (answer.code === 1) notKept.push(t)
+          else return yield* refuse('git', gitSaid(ask, answer))
+        }
+        if (held.length === 0) {
+          return yield* refuse('nothing-landed', `no ticket has landed on ${personal} that a PR does not already hold`)
+        }
+        yield* recordPrInProgress(project, n, { branch: personal, main, frozenSha, tickets: held }, ports.store, {
+          state,
+          notKept,
+        })
+      }),
+    )
   })
 
 /**

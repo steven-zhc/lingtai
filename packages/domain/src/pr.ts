@@ -941,6 +941,21 @@ export function backClosedTransition(
   return closeEvent(closed)
 }
 
+/**
+ * The tickets a PR that ended without merging hands back to the draft (ADR 0131 §10), each naming the PR it came from:
+ * every ticket the PR holds, in order, except a pr-fix ticket no merge back carried onto `branch.personal`. A pr-fix
+ * ticket is one in `fixesLanded` (`PrFixLanded` puts it in `tickets` too); membership there, not a ticket-kind lookup,
+ * is what says so.
+ */
+export function ticketsHandedBack(state: PrState): PayloadOf<'PrDraftTicketAdded'>[] {
+  const fixes = new Set(state.fixesLanded.map((f) => f.ticket))
+  const mergedBack = new Set(state.mergedBackTickets)
+  const from = state.n ?? 0
+  return state.tickets
+    .filter((t) => !fixes.has(t.ticket) || mergedBack.has(t.ticket))
+    .map((t) => ({ ticket: t.ticket, mergeCommit: t.mergeCommit, from }))
+}
+
 /** A step that needs a person; the same wait twice in a row appends nothing. */
 export function waitTransition(state: PrState, wait: PayloadOf<'PrWaiting'>): ToAppend<PayloadOf<'PrWaiting'>> | null {
   if (state.status !== 'in-progress' && state.status !== 'waiting') return null
