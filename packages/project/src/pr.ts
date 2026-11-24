@@ -38,7 +38,6 @@ import {
   mergedTransition,
   closedTransition,
   ticketsHandedBack,
-  addDraftTicket,
   backClosedTransition,
   retryTransition,
   adoptTransition,
