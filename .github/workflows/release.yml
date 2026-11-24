@@ -6,6 +6,9 @@
 # bundle and the binary, starts the board from each, and on macOS proves the
 # binary is signed and that it is `buildBinary`'s signing step that signs it.
 #
+# A pull request does not build the binary: `build.test.ts` runs on a PR inside
+# `integration.yml`, and the four platform builds run on the push to `main`.
+#
 # A tag `v*` publishes: the four binaries, the one board (pure JavaScript, the
 # same everywhere), and SHA256SUMS over all of them.
 #
@@ -16,7 +19,6 @@ on:
   push:
     branches: [main]
     tags: ["v*"]
-  pull_request:
   workflow_dispatch:
 
 permissions:
