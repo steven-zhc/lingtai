@@ -5,15 +5,18 @@ import { STEPS } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
 import {
+  BOOK,
   DOCS_PUBLIC,
   decidedOn,
   decisionsByNumber,
   docRoot,
   entriesOf,
   fileOf,
+  filesOf,
   GITHUB_BLOB,
   headingsOf,
   ledeOf,
+  neighboursOf,
   published,
   resolveHref,
   servable,
@@ -38,14 +41,25 @@ import {
  */
 
 describe('what the site publishes', () => {
-  it('takes every guide the sections name, and they all exist', async () => {
-    const guides = SECTIONS.find((s) => s.id === 'guides')
-    expect(guides).toBeDefined()
-    const files = Array.isArray(guides!.files) ? guides!.files : []
+  it.each(['book', 'reference', 'more'])('takes every file the %s section names, and they all exist', async (id) => {
+    const section = SECTIONS.find((s) => s.id === id)
+    expect(section).toBeDefined()
+    const files = Array.isArray(section!.files) ? section!.files : []
     // `filesOf` drops a file that is not on disk, so a name that disappeared
-    // from `doc/` would leave the site quietly one page short.
-    const { filesOf } = await import('@/lib/docs')
-    expect(await filesOf(guides!)).toEqual(files)
+    // from `doc/` would leave the site quietly one page short. For `book` this
+    // is the check that a BOOK row has its file.
+    expect(await filesOf(section!)).toEqual(files)
+  })
+
+  it('names no file in two sections', () => {
+    const seen = new Set<string>()
+    for (const section of SECTIONS) {
+      if (!Array.isArray(section.files)) continue
+      for (const file of section.files) {
+        expect(seen.has(file), `${file} is in two sections`).toBe(false)
+        seen.add(file)
+      }
+    }
   })
 
   it('takes every decision in the directory, and not the archive', async () => {
@@ -110,6 +124,53 @@ const proseOf = (text: string) =>
     .trim()
     .split(/\s+/).length
 
+describe('concepts is chapter 4, one attempt', () => {
+  it('stays between 600 and 800 words, in four sections, ending at the board', async () => {
+    const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1376 §2
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual(['One ticket, start to finish', 'Two ways to go back', 'How a ticket ends', 'Next'])
+    expect(body).toContain('(board.md)')
+    expect(body).not.toContain('#a-prs-life')
+  })
+})
+
+describe('safety is chapter 10, what an agent can reach', () => {
+  it('stays between 600 and 800 words, in four sections, with no Next, and keeps every limit', async () => {
+    const body = await readFile(path.join(docRoot, 'safety.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1387
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual([
+      'What the sandbox refuses and allows',
+      'Turning it on',
+      'What the sandbox does not cover',
+      'When the host cannot sandbox',
+    ])
+    for (const limit of [
+      "**The run's own token is readable inside it.**",
+      "**Codex's login is readable to a Codex run**",
+      '**The Copilot token is readable to a Copilot run**',
+      '**A refused file read is not reported.**',
+      '**`srt` is a research preview**',
+      "**On macOS a run can read other processes' command lines**",
+      '**On Linux every Unix socket is reachable**',
+      '**unsandboxed**',
+    ]) {
+      expect(body).toContain(limit)
+    }
+  })
+})
+
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
@@ -119,7 +180,8 @@ describe('the tutorial stays a first-run path', () => {
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(body).not.toContain('$VISUAL')
     expect(body).not.toContain('--land hold')
-    expect(body).toContain('(tutorial-more.md)')
+    expect(body).toContain('(team.md)')
+    expect(body).not.toContain('tutorial-more.md')
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)
@@ -261,12 +323,11 @@ describe('where a link inside a document goes', () => {
     expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(recipe.md)')
   })
 
-  it('publishes the concepts page, built from doc/, and links it from the tutorial', async () => {
+  it('publishes the concepts page, built from doc/', async () => {
     const served = await servable()
     const served$ = (file: string) => served.includes(file)
     expect(served).toContain('concepts.md')
     expect(resolveHref('tutorial.md', 'concepts.md', served$)).toBe('/docs/concepts/')
-    expect(await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')).toContain('(concepts.md)')
     const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
     expect(body).toContain('(img/concepts.svg)')
     await expect(readFile(path.join(docRoot, 'img/concepts.svg'), 'utf8')).resolves.toContain('<svg')
@@ -427,15 +488,28 @@ describe("what a decision's page says about it", () => {
 })
 
 describe('treeOf', () => {
-  it('lists Events in the guides group straight after CLI, and once', async () => {
+  it('lists Events in the reference group straight after CLI, and once', async () => {
     const tree = await treeOf()
-    const guides = tree.find((group) => group.id === 'guides')
-    expect(guides).toBeDefined()
-    const slugs = guides!.entries.map((entry) => entry.slug)
+    const reference = tree.find((group) => group.id === 'reference')
+    expect(reference).toBeDefined()
+    const slugs = reference!.entries.map((entry) => entry.slug)
     const at = slugs.indexOf('cli')
     expect(at).toBeGreaterThanOrEqual(0)
-    expect(guides!.entries[at + 1]).toEqual({ slug: 'events', title: 'Events' })
+    expect(reference!.entries[at + 1]).toEqual({ slug: 'events', title: 'Events' })
     expect(tree.flatMap((group) => group.entries).filter((entry) => entry.slug === 'events')).toHaveLength(1)
+  })
+
+  it('numbers the book entries from BOOK, and nothing else', async () => {
+    const tree = await treeOf()
+    const book = tree.find((group) => group.id === 'book')
+    expect(book).toBeDefined()
+    for (const entry of book!.entries) {
+      const row = BOOK.find((each) => slugOf(each.file) === entry.slug)
+      expect(entry.n, entry.slug).toBe(row?.n)
+    }
+    for (const group of tree.filter((each) => each.id !== 'book')) {
+      for (const entry of group.entries) expect(entry.n, entry.slug).toBeUndefined()
+    }
   })
 
   it('keeps every sidebar title to three words, so no entry wraps at 13rem', async () => {
@@ -465,4 +539,37 @@ describe('short titles with the old title as a subtitle', () => {
       expect(lede).not.toBe(subtitle.slice(1, -1))
     })
   }
+})
+
+describe('the book', () => {
+  it('rises strictly in number, and the book section is BOOK in order', () => {
+    for (let i = 1; i < BOOK.length; i++) expect(BOOK[i]!.n, BOOK[i]!.file).toBeGreaterThan(BOOK[i - 1]!.n)
+    const book = SECTIONS.find((s) => s.id === 'book')
+    expect(book!.files).toEqual(BOOK.map((row) => row.file))
+  })
+
+  const all = new Set(BOOK.map((row) => slugOf(row.file)))
+
+  it('gives the chapters either side of one', () => {
+    const near = neighboursOf('concepts', all)
+    expect(near.previous?.file).toBe('tutorial.md')
+    expect(near.next?.file).toBe('when-it-fails.md')
+  })
+
+  it('gives the first no previous and the last no next', () => {
+    expect(neighboursOf('tutorial', all).previous).toBeNull()
+    expect(neighboursOf('safety', all).next).toBeNull()
+  })
+
+  it('skips a chapter that is not served', () => {
+    const without = new Set(all)
+    without.delete('concepts')
+    expect(neighboursOf('tutorial', without).next?.file).toBe('when-it-fails.md')
+    expect(neighboursOf('when-it-fails', without).previous?.file).toBe('tutorial.md')
+    expect(neighboursOf('concepts', without)).toEqual({ previous: null, next: null })
+  })
+
+  it('gives a page outside the book neither', () => {
+    expect(neighboursOf('cli', all)).toEqual({ previous: null, next: null })
+  })
 })

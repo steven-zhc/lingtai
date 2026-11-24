@@ -30,7 +30,7 @@ const URL_ = 'postgresql://me:secret@db.example:5432/lingtai'
 const GITHUB_APP = 'github:\n  auth: app\n'
 
 /**
- * What git is asked about `--local /repo --base main`: the toplevel, the
+ * What git is asked about `--local /repo --main main`: the toplevel, the
  * origin, and that `refs/heads/main` resolves (first-project.ts checks the
  * given base as a local branch, not as `main^{commit}`).
  */
@@ -44,9 +44,13 @@ const LOCAL_REPO_GIT = {
  * Every `askRecipe` (#431) question on the local branch, answered by flag
  * rather than scripted through `ask()` — this suite's own `ask` only
  * recognises the project, App, database and kinds questions (#431 fix
- * round, finding 1), and base is `main` in every test that uses this.
+ * round, finding 1), and base is `main` in every test that uses this. Solo,
+ * because these tests land on `main` (--land main); the team/solo question
+ * is 3b80a64d9's and a team project lands on its personal branch (0130 §1).
  */
 const RECIPE_FLOW_FLAGS = [
+  '--mode',
+  'solo',
   '--agent',
   'claude-code',
   '--model',
@@ -325,10 +329,19 @@ describe('lingtai init (#186)', () => {
       answers: [URL_],
       gitPlan: LOCAL_REPO_GIT,
     })
-    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
     expect(seen.lines.join('\n')).toMatch(/init {2}repo/)
+  })
+
+  it('--base on a first --local run is refused by name, and nothing is registered (13a4060)', async () => {
+    const home = freshHome()
+    const { world: w, seen } = world(home, { answers: [URL_], gitPlan: LOCAL_REPO_GIT })
+    const code = await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)
+    expect(code).not.toBe(0)
+    expect(seen.lines.join('\n')).toContain('--base is now --main: pass --main main')
+    expect(seen.registered).toEqual([])
   })
 
   it('a local project, once registered, is listed on a re-run rather than asked about again (#394)', async () => {
@@ -336,7 +349,7 @@ describe('lingtai init (#186)', () => {
     const git = LOCAL_REPO_GIT
     const first = world(home, { answers: [URL_], gitPlan: git })
     expect(
-      await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), first.world),
+      await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), first.world),
     ).toBe(0)
 
     // The first run actually registered the directory — not just printed a
@@ -875,14 +888,14 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(config(home)).toBeNull()
   })
 
-  it('--store sqlite, with --local <dir> --base <branch>, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
+  it('--store sqlite, with --local <dir> --main <branch>, writes database.store: sqlite, leaves no database.url, and finishes setup', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, {
       gitPlan: LOCAL_REPO_GIT,
     })
     expect(
       await initCommand(
-        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]),
+        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]),
         w,
       ),
     ).toBe(0)

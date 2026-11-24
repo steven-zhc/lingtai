@@ -116,25 +116,75 @@ export interface Section {
  * this file paying that same cost — every markdown file in `doc/` that is not
  * in a section here is listed on the docs index, with a link to it on GitHub.
  */
+/**
+ * The book: the chapters ADR 0112 §13 lists, in that order. `n` is the chapter's
+ * number in that table, so chapter 4 is 4 while 2 and 3 are unwritten.
+ *
+ * Only files that exist today. A chapter ticket adds its own row here and its
+ * slug to `PUBLIC_SLUGS`; a row before its file fails the unit test, by name.
+ */
+export interface BookRow {
+  n: number
+  part: string
+  file: string
+}
+
+export const BOOK: BookRow[] = [
+  { n: 1, part: 'Get started', file: 'tutorial.md' },
+  { n: 4, part: 'Understand it', file: 'concepts.md' },
+  { n: 7, part: 'Every day', file: 'when-it-fails.md' },
+  { n: 8, part: 'Fit it to your project', file: 'recipe.md' },
+  { n: 10, part: 'Fit it to your project', file: 'safety.md' },
+]
+
+/** The chapter number a file has in the book, or null. */
+export function chapterOf(file: string): number | null {
+  return BOOK.find((row) => row.file === file)?.n ?? null
+}
+
+/** `4 · Concepts` — how a book entry is named in the tree and on the index. */
+export function chapterTitle(n: number | undefined | null, title: string): string {
+  return n === undefined || n === null ? title : `${n} · ${title}`
+}
+
+/**
+ * The chapters either side of `slug` in the book, counting only those in
+ * `served` — never a link to a page that 404s. A slug that is not a served
+ * chapter has neither.
+ */
+export function neighboursOf(
+  slug: string,
+  served: ReadonlySet<string>,
+): { previous: BookRow | null; next: BookRow | null } {
+  const rows = BOOK.filter((row) => served.has(slugOf(row.file)))
+  const at = rows.findIndex((row) => slugOf(row.file) === slug)
+  if (at === -1) return { previous: null, next: null }
+  return { previous: rows[at - 1] ?? null, next: rows[at + 1] ?? null }
+}
+
 export const SECTIONS: Section[] = [
   {
-    id: 'guides',
-    label: 'Guides',
-    note: 'Written to be read in order. Start at the tutorial.',
+    id: 'book',
+    label: 'The book',
+    note: 'Ten chapters, read in order. Start at 1.',
+    files: BOOK.map((row) => row.file),
+  },
+  {
+    id: 'reference',
+    label: 'Reference',
+    note: 'Look a thing up: the commands, what Lingtai needs, and moving a project to 0.16.',
+    files: ['cli.md', 'requirements.md', 'upgrading-to-0.16.md'],
+  },
+  {
+    id: 'more',
+    label: 'More',
+    note: 'Pages off the reading path.',
     files: [
-      'tutorial.md',
       'tutorial-more.md',
-      'concepts.md',
-      'when-it-fails.md',
-      'recipe.md',
-      'cli.md',
-      'requirements.md',
-      'safety.md',
+      'guide.md',
       'from-symphony.md',
       'why.md',
-      'guide.md',
       'operating.md',
-      'upgrading-to-0.16.md',
       'reference.md',
       'design.md',
       'roadmap.md',
@@ -611,7 +661,7 @@ export function statusParts(status: string, hrefOf: (number: string) => string |
 export interface TreeGroup {
   id: string
   label: string
-  entries: { slug: string; title: string }[]
+  entries: { slug: string; title: string; n?: number }[]
 }
 
 /**
@@ -639,14 +689,18 @@ export async function treeOf(): Promise<TreeGroup[]> {
     groups.push({
       id: section.id,
       label: section.label,
-      entries: entries.map((entry) => ({ slug: entry.slug, title: entry.title.replace(/`/g, '') })),
+      entries: entries.map((entry) => {
+        const title = entry.title.replace(/`/g, '')
+        const n = section.id === 'book' ? chapterOf(entry.source) : null
+        return n === null ? { slug: entry.slug, title } : { slug: entry.slug, title, n }
+      }),
     })
   }
   if (isPublicSlug('events') || DOCS_PUBLIC) {
-    const guides = groups.find((group) => group.id === 'guides')
-    if (guides !== undefined) {
-      const at = guides.entries.findIndex((entry) => entry.slug === 'cli')
-      guides.entries.splice(at === -1 ? guides.entries.length : at + 1, 0, { slug: 'events', title: 'Events' })
+    const reference = groups.find((group) => group.id === 'reference')
+    if (reference !== undefined) {
+      const at = reference.entries.findIndex((entry) => entry.slug === 'cli')
+      reference.entries.splice(at === -1 ? reference.entries.length : at + 1, 0, { slug: 'events', title: 'Events' })
     }
   }
   return groups

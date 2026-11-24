@@ -5,7 +5,7 @@
 import type { Log } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { Deferred, Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import type { DaemonStore } from '../src/store.ts'
 import { makeWorkLoop } from '../src/work-loop.ts'
@@ -67,8 +67,11 @@ describe('the PR sweep runs on its own timer (#1317)', () => {
       pr: { serve: () => Effect.void, resume: () => Effect.void, sweep: () => sweep },
     })
     await Effect.runPromise(port.start())
-    await new Promise((r) => setTimeout(r, 120))
-    await Effect.runPromise(port.stop())
+    try {
+      await vi.waitFor(() => expect(calls).toBeGreaterThan(2), { timeout: 5_000, interval: 5 })
+    } finally {
+      await Effect.runPromise(port.stop())
+    }
     expect(calls).toBeGreaterThan(2)
     expect(overlapped).toBe(false)
   })
@@ -89,8 +92,11 @@ describe('a stalled read does not hold the drain (#1317)', () => {
       },
     })
     await Effect.runPromise(port.start())
-    await new Promise((r) => setTimeout(r, 60))
-    await Effect.runPromise(port.stop())
+    try {
+      await vi.waitFor(() => expect(resumes).toBeGreaterThan(1), { timeout: 5_000, interval: 5 })
+    } finally {
+      await Effect.runPromise(port.stop())
+    }
     expect(resumes).toBeGreaterThan(1)
   })
 })

@@ -7,7 +7,6 @@
 - [Order and release](#order-and-release): a kind label sets priority, a chain goes in *blocked by*, and nothing is released unread.
 - [Choose a model for each role](#choose-a-model-for-each-role): a recipe names a runtime and model per role, and a reviewer from another family has other blind spots.
 - [Gate what has failed](#gate-what-has-failed): keep the gates that refuse, delete the ones that never do, and watch each one fail once.
-- [Read a failure in this order](#read-a-failure-in-this-order): a rule answers first, a judge or triage names a cause, a person is asked for a limit, a question or the environment; read receipt, run log, triage, then events, narrowest view outward.
 - [Set the limits](#set-the-limits): treat each limit as an alarm with a reason, and read one that fires as news about the ticket.
 
 The habits that make Lingtai cheap and predictable. Every section is its rule,
@@ -118,7 +117,7 @@ Read what each cannot do before choosing one:
 
 Install and sign in: for Copilot, `copilot login` (or `gh`'s login) when the
 project is unsandboxed, and `lingtai token copilot` when it is sandboxed
-([safety](safety.md#the-copilot-token)). For Antigravity, `agy acp --login`, and
+([requirements](requirements.md#tokens-for-a-sandboxed-run)). For Antigravity, `agy acp --login`, and
 Lingtai must run in your GUI login session, not over ssh, because the sign-in
 lives in the keychain (019 E10). Versions measured on 2026-11-19: Copilot CLI
 1.0.112, Antigravity CLI 1.5.9. The full table is in
@@ -188,46 +187,6 @@ yet reads
 `#58` was a `merge` point that **did not execute**, so a run without `--no-merge`
 merged itself into `main` unapproved; a point that never refuses and a point that
 never runs look identical from outside.
-
-## Read a failure in this order
-
-**The rule.** A failure is answered in three layers, and a person is the last of
-them (0108 §6, §16):
-
-1. **A rule** answers what is mechanical or transient, free: no agent is paid.
-2. **A cause the system acts on.** A judge (within the bounds) or triage (where
-   a wait would open) **names a cause** and never an action; the system chooses
-   the action and carries it out.
-3. **A person**, asked only for a *limit* (a bound is spent), an *unclear*
-   requirement or a broken *environment*.
-
-So a wait on the board means a rule, and a judge or triage, have already
-answered what they could, and it is one of those three kinds. A wait the system
-resolved itself is **a line on the card**, not a wait: *Triage read only
-unfinished; the step is being redone — 2 of 3 redos used*.
-
-Then read a failure from the narrowest view outward: the receipt, then the run
-log, then triage's summary, then the events. The instinctive order is wrong: on
-2026-09-08 *"why is this not moving?"* was asked of `#80`, `#87`, `#89` and `#94`
-in a single day and **answered wrongly four times**
-([0032](decisions-archive/0032-the-page-is-organised-by-attempt.md)).
-
-**Do this.**
-
-- Open the attempts ledger on `/task/<id>` first: one row per attempt, with its
-  prompt, files, gates and outcome. Read the outcome word on the failing row
-  before anything else; `never-started` is Lingtai's own failure, not the
-  ticket's.
-- Open the refusing gate's evidence through the pointer on the row.
-- If the item has not landed, tail the run log: `pnpm lingtai attach <runId>`. A
-  run that landed has no log.
-- Read triage's summary for a waiting ticket as the cause it named; what was
-  done with it is the system's, and the card says which bound it spent. When a
-  card says `disagreement`, a fixer's `Disputed` is waiting for a judge to rule
-  on it; it is a judgement to make, not a repair, and a fixer that committed
-  nothing may have declined.
-- When you must settle a behavioural claim, read `events` and cite the seq.
-  Absence from documentation is not absence from the program (`#89`, $13.04).
 
 ## Set the limits
 

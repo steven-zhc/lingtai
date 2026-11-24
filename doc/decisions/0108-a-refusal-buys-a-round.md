@@ -273,7 +273,7 @@ fixes the actions, their bounds and the endings that router works inside.
       includes the WIP Lingtai committed for a cut-off `implement` (§20) —
       and whatever else was uncommitted is dropped. The step runs again from
       its first action, never from the action that was cut off. An agent's
-      brief ends with one paragraph: *this step was interrupted (why); it began
+      brief opens with one paragraph, after the lines naming how it ends and ahead of anything long (#1404): *this step was interrupted (why); it began
       at `<sha>` and is committed to `<head>`, including any unfinished work
       Lingtai saved for you; carry on, and do not redo what is committed.* A
       `review` redone gets no such paragraph: it reads only what is

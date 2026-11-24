@@ -303,6 +303,27 @@ number a repository should be able to choose belongs in the recipe (0016 §7);
 one that governs the log or the board belongs in code, and then this table is
 where its value is written down.
 
+### what a run may reach — `sandbox`, the recipe's
+
+Checked when the recipe resolves, in `packages/recipe/src/sandbox.ts` and
+`sandbox-block.ts` ([ADR 0127](decisions/0127-what-an-agent-can-reach.md) §13). [Safety](safety.md#turning-it-on) shows one complete block.
+
+- `network.allow`, `write` and `deny` only add: none removes a built-in entry. A
+  network entry is a hostname or `*.` and a hostname, with no scheme, port or path.
+- A path is `~/…` or absolute. A relative path is refused.
+- `enabled: false` with `required: true` is refused: a project cannot need a
+  sandbox and not have one.
+- A `write` or a `deny` that is, lies inside or contains a protected path is
+  refused: the deny list, `~/.lingtai`, the mirror, the runtimes' configuration
+  directories (`~/.claude`, `~/.claude.json`, `~/.codex`) and the host's tool and
+  cache directories. `$HOME`, or a path containing it, is refused; `~/work/fixtures`
+  is not. A `deny` is also refused inside the worktree or the mirror, because the
+  run's `allowRead` overrides `denyRead` there.
+- A recipe that still says `runtime.tier` is refused, with its replacement by
+  value (`packages/recipe/src/resolve.ts:295-305`): `tier: sandboxed` becomes
+  `sandbox: { enabled: true, required: true }`, and `tier: guarded` or
+  `tier: open` is deleted. Lingtai does not rewrite the file.
+
 ### what a run is given — `runtime.budget`, the recipe's
 
 Together these are the answer to *what does an agent know about why the last
@@ -437,6 +458,22 @@ still carrying a `repair` block is **refused by name** rather than ignored —
 `z.object` would have dropped it silently, leaving a repository running on a
 default while its own file said otherwise. The two old ceilings do not add up to
 the new one, so nothing migrates it for you.
+
+### what a PR summary may spend — `pr:`, the recipe's
+
+`pr:` configures the agent that writes a PR's title and summary, and a solo recipe that writes it is refused. Defaults are read off the schema and `ciOf`.
+
+| Key | Default | Where |
+|---|---|---|
+| `pr.agent` | `runtime.agent`, where that runtime can run with no tools (`claude-code` or `codex`); a written `agent` must be one of those two, because a PR summary runs with no tools | `packages/recipe/src/recipe.ts:2927` (`DiscussAgent`), `:3005` |
+| `pr.model` | absent: the runtime's own default, handed over as written | `packages/recipe/src/recipe.ts:283`, `:3006` |
+| `pr.prompt` | absent: the fixed brief alone; written, it is appended to the brief and never replaces it | `packages/recipe/src/recipe.ts:285`, `:3007` |
+| `pr.limits.turns` | `20` | `packages/recipe/src/recipe.ts:3010` |
+| `pr.limits.wall` | `5m` | `packages/recipe/src/recipe.ts:3013` |
+| `pr.limits.usd` | none: it spends outside any attempt, so each run counts against the day's ceiling | `Pr` carries no `usd` |
+| `pr.ci.timeout` | `60m` | `packages/recipe/src/settings.ts:278` |
+| `pr.ci.required` | every check on the PR's head; an empty list is refused | `packages/recipe/src/settings.ts:277` |
+| `pr.ci.provider: jenkins` | refused in 0.16; its credentials are `jenkins.user` and `jenkins.token` in `~/.lingtai/config.yml`, never the recipe | `packages/recipe/src/resolve.ts:546` |
 
 ### what triage may spend — `triage:`
 
@@ -1855,7 +1892,7 @@ Three more limits, which a person choosing one should read before the rest:
   scheduling.
 - **Antigravity is never sandboxed in this release**, on any host. A recipe with
   `sandbox.required: true` that names it is refused; see
-  [safety](safety.md#without-the-sandbox).
+  [safety](safety.md#when-the-host-cannot-sandbox).
 - **`model:`** for `antigravity` is one of the models it offers (a `model`
   config option). `copilot` advertises none, so it is an id your account may use
   and is set with `session/set_model`; a wrong id comes back as the reply's text,

@@ -152,8 +152,13 @@ describe("a pass given a store reads that store's log", () => {
     // machine that has configured none the whole pass refuses at
     // `postgresUrl()`, and on one that has, it asks a log this pass has
     // nothing to do with.
-    expect(asked).toHaveLength(2)
-    expect(asked[1]!.prefixes).toEqual(['ticket-%'])
-    expect(asked[1]!.types).toContain('TicketLanded')
+    // Three reads, in pass order, all of them this store: the owed-landings
+    // read #1397 put first (9b73067 — a landing whose process died after the
+    // push is recorded at the next start), then the claim read, then
+    // converge's. The first goes through `options.withStreams` like the rest,
+    // so it too went to the injected store.
+    expect(asked.map((a) => a.prefixes)).toEqual([[`int-${PROJECT}-%`], [`ticket-${PROJECT}-%`], ['ticket-%']])
+    expect(asked[0]!.types).toEqual(['IntegrationSucceeded'])
+    expect(asked[2]!.types).toContain('TicketLanded')
   })
 })

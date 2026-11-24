@@ -99,7 +99,8 @@ async function blocked(cause: object | null) {
   return { store, tickets, ticketId, waitId, grant }
 }
 
-const types = async (store: EventStore, id: string) => (await store.read(id)).map((e) => e.type)
+const types = async (store: EventStore, id: string) =>
+  (await store.read(id)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('FixRefusal writes the triage answers first (#921)', () => {
   it('writes the section, then resolves — at the version the write left behind', async () => {

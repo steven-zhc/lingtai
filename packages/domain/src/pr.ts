@@ -562,6 +562,18 @@ export function isOpen(state: PrState | null): boolean {
   )
 }
 
+/**
+ * The open PR among a project's PRs in number order: the highest-numbered one not in `draft`, when it is open.
+ * A draft is the highest PR while it gathers tickets, so "the latest, if open" would answer the draft.
+ */
+export function openAmong(prs: readonly PrState[]): PrState | null {
+  for (let i = prs.length - 1; i >= 0; i--) {
+    const pr = prs[i]!
+    if (pr.status !== 'draft') return isOpen(pr) ? pr : null
+  }
+  return null
+}
+
 /** What a PR is called in a sentence. */
 export function prName(project: string, n: number): string {
   return `PR ${n} of ${project}`
@@ -571,7 +583,8 @@ export type SubmitRefusal = { kind: 'refused'; reason: 'solo' | 'open-pr' | 'not
 
 /**
  * Whether a Submit may start a PR: refused `solo` where the project lands on `branch.main` itself, and `open-pr`
- * — naming it — while the project's latest PR is open. The new PR's number is the caller's, one past the highest.
+ * — naming it — while a PR is open (the caller passes `openAmong`, the open PR below any draft). The PR a Submit
+ * requests is the draft's own, whose number the caller reads.
  */
 export function requestSubmit(
   previous: PrState | null,

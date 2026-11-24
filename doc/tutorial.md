@@ -4,8 +4,7 @@
 
 Use [Chapter Garden](https://github.com/steven-zhc/chapter-garden), a small
 Astro site for jointly written novels, to try Lingtai: set up a project, create
-a ticket and let an agent work on it. The options, a hold for your approval and
-GitHub are on [Going further](tutorial-more.md).
+a ticket and let an agent work on it.
 
 ## Before you start
 
@@ -27,7 +26,10 @@ lingtai init --local chapter-garden
 If your shell cannot find `lingtai`, add `~/.local/bin` to your `PATH`; the
 installer edits no shell profile.
 
-Work lands on a `lingtai-base` branch in this checkout, never on `main`.
+Enter at the mode question makes a **team** project, which is what the rest of
+the book uses, even if you work alone. Its work lands on a `lingtai-base` branch
+in this checkout, never on `main`. Answer `solo` and work lands on `lingtai-base`
+too, but the ticket closes; the rest of the book assumes team.
 
 ## Step 2 — Open one ticket
 
@@ -58,15 +60,17 @@ terminal, run `lingtai board` to watch. The board has no login and listens on
 every address; `board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to
 this machine.
 
-When the card is **Landed**, read the change, and merge it to keep it:
+When the card is **Landed**, look at what landed:
 
 ```sh
 git -C chapter-garden log -1 --stat lingtai-base
-git -C chapter-garden merge lingtai-base
+git -C chapter-garden diff main...lingtai-base
 ```
 
-Run the merge on `main`. If `lingtai-base` is checked out, the landing holds
-until you switch to another branch.
+If `lingtai-base` is checked out, the landing holds until you switch to another
+branch. In a team project the ticket stays open after landing, and local tickets
+are yours to take. Getting the change onto `main` is a PR, which is the next
+chapter.
 
 The change lands on its own once your checks at `build:` and the AI review pass.
 To OK each landing first, declare a `human:` at `proposed:`; see
@@ -74,8 +78,4 @@ To OK each landing first, declare a `human:` at `proposed:`; see
 
 ## Next
 
-For the model behind it, see [the concepts](concepts.md). To hold attempts for
-your approval, see what each option means, or move to GitHub, continue with
-[Going further](tutorial-more.md). To read or change what `init` wrote, see
-[the recipe guide](recipe.md). The [CLI guide](cli.md) has the command for each
-routine action once an attempt has run.
+Next: [Team mode](team.md) — the way we recommend working.

@@ -2742,15 +2742,14 @@ describe('the paragraph a step redone whole ends its brief with (#1245)', () => 
     expect(redoParagraph(REDO)).not.toContain('including')
   })
 
-  it('ends the design brief with it, and leaves a first arrival’s brief as it was', async () => {
+  it('opens the design brief with it, and leaves a first arrival’s brief as it was', async () => {
     const plain = reviewer(outcome({ text: '## Shape\n\n1. one' }))
     await createDraftAction({ name: 'draft', prompt: '' }, deps(plain)).run(context)
     const redone = reviewer(outcome({ text: '## Shape\n\n1. one' }))
     await createDraftAction({ name: 'draft', prompt: '' }, deps(redone)).run({ ...context, rerun: 1, redo: REDO })
 
     expect(plain.seen[0]!.prompt).not.toContain('This step was interrupted')
-    expect(redone.seen[0]!.prompt.startsWith(plain.seen[0]!.prompt)).toBe(true)
-    expect(redone.seen[0]!.prompt.endsWith(redoParagraph(REDO))).toBe(true)
+    expect(redone.seen[0]!.prompt).toBe(`${redoParagraph(REDO)}\n\n${plain.seen[0]!.prompt}`)
   })
 
   it('never writes it into the reviewer’s brief', async () => {

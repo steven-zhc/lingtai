@@ -158,7 +158,7 @@ source:
 
 A team project takes only the tickets assigned to that login, lands them on
 `branch.personal`, and reaches `main` through a PR you submit: see
-[A PR's life](concepts.md#a-prs-life), [the recipe's `mode`, `branch` and `pr:`](recipe.md#solo-or-team-016)
+[A PR's life](team.md)
 and [a team project's PR on GitHub](github.md#a-team-projects-pr). The recipe
 refuses `take: all` or `take: unassigned` in team mode, and `branch.personal` in a
 solo one, each by name. Two things to know before you switch:
