@@ -1350,18 +1350,64 @@ export function recordedOr(
   return { handed: prompt, recorded: prompt, refs: [], values: [] }
 }
 
-/** `prompt` with its own trailing redo paragraph (a cut-off call that was itself a redo) replaced by `paragraph`, if any. */
-export function withRedoParagraph(prompt: string, paragraph: string | null | undefined): string {
-  if (paragraph === undefined || paragraph === null) return prompt
-  // Only the generated paragraph itself, as the brief's last paragraph: quoted text that merely starts alike,
-  // or is followed by anything, is the brief's own and stays (#1246).
-  const trailing =
-    /\n\nThis step was interrupted \([^\n]*\); it began at [^\n]* and is committed to [^\n]*\. Carry on, and do not redo what is committed\.(?:\n\nYour last message ended:\n\n(?: {4}[^\n]*\n)*\nNo outcome could be read from it\.[^\n]*\n\n {4}```outcome\n {4}\{"outcome": "Implemented"\}\n {4}```\n\nor another block as the brief above shows it\.)?$/
-  return `${prompt.replace(trailing, '')}\n\n${paragraph}`
+/**
+ * What opens every brief that ends with an outcome block (#1404): two lines, the first saying the final message
+ * ends with the block and where the section is, the second that something long follows. A brief an agent reads
+ * only in part must still say how it ends, so the lines come before anything long. `prompts/ticket.md` and
+ * `fixBriefParts` open with this mark, and a test holds the template to it.
+ */
+export const ENDING_MARK = '**Your final message ends with a fenced `outcome` block'
+
+/** The opening lines of a brief, with the blank line after them, or `''` for a brief that does not open with the mark. */
+export function openingLinesOf(text: string): string {
+  if (!text.startsWith(ENDING_MARK)) return ''
+  const end = text.indexOf('\n\n')
+  return end === -1 ? '' : text.slice(0, end + 2)
 }
 
 /**
- * **The one paragraph that ends the brief of an agent whose step is redone** (0108 §12, #1245): why it was
+ * `parts` with `inserted` placed right after the opening lines (#1404), so what the code adds — the recipe's words,
+ * the redo paragraph — stays ahead of whatever long text the template puts later. A template that does not open
+ * with the mark gets them at the very start, for the same reason.
+ */
+export function afterOpeningLines<T extends string | { readonly text: string }>(
+  parts: readonly T[],
+  inserted: readonly string[],
+): (T | string)[] {
+  if (inserted.length === 0) return [...parts]
+  const first = parts[0]
+  const opening = typeof first === 'string' ? openingLinesOf(first) : ''
+  if (typeof first !== 'string' || opening === '') return [...inserted, ...parts]
+  return [opening, ...inserted, first.slice(opening.length), ...parts.slice(1)]
+}
+
+const REDO_PARAGRAPH =
+  'This step was interrupted \\([^\\n]*\\); it began at [^\\n]* and is committed to [^\\n]*\\. Carry on, and do not redo what is committed\\.(?:\\n\\nYour last message ended:\\n\\n(?: {4}[^\\n]*\\n)*\\nNo outcome could be read from it\\.[^\\n]*\\n\\n {4}```outcome\\n {4}\\{"outcome": "Implemented"\\}\\n {4}```\\n\\nor another block as the brief (?:above|below) shows it\\.)?'
+
+/**
+ * `prompt` with its own redo paragraph (a cut-off call that was itself a redo) replaced by `paragraph`, if any.
+ * The paragraph opens the brief, after the lines naming the ending (#1404); a brief recorded before that carries
+ * it as its last paragraph, and is stripped of it all the same.
+ */
+export function withRedoParagraph(prompt: string, paragraph: string | null | undefined): string {
+  if (paragraph === undefined || paragraph === null) return prompt
+  // Only the generated paragraph itself, whole, on its own paragraph boundaries: quoted text that merely starts
+  // alike, or is followed by anything it should not be, is the brief's own and stays (#1246). It is found
+  // wherever the fresh builders put it: right after the opening lines, or behind a header, the recipe's words
+  // or the split paragraph (#1404), or last, in a brief recorded before it moved.
+  const found = new RegExp(`(^|\\n)${REDO_PARAGRAPH}(\\n\\n|$)`).exec(prompt)
+  if (found !== null && found.index + found[0].length < prompt.length) {
+    const lead = found[1]!
+    const at = found.index + lead.length
+    return `${prompt.slice(0, at)}${paragraph}${prompt.slice(found.index + found[0].length - 2)}`
+  }
+  const without = found === null ? prompt : prompt.slice(0, found.index).replace(/\n+$/, '')
+  const opening = openingLinesOf(without)
+  return `${opening}${paragraph}\n\n${without.slice(opening.length)}`
+}
+
+/**
+ * **The one paragraph that opens the brief of an agent whose step is redone** (0108 §12, #1245): why it was
  * interrupted, where it began, what is committed now, and the WIP Lingtai saved for it (`kept`, the shas of
  * the commits made for the cut-off run). Never written into a `review`'s brief. One function, so the three
  * agents that are handed it cannot word it differently.
@@ -1378,7 +1424,7 @@ export function redoParagraph(redo: RedoNote, kept: readonly string[] = []): str
     .split(/\r?\n/)
     .map((l) => `    ${l}`)
     .join('\n')
-  return `${base}\n\nYour last message ended:\n\n${quoted}\n\nNo outcome could be read from it. End your next message with the block, and nothing after it:\n\n    \`\`\`outcome\n    {"outcome": "Implemented"}\n    \`\`\`\n\nor another block as the brief above shows it.`
+  return `${base}\n\nYour last message ended:\n\n${quoted}\n\nNo outcome could be read from it. End your next message with the block, and nothing after it:\n\n    \`\`\`outcome\n    {"outcome": "Implemented"}\n    \`\`\`\n\nor another block as the brief below shows it.`
 }
 
 /** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */

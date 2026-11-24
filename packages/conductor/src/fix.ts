@@ -57,7 +57,7 @@
  * rule about spending money that lives inside an `if` in a 1,500-line file is a
  * rule nobody can check.
  */
-import { LANDED_DIFF_LINES, landedPathsSection } from '@lingtai/actions'
+import { ENDING_MARK, LANDED_DIFF_LINES, landedPathsSection } from '@lingtai/actions'
 import type { ActionFinding, LandedPath } from '@lingtai/actions'
 import {
   type Envelope,
@@ -534,6 +534,10 @@ export function fixBriefParts(input: {
    * verbatim, then the ruling. Replaces `declined`, which is older.
    */
   overruled?: { objection: string; ruling: string }
+  /** The redo paragraph (`redoNoteOf`), when this step is redone: placed near the top (#1404). */
+  redo?: string | null
+  /** The recipe's own words at this action (`spec.prompt`): instructions, so before the long parts (#1404). */
+  also?: string
 }): RecordPart[] {
   const clip = input.diff.length > input.diffBytes
   const clipped = clip
@@ -560,8 +564,14 @@ export function fixBriefParts(input: {
           : mergedConflictHalf(input.refusal.base, input.refusal.merged)
         : outputHalf(input.refusal.output, input.action)
 
+  // **Everything the agent must follow comes before anything long it may skim** (#1404): a brief that is
+  // too long is handed to the agent as a file it reads in part, and the diff, up to `runtime.budget.diff`,
+  // is what makes it long. So the diff is last, the ticket body before it, and the outcome section ahead of both.
   return [
-    `# The ${input.action} action refused this change, and you are the fix
+    `${ENDING_MARK} of JSON; the section headed \`If this is not yours to fix\` below says which.**
+**The ticket and the diff are the brief's last sections; everything you must follow comes before them.**
+
+# The ${input.action} action refused this change, and you are the fix
 
 You are in the worktree the change was made in. This is fix round
 ${input.round} of ${input.of}.
@@ -570,29 +580,11 @@ ${input.round} of ${input.of}.
 session. What you have is below, and the code in front of you.
 
 `,
+    ...(input.redo == null ? [] : [`${input.redo}\n\n`]),
     ...(typeof evidence === 'string' ? [evidence] : evidence),
     ...(input.refusal.on === 'conflict' ? [openFindingsContext(input.refusal.findings)] : []),
     `
 ${adviceSection(input.advice)}${declinedSection(input.declined)}${overruledSection(input.overruled)}
-## The ticket the reviewer held this change to
-
-${input.ticket.title}
-
-`,
-    body,
-    `
-
-This is what the cold reviewer read the change against. It is context for the
-refusal, not the job handed to you again: ${input.refusal.on === 'conflict' ? 'the merge is the criterion.' : 'the findings are still the criterion.'}
-
-## The change under review
-
-\`\`\`diff
-`,
-    diffPart,
-    `
-\`\`\`
-
 ${criterion}
 
 - **Change nothing else.** Not the formatting, not the neighbouring function, not
@@ -606,7 +598,7 @@ approve, is a commit — an attempt that ends with advice about the code produce
 nothing anyone can act on.
 
 ${checksBrief(input.checks)}
-
+${input.also === undefined || input.also === '' ? '' : `\n## Also for this project\n\n${input.also}\n`}
 ## If this is not yours to fix, declare \`Disputed\`
 
 That is not giving up, and it is not a wasted round. **It is how your objection
@@ -641,6 +633,25 @@ Prose that is not this block is a run that did not finish, and it is redone.
 
 \`\`\`outcome
 {"outcome": "Unclear", "questions": [{"id": "q1", "text": "<the question>", "answers": [{"id": "a", "text": "<option>"}, {"id": "b", "text": "<option>"}], "recommended": "a"}]}
+\`\`\`
+
+## The ticket the reviewer held this change to
+
+${input.ticket.title}
+
+`,
+    body,
+    `
+
+This is what the cold reviewer read the change against. It is context for the
+refusal, not the job handed to you again: ${input.refusal.on === 'conflict' ? 'the merge is the criterion.' : 'the findings are still the criterion.'}
+
+## The change under review
+
+\`\`\`diff
+`,
+    diffPart,
+    `
 \`\`\``,
   ]
 }

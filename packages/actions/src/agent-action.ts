@@ -1722,8 +1722,9 @@ export function makeDraftAction(spec: AgentActionSpec, deps: AgentPortDeps): Act
           context,
           spec.name,
           composePrompt([
+            // First, ahead of the brief's long parts (#1404); `withRedoParagraph` puts a recorded one there too.
+            ...(context.redo === undefined ? [] : [`${redoParagraph(context.redo)}\n\n`]),
             ...designPromptParts(spec, issue),
-            ...(context.redo === undefined ? [] : [`\n\n${redoParagraph(context.redo)}`]),
           ]),
           context.redo === undefined ? undefined : redoParagraph(context.redo),
         )
