@@ -424,6 +424,22 @@
     "reason": "A guard on one event as it is recorded, so a failure of the recorder does not record itself (plan §1.7)."
   },
   {
+    "file": "packages/daemon/src/owed-landings.ts",
+    "function": "recordProject",
+    "type": "ProjectRecipeChanged",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the project stream to learn which recipe was in force when a landing was made, and which ticket claim it followed, so a recovered landing joins the draft by the pass's own recipe; keeps no state."
+  },
+  {
+    "file": "packages/daemon/src/owed-landings.ts",
+    "function": "recordProject",
+    "type": "TicketClaimed",
+    "count": 1,
+    "class": "select",
+    "reason": "Reads the project stream to learn which recipe was in force when a landing was made, and which ticket claim it followed, so a recovered landing joins the draft by the pass's own recipe; keeps no state."
+  },
+  {
     "file": "packages/extension/src/index.ts",
     "function": "describe",
     "type": "IntegrationRefused",
