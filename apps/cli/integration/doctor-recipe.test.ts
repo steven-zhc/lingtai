@@ -36,7 +36,7 @@ describe('the recipe row, with no App configured', () => {
     await mkdir(join(home, 'app'))
     await writeFile(join(home, 'app', 'recipe.yml'), RECIPE)
     // The machine's own facts only: the agent is the recipe's since `#372`.
-    await writeFile(join(home, 'config.yml'), 'board:\n  port: 17820\n')
+    await writeFile(join(home, 'config.yml'), 'database:\n  store: sqlite\nboard:\n  port: 17820\n')
     saved = process.env['LINGTAI_HOME']
     process.env['LINGTAI_HOME'] = home
   })
