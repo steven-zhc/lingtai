@@ -1,14 +1,15 @@
-/**
- * The `ci` and `ready` steps (#1339): a fake `CiProvider` drives the step through every verdict, and the step code
- * imports nothing from the one adapter.
- */
 import { readFileSync } from 'node:fs'
 
 import { type CiCheck, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
-import { recordPrInProgress, requestPrRetry, requestPrSubmit } from '@lingtai/project'
+import { recordPrInProgress, requestPrRetry } from '@lingtai/project'
+/**
+ * The `ci` and `ready` steps (#1339): a fake `CiProvider` drives the step through every verdict, and the step code
+ * imports nothing from the one adapter.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { TestClock } from 'effect/testing'
@@ -61,7 +62,7 @@ async function frozen(): Promise<EventStore> {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   await Effect.runPromise(
     recordPrInProgress(
       'lingtai',
@@ -148,7 +149,8 @@ const aWorld = (checks: CiCheck[]): World => ({
   observed: 0,
 })
 const serve = (p: PrPorts) => Effect.runPromise(servePr(p, 'lingtai', 1, STEPS))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('the ci and ready steps', () => {
   it('five green checks: PrChecked green, the mutation with the draft’s node id, then PrOpened', async () => {

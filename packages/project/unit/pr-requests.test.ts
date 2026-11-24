@@ -1,7 +1,3 @@
-/**
- * What a person can do when a PR waits on them (#1314): the three requests as `@lingtai/project` appends them — the way the
- * board's server action will call them — and the pure view `lingtai pr` and the PR page both read.
- */
 import { conflictRoundsLeft, grantedFor, prStream, prWaitOf, reducePr } from '@lingtai/domain'
 import type { ConflictEnd, PayloadOf } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
@@ -16,8 +12,12 @@ import {
   recordSyncRoundStarted,
   requestPrBack,
   requestPrRetry,
-  requestPrSubmit,
 } from '../src/pr.ts'
+/**
+ * What a person can do when a PR waits on them (#1314): the three requests as `@lingtai/project` appends them — the way the
+ * board's server action will call them — and the pure view `lingtai pr` and the PR page both read.
+ */
+import { submitPr } from '../test/submit.ts'
 
 const run = <A>(e: Effect.Effect<A, Error>) => Effect.runPromise(e)
 const A = 'a'.repeat(40)
@@ -42,7 +42,7 @@ const conflict = (commit = M, over: Partial<ConflictEnd> = {}): ConflictEnd => (
 /** PR 1 frozen and waiting at `sync`. */
 async function waiting(wait: Partial<PayloadOf<'PrWaiting'>> = {}): Promise<EventStore> {
   const store = createMemoryEventStore()
-  await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await run(submitPr('lingtai', 'team', 'human:steven', store))
   await run(
     recordPrInProgress(
       'lingtai',
@@ -142,7 +142,7 @@ describe('retry and back', () => {
 
   it('a retry is refused on a PR that is not waiting, and on a solo project', async () => {
     const store = createMemoryEventStore()
-    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
     expect(await run(requestPrRetry(ref, { by: 'human:x' }, store))).toMatchObject({
       kind: 'refused',
       detail: expect.stringContaining('not waiting on you'),
@@ -154,7 +154,7 @@ describe('retry and back', () => {
 
   it('back is refused while a step runs and accepted on a wait', async () => {
     const store = createMemoryEventStore()
-    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
     await run(
       recordPrInProgress('lingtai', 1, { branch: 'lingtai-team', main: 'main', frozenSha: A, tickets: [] }, store),
     )
@@ -246,7 +246,7 @@ describe('what a waiting PR shows', () => {
     const denied = await waiting({ reason: 'denied', conflict: null })
     expect(prWaitOf(await state(denied), facts)).toMatchObject({ kind: 'plain', commands: [] })
     const fresh = createMemoryEventStore()
-    await run(requestPrSubmit('lingtai', 'team', 'human:x', fresh))
+    await run(submitPr('lingtai', 'team', 'human:x', fresh))
     expect(prWaitOf(await state(fresh), facts)).toBeNull()
   })
 })

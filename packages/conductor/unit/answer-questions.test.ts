@@ -80,7 +80,8 @@ async function asking() {
   return { store, tickets, ticketId, waitId, answer }
 }
 
-const types = async (store: EventStore, id: string) => (await store.read(id)).map((e) => e.type)
+const types = async (store: EventStore, id: string) =>
+  (await store.read(id)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('AnswerQuestions on a question an agent asked (#1254)', () => {
   it('writes the answers into the body, then resolves — and the ticket is owed a continuation, not a new attempt', async () => {

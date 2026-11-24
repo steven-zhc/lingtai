@@ -36,7 +36,8 @@ async function claimed() {
   return { store, inner, appends, refuseNext: () => void (refuse = true) }
 }
 
-const types = async (store: EventStore) => (await store.read(ticketId)).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(ticketId)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('an ending and its plan are one append', () => {
   it('land writes TicketLanded and the plan in a single append', async () => {

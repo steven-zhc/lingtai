@@ -1,4 +1,3 @@
-/** `changeRecipe` refuses team → solo while work is stranded (0130 §1, #1328): memory log, `Map` files. */
 import { prStream, projectStream, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -9,7 +8,9 @@ import { describe, expect, it } from 'vitest'
 
 import { modeSwitchMessage } from '../src/change.ts'
 import { ProjectFiles, changeRecipe, recipePath } from '../src/index.ts'
-import { recordPrClosed, recordPrDraftOpened, recordPrInProgress, recordPrMerged, requestPrSubmit } from '../src/pr.ts'
+import { recordPrClosed, recordPrDraftOpened, recordPrInProgress, recordPrMerged } from '../src/pr.ts'
+/** `changeRecipe` refuses team → solo while work is stranded (0130 §1, #1328): memory log, `Map` files. */
+import { submitPr } from '../test/submit.ts'
 
 const HOME = '/home/me/.lingtai'
 const PATH = recipePath('app', HOME)
@@ -105,7 +106,7 @@ describe('team → solo', () => {
   it('is refused naming an open PR with an empty draft, whatever its column', async () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team')
-    await Effect.runPromise(requestPrSubmit('app', 'team', 'human:me', w.store))
+    await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
     const r = await w.save(SOLO, ['43'])
     expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
     expect((r as { message: string }).message).toContain('PR #1 is open')
@@ -116,7 +117,7 @@ describe('team → solo', () => {
   it('is written when the only PR is merged and nothing landed since', async () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team')
-    await Effect.runPromise(requestPrSubmit('app', 'team', 'human:me', w.store))
+    await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
     await Effect.runPromise(recordPrInProgress('app', 1, frozen(['43']), w.store))
     await Effect.runPromise(recordPrMerged('app', 1, { how: 'host', headSha: 'a'.repeat(40), mergeSha: null }, w.store))
     expect(await w.save(SOLO, ['43'])).toMatchObject({ ok: true, written: true })
@@ -126,7 +127,7 @@ describe('team → solo', () => {
   it('is refused naming the tickets of a PR closed without merging', async () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team')
-    await Effect.runPromise(requestPrSubmit('app', 'team', 'human:me', w.store))
+    await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
     await Effect.runPromise(recordPrInProgress('app', 1, frozen(['43']), w.store))
     await Effect.runPromise(
       recordPrDraftOpened('app', 1, { number: 9, nodeId: 'n', url: 'u', found: 'opened' }, w.store),

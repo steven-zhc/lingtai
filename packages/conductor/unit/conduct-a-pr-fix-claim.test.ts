@@ -83,6 +83,18 @@ describe('a team lingtai:pr-fix claim', () => {
     expect(did).toContain('cut from origin/lingtai-team-pr-1')
   })
 
+  it('with a draft above the open PR is still cut from the open PR, not from branch.personal (#1391)', async () => {
+    const store = memoryStore()
+    await openPr(store, true)
+    await store.append(prStream(PROJECT, 2), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '9', mergeCommit: 'c9', from: null } },
+    ] as never)
+    const did: string[] = []
+    await once(options(store), fakePorts(did, store, true))
+    expect((await claims(store))[0]!.data).toMatchObject({ cutFrom: { branch: 'lingtai-team-pr-1', pr: 1 } })
+    expect(did).toContain('cut from origin/lingtai-team-pr-1')
+  })
+
   it('with no PR open records branch.personal and no PR, and is cut from it', async () => {
     const store = memoryStore()
     const did: string[] = []
