@@ -284,7 +284,7 @@ has the states). On GitHub:
   ready without CI being read, and the PR page says so. A red run waits on you: you re-run it on GitHub and check again,
   because Lingtai never re-runs a workflow.
 - **What the team does there is read back.** A merged PR closes every ticket it
-  held; one closed without merging goes back to Draft. Lingtai finds out on the
+  held; one closed without merging gives its tickets to the draft, and its code stays on the personal branch. Lingtai finds out on the
   daemon's sweep, which reads the one open PR, and when the PR page renders.
 - **Merge it with a merge commit.** The merge lane's own merges are `--no-ff`, so
   one ticket the team refuses is one `git revert`. **A squash merge still counts

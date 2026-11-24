@@ -151,12 +151,17 @@ Changes state — `--json` on its verdict (version 1).
 
 ```text
 lingtai pr [<project>] [--json] [--no-color]
-  The tickets landed on branch.personal that no PR holds, and the
-  open PR: its number, its state and the steps it has been through.
+  The draft, which is the next PR, not yet submitted: the tickets landed
+  since the last PR was frozen. And the open PR: its number, its state
+  and the steps it has been through.
   A solo project has no PR page: it lands on branch.main itself.
 lingtai pr submit [<project>] [--json] [--no-color]
   Freezes branch.personal at one commit and starts the PR. Refused
-  while another PR is open, saying which, and in a solo project.
+  while another PR is open, saying which, and in a solo project. Refused
+  with nothing landed, and records nothing. Tickets the frozen commit
+  does not hold stay in the draft for the next PR. A submit Lingtai
+  cannot carry out returns the PR to the draft, keeping its number, and
+  says why.
   It is served by a running conductor: lingtai start, or lingtai run.
 lingtai pr retry [<project>] [--pr <n>] [--json] [--no-color]
   Check a waiting PR again: after resolving a conflict by hand on the
@@ -167,7 +172,7 @@ lingtai pr rounds [<project>] [--pr <n>] [--json] [--no-color]
   waits on. Refused for any wait that is not a conflict.
 lingtai pr back [<project>] [--json] [--no-color]
   Take the PR back to Draft: closes the draft pull request on GitHub.
-  The tickets stay on the personal branch. Refused while a step runs.
+  Its tickets join the draft. Refused while a step runs.
 lingtai pr summary [<project>] [--file <path>] [--json] [--no-color]
   Prints the open PR’s summary. --file replaces it with the file’s text
   and waits for the description to be pushed to GitHub. Only the summary
