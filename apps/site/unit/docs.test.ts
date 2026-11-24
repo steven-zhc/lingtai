@@ -140,6 +140,37 @@ describe('concepts is chapter 4, one attempt', () => {
   })
 })
 
+describe('safety is chapter 10, what an agent can reach', () => {
+  it('stays between 600 and 800 words, in four sections, with no Next, and keeps every limit', async () => {
+    const body = await readFile(path.join(docRoot, 'safety.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1387
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual([
+      'What the sandbox refuses and allows',
+      'Turning it on',
+      'What the sandbox does not cover',
+      'When the host cannot sandbox',
+    ])
+    for (const limit of [
+      "**The run's own token is readable inside it.**",
+      "**Codex's login is readable to a Codex run**",
+      '**The Copilot token is readable to a Copilot run**',
+      '**A refused file read is not reported.**',
+      '**`srt` is a research preview**',
+      "**On macOS a run can read other processes' command lines**",
+      '**On Linux every Unix socket is reachable**',
+      '**unsandboxed**',
+    ]) {
+      expect(body).toContain(limit)
+    }
+  })
+})
+
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')

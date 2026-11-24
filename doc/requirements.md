@@ -74,6 +74,7 @@ Where a table says "any recent", the code does not check a version.
 | `open` (macOS) or `xdg-open` (Linux) | Optional | Any recent | Opens the board or the GitHub App page in your browser; without it Lingtai prints the address | None | `apps/cli/src/board-world.ts:56`, `apps/cli/src/init.ts:1054` |
 | `terminal-notifier` or `osascript` (macOS) | Optional, for desktop notifications | Any recent | Shows a notification when a question is waiting; `osascript` ships with macOS and is the fallback | None | `apps/cli/src/notify.ts:68`, `:124` |
 | `$EDITOR` | Optional, for `lingtai ticket` | Any | Opens the ticket form | None | `apps/cli/src/ticket.ts:87` |
+| `srt` sandbox, on a host that can run it | A project's recipe has `sandbox.enabled` ([safety](safety.md#turning-it-on)) | Pinned by Lingtai | Wraps every agent run | `sandbox: host` and `sandbox: <project>`; with a live canary of four commands through the run's own wrapper (a planted file under a denied path and a host off the allowlist must fail; two controls must succeed), run only where the host can sandbox and some project asks for it | `apps/cli/src/doctor.ts`, `apps/cli/src/sandbox-canary.ts` |
 
 ## Services Lingtai reaches
 
@@ -100,8 +101,29 @@ it.
 | A GitHub App you create and install on the repository | The project is a GitHub one run by a team ([0114](https://github.com/steven-zhc/lingtai/blob/main/doc/decisions/0114-a-github-app-not-a-token.md)). A `--local` project needs none | Lingtai acts on GitHub as the App, not as you | `github: app credentials` (`skip` under `gh`). `lingtai add` checks the App's permissions before it records a repository |
 | GitHub access for `git` | You run `git` against the repository yourself, and for a remote that is not served by the App | A run's own push and fetch use an installation token of the App in App mode, and the token `gh auth token` prints in `gh` mode (`packages/repo/src/git.ts:47`, `packages/github/src/client.ts:382`), so they need no personal key; your own clone and any push you make use your SSH key or credentials, which Lingtai does not store | None |
 | A separately billed OpenAI API key (`codex_text`) | The runtime is `codex` and discussion or triage is model-only | The Responses API is called directly, and the Codex login does not supply the key. Put the `codex_text` block from `config.example.yml` in `~/.lingtai/config.yml` (the example file itself is never read), or export it as `LINGTAI_CODEX_TEXT_*` variables (`packages/env/src/index.ts:187`) | `discuss: <project> codex ready` and `triage: <project> codex ready` |
+| A Claude token, for a sandboxed run | A project is sandboxed and a role runs `claude-code`: the login in `~/.claude/.credentials.json` is denied to the run | The run uses a long-lived token instead ([below](#tokens-for-a-sandboxed-run)) | None |
+| A Copilot token, for a sandboxed run | A project is sandboxed and a step names `copilot` | The run is handed a fine-grained token instead of `gh`'s login ([below](#tokens-for-a-sandboxed-run)) | None |
 | Postgres credentials | `database.url` is set | Part of the URL | `postgres: pooled connection` |
 | A Telegram bot | A `telegram` subscriber is in your recipe | To post as | None |
+
+### Tokens for a sandboxed run
+
+`lingtai token claude` and `lingtai token copilot` make them ([`cli.md`](cli.md#lingtai-token)). Revoking either is yours to do.
+
+- **Claude.** `claude setup-token`'s result is saved as `claude.oauth_token` in
+  `~/.lingtai/config.yml`; `LINGTAI_CLAUDE_OAUTH_TOKEN` is read first. The run
+  gets it as `CLAUDE_CODE_OAUTH_TOKEN`, and a configuration directory of its own
+  with the hook settings and copies of your user-level `CLAUDE.md`, `skills/` and
+  `agents/`, but no MCP servers, plugins, `settings.json` or login
+  (`apps/cli/src/claude-token.ts`).
+- **Copilot.** A fine-grained personal access token (`github_pat_…`), owned by
+  your own account, with only the *Copilot Requests* account permission. It is
+  not `gh`'s login: that can reach your repositories, and this token cannot. A
+  classic `ghp_` token is silently ignored by Copilot, so the command refuses it
+  by name. It is saved as `copilot.github_token`;
+  `LINGTAI_COPILOT_GITHUB_TOKEN` is read first and wins over the file. Only the
+  token's shape is checked, not its permission or expiry
+  (`apps/cli/src/copilot-token.ts`).
 
 `lingtai doctor` reports sign-in through `runtime: signed in` (any runtime) and
 `runtime: <project> signed in` (the runtime that project dispatches), both off
