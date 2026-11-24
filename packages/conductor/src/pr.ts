@@ -81,8 +81,6 @@ export interface PrPorts {
   readonly store: EventStore
   /** The project's resolved recipe: its mode and its two branches. */
   recipe(project: string): Effect.Effect<Recipe, Error>
-  /** Every ticket the draft may hold — the landed ones, over a window that covers all of them. */
-  candidates(project: string): Effect.Effect<readonly { readonly issue: string }[], Error>
   /** Brings the project's mirror up to date with the remote. */
   fetch(project: string): Effect.Effect<void, Error>
   /** Runs `git` in the project's mirror. A non-zero exit is an answer, not a failure. */
@@ -207,7 +205,7 @@ export type PrRecord = (project: string, n: number, store: EventStore) => Effect
 
 /** What a step answers. `again` records nothing: the next serve runs it again. */
 export type StepAnswer =
-  | { readonly kind: 'done'; readonly headSha: string; readonly record?: PrRecord }
+  | { readonly kind: 'done'; readonly headSha: string; readonly record?: PrRecord; readonly main?: string }
   | {
       readonly kind: 'wait'
       readonly reason: PayloadOf<'PrWaiting'>['reason']
@@ -748,13 +746,20 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
     // frozen commit can hold a ticket the draft cannot yet name. Its integration is attempted before it pushes, so
     // once the commit is read a landing that reached it is visible on the lane: wait it out, and read the commit again.
     const verify = ['rev-parse', '--verify', '--quiet', `refs/heads/${personal}^{commit}`] as const
+    const mainVerify = ['rev-parse', '--verify', '--quiet', `refs/heads/${main}^{commit}`] as const
     let frozenSha = ''
+    let mainSha = ''
     for (let look = 0; ; look++) {
       yield* ports.fetch(project)
       const head = yield* ports.git(project, verify)
       if (head.code === 1) return yield* refuse('personal-missing', `${personal} is not in the mirror`)
       if (head.code !== 0) return yield* refuse('git', gitSaid(verify, head))
       frozenSha = head.stdout.trim()
+      // `main` comes from the same fetch as the personal head: the tickets it already holds are not this PR's.
+      const mainHead = yield* ports.git(project, mainVerify)
+      if (mainHead.code === 1) return yield* refuse('main-missing', `${main} is not in the mirror`)
+      if (mainHead.code !== 0) return yield* refuse('git', gitSaid(mainVerify, mainHead))
+      mainSha = mainHead.stdout.trim()
       const pending: string[] = []
       for (const landing of yield* landingsInFlight(project, personal, ports.store)) {
         // A landing whose push is certain is owed. One nobody finished is for git to say: the frozen commit holds the
@@ -779,7 +784,24 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
       yield* Effect.sleep(ports.landingWaitMs ?? 1000)
     }
 
-    // The candidates are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
+    // The PR branch is named once per freeze, so a retry reuses the answer. A name is taken if the remote has it or an
+    // earlier PR of this project recorded it (a merged PR's branch is usually deleted, and the mirror prunes it).
+    const base = `${personal}-pr-${n}`
+    const lsArgs = ['ls-remote', '--heads', 'origin', `refs/heads/${base}*`] as const
+    const listed = yield* ports.remote(project, lsArgs)
+    if (listed.code !== 0) return yield* refuse('git', gitSaid(lsArgs, listed))
+    const taken = new Set<string>()
+    for (const line of listed.stdout.split('\n')) {
+      const name = line.trim().split('\t')[1]
+      if (name?.startsWith('refs/heads/')) taken.add(name.slice('refs/heads/'.length))
+    }
+    for (const other of yield* listPrs(project, ports.store)) {
+      if (other.n !== n && other.prBranch !== null) taken.add(other.prBranch)
+    }
+    let prBranch = base
+    for (let k = 2; taken.has(prBranch); k++) prBranch = `${base}-${k}`
+
+    // The tickets are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
     // at: a landing between the read and the write moves the stream, the write fails, and the whole block runs once
     // more — reads the list, asks git, decides — so a list that lacks a ticket the commit holds is never frozen.
     // A ticket landed after `frozenSha` is not an ancestor on the second pass either, and goes to the next draft.
@@ -793,7 +815,16 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
           recordPrRefused(project, n, { reason, detail }, ports.store, state).pipe(Effect.asVoid)
         const held: PayloadOf<'PrInProgress'>['tickets'] = []
         const notKept: PayloadOf<'PrDraftTicketAdded'>[] = []
+        const onMain: string[] = []
         for (const t of state.draft) {
+          // Already on `main` (a PR merged by hand): neither held nor kept for the next draft. Only 0 and 1 answer.
+          const onMainAsk = ['merge-base', '--is-ancestor', t.mergeCommit, mainSha] as const
+          const onMainAnswer = yield* ports.git(project, onMainAsk)
+          if (onMainAnswer.code === 0) {
+            onMain.push(t.ticket)
+            continue
+          }
+          if (onMainAnswer.code !== 1) return yield* refuseAt('git', gitSaid(onMainAsk, onMainAnswer))
           const ask = ['merge-base', '--is-ancestor', t.mergeCommit, frozenSha] as const
           const answer = yield* ports.git(project, ask)
           // 0 yes, 1 no; anything else is git failing, never *not an ancestor*.
@@ -813,13 +844,18 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
         if (held.length === 0) {
           return yield* refuseAt(
             'nothing-landed',
-            `no ticket has landed on ${personal} that a PR does not already hold`,
+            onMain.length > 0
+              ? `no ticket has landed on ${personal} that a PR does not already hold; ${onMain.map((t) => `#${t}`).join(', ')} already on ${main}`
+              : `no ticket has landed on ${personal} that a PR does not already hold`,
           )
         }
-        yield* recordPrInProgress(project, n, { branch: personal, main, frozenSha, tickets: held }, ports.store, {
-          state,
-          notKept,
-        })
+        yield* recordPrInProgress(
+          project,
+          n,
+          { branch: personal, main, frozenSha, prBranch, tickets: held },
+          ports.store,
+          { state, notKept },
+        )
       }),
     )
   })
@@ -885,7 +921,12 @@ export const walkPr = (
       }
       const record = answer.record
       if (record === undefined) {
-        yield* recordPrStepDone(project, n, { step: next.name, headSha: answer.headSha }, ports.store)
+        yield* recordPrStepDone(
+          project,
+          n,
+          { step: next.name, headSha: answer.headSha, ...(answer.main === undefined ? {} : { main: answer.main }) },
+          ports.store,
+        )
       } else {
         yield* record(project, n, ports.store)
       }
@@ -1334,7 +1375,7 @@ const closeMergedTickets = (
 const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     if (pr.n === null) return
-    const landings = yield* readUnheldFixLandings(project, pr, yield* ports.candidates(project), ports.store)
+    const landings = yield* readUnheldFixLandings(project, pr, ports.store)
     for (const landed of landings) yield* recordPrFixLanded(project, pr.n, landed, ports.store)
   })
 

@@ -1,7 +1,7 @@
 'use client'
 
 /**
- * The summary, the one field a person edits on a PR's page (#1320): a textarea over the summary alone, and under a rule the
+ * The summary, the one field a person edits on a PR's page (#1320): a Markdown field over the summary alone, and under a rule the
  * generated rest of the description — the tickets and the `Closes #…` line — read-only, because an edit to a
  * `Closes` line would silently stop a ticket closing. Save calls `savePrSummaryNow` with the summary and nothing else.
  */
@@ -10,6 +10,7 @@ import { type ReactNode, useState, useTransition } from 'react'
 import type { PageSummary } from '@/lib/pr-page.ts'
 
 import { savePrSummaryNow } from './actions.ts'
+import { MarkdownField } from './markdown-field.tsx'
 
 export function PrSummaryEditor({
   project,
@@ -41,12 +42,12 @@ export function PrSummaryEditor({
   }
   return (
     <div className="prp-summary">
-      <textarea
+      <MarkdownField
         aria-label="Summary"
         className="prp-textarea"
         value={text}
         readOnly={!summary.editable}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
         rows={6}
       />
       {summary.refusal === null ? (

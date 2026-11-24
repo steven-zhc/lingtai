@@ -21,7 +21,7 @@ import {
   freezeTransition,
   landedSeq,
   landingsStarted,
-  teamSince,
+  parseTicketStream,
   refuseTransition,
   stepDoneTransition,
   pushedTransition,
@@ -62,12 +62,10 @@ import {
   integrationStream,
 } from '@lingtai/domain'
 import { ConcurrencyError, type EventStore, type StreamBatch } from '@lingtai/event-store/store'
-import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
 
 import { withOneRetry } from './commands.ts'
-import { readProjectEvents } from './state.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -152,12 +150,13 @@ export function draftBatchFor(
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
 export function readDraft(project: string, store: EventStore): Effect.Effect<PrState['draft'], Error> {
-  return listPrs(project, store).pipe(
-    Effect.map((prs) => {
-      const top = prs[prs.length - 1]
-      return top !== undefined && top.status === 'draft' ? top.draft : []
-    }),
-  )
+  return listPrs(project, store).pipe(Effect.map(draftIn))
+}
+
+/** The draft among PRs already read: the highest one's tickets while it is `draft`, else none. One read, one answer. */
+export function draftIn(prs: readonly PrState[]): PrState['draft'] {
+  const top = prs[prs.length - 1]
+  return top !== undefined && top.status === 'draft' ? top.draft : []
 }
 
 /** Appends one PR's transition at the head it was read at, if the transition decides anything. */
@@ -598,124 +597,37 @@ export function isTeamSource(source: string): boolean {
 }
 
 /**
- * **The draft**: the project's tickets landed on `branch.personal` since it became a team project and held by no PR
- * that is still going. Empty in solo mode.
- *
- * `candidates` are handed in — the board's cards with a window that covers every landed row, **never the board's
- * two-day default**, which would lose every ticket landed longer ago — and each is decided from its own stream's
- * reduce (0129 §6). A ticket a person closed after it landed counts (0130 §4). A failed read fails the whole read:
- * it is never *no tickets*.
+ * The branch a landing joins the draft on, from a recorded recipe text: `branch.personal` of a `mode: team` recipe, or
+ * null where the text is not team or names none. The live pass joins the draft for exactly this base (`draftOfLanding`).
  */
-export function readPrDraft(
-  project: string,
-  recipe: Recipe,
-  candidates: readonly { readonly issue: string }[],
-  store: EventStore,
-  prs?: readonly PrState[],
-): Effect.Effect<PrDraftTicket[], Error> {
-  return Effect.gen(function* () {
-    if (modeOf(recipe) !== 'team') return []
-    return yield* readDraftOn(project, recipe.branch.personal ?? recipe.branch.main, candidates, store, prs)
-  })
+export function draftBranchOf(source: string): string | null {
+  try {
+    if (!isTeamSource(source)) return null
+    const raw = parseYaml(source) as { branch?: { personal?: unknown } } | null
+    const personal = raw?.branch?.personal
+    return typeof personal === 'string' ? personal : null
+  } catch {
+    return null
+  }
 }
-
-/** The most times `backfillDraft` reads and decides again after the stream moved under it. */
-const BACKFILL_ATTEMPTS = 3
 
 /**
- * **Temporary** (#1394): writes onto the draft's stream each ticket the computed draft holds and the stream lacks, and
- * returns how many it appended. Those tickets landed before any landing wrote `PrDraftTicketAdded`. It is the last
- * caller of the computed draft (`readPrDraft`) and goes with it; keep it in one function with one call site.
- *
- * The PR streams are read once per attempt and the list serves both `wanted` and the target. One `append`, at the
- * version read: all of a project's tickets or none. A `ConcurrencyError` reads again and decides again, up to three
- * times, then fails. A failed read fails the backfill, never "an empty draft". Solo projects append nothing.
- *
- * `candidates` come from the board's projection, which may lag at a start: a ticket landed and not yet projected is
- * missing from `wanted`, so it is only ever under-added, and the next start picks it up.
+ * The tickets the draft holds, each with its title: `readDraft`'s list in the stream's order (the order they joined),
+ * and one read of each ticket's own stream for the title (`#<issue>` where it has none). Only the PR streams and the
+ * draft's tickets are read — never every ticket that ever landed. A failed read fails the whole read: it is never
+ * *no tickets*.
  */
-export function backfillDraft(
-  project: string,
-  recipe: Recipe,
-  candidates: readonly { readonly issue: string }[],
-  store: EventStore,
-): Effect.Effect<number, Error> {
-  const once = Effect.gen(function* () {
-    if (modeOf(recipe) !== 'team') return 0
-    const prs = yield* listPrs(project, store)
-    const wanted = yield* readPrDraft(project, recipe, candidates, store, prs)
-    const target = draftOf(prs)
-    const top = prs[prs.length - 1]
-    const state = target.state === null || top === undefined ? emptyPr : top
-    const have = new Set((target.state === null || top === undefined ? [] : top.draft).map((t) => t.ticket))
-    const events: NonNullable<ReturnType<typeof addDraftTicket>>[] = []
-    for (const t of wanted) {
-      if (have.has(t.ticket)) continue
-      const event = addDraftTicket(state, { ticket: t.ticket, mergeCommit: t.mergeCommit, from: null })
-      if (event === null)
-        return yield* Effect.die(new Error(`the draft of ${project} refused a ticket in ${state.status}`))
-      events.push(event)
-    }
-    if (events.length === 0) return 0
-    yield* Effect.tryPromise({
-      try: () => store.append(prStream(project, target.n), target.version, events),
-      catch: (err) => err,
-    }).pipe(Effect.mapError((err) => (err instanceof ConcurrencyError ? err : failed(err))))
-    return events.length
-  })
-  const attempt = (left: number): Effect.Effect<number, Error> =>
-    once.pipe(
-      Effect.catchIf(
-        (err): err is ConcurrencyError => err instanceof ConcurrencyError && left > 1,
-        () => attempt(left - 1),
-      ),
-    )
-  return attempt(BACKFILL_ATTEMPTS)
-}
-
-/** The draft against a named personal branch: `readPrDraft` without the recipe, for a caller that holds only text. */
-export function readDraftOn(
-  project: string,
-  personal: string,
-  candidates: readonly { readonly issue: string }[],
-  store: EventStore,
-  /** The PRs, where the caller has read them already: the stream is then not read a second time, and a caller whose read of one failed does not pass any. */
-  prs?: readonly PrState[],
-): Effect.Effect<PrDraftTicket[], Error> {
+export function readDraftTickets(project: string, store: EventStore): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
-    const since = teamSince(yield* readProjectEvents(project, store), isTeamSource)
-
-    const held = new Set<string>()
-    // A pr-fix the PR held when a merge back carried it, and whose PR then closed unmerged: its code is on the
-    // personal branch, so it is a draft ticket like the PR's own. Per ticket, never per branch (#1341): a later fix on
-    // the branch, or one the PR was never told of, is not on the personal branch.
-    const mergedBack = new Map<string, string>()
-    for (const pr of prs ?? (yield* listPrs(project, store))) {
-      if (pr.status === 'closed') {
-        if (pr.prBranch !== null) for (const t of pr.mergedBackTickets) mergedBack.set(t, pr.prBranch)
-        continue
-      }
-      if (pr.status === 'refused') continue
-      for (const t of pr.tickets) held.add(t.ticket)
+    const draft = yield* readDraft(project, store)
+    const tickets: PrDraftTicket[] = []
+    for (const t of draft) {
+      const state = reduceTicket(
+        yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, t.ticket)), catch: failed }),
+      )
+      tickets.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: state.title ?? `#${t.ticket}` })
     }
-
-    const landedAtTime = new Map<string, number>()
-    const draft: PrDraftTicket[] = []
-    for (const { issue } of candidates) {
-      if (held.has(issue)) continue
-      const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
-      const state = reduceTicket(events)
-      if (state.landed === null) continue
-      const onBase = state.landed.base
-      if (onBase !== personal && mergedBack.get(issue) !== onBase) continue
-      const landedAt = landedSeq(events, onBase)
-      if (landedAt === null || landedAt <= since) continue
-      const landing = events.find((e) => e.seq === landedAt)
-      landedAtTime.set(issue, landing === undefined ? 0 : landing.at.getTime())
-      draft.push({ ticket: issue, mergeCommit: state.landed.mergeCommit, title: state.title ?? `#${issue}` })
-    }
-    // In the order they landed, not the order of their numbers; a tie keeps the candidates' order.
-    return draft.sort((a, b) => (landedAtTime.get(a.ticket) ?? 0) - (landedAtTime.get(b.ticket) ?? 0))
+    return tickets
   })
 }
 
@@ -723,23 +635,39 @@ export function readDraftOn(
  * The pr-fix landings on an open PR's branch that the PR does not hold (#1341): tickets whose latest landing is on
  * `prBranch` and are not among the PR's tickets, so a process that died between `TicketLanded` and `PrFixLanded` is
  * mended on the next sweep. A PR's branch is named for it alone, so nothing landed there is anything but its fix.
+ *
+ * The candidates are the tickets named on the PR branch's integration stream — every ticket with an attempt, a refusal
+ * or a success there, not only each one's last event, so a ticket that landed and was later refused again is still
+ * found. Each is decided by its own stream; one that never landed on the branch is skipped.
  */
 export function readUnheldFixLandings(
   project: string,
   pr: PrState,
-  candidates: readonly { readonly issue: string }[],
   store: EventStore,
 ): Effect.Effect<PayloadOf<'PrFixLanded'>[], Error> {
   return Effect.gen(function* () {
     const unheld: PayloadOf<'PrFixLanded'>[] = []
     const order = new Map<string, bigint>()
-    if (pr.prBranch === null) return unheld
-    for (const { issue } of candidates) {
+    const branch = pr.prBranch
+    if (branch === null) return unheld
+    const lane = yield* Effect.tryPromise({
+      try: () => store.read(integrationStream(project, branch)),
+      catch: failed,
+    })
+    // An integration event's `ticketId` is the ticket's stream id; the issue is what the PR holds.
+    const named = new Set<string>()
+    for (const e of lane) {
+      if (e.type !== 'IntegrationAttempted' && e.type !== 'IntegrationRefused' && e.type !== 'IntegrationSucceeded')
+        continue
+      const parsed = parseTicketStream((e.data as { ticketId: string }).ticketId)
+      if (parsed !== null && parsed.project === project) named.add(parsed.issue)
+    }
+    for (const issue of named) {
       if (pr.tickets.some((t) => t.ticket === issue)) continue
       const events = yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, issue)), catch: failed })
       const state = reduceTicket(events)
-      if (state.landed === null || state.landed.base !== pr.prBranch) continue
-      const landedAt = landedSeq(events, pr.prBranch)
+      if (state.landed === null || state.landed.base !== branch) continue
+      const landedAt = landedSeq(events, branch)
       if (landedAt === null) continue
       order.set(issue, landedAt)
       unheld.push({

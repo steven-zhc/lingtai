@@ -56,6 +56,7 @@ import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
 import type { ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
+import { paint } from '@lingtai/env/colour'
 import type { Locker } from '@lingtai/env/lock'
 import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
@@ -70,7 +71,7 @@ import { readTasksEffect } from '@lingtai/projector'
 import { branchOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
-import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
+import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import {
   alreadyAddedSentence,
   applySetup,
@@ -989,6 +990,16 @@ function runLocalBranch(
           }),
       },
     )
+
+    // A local directory keeps `db`; where its origin is on GitHub the proposal's own line says how to
+    // take that repository's issues. The no-origin and kept: lines are not that hint.
+    if (
+      proposal.tickets.known &&
+      !proposal.tickets.because.startsWith('kept:') &&
+      proposal.tickets.because !== NO_GITHUB_ORIGIN
+    ) {
+      world.log(paint.muted(`tickets       db — ${proposal.tickets.because}`))
+    }
 
     // A repair of a registered project (#772) changes what it moves and nothing else: no questionnaire,
     // so no answer can touch another setting of a recipe that is edited by hand.

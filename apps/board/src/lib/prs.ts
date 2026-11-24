@@ -14,9 +14,8 @@ import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import { type PrDraftTicket, openPr, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
+import { type PrDraftTicket, openPr, readDraftTickets, readPr, readPrEvents, readProject } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
-import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -91,30 +90,12 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
   })
 
 /**
- * The draft, decided from every PR's tickets, so one stream that could not be read leaves it unknown — said as such where
- * the draft would be, while every PR that was read is still drawn. **Never an empty draft** for a read that failed. The PRs
+ * The draft, read from the draft PR's own stream, each ticket with its title. A read that fails is said as such where the
+ * draft would be, while every PR that was read is still drawn. **Never an empty draft** for a read that failed. The PRs
  * board and a PR's page both ask here, so the two cannot decide the draft differently.
  */
-export const readDraftOf = (
-  project: string,
-  recipe: Recipe,
-  prs: readonly PrRead[],
-): Effect.Effect<PrDraftTicket[] | { error: string }> => {
-  const unread = prs.find((r) => !('pr' in r))
-  if (unread !== undefined) return Effect.succeed({ error: `PR ${unread.n} could not be read` })
-  return Effect.gen(function* () {
-    const cards = yield* readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
-      Effect.mapError(failed),
-    )
-    return yield* readPrDraft(
-      project,
-      recipe,
-      cards.map((c) => ({ issue: c.issue })),
-      eventStore,
-      prs.flatMap((r) => ('pr' in r ? [r.pr] : [])),
-    )
-  }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
-}
+export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { error: string }> =>
+  readDraftTickets(project, eventStore).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
 export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
@@ -151,7 +132,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const prs = yield* readProjectPrs(project, eventStore)
-        const draft = yield* readDraftOf(project, recipe, prs)
+        const draft = yield* readDraftOf(project)
         const spend = yield* spendByPr(
           project,
           prs.map((r) => r.n),
@@ -203,7 +184,7 @@ export async function readLandedWhere(project: string): Promise<LandedWhereRead>
     return await Effect.runPromise(
       Effect.gen(function* () {
         const prs = yield* readProjectPrs(project, eventStore)
-        const draft = yield* readDraftOf(project, recipe, prs)
+        const draft = yield* readDraftOf(project)
         return { kind: 'team', prs, draft } as const
       }),
     )
@@ -321,7 +302,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         const now = new Date()
         if (n === 'next') {
           const prs = yield* readProjectPrs(project, eventStore)
-          const draft = yield* readDraftOf(project, recipe, prs)
+          const draft = yield* readDraftOf(project)
           const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
           const view = prPage({
             project,
@@ -450,7 +431,7 @@ export const readOnBranch = (project: string): Effect.Effect<OnBranchPageRead> =
     if (modeOf(recipe) !== 'team') return { kind: 'none' } as const
     const read: OnBranchRead = yield* Effect.gen(function* () {
       const prs = yield* readProjectPrs(project, eventStore)
-      const draft = yield* readDraftOf(project, recipe, prs)
+      const draft = yield* readDraftOf(project)
       return { prs, draft }
     }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
     return { kind: 'team', recipe, owner: state.owner ?? null, read } as const

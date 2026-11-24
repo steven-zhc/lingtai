@@ -1,7 +1,7 @@
 import { makeGuard } from '@lingtai/daemon'
 import { CONTROL_STREAM } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { ProjectionLag } from '@lingtai/projector'
+import type { ProjectionLag, SpendRow } from '@lingtai/projector'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -65,6 +65,30 @@ describe('the daily ceiling and a stalled spend projection (#650)', () => {
 
   it('treats a lagging projection that never moved as stalled', () => {
     expect(spendStall([spend(2n, null)], now)).toMatch(/has never moved/)
+  })
+
+  it('measures quiet from this process start when it is later than the checkpoint (#1016)', async () => {
+    const day = 25 * 3600_000
+    const at = (ms: number) => new Date(now.getTime() - ms)
+    expect(spendStall([spend(1n, day)], now, at(10_000))).toBeNull()
+    expect(spendStall([spend(1n, day)], now, at(120_000))).toMatch(/1 behind/)
+    expect(spendStall([spend(1n, day)], now)).toMatch(/1 behind/)
+    expect(spendStall([spend(1n, null)], now, at(10_000))).toBeNull()
+    // a stall after the start still reports when the checkpoint last moved, not how long this process has run
+    expect(spendStall([spend(1n, day)], now, at(120_000))).toMatch(/last moved 1500m ago/)
+  })
+
+  it("answers the day's spend, not a failure, for a projection catching up since the start (#1016)", async () => {
+    const day = 25 * 3600_000
+    const row = { at: now, costUsd: 1.5, estimatedUsd: null, estimateFetched: null, usage: {} } as unknown as SpendRow
+    const spent = await Effect.runPromise(
+      ceilingPort(createMemoryEventStore(), {
+        ...ports(() => Effect.succeed([spend(1n, day)])),
+        rows: () => Effect.succeed([row]),
+        startedAt: new Date(now.getTime() - 10_000),
+      }).todaysSpend(now),
+    )
+    expect(spent.reportedCents).toBe(150)
   })
 
   it('does not call a caught-up row stalled', () => {

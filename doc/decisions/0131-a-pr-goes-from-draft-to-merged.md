@@ -73,7 +73,7 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 
    | # | Step | What it does | When it cannot go on |
    |---|---|---|---|
-   | 1 | Freeze | fixes `branch.personal` at one commit as the PR's content; keeps the draft's tickets whose merge commit that commit holds, and hands the rest to the next draft in the same transaction | — |
+   | 1 | Freeze | fixes `branch.personal` at one commit as the PR's content; keeps the draft's tickets whose merge commit that commit holds, and hands the rest to the next draft in the same transaction; a ticket whose merge commit `main` already holds (a PR merged by hand) is not held and not handed on — it drops out; the PR branch is `<personal>-pr-<n>`, or `-2`, `-3`, … when the remote or an earlier PR of the project already has the name | — |
    | 2 | Bring `main` in | nothing when `main` is already an ancestor; otherwise merged in the merge lane's turn (§3) | a conflict → the conflict agent; its rounds spent → **waiting on you** |
    | 3 | Build | the result is built before it is pushed | red after a merge → the conflict agent (§3); red with nothing merged → **waiting on you** |
    | 4 | Others' commits | fetches the remote PR branch and merges in what others pushed (§4); nothing to do on the first submit | a conflict or a red build → the conflict agent; a force-push or a deleted branch → **waiting on you** |

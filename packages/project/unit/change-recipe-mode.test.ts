@@ -8,7 +8,7 @@ import { describe, expect, it } from 'vitest'
 
 import { modeSwitchMessage } from '../src/change.ts'
 import { ProjectFiles, changeRecipe, recipePath } from '../src/index.ts'
-import { recordPrClosed, recordPrDraftOpened, recordPrInProgress, recordPrMerged } from '../src/pr.ts'
+import { draftTarget, recordPrClosed, recordPrDraftOpened, recordPrInProgress, recordPrMerged } from '../src/pr.ts'
 /** `changeRecipe` refuses team → solo while work is stranded (0130 §1, #1328): memory log, `Map` files. */
 import { submitPr } from '../test/submit.ts'
 
@@ -32,6 +32,7 @@ const TEAM = `mode: team\n${BODY.replace('main: main', 'main: main\n  personal: 
 const SOLO = `mode: solo\n${BODY}`
 const NONE = BODY
 
+/** A ticket that landed on `base`, and (for `team`) joined the draft — what a landing writes (ADR 0131 §2). */
 async function ticket(store: EventStore, issue: string, base: string, closed = false) {
   await store.append(ticketStream('app', issue), 0, [
     {
@@ -42,12 +43,18 @@ async function ticket(store: EventStore, issue: string, base: string, closed = f
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: `m${issue}`, base } },
     ...(closed ? [{ type: 'TicketClosed', actor: 'human:me', data: { by: 'human:me', reason: 'done' } }] : []),
   ])
+  if (base !== 'team') return
+  const target = await Effect.runPromise(draftTarget('app', store))
+  await store.append(prStream('app', target.n), target.version, [
+    { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
+  ])
 }
 
 const frozen = (tickets: string[]) => ({
   branch: 'team',
   main: 'main',
   frozenSha: 'f'.repeat(40),
+  prBranch: 'lingtai-team-pr-1',
   tickets: tickets.map((t) => ({ ticket: t, mergeCommit: `m${t}`, title: `t${t}` })),
 })
 
@@ -67,8 +74,7 @@ async function world(initial: string, onRead?: (stream: string) => void) {
     read: async (p) => disk.get(p) ?? null,
     replace: async (p, t) => void disk.set(p, t),
   }
-  const candidates = (issues: string[]) => () => Effect.succeed(issues.map((issue) => ({ issue })))
-  const save = (next: string, issues: string[] = [], withPort = true) =>
+  const save = (next: string) =>
     Effect.runPromise(
       changeRecipe(
         'app',
@@ -79,10 +85,10 @@ async function world(initial: string, onRead?: (stream: string) => void) {
           signedIn: async () => ['claude-code' as const],
           hostFacts: fakeSandboxHost().hostFacts,
         },
-        { by: 'human:me', store, home: HOME, ...(withPort ? { candidates: candidates(issues) } : {}) },
+        { by: 'human:me', store, home: HOME },
       ).pipe(Effect.provideService(ProjectFiles, files)),
     )
-  return { disk, store, save, files, candidates }
+  return { disk, store, save, files }
 }
 
 describe('team → solo', () => {
@@ -90,7 +96,7 @@ describe('team → solo', () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team')
     const before = (await w.store.read(projectStream('app'))).length
-    const r = await w.save(SOLO, ['43'])
+    const r = await w.save(SOLO)
     expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
     expect((r as { message: string }).message).toContain('#43')
     expect(w.disk.get(PATH)).toBe(TEAM)
@@ -100,18 +106,18 @@ describe('team → solo', () => {
   it('is refused the same way for a ticket a person closed after it landed', async () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team', true)
-    expect(await w.save(SOLO, ['43'])).toMatchObject({ ok: false, reason: 'mode-switch' })
+    expect(await w.save(SOLO)).toMatchObject({ ok: false, reason: 'mode-switch' })
   })
 
   it('is refused naming an open PR with an empty draft, whatever its column', async () => {
     const w = await world(TEAM)
     await ticket(w.store, '43', 'team')
     await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
-    const r = await w.save(SOLO, ['43'])
+    const r = await w.save(SOLO)
     expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
     expect((r as { message: string }).message).toContain('PR #1 is open')
     await Effect.runPromise(recordPrInProgress('app', 1, frozen(['43']), w.store))
-    expect(await w.save(SOLO, ['43'])).toMatchObject({ ok: false, reason: 'mode-switch' })
+    expect(await w.save(SOLO)).toMatchObject({ ok: false, reason: 'mode-switch' })
   })
 
   it('is written when the only PR is merged and nothing landed since', async () => {
@@ -120,7 +126,7 @@ describe('team → solo', () => {
     await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
     await Effect.runPromise(recordPrInProgress('app', 1, frozen(['43']), w.store))
     await Effect.runPromise(recordPrMerged('app', 1, { how: 'host', headSha: 'a'.repeat(40), mergeSha: null }, w.store))
-    expect(await w.save(SOLO, ['43'])).toMatchObject({ ok: true, written: true })
+    expect(await w.save(SOLO)).toMatchObject({ ok: true, written: true })
     expect(w.disk.get(PATH)).toBe(SOLO)
   })
 
@@ -133,7 +139,7 @@ describe('team → solo', () => {
       recordPrDraftOpened('app', 1, { number: 9, nodeId: 'n', url: 'u', found: 'opened' }, w.store),
     )
     await Effect.runPromise(recordPrClosed('app', 1, { headSha: 'a'.repeat(40) }, w.store))
-    const r = await w.save(SOLO, ['43'])
+    const r = await w.save(SOLO)
     expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
     expect((r as { message: string }).message).toContain('#43')
   })
@@ -150,25 +156,20 @@ describe('team → solo', () => {
             { path: ['branch', 'personal'], value: undefined },
           ],
         },
-        { by: 'human:me', store: w.store, home: HOME, candidates: w.candidates(['43']) },
+        { by: 'human:me', store: w.store, home: HOME },
       ).pipe(Effect.provideService(ProjectFiles, w.files)),
     )
     expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
     expect(w.disk.get(PATH)).toBe(TEAM)
   })
 
-  it('is refused by name when the caller gave no way to read the draft', async () => {
+  it('fails the change, writing nothing, when a PR stream cannot be read', async () => {
     const w = await world(TEAM)
-    expect(await w.save(SOLO, [], false)).toMatchObject({ ok: false, reason: 'mode-switch' })
-    expect(w.disk.get(PATH)).toBe(TEAM)
-  })
-
-  it('fails the change, writing nothing, when a ticket stream cannot be read', async () => {
-    const w = await world(TEAM)
+    await ticket(w.store, '43', 'team')
     const read = w.store.read.bind(w.store)
     w.store.read = ((s: string, ...r: unknown[]) =>
-      s.startsWith('ticket-') ? Promise.reject(new Error('boom')) : (read as any)(s, ...r)) as typeof w.store.read
-    await expect(w.save(SOLO, ['43'])).rejects.toThrow('boom')
+      s.startsWith('pr-') ? Promise.reject(new Error('boom')) : (read as any)(s, ...r)) as typeof w.store.read
+    await expect(w.save(SOLO)).rejects.toThrow('boom')
     expect(w.disk.get(PATH)).toBe(TEAM)
   })
 })
@@ -180,18 +181,18 @@ describe('every other change reads no ticket or PR stream', () => {
 
   it('solo → team is written', async () => {
     const w = await world(SOLO, guard)
-    const r = await w.save(TEAM, [], false)
+    const r = await w.save(TEAM)
     expect(r).toMatchObject({ ok: true, written: true })
   })
 
   it('mode: solo over a file that named none is written', async () => {
     const w = await world(NONE, guard)
-    expect(await w.save(SOLO, [], false)).toMatchObject({ ok: true, written: true })
+    expect(await w.save(SOLO)).toMatchObject({ ok: true, written: true })
   })
 
   it('a team edit that stays team is written', async () => {
     const w = await world(TEAM, guard)
-    expect(await w.save(TEAM.replace('[bug]', '[bug, feature]'), [], false)).toMatchObject({ ok: true })
+    expect(await w.save(TEAM.replace('[bug]', '[bug, feature]'))).toMatchObject({ ok: true })
   })
 })
 
@@ -205,3 +206,23 @@ describe('modeSwitchMessage', () => {
 })
 
 void prStream
+
+describe('team → solo decides from one read of the PRs', () => {
+  it('is refused when a PR turns requested between what would have been two reads', async () => {
+    const w = await world(TEAM)
+    await ticket(w.store, '43', 'team')
+    const list = w.store.read.bind(w.store)
+    let submitted = false
+    w.store.read = (async (s: string, ...r: unknown[]) => {
+      const events = await (list as any)(s, ...r)
+      if (s.startsWith('pr-') && !submitted) {
+        submitted = true
+        await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
+      }
+      return events
+    }) as typeof w.store.read
+    const r = await w.save(SOLO)
+    expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
+    expect(w.disk.get(PATH)).toBe(TEAM)
+  })
+})

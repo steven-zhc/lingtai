@@ -71,6 +71,7 @@ describe('a landing joins the draft in the same transaction', () => {
         branch: 'personal',
         main: 'main',
         frozenSha: 'f'.repeat(40),
+        prBranch: 'personal-pr-1',
         tickets: [],
       })
       expect(frozen).not.toBeNull()

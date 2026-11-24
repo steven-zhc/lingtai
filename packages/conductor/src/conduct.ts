@@ -3998,15 +3998,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             // `TicketLanded` on this branch), so the head checked below is the PR's however many processes ago that was.
             const mended = yield* Effect.result(
               Effect.gen(function* () {
-                const open = yield* Effect.tryPromise({ try: () => options.client.listOpenIssues(), catch: (e) => e })
                 const current = yield* readPr(project, attemptCut!.pr!, store)
                 if (current === null) return
-                const owed = yield* readUnheldFixLandings(
-                  project,
-                  current,
-                  open.map((i) => ({ issue: String(i.number) })),
-                  store,
-                )
+                const owed = yield* readUnheldFixLandings(project, current, store)
                 for (const fix of owed) yield* recordPrFixLanded(project, attemptCut!.pr!, fix, store)
               }),
             )
@@ -4037,6 +4031,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             owner: options.client.owner ?? '',
             repo: options.client.repo,
             base: attemptBase(),
+            draft: draftOfLanding() !== null,
             branch,
             ticketId,
             headSha: on.onSha,

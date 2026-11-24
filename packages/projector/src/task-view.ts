@@ -1030,9 +1030,6 @@ export interface ReadTasksOptions {
   url?: string
 }
 
-/** A window that covers every landed row: the board's two-day default would lose a ticket landed last week. */
-export const EVERY_LANDED_ROW_DAYS = 36_500
-
 /**
  * The board's cards, out of whichever store this machine wrote down (#179).
  *

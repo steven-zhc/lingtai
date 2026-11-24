@@ -104,6 +104,8 @@ export interface IntegrateOptions {
    * refused `pr-branch-moved` before anything is merged or pushed. Absent on every other landing.
    */
   expectBase?: string
+  /** Whether this landing joins the draft: recorded on `IntegrationSucceeded` so a recovery reads the pass's decision. */
+  draft?: boolean
   /** The issue number, for the sentence a held land hands a person (`lingtai approve --issue`). */
   issue?: string
   token?: TokenSource
@@ -305,6 +307,7 @@ export function integrateEffect(options: IntegrateOptions): Effect.Effect<Integr
         branch: options.branch,
         base: options.base,
         mergeCommit,
+        ...(options.draft === undefined ? {} : { draft: options.draft }),
       })
       return { ok: true, mergeCommit } as IntegrateResult
     })

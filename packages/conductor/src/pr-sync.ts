@@ -193,7 +193,7 @@ const syncStepRun: PrStep['run'] = ({ project, n, state, ports }) =>
       const kept = ['update-ref', targetRef(n), merged.sha] as const
       const made = yield* ports.git(project, kept)
       if (made.code !== 0) return wait('sync-unknown', gitSaid(kept, made))
-      return { kind: 'done', headSha: merged.sha } as StepAnswer
+      return { kind: 'done', headSha: merged.sha, main: mainSha } as StepAnswer
     }).pipe(Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'main')))),
     (message) => ({
       kind: 'wait',

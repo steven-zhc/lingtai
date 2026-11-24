@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { shownLabel } from '@/lib/pr-branches.ts'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
 import { PrButtons } from './pr-buttons.tsx'
@@ -25,47 +26,104 @@ const Mark = () => (
   </svg>
 )
 
-function Drawing({ view }: { view: PrPageView }) {
+const LEGEND: readonly { readonly cls: string; readonly text: string }[] = [
+  { cls: 'done', text: 'happened' },
+  { cls: 'todo', text: 'still to come' },
+  { cls: 'running', text: 'running now' },
+  { cls: 'waiting', text: 'waiting on you' },
+  { cls: 'ticket', text: 'a ticket landed' },
+]
+
+/** The PR's three branches, drawn from `lib/pr-branches.ts`'s laid-out list: lanes, nodes, 45° connectors, *now*. */
+function Branches({ view }: { view: PrPageView }) {
   const d = view.drawing
-  const dots = d.dots
+  if (d === null) return null
+  const y = d.laneY
   return (
-    <svg
-      className="prp-drawing"
-      viewBox="0 0 600 120"
-      role="img"
-      aria-label="the PR branch between main and the personal branch"
-    >
-      <text x="8" y="16" className="prp-svg-t">
-        {d.main}
-      </text>
-      <line x1="8" y1="24" x2="592" y2="24" className="prp-line main" />
-      <text x="8" y="112" className="prp-svg-t">
-        {d.personal}
-      </text>
-      <line x1="8" y1="104" x2="592" y2="104" className="prp-line personal" />
-      {d.prBranch === null ? null : (
-        <>
-          <line x1="60" y1="64" x2="540" y2="64" className="prp-line pr" />
-          {dots.map((t, i) => (
-            <circle
-              key={`${t.fix ? 'fix' : 't'}${t.ticket}`}
-              cx={120 + i * 110}
-              cy="64"
-              r="7"
-              className={t.fix ? 'prp-dot fix' : 'prp-dot'}
-            >
-              <title>{`#${t.ticket} ${t.title}${t.fix ? ' · pr-fix' : ''}`}</title>
-            </circle>
-          ))}
-          {d.more === 0 ? null : <text x="470" y="68" className="prp-svg-t">{`+ ${d.more} more`}</text>}
-          <text x="60" y="52" className="prp-svg-t">{`this PR · ${d.prBranch}`}</text>
-          <line x1="540" y1="64" x2="540" y2="104" className="prp-line tie" strokeDasharray="4 3" />
-          <text x="380" y="92" className="prp-svg-t">
-            merged back after each fix
-          </text>
-        </>
-      )}
-    </svg>
+    <>
+      <svg
+        className="prp-drawing"
+        viewBox={`0 0 ${d.width} ${d.height}`}
+        role="img"
+        aria-label="the PR branch between main and the personal branch"
+      >
+        <text x="8" y={y.main + 4} className="prp-lname">
+          {d.lanes.main}
+        </text>
+        <line x1={d.gutter} y1={y.main} x2={d.width - 15} y2={y.main} className="prp-line main" />
+        <text x="8" y={y.personal + 4} className="prp-lname">
+          {d.lanes.personal}
+        </text>
+        <line x1={d.gutter} y1={y.personal} x2={d.width - 15} y2={y.personal} className="prp-line personal" />
+        <text x="8" y={y.pr + 4} className={d.lanes.pr === null ? 'prp-lname idle' : 'prp-lname'}>
+          {d.lanes.pr ?? 'no PR yet'}
+        </text>
+        {d.prSpan === null ? null : (
+          <line
+            x1={d.prSpan[0]}
+            y1={y.pr}
+            x2={d.prSpan[1]}
+            y2={y.pr}
+            className={d.lanes.gone ? 'prp-line pr gone' : 'prp-line pr'}
+          />
+        )}
+        {d.nowX === null ? null : (
+          <>
+            <line x1={d.nowX} y1="18" x2={d.nowX} y2={d.height - 30} className="prp-now" />
+            <text x={d.nowX + 4} y="22" className="prp-now-t">
+              NOW
+            </text>
+          </>
+        )}
+        {d.edges.map((e) => (
+          <path
+            key={`${e.from}-${e.to}`}
+            d={`M${e.x1} ${e.y1} L${e.x2} ${e.y2}`}
+            className={`prp-edge ${e.kind} ${e.state}`}
+          />
+        ))}
+        {d.brace === null ? null : (
+          <>
+            <path d={`M${d.brace.x1} ${y.personal + 40} v6 H${d.brace.x2} v-6`} className="prp-brace" />
+            <text x={d.brace.x1} y={y.personal + 62} className="prp-svg-t">
+              {d.brace.text}
+            </text>
+          </>
+        )}
+        {d.nodes.map((n) => (
+          <g key={n.id} className="prp-node-g">
+            {n.hidden ? null : (
+              <circle cx={n.x} cy={n.y} r={n.kind === 'ticket' ? 4.5 : 7} className={`prp-nd ${n.kind}`}>
+                <title>
+                  {[n.title ?? (n.label === '' ? n.lane : n.label), n.sha].filter((t) => t !== null).join(' · ')}
+                </title>
+              </circle>
+            )}
+            {shownLabel(n) === '' ? null : (
+              <text
+                x={n.x - 6}
+                y={n.above ? n.y - 13 : n.y + 21}
+                textAnchor={n.anchor}
+                className={`prp-svg-t ${n.tone ?? ''}`}
+              >
+                {shownLabel(n)}
+              </text>
+            )}
+          </g>
+        ))}
+      </svg>
+      <p className="prp-small prp-legend">
+        {LEGEND.map((l) => (
+          <span key={l.cls}>
+            <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true">
+              <circle cx="7" cy="7" r="5" className={`prp-nd ${l.cls}`} />
+            </svg>{' '}
+            {l.text}{' '}
+          </span>
+        ))}
+      </p>
+      {d.words.length === 0 ? null : <p className="prp-small prp-words">{d.words.join(' · ')}</p>}
+    </>
   )
 }
 
@@ -113,7 +171,7 @@ export function PrDetail({
                 </li>
               ))}
             </ol>
-            <Drawing view={view} />
+            <Branches view={view} />
           </section>
 
           {view.kind === 'draft' ? null : (

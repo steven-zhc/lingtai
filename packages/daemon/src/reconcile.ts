@@ -96,7 +96,6 @@ import {
 import { projectionLagEffect } from '@lingtai/projector'
 import { Cause, Effect } from 'effect'
 
-import { backfillDraftsEffect, type DraftPorts } from './backfill-draft.ts'
 import { withDaemonStore } from './choose.ts'
 import { CONTROL_STREAM } from './control.ts'
 import { type ConvergeOptions, convergeIssuesEffect } from './converge.ts'
@@ -298,11 +297,6 @@ export interface ReconcileOptions {
    * should still clean worktrees and return claims.
    */
   github?: ConvergeOptions
-  /**
-   * What the start's draft backfill reads through (#1394). Omit it and that step is skipped rather than guessed at.
-   * Temporary: it goes with the computed draft.
-   */
-  draft?: DraftPorts
   /**
    * The two filesystem calls the sweep of a run's own Claude directory makes,
    * so a unit test hands in a fake rather than a real directory. Defaults to
@@ -817,12 +811,6 @@ export const reconcileEffect = Effect.fn('daemon.reconcile')(function* (options:
     dryRun: options.dryRun,
     log,
   })
-
-  // Temporary (#1394): the tickets the computed draft holds are written onto the draft's stream. After the owed
-  // landings, so those are on the log when it reads; before the scans, since it writes PR streams and no finding.
-  if (options.draft !== undefined && !options.dryRun) {
-    yield* backfillDraftsEffect({ projects: options.projects ?? [], store, draft: options.draft, log })
-  }
 
   // Read all four before acting on any. A pass that repaired as it discovered
   // would report a world that no longer existed by the time it finished.

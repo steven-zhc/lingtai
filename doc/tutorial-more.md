@@ -1,10 +1,10 @@
 # Going further
 
-*Tutorial, continued — the options, a hold, a refusal and GitHub*
+*Tutorial, continued — the options, a hold and a refusal*
 
 [The tutorial](tutorial.md) gets one ticket to land with defaults. This page is
 what it left out: what each `init` option means, holding every attempt for your
-approval, watching a check refuse, and moving the project to GitHub. The
+approval and watching a check refuse. The
 examples use the same Chapter Garden checkout.
 
 ## What each init option means
@@ -14,7 +14,6 @@ pressed Enter. Every question has a flag, so one command can answer all of them:
 
 ```sh
 lingtai init --store sqlite --local chapter-garden \
-  --base lingtai-base \
   --agent claude-code --reviewer claude-code \
   --install 'npm ci' --build 'npm run check' \
   --build 'npm run build' --defaults --land hold
@@ -23,8 +22,7 @@ lingtai init --store sqlite --local chapter-garden \
 | Option                     | Meaning                                                            |
 | -------------------------- | ------------------------------------------------------------------ |
 | `--store sqlite`           | Keeps Lingtai's log on this machine; no database server is needed. |
-| `--local chapter-garden`   | Registers your checkout without a GitHub App ([Part 2](#part-2--move-the-project-to-github) adds one). |
-| `--base lingtai-base`      | Lands on a `lingtai-base` branch in your checkout; `main` and your working tree are never touched. |
+| `--local chapter-garden`   | Registers your checkout without a GitHub App ([Connect GitHub](connect-github.md) adds one). |
 | `--agent claude-code`      | Uses the Claude Code account you signed in to for the change.      |
 | `--reviewer claude-code`   | Uses the same account for the AI review.                           |
 | `--install 'npm ci'`       | Installs Chapter Garden's dependencies in each worktree.           |
@@ -110,53 +108,3 @@ Chapter Garden requires `order` to be a number, so the first build is refused. L
 - **Run log**: inside the attempt row, or `lingtai attach <runId>` with the run id printed under it.
 
 Read all three **before** you press Approve: a run's log is deleted when it lands. Then approve as above. If the review still refuses, approving asks for a reason: `lingtai approve chapter-garden --issue <ticket-number> --note "<why>"`.
-
-## Part 2 — Move the project to GitHub
-
-Sign in with the GitHub CLI; no App is needed for one person. Lingtai's actions
-(labels, comments, pushes) then appear as that account, and commits are authored
-by the machine's git identity (`user.name`, `user.email`), which Lingtai does
-not set. For a team, use a GitHub App: [GitHub](github.md) and
-[operating](operating.md#connecting-github).
-
-**Part 2 is a second start.** Local tickets stay in the database and `add`
-does not migrate them. **Stop the board first** (ctrl-c): `init` and `add`
-would otherwise find it.
-
-In a new terminal, sign in, then use a fresh `LINGTAI_HOME`. Under `gh`, `init` starts no board:
-
-```sh
-gh auth login --hostname github.com --scopes repo,workflow
-export LINGTAI_HOME="$HOME/.lingtai-github-tutorial"
-lingtai init --store sqlite --project github --github-auth gh
-```
-
-Already signed in without `workflow`? Run
-`gh auth refresh --hostname github.com --scopes workflow`.
-
-Use your own fork, `<you>/chapter-garden`; you must be able to push to it.
-
-**The base must accept direct pushes from your account**: Lingtai pushes to it and opens no pull request. If protected, let your account bypass it, or set the recipe's `repo.base` elsewhere.
-
-Use another terminal, same `LINGTAI_HOME`, from here on.
-
-### Add the repository
-
-```sh
-lingtai add <you>/chapter-garden --base main
-```
-
-`add` asks its recipe questions (pass the flags from the option table above; a fresh home needs `--base`). It prints nothing when the check passes.
-
-### Check it worked
-
-```sh
-lingtai doctor
-```
-
-`github: gh login` should be `ok`, naming your account. `github: app credentials` reads `skip`: expected, as there is no App.
-
-Tickets here are GitHub issues with a kind label, not `lingtai ticket new`.
-The tutorial's steps then apply, including `lingtai board`: start it in this home, as `init` left none running.
-The landing now merges into `main` of your fork on GitHub, not `lingtai-base` in
-your checkout, so the `git merge lingtai-base` above does not apply: look on GitHub instead.

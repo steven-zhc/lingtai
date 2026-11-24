@@ -45,12 +45,6 @@ import { addEffect, addLocalEffect } from './onboard.ts'
  * for a directory). The page hands in plain form answers and never a
  * `RecipeChange[]`.
  *
- * **A local directory's tickets are `db`.** `proposeSetup` proposes `github` for
- * a directory whose `origin` is on GitHub, but the registration of a directory
- * is `owner: null` and `ownerlessRefusal` (`filter.ts`) refuses every pass of an
- * ownerless project whose recipe says `github` — so `localTicketsOf` is where
- * the page overrides it, and #977 deletes that function with the rule.
- *
  * **Every read is an Effect.** The ports `@lingtai/setup` types are Effects, so
  * each member here is one.
  */
@@ -199,23 +193,6 @@ export function recipeIsNew(project: string, ports: { home?: string } = {}) {
     Effect.map((draft) => draft.text() === null),
     Effect.orElseSucceed(() => true),
   )
-}
-
-/**
- * The ticket source a directory can take. A directory is registered with no
- * owner, so `github` is not one of its choices yet (#977), whatever its
- * `origin` says; the sentence says why the line reads `db`.
- */
-export function localTicketsOf(proposal: Proposal): { source: 'db'; because: string } {
-  const onGithub = proposal.tickets.known && proposal.tickets.value.repository !== null
-  return {
-    source: 'db',
-    because: onGithub
-      ? 'its origin is on GitHub, but a local directory cannot take its issues yet (#977) — Lingtai keeps its own tickets'
-      : proposal.tickets.known
-        ? proposal.tickets.because
-        : proposal.tickets.reason,
-  }
 }
 
 /** The recipe text the form would write, or why it would not resolve — nothing is written. */
