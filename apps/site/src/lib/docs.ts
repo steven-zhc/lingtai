@@ -71,6 +71,7 @@ export const PUBLIC_SLUGS = [
   'tutorial',
   'tutorial-more',
   'concepts',
+  'board',
   'when-it-fails',
   'recipe',
   'cli',
@@ -132,6 +133,7 @@ export interface BookRow {
 export const BOOK: BookRow[] = [
   { n: 1, part: 'Get started', file: 'tutorial.md' },
   { n: 4, part: 'Understand it', file: 'concepts.md' },
+  { n: 5, part: 'Understand it', file: 'board.md' },
   { n: 7, part: 'Every day', file: 'when-it-fails.md' },
   { n: 8, part: 'Fit it to your project', file: 'recipe.md' },
   { n: 10, part: 'Fit it to your project', file: 'safety.md' },
