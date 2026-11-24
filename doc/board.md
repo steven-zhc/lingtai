@@ -10,14 +10,14 @@ A ticket sits in one of four columns, and a ticket is in exactly one at a time.
 
 - **Queued**: open, not yet taken.
 - **Running**: an attempt is working it now.
-- **Waiting on you**: the attempt stopped where the recipe says a person decides. This is the column to open first: nothing in it moves until you choose, and nothing is lost while it waits.
-- **Landed**: the change reached its branch.
+- **Waiting on you**: the attempt stopped where the recipe says a person decides. This is the column to open first. Automatic triage may resolve a wait and send the ticket back to work without you; otherwise it stays until you choose, and nothing is lost while it waits.
+- **Landed**: the ticket is over. Most landed their change on the branch; one found already done, or one closed, shares the column and its row says which ending it was, so check the row before assuming a change was delivered.
 
 ## The PR view
 
 Only a team project has it, because only a team project opens pull requests. Each pull request sits in one of five states, shown as a strip across the page.
 
-- **Draft**: opened, not ready.
+- **Draft**: local work not yet submitted. No pull request exists on the host; the page offers Submit PR.
 - **In progress**: an agent is still working.
 - **Waiting on you**: it needs your answer.
 - **In review**: with its reviewers.
