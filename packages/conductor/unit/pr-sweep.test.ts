@@ -1,12 +1,13 @@
-/**
- * The sweep's read of an open PR (#1317, 0130 §5): merged by the host's word or by git, closed on the host, and the
- * tickets of a merged PR closed once. Every append is a transition, so a second sweep says nothing.
- */
 import { prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
 import { requestPrSubmit } from '@lingtai/project'
+/**
+ * The sweep's read of an open PR (#1317, 0130 §5): merged by the host's word or by git, closed on the host, and the
+ * tickets of a merged PR closed once. Every append is a transition, so a second sweep says nothing.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -117,7 +118,7 @@ async function inReview(recipe: Recipe = team): Promise<{ store: EventStore; w: 
   const store = createMemoryEventStore()
   await landed(store, '1')
   await landed(store, '2')
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   const w = aWorld()
   await Effect.runPromise(servePr(ports(store, w, recipe), 'lingtai', 1, PUSH_OPEN))
   w.pullCalls.length = 0
@@ -165,7 +166,7 @@ describe('the sweep learns what became of the open PR', () => {
     const { store, w } = await inReview()
     w.pull = { ...open, state: 'closed' }
     await sweep(ports(store, w))
-    const asked = await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    const asked = await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     expect(asked).toEqual({ kind: 'requested', n: 2 })
     await Effect.runPromise(servePr(ports(store, w), 'lingtai', 2, PUSH_OPEN))
     expect((await pr(store, 2)).tickets.map((t) => t.ticket)).toEqual(['1', '2'])
@@ -239,7 +240,7 @@ describe('an unfinished close is retried after a later PR merges', () => {
     await sweep(p)
     expect(w.closed).toEqual([])
     await landed(store, '3')
-    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     await Effect.runPromise(servePr(p, 'lingtai', 2, PUSH_OPEN))
     w.pull = { ...open, merged: true, state: 'closed' }
     await sweep(p)
@@ -280,7 +281,7 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
   it('a hung ls-remote is bounded: the walk reaches remote and still returns', async () => {
     const store = createMemoryEventStore()
     await landed(store, '1')
-    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     const w = aWorld()
     let asked = 0
     const p: PrPorts = {

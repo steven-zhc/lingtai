@@ -1,19 +1,14 @@
+import { findingsRaisedOf, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import type { EventStore } from '@lingtai/event-store/store'
+import type { GitHub } from '@lingtai/github'
+import { recordPrOpened, recordPrPushed, recordSyncRoundRefused, recordSyncRoundStarted } from '@lingtai/project'
 /**
  * An agent resolves a PR's conflicting sync and merge back (#1313, 0130 §6, 0108 §8): rounds counted per commit on the
  * PR's stream and never refunded, a lock that stops a round before it starts, the answer read off the commit graph, a
  * build and a review that refuse into the next round, and the resolution handed on without a push of the round's own.
  */
-import { findingsRaisedOf, prStream, reducePr, ticketStream } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
-import type { GitHub } from '@lingtai/github'
-import {
-  recordPrOpened,
-  recordPrPushed,
-  recordSyncRoundRefused,
-  recordSyncRoundStarted,
-  requestPrSubmit,
-} from '@lingtai/project'
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult, StandMergeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -216,7 +211,7 @@ async function inProgress(): Promise<EventStore> {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   await store.append(prStream('lingtai', 1), 1, [
     {
       type: 'PrInProgress',

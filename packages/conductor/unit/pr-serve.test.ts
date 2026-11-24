@@ -1,11 +1,12 @@
-/**
- * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
- * In progress's steps.
- */
 import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { requestPrSubmit } from '@lingtai/project'
+/**
+ * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
+ * In progress's steps.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -77,7 +78,7 @@ function ports(
 }
 
 const state = async (store: EventStore, n = 1) => reducePr(await store.read(prStream('lingtai', n)))
-const request = (store: EventStore) => Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+const request = (store: EventStore) => Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
 const serve = (p: PrPorts, steps: readonly PrStep[] = []) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
 
 describe('the freeze', () => {
@@ -248,8 +249,8 @@ describe('resuming', () => {
   it('a failure serving one PR does not leave the others unserved', async () => {
     const store = createMemoryEventStore()
     await landed(store, '1')
-    await Effect.runPromise(requestPrSubmit('a', 'team', 'human:steven', store))
-    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('a', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     const p = ports(store, { reachable: ['m1'] })
     const flaky: PrPorts = {
       ...p,

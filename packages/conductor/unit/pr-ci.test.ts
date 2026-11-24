@@ -1,14 +1,15 @@
-/**
- * The `ci` and `ready` steps (#1339): a fake `CiProvider` drives the step through every verdict, and the step code
- * imports nothing from the one adapter.
- */
 import { readFileSync } from 'node:fs'
 
 import { type CiCheck, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
-import { recordPrInProgress, requestPrRetry, requestPrSubmit } from '@lingtai/project'
+import { recordPrInProgress, requestPrRetry } from '@lingtai/project'
+/**
+ * The `ci` and `ready` steps (#1339): a fake `CiProvider` drives the step through every verdict, and the step code
+ * imports nothing from the one adapter.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { TestClock } from 'effect/testing'
@@ -61,7 +62,7 @@ async function frozen(): Promise<EventStore> {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   await Effect.runPromise(
     recordPrInProgress(
       'lingtai',

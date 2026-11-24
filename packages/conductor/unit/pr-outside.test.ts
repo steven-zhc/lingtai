@@ -1,12 +1,13 @@
-/**
- * The `outside` step (0131 §4, #1353): commits others pushed on top of what Lingtai last pushed are merged in, built, and
- * sent to the conflict agent when they conflict or go red; a force-push or a deleted branch waits on a person.
- */
 import { prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub } from '@lingtai/github'
-import { recordPrOutsideMerged, recordPrPushed, requestPrSubmit } from '@lingtai/project'
+import { recordPrOutsideMerged, recordPrPushed } from '@lingtai/project'
+/**
+ * The `outside` step (0131 §4, #1353): commits others pushed on top of what Lingtai last pushed are merged in, built, and
+ * sent to the conflict agent when they conflict or go red; a force-push or a deleted branch waits on a person.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Effect } from 'effect'
@@ -147,7 +148,7 @@ async function inProgress(pushed: boolean): Promise<EventStore> {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   const inprogress = {
     type: 'PrInProgress' as const,
     actor: 'conductor',

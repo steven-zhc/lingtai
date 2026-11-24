@@ -1,12 +1,13 @@
-/**
- * `push` and `open`, In progress's two steps (#1337, 0130 §5): the branch is pushed in its lane turn, never forced, and
- * the PR opens as a draft — each looking before it acts, so a restart pushes and opens nothing twice.
- */
 import { integrationStream, prDescription, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type OpenPull } from '@lingtai/github'
 import { requestPrSubmit } from '@lingtai/project'
+/**
+ * `push` and `open`, In progress's two steps (#1337, 0130 §5): the branch is pushed in its lane turn, never forced, and
+ * the PR opens as a draft — each looking before it acts, so a restart pushes and opens nothing twice.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Deferred, Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -151,7 +152,7 @@ async function frozen(): Promise<EventStore> {
   const store = createMemoryEventStore()
   await landed(store, '1')
   await landed(store, '2')
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   const w = aWorld()
   await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, []))
   return store

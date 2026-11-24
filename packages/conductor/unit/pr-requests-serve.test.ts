@@ -1,7 +1,3 @@
-/**
- * A retry and a back, served (#1314): the retry reads the PR branch in its lane turn and either walks again, adopts the head a
- * person pushed, or waits `sync-rewritten`; the back closes the draft on the host once and records `PrClosed`.
- */
 import { prStream, reducePr } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -13,8 +9,12 @@ import {
   recordPrWaiting,
   requestPrBack,
   requestPrRetry,
-  requestPrSubmit,
 } from '@lingtai/project'
+/**
+ * A retry and a back, served (#1314): the retry reads the PR branch in its lane turn and either walks again, adopts the head a
+ * person pushed, or waits `sync-rewritten`; the back closes the draft on the host once and records `PrClosed`.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -89,7 +89,7 @@ const aWorld = (over: Partial<World> = {}): World => ({
 /** PR 1 frozen and waiting at its sync with `reason`; `pushed` leaves it in the PR branch's last pushed state. */
 async function waiting(reason: 'sync-red' | 'sync-conflict' = 'sync-red'): Promise<EventStore> {
   const store = createMemoryEventStore()
-  await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await run(submitPr('lingtai', 'team', 'human:steven', store))
   await run(
     recordPrInProgress('lingtai', 1, { branch: 'lingtai-team', main: 'main', frozenSha: FROZEN, tickets: [] }, store),
   )

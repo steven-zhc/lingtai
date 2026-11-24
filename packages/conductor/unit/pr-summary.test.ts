@@ -1,14 +1,15 @@
-/**
- * The `pr:` agent's summary and top-up (#1318, 0131 §2, §5): written before the draft opens, topped up after CI for each
- * pr-fix that joined, paid as a `RunSpent` on the PR's own stream, and pushed to the code host — where the person's words
- * win a race against a run.
- */
 import { SpentFor, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub, OpenPull } from '@lingtai/github'
-import { editPrSummary, recordPrFixLanded, requestPrSubmit } from '@lingtai/project'
+import { editPrSummary, recordPrFixLanded } from '@lingtai/project'
+/**
+ * The `pr:` agent's summary and top-up (#1318, 0131 §2, §5): written before the draft opens, topped up after CI for each
+ * pr-fix that joined, paid as a `RunSpent` on the PR's own stream, and pushed to the code host — where the person's words
+ * win a race against a run.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -154,7 +155,7 @@ async function frozen(): Promise<EventStore> {
   const store = createMemoryEventStore()
   await landed(store, '1')
   await landed(store, '2')
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   await Effect.runPromise(servePr(ports(store, aWorld()), 'lingtai', 1, []))
   return store
 }
