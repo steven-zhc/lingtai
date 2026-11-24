@@ -21,7 +21,7 @@ import {
   listPrs,
   openPr,
   readPr,
-  readPrDraft,
+  readDraftTickets,
   requestPrBack,
   requestPrRetry,
   requestPrSubmit,
@@ -68,7 +68,6 @@ const POLL_MS = 500
 export interface PrWorld {
   readonly store: EventStore
   recipe(project: string): Effect.Effect<Recipe, Error>
-  candidates(project: string): Effect.Effect<readonly { readonly issue: string }[], Error>
   /** The PR's generated description — what a person opens by hand where Lingtai does not follow the remote. */
   describe(project: string, n: number): Effect.Effect<{ title: string; body: string }, Error>
   /** `conductorLockHolder`: who conducts, null for nobody. */
@@ -82,7 +81,6 @@ export function livePrWorld(): PrWorld {
   return {
     store: eventStore,
     recipe: ports.recipe,
-    candidates: ports.candidates,
     describe: (project, n) => describePr(ports, project, n),
     holder: () => conductorLockHolder(),
     now: Date.now,
@@ -167,12 +165,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
     const prs = yield* listPrs(project, world.store)
     const latest = prs[prs.length - 1] ?? null
     const open = openAmong(prs)
-    const draft: readonly PrDraftTicket[] = yield* readPrDraft(
-      project,
-      recipe,
-      yield* world.candidates(project),
-      world.store,
-    )
+    const draft: readonly PrDraftTicket[] = yield* readDraftTickets(project, world.store)
 
     let description: { title: string; body: string } | null = null
     const lines: string[] = [

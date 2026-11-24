@@ -90,7 +90,6 @@ function ports(store: EventStore, w: World, extra: Partial<PrPorts> = {}): PrPor
   return {
     store,
     recipe: () => Effect.succeed(team),
-    candidates: () => Effect.succeed([{ issue: '1' }]),
     fetch: () => Effect.void,
     tickets: () => Effect.fail(new Error('no ticket channel in this test')),
     projects: () => Effect.succeed(['lingtai']),

@@ -81,8 +81,6 @@ export interface PrPorts {
   readonly store: EventStore
   /** The project's resolved recipe: its mode and its two branches. */
   recipe(project: string): Effect.Effect<Recipe, Error>
-  /** Every ticket the draft may hold — the landed ones, over a window that covers all of them. */
-  candidates(project: string): Effect.Effect<readonly { readonly issue: string }[], Error>
   /** Brings the project's mirror up to date with the remote. */
   fetch(project: string): Effect.Effect<void, Error>
   /** Runs `git` in the project's mirror. A non-zero exit is an answer, not a failure. */
@@ -779,7 +777,7 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
       yield* Effect.sleep(ports.landingWaitMs ?? 1000)
     }
 
-    // The candidates are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
+    // The tickets are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
     // at: a landing between the read and the write moves the stream, the write fails, and the whole block runs once
     // more — reads the list, asks git, decides — so a list that lacks a ticket the commit holds is never frozen.
     // A ticket landed after `frozenSha` is not an ancestor on the second pass either, and goes to the next draft.
@@ -1339,7 +1337,7 @@ const closeMergedTickets = (
 const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.Effect<void, Error> =>
   Effect.gen(function* () {
     if (pr.n === null) return
-    const landings = yield* readUnheldFixLandings(project, pr, yield* ports.candidates(project), ports.store)
+    const landings = yield* readUnheldFixLandings(project, pr, ports.store)
     for (const landed of landings) yield* recordPrFixLanded(project, pr.n, landed, ports.store)
   })
 

@@ -59,7 +59,6 @@ function ports(
     store,
     calls,
     recipe: () => Effect.succeed(options.recipe ?? team),
-    candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.sync(() => void calls.push('fetch')),
     projects: () => Effect.succeed(['lingtai']),
     merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),

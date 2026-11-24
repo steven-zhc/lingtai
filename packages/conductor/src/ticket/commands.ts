@@ -932,7 +932,7 @@ export function landTicketEffect(
   const draft = input.draft ?? null
   if (draft === null) return appendOnTicket(store, ticketId, options, events)
   return Effect.gen(function* () {
-    // `PrDraftTicketAdded.ticket` is the issue, as `readDraftOn` compares it, never the stream's id.
+    // `PrDraftTicketAdded.ticket` is the issue, as the draft lists it, never the stream's id.
     const named = parseTicketStream(ticketId)
     if (named === null) return yield* Effect.die(new Error(`${ticketId} is not a ticket's stream`))
     // Read once: a write to the ticket's stream between here and the append is a conflict, and a defect.

@@ -464,6 +464,30 @@
     "reason": "Renders one event as a notification (plan §1.8)."
   },
   {
+    "file": "packages/project/src/pr.ts",
+    "function": "readUnheldFixLandings",
+    "type": "IntegrationAttempted",
+    "count": 1,
+    "class": "select",
+    "reason": "Names the tickets on a PR branch's lane — every ticket with an attempt, a refusal or a success there, not each one's last event — so each is decided by its own stream; keeps no state (#1395)."
+  },
+  {
+    "file": "packages/project/src/pr.ts",
+    "function": "readUnheldFixLandings",
+    "type": "IntegrationRefused",
+    "count": 1,
+    "class": "select",
+    "reason": "Names the tickets on a PR branch's lane — every ticket with an attempt, a refusal or a success there, not each one's last event — so each is decided by its own stream; keeps no state (#1395)."
+  },
+  {
+    "file": "packages/project/src/pr.ts",
+    "function": "readUnheldFixLandings",
+    "type": "IntegrationSucceeded",
+    "count": 1,
+    "class": "select",
+    "reason": "Names the tickets on a PR branch's lane — every ticket with an attempt, a refusal or a success there, not each one's last event — so each is decided by its own stream; keeps no state (#1395)."
+  },
+  {
     "file": "packages/projector/src/backlog.ts",
     "function": "reduce",
     "type": "RunStarted",

@@ -104,7 +104,6 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
   return {
     store,
     recipe: () => Effect.succeed(recipe),
-    candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }]),
     fetch: () => Effect.void,
     projects: () => Effect.succeed(['lingtai']),
     merge: () => Effect.succeed({ kind: 'failed', text: 'this test never merges' }),

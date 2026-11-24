@@ -1085,23 +1085,6 @@ export function prStepRows(names: readonly string[], state: PrState): PrStepRow[
   })
 }
 
-/**
- * The seq of the `ProjectRecipeChanged` after which the project has been team ever since, or 0 when no recorded recipe
- * says otherwise. A landing before it was a solo project's, even on a branch of the same name (0130 §3). `isTeam`
- * reads one recorded recipe text: the domain imports nothing, so it cannot parse one.
- */
-export function teamSince(events: readonly Envelope[], isTeam: (source: string) => boolean): bigint {
-  let since = 0n
-  let team = false
-  for (const e of events) {
-    if (e.type !== 'ProjectRecipeChanged') continue
-    const now = isTeam((e.data as PayloadOf<'ProjectRecipeChanged'>).source)
-    if (now && !team) since = e.seq
-    team = now
-  }
-  return since
-}
-
 /** The seq of a ticket's last `TicketLanded` on `base`, or null if it never landed there. */
 export function landedSeq(events: readonly Envelope[], base: string): bigint | null {
   let seq: bigint | null = null
@@ -1118,6 +1101,8 @@ export interface LandingStarted {
   base: string | null
   /** The global order of the success event, `null` otherwise: which of a ticket's landings on two lanes is later. */
   seq: bigint | null
+  /** The success event's own `draft`: whether the pass that pushed it joined the draft; `null` where it did not say. */
+  draft: boolean | null
   unexpected: boolean
   headSha: string | null
 }
@@ -1169,25 +1154,34 @@ export function landingsStarted(laneEvents: readonly Envelope[]): LandingStarted
   for (const [ticketId, e] of last) {
     const headSha = heads.get(ticketId) ?? null
     if (e.type === 'IntegrationAttempted')
-      started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: false, headSha })
+      started.push({ ticketId, mergeCommit: null, base: null, seq: null, draft: null, unexpected: false, headSha })
     if (e.type === 'IntegrationSucceeded') {
       started.push({
         ticketId,
         mergeCommit: (e.data as PayloadOf<'IntegrationSucceeded'>).mergeCommit,
         base: (e.data as PayloadOf<'IntegrationSucceeded'>).base,
         seq: e.seq,
+        draft: (e.data as PayloadOf<'IntegrationSucceeded'>).draft ?? null,
         unexpected: false,
         headSha,
       })
     }
     if (e.type === 'IntegrationRefused' && (e.data as { reason?: string }).reason === 'unexpected') {
-      started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: true, headSha })
+      started.push({ ticketId, mergeCommit: null, base: null, seq: null, draft: null, unexpected: true, headSha })
     }
     // An earlier attempt left uncertain stays owed beside whatever the last event says: a retry's refusal
     // (`no-commits`, because the first push is already on the base) is no proof the first pushed nothing.
     for (const earlier of uncertain.get(ticketId) ?? []) {
       if (!started.some((x) => x.ticketId === ticketId && x.headSha === earlier)) {
-        started.push({ ticketId, mergeCommit: null, base: null, seq: null, unexpected: true, headSha: earlier })
+        started.push({
+          ticketId,
+          mergeCommit: null,
+          base: null,
+          seq: null,
+          draft: null,
+          unexpected: true,
+          headSha: earlier,
+        })
       }
     }
   }

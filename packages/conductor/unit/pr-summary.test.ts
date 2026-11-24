@@ -126,7 +126,6 @@ function ports(store: EventStore, w: World, options: { summarizer?: boolean } = 
   return {
     store,
     recipe: () => Effect.succeed(team),
-    candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.void,
     projects: () => Effect.succeed(['lingtai']),
     merge: () => Effect.succeed({ kind: 'failed', text: 'never merges' }),

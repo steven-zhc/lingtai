@@ -46,7 +46,6 @@ const world = (store: EventStore, answer: () => Promise<void>): PrWorld => {
   return {
     store,
     recipe: () => Effect.succeed(team),
-    candidates: () => Effect.succeed([]),
     describe: () => Effect.succeed({ title: '', body: '' }),
     holder: async () => null,
     now: () => now,
