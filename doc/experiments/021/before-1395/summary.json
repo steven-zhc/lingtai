@@ -1,0 +1,134 @@
+{
+  "window_start_inclusive": "2026-11-24T00:00:00-06:00",
+  "window_end_exclusive": "2026-11-24T16:00:10-06:00",
+  "selection": "request start in window and request end no later than window end",
+  "quantiles": "nearest rank: sorted[ceil(p*n)-1]; per-request observations, no time weighting",
+  "duration": "server request completion; not browser paint or exclusive CPU time",
+  "source_sha256": "c673e47a7aa56b3357a4cafc95121a4abf5bc6cbf70f28ab58cefef9514fe56c",
+  "request_count": 230,
+  "excluded_http_spans": {
+    "request_start_outside_window": 547
+  },
+  "groups": [
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "false",
+      "n": 6,
+      "p50_s": 61.332828792,
+      "p95_s": 122.051013625,
+      "max_s": 122.051013625,
+      "http_status_counts": {
+        "200": 6
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 6,
+      "pr_ticket_reads_when_observed": {
+        "n": 6,
+        "p50": 836,
+        "p95": 840,
+        "max": 840
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "true",
+      "n": 92,
+      "p50_s": 48.687330875,
+      "p95_s": 155.781321958,
+      "max_s": 195.7728115,
+      "http_status_counts": {
+        "200": 92
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 92,
+      "pr_ticket_reads_when_observed": {
+        "n": 92,
+        "p50": 838,
+        "p95": 840,
+        "max": 840
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/api/footer",
+      "rsc": "false",
+      "n": 16,
+      "p50_s": 1.206926542,
+      "p95_s": 2.489057208,
+      "max_s": 2.489057208,
+      "http_status_counts": {
+        "200": 16
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 16,
+      "pr_ticket_reads_when_observed": {
+        "n": 16,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/pr/[project]",
+      "rsc": "false",
+      "n": 3,
+      "p50_s": 57.455860541,
+      "p95_s": 165.512457875,
+      "max_s": 165.512457875,
+      "http_status_counts": {
+        "200": 3
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 3,
+      "pr_ticket_reads_when_observed": {
+        "n": 3,
+        "p50": 825,
+        "p95": 836,
+        "max": 836
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/pr/[project]",
+      "rsc": "true",
+      "n": 107,
+      "p50_s": 40.290344292,
+      "p95_s": 105.110639208,
+      "max_s": 200.633471083,
+      "http_status_counts": {
+        "200": 107
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 107,
+      "pr_ticket_reads_when_observed": {
+        "n": 107,
+        "p50": 825,
+        "p95": 838,
+        "max": 838
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/task/[id]",
+      "rsc": "true",
+      "n": 6,
+      "p50_s": 5.328647584,
+      "p95_s": 6.004080209,
+      "max_s": 6.004080209,
+      "http_status_counts": {
+        "200": 6
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 6,
+      "pr_ticket_reads_when_observed": {
+        "n": 6,
+        "p50": 0,
+        "p95": 0,
+        "max": 0
+      }
+    }
+  ]
+}

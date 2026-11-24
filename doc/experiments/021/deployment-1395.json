@@ -1,0 +1,12 @@
+{
+  "issue": "https://github.com/steven-zhc/lingtai/issues/1395",
+  "status": "awaiting_runtime_cutover_confirmation",
+  "issue_landed_label_observed_at_utc": "2026-11-24T23:09:35Z",
+  "fix_commit": null,
+  "landing_at_utc": null,
+  "board_effective_at_utc": null,
+  "confirmed_by": null,
+  "evidence": null,
+  "after_sample_start_utc": null,
+  "notes": "Use the board effective time, not issue close/label/merge time. Exclude in-flight requests started before cutover. Record first cold request separately; keep warm-window boundaries explicit."
+}

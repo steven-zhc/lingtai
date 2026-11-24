@@ -1,0 +1,44 @@
+{
+  "baseline_id": "2026-11-24-before-1395",
+  "created_at_utc": "2026-11-24T23:12:04.053170+00:00",
+  "service": "lingtai-board",
+  "jaeger_query_url": "http://harbor:16686/api/v3/traces",
+  "source_query": {
+    "query.service_name": "lingtai-board",
+    "query.start_time_min": "2026-11-23T00:00:00Z",
+    "query.start_time_max": "2026-11-24T22:00:10Z",
+    "query.search_depth": 10000,
+    "query.raw_traces": true
+  },
+  "source_export_file_mtime_utc": "2026-11-24T22:00:36.229936+00:00",
+  "source_export_sha256": "c673e47a7aa56b3357a4cafc95121a4abf5bc6cbf70f28ab58cefef9514fe56c",
+  "analysis_checkout_commit": "8fcffee0b8fd38a54d02e21614e7051f4d5e9d5d",
+  "running_board_commit": null,
+  "runtime_version_proof": "Not present in the exported service resource; analysis checkout is not runtime proof. The witnesses show the pre-1395 full-history ticket-read path.",
+  "benchmark_kind": "observational production/dev traffic baseline, not controlled load test",
+  "selected_window_start": "2026-11-24T00:00:00-06:00",
+  "selected_window_end": "2026-11-24T16:00:10-06:00",
+  "per_request_project": "unknown: route spans do not export project values or query filters; do not claim all requests are project lingtai",
+  "witness_trace_ids": [
+    "b720d69f0518f776b8152750678dac71",
+    "c271de58554f5ae25bcb62b977a2cd1d"
+  ],
+  "witness_span_count": 1856,
+  "github_1395_snapshot": {
+    "observed_at_utc": "2026-11-24T23:09:35Z",
+    "state": "OPEN",
+    "labels": [
+      "tech-debt",
+      "lingtai:landed"
+    ],
+    "updated_at_utc": "2026-11-24T22:37:50Z",
+    "meaning": "Issue updatedAt is not evidence of board deployment time or the exact landing time."
+  },
+  "comparison_requirements": [
+    "Match route, method and RSC flag; report sample sizes and window boundaries.",
+    "Record runtime cutover first; only requests started after it and confirmed to run fixed code belong to after.",
+    "Record cold/warm state, active pages/concurrency, project filter and actual draft/history size when known.",
+    "An unobserved stage is missing, not zero; counts require events.read instrumentation.",
+    "Use per-request percentiles, not percentiles of already aggregated buckets; compare counts as well as elapsed time."
+  ]
+}
