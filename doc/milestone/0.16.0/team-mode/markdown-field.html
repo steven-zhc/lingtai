@@ -1,0 +1,185 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · one Markdown field with live preview (#1372, 0.16.0)</title>
+<link rel="stylesheet" href="style.css">
+<style>
+/* the board's PR page rules this mock borrows (apps/board/src/app/globals.css .pr-*, .prp-*) */
+.page{background:#f2f4fa;padding:14px 16px 18px}
+.lbl{font-size:12.5px;text-transform:uppercase;letter-spacing:.06em;margin:0 0 6px;color:#44507a}
+.pr-actions{display:flex;gap:6px;margin-top:8px;align-items:center}
+.pr-btn{font:inherit;font-size:13px;border:1px solid #2f3d63;background:#fff;color:#2f3d63;border-radius:4px;padding:2px 10px}
+.pr-btn.primary{background:#2f3d63;color:#fff}
+.pr-why{margin:3px 0 0;font-size:12.5px;color:#6c7aa3}
+.prp-rule{border:0;border-top:1px solid #d5dbec;margin:12px 0}
+
+/* today: a plain textarea */
+.ta{display:block;width:100%;box-sizing:border-box;font:13px/1.55 var(--mono);color:#1f2a44;background:#fff;border:1px solid #c4cce4;border-radius:4px;padding:8px 10px;white-space:pre-wrap;min-height:9em}
+
+/* proposed: MarkdownField — same box, same border, the text drawn formatted */
+.mf{background:#fff;border:1px solid #c4cce4;border-radius:4px;padding:8px 10px;font:14px/1.6 var(--sans,system-ui,sans-serif);color:#1f2a44;min-height:9em}
+.mf.focus{border-color:#2f3d63;box-shadow:0 0 0 2px rgba(47,61,99,.15)}
+.mf.ro{background:#f7f8fc;color:#44507a}
+.mf .ln{min-height:1.6em;position:relative}
+.mf .h1{font-size:19px;font-weight:650;line-height:1.5}
+.mf .h2{font-size:16px;font-weight:650;line-height:1.5}
+.mf code{font:12.5px var(--mono);background:#eef1f8;border-radius:3px;padding:0 4px}
+.mf a{color:#2f5fb3;text-decoration:underline}
+.mf .li{padding-left:1.2em}
+.mf .li::before{content:'•';position:absolute;left:.25em;color:#6c7aa3}
+.mf .ol{padding-left:1.4em}
+.mf .ol .num{position:absolute;left:0;color:#6c7aa3}
+.mf .quote{border-left:3px solid #c4cce4;padding-left:9px;color:#55618a}
+.mf .fence{font:12.5px/1.55 var(--mono);background:#eef1f8;padding:0 8px}
+.mf .fence.first{border-radius:4px 4px 0 0;padding-top:4px}
+.mf .fence.last{border-radius:0 0 4px 4px;padding-bottom:4px}
+/* the cursor line: Markdown shown as typed, markers dimmed rather than hidden */
+.mf .cur{background:#f4f6fb;margin:0 -10px;padding:0 10px;font:13px/1.6 var(--mono)}
+.mk{color:#9aa5c4}
+.caret{display:inline-block;width:1.5px;height:1.05em;background:#1f2a44;vertical-align:-2px;animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:0}}
+.ime{text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px}
+.cand{display:inline-flex;gap:10px;margin-left:6px;font-size:12.5px;background:#fff;border:1px solid #c4cce4;border-radius:4px;padding:1px 8px;box-shadow:0 2px 6px rgba(0,0,0,.08);vertical-align:1px}
+.ph{color:#9aa5c4}
+
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+/* the mock's own chrome */
+.fh{display:flex;align-items:baseline;gap:10px;max-width:1240px;margin:30px auto 6px;padding:0 8px}
+.fh .n{font:600 12px var(--mono);color:var(--accent-ink)}
+.fh h2{margin:0;font-size:16px}
+.fh .tag{font:600 11px var(--mono);border-radius:3px;padding:1px 7px;background:var(--fail-soft);color:var(--fail)}
+.fh .tag.new{background:var(--pass-soft);color:var(--pass)}
+.why{max-width:1240px;margin:0 auto 10px;padding:0 8px;font-size:13.5px;color:#3a4a50}
+.why li{margin:2px 0}
+header.top{max-width:1240px;margin:26px auto 0;padding:0 8px}
+header.top h1{font-size:21px;margin:0 0 6px}
+.narrow{max-width:760px}
+</style>
+</head>
+<body>
+
+<header class="top">
+<h1>Markdown 输入框：边写边显示格式，存下来的仍是原文（#1372）</h1>
+<div class="why">
+<p>操作者 2026-11-23 在 PR 页面上说：摘要里到处是 <code>**</code>、<code>#</code>、<code>-</code>，长了就读不下去。选定的是<b>实时预览</b>：同一个框里边打字边显示格式，不要"预览 / 编辑"切换，也不要左右分栏；Save 按钮留在原处。<b>帧 00 是今天的样子，01–05 是提议。</b></p>
+<p>规则四条：</p>
+<ol>
+<li><b>一个组件，七处共用。</b><code>MarkdownField</code> 替换 PR 摘要、回答 / 加进正文的文字、决定的理由、triage 的回答、下一次 attempt 的说明、问运行中 agent 的问题，以及 PR 描述里生成的部分（只读）。</li>
+<li><b>光标所在的那一行显示原文。</b>其它行画成格式、标记隐藏；光标行用等宽字，标记淡色显示，所以你总能看见、改到自己打的每个字符。</li>
+<li><b>不改写文字。</b>交出去的就是打进去的字符：列表符号、换行、行尾空格都不动。预览只是装饰。</li>
+<li><b>框的外形不变。</b>边框、最小高度、Save 按钮、错误提示都和今天的 textarea 一样；只有框里的字变了。</li>
+</ol>
+</div>
+</header>
+
+<!-- ─────────────── 00 today ─────────────── -->
+<div class="fh"><span class="n">00</span><h2>Today — the PR summary is a plain textarea</h2><span class="tag">today</span></div>
+<div class="why">PR 3 的摘要（<code>pr-summary-editor.tsx</code>）。所有符号都原样显示。</div>
+<div class="frame"><div class="page narrow">
+<p class="lbl">Summary</p>
+<div class="ta">## What this PR brings
+
+- **PR**: after a PR merges, main is merged into the personal branch once (#1371)
+- **Draft**: a landing adds its ticket to the draft's stream (#1392, #1394)
+- **CI**: the integration half runs on pull requests into `main` (#1403)
+
+&gt; Review closely: submit on main has been refused since PR 4.</div>
+<div class="pr-actions"><button class="pr-btn primary">Save summary</button></div>
+</div></div>
+
+<!-- ─────────────── 01 not focused ─────────────── -->
+<div class="fh"><span class="n">01</span><h2>The same summary, not focused — everything drawn</h2><span class="tag new">proposed</span></div>
+<div class="why">同一段文字，没有光标时：标题、粗体、行内代码、列表、引用都画出来，标记全部隐藏。框的大小、边框和 Save 按钮与 00 一样。</div>
+<div class="frame"><div class="page narrow">
+<p class="lbl">Summary</p>
+<div class="mf">
+ <div class="ln h2">What this PR brings</div>
+ <div class="ln"></div>
+ <div class="ln li"><b>PR</b>: after a PR merges, main is merged into the personal branch once (#1371)</div>
+ <div class="ln li"><b>Draft</b>: a landing adds its ticket to the draft's stream (#1392, #1394)</div>
+ <div class="ln li"><b>CI</b>: the integration half runs on pull requests into <code>main</code> (#1403)</div>
+ <div class="ln"></div>
+ <div class="ln quote">Review closely: submit on main has been refused since PR 4.</div>
+</div>
+<div class="pr-actions"><button class="pr-btn primary">Save summary</button></div>
+</div></div>
+
+<!-- ─────────────── 02 editing ─────────────── -->
+<div class="fh"><span class="n">02</span><h2>Editing — the cursor's line shows its Markdown</h2><span class="tag new">proposed</span></div>
+<div class="why">光标在第四行：这一行用等宽字显示原文，<code>-</code>、<code>**</code> 淡色可见，可以直接改。其它行照旧画成格式。光标移到哪一行，哪一行就显示原文。</div>
+<div class="frame"><div class="page narrow">
+<p class="lbl">Summary</p>
+<div class="mf focus">
+ <div class="ln h2">What this PR brings</div>
+ <div class="ln"></div>
+ <div class="ln li"><b>PR</b>: after a PR merges, main is merged into the personal branch once (#1371)</div>
+ <div class="ln cur"><span class="mk">- **</span>Draft<span class="mk">**</span>: a landing adds its ticket to the draft's stream, and the freeze keeps<span class="caret"></span> (#1392, #1394)</div>
+ <div class="ln li"><b>CI</b>: the integration half runs on pull requests into <code>main</code> (#1403)</div>
+ <div class="ln"></div>
+ <div class="ln quote">Review closely: submit on main has been refused since PR 4.</div>
+</div>
+<div class="pr-actions"><button class="pr-btn primary">Save summary</button></div>
+</div></div>
+
+<!-- ─────────────── 03 decision answer + IME ─────────────── -->
+<div class="fh"><span class="n">03</span><h2>A decision's answer — Chinese input, and an empty field</h2><span class="tag new">proposed</span></div>
+<div class="why">左：任务页上回答一个问题（<code>decide.tsx</code>）。中文输入法照常工作：拼音候选框在光标处，候选词带点状下划线，确认前不算输入。右：空框显示 placeholder，和今天一样。框内按 ⌘K 和 <code>G</code> 不触发全局快捷键。</div>
+<div class="frame"><div class="page"><div class="two">
+<div>
+<p class="lbl">Your answer</p>
+<div class="mf focus">
+ <div class="ln">Keep the old route for <code>/pr</code>:</div>
+ <div class="ln ol"><span class="num">1.</span>redirect to the project's page</div>
+ <div class="ln cur"><span class="mk">2. </span>不要删<span class="ime">书签</span><span class="caret"></span><span class="cand"><span>1 书签</span><span>2 舒适</span><span>3 输钱</span></span></div>
+</div>
+<div class="pr-actions"><button class="pr-btn primary">Answer</button></div>
+</div>
+<div>
+<p class="lbl">Text to add to the ticket body</p>
+<div class="mf"><div class="ln ph">Markdown, added under the body as written</div></div>
+<div class="pr-actions"><button class="pr-btn primary">Add and requeue</button></div>
+</div>
+</div></div></div>
+
+<!-- ─────────────── 04 next attempt note, with fenced code ─────────────── -->
+<div class="fh"><span class="n">04</span><h2>The next attempt's note — what is typed reaches the agent unaltered</h2><span class="tag new">proposed</span></div>
+<div class="why">下一次 attempt 的说明（<code>outgoing.tsx</code>）。代码块画成灰底等宽，栅栏 <code>```</code> 在光标不在时隐藏；块内只有一种等宽样式，没有语法高亮。原文一个字不改地交给 agent，框下的说明照旧。</div>
+<div class="frame"><div class="page narrow">
+<p class="lbl">Note to the next attempt</p>
+<div class="mf">
+ <div class="ln h1">Start from the failing test</div>
+ <div class="ln">The red is in <code>work-loop-pr.test.ts</code>; run only that file first:</div>
+ <div class="ln fence first">HOME=/nonexistent pnpm vitest run --project unit \</div>
+ <div class="ln fence last">  packages/daemon/unit/work-loop-pr.test.ts</div>
+ <div class="ln">Do <b>not</b> raise <code>effect-ratchet.baseline.json</code>. See <a>#1405</a>.</div>
+</div>
+<p class="pr-why">Raw Markdown: what is typed here reaches the agent unaltered.</p>
+<div class="pr-actions"><button class="pr-btn primary">Start the next attempt</button></div>
+</div></div>
+
+<!-- ─────────────── 05 read-only generated rest ─────────────── -->
+<div class="fh"><span class="n">05</span><h2>The PR description's generated rest — read-only, drawn the same way</h2><span class="tag new">proposed</span></div>
+<div class="why">摘要下面那段由 Lingtai 生成的部分（票的清单和 <code>Closes</code> 行）仍然只读：浅灰底、没有光标、点进去也不显示原文。今天它是一个只读 textarea，同样满是符号。</div>
+<div class="frame"><div class="page narrow">
+<p class="lbl">Summary</p>
+<div class="mf" style="min-height:auto">
+ <div class="ln">Lands chapters 2, 5 and 6 of the book, and the draft's stream.</div>
+</div>
+<div class="pr-actions"><button class="pr-btn primary">Save summary</button></div>
+<hr class="prp-rule">
+<p class="lbl">Generated — not editable</p>
+<div class="mf ro" style="min-height:auto">
+ <div class="ln h2">Tickets</div>
+ <div class="ln li"><a>#1343</a> docs: chapter 2 is the board</div>
+ <div class="ln li"><a>#1392</a> feat(pr): a landing adds its ticket to the draft's stream</div>
+ <div class="ln li"><a>#1403</a> ci: the integration half runs on pull requests into main</div>
+ <div class="ln"></div>
+ <div class="ln">Closes #1343, #1392, #1403</div>
+</div>
+</div></div>
+
+</body>
+</html>
