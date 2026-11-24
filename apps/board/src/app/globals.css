@@ -3425,7 +3425,30 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-life li.current { background: #44507a; color: #fff; border-color: #44507a; }
 .prp-life li.waiting.current { background: var(--fail); border-color: var(--fail); }
 .prp-life li.draft.current { background: transparent; color: #44507a; border-style: dashed; }
-.prp-drawing { width: 100%; height: auto; max-height: 150px; }
+.prp-drawing { width: 100%; height: auto; }
+.prp-lname { font-family: var(--mono); font-size: 11px; fill: #44507a; }
+.prp-lname.idle { fill: #aab1c6; }
+.prp-line.personal { stroke: #44507a; }
+.prp-line.pr { stroke: #5a6bd1; }
+.prp-line.gone { stroke-dasharray: 5 4; opacity: 0.6; }
+.prp-now { stroke: #c58a14; stroke-width: 1; stroke-dasharray: 3 3; }
+.prp-now-t { font: 600 10px var(--mono); fill: #c58a14; }
+.prp-edge { fill: none; stroke-width: 2; stroke: #8a93b5; }
+.prp-edge.todo { stroke-dasharray: 4 3; }
+.prp-edge.red { stroke: #c0392b; }
+.prp-edge.merge.done { stroke: #2e8b57; }
+.prp-brace { fill: none; stroke: #b9c0d4; stroke-width: 1.2; }
+.prp-nd { fill: #44507a; stroke: #44507a; stroke-width: 1.5; }
+.prp-nd.todo, .prp-nd.main { fill: #fff; }
+.prp-nd.running { fill: #fff; stroke: #c58a14; }
+.prp-nd.waiting { fill: #c0392b; stroke: #c0392b; }
+.prp-nd.ticket { fill: #8a93b5; stroke: #8a93b5; }
+.prp-nd.outside { fill: #c58a14; stroke: #c58a14; }
+.prp-nd.merged { fill: #2e8b57; stroke: #2e8b57; }
+.prp-svg-t.red { fill: #c0392b; }
+.prp-svg-t.mut { fill: #8a8f99; }
+.prp-svg-t.sig { fill: #c58a14; }
+.prp-legend span { margin-right: 0.6rem; white-space: nowrap; }
 .prp-svg-t { font-family: var(--mono); font-size: 10px; fill: #5b6485; }
 .prp-line { stroke: #44507a; stroke-width: 2; fill: none; }
 .prp-line.main { stroke: #8a93b5; }

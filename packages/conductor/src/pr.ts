@@ -207,7 +207,7 @@ export type PrRecord = (project: string, n: number, store: EventStore) => Effect
 
 /** What a step answers. `again` records nothing: the next serve runs it again. */
 export type StepAnswer =
-  | { readonly kind: 'done'; readonly headSha: string; readonly record?: PrRecord }
+  | { readonly kind: 'done'; readonly headSha: string; readonly record?: PrRecord; readonly main?: string }
   | {
       readonly kind: 'wait'
       readonly reason: PayloadOf<'PrWaiting'>['reason']
@@ -885,7 +885,12 @@ export const walkPr = (
       }
       const record = answer.record
       if (record === undefined) {
-        yield* recordPrStepDone(project, n, { step: next.name, headSha: answer.headSha }, ports.store)
+        yield* recordPrStepDone(
+          project,
+          n,
+          { step: next.name, headSha: answer.headSha, ...(answer.main === undefined ? {} : { main: answer.main }) },
+          ports.store,
+        )
       } else {
         yield* record(project, n, ports.store)
       }

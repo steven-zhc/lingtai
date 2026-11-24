@@ -2607,7 +2607,12 @@ export const PrFixLanded = z.object({
  *
  * @summary One of a PR's In progress steps finished, on the head commit it ran on.
  */
-export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
+export const PrStepDone = z.object({
+  step: z.string().min(1),
+  headSha: z.string().min(1),
+  /** The `main` commit a clean sync merged (#1373); absent on every other step and on events written before it. */
+  main: z.string().min(1).optional(),
+})
 
 /** Why a PR waits on a person; each step's ticket extends the set with its own. */
 const PrWaitReason = z.enum([
