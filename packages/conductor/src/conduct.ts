@@ -49,7 +49,6 @@ import {
   triageSpentOf,
   personFixRoundsOf,
   WIP_COMMIT_PREFIX,
-  accountLimitReleases,
   releasesOf,
   stepStartedAtOf,
   continuableRelease,
@@ -350,6 +349,11 @@ import {
 import { outcomeFormNote, withUnreadTail } from './unread-tail.ts'
 
 /** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
+/** The releases of `runId` that each started a rerun of it: an account limit's lift and a redo a stop interrupted (#1398). */
+function releaseRerunsOf(ticketEvents: Parameters<typeof releasesOf>[0], runId: string): number {
+  return releasesOf(ticketEvents, runId, 'AccountLimit') + releasesOf(ticketEvents, runId, 'StepRedoPending')
+}
+
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
   // An `AnswerQuestions` continues the asking step the same way, so it spends a suffix too (#1254): two `design` dispatches never share an id.
   return waits.filter(
@@ -1470,7 +1474,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
-            releasesOf(ticketEvents, releasedFrom.runId, 'AccountLimit') +
+            releaseRerunsOf(ticketEvents, releasedFrom.runId) +
             personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
           return {
             step: 'build' as Step,
@@ -1539,8 +1543,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218). An account limit's
         // releases and a redo's are counted together, so no two reruns of one attempt share a dispatch id.
         const accountReruns =
-          releasesOf(ticketReleases, releasedFrom.runId, 'AccountLimit') +
-          releasesOf(ticketReleases, releasedFrom.runId, 'StepRedoPending') +
+          releaseRerunsOf(ticketReleases, releasedFrom.runId) +
           personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
         const cutOff = cutOffPromptOf(releasedEvents)
         // The call the wall cut off is the release's own step: another step's last call is not it.
@@ -1626,7 +1629,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const head = releasedHeadOf(runEvents)
         const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
         const accountReruns =
-          accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
+          releaseRerunsOf(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
         const cutOff = cutOffPromptOf(runEvents)
         // The call the stop cut off is the rerun step's own: another step's last call is not it.

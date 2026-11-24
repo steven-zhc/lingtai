@@ -784,6 +784,7 @@ export function pendingRedoOf(
     if (event.type === 'StepStarted') return null
     if (event.type !== 'StepRedone' && event.type !== 'StepRerunInPlace') continue
     const d = event.data as PayloadOf<'StepRedone'>
+    if (d.unread !== true) return null
     return d.step === 'design' || d.step === 'implement' || d.step === 'review' ? { step: d.step, said: d.said } : null
   }
   return null

@@ -3178,7 +3178,8 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
         recipe: recipeWith({}),
         context,
         emit: (event) => {
-          if (event.type === 'StepRedone') order.push('StepRedone')
+          if (event.type === 'StepRedone')
+            order.push((event.data as { unread?: boolean }).unread ? 'StepRedone:unread' : 'StepRedone')
           return emit(event)
         },
         bodies,
@@ -3190,7 +3191,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
       })
       return order
     }
-    expect(await run('unreadable')).toEqual(['saveHead', 'StepRedone'])
+    expect(await run('unreadable')).toEqual(['saveHead', 'StepRedone:unread'])
     expect(await run('crash')).toEqual(['StepRedone'])
     // A save that left no head to continue from (a refused push, a refused publication row) writes no StepRedone.
     expect(await run('unreadable', { failed: 'push refused' })).toEqual(['saveHead'])

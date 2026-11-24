@@ -130,7 +130,10 @@ describe('a stop during a redo wait (#1398)', () => {
       rerun: 1,
       said: 'Implemented, but in prose',
       waitMs: 60000,
+      unread: true,
     })
+    const crashed = e('StepRedone', { runId: 'r1', step: 'review', rerun: 2, said: 'API Error: 503', waitMs: 60000 })
+    expect(pendingRedoOf([redone, crashed])).toBeNull()
     expect(pendingRedoOf([redone])).toEqual({ step: 'implement', said: 'Implemented, but in prose' })
     const started = e('StepStarted', { runId: 'r1', step: 'implement', round: 1 } as never)
     expect(pendingRedoOf([redone, started])).toBeNull()

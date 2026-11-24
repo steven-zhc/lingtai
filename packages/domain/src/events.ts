@@ -1769,6 +1769,8 @@ export const StepRedone = z.object({
   waitMs: z.number().int().nonnegative(),
   /** Written by #1224–#1249 rows only; nothing reads it since #1249 (`stepRedos` is the bound), kept so old rows parse. */
   askedAgain: z.boolean().optional(),
+  /** Set where `said` is the tail of a message no outcome could be read from (#1398): only such a redo quotes it again after a stop. */
+  unread: z.boolean().optional(),
 })
 
 /**

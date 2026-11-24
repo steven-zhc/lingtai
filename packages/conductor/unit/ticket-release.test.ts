@@ -59,7 +59,14 @@ describe('releaseDeadWorkerEffect', () => {
         outcome: 'published',
         detail: null,
       })
-      const redo = e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 })
+      const redo = e('StepRedone', {
+        runId: 'pass-run1',
+        step: 'implement',
+        rerun: 1,
+        said: 'tail',
+        waitMs: 60000,
+        unread: true,
+      })
       await store.append('pass-run1', 0, saved ? [refs, redo] : [redo])
     }
     const releases = async (store: Awaited<ReturnType<typeof claimedBy>>) =>
@@ -73,6 +80,16 @@ describe('releaseDeadWorkerEffect', () => {
 
     it('is released with no cause where the run was not at a redo', async () => {
       expect(await causeOf(await claimedBy('dead:1', 'pass-run1'))).toBeNull()
+    })
+
+    it('is released with no cause where the redo was a crash, though an earlier redo saved a head', async () => {
+      const store = await claimedBy('dead:1', 'pass-run1')
+      await redone(store)
+      const e = makeStream('pass-run1')
+      await store.append('pass-run1', 2, [
+        e('StepRedone', { runId: 'pass-run1', step: 'review', rerun: 2, said: 'API Error: 503', waitMs: 60000 }),
+      ])
+      expect(await causeOf(store)).toBeNull()
     })
 
     it('is released with no cause where the redo has no saved head to continue from', async () => {
@@ -92,7 +109,7 @@ describe('releaseDeadWorkerEffect', () => {
           outcome: 'refused',
           detail: 'push refused',
         }),
-        e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 }),
+        e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000, unread: true }),
       ])
       expect(await causeOf(store)).toBeNull()
     })

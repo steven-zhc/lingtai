@@ -1526,7 +1526,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly startedAt?: string
     } | null = null
     /** The one place `StepRedone` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input) =>
+    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input, unread = false) =>
       options.emit({
         type: 'StepRedone',
         data: {
@@ -1535,6 +1535,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           rerun: retry,
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
+          ...(unread ? { unread: true } : {}),
         },
       })
     const roundLimit =
@@ -1821,7 +1822,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // leave a head to continue from writes no `StepRedone`: a stop during the wait would release with no cause.
         const saved = redo.unread !== undefined && options.saveHead !== undefined ? yield* options.saveHead() : null
         if (saved !== null) return cannot(`its head could not be saved before the wait — ${saved.failed}`)
-        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.unread !== undefined)
         if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const reset =
           options.resetToHead === undefined
