@@ -48,7 +48,17 @@ credentials` reads `skip`, as there is no App.
 ## An issue, assigned to you
 
 Open an issue on GitHub. It needs a kind label (`bug`, `tech-debt`, `feature` or
-`documentation`), or the queue never sees it. A team project takes only issues
+`documentation`), or the queue never sees it. A new repository may lack some of
+them, and has no `lingtai:pr-fix`; GitHub's issue form cannot pick a label that does
+not exist. Create what is missing once, `--force` leaving the ones you have:
+
+```sh
+for l in bug tech-debt feature documentation lingtai:pr-fix; do
+  gh label create "$l" --repo <owner>/<repo> --force
+done
+```
+
+A team project takes only issues
 assigned to your login, so assign it to yourself. Add `lingtai:hold` if you want to
 read it before an agent starts. [Tickets](tickets.md) is about writing one
 well. The ticket is worked as in chapter 2, and when it lands it is on your
@@ -84,7 +94,7 @@ summary and marked ready, on the head they passed. Run `lingtai pr <repo>` to fo
 Review the PR on GitHub as you would anyone's. Lingtai does not read review
 comments, so a comment alone starts nothing. To send the change back, open the PR's
 page on the board and choose *New pr-fix ticket*: it opens GitHub's new-issue form
-with the `lingtai:pr-fix` label and a title put in. Write what must change, assign
+with the `lingtai:pr-fix` label (created above) and a title put in. Write what must change, assign
 the issue to yourself, and create it. That ticket is cut from the PR's branch and
 lands on it, so the fix is another commit on the same PR. The PR stays ready and
 does not go back to a draft, and CI runs again on the new head.
