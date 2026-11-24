@@ -117,7 +117,7 @@ Read what each cannot do before choosing one:
 
 Install and sign in: for Copilot, `copilot login` (or `gh`'s login) when the
 project is unsandboxed, and `lingtai token copilot` when it is sandboxed
-([safety](safety.md#the-copilot-token)). For Antigravity, `agy acp --login`, and
+([requirements](requirements.md#tokens-for-a-sandboxed-run)). For Antigravity, `agy acp --login`, and
 Lingtai must run in your GUI login session, not over ssh, because the sign-in
 lives in the keychain (019 E10). Versions measured on 2026-11-19: Copilot CLI
 1.0.112, Antigravity CLI 1.5.9. The full table is in
