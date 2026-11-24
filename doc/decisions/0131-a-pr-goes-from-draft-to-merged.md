@@ -67,9 +67,10 @@ branch, the review's changes, and the merge back. One topic, one ADR.
    gives the rounds from a terminal); or *take it back to Draft*, which closes the
    PR on the code host and leaves its tickets in *Draft* for the next one.
 
-3. **`main` is brought in when a PR is submitted or reworked, and only then.**
+3. **`main` is brought in when a PR is submitted or reworked, and once more
+   into `branch.personal` after the PR merges (§10).**
    The sync is PR work: it runs on the PR branch, as step 2, at *Submit* and at
-   each rework (§8) — never on a claim or a sweep. Between submits
+   each rework (§8) — never on a claim or a sweep. Between those points
    `branch.personal` may fall behind `main`; tickets are cut from it as it is,
    and what conflicts is met at the next submit.
    - When `origin/<branch.main>` is already an ancestor of the PR branch
