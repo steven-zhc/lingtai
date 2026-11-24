@@ -5,7 +5,7 @@
  * without rendering. The page and `lib/prs.ts` (which reads the log) share it. The step names are handed in — they
  * are the conductor's list, and the conductor stays out of this file so a client graph may import it.
  */
-import { type PayloadOf, type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type PayloadOf, type PrState, isOpen, openAmong, prStepRows, prWaitOf } from '@lingtai/domain'
 import { type Recipe, callForPr, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
 
 type WaitReason = PayloadOf<'PrWaiting'>['reason']
@@ -251,7 +251,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
   const personal = recipe.branch.personal ?? main
   const good = input.prs.flatMap((r) => ('pr' in r ? [r] : []))
   const latest = good[good.length - 1]?.pr ?? null
-  const open = latest !== null && isOpen(latest) ? latest : null
+  const open = openAmong(good.map((r) => r.pr))
   const call = callForPr(recipe)
 
   const unreadPrs = input.prs.flatMap((r) => ('pr' in r ? [] : [r.n]))
