@@ -60,7 +60,7 @@ export const DOCS_PUBLIC = false
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
  * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). Nothing else in `doc/` has been through
+ * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -70,6 +70,7 @@ export const DOCS_PUBLIC = false
 export const PUBLIC_SLUGS = [
   'tutorial',
   'tutorial-more',
+  'team',
   'concepts',
   'when-it-fails',
   'recipe',
@@ -118,7 +119,7 @@ export interface Section {
  */
 /**
  * The book: the chapters ADR 0112 §13 lists, in that order. `n` is the chapter's
- * number in that table, so chapter 4 is 4 while 2 and 3 are unwritten.
+ * number in that table, so chapter 4 is 4 while 3 is unwritten.
  *
  * Only files that exist today. A chapter ticket adds its own row here and its
  * slug to `PUBLIC_SLUGS`; a row before its file fails the unit test, by name.
@@ -131,6 +132,7 @@ export interface BookRow {
 
 export const BOOK: BookRow[] = [
   { n: 1, part: 'Get started', file: 'tutorial.md' },
+  { n: 2, part: 'Get started', file: 'team.md' },
   { n: 4, part: 'Understand it', file: 'concepts.md' },
   { n: 7, part: 'Every day', file: 'when-it-fails.md' },
   { n: 8, part: 'Fit it to your project', file: 'recipe.md' },
