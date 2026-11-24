@@ -1,7 +1,3 @@
-/**
- * A retry and a back, served (#1314): the retry reads the PR branch in its lane turn and either walks again, adopts the head a
- * person pushed, or waits `sync-rewritten`; the back closes the draft on the host once and records `PrClosed`.
- */
 import { prStream, reducePr } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -13,8 +9,12 @@ import {
   recordPrWaiting,
   requestPrBack,
   requestPrRetry,
-  requestPrSubmit,
 } from '@lingtai/project'
+/**
+ * A retry and a back, served (#1314): the retry reads the PR branch in its lane turn and either walks again, adopts the head a
+ * person pushed, or waits `sync-rewritten`; the back closes the draft on the host once and records `PrClosed`.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -89,7 +89,7 @@ const aWorld = (over: Partial<World> = {}): World => ({
 /** PR 1 frozen and waiting at its sync with `reason`; `pushed` leaves it in the PR branch's last pushed state. */
 async function waiting(reason: 'sync-red' | 'sync-conflict' = 'sync-red'): Promise<EventStore> {
   const store = createMemoryEventStore()
-  await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await run(submitPr('lingtai', 'team', 'human:steven', store))
   await run(
     recordPrInProgress('lingtai', 1, { branch: 'lingtai-team', main: 'main', frozenSha: FROZEN, tickets: [] }, store),
   )
@@ -98,7 +98,8 @@ async function waiting(reason: 'sync-red' | 'sync-conflict' = 'sync-red'): Promi
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('a retry, served', () => {
   it('a branch that is not there and was never pushed: In progress walks again, and nothing is adopted', async () => {
@@ -185,6 +186,43 @@ describe('a back, served', () => {
     expect(w.closeCalls).toEqual([7])
     expect((await types(store)).filter((t) => t === 'PrClosed')).toHaveLength(1)
     expect(await state(store)).toMatchObject({ status: 'closed', pending: null })
+  })
+
+  it('hands the PR’s tickets to the draft in the same transaction as PrClosed', async () => {
+    const store = createMemoryEventStore()
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
+    await run(
+      recordPrInProgress(
+        'lingtai',
+        1,
+        {
+          branch: 'lingtai-team',
+          main: 'main',
+          frozenSha: FROZEN,
+          tickets: [
+            { ticket: '1', mergeCommit: 'm1', title: 't1' },
+            { ticket: '2', mergeCommit: 'm2', title: 't2' },
+          ],
+        },
+        store,
+      ),
+    )
+    await run(
+      recordPrWaiting('lingtai', 1, { step: 'sync', reason: 'sync-red', detail: 'red', headSha: FROZEN }, store),
+    )
+    await run(requestPrBack(ref, { by: 'human:steven' }, store))
+    await run(servePr(ports(store, aWorld()), 'lingtai', 1, []))
+    expect((await state(store)).status).toBe('closed')
+    const next = reducePr(await store.read(prStream('lingtai', 2)))
+    expect(next.status).toBe('draft')
+    expect(next.draft).toEqual([
+      { ticket: '1', mergeCommit: 'm1', from: 1 },
+      { ticket: '2', mergeCommit: 'm2', from: 1 },
+    ])
+    // A second serve writes nothing on either stream.
+    const heads = [await store.head(prStream('lingtai', 1)), await store.head(prStream('lingtai', 2))]
+    await run(servePr(ports(store, aWorld()), 'lingtai', 1, []))
+    expect([await store.head(prStream('lingtai', 1)), await store.head(prStream('lingtai', 2))]).toEqual(heads)
   })
 
   it('a closePull that fails records nothing, and the request is served again', async () => {

@@ -125,8 +125,8 @@ describe("editRecipe, on this repository's own recipe", () => {
       { path: ['branch', 'main'], value: 'develop' },
     ])
     expect(gitDiff(OWN, out)).toEqual({
-      removed: ['  base: main', '      refusalFixes: 3', '      newAttempts: 1'],
-      added: ['  base: develop', '      refusalFixes: 2', '      newAttempts: 0'],
+      removed: ['  main: main', '      refusalFixes: 3', '      newAttempts: 1'],
+      added: ['  main: develop', '      refusalFixes: 2', '      newAttempts: 0'],
     })
   })
 

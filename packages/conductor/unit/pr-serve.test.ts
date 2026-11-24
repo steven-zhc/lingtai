@@ -1,11 +1,11 @@
+import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 /**
  * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
  * In progress's steps.
  */
-import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
-import { requestPrSubmit } from '@lingtai/project'
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -39,6 +39,14 @@ async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: `m${issue}`, base } },
   ])
+  // The draft is the PR's own list (ADR 0131 §2): a ticket landing on the personal branch joins it while it is a draft.
+  const pr1 = await store.read(prStream('lingtai', 1))
+  const status = pr1.length === 0 ? null : reducePr(pr1).status
+  if (base === 'lingtai-team' && (status === null || status === 'draft')) {
+    await store.append(prStream('lingtai', 1), pr1.length, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
+    ])
+  }
 }
 
 /** A fake mirror: `personal` resolves to FROZEN (or does not), and `reachable` are the merge commits it holds. */
@@ -77,7 +85,7 @@ function ports(
 }
 
 const state = async (store: EventStore, n = 1) => reducePr(await store.read(prStream('lingtai', n)))
-const request = (store: EventStore) => Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+const request = (store: EventStore) => Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
 const serve = (p: PrPorts, steps: readonly PrStep[] = []) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
 
 describe('the freeze', () => {
@@ -97,7 +105,21 @@ describe('the freeze', () => {
     expect(pr.tickets.map((t) => t.ticket)).toEqual(['1', '2'])
     expect(pr.tickets[0]).toEqual({ ticket: '1', mergeCommit: 'm1', title: 'ticket 1' })
     const types = (await store.read(prStream('lingtai', 1))).map((e) => e.type)
-    expect(types).toEqual(['PrSubmitRequested', 'PrInProgress'])
+    expect(types).toEqual([
+      'PrDraftTicketAdded',
+      'PrDraftTicketAdded',
+      'PrDraftTicketAdded',
+      'PrSubmitRequested',
+      'PrInProgress',
+    ])
+    // The one the commit does not hold goes to the next draft, naming the PR it came from.
+    const next = await state(store, 2)
+    expect(next.status).toBe('draft')
+    expect(next.draft).toEqual([{ ticket: '3', mergeCommit: 'm3', from: 1 }])
+    // `PrInProgress` and the hand-over are adjacent in the log.
+    const all = (await store.read(prStream('lingtai', 1))).at(-1)!
+    const handed = (await store.read(prStream('lingtai', 2)))[0]!
+    expect(handed.seq).toBe(all.seq + 1n)
   })
 
   it('refuses nothing-landed when no ticket is held by the frozen commit', async () => {
@@ -106,8 +128,85 @@ describe('the freeze', () => {
     await request(store)
     await serve(ports(store, { reachable: [] }))
     const pr = await state(store)
-    expect(pr.status).toBe('refused')
+    // A draft that holds a ticket goes back to the draft when refused (the reducer), so it can be submitted again.
+    expect(pr.status).toBe('draft')
     expect(pr.refusal?.reason).toBe('nothing-landed')
+  })
+
+  it('with three draft tickets and none held: nothing-landed, the PR is a draft again with all three, nothing handed over', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await landed(store, '2')
+    await landed(store, '3')
+    await request(store)
+    await serve(ports(store, { reachable: [] }))
+    const pr = await state(store)
+    expect(pr.status).toBe('draft')
+    expect(pr.draft.length).toBe(3)
+    expect(pr.refusal?.reason).toBe('nothing-landed')
+    expect(await store.head(prStream('lingtai', 2))).toBe(0)
+  })
+
+  it('a lost race on the PR writes neither stream, and the second try writes both', async () => {
+    const mem = createMemoryEventStore()
+    await landed(mem, '1')
+    await landed(mem, '2')
+    await landed(mem, '3')
+    await request(mem)
+    let calls = 0
+    const store: EventStore = {
+      ...mem,
+      appendAll: async (batches) => {
+        calls++
+        if (calls === 1) {
+          // A ticket joins the draft on the PR's stream between the read and the write.
+          const head = await mem.head(prStream('lingtai', 1))
+          await mem.append(prStream('lingtai', 1), head, [
+            { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '4', mergeCommit: 'm4', from: null } },
+          ])
+          throw new ConcurrencyError(prStream('lingtai', 1), head, [head + 1])
+        }
+        return mem.appendAll(batches)
+      },
+    }
+    const before = (await mem.read(prStream('lingtai', 1))).length
+    await serve(ports(store, { reachable: ['m1', 'm2'] }))
+    expect(calls).toBe(2)
+    const pr = await state(mem)
+    expect(pr.status).toBe('in-progress')
+    // Nothing from the failed batch landed: the only event added before the retry is the ticket that joined.
+    expect((await mem.read(prStream('lingtai', 1))).length).toBe(before + 2)
+    expect(pr.tickets.map((t) => t.ticket)).toEqual(['1', '2'])
+    expect((await state(mem, 2)).draft.map((t) => t.ticket)).toEqual(['3', '4'])
+  })
+
+  it('a ticket the commit holds that joins the draft during the ancestry check is not refused nothing-landed', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    const base = ports(store, { reachable: ['m4'] })
+    let joined = false
+    const p: PrPorts = {
+      ...base,
+      git: (project, args) => {
+        if (args[0] === 'merge-base' && !joined) {
+          joined = true
+          return Effect.promise(async () => {
+            const head = await store.head(prStream('lingtai', 1))
+            await store.append(prStream('lingtai', 1), head, [
+              { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '4', mergeCommit: 'm4', from: null } },
+            ])
+            return { code: 1, stdout: '', stderr: '' }
+          })
+        }
+        return base.git(project, args)
+      },
+    }
+    await serve(p)
+    const pr = await state(store)
+    expect(pr.status).toBe('in-progress')
+    expect(pr.tickets.map((t) => t.ticket)).toEqual(['4'])
+    expect((await state(store, 2)).draft.map((t) => t.ticket)).toEqual(['1'])
   })
 
   it('refuses personal-missing when the branch does not resolve', async () => {
@@ -197,6 +296,14 @@ describe('a landing in flight', () => {
             await store.append(ticketId, 1, [
               { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm2', base: 'lingtai-team' } },
             ])
+            const head = await store.head(prStream('lingtai', 1))
+            await store.append(prStream('lingtai', 1), head, [
+              {
+                type: 'PrDraftTicketAdded',
+                actor: 'conductor',
+                data: { ticket: '2', mergeCommit: 'm2', from: null },
+              },
+            ])
           }
         }),
     }
@@ -248,8 +355,8 @@ describe('resuming', () => {
   it('a failure serving one PR does not leave the others unserved', async () => {
     const store = createMemoryEventStore()
     await landed(store, '1')
-    await Effect.runPromise(requestPrSubmit('a', 'team', 'human:steven', store))
-    await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('a', 'team', 'human:steven', store))
+    await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     const p = ports(store, { reachable: ['m1'] })
     const flaky: PrPorts = {
       ...p,

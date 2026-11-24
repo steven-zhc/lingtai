@@ -180,6 +180,7 @@ export function deferredEvents(open: Effect.Effect<EventsPort>): EventsPort {
   return {
     append: (streamId, expectedVersion, events) =>
       Effect.flatMap(open, (e) => e.append(streamId, expectedVersion, events)),
+    appendAll: (batches) => Effect.flatMap(open, (e) => e.appendAll(batches)),
     read: (streamId, fromVersion) => Effect.flatMap(open, (e) => e.read(streamId, fromVersion)),
     head: (streamId) => Effect.flatMap(open, (e) => e.head(streamId)),
     readTypes: (streamId, types, fromVersion) => Effect.flatMap(open, (e) => e.readTypes(streamId, types, fromVersion)),

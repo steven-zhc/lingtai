@@ -9,6 +9,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
+  backfillDraft,
   landingsInFlight,
   latestPr,
   listPrs,
@@ -16,9 +17,12 @@ import {
   recordPrInProgress,
   recordPrRefused,
   recordPrStepDone,
-  recordPrWaiting,
+  draftTarget,
+  openPr,
+  readDraft,
   requestPrSubmit,
 } from '../src/pr.ts'
+import { submitPr } from '../test/submit.ts'
 
 const run = <A>(e: Effect.Effect<A, Error>) => Effect.runPromise(e)
 
@@ -57,49 +61,180 @@ const frozen = (tickets: { ticket: string; mergeCommit: string; title: string }[
   tickets,
 })
 
+const draftTicket = (ticket: string) => ({
+  type: 'PrDraftTicketAdded' as const,
+  actor: 'conductor',
+  data: { ticket, mergeCommit: `m${ticket}`, from: null },
+})
+/** A ticket joins PR `n`'s draft, through the stream so the reducer decides the state. */
+const addToDraft = async (store: EventStore, n: number, ticket: string) =>
+  store.append(prStream('lingtai', n), await store.head(prStream('lingtai', n)), [draftTicket(ticket)])
+const heads = async (store: EventStore, upTo = 3) =>
+  Promise.all(Array.from({ length: upTo }, (_, i) => store.head(prStream('lingtai', i + 1))))
+const close = async (store: EventStore, n: number) =>
+  store.append(prStream('lingtai', n), await store.head(prStream('lingtai', n)), [
+    { type: 'PrClosed', actor: 'conductor', data: { headSha: 'a'.repeat(40) } },
+  ])
+/** PR 1 in progress, PR 2 a draft. */
+const reviewBelowDraft = async (store: EventStore) => {
+  await addToDraft(store, 1, '1')
+  await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
+  await addToDraft(store, 2, '2')
+}
+
+describe('openPr, draftTarget and readDraft', () => {
+  it('no PR at all: nothing open, the draft is number 1 in no state, and it is empty', async () => {
+    const store = createMemoryEventStore()
+    expect(await run(openPr('lingtai', store))).toBeNull()
+    expect(await run(draftTarget('lingtai', store))).toEqual({ n: 1, version: 0, state: null })
+    expect(await run(readDraft('lingtai', store))).toEqual([])
+  })
+
+  it('a draft above an open PR: the open PR is the one below, the draft is the highest', async () => {
+    const store = createMemoryEventStore()
+    await reviewBelowDraft(store)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.status)).toEqual(['in-progress', 'draft'])
+    expect((await run(openPr('lingtai', store)))?.n).toBe(1)
+    expect(await run(draftTarget('lingtai', store))).toEqual({ n: 2, version: 1, state: 'draft' })
+    expect((await run(readDraft('lingtai', store))).map((t) => t.ticket)).toEqual(['2'])
+  })
+
+  it('a draft asked to submit is still the draft stream, and is the open PR; no tickets are readable', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    expect(await run(draftTarget('lingtai', store))).toEqual({ n: 1, version: 2, state: 'requested' })
+    expect((await run(openPr('lingtai', store)))?.status).toBe('requested')
+    expect(await run(readDraft('lingtai', store))).toEqual([])
+  })
+
+  it('a highest PR that ended: nothing open, and the draft is the next number', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await close(store, 1)
+    expect(await run(openPr('lingtai', store))).toBeNull()
+    expect(await run(draftTarget('lingtai', store))).toEqual({ n: 2, version: 0, state: null })
+    expect(await run(readDraft('lingtai', store))).toEqual([])
+  })
+})
+
 describe('requestPrSubmit', () => {
   it('is refused solo, and appends nothing', async () => {
     const store = createMemoryEventStore()
     const answer = await run(requestPrSubmit('lingtai', 'solo', 'human:steven', store))
     expect(answer).toMatchObject({ kind: 'refused', reason: 'solo' })
-    expect(await store.head(prStream('lingtai', 1))).toBe(0)
+    expect(await heads(store)).toEqual([0, 0, 0])
   })
 
-  it('numbers PRs from 1 and is refused open-pr, naming the open one, while it is requested, in progress or waiting', async () => {
+  it('is refused nothing-landed with no draft stream, and appends nothing', async () => {
     const store = createMemoryEventStore()
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toMatchObject({
+      kind: 'refused',
+      reason: 'nothing-landed',
+    })
+    expect(await heads(store)).toEqual([0, 0, 0])
+  })
+
+  it('appends PrSubmitRequested to the draft stream, and the number does not change', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
     expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toEqual({ kind: 'requested', n: 1 })
+    expect((await store.read(prStream('lingtai', 1))).map((e) => e.type)).toEqual([
+      'PrDraftTicketAdded',
+      'PrSubmitRequested',
+    ])
+    expect(await heads(store)).toEqual([2, 0, 0])
+  })
+
+  it('is refused open-pr, naming it, while a PR is open below a draft or the draft is requested', async () => {
+    const store = createMemoryEventStore()
+    await reviewBelowDraft(store)
+    const before = await heads(store)
     expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toMatchObject({
       kind: 'refused',
       reason: 'open-pr',
       detail: expect.stringContaining('PR 1 of lingtai'),
     })
+    expect(await heads(store)).toEqual(before)
 
-    await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
-    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toMatchObject({ reason: 'open-pr' })
-
-    await run(
-      recordPrWaiting('lingtai', 1, { step: 'push', reason: 'denied', detail: 'no', headSha: 'f'.repeat(40) }, store),
-    )
-    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toMatchObject({ reason: 'open-pr' })
-    expect(await store.head(prStream('lingtai', 2))).toBe(0)
+    const other = createMemoryEventStore()
+    await addToDraft(other, 1, '1')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', other))
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', other))).toMatchObject({ reason: 'open-pr' })
+    expect(await heads(other)).toEqual([2, 0, 0])
   })
 
-  it('numbers past a refused PR: a refused one is not open', async () => {
+  it('numbers past a closed PR: a closed one is not open, and the draft above it is the next number', async () => {
     const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
     await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
-    await run(recordPrRefused('lingtai', 1, { reason: 'nothing-landed', detail: 'none' }, store))
+    await close(store, 1)
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toMatchObject({
+      reason: 'nothing-landed',
+    })
+    await addToDraft(store, 2, '2')
     expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))).toEqual({ kind: 'requested', n: 2 })
   })
 
   it('two requests racing produce one PrSubmitRequested', async () => {
     const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
     const [a, b] = await Promise.all([
       run(requestPrSubmit('lingtai', 'team', 'human:a', store)),
       run(requestPrSubmit('lingtai', 'team', 'human:b', store)),
     ])
     expect([a.kind, b.kind].sort()).toEqual(['refused', 'requested'])
-    const events = [...(await store.read(prStream('lingtai', 1))), ...(await store.read(prStream('lingtai', 2)))]
+    const events = await store.read(prStream('lingtai', 1))
     expect(events.filter((e) => e.type === 'PrSubmitRequested')).toHaveLength(1)
+  })
+
+  it('a landing between the read and the append: the Submit reads again and appends at the new version', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    let landed = false
+    const racing: EventStore = {
+      ...store,
+      append: async (stream, version, events) => {
+        if (!landed) {
+          landed = true
+          await store.append(stream, version, [draftTicket('2')])
+        }
+        return store.append(stream, version, events)
+      },
+    }
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:steven', racing))).toEqual({ kind: 'requested', n: 1 })
+    expect((await store.read(prStream('lingtai', 1))).map((e) => e.type)).toEqual([
+      'PrDraftTicketAdded',
+      'PrDraftTicketAdded',
+      'PrSubmitRequested',
+    ])
+  })
+
+  it('a PR read early that moves while a later one is read: the Submit reads again and is refused open-pr', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    let moved = false
+    const racing: EventStore = {
+      ...store,
+      read: async (stream, ...rest) => {
+        const events = await store.read(stream, ...rest)
+        if (!moved && stream === prStream('lingtai', 1)) {
+          moved = true
+          // Another Submit, the freeze and a landing into a new draft, all after PR 1 was read as a draft.
+          await run(requestPrSubmit('lingtai', 'team', 'human:b', store))
+          await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
+          await addToDraft(store, 2, '2')
+        }
+        return events
+      },
+    }
+    expect(await run(requestPrSubmit('lingtai', 'team', 'human:a', racing))).toMatchObject({
+      kind: 'refused',
+      reason: 'open-pr',
+    })
+    expect(await store.head(prStream('lingtai', 2))).toBe(1)
   })
 
   it('does not take a project stream for a PR: prj- and pr- share two letters', async () => {
@@ -113,7 +248,7 @@ describe('requestPrSubmit', () => {
 describe('the transitions record each step once', () => {
   it('a step recorded since the latest PrInProgress is answered from the state, and a new freeze starts again', async () => {
     const store = createMemoryEventStore()
-    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
     await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
     expect(await run(recordPrStepDone('lingtai', 1, { step: 'build', headSha: 'a'.repeat(40) }, store))).toBe(true)
     expect(await run(recordPrStepDone('lingtai', 1, { step: 'build', headSha: 'a'.repeat(40) }, store))).toBe(false)
@@ -164,7 +299,7 @@ describe('the draft', () => {
     await recipeChanged(store, 'mode: team\n', 0)
     await landed(store, '1', 'lingtai-team')
     await landed(store, '2', 'lingtai-team')
-    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
     await run(recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store))
     const open = await run(readPrDraft('lingtai', team, [{ issue: '1' }, { issue: '2' }], store))
     expect(open.map((t) => t.ticket)).toEqual(['2'])
@@ -174,7 +309,7 @@ describe('the draft', () => {
     const store = createMemoryEventStore()
     await recipeChanged(store, 'mode: team\n', 0)
     await landed(store, '1', 'lingtai-team')
-    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(submitPr('lingtai', 'team', 'human:steven', store))
     await run(recordPrRefused('lingtai', 1, { reason: 'git', detail: 'x' }, store))
     expect((await run(readPrDraft('lingtai', team, [{ issue: '1' }], store))).map((t) => t.ticket)).toEqual(['1'])
   })
@@ -267,5 +402,76 @@ describe('landings in flight', () => {
     ])
     const owed = await run(landingsInFlight('lingtai', 'lingtai-team', store))
     expect(owed.map((o) => o.headSha).sort()).toEqual(['h1', 'h2'])
+  })
+})
+
+describe('backfillDraft (#1394)', () => {
+  const cands = [{ issue: '1' }, { issue: '2' }, { issue: '3' }, { issue: '4' }]
+  const teamStore = async () => {
+    const store = createMemoryEventStore()
+    await recipeChanged(store, 'mode: team\n', 0)
+    return store
+  }
+
+  it('writes the three landed tickets onto PR 1, in landing order, with from: null', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(3)
+    const pr = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(pr.status).toBe('draft')
+    expect(pr.draft.map((t) => [t.ticket, t.from])).toEqual([
+      ['1', null],
+      ['2', null],
+      ['3', null],
+    ])
+  })
+
+  it('a second call appends nothing and returns 0', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await run(backfillDraft('lingtai', team, cands, store))
+    const head = await store.head(prStream('lingtai', 1))
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(0)
+    expect(await store.head(prStream('lingtai', 1))).toBe(head)
+  })
+
+  it('appends only the tickets the stream lacks', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await addToDraft(store, 1, '2')
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(2)
+    const pr = reducePr(await store.read(prStream('lingtai', 1)))
+    expect(pr.draft.map((t) => t.ticket).sort()).toEqual(['1', '2', '3'])
+  })
+
+  it('a ticket landed since an in-review PR goes to the next number', async () => {
+    const store = await teamStore()
+    for (const i of ['1', '2', '3']) await landed(store, i, 'lingtai-team')
+    await addToDraft(store, 1, '1')
+    await addToDraft(store, 1, '2')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    await run(
+      recordPrInProgress(
+        'lingtai',
+        1,
+        frozen([
+          { ticket: '1', mergeCommit: 'm1', title: 't' },
+          { ticket: '2', mergeCommit: 'm2', title: 't' },
+        ]),
+        store,
+      ),
+    )
+    expect(await store.head(prStream('lingtai', 2))).toBe(0)
+    expect(await run(backfillDraft('lingtai', team, cands, store))).toBe(1)
+    const two = reducePr(await store.read(prStream('lingtai', 2)))
+    expect(two.draft.map((t) => t.ticket)).toEqual(['3'])
+    expect(await store.head(prStream('lingtai', 1))).toBeGreaterThan(0)
+  })
+
+  it('a solo project appends nothing', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1', 'lingtai-team')
+    expect(await run(backfillDraft('lingtai', solo, cands, store))).toBe(0)
+    expect(await store.head(prStream('lingtai', 1))).toBe(0)
   })
 })

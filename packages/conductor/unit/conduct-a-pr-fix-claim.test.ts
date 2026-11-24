@@ -83,6 +83,18 @@ describe('a team lingtai:pr-fix claim', () => {
     expect(did).toContain('cut from origin/lingtai-team-pr-1')
   })
 
+  it('with a draft above the open PR is still cut from the open PR, not from branch.personal (#1391)', async () => {
+    const store = memoryStore()
+    await openPr(store, true)
+    await store.append(prStream(PROJECT, 2), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '9', mergeCommit: 'c9', from: null } },
+    ] as never)
+    const did: string[] = []
+    await once(options(store), fakePorts(did, store, true))
+    expect((await claims(store))[0]!.data).toMatchObject({ cutFrom: { branch: 'lingtai-team-pr-1', pr: 1 } })
+    expect(did).toContain('cut from origin/lingtai-team-pr-1')
+  })
+
   it('with no PR open records branch.personal and no PR, and is cut from it', async () => {
     const store = memoryStore()
     const did: string[] = []
@@ -123,5 +135,33 @@ describe('every other claim', () => {
     await once(ordinary, fakePorts([], store, true))
     const [claim] = await claims(store)
     expect(claim!.data).not.toHaveProperty('cutFrom')
+  })
+})
+
+describe('a landing and the draft (ADR 0131 §1)', () => {
+  const landed = async (store: EventStore) =>
+    (await store.read(ticketStream(PROJECT, 7))).filter((e) => e.type === 'TicketLanded')
+
+  it('a pr-fix landing, on the PR’s branch, writes no PrDraftTicketAdded', async () => {
+    const store = memoryStore()
+    await openPr(store, true)
+    await once(options(store), fakePorts([], store, true))
+    expect((await landed(store))[0]!.data).toMatchObject({ base: 'lingtai-team-pr-1' })
+    const types = [...(await store.read(prStream(PROJECT, 1))), ...(await store.read(prStream(PROJECT, 2)))].map(
+      (e) => e.type,
+    )
+    expect(types).not.toContain('PrDraftTicketAdded')
+  })
+
+  it('an ordinary team landing, on branch.personal, adds the issue to the draft', async () => {
+    const store = memoryStore()
+    const ordinary = options(store)
+    ordinary.client.getIssue = async () => ({ ...issue, assignees: ['me'] })
+    ordinary.client.listOpenIssues = async () => [{ ...issue, assignees: ['me'] }]
+    await once(ordinary, fakePorts([], store, true))
+    expect((await landed(store))[0]!.data).toMatchObject({ base: 'lingtai-team' })
+    const [added] = await store.read(prStream(PROJECT, 1))
+    expect(added?.type).toBe('PrDraftTicketAdded')
+    expect(added?.data).toMatchObject({ ticket: '7', from: null })
   })
 })

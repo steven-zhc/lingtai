@@ -54,6 +54,9 @@ const memory = (): EventStore & { events: Envelope[] } => {
     async read(streamId) {
       return events.filter((e) => e.streamId === streamId)
     },
+    async appendAll() {
+      throw new Error('appendAll: not used by this script')
+    },
     async readAll() {
       return events
     },

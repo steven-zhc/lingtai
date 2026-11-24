@@ -503,6 +503,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(run.ok).toBe(true)
     expect(did).toContain('integrate')
     expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
+    // A solo project has no draft: the landing writes the ticket's stream only (ADR 0131 §1).
+    expect(await store.head(`pr-${PROJECT}-1`)).toBe(0)
   })
 
   /**
@@ -1577,13 +1579,12 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(new Set(ids).size).toBe(3)
     expect(ids[1]).toBe(`${ids[0]}:rerun:1`)
     expect(ids[2]).toBe(`${ids[0]}:rerun:2`)
-    // The same brief, and one paragraph more at its end: the step was redone whole from the head (#1245).
-    expect(prompts[1]!.startsWith(prompts[0]!)).toBe(true)
-    expect(prompts[1]!.slice(prompts[0]!.length)).toContain('This step was interrupted')
-    expect(prompts[1]!.slice(prompts[0]!.length)).toMatch(
-      /\([^)]*API Error: 503[^)]*\); it began at \S+ and is committed to \S+/,
-    )
-    expect(prompts[2]!.startsWith(prompts[0]!)).toBe(true)
+    // The same brief, and one paragraph more, after its opening lines: the step was redone whole from the head
+    // (#1245), and the paragraph comes before anything long (#1404).
+    const redoPara = /This step was interrupted [^\n]*Carry on, and do not redo what is committed\.\n\n/
+    expect(prompts[1]!.replace(redoPara, '')).toBe(prompts[0]!)
+    expect(prompts[1]!).toMatch(/\([^)]*API Error: 503[^)]*\); it began at \S+ and is committed to \S+/)
+    expect(prompts[2]!.replace(redoPara, '')).toBe(prompts[0]!)
 
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     const reruns = run.filter((e) => e.type === 'StepRedone').map((e) => e.data as PayloadOf<'StepRedone'>)
@@ -1722,8 +1723,9 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
     expect(fixes.length).toBeGreaterThanOrEqual(2)
     expect(fixes[1]!.id).toBe(`${fixes[0]!.id}:rerun:1`)
-    // The same fix brief, and the paragraph a redone step ends with (#1245).
-    expect(fixes[1]!.prompt.startsWith(fixes[0]!.prompt)).toBe(true)
+    // The same fix brief, and the paragraph a redone step opens with (#1245, #1404).
+    const redoPara = /This step was interrupted [^\n]*Carry on, and do not redo what is committed\.\n\n/
+    expect(fixes[1]!.prompt.replace(redoPara, '')).toBe(fixes[0]!.prompt)
     expect(fixes[1]!.prompt).toContain('This step was interrupted')
     const [, run] = [...streams(store)].find(([id]) => id.startsWith('pass-'))!
     expect(run.filter((e) => e.type === 'StepRedone')).toHaveLength(1)

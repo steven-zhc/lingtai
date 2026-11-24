@@ -40,20 +40,41 @@ export interface PrSummarizer {
   locked(project: string): Effect.Effect<string | null>
 }
 
-const BRIEF = `You write the title and summary of a pull request, for the team's reviewers.
+/** What a good answer looks like, shown to the agent in both briefs. It has no `Closes` line for the model to copy. */
+export const SUMMARY_EXAMPLE = `Board traces, PR draft state, more outcome forms
 
-Answer in plain prose, as the text of the pull request and nothing else:
-- the first line is the pull request's title, one line, without a leading "#";
-- then a short summary of the change as a whole — what it does and why — in a few paragraphs at most;
-- no list of the tickets, and no "Closes #…" lines: Lingtai appends them itself.
+- Board: traces show which page and which event stream is slow (#1359, #1360, #1361, #1362, #1375)
+- PR: a PR has a draft state, and appendAll writes several streams in one transaction; nothing calls them yet (#1389, #1390)
+- Daemon: a landing whose process died after the push is recorded at the next start (#1397)
+- Docs: the docs are a ten-chapter book; chapters 2–3 written (#1367, #1376, #1399)
+
+Review closely: #1398 also keeps the redo's reason across a daemon restart, wider than the ticket asked.`
+
+export const BRIEF = `You write the title and summary of a pull request, for the team's reviewers, who read it in under a minute.
+
+Answer as the text of the pull request and nothing else:
+- the first line is the pull request's title, at most 60 characters, naming the two or three largest themes, without a leading "#";
+- then one bullet per area (Board, PR, Daemon, Docs, … as the tickets suggest), each one sentence saying what is now true, ending with its ticket numbers in parentheses;
+- every ticket's number appears in exactly one bullet; no transition sentences, no paragraphs;
+- only when a ticket's change is wider than its title says, one last line starting "Review closely:"; otherwise no such line;
+- no Closes lines: Lingtai appends them itself.
+
+An example of the shape:
+
+${SUMMARY_EXAMPLE}
 `
 
-const TOPUP_BRIEF = `You keep the summary of a pull request up to date, for the team's reviewers. Below is its current text and what changed since it was written.
+export const TOPUP_BRIEF = `You keep the summary of a pull request up to date, for the team's reviewers. Below is its current text and what changed since it was written.
 
-Keep the current summary and extend it with what changed and why. Answer as the whole new text of the pull request and nothing else:
-- the first line is the pull request's title; it stays as it is unless it no longer fits;
-- then the summary, in plain prose;
-- no list of the tickets, and no "Closes #…" lines: Lingtai appends them itself.
+Keep the current summary and extend it with what changed. Answer as the whole new text of the pull request and nothing else:
+- the first line is the pull request's title, at most 60 characters; it stays as it is unless it no longer fits;
+- then the bullets: add a bullet for what changed, or add its ticket numbers to an existing bullet — never a paragraph;
+- every ticket's number appears in exactly one bullet; a "Review closely:" line only when a ticket's change is wider than its title says;
+- no Closes lines: Lingtai appends them itself.
+
+An example of the shape:
+
+${SUMMARY_EXAMPLE}
 `
 
 /**

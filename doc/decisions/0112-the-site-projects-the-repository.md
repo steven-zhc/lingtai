@@ -84,6 +84,46 @@ or a board with its stuck work removed, would contradict the pitch.
     bot protection can answer it with a 200 HTML page that `curl -f` does not
     catch. The root `.node-version` (`26`) lets a provider's build run the `.ts`
     scripts directly.
+13. **The docs are a book, and a reader goes through it in order.** The reading
+    path is ten chapters in four parts; a reader who goes page by page learns
+    every feature they need, simple to deep, without jumping.
+
+    | Part                  | #   | Chapter                                                                        | File                 |
+    | --------------------- | --- | ------------------------------------------------------------------------------ | -------------------- |
+    | Get started           | 1   | Land your first ticket — local, every default, about ten minutes              | `tutorial.md`        |
+    |                       | 2   | A day in team mode — two tickets land on your branch, submit a PR, merge it, the tickets close | `team.md` |
+    |                       | 3   | Connect GitHub — add your own repository, assign issues, CI, a review that asks for a change | `connect-github.md` |
+    | Understand it         | 4   | How an attempt goes — the ten steps, why a card stops where it does          | `concepts.md`        |
+    |                       | 5   | The board — what each column means, the PR view, the keys                     | `board.md`           |
+    | Every day             | 6   | Writing a ticket an agent can work                                             | `tickets.md`         |
+    |                       | 7   | When something fails                                                           | `when-it-fails.md`   |
+    | Fit it to your project | 8  | The recipe                                                                     | `recipe.md`          |
+    |                       | 9   | Checks, review and spend                                                       | `checks-and-spend.md` |
+    |                       | 10  | The sandbox and what an agent can reach                                        | `safety.md`          |
+
+    Chapters 1 and 2 use Chapter Garden, on local tickets, in one home; chapter
+    3 adds the reader's own repository to that home.
+14. **A chapter is 600–800 words and never more than 800**, counted as `wc -w`
+    over the file with fenced code blocks removed. A chapter answers one
+    question, and its first screen gives the answer. A shorter chapter is fine
+    when it answers its question; a longer one is split or cut, never accepted.
+15. **Each fact has one home.** A chapter that needs a fact another page owns
+    links to it in one line; it does not explain it again.
+16. **A chapter says what Lingtai is and what to do, not why it was designed
+    so.** The reasons are the ADRs'; a chapter links to one at most.
+17. **A chapter ends with one way on**: the next chapter. The site draws
+    previous and next from the order in §13.
+18. **Reference pages sit beside the path and may be long**: `cli.md`,
+    `plugins/`, `requirements.md`, `events`, `upgrading-to-0.16.md`. They are
+    looked up, not read through: a table or one fact per line, no long
+    paragraphs.
+19. **Pages off the path** — `guide.md`, `tutorial-more.md`, `operating.md`,
+    `reference.md`, `design.md`, `roadmap.md`, `why.md`, `from-symphony.md` —
+    stay in `doc/` and stay published under §6, but no chapter sends a newcomer
+    to them. A chapter that takes over one of them (`tickets.md` from
+    `guide.md`, chapter 3 from `tutorial-more.md`) says so in its own ticket.
+20. **The slogan and the front page's hero intro are not chapters and are not
+    edited under this rule.**
 
 ## Consequences
 
@@ -98,6 +138,8 @@ or a board with its stuck work removed, would contradict the pitch.
   `LINGTAI_SITE_PUBLIC_PROJECTS`, what the page shows.
 - A new HTML document in `doc/` is unreachable on the site until it is added to
   `HTML_DOCS`.
+- Every chapter is reviewed against §14–§17, and a reviewer may refuse a chapter
+  over 800 words. No test counts the words, so the reviewer is the only check.
 
 ---
 *Replaces archived 0035 in [decisions-archive](../decisions-archive/).*

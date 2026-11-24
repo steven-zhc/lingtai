@@ -374,6 +374,12 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   font-size: 11.5px; font-weight: 600; letter-spacing: 0.04em;
   color: var(--muted); padding: 0 3px 9px;
 }
+/* One height for every lane's header, so the lanes' cards start on one line.
+   The Landed pill (LandedCount, page.tsx) sets it: ~26.3px of pill + 9px
+   padding. Waiting's 22px count is shorter. min-height, not height, so a
+   wrapped label grows its own header rather than clipping. Not on bare
+   .col-h: the "On their way in" strip shares that class. */
+.col > .col-h { min-height: 36px; }
 .col-h .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .ctbtn { display: inline-flex; align-items: baseline; gap: 6px; text-decoration: none; color: var(--accent-ink); border: 1px solid var(--rule-2); border-radius: 999px; padding: 3px 10px 4px; background: var(--surface); }
 .ctbtn .lbl { font-size: 11px; letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
@@ -383,7 +389,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 /* The Waiting lane is a compact reading list at the reference's 440px width.
    Its count and card hierarchy stay distinct from the other lanes. */
 .col.hot { min-width: min(100%, 440px); }
-.col.hot .col-h { padding: 1px 4px 11px; text-transform: uppercase; letter-spacing: 0.08em; }
+.col.hot .col-h { padding-inline: 4px; text-transform: uppercase; letter-spacing: 0.08em; }
 .col.hot .col-h .ct { font-size: 22px; font-weight: 500; line-height: 1; letter-spacing: 0; }
 .col.hot .cards, .col.hot .cards-in { gap: 9px; }
 
@@ -3677,6 +3683,13 @@ dialog.palette::backdrop { background: rgb(15 24 28 / 0.35); }
 }
 .palette-opt.on { background: var(--accent-soft); color: var(--accent-ink); }
 .palette-detail { color: var(--muted); font-size: 11px; white-space: nowrap; }
+/* The key line at the foot. The dialog is mounted under <body>, outside `.bar`, so it carries its own
+   Mac/PC switch: the Mac label until `Palette` sets `data-os` on <html>. */
+.palette-keys { margin: 0; font-size: 11px; color: var(--muted); }
+.palette-keys kbd { font-family: var(--mono); font-size: 10.5px; }
+.palette-keys .k-pc { display: none; }
+html[data-os="pc"] .palette-keys .k-pc { display: inline; }
+html[data-os="pc"] .palette-keys .k-mac { display: none; }
 @media (prefers-reduced-motion: reduce) { dialog.palette, .palette-opt { transition: none !important; } }
 
 /* Step 2 of adding a repository (#971): the lines on the left, the recipe it writes on the right. */

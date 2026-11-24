@@ -29,8 +29,10 @@ import { buildCommands, nextPrompt, renderPrompt } from '@lingtai/conductor/prom
 import type { Envelope } from '@lingtai/domain'
 import { repoRoot } from '@lingtai/env'
 import { readProject } from '@lingtai/project'
+import { SpanStatusCode } from '@opentelemetry/api'
 
 import type { TicketView } from './task.ts'
+import { traced, tracedSync } from './timing.ts'
 
 /**
  * Lines added and removed against what Lingtai composed.
@@ -134,18 +136,27 @@ export async function outgoingFor(input: {
   const path = resolve(repoRoot(), 'prompts/ticket.md')
   let template: string
   try {
-    template = await readFile(path, 'utf8')
+    template = await traced('prompt.template', () => readFile(path, 'utf8'))
   } catch {
     return refused(`no prompt template at ${path}`)
   }
 
-  const state = await readProject(ticket.project).catch(() => null)
+  const state = await traced('prompt.project', async (span) => {
+    const found = await readProject(ticket.project)
+    // A project nobody registered is a refusal below: the stage ends as one before it.
+    if (found === null) span.setStatus({ code: SpanStatusCode.ERROR })
+    return found
+  }).catch(() => null)
   if (!state) return refused(`${ticket.project} is not a registered project`)
   // Never throws, and its `problem` is already one line. The recipe is here for
   // two things, not one: `runtime.budget` — how much of the earlier attempts
   // this prompt quotes (0029) — and `steps`, to name the commands `{{checks}}`
   // renders (`#319`). Guessing at either would misstate the document.
-  const filter = await projectFilter(state)
+  const filter = await traced('prompt.filter', async (span) => {
+    const found = await projectFilter(state)
+    if (!found.ok) span.setStatus({ code: SpanStatusCode.ERROR })
+    return found
+  })
   if (!filter.ok) return refused(`the recipe could not be read: ${filter.problem}`)
 
   // What `conduct.ts` asks, asked the same way (#315): only where there was an
@@ -155,34 +166,41 @@ export async function outgoingFor(input: {
   const arms =
     input.streams.length === 0
       ? null
-      : await githubClientFor(state)
-          .then((client) => armsOnOrigin(client, agentBranch(ticket.ref)))
-          .catch(() => null)
+      : await traced('prompt.arms', async (span) => {
+          const client = await traced('prompt.client', () => githubClientFor(state))
+          const found = await armsOnOrigin(client, agentBranch(ticket.ref))
+          // `armsOnOrigin` answers a failed lookup with null rather than a throw: the stage still failed.
+          if (found === null) span.setStatus({ code: SpanStatusCode.ERROR })
+          return found
+        }).catch(() => null)
 
-  const next = nextPrompt({
-    // The same version `conduct.ts` and `lingtai run` pass, computed the same
-    // way from the same file.
-    base: `ticket@${template.length}`,
-    budget: filter.recipe.runtime.budget,
-    item: input.own,
-    lastRun: input.streams.length === 0 ? null : (input.streams.at(-1) ?? []),
-    arms,
+  const body = ticket.body
+  return tracedSync('prompt.compose', () => {
+    const next = nextPrompt({
+      // The same version `conduct.ts` and `lingtai run` pass, computed the same
+      // way from the same file.
+      base: `ticket@${template.length}`,
+      budget: filter.recipe.runtime.budget,
+      item: input.own,
+      lastRun: input.streams.length === 0 ? null : (input.streams.at(-1) ?? []),
+      arms,
+    })
+
+    const checks = buildCommands(filter.recipe.steps)
+    const filled = { number: Number(ticket.ref), title: ticket.title ?? '', body }
+    const text = renderPrompt(template, filled, checks, next.failure)
+
+    return {
+      text,
+      version: next.version,
+      basedOn: next.composed.version,
+      attempt: next.attempt,
+      edit: next.edit,
+      delta:
+        next.edit === null
+          ? { added: 0, removed: 0 }
+          : lineDelta(renderPrompt(template, filled, checks, next.composed.failure), text),
+      problem: null,
+    }
   })
-
-  const checks = buildCommands(filter.recipe.steps)
-  const filled = { number: Number(ticket.ref), title: ticket.title ?? '', body: ticket.body }
-  const text = renderPrompt(template, filled, checks, next.failure)
-
-  return {
-    text,
-    version: next.version,
-    basedOn: next.composed.version,
-    attempt: next.attempt,
-    edit: next.edit,
-    delta:
-      next.edit === null
-        ? { added: 0, removed: 0 }
-        : lineDelta(renderPrompt(template, filled, checks, next.composed.failure), text),
-    problem: null,
-  }
 }

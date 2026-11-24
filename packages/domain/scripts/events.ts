@@ -285,6 +285,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'ProjectResumed',",
   },
   {
+    event: 'PrDraftTicketAdded',
+    why: 'returned from a transition; nothing appends it yet',
+    file: 'packages/domain/src/pr.ts',
+    anchor: "type: 'PrDraftTicketAdded',",
+  },
+  {
     event: 'PrSubmitRequested',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',
@@ -628,6 +634,7 @@ export const STREAMS = {
   ProjectRecovered: ['prj-'],
   ProjectPaused: ['prj-'],
   ProjectResumed: ['prj-'],
+  PrDraftTicketAdded: ['pr-'],
   PrSubmitRequested: ['pr-'],
   PrSubmitRefused: ['pr-'],
   PrInProgress: ['pr-'],

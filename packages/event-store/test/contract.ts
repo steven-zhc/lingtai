@@ -243,5 +243,124 @@ export function describeEventStoreContract(
       expect(written!.at).toBeInstanceOf(Date)
       expect(Number.isNaN(written!.at.getTime())).toBe(false)
     })
+
+    describe('appendAll', () => {
+      const runIds = (es: { data: unknown }[]) => es.map((e) => (e.data as { runId: string }).runId)
+
+      it('writes two new streams and reads them back with the right versions', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+
+        const written = await s.appendAll([
+          { streamId: a, expectedVersion: 0, events: [claimed('a-1'), claimed('a-2')] },
+          { streamId: b, expectedVersion: 0, events: [claimed('b-1')] },
+        ])
+
+        expect(written.map((w) => w.map((e) => e.version))).toEqual([[1, 2], [1]])
+        expect((await s.read(a)).map((e) => e.version)).toEqual([1, 2])
+        expect(runIds(await s.read(b))).toEqual(['b-1'])
+      })
+
+      it('raises seq in batch order', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+
+        const [first, second] = await s.appendAll([
+          { streamId: a, expectedVersion: 0, events: [claimed('a-1'), claimed('a-2')] },
+          { streamId: b, expectedVersion: 0, events: [claimed('b-1')] },
+        ])
+
+        const seqs = [...first!, ...second!].map((e) => e.seq)
+        expect(seqs).toEqual([...seqs].sort((x, y) => (x < y ? -1 : x > y ? 1 : 0)))
+        expect(new Set(seqs).size).toBe(3)
+      })
+
+      it('leaves the first stream unchanged when the second conflicts, and names the second', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+        await s.append(b, 0, [claimed('b-1')])
+
+        const err = await s
+          .appendAll([
+            { streamId: a, expectedVersion: 0, events: [claimed('a-1')] },
+            { streamId: b, expectedVersion: 0, events: [claimed('b-2')] },
+          ])
+          .catch((e: unknown) => e)
+
+        expect(err).toBeInstanceOf(ConcurrencyError)
+        expect((err as ConcurrencyError).streamId).toBe(b)
+        expect(await s.read(a)).toEqual([])
+        expect(runIds(await s.read(b))).toEqual(['b-1'])
+      })
+
+      it('writes nothing to the first stream when the second has a bad event', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+
+        await expect(
+          s.appendAll([
+            { streamId: a, expectedVersion: 0, events: [claimed('a-1')] },
+            { streamId: b, expectedVersion: 0, events: [{ type: 'NoSuchEvent', actor: 'conductor', data: {} }] },
+          ]),
+        ).rejects.toThrow()
+
+        expect(await s.read(a)).toEqual([])
+        expect(await s.read(b)).toEqual([])
+      })
+
+      it('writes nothing when a later batch fails to decode after the earlier ones were built', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+        const c = freshStream()
+
+        await expect(
+          s.appendAll([
+            { streamId: a, expectedVersion: 0, events: [claimed('a-1')] },
+            { streamId: b, expectedVersion: 0, events: [{ ...claimed('b-1'), schemaVer: 999 }] },
+            { streamId: c, expectedVersion: 0, events: [claimed('c-1')] },
+          ]),
+        ).rejects.toThrow()
+
+        expect(await s.head(a)).toBe(0)
+        expect(await s.head(b)).toBe(0)
+        expect(await s.head(c)).toBe(0)
+        expect(await s.read(b)).toEqual([])
+      })
+
+      it('refuses a stream id that appears in two batches', async () => {
+        const s = await store()
+        const a = freshStream()
+
+        await expect(
+          s.appendAll([
+            { streamId: a, expectedVersion: 0, events: [claimed('a-1')] },
+            { streamId: a, expectedVersion: 1, events: [claimed('a-2')] },
+          ]),
+        ).rejects.toThrow(RangeError)
+
+        expect(await s.read(a)).toEqual([])
+      })
+
+      it('writes nothing for an empty batch or an empty call, and keeps the slot', async () => {
+        const s = await store()
+        const a = freshStream()
+        const b = freshStream()
+
+        expect(await s.appendAll([])).toEqual([])
+        expect(await s.appendAll([{ streamId: a, expectedVersion: 0, events: [] }])).toEqual([[]])
+        const written = await s.appendAll([
+          { streamId: a, expectedVersion: 0, events: [] },
+          { streamId: b, expectedVersion: 0, events: [claimed('b-1')] },
+        ])
+
+        expect(written.map((w) => w.length)).toEqual([0, 1])
+        expect(await s.read(a)).toEqual([])
+      })
+    })
   })
 }

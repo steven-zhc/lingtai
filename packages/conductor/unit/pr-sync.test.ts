@@ -1,3 +1,8 @@
+import { integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import type { EventStore } from '@lingtai/event-store/store'
+import type { GitHub } from '@lingtai/github'
+import { recordBranchSynced, recordPrOpened, recordPrPushed, recordPrRestart } from '@lingtai/project'
 /**
  * `sync` and `build`, In progress's first two steps, and the merge back into `branch.personal` (#1312, 0130 §6):
  * `main` is merged in a throwaway worktree and built before it is anyone's target; nothing but `push` writes the PR
@@ -26,8 +31,8 @@ import {
   grantPrRounds,
   recordPrRestart,
   requestPrRetry,
-  requestPrSubmit,
 } from '@lingtai/project'
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import type { MergeInWorktreeResult } from '@lingtai/repo'
 import { Deferred, Effect } from 'effect'
@@ -142,7 +147,7 @@ async function frozen(): Promise<EventStore> {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   // The freeze: `rev-parse` of the personal branch answers FROZEN, and the ticket's commit is in it.
   const freezing = aWorld()
   freezing.ancestor = () => true
@@ -165,7 +170,8 @@ async function frozen(): Promise<EventStore> {
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const named = (...names: string[]): readonly PrStep[] => IN_PROGRESS_STEPS.filter((s) => names.includes(s.name))
 const serve = (p: PrPorts, steps: readonly PrStep[]) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
 const pushesOf = (w: World) => w.remoteCalls.filter((a) => a[0] === 'push')

@@ -378,7 +378,8 @@ is a `Done when` an agent cannot reach. Ask for `pnpm test` and `pnpm typecheck`
 and commit as the work stands.
 
 **It is not given up, it moves.** The integration half runs on a separate system
-after the merge — [0060](doc/decisions-archive/0060-the-gate-runs-unit-tests.md)'s other
+after the merge (the merge lane's landing on `steven-zhc/studio`, and the PR into
+`main`) — [0060](doc/decisions-archive/0060-the-gate-runs-unit-tests.md)'s other
 half, and `the-pipeline.md`'s **T11**. What a ticket must not do is wait for it.
 
 So one check is out of reach while a change is being made rather than absent:
@@ -405,6 +406,13 @@ for the same reason nobody runs that half as part of a ticket. It carries no
 `git merge --no-ff` and a push (`packages/actions/src/merge-action.ts:47`), never
 a pull request, so a required check on that branch would refuse every landing the
 conductor makes.
+
+**Since #1403 the two integration legs, `integration (sqlite)` and
+`integration (postgres)`, also run on PRs into `main`** (`integration.yml`); a
+red PR run is a failed check on the PR and never reaches #1124, because `report`
+runs for `main` alone. They join `pr.ci.required` only once the fix ticket has
+merged and `main` is green — an operator's edit to the conducting recipe, owed
+and not yet made — since a required check on a red `main` blocks every PR.
 
 **Since #275 the integration half runs on a SQLite file of its own by
 default, and only a named few files still assert Postgres itself** — the

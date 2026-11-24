@@ -115,7 +115,7 @@ export function streams(store: EventStore): Map<string, Envelope[]> {
 export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> } {
   const streams = new Map<string, Envelope[]>()
   let seq = 0n
-  return {
+  const store: EventStore & { streams: Map<string, Envelope[]> } = {
     streams,
     async append(streamId: string, expectedVersion: number, events: readonly ToAppend[]) {
       const held = streams.get(streamId) ?? []
@@ -150,10 +150,26 @@ export function memoryStore(): EventStore & { streams: Map<string, Envelope[]> }
     async readTypes(streamId: string, types: readonly string[], fromVersion = 1) {
       return (streams.get(streamId) ?? []).filter((e) => e.version >= fromVersion && types.includes(e.type))
     },
+    /** Every batch's version is checked before any is written, in the order given: all or nothing. */
+    async appendAll(batches) {
+      for (const b of batches) {
+        if ((streams.get(b.streamId) ?? []).length !== b.expectedVersion) {
+          throw new ConcurrencyError(
+            b.streamId,
+            b.expectedVersion,
+            b.events.map((_, i) => b.expectedVersion + i),
+          )
+        }
+      }
+      const written: Envelope[][] = []
+      for (const b of batches) written.push(await store.append(b.streamId, b.expectedVersion, b.events))
+      return written
+    },
     async readAll() {
       return []
     },
   }
+  return store
 }
 
 export const RECIPE = `

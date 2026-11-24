@@ -332,6 +332,7 @@ describe('integrate', () => {
       read: () => Promise.reject(dropped),
       head: () => Promise.reject(dropped),
       readTypes: () => Promise.reject(dropped),
+      appendAll: () => Promise.reject(dropped),
       readAll: () => Promise.reject(dropped),
     }
 

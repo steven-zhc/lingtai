@@ -946,7 +946,7 @@ export function claimTransition(
 }
 
 /** The causes of a release whose attempt the next claim continues rather than restarts (#1205, #1211). */
-export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit', 'BaseRed']
+export const CONTINUABLE_CAUSES: readonly ReleaseCause['_tag'][] = ['AccountLimit', 'BaseRed', 'StepRedoPending']
 
 /**
  * The release the ticket's newest claim ended in, when its cause is one the next claim continues — else null.
@@ -967,7 +967,7 @@ export function continuableRelease(state: Pick<TicketState, 'claims'>): { runId:
 export function releasesOf(
   ticketEvents: readonly Envelope[],
   runId: string,
-  cause: 'AccountLimit' | 'BaseRed',
+  cause: 'AccountLimit' | 'BaseRed' | 'StepRedoPending',
 ): number {
   return ticketEvents.filter((event) => {
     if (event.type !== 'TicketReleased') return false

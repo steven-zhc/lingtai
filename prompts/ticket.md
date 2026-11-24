@@ -1,13 +1,10 @@
+**Your final message ends with a fenced `outcome` block of JSON; the section `## How to end` below says which.**
+**The ticket and the design are the brief's last sections; everything you must follow comes before them.**
+
 # Ticket
 
-## #{{issue}} — {{title}}
-
-{{body}}
-
----
-
 You are working that issue in this repository, under Lingtai. The ticket is
-above in full; there is nothing else to fetch and no `gh` to fetch it with.
+below in full; there is nothing else to fetch and no `gh` to fetch it with.
 
 Make the change and commit it on the branch you are already on.
 
@@ -27,8 +24,6 @@ Make the change and commit it on the branch you are already on.
 - **Migrations are held for a person.** Write the migration file if the change
   needs one, and expect the merge to stop for review rather than apply it.
 
-{{failure}}
-
 ## What to do
 
 1. Read the code the ticket points at.
@@ -45,6 +40,8 @@ Make the change and commit it on the branch you are already on.
    published for the next attempt to build on, and nothing merges without
    passing the gates anyway. `git add` and `git commit` on the current branch;
    do not push.
+
+## How to end
 
 **End your final message with a fenced `outcome` block of JSON, and nothing after it.**
 It is the only thing that says what you produced; the conductor reads it and acts
@@ -81,3 +78,13 @@ If you did change something, this is `Implemented`, not this.
 
 A final message with no block, or one that cannot be read, is a run that did not
 finish, and it is redone.
+
+{{failure}}
+
+{{design}}
+
+---
+
+## #{{issue}} — {{title}}
+
+{{body}}

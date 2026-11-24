@@ -14,6 +14,7 @@
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 
+import { ENDING_MARK, afterOpeningLines, openingLinesOf } from '@lingtai/actions'
 import { type Envelope, type EventType, type PayloadOf, SCHEMA_VER, parsePayload } from '@lingtai/domain'
 import { describe, expect, it } from 'vitest'
 
@@ -445,5 +446,34 @@ describe('renderPromptParts (#928)', () => {
     const parts = renderPromptParts('{{nope}} {{design}}!', ticket, [], '', '   ')
     expect(text(parts).startsWith('{{nope}} !')).toBe(true)
     expect(parts.some((p) => typeof p !== 'string' && 'onStep' in p)).toBe(false)
+  })
+})
+
+describe('the real ticket template puts what the agent must follow before the ticket (#1404)', () => {
+  it('opens with the lines naming the ending, then the outcome section, then the ticket and the design', async () => {
+    const template = await readFile(`${repoRoot}prompts/ticket.md`, 'utf8')
+    expect(template.startsWith(ENDING_MARK)).toBe(true)
+    const parts = renderPromptParts(
+      template,
+      { number: 7, title: 'a title', body: 'THE-BODY '.repeat(5_000) },
+      ['pnpm test'],
+      '',
+      'THE-DESIGN',
+    )
+    const text = parts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
+    expect(openingLinesOf(text)).not.toBe('')
+    const outcome = text.indexOf('## How to end')
+    expect(outcome).toBeGreaterThan(-1)
+    expect(outcome).toBeLessThan(text.indexOf('THE-BODY'))
+    expect(outcome).toBeLessThan(text.indexOf('THE-DESIGN'))
+    expect(text.lastIndexOf('```outcome')).toBeLessThan(text.indexOf('THE-BODY'))
+    expect(text.indexOf('THE-DESIGN')).toBeLessThan(text.indexOf('THE-BODY'))
+  })
+
+  it('places what the code adds right after the opening lines', () => {
+    const open = `${ENDING_MARK} of JSON.**\nsecond\n\n`
+    const placed = afterOpeningLines([`${open}rest`, 'tail'], ['EXTRA\n\n'])
+    expect(placed.join('')).toBe(`${open}EXTRA\n\nresttail`)
+    expect(afterOpeningLines(['no mark', 'tail'], ['EXTRA\n\n']).join('')).toBe('EXTRA\n\nno marktail')
   })
 })

@@ -20,12 +20,15 @@ const fence = (body: string) => `done.\n\`\`\`outcome\n${body}\n\`\`\`\n`
 
 describe('parseImplementOutcome', () => {
   it('reads the last outcome fence', () => {
-    expect(parseImplementOutcome(fence('{"outcome":"Implemented"}'))).toEqual({ _tag: 'Implemented' })
+    expect(parseImplementOutcome(fence('{"outcome":"Implemented"}'))).toEqual({
+      declared: { _tag: 'Implemented' },
+      form: 'fence',
+    })
   })
   it('answers none for no fence, not JSON, an unknown outcome and an unclosed fence', () => {
     expect(parseImplementOutcome('all good')).toBeNull()
     expect(parseImplementOutcome(null)).toBeNull()
-    expect(parseImplementOutcome(fence('Implemented'))).toBeNull()
+    expect(parseImplementOutcome(fence('Disputed'))).toBeNull()
     expect(parseImplementOutcome(fence('{"outcome":"Done"}'))).toBeNull()
     expect(parseImplementOutcome('```outcome\n{"outcome":"Implemented"}')).toBeNull()
   })
@@ -33,18 +36,59 @@ describe('parseImplementOutcome', () => {
     const a = fence('{"outcome":"Implemented"}')
     const b = fence(JSON.stringify({ outcome: 'Unclear', questions: [q] }))
     expect(parseImplementOutcome(a + b)).toBeNull()
-    expect(parseImplementOutcome(a + a)).toEqual({ _tag: 'Implemented' })
+    expect(parseImplementOutcome(a + a)).toEqual({ declared: { _tag: 'Implemented' }, form: 'fence' })
   })
   it('reads Disputed and Unclear in their shapes, and refuses an Unclear with no questions', () => {
     expect(parseImplementOutcome(fence('{"outcome":"Disputed","findings":[{"index":2,"why":"no"}]}'))).toEqual({
-      _tag: 'Disputed',
-      findings: [{ index: 2, why: 'no' }],
+      declared: { _tag: 'Disputed', findings: [{ index: 2, why: 'no' }] },
+      form: 'fence',
     })
     expect(parseImplementOutcome(fence(JSON.stringify({ outcome: 'Unclear', questions: [q] })))).toEqual({
-      _tag: 'Unclear',
-      questions: [q],
+      declared: { _tag: 'Unclear', questions: [q] },
+      form: 'fence',
     })
     expect(parseImplementOutcome(fence('{"outcome":"Unclear","questions":[]}'))).toBeNull()
+  })
+  describe('the forms agents write (#1398)', () => {
+    const imp = { _tag: 'Implemented' } as const
+    const J = '{"outcome": "Implemented"}'
+    it.each([
+      ['a json fence', `done\n\`\`\`json\n${J}\n\`\`\``, 'json-fence'],
+      ['a bare Implemented in an outcome fence', 'done\n```outcome\nImplemented\n```', 'bare-word'],
+      ['a bare Implemented, CRLF', 'done\r\n```outcome \r\nImplemented\r\n```\r\n', 'bare-word'],
+      ['the last line, unfenced', `all done.\n${J}`, 'last-line'],
+      ['the last line, trailing blank lines', `all done.\n${J}\n\n`, 'last-line'],
+    ] as const)('reads %s', (_n, text, form) => {
+      expect(parseImplementOutcome(text)).toEqual({ declared: imp, form })
+    })
+    it('does not read a json fence that is not an outcome, and reads the outcome block after it', () => {
+      const cfg = '```json\n{"name":"x"}\n```\n'
+      expect(parseImplementOutcome(cfg)).toBeNull()
+      expect(parseImplementOutcome(cfg + fence(J))).toEqual({ declared: imp, form: 'fence' })
+    })
+    it('is null where a json Implemented and an outcome Disputed disagree', () => {
+      const d = fence('{"outcome":"Disputed","findings":[{"index":1,"why":"no"}]}')
+      expect(parseImplementOutcome(`\`\`\`json\n${J}\n\`\`\`\n${d}`)).toBeNull()
+    })
+    it('is null for a bare Disputed, an unknown name in a json fence, and a last line that is no outcome', () => {
+      expect(parseImplementOutcome(fence('Disputed'))).toBeNull()
+      expect(parseImplementOutcome('```json\n{"outcome":"Done"}\n```')).toBeNull()
+      expect(parseImplementOutcome('{"outcome":"Disputed"}')).toBeNull()
+      expect(parseImplementOutcome('{"other":1}')).toBeNull()
+    })
+    it('is null where an unknown outcome name sits beside a valid block, in a json fence or on the last line', () => {
+      const ok = fence(J)
+      expect(parseImplementOutcome(`${ok}\n\`\`\`json\n{"outcome":"Done"}\n\`\`\``)).toBeNull()
+      expect(parseImplementOutcome(`${ok}\n{"outcome":"Done"}`)).toBeNull()
+    })
+    it('does not read JSON inside an unclosed fence as a declaration', () => {
+      expect(parseImplementOutcome(`done\n\`\`\`json\n${J}`)).toBeNull()
+      expect(parseImplementOutcome(`done\n\`\`\`text\n${J}`)).toBeNull()
+      expect(parseImplementOutcome(`${fence(J)}\n\`\`\`json\n${J}`)).toBeNull()
+    })
+    it('counts a json fence that ends the message once', () => {
+      expect(parseImplementOutcome(`x\n\`\`\`json\n${J}\n\`\`\``)?.form).toBe('json-fence')
+    })
   })
 })
 
@@ -138,7 +182,8 @@ describe('decideImplementOutcome', () => {
 
     it('is read from the block the agent ends its message with', () => {
       expect(
-        parseImplementOutcome(fence('{"outcome":"AlreadyDone","items":[{"item":"one","evidence":"a.ts:1"}]}')),
+        parseImplementOutcome(fence('{"outcome":"AlreadyDone","items":[{"item":"one","evidence":"a.ts:1"}]}'))
+          ?.declared,
       ).toEqual({ _tag: 'AlreadyDone', items: [{ item: 'one', evidence: 'a.ts:1' }] })
     })
 

@@ -337,6 +337,28 @@ export function prepareAppend(streamId: string, expectedVersion: number, events:
   })
 }
 
+/** One stream's share of an `appendAll`: what `append` takes, as a value. */
+export type StreamBatch = { streamId: string; expectedVersion: number; events: readonly ToAppend[] }
+
+/**
+ * What `appendAll` checks before anything is written: every batch through
+ * `prepareAppend` (an empty batch is validated too), and no stream id twice.
+ * Returns one entry per batch, in the order given, with its rows.
+ */
+export function prepareAppendAll(batches: readonly StreamBatch[]) {
+  const prepared = batches.map((b) => ({
+    streamId: b.streamId,
+    expectedVersion: b.expectedVersion,
+    rows: prepareAppend(b.streamId, b.expectedVersion, b.events),
+  }))
+  const seen = new Set<string>()
+  for (const b of prepared) {
+    if (seen.has(b.streamId)) throw new RangeError(`appendAll: stream ${b.streamId} appears in more than one batch`)
+    seen.add(b.streamId)
+  }
+  return prepared
+}
+
 // ------------------------------------------------------------------- store ----
 
 export interface EventStore {
@@ -351,6 +373,20 @@ export interface EventStore {
    * Throws `ConcurrencyError` if the stream moved.
    */
   append(streamId: string, expectedVersion: number, events: readonly ToAppend[]): Promise<Envelope[]>
+
+  /**
+   * Append several streams' batches in one transaction: every batch lands or
+   * none does (ADR 0100 §3). The result has one list per batch, in the order
+   * given; batches are written in that order, so `seq` rises in it.
+   *
+   * Every batch is validated before anything is written, and a stream id in two
+   * batches is a `RangeError`. A batch with no events writes nothing and gives
+   * `[]`; a call with only such batches opens no transaction.
+   *
+   * Throws one `ConcurrencyError`, for the first batch written whose stream
+   * moved, and the whole call is rolled back. Nothing retries.
+   */
+  appendAll(batches: readonly StreamBatch[]): Promise<Envelope[][]>
 
   /** One stream, in version order, from `fromVersion` (inclusive, default 1). */
   read(streamId: string, fromVersion?: number): Promise<Envelope[]>
@@ -395,6 +431,8 @@ export interface EventsPort {
     expectedVersion: number,
     events: readonly ToAppend[],
   ): Effect.Effect<Envelope[], ConcurrencyError>
+  /** `EventStore.appendAll`; fails with `ConcurrencyError` and nothing else. */
+  appendAll(batches: readonly StreamBatch[]): Effect.Effect<Envelope[][], ConcurrencyError>
   read(streamId: string, fromVersion?: number): Effect.Effect<Envelope[]>
   head(streamId: string): Effect.Effect<number>
   readTypes(streamId: string, types: readonly EventType[], fromVersion?: number): Effect.Effect<Envelope[]>
@@ -449,6 +487,62 @@ export function makePostgresEvents(client: Db): EventsPort {
                       streamId,
                       expectedVersion,
                       rows.map((r) => r.version),
+                      { cause: err },
+                    ),
+                  )
+                }
+                throw err
+              },
+            ),
+        ),
+      )
+      return yield* outcome
+    }),
+
+    appendAll: Effect.fn('EventStore.appendAll')(function* (batches: readonly StreamBatch[]) {
+      // Validated, and duplicates refused, before a transaction opens: a throw
+      // here is a defect with nothing written.
+      const prepared = prepareAppendAll(batches)
+      const written = prepared.filter((b) => b.rows.length > 0)
+      const empty = (): Envelope[][] => prepared.map(() => [])
+      if (written.length === 0) return empty()
+
+      // Which batch is being written, so a conflict names its stream without
+      // reading the driver's message. Rows go in batch order, so the first
+      // conflict raised is the first conflicting batch written.
+      let current = 0
+      const context = yield* Effect.context()
+      const outcome = yield* Effect.uninterruptible(
+        Effect.promise(() =>
+          client
+            .transaction((tx) =>
+              Effect.runPromiseWith(context)(
+                Effect.forEach(written, (b, i) =>
+                  Effect.suspend(() => {
+                    current = i
+                    return Effect.forEach(b.rows, (row) =>
+                      Effect.map(
+                        Effect.promise(() => tx.orm.public.Event.create(row)),
+                        (created) => toEnvelope(created as EventRow),
+                      ),
+                    )
+                  }),
+                ),
+              ),
+            )
+            .then(
+              (lists): Effect.Effect<Envelope[][], ConcurrencyError> => {
+                const byStream = new Map(written.map((b, i) => [b.streamId, lists[i]!]))
+                return Effect.succeed(prepared.map((b) => byStream.get(b.streamId) ?? []))
+              },
+              (err): Effect.Effect<Envelope[][], ConcurrencyError> => {
+                if (isVersionConflict(err)) {
+                  const b = written[current]!
+                  return Effect.fail(
+                    new ConcurrencyError(
+                      b.streamId,
+                      b.expectedVersion,
+                      b.rows.map((r) => r.version),
                       { cause: err },
                     ),
                   )

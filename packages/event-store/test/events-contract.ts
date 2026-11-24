@@ -50,6 +50,52 @@ export function describeEventsContract(name: string, make: () => EventsPort, fre
       }
     })
 
+    it('appendAll: a conflict on the second batch is a Fail carrying a ConcurrencyError, not a Die', async () => {
+      const events = make()
+      const a = freshStream()
+      const b = freshStream()
+      await Effect.runPromise(events.append(b, 0, [claimed('b')]))
+      const exit = await Effect.runPromiseExit(
+        events.appendAll([
+          { streamId: a, expectedVersion: 0, events: [claimed('a')] },
+          { streamId: b, expectedVersion: 0, events: [claimed('b2')] },
+        ]),
+      )
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) {
+        expect(Cause.hasFails(exit.cause)).toBe(true)
+        expect(Cause.hasDies(exit.cause)).toBe(false)
+        const error = Cause.squash(exit.cause)
+        expect(error).toBeInstanceOf(ConcurrencyError)
+        expect((error as ConcurrencyError).streamId).toBe(b)
+      }
+    })
+
+    it('appendAll: a duplicate stream id and an unknown type in the second batch are each a Die', async () => {
+      const events = make()
+      const a = freshStream()
+      const b = freshStream()
+      const duplicate = await Effect.runPromiseExit(
+        events.appendAll([
+          { streamId: a, expectedVersion: 0, events: [claimed('a')] },
+          { streamId: a, expectedVersion: 1, events: [claimed('a2')] },
+        ]),
+      )
+      const unknown = await Effect.runPromiseExit(
+        events.appendAll([
+          { streamId: a, expectedVersion: 0, events: [claimed('a')] },
+          { streamId: b, expectedVersion: 0, events: [{ ...claimed('b'), type: 'NoSuchType' } as never] },
+        ]),
+      )
+      for (const exit of [duplicate, unknown]) {
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          expect(Cause.hasDies(exit.cause)).toBe(true)
+          expect(Cause.hasFails(exit.cause)).toBe(false)
+        }
+      }
+    })
+
     it('the face rejects with the very ConcurrencyError the Effect failed with', async () => {
       const events = make()
       const id = freshStream()

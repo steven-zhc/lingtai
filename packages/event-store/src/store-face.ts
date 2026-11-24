@@ -16,7 +16,7 @@
 import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
 import { Cause, Deferred, Effect, Exit } from 'effect'
 
-import { ConcurrencyError, type EventStore, type EventsPort } from './event-store.ts'
+import { ConcurrencyError, type EventStore, type EventsPort, type StreamBatch } from './event-store.ts'
 import { observedRead } from './observe.ts'
 import type { LogQueries, QueriesPort } from './queries.ts'
 import { type Snapshot, type SnapshotKey, type SnapshotsPort, type SnapshotStore } from './snapshots.ts'
@@ -26,6 +26,10 @@ import type { WakeListener, Waker, WakerPort } from './wake.ts'
 
 export function appendFace(events: EventsPort, streamId: string, expectedVersion: number, batch: readonly ToAppend[]) {
   return Effect.runPromise(events.append(streamId, expectedVersion, batch))
+}
+
+export function appendAllFace(events: EventsPort, batches: readonly StreamBatch[]) {
+  return Effect.runPromise(events.appendAll(batches))
 }
 
 export function readFace(events: EventsPort, streamId: string, fromVersion?: number) {
@@ -48,6 +52,7 @@ export function readAllFace(events: EventsPort, fromSeq: bigint, limit: number) 
 export function promiseStore(events: EventsPort): EventStore {
   return {
     append: (streamId, expectedVersion, batch) => appendFace(events, streamId, expectedVersion, batch),
+    appendAll: (batches) => appendAllFace(events, batches),
     read: (streamId, fromVersion) => observedRead(streamId, () => readFace(events, streamId, fromVersion)),
     head: (streamId) => headFace(events, streamId),
     readTypes: (streamId, types, fromVersion) =>
@@ -68,6 +73,18 @@ export function fromPromiseStore(store: EventStore): EventsPort {
           store.append(streamId, expectedVersion, batch).then(
             (written): Effect.Effect<Envelope[], ConcurrencyError> => Effect.succeed(written),
             (err): Effect.Effect<Envelope[], ConcurrencyError> => {
+              if (err instanceof ConcurrencyError) return Effect.fail(err)
+              throw err
+            },
+          ),
+        ),
+      ),
+    appendAll: (batches) =>
+      Effect.flatten(
+        Effect.promise(() =>
+          store.appendAll(batches).then(
+            (written): Effect.Effect<Envelope[][], ConcurrencyError> => Effect.succeed(written),
+            (err): Effect.Effect<Envelope[][], ConcurrencyError> => {
               if (err instanceof ConcurrencyError) return Effect.fail(err)
               throw err
             },

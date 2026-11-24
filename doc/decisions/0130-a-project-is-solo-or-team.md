@@ -108,7 +108,8 @@ PR is a person deciding a body of work is ready for the team.
 
 4. **A team's ticket lands on the personal branch, as any ticket lands.** The
    merge lane merges it into `branch.personal` and appends `TicketLanded { base:
-   <branch.personal> }`; `landed` is terminal as 0109 §11 says, so the queue never
+   <branch.personal> }` and, in the same transaction, adds the ticket to the
+   draft PR ([0131](0131-a-pr-goes-from-draft-to-merged.md) §1); `landed` is terminal as 0109 §11 says, so the queue never
    takes it again, and every reducer, column and page reads it as they read any
    landing. What differs is the tracker:
    - **The ticket stays open on its tracker** until its code reaches `main`: in

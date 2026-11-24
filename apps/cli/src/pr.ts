@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises'
 
 import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, catchUpOwed, catchUpWaits, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type PrState, catchUpOwed, catchUpWaits, isOpen, openAmong, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import {
@@ -18,8 +18,8 @@ import {
   type PrRequestAnswer,
   editPrSummary,
   grantPrRounds,
-  latestPr,
   listPrs,
+  openPr,
   readPr,
   readPrDraft,
   requestPrBack,
@@ -166,7 +166,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
     }
     const prs = yield* listPrs(project, world.store)
     const latest = prs[prs.length - 1] ?? null
-    const open = latest !== null && isOpen(latest) ? latest : null
+    const open = openAmong(prs)
     const draft: readonly PrDraftTicket[] = yield* readPrDraft(
       project,
       recipe,
@@ -383,7 +383,7 @@ export const prRequestVerdict = (
     const latest =
       target !== null
         ? (prs.find((pr) => pr.n === target) ?? null)
-        : (prs.findLast((pr) => isOpen(pr)) ?? prs.findLast((pr) => catchUpWaits(pr)) ?? prs[prs.length - 1] ?? null)
+        : (openAmong(prs) ?? prs.findLast((pr) => catchUpWaits(pr)) ?? prs[prs.length - 1] ?? null)
     if (latest === null || latest.n === null || !askable(latest)) {
       return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     }
@@ -476,8 +476,9 @@ export const prSummaryVerdict = (
     const recipe = yield* world.recipe(project)
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
-    const latest = yield* latestPr(project, world.store)
-    if (latest === null || latest.n === null) return refusal(1, 'no-pr', `${project} has no PR`, { subject: project })
+    const latest = yield* openPr(project, world.store)
+    if (latest === null || latest.n === null)
+      return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     const n = latest.n
     const subject = `${project} PR ${n}`
     const said = (detail: string, extra: Record<string, unknown> = {}): Answered => ({

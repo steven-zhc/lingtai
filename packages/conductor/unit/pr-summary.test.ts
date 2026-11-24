@@ -1,19 +1,27 @@
-/**
- * The `pr:` agent's summary and top-up (#1318, 0131 §2, §5): written before the draft opens, topped up after CI for each
- * pr-fix that joined, paid as a `RunSpent` on the PR's own stream, and pushed to the code host — where the person's words
- * win a race against a run.
- */
 import { SpentFor, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import type { Envelope } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub, OpenPull } from '@lingtai/github'
-import { editPrSummary, recordPrFixLanded, requestPrSubmit } from '@lingtai/project'
+import { editPrSummary, recordPrFixLanded } from '@lingtai/project'
+/**
+ * The `pr:` agent's summary and top-up (#1318, 0131 §2, §5): written before the draft opens, topped up after CI for each
+ * pr-fix that joined, paid as a `RunSpent` on the PR's own stream, and pushed to the code host — where the person's words
+ * win a race against a run.
+ */
+import { submitPr } from '@lingtai/project/test/submit'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type PrSummarizer, joinedSinceSummary, parseSummary } from '../src/pr-summary.ts'
+import {
+  BRIEF,
+  SUMMARY_EXAMPLE,
+  TOPUP_BRIEF,
+  type PrSummarizer,
+  joinedSinceSummary,
+  parseSummary,
+} from '../src/pr-summary.ts'
 import { type PrPorts, type PrStep, IN_PROGRESS_STEPS, servePr } from '../src/pr.ts'
 
 const team = {
@@ -39,6 +47,14 @@ async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: `m${issue}`, base } },
   ])
+  // The draft is the PR's own list (ADR 0131 §2): a ticket landing on the personal branch joins it while it is a draft.
+  const pr1 = await store.read(prStream('lingtai', 1))
+  const status = pr1.length === 0 ? null : reducePr(pr1).status
+  if (base === 'lingtai-team' && (status === null || status === 'draft')) {
+    await store.append(prStream('lingtai', 1), pr1.length, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
+    ])
+  }
 }
 
 interface World {
@@ -144,7 +160,8 @@ function ports(store: EventStore, w: World, options: { summarizer?: boolean } = 
 }
 
 const events = (store: EventStore): Promise<Envelope[]> => store.read(prStream('lingtai', 1))
-const types = async (store: EventStore) => (await events(store)).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await events(store)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const state = async (store: EventStore) => reducePr(await events(store))
 const named = (...names: string[]): PrStep[] => IN_PROGRESS_STEPS.filter((s) => names.includes(s.name))
 const SUBMIT = named('summary', 'push', 'open')
@@ -154,7 +171,7 @@ async function frozen(): Promise<EventStore> {
   const store = createMemoryEventStore()
   await landed(store, '1')
   await landed(store, '2')
-  await Effect.runPromise(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+  await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
   await Effect.runPromise(servePr(ports(store, aWorld()), 'lingtai', 1, []))
   return store
 }
@@ -218,7 +235,7 @@ describe('the summary, at submit', () => {
     expect(w.posts[0]).toMatchObject({ title: 'Add the thing' })
     const body = w.posts[0]!['body'] as string
     expect(body.startsWith('It does the thing, because the team needed it.')).toBe(true)
-    expect(body).toContain('Closes #1 — ticket 1')
+    expect(body).toContain('Closes #1')
     // No PATCH on a first submit: the draft opened with what the log holds.
     expect(w.patches).toEqual([])
     expect((await state(store)).descriptionOwed).toBe(false)
@@ -373,7 +390,7 @@ describe('the top-up, after CI', () => {
     expect(w.patches).toHaveLength(1)
     expect(w.patches[0]).toMatchObject({ number: 7, title: 'Add the thing and fix it' })
     expect(w.patches[0]!.body).toContain('now it is fixed too')
-    expect(w.patches[0]!.body).toContain('Closes #3 — ticket 3')
+    expect(w.patches[0]!.body).toContain('Closes #1, Closes #3')
     const s = await state(store)
     expect(s.descriptionOwed).toBe(false)
 
@@ -394,7 +411,7 @@ describe('the top-up, after CI', () => {
       { at: 'pr-fix', why: 'paused by steven' },
     ])
     expect(w.patches).toHaveLength(1)
-    expect(w.patches[0]!.body).toContain('Closes #3 — ticket 3')
+    expect(w.patches[0]!.body).toContain('Closes #1, Closes #3')
     expect(w.patches[0]!.title).toBe('Add the thing')
   })
 })
@@ -451,7 +468,7 @@ describe('the person’s edit', () => {
     expect(w.patches).toHaveLength(1)
     expect(w.patches[0]!.title).toBe('Add the thing')
     expect(w.patches[0]!.body.startsWith('Corrected words.')).toBe(true)
-    expect(w.patches[0]!.body).toContain('Closes #1 — ticket 1')
+    expect(w.patches[0]!.body).toContain('Closes #1')
     expect((await types(store)).at(-1)).toBe('PrDescriptionPushed')
 
     // Served again, nothing is owed and nothing is pushed.
@@ -472,5 +489,20 @@ describe('the person’s edit', () => {
     expect(asked.kind).toBe('refused')
     expect((asked as { detail: string }).detail).toContain('merged')
     expect(await types(store)).not.toContain('PrSummaryEdited')
+  })
+})
+
+describe('the briefs', () => {
+  it.each([
+    ['BRIEF', BRIEF],
+    ['TOPUP_BRIEF', TOPUP_BRIEF],
+  ])('%s asks for bullets with ticket numbers, a 60-character title, and carries the example', (_name, brief) => {
+    expect(brief).toContain('bullet')
+    expect(brief).toContain('ticket numbers')
+    expect(brief).toContain('60 characters')
+    expect(brief).toContain('Review closely')
+    expect(brief).toContain(SUMMARY_EXAMPLE)
+    expect(brief).toContain('no Closes lines')
+    expect(SUMMARY_EXAMPLE).not.toContain('Closes')
   })
 })

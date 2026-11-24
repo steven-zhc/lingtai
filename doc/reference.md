@@ -145,7 +145,7 @@ are not — one per work item, attempt, lane and project, forever.
 | `pass-` | attempt, `pass-…` | [AttemptState](glossary.md#the-log-and-its-states) | [RunStarted](events.json#RunStarted), [RunPrompted](events.json#RunPrompted), [RunTouchedFile](events.json#RunTouchedFile), [RunContextExhausted](events.json#RunContextExhausted), [RunAwaitingInput](events.json#RunAwaitingInput), [RunProducedDiff](events.json#RunProducedDiff), [RunRefsPublished](events.json#RunRefsPublished), [RunKeptUncommitted](events.json#RunKeptUncommitted), [RunAppliedKeptWork](events.json#RunAppliedKeptWork) *(retired)*, [RunProposedCompletion](events.json#RunProposedCompletion), [RunFinished](events.json#RunFinished), [SandboxBoundaryRecorded](events.json#SandboxBoundaryRecorded), [SandboxConnectionsRefused](events.json#SandboxConnectionsRefused), [RunFailed](events.json#RunFailed), [RunSpent](events.json#RunSpent), [StepsResolved](events.json#StepsResolved), [StepStarted](events.json#StepStarted), [StepEnded](events.json#StepEnded), [MergeLaneWaited](events.json#MergeLaneWaited), [PassRouted](events.json#PassRouted) *(retired)*, [ProposalRouted](events.json#ProposalRouted), [StepRerunInPlace](events.json#StepRerunInPlace) *(retired)*, [StepRedone](events.json#StepRedone) |
 | `int-` | base branch, `int-{project}-{base}` | [IntegrationState](glossary.md#the-log-and-its-states) | [IntegrationAttempted](events.json#IntegrationAttempted), [IntegrationRefused](events.json#IntegrationRefused), [IntegrationSucceeded](events.json#IntegrationSucceeded), [BaseChecked](events.json#BaseChecked), [BaseFixProposed](events.json#BaseFixProposed) |
 | `prj-` | repository, `prj-{project}` | [ProjectState](glossary.md#the-log-and-its-states) | [ProjectOnboardingStarted](events.json#ProjectOnboardingStarted) *(retired)*, [ProjectConfigured](events.json#ProjectConfigured), [ProjectRecipeChanged](events.json#ProjectRecipeChanged), [ProjectSandboxObserved](events.json#ProjectSandboxObserved), [ProjectRefused](events.json#ProjectRefused), [ProjectRecovered](events.json#ProjectRecovered), [ProjectPaused](events.json#ProjectPaused), [ProjectResumed](events.json#ProjectResumed) |
-| `pr-` | PR, `pr-{project}-{n}` | [PrState](glossary.md#the-log-and-its-states) | [RunPrompted](events.json#RunPrompted), [RunSpent](events.json#RunSpent), [StepEnded](events.json#StepEnded), [PrSubmitRequested](events.json#PrSubmitRequested), [PrSubmitRefused](events.json#PrSubmitRefused), [PrInProgress](events.json#PrInProgress), [PrFixLanded](events.json#PrFixLanded), [PrStepDone](events.json#PrStepDone), [PrWaiting](events.json#PrWaiting), [PrPushed](events.json#PrPushed), [PrDraftOpened](events.json#PrDraftOpened), [PrCiSkipped](events.json#PrCiSkipped), [PrCiFollowing](events.json#PrCiFollowing), [PrChecked](events.json#PrChecked), [PrOpened](events.json#PrOpened), [BranchSynced](events.json#BranchSynced), [PrOutsideMerged](events.json#PrOutsideMerged), [PrMergedBack](events.json#PrMergedBack), [PrMergeBackFailed](events.json#PrMergeBackFailed), [PrCaughtUp](events.json#PrCaughtUp), [PrCatchUpFailed](events.json#PrCatchUpFailed), [SyncRoundStarted](events.json#SyncRoundStarted), [SyncRoundRefused](events.json#SyncRoundRefused), [PrMerged](events.json#PrMerged), [PrClosed](events.json#PrClosed), [PrRoundsGranted](events.json#PrRoundsGranted), [PrRetryRequested](events.json#PrRetryRequested), [PrHeadAdopted](events.json#PrHeadAdopted), [PrBackRequested](events.json#PrBackRequested), [PrSummaryWritten](events.json#PrSummaryWritten), [PrSummaryNotWritten](events.json#PrSummaryNotWritten), [PrSummaryEdited](events.json#PrSummaryEdited), [PrDescriptionPushed](events.json#PrDescriptionPushed) |
+| `pr-` | PR, `pr-{project}-{n}` | [PrState](glossary.md#the-log-and-its-states) | [RunPrompted](events.json#RunPrompted), [RunSpent](events.json#RunSpent), [StepEnded](events.json#StepEnded), [PrDraftTicketAdded](events.json#PrDraftTicketAdded), [PrSubmitRequested](events.json#PrSubmitRequested), [PrSubmitRefused](events.json#PrSubmitRefused), [PrInProgress](events.json#PrInProgress), [PrFixLanded](events.json#PrFixLanded), [PrStepDone](events.json#PrStepDone), [PrWaiting](events.json#PrWaiting), [PrPushed](events.json#PrPushed), [PrDraftOpened](events.json#PrDraftOpened), [PrCiSkipped](events.json#PrCiSkipped), [PrCiFollowing](events.json#PrCiFollowing), [PrChecked](events.json#PrChecked), [PrOpened](events.json#PrOpened), [BranchSynced](events.json#BranchSynced), [PrOutsideMerged](events.json#PrOutsideMerged), [PrMergedBack](events.json#PrMergedBack), [PrMergeBackFailed](events.json#PrMergeBackFailed), [SyncRoundStarted](events.json#SyncRoundStarted), [SyncRoundRefused](events.json#SyncRoundRefused), [PrMerged](events.json#PrMerged), [PrClosed](events.json#PrClosed), [PrRoundsGranted](events.json#PrRoundsGranted), [PrRetryRequested](events.json#PrRetryRequested), [PrHeadAdopted](events.json#PrHeadAdopted), [PrBackRequested](events.json#PrBackRequested), [PrSummaryWritten](events.json#PrSummaryWritten), [PrSummaryNotWritten](events.json#PrSummaryNotWritten), [PrSummaryEdited](events.json#PrSummaryEdited), [PrDescriptionPushed](events.json#PrDescriptionPushed) |
 | `ctl-` | control stream: `ctl-conductor` (one per machine) and `ctl-github-app` | [ControlState](glossary.md#the-log-and-its-states) (`ctl-conductor`); none for `ctl-github-app` | [ConductorPaused](events.json#ConductorPaused), [ConductorResumed](events.json#ConductorResumed), [DayCeilingReached](events.json#DayCeilingReached), [DayCeilingLifted](events.json#DayCeilingLifted), [ConductorShutdownRequested](events.json#ConductorShutdownRequested), [ConductorStarted](events.json#ConductorStarted), [ConductorShutdownWithdrawn](events.json#ConductorShutdownWithdrawn) *(retired)*, [QueueChanged](events.json#QueueChanged), [RunRequested](events.json#RunRequested), [ContinueRequested](events.json#ContinueRequested), [DiscussionRequested](events.json#DiscussionRequested), [Reconciled](events.json#Reconciled), [GitHubAppCreated](events.json#GitHubAppCreated) |
 | `chat-` | discussion, `chat-…` | [ChatState](glossary.md#the-log-and-its-states) | [RunSpent](events.json#RunSpent), [DiscussionAsked](events.json#DiscussionAsked), [DiscussionAnswered](events.json#DiscussionAnswered) |
 | `ext-` | extension, `ext-subscribers` (the only one so far) | none | [PluginFailed](events.json#PluginFailed) |
@@ -303,6 +303,27 @@ number a repository should be able to choose belongs in the recipe (0016 §7);
 one that governs the log or the board belongs in code, and then this table is
 where its value is written down.
 
+### what a run may reach — `sandbox`, the recipe's
+
+Checked when the recipe resolves, in `packages/recipe/src/sandbox.ts` and
+`sandbox-block.ts` ([ADR 0127](decisions/0127-what-an-agent-can-reach.md) §13). [Safety](safety.md#turning-it-on) shows one complete block.
+
+- `network.allow`, `write` and `deny` only add: none removes a built-in entry. A
+  network entry is a hostname or `*.` and a hostname, with no scheme, port or path.
+- A path is `~/…` or absolute. A relative path is refused.
+- `enabled: false` with `required: true` is refused: a project cannot need a
+  sandbox and not have one.
+- A `write` or a `deny` that is, lies inside or contains a protected path is
+  refused: the deny list, `~/.lingtai`, the mirror, the runtimes' configuration
+  directories (`~/.claude`, `~/.claude.json`, `~/.codex`) and the host's tool and
+  cache directories. `$HOME`, or a path containing it, is refused; `~/work/fixtures`
+  is not. A `deny` is also refused inside the worktree or the mirror, because the
+  run's `allowRead` overrides `denyRead` there.
+- A recipe that still says `runtime.tier` is refused, with its replacement by
+  value (`packages/recipe/src/resolve.ts:295-305`): `tier: sandboxed` becomes
+  `sandbox: { enabled: true, required: true }`, and `tier: guarded` or
+  `tier: open` is deleted. Lingtai does not rewrite the file.
+
 ### what a run is given — `runtime.budget`, the recipe's
 
 Together these are the answer to *what does an agent know about why the last
@@ -437,6 +458,22 @@ still carrying a `repair` block is **refused by name** rather than ignored —
 `z.object` would have dropped it silently, leaving a repository running on a
 default while its own file said otherwise. The two old ceilings do not add up to
 the new one, so nothing migrates it for you.
+
+### what a PR summary may spend — `pr:`, the recipe's
+
+`pr:` configures the agent that writes a PR's title and summary, and a solo recipe that writes it is refused. Defaults are read off the schema and `ciOf`.
+
+| Key | Default | Where |
+|---|---|---|
+| `pr.agent` | `runtime.agent`, where that runtime can run with no tools (`claude-code` or `codex`); a written `agent` must be one of those two, because a PR summary runs with no tools | `packages/recipe/src/recipe.ts:2927` (`DiscussAgent`), `:3005` |
+| `pr.model` | absent: the runtime's own default, handed over as written | `packages/recipe/src/recipe.ts:283`, `:3006` |
+| `pr.prompt` | absent: the fixed brief alone; written, it is appended to the brief and never replaces it | `packages/recipe/src/recipe.ts:285`, `:3007` |
+| `pr.limits.turns` | `20` | `packages/recipe/src/recipe.ts:3010` |
+| `pr.limits.wall` | `5m` | `packages/recipe/src/recipe.ts:3013` |
+| `pr.limits.usd` | none: it spends outside any attempt, so each run counts against the day's ceiling | `Pr` carries no `usd` |
+| `pr.ci.timeout` | `60m` | `packages/recipe/src/settings.ts:278` |
+| `pr.ci.required` | every check on the PR's head; an empty list is refused | `packages/recipe/src/settings.ts:277` |
+| `pr.ci.provider: jenkins` | refused in 0.16; its credentials are `jenkins.user` and `jenkins.token` in `~/.lingtai/config.yml`, never the recipe | `packages/recipe/src/resolve.ts:546` |
 
 ### what triage may spend — `triage:`
 
@@ -777,8 +814,8 @@ the new name** — that rule is a reviewer's, not a test's.
 it worth arguing — because what stands there is **larger than the table below**,
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
-`{apps,packages}/*/{unit,integration,test}/` reads **at most 327 occurrences in
-82 files**, counted 2026-11-20 — up from 226 in 47 because `#516`'s pair rule
+`{apps,packages}/*/{unit,integration,test}/` reads **at most 329 occurrences in
+83 files**, counted 2026-11-23 — up from 226 in 47 because `#516`'s pair rule
 below is the same rule for this purpose and is counted here with it, and down
 from 661 in 62 the four words carried alone because `#247` had to
 carry the halves as far as compiling and asserting against a `src/` whose event
@@ -1855,7 +1892,7 @@ Three more limits, which a person choosing one should read before the rest:
   scheduling.
 - **Antigravity is never sandboxed in this release**, on any host. A recipe with
   `sandbox.required: true` that names it is refused; see
-  [safety](safety.md#without-the-sandbox).
+  [safety](safety.md#when-the-host-cannot-sandbox).
 - **`model:`** for `antigravity` is one of the models it offers (a `model`
   config option). `copilot` advertises none, so it is an id your account may use
   and is set with `session/set_model`; a wrong id comes back as the reply's text,

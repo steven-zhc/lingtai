@@ -59,6 +59,7 @@ import {
   claimTransition,
   continueTransition,
   parsePayload,
+  parseTicketStream,
   releaseTransition,
   cut,
   ticketReducer,
@@ -71,10 +72,11 @@ import {
   readThroughSnapshot,
   type SnapshotReadOptions,
 } from '@lingtai/event-store/store'
+import { draftBatchFor } from '@lingtai/project'
 import { type StepAction } from '@lingtai/recipe'
 import { Cause, Effect, Exit, Result } from 'effect'
 
-import { editHash } from '../attempts.ts'
+import { continuableRedoOf, editHash } from '../attempts.ts'
 import { resolveEndActions, type TerminalOutcome } from '../end-step.ts'
 import { recordPrompt } from '../record-prompt.ts'
 import type { Tickets } from '../ticket-store.ts'
@@ -325,6 +327,28 @@ export function releaseDeadWorkerEffect(
   return releaseWith(ticketId, { by: 'dead-worker', ...input }, store, options)
 }
 
+/**
+ * The release a dead worker's claim gets: `StepRedoPending` where the worker's run stopped at a redo's wait. A run
+ * stream that cannot be read fails the release rather than answering "no redo": a release with no cause is final, and
+ * the next scan reads the stream again.
+ */
+function readRunEvents(
+  store: EventStore,
+  runId: string,
+  released: readonly ToAppend<PayloadOf<'TicketReleased'>>[],
+): Effect.Effect<readonly ToAppend<PayloadOf<'TicketReleased'>>[], unknown> {
+  return Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+    Effect.map((runEvents) => {
+      const pending = continuableRedoOf(runEvents)
+      if (pending === null) return released
+      return released.map((e) => ({
+        ...e,
+        data: { ...e.data, cause: { _tag: 'StepRedoPending' as const, runId, step: pending.step } },
+      }))
+    }),
+  )
+}
+
 function releaseWith(
   ticketId: string,
   input: Parameters<typeof releaseTransition>[1],
@@ -339,12 +363,19 @@ function releaseWith(
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
     const decided = releaseTransition(state, input)
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    // A worker that died while its run waited to be redone could not say so itself (#1398): the run's own stream
+    // does, so the release names the redo it interrupted and the next claim continues it. A read that fails fails
+    // the release: it is made again, where an unreadable stream released with no cause would never be asked again.
+    const events =
+      input.by === 'dead-worker' && state.lifecycle.status === 'claimed'
+        ? yield* readRunEvents(store, state.lifecycle.runId, decided.events)
+        : decided.events
     if (options.beforeAppend !== undefined && state.lifecycle.status === 'claimed') {
       const { runId, worker } = state.lifecycle
       yield* options.beforeAppend({ runId, worker })
     }
     yield* Effect.tryPromise({
-      try: () => store.append(ticketId, state.version, [...decided.events, ...(options.endPlan ?? [])]),
+      try: () => store.append(ticketId, state.version, [...events, ...(options.endPlan ?? [])]),
       catch: (error) => error,
     })
     return { ok: true } as const
@@ -877,21 +908,57 @@ export function refuseDispatchEffect(
 /**
  * `TicketLanded` and the end plan, **one append**: an `EndActionsResolved{landed}`
  * over an unrecorded landing must be unreachable, not merely unlikely.
+ *
+ * **With `draft`, the landing also joins the draft** (ADR 0131 §1): the ticket's batch and the PR owner's
+ * `draftBatchFor` go in one `appendAll`. The push has already happened, so a conflict on the draft's stream — a freeze,
+ * or another landing — finds the draft again and writes again, **with no limit** and one log line each time; giving up
+ * would lose the record of a landing. A conflict on the ticket's stream is a defect, as it is without a draft. `null`
+ * or absent writes the ticket's stream only.
  */
 export function landTicketEffect(
   ticketId: string,
-  input: { mergeCommit: string; base: string; endPlan?: readonly ToAppend[] },
+  input: { mergeCommit: string; base: string; endPlan?: readonly ToAppend[]; draft?: { project: string } | null },
   store: EventStore,
   options: SnapshotReadOptions = {},
 ): Effect.Effect<void> {
-  return appendOnTicket(store, ticketId, options, [
+  const events: readonly ToAppend[] = [
     {
       type: 'TicketLanded',
       actor: 'conductor',
       data: parsePayload('TicketLanded', { mergeCommit: input.mergeCommit, base: input.base }),
     },
     ...(input.endPlan ?? []),
-  ])
+  ]
+  const draft = input.draft ?? null
+  if (draft === null) return appendOnTicket(store, ticketId, options, events)
+  return Effect.gen(function* () {
+    // `PrDraftTicketAdded.ticket` is the issue, as `readDraftOn` compares it, never the stream's id.
+    const named = parseTicketStream(ticketId)
+    if (named === null) return yield* Effect.die(new Error(`${ticketId} is not a ticket's stream`))
+    // Read once: a write to the ticket's stream between here and the append is a conflict, and a defect.
+    const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options).pipe(Effect.orDie)
+    for (;;) {
+      const batch = yield* draftBatchFor(
+        draft.project,
+        { ticket: named.issue, mergeCommit: input.mergeCommit, from: null },
+        store,
+      ).pipe(Effect.orDie)
+      const written = yield* Effect.result(
+        Effect.tryPromise({
+          // The ticket's batch first: when both streams moved, the one named is the ticket's.
+          try: () => store.appendAll([{ streamId: ticketId, expectedVersion: state.version, events }, batch]),
+          catch: (e) => e,
+        }),
+      )
+      if (Result.isSuccess(written)) return
+      const refused = written.failure
+      if (refused instanceof ConcurrencyError && refused.streamId === batch.streamId) {
+        yield* Effect.logWarning(`landing ${ticketId}: the draft of ${draft.project} moved, writing again`)
+        continue
+      }
+      return yield* Effect.die(refused)
+    }
+  })
 }
 
 /** What ending a ticket as satisfied answered: done, refused by the reducer's own transition, or the stream moved. */
