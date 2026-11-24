@@ -37,7 +37,7 @@ const ticketsSection: PrSection = (pr) => {
   // A ticket still open when this is written closes with the PR; GitHub ignores `Closes` on one already closed, and an
   // unreadable state is written as open.
   const closing = pr.tickets.filter((t) => isGithubTicket(t.ticket) && t.open !== false)
-  const closes = closing.length === 0 ? null : `Closes ${closing.map((t) => `#${t.ticket}`).join(', ')}`
+  const closes = closing.length === 0 ? null : closing.map((t) => `Closes #${t.ticket}`).join(', ')
   // With a summary it names the tickets; without one the list is the only content (0131 §5).
   const list = summarised
     ? []

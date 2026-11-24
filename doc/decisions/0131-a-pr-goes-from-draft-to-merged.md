@@ -153,7 +153,7 @@ branch, the review's changes, and the merge back. One topic, one ADR.
 
 5. **The summary is written before the draft opens, and topped up after CI.**
    The description is generated from the log — under a summary the `pr:` agent
-   writes, one `Closes #a, #b, …` line for the GitHub tickets still open, and a
+   writes, one `Closes #a, Closes #b, …` line (GitHub links only an issue with its own keyword) for the GitHub tickets still open, and a
    footer with the ticket count; with no summary, one `- <title> (#n)` line per
    ticket first. It carries no spend, no merge commit and no per-ticket sha: spend
    is for the operator, and stays on the board's PR page. The summary is a short

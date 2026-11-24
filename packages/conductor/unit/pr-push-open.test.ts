@@ -398,7 +398,7 @@ describe('the description', () => {
 
   it('with a summary: the summary, one Closes line of the open tickets, and a footer without spend', () => {
     const { body } = prDescription({ title: null, summary: 'What changed.', tickets })
-    expect(body).toBe('What changed.\n\n---\n\nCloses #1, #2\n\nMade with Lingtai · 3 tickets')
+    expect(body).toBe('What changed.\n\n---\n\nCloses #1, Closes #2\n\nMade with Lingtai · 3 tickets')
     noSecrets(body)
   })
 
@@ -409,7 +409,7 @@ describe('the description', () => {
       tickets: [...tickets, { ticket: 'local-4', title: 'four', open: null }, { ticket: '5', title: '', open: null }],
     })
     expect(body).toBe(
-      '- one (#1)\n- two (#2)\n- three (#3)\n- four\n- #5\n\nCloses #1, #2, #5\n\nMade with Lingtai · 5 tickets',
+      '- one (#1)\n- two (#2)\n- three (#3)\n- four\n- #5\n\nCloses #1, Closes #2, Closes #5\n\nMade with Lingtai · 5 tickets',
     )
     noSecrets(body)
   })

@@ -382,7 +382,7 @@ describe('the top-up, after CI', () => {
     expect(w.patches).toHaveLength(1)
     expect(w.patches[0]).toMatchObject({ number: 7, title: 'Add the thing and fix it' })
     expect(w.patches[0]!.body).toContain('now it is fixed too')
-    expect(w.patches[0]!.body).toContain('Closes #1, #3')
+    expect(w.patches[0]!.body).toContain('Closes #1, Closes #3')
     const s = await state(store)
     expect(s.descriptionOwed).toBe(false)
 
@@ -403,7 +403,7 @@ describe('the top-up, after CI', () => {
       { at: 'pr-fix', why: 'paused by steven' },
     ])
     expect(w.patches).toHaveLength(1)
-    expect(w.patches[0]!.body).toContain('Closes #1, #3')
+    expect(w.patches[0]!.body).toContain('Closes #1, Closes #3')
     expect(w.patches[0]!.title).toBe('Add the thing')
   })
 })
