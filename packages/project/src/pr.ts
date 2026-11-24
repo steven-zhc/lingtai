@@ -591,6 +591,60 @@ export function readPrDraft(
   })
 }
 
+/** The most times `backfillDraft` reads and decides again after the stream moved under it. */
+const BACKFILL_ATTEMPTS = 3
+
+/**
+ * **Temporary** (#1394): writes onto the draft's stream each ticket the computed draft holds and the stream lacks, and
+ * returns how many it appended. Those tickets landed before any landing wrote `PrDraftTicketAdded`. It is the last
+ * caller of the computed draft (`readPrDraft`) and goes with it; keep it in one function with one call site.
+ *
+ * The PR streams are read once per attempt and the list serves both `wanted` and the target. One `append`, at the
+ * version read: all of a project's tickets or none. A `ConcurrencyError` reads again and decides again, up to three
+ * times, then fails. A failed read fails the backfill, never "an empty draft". Solo projects append nothing.
+ *
+ * `candidates` come from the board's projection, which may lag at a start: a ticket landed and not yet projected is
+ * missing from `wanted`, so it is only ever under-added, and the next start picks it up.
+ */
+export function backfillDraft(
+  project: string,
+  recipe: Recipe,
+  candidates: readonly { readonly issue: string }[],
+  store: EventStore,
+): Effect.Effect<number, Error> {
+  const once = Effect.gen(function* () {
+    if (modeOf(recipe) !== 'team') return 0
+    const prs = yield* listPrs(project, store)
+    const wanted = yield* readPrDraft(project, recipe, candidates, store, prs)
+    const target = draftOf(prs)
+    const top = prs[prs.length - 1]
+    const state = target.state === null || top === undefined ? emptyPr : top
+    const have = new Set((target.state === null || top === undefined ? [] : top.draft).map((t) => t.ticket))
+    const events: NonNullable<ReturnType<typeof addDraftTicket>>[] = []
+    for (const t of wanted) {
+      if (have.has(t.ticket)) continue
+      const event = addDraftTicket(state, { ticket: t.ticket, mergeCommit: t.mergeCommit, from: null })
+      if (event === null)
+        return yield* Effect.die(new Error(`the draft of ${project} refused a ticket in ${state.status}`))
+      events.push(event)
+    }
+    if (events.length === 0) return 0
+    yield* Effect.tryPromise({
+      try: () => store.append(prStream(project, target.n), target.version, events),
+      catch: (err) => err,
+    }).pipe(Effect.mapError((err) => (err instanceof ConcurrencyError ? err : failed(err))))
+    return events.length
+  })
+  const attempt = (left: number): Effect.Effect<number, Error> =>
+    once.pipe(
+      Effect.catchIf(
+        (err): err is ConcurrencyError => err instanceof ConcurrencyError && left > 1,
+        () => attempt(left - 1),
+      ),
+    )
+  return attempt(BACKFILL_ATTEMPTS)
+}
+
 /** The draft against a named personal branch: `readPrDraft` without the recipe, for a caller that holds only text. */
 export function readDraftOn(
   project: string,
