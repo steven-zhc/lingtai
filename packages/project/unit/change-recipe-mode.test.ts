@@ -205,3 +205,23 @@ describe('modeSwitchMessage', () => {
 })
 
 void prStream
+
+describe('team → solo decides from one read of the PRs', () => {
+  it('is refused when a PR turns requested between what would have been two reads', async () => {
+    const w = await world(TEAM)
+    await ticket(w.store, '43', 'team')
+    const list = w.store.read.bind(w.store)
+    let submitted = false
+    w.store.read = (async (s: string, ...r: unknown[]) => {
+      const events = await (list as any)(s, ...r)
+      if (s.startsWith('pr-') && !submitted) {
+        submitted = true
+        await Effect.runPromise(submitPr('app', 'team', 'human:me', w.store))
+      }
+      return events
+    }) as typeof w.store.read
+    const r = await w.save(SOLO)
+    expect(r).toMatchObject({ ok: false, reason: 'mode-switch' })
+    expect(w.disk.get(PATH)).toBe(TEAM)
+  })
+})

@@ -9,7 +9,7 @@ import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
 import type { EventStore } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { landingsInFlight } from '@lingtai/project'
+import { landingsInFlight, readDraft } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -95,6 +95,27 @@ describe('the landings a dead conductor owed', () => {
     expect(landed?.data).toMatchObject({ mergeCommit: MERGE, base: BASE })
     expect(lines).toEqual([`recorded the landing of ${OWED} at ${MERGE}, left by a conductor that died`])
     expect(await Effect.runPromise(landingsInFlight(PROJECT, BASE, store))).toEqual([])
+  })
+
+  it('joins the draft of a team project when the landing is on its personal branch, and not on a PR branch', async () => {
+    const { store, daemonStore } = await world()
+    await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    const team = {
+      ...projectOf(PROJECT),
+      recipe: {
+        sourceHash: 'h',
+        source: `mode: team\nbranch:\n  main: main\n  personal: ${BASE}\n`,
+        by: 'file',
+        seq: 1n,
+        at: new Date(0),
+      },
+    } as unknown as ProjectState
+    await Effect.runPromise(
+      recordOwedLandingsEffect({ projects: [team], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+    )
+    const draft = await Effect.runPromise(readDraft(PROJECT, store))
+    expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
   })
 
   it('writes nothing for a ticket already landed at that commit', async () => {

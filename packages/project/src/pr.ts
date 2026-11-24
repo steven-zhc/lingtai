@@ -150,12 +150,13 @@ export function draftBatchFor(
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
 export function readDraft(project: string, store: EventStore): Effect.Effect<PrState['draft'], Error> {
-  return listPrs(project, store).pipe(
-    Effect.map((prs) => {
-      const top = prs[prs.length - 1]
-      return top !== undefined && top.status === 'draft' ? top.draft : []
-    }),
-  )
+  return listPrs(project, store).pipe(Effect.map(draftIn))
+}
+
+/** The draft among PRs already read: the highest one's tickets while it is `draft`, else none. One read, one answer. */
+export function draftIn(prs: readonly PrState[]): PrState['draft'] {
+  const top = prs[prs.length - 1]
+  return top !== undefined && top.status === 'draft' ? top.draft : []
 }
 
 /** Appends one PR's transition at the head it was read at, if the transition decides anything. */
@@ -592,6 +593,21 @@ export function isTeamSource(source: string): boolean {
     return typeof raw === 'object' && raw !== null && (raw as { mode?: unknown }).mode === 'team'
   } catch {
     return false
+  }
+}
+
+/**
+ * The branch a landing joins the draft on, from a recorded recipe text: `branch.personal` of a `mode: team` recipe, or
+ * null where the text is not team or names none. The live pass joins the draft for exactly this base (`draftOfLanding`).
+ */
+export function draftBranchOf(source: string): string | null {
+  try {
+    if (!isTeamSource(source)) return null
+    const raw = parseYaml(source) as { branch?: { personal?: unknown } } | null
+    const personal = raw?.branch?.personal
+    return typeof personal === 'string' ? personal : null
+  } catch {
+    return null
   }
 }
 

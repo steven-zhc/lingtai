@@ -31,6 +31,7 @@
 import { landTicketEffect } from '@lingtai/conductor/ticket'
 import { integrationStream, landingsStarted, ticketReducer, ticketStreamsOf, type ProjectState } from '@lingtai/domain'
 import { type EventStore, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
+import { draftBranchOf } from '@lingtai/project'
 import { Cause, Effect } from 'effect'
 
 import type { DaemonStore } from './store.ts'
@@ -54,11 +55,19 @@ const unlessInterrupted =
       ? Effect.failCause(cause as Cause.Cause<never>)
       : Effect.sync(() => say((Cause.squash(cause) as Error)?.message ?? String(Cause.squash(cause))))
 
-const recordProject = (project: string, options: OwedLandingsOptions, log: (line: string) => void) =>
+const recordProject = (
+  project: ProjectState,
+  name: string,
+  options: OwedLandingsOptions,
+  log: (line: string) => void,
+) =>
   Effect.gen(function* () {
     const { store } = options
+    // A landing on a team project's `branch.personal` joins the draft with the ticket, as the live pass writes it; the
+    // recorded recipe text is what the reconcile holds, and a landing on any other base (a PR's fix) does not join.
+    const personal = project.recipe === null ? null : draftBranchOf(project.recipe.source)
     const lanes = yield* options.withStreams((it) =>
-      it.streams({ prefixes: [`int-${project}-%`], types: ['IntegrationSucceeded'] }),
+      it.streams({ prefixes: [`int-${name}-%`], types: ['IntegrationSucceeded'] }),
     )
     // A ticket can have a success on more than one lane (a retry on another base): only its latest, by the log's
     // global order, is the landing it holds, so an older one on a lane that sorts later is history and not owed.
@@ -69,8 +78,8 @@ const recordProject = (project: string, options: OwedLandingsOptions, log: (line
         const { ticketId, mergeCommit, base } = started
         if (mergeCommit === null || base === null) continue
         // `like` is loose: `_` is a wildcard and project `foo` matches `int-foo-bar-main`.
-        if (integrationStream(project, base) !== lane || !ticketId.startsWith(ticketStreamsOf(project))) {
-          log(`left the landing of ${ticketId} at ${mergeCommit} alone: it is not ${project}'s on ${lane}`)
+        if (integrationStream(name, base) !== lane || !ticketId.startsWith(ticketStreamsOf(name))) {
+          log(`left the landing of ${ticketId} at ${mergeCommit} alone: it is not ${name}'s on ${lane}`)
           continue
         }
         const { seq } = started
@@ -86,7 +95,12 @@ const recordProject = (project: string, options: OwedLandingsOptions, log: (line
         log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
         continue
       }
-      yield* landTicketEffect(ticketId, { mergeCommit, base }, store, options.read).pipe(
+      yield* landTicketEffect(
+        ticketId,
+        { mergeCommit, base, draft: personal !== null && base === personal ? { project: name } : null },
+        store,
+        options.read,
+      ).pipe(
         Effect.andThen(() =>
           Effect.sync(() =>
             log(`recorded the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`),
@@ -101,8 +115,10 @@ export const recordOwedLandingsEffect = Effect.fn('daemon.recordOwedLandings')(f
   options: OwedLandingsOptions,
 ) {
   const log = options.log ?? (() => {})
-  for (const name of options.projects.map((p) => p.project).filter((n): n is string => !!n)) {
-    yield* recordProject(name, options, log).pipe(
+  for (const project of options.projects) {
+    const name = project.project
+    if (!name) continue
+    yield* recordProject(project, name, options, log).pipe(
       Effect.catchCause(unlessInterrupted((m) => log(`could not look for landings owed on ${name}: ${m}`))),
     )
   }

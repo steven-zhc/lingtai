@@ -28,7 +28,7 @@ import { recordFileRecipe } from './commands.ts'
 import { draftRecipe } from './draft.ts'
 import { ProjectFiles, filesEffect } from './files.ts'
 import { recipePath, resolveLocalRecipeEffect } from './local.ts'
-import { isTeamSource, listPrs, readDraft } from './pr.ts'
+import { draftIn, isTeamSource, listPrs } from './pr.ts'
 import { defaultStore, readProjectStateEffect } from './state.ts'
 
 /** What to change: a draft's changes, or the text a person typed over the text their page loaded. */
@@ -179,8 +179,10 @@ export const changeRecipe = Effect.fn('project.change-recipe')(function* (
   if (current !== null && isTeamSource(current) && !isTeamSource(text)) {
     const personal = personalOf(current)
     // A failed read fails the change: never *nothing open*.
-    const open = (yield* listPrs(project, store)).filter(isOpen)
-    const draft = yield* readDraft(project, store)
+    // One read of the PRs decides both halves: two reads could see two states (a Submit between them) and approve.
+    const prs = yield* listPrs(project, store)
+    const open = prs.filter(isOpen)
+    const draft = draftIn(prs)
     if (open.length > 0 || draft.length > 0) {
       return {
         ok: false,
