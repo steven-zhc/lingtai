@@ -887,7 +887,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .btn.held:hover:not(:disabled) { color: var(--held); border-color: var(--held); }
 
 .reason { display: grid; gap: 3px; font-size: 11px; color: var(--muted); }
-.reason input, .reason textarea {
+.reason input, .reason textarea, .reason .mdf {
   font: 12px/1.4 var(--sans);
   padding: 4px 6px;
   border: 1px solid var(--rule-2);
@@ -900,7 +900,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   width: 38ch;
   max-width: 100%;
 }
-.reason textarea { min-height: 5rem; resize: vertical; }
+.reason textarea, .reason .mdf { min-height: 5rem; resize: vertical; }
 
 /* Not styled as an error: the work landed, and this says so. */
 .decided { margin: 0; font-size: 11px; color: var(--pass); font-family: var(--mono); }
@@ -1716,14 +1716,15 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .sresolutionaction .reason { min-width: 0; }
 .sresolutionaction .reason { gap: 0.4rem; font-size: 0.78rem; }
 .sresolutionaction .reason input,
-.sresolutionaction .reason textarea {
+.sresolutionaction .reason textarea,
+.sresolutionaction .reason .mdf {
   width: 100%;
   max-width: 100%;
   min-height: 2.5rem;
   padding: 0.55rem 0.75rem;
   font-size: 0.84rem;
 }
-.sresolutionaction .reason textarea { min-height: 6rem; }
+.sresolutionaction .reason textarea, .sresolutionaction .reason .mdf { min-height: 6rem; }
 .sresolutionaction .btn {
   width: 100%;
   max-width: 100%;
@@ -2032,7 +2033,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .outwho { margin-right: 0.45rem; color: var(--muted); }
 .outeditor { display: grid; gap: 0.35rem; align-content: start; }
 .outbox { display: grid; gap: 0.35rem; }
-.outbox textarea {
+.outbox textarea, .outbox .mdf {
   font: 0.75rem/1.55 var(--mono);
   padding: 0.35rem 0.45rem;
   border: 1px solid var(--rule-2);
@@ -2290,12 +2291,12 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 @media (max-width: 30rem) {
   .detail--waiting .chatask { grid-template-columns: minmax(0, 1fr); }
 }
-.chatask, .chatask textarea, .chatprop, .chattrace { min-width: 0; }
+.chatask, .chatask textarea, .chatask .mdf, .chatprop, .chattrace { min-width: 0; }
 .chatprop .btnrow { flex-wrap: wrap; }
-/* Grows with what is typed (`Discussion` sets the height), to a bound, and then
+/* Grows with what is typed (the editor sizes itself to its content), to a bound, and then
    scrolls in itself: a long question takes room from the conversation above it
    only so far (#173). */
-.chatask textarea {
+.chatask textarea, .chatask .mdf {
   font: 0.8rem/1.5 var(--sans);
   padding: 0.35rem 0.45rem;
   border: 1px solid var(--rule-2);
@@ -2306,6 +2307,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   max-height: 12rem;
   overflow-y: auto;
 }
+.chatask .mdf .cm-scroller { max-height: 12rem; }
 
 /* --- the record -----------------------------------------------------------
    Rank 7 (#152, 0118 §2, #885). Everything the first screen does not need, as
@@ -3462,7 +3464,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-step.not-reached, .prp-step.skipped { color: #7a819d; }
 .prp-tickets { max-height: 18rem; overflow: auto; }
 .prp-textarea { width: 100%; box-sizing: border-box; font-family: var(--mono); font-size: 0.82rem; padding: 0.5rem; }
-.prp-textarea.generated { background: #f2f4fa; color: #5b6485; }
+.mdf.prp-textarea { border: 1px solid var(--rule-2); background: var(--surface); }
+.prp-textarea.generated, .mdf.prp-textarea.generated { background: #f2f4fa; color: #5b6485; }
 .prp-rule { border: 0; border-top: 1px solid #d5daea; margin: 0.6rem 0; }
 .prp-facts { margin: 0; display: grid; gap: 0.35rem; }
 .prp-facts div { display: grid; grid-template-columns: 5.5rem 1fr; gap: 0.5rem; font-size: 0.82rem; }
@@ -3817,7 +3820,7 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .ssatisfiedreading { margin: 8px 0 12px; }
 .triage-choice-hint { color: var(--ink-2); font-size: 0.8rem; }
 .triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: 0.85rem; }
-.triage-own textarea { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }
+.triage-own textarea, .triage-own .mdf { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }
 
 /* The running card (#1290): one facts row, the live log open under it. */
 .running-card .triage-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
@@ -3841,7 +3844,7 @@ button.navlink { font-family: inherit; cursor: pointer; }
 .running-ask .chat > .chatscroll { max-height: 14rem; }
 .running-ask .chat { overflow-y: auto; }
 .running-ask .chat .chatask { display: flex; flex: 1 1 20rem; align-items: center; gap: 0.5rem; }
-.running-ask .chat .chatask textarea { flex: 1; min-height: 0; height: 2rem; resize: vertical; }
+.running-ask .chat .chatask textarea, .running-ask .chat .chatask .mdf { flex: 1; min-height: 0; height: 2rem; resize: vertical; }
 
 .sw-donut { display: grid; grid-template-columns: 180px 1fr; gap: 22px; align-items: center; margin: 10px 0 18px; }
 @media (max-width: 520px) {
@@ -3850,3 +3853,10 @@ button.navlink { font-family: inherit; cursor: pointer; }
   .rp-panel .sw-donut svg { width: 180px; }
 }
 .rp-more > summary { cursor: pointer; font-size: 11px; color: var(--muted); }
+
+/* MarkdownField (#1372): the wrapper carries the box the caller styled for a textarea; what is inside fills it. */
+.mdf { box-sizing: border-box; display: block; min-width: 0; position: relative; }
+.mdf textarea { display: block; box-sizing: border-box; width: 100%; margin: 0; padding: 0; border: 0; background: transparent; font: inherit; color: inherit; resize: none; min-height: 0; max-height: none; }
+.mdf-editor, .mdf .cm-editor { min-height: calc(var(--mdf-rows, 3) * 1.5em); }
+.mdf .cm-content { min-height: calc(var(--mdf-rows, 3) * 1.5em); }
+.mdf-readonly .cm-content { cursor: default; }
