@@ -42,6 +42,7 @@ import { useState, useTransition } from 'react'
 import type { OutgoingView } from '@/lib/prompt'
 
 import { editPrompt, sendAttempt } from './actions.ts'
+import { MarkdownField } from './markdown-field.tsx'
 
 /** `+4 −0 lines`, or nothing at all when the edit changed no lines. */
 function delta(view: OutgoingView): string | null {
@@ -140,11 +141,11 @@ export function OutgoingEditor({
           {/* Raw text. No toolbar, no rendering, no escaping: what is typed
               here reaches the agent unaltered, inside a block that names who
               wrote it and says it applies to this attempt only. */}
-          <textarea
+          <MarkdownField
             autoFocus
             rows={4}
             value={draft}
-            onChange={(e) => setDraft(e.target.value)}
+            onChange={setDraft}
             placeholder="`claude --help` does not list it; read the shipped bundle instead of guessing."
           />
           <p className="outnote">

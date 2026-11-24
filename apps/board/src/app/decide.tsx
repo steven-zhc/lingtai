@@ -41,6 +41,7 @@ import {
   sendAttempt,
 } from './actions.ts'
 import { askedOf } from './asked-of.ts'
+import { MarkdownField } from './markdown-field.tsx'
 import { TriageChoices, useTriageDraft, type Sending } from './triage-picks.tsx'
 
 /**
@@ -477,11 +478,11 @@ export function EditBodyAndRequeue({
       {showEdit ? (
         <label className="reason">
           <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
-          <textarea
+          <MarkdownField
             value={currentText}
             placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
-            onChange={(event) => {
-              triage?.setBody(event.target.value)
+            onChange={(text) => {
+              triage?.setBody(text)
               if (draftWaitId !== waitId) setDetail(null)
             }}
           />
@@ -656,10 +657,10 @@ export function Requeue({
       <label className="reason">
         <span>{withdrawing ? 'Why withdraw it? (optional)' : asked ? 'Your answer' : 'Why? (optional)'}</span>
         {asked && !withdrawing ? (
-          <textarea
+          <MarkdownField
             autoFocus
             value={note}
-            onChange={(e) => setNote(e.target.value)}
+            onChange={setNote}
             placeholder="every attempt at this ticket is told this"
           />
         ) : (

@@ -10,6 +10,7 @@ import { type ReactNode, useState, useTransition } from 'react'
 import type { PageSummary } from '@/lib/pr-page.ts'
 
 import { savePrSummaryNow } from './actions.ts'
+import { MarkdownField } from './markdown-field.tsx'
 
 export function PrSummaryEditor({
   project,
@@ -41,12 +42,12 @@ export function PrSummaryEditor({
   }
   return (
     <div className="prp-summary">
-      <textarea
+      <MarkdownField
         aria-label="Summary"
         className="prp-textarea"
         value={text}
         readOnly={!summary.editable}
-        onChange={(e) => setText(e.target.value)}
+        onChange={setText}
         rows={6}
       />
       {summary.refusal === null ? (

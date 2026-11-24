@@ -669,7 +669,7 @@ describe("the pair's height", () => {
     // conversation.
     const pane = stacked(800, 420)
     const fixed = 17.6 + 2 + 18 + 2 * 8 + 12 * rem + 5.6 + 30
-    expect(css).toMatch(/\.chatask textarea\s*\{[^}]*max-height:\s*12rem/)
+    expect(css).toMatch(/\.chatask textarea,[^{]*\{[^}]*max-height:\s*12rem/)
     expect(pane).toBeGreaterThanOrEqual(24 * rem)
     expect(pane - fixed).toBeGreaterThan(4 * 0.8 * rem * 1.5)
   })
