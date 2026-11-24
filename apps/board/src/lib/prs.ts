@@ -21,6 +21,7 @@ import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
+import { actor } from '@/lib/actor.ts'
 
 import { type FixTicket, type PrBoardView, type PrRead, prBoard, prHolding, prName } from './pr-board.ts'
 import {
@@ -175,7 +176,8 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           draft,
           stepNames: inProgressStepNames(),
           spend,
-          servedWords: servedWords(holder),
+          daemon: holder === null ? 'none' : holder === 'unknown' ? 'unknown' : 'running',
+          viewer: actor(),
           newFixHref: fixHref(null),
           newFixFor: (pr) => fixHref(prName(pr)),
         })
@@ -209,14 +211,6 @@ export async function readLandedWhere(project: string): Promise<LandedWhereRead>
     return { kind: 'failed', error: (err as Error).message }
   }
 }
-
-/** Who serves a submitted PR, in one sentence: the CLI's words, from one place. */
-export const servedWords = (holder: string | null): string =>
-  holder === null
-    ? 'it is served when a conductor runs: lingtai start, or lingtai run'
-    : holder === 'unknown'
-      ? 'could not tell whether a conductor is running; lingtai doctor says'
-      : `${holder} is freezing it`
 
 /**
  * The place line's views for a project: `viewsFor` with the `PRs` view a team project has and its count of PRs waiting
