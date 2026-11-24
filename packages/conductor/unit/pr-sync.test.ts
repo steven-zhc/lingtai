@@ -1,8 +1,3 @@
-import { integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
-import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
-import type { GitHub } from '@lingtai/github'
-import { recordBranchSynced, recordPrOpened, recordPrPushed, recordPrRestart } from '@lingtai/project'
 /**
  * `sync` and `build`, In progress's first two steps, and the merge back into `branch.personal` (#1312, 0130 §6):
  * `main` is merged in a throwaway worktree and built before it is anyone's target; nothing but `push` writes the PR
