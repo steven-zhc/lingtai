@@ -57,18 +57,21 @@ runs the build. It also buys one more paid agent run, which writes the PR's
 title and summary. With nothing landed, or with a PR already open, it refuses
 and says why. A refused submit returns the PR to the draft.
 
-If `lingtai start` is not running, the submit is not served; start it and
-submit again. Run `lingtai pr` again for the PR's number, its branch and its steps. The board
-shows the same PR as one of five states: Draft, In progress, Waiting on you,
-In review, Merged.
+Submit returns once the PR is frozen; the build, the summary and the push come
+after, in the running conductor. If `lingtai start` is not running, the request
+is kept and waits there: start it and it is served. Do not submit again, since a
+second submit is refused while the first is open. Run `lingtai pr` until the PR
+leaves `in-progress`. The board shows the same PR as one of five states: Draft,
+In progress, Waiting on you, In review, Merged.
 
 ```text
 PR <n>: in-review — lingtai-base-pr-<n>
 ```
 
-`<n>` is the PR's number, which `lingtai pr` prints. Your checkout is the remote, so the branch is pushed into it and no pull request
-is opened anywhere. The description `lingtai pr` prints under that line is there
-to read, and you review the PR as a diff:
+`<n>` is the PR's number, which `lingtai pr` prints. Your checkout is the
+remote, so the branch is pushed into it and no pull request is opened anywhere.
+Only once the PR is In review is the branch there, and the description `lingtai
+pr` prints under that line is there to read. You review the PR as a diff:
 
 ```sh
 git -C chapter-garden diff main...lingtai-base-pr-<n>
@@ -91,7 +94,9 @@ and a push into a branch you have checked out is refused.
 Never squash. Lingtai marks a PR Merged when the PR's last pushed commit is an
 ancestor of `main`, and a squash commit does not contain it, so the PR would
 stay In review for good. Keep `lingtai start` running for this step too: the
-running conductor notices the merge.
+running conductor notices the merge on a later sweep, not at the moment of the
+merge, so the PR may still read `in-review` and the tickets stay open for a
+little while. Run `lingtai pr` again until it reports the merge.
 
 ```sh
 lingtai pr
@@ -101,13 +106,11 @@ lingtai pr
 PR <n>: merged by git at 2026-11-24T10:00:00.000Z
 ```
 
-The PR is Merged and its three tickets close, the first one from chapter 1
-included. Lingtai also prints a line saying `lingtai-base` has caught up with
-`main`. Each new ticket from here is one more paid attempt, and each submit one
-more paid summary, so the cost follows the tickets you open, not the days that
-pass. `main` now holds everything the
-PR held, `lingtai-base` has caught up with it, and the next ticket starts the
-next draft.
+Once that line shows, the PR is Merged and its three tickets close, the first
+one from chapter 1 included. Lingtai also prints a line saying `lingtai-base`
+has caught up with `main`. Each new ticket from here is one more paid attempt,
+and each submit one more paid summary, so the cost follows the tickets you open.
+The next ticket starts the next draft.
 
 ## Next
 
