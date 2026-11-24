@@ -20,7 +20,7 @@ const BranchMark = () => (
 
 export function PrCard({ project, card }: { project: string; card: CardView }) {
   return (
-    <article className={`pr-card ${card.tone}`}>
+    <article className={`pr-card ${card.tone === 'queued' ? 'progress queued' : card.tone}`}>
       <header className="pr-head">
         <BranchMark />
         {card.href === null ? (
@@ -31,7 +31,7 @@ export function PrCard({ project, card }: { project: string; card: CardView }) {
           </Link>
         )}
         {card.pill === null ? null : (
-          <span className={card.pill === 'CI' ? 'pr-pill pulse' : 'pr-pill'}>{card.pill}</span>
+          <span className={card.pill === 'in progress' ? 'pr-pill pulse' : 'pr-pill'}>{card.pill}</span>
         )}
         {card.count === null ? null : <span className="pr-count">{card.count}</span>}
       </header>
@@ -119,6 +119,13 @@ function Column({ project, column }: { project: string; column: ColumnView }) {
 export function PrColumns({ project, view }: { project: string; view: PrBoardView }) {
   return (
     <div className="pr-board">
+      {view.submitted === null ? null : (
+        <p className="pr-submitted" role="status">
+          ✓ PR {view.submitted.n} submitted{view.submitted.at === null ? '' : ` at ${view.submitted.at}`}
+          {view.submitted.daemon === 'running' ? ' — it starts when the daemon next looks for work. ' : '. '}
+          <Link href={view.submitted.href}>Open PR {view.submitted.n}</Link>
+        </p>
+      )}
       <p className="pr-strip">
         <b>{view.strip.branches}</b> · {view.strip.notInPr} · {view.strip.mainNote}
       </p>
