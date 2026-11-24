@@ -380,7 +380,7 @@ export const describePr = (
       summary: state?.summary?.text ?? null,
       tickets: tickets.map((t) => {
         const read = facts.find((f) => f.ticket === t.ticket)
-        return { ...t, open: read?.open ?? null, spend: read?.spend ?? null }
+        return { ...t, open: read?.open ?? null }
       }),
     })
   })

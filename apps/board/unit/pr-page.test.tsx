@@ -451,7 +451,7 @@ describe('a retry keeps the submit summary failure', () => {
 })
 
 describe('the description and the spend the page shows', () => {
-  it('uses the ticket facts the daemon publishes: spend known, a closed ticket without Closes', () => {
+  it('uses the ticket facts the daemon publishes, with no spend in the body: a closed ticket without Closes', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]], {
       facts: [
         { ticket: '41', open: true, spend: 1.5 },
@@ -463,9 +463,29 @@ describe('the description and the spend the page shows', () => {
     const body = v.summary?.generated ?? ''
     expect(body).toContain('Closes #41')
     expect(body).not.toContain('Closes #42')
-    expect(body).toContain('$1.50')
-    expect(body).not.toContain('spend unknown')
+    expect(body).not.toContain('$')
+    expect(body).not.toContain('spend')
     expect(v.facts.find((f) => f.label === 'Spend')?.value).toBe('$3.61 · tickets $3.55 · PR runs $0.06')
+  })
+})
+
+describe('the generated box knows whether a summary sits above it', () => {
+  it('under a summary it is the rule and one Closes line, with no ticket list', () => {
+    const v = page(
+      [
+        requested,
+        started,
+        ['PrSummaryWritten', { by: 'agent', at: 'submit', title: 'T', summary: 's', basedOn: 0 }],
+        draftOpened,
+        green,
+        ['PrOpened', { host: 'github', number: 88, url: 'u' }],
+      ],
+      { facts: [{ ticket: '41', open: true, spend: 1.5 }] },
+    )
+    const body = v.summary?.generated ?? ''
+    expect(body).toContain('Closes #41')
+    expect(body.split('\n').filter((l) => l.startsWith('- '))).toEqual([])
+    expect(body).not.toContain('\ns\n')
   })
 })
 

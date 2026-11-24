@@ -188,9 +188,9 @@ describe('push and open', () => {
     expect(post).toMatchObject({ draft: true, head: 'lingtai-team-pr-1', base: 'main', title: 'ticket 1' })
     const body = post['body'] as string
     // #1 is open and closes with the PR; #2 closed meanwhile and is only named.
-    expect(body).toContain('Closes #1 — ticket 1')
+    expect(body).toContain('Closes #1')
     expect(body).not.toContain('Closes #2')
-    expect(body).toContain('#2 — ticket 2')
+    expect(body).toContain('- ticket 2 (#2)')
     const s = await state(store)
     expect(s.lastPushed).toBe(FROZEN)
     expect(s.host).toMatchObject({ number: 7 })
@@ -394,29 +394,55 @@ describe('push and open', () => {
 
 describe('the description', () => {
   const tickets = [
-    { ticket: '1', title: 'one', mergeCommit: 'abcdef1234', open: true, spend: 1.5 },
-    { ticket: 'local-2', title: 'two', mergeCommit: '1234567890', open: null, spend: null },
+    { ticket: '1', title: 'one', open: true },
+    { ticket: '2', title: 'two', open: true },
+    { ticket: '3', title: 'three', open: false },
   ]
+  const noSecrets = (body: string) => {
+    expect(body).not.toContain('$')
+    expect(body).not.toContain('spend')
+    expect(body).not.toMatch(/\b[0-9a-f]{7}\b/)
+  }
 
-  it('prints unknown spend as unknown, never $0, and a local ticket by its title alone', () => {
-    const { body } = prDescription({ title: null, summary: null, tickets })
-    expect(body).toContain('- Closes #1 — one · abcdef1 · $1.50')
-    expect(body).toContain('- two · 1234567 · spend unknown')
-    expect(body).not.toContain('$0')
-    expect(body).toContain('Made with Lingtai · 2 tickets · $1.50 (some unknown)')
+  it('with a summary: the summary, one Closes line of the open tickets, and a footer without spend', () => {
+    const { body } = prDescription({ title: null, summary: 'What changed.', tickets })
+    expect(body).toBe('What changed.\n\n---\n\nCloses #1, Closes #2\n\nMade with Lingtai · 3 tickets')
+    noSecrets(body)
+  })
+
+  it('with no summary: one line per ticket, then the Closes line; a local ticket is its title alone', () => {
+    const { body } = prDescription({
+      title: null,
+      summary: null,
+      tickets: [...tickets, { ticket: 'local-4', title: 'four', open: null }, { ticket: '5', title: '', open: null }],
+    })
+    expect(body).toBe(
+      '- one (#1)\n- two (#2)\n- three (#3)\n- four\n- #5\n\nCloses #1, Closes #2, Closes #5\n\nMade with Lingtai · 5 tickets',
+    )
+    noSecrets(body)
+  })
+
+  it('writes no Closes line, and no orphan rule, when no ticket is open', () => {
+    const closed = [{ ticket: '3', title: 'three', open: false }]
+    expect(prDescription({ title: null, summary: 'S.', tickets: closed }).body).toBe(
+      'S.\n\nMade with Lingtai · 1 ticket',
+    )
+    expect(prDescription({ title: null, summary: null, tickets: closed }).body).toBe(
+      '- three (#3)\n\nMade with Lingtai · 1 ticket',
+    )
   })
 
   it('puts the summary first, under a rule, and the title is the summary run’s when it wrote one', () => {
     const out = prDescription({ title: 'Ship it', summary: 'What changed.', tickets })
     expect(out.title).toBe('Ship it')
-    expect(out.body.startsWith('What changed.\n\n---\n\n- Closes #1')).toBe(true)
+    expect(out.body.startsWith('What changed.\n\n---\n\nCloses #1')).toBe(true)
   })
 
   it('renders an added section in place, the others unchanged', () => {
     const base = prDescription({ title: null, summary: null, tickets })
     const sections = [(pr: { tickets: readonly unknown[] }) => `first of ${pr.tickets.length}`, () => null] as const
     const all = prDescription({ title: null, summary: null, tickets }, [sections[0], sections[1], () => 'last'])
-    expect(all.body).toBe('first of 2\n\nlast')
+    expect(all.body).toBe('first of 3\n\nlast')
     expect(base.body).toContain('Made with Lingtai')
   })
 })
