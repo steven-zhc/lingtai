@@ -57,6 +57,26 @@ const TOKEN_MS = 60_000
 const asError = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
 /**
+ * The two ports the computed draft is read through: a project's recipe and the candidates (every landed row, never the
+ * board's two-day default). One source for the submit and for the start's backfill (#1394), so both compute the draft
+ * from the same inputs.
+ */
+export function draftPorts(store: EventStore) {
+  const recipe = (project: string) =>
+    readProjectStateEffect(project, store).pipe(
+      Effect.flatMap((state) => currentRecipeEffect(state)),
+      Effect.map((resolved) => resolved.recipe),
+      Effect.mapError(asError),
+    )
+  const candidates = (project: string) =>
+    readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
+      Effect.map((cards) => cards.map((card) => ({ issue: card.issue }))),
+      Effect.mapError(asError),
+    )
+  return { recipe, candidates }
+}
+
+/**
  * `locked` is the daemon's guard as a function (`lockedEffect`): the sentence for a lock that stops new work on a project,
  * or null. **Without it no agent is given a PR's conflict** — a round that could not be stopped by a pause, the day's
  * ceiling or an account limit would be new work outside every lock (0126 §6), so the person is asked as before.
@@ -66,12 +86,7 @@ export function livePrPorts(
   log: (line: string) => void,
   locked?: (project: string) => Effect.Effect<string | null>,
 ): PrPorts {
-  const recipeOf = (project: string) =>
-    readProjectStateEffect(project, store).pipe(
-      Effect.flatMap((state) => currentRecipeEffect(state)),
-      Effect.map((resolved) => resolved.recipe),
-      Effect.mapError(asError),
-    )
+  const { recipe: recipeOf, candidates } = draftPorts(store)
   /** The project's GitHub owner and repo; null where it has none on record (a local remote). */
   const slugOf = (project: string) =>
     readProjectStateEffect(project, store).pipe(
@@ -252,11 +267,7 @@ export function livePrPorts(
     ...(resolver === undefined ? {} : { resolver }),
     ...(summarizer === undefined ? {} : { summarizer }),
     recipe: recipeOf,
-    candidates: (project) =>
-      readTasksEffect({ project, retentionDays: EVERY_LANDED_ROW_DAYS }).pipe(
-        Effect.map((cards) => cards.map((card) => ({ issue: card.issue }))),
-        Effect.mapError(asError),
-      ),
+    candidates,
     fetch: (project) =>
       Effect.gen(function* () {
         const recipe = yield* recipeOf(project)
