@@ -84,7 +84,7 @@ const recordProject = (
     )
     // A ticket can have a success on more than one lane (a retry on another base): only its latest, by the log's
     // global order, is the landing it holds, so an older one on a lane that sorts later is history and not owed.
-    const latest = new Map<string, { mergeCommit: string; base: string; seq: bigint }>()
+    const latest = new Map<string, { mergeCommit: string; base: string; seq: bigint; draft: boolean | null }>()
     for (const lane of lanes) {
       const events = yield* Effect.tryPromise({ try: () => store.read(lane), catch: (e) => e })
       for (const started of landingsStarted(events)) {
@@ -98,20 +98,22 @@ const recordProject = (
         const { seq } = started
         if (seq === null) continue
         const held = latest.get(ticketId)
-        if (held === undefined || seq > held.seq) latest.set(ticketId, { mergeCommit, base, seq })
+        if (held === undefined || seq > held.seq) latest.set(ticketId, { mergeCommit, base, seq, draft: started.draft })
       }
     }
-    for (const [ticketId, { mergeCommit, base, seq }] of latest) {
+    for (const [ticketId, { mergeCommit, base, seq, draft }] of latest) {
       const ticket = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options.read)
       if (ticket.landed?.mergeCommit === mergeCommit) continue
       if (options.dryRun) {
         log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
         continue
       }
-      const personal = personalAt(seq)
+      // The pass bound its own decision to the success event; only an event from before it did falls back to the log.
+      const personal = draft === null ? personalAt(seq) : null
+      const joins = draft ?? (personal !== null && base === personal)
       yield* landTicketEffect(
         ticketId,
-        { mergeCommit, base, draft: personal !== null && base === personal ? { project: name } : null },
+        { mergeCommit, base, draft: joins ? { project: name } : null },
         store,
         options.read,
       ).pipe(

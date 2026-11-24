@@ -1625,6 +1625,13 @@ export const IntegrationSucceeded = z.object({
   branch: z.string(),
   base: z.string(),
   mergeCommit: z.string(),
+  /**
+   * Whether the pass that made this landing was to join the draft with it: team mode and `base` its recipe's
+   * `branch.personal`, as the pass resolved the recipe it holds. It is bound here, to the attempt, so a recovery after
+   * a crash reads what the pass decided and not a recipe edited since. Absent on an event written before it existed,
+   * and recovery then reads the recipe in force at the event.
+   */
+  draft: z.boolean().optional(),
 })
 /** @summary The conductor ran a project's check command on the base branch and recorded whether it passed. */
 export const BaseChecked = z.object({

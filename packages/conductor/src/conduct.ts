@@ -4031,6 +4031,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             owner: options.client.owner ?? '',
             repo: options.client.repo,
             base: attemptBase(),
+            draft: draftOfLanding() !== null,
             branch,
             ticketId,
             headSha: on.onSha,
