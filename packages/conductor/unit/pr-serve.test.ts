@@ -180,6 +180,35 @@ describe('the freeze', () => {
     expect((await state(mem, 2)).draft.map((t) => t.ticket)).toEqual(['3', '4'])
   })
 
+  it('a ticket the commit holds that joins the draft during the ancestry check is not refused nothing-landed', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    const base = ports(store, { reachable: ['m4'] })
+    let joined = false
+    const p: PrPorts = {
+      ...base,
+      git: (project, args) => {
+        if (args[0] === 'merge-base' && !joined) {
+          joined = true
+          return Effect.promise(async () => {
+            const head = await store.head(prStream('lingtai', 1))
+            await store.append(prStream('lingtai', 1), head, [
+              { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '4', mergeCommit: 'm4', from: null } },
+            ])
+            return { code: 1, stdout: '', stderr: '' }
+          })
+        }
+        return base.git(project, args)
+      },
+    }
+    await serve(p)
+    const pr = await state(store)
+    expect(pr.status).toBe('in-progress')
+    expect(pr.tickets.map((t) => t.ticket)).toEqual(['4'])
+    expect((await state(store, 2)).draft.map((t) => t.ticket)).toEqual(['1'])
+  })
+
   it('refuses personal-missing when the branch does not resolve', async () => {
     const store = createMemoryEventStore()
     await landed(store, '1')

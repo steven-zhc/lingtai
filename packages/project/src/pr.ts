@@ -196,14 +196,31 @@ export const requestPrSubmit = (
   )
 
 /** The serve refused a request it found it could not honour. */
-export const recordPrRefused = (project: string, n: number, refusal: PayloadOf<'PrSubmitRefused'>, store: EventStore) =>
-  transitionPr(
-    store,
-    project,
-    n,
-    (state) => refuseTransition(state, refusal),
-    (_state, appended) => appended,
-  )
+export const recordPrRefused = (
+  project: string,
+  n: number,
+  refusal: PayloadOf<'PrSubmitRefused'>,
+  store: EventStore,
+  decided?: PrState,
+): Effect.Effect<boolean, Error> =>
+  decided !== undefined
+    ? // Pinned: the refusal was decided against this snapshot, so it is written at its version or not at all.
+      Effect.gen(function* () {
+        const next = refuseTransition(decided, refusal)
+        if (next === null) return false
+        yield* Effect.tryPromise({
+          try: () => store.append(prStream(project, n), decided.version, [next]),
+          catch: (e) => e,
+        })
+        return true
+      }).pipe(Effect.mapError((e) => (e instanceof ConcurrencyError ? e : failed(e))))
+    : transitionPr(
+        store,
+        project,
+        n,
+        (state) => refuseTransition(state, refusal),
+        (_state, appended) => appended,
+      )
 
 type Batches = Parameters<EventStore['appendAll']>[0] extends readonly (infer B)[] ? B[] : never
 
