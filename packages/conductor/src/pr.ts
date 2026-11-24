@@ -23,6 +23,7 @@ import {
   prDescription,
   prStream,
   ciVerdict,
+  reduceTicket,
   ticketStream,
 } from '@lingtai/domain'
 import type { RuntimeId, Usage } from '@lingtai/domain'
@@ -35,7 +36,7 @@ import {
   recordPrClosed,
   recordPrMerged,
   readPr,
-  readPrDraft,
+  withOneRetry,
   recordPrCiSkipped,
   recordPrCiFollowing,
   recordPrChecked,
@@ -777,20 +778,49 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
       yield* Effect.sleep(ports.landingWaitMs ?? 1000)
     }
 
-    const draft = yield* readPrDraft(project, recipe, yield* ports.candidates(project), ports.store)
-    const held: PayloadOf<'PrInProgress'>['tickets'] = []
-    for (const t of draft) {
-      const ask = ['merge-base', '--is-ancestor', t.mergeCommit, frozenSha] as const
-      const answer = yield* ports.git(project, ask)
-      // 0 yes, 1 no; anything else is git failing, never *not an ancestor*.
-      if (answer.code === 0) held.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: t.title })
-      else if (answer.code !== 1) return yield* refuse('git', gitSaid(ask, answer))
-    }
-    if (held.length === 0) {
-      return yield* refuse('nothing-landed', `no ticket has landed on ${personal} that a PR does not already hold`)
-    }
-
-    yield* recordPrInProgress(project, n, { branch: personal, main, frozenSha, tickets: held }, ports.store)
+    // The candidates are the PR's own draft list, read with the PR, and the write is pinned to the version it was read
+    // at: a landing between the read and the write moves the stream, the write fails, and the whole block runs once
+    // more — reads the list, asks git, decides — so a list that lacks a ticket the commit holds is never frozen.
+    // A ticket landed after `frozenSha` is not an ancestor on the second pass either, and goes to the next draft.
+    yield* withOneRetry(
+      Effect.gen(function* () {
+        const state = yield* readPr(project, n, ports.store)
+        if (state === null) return
+        // A refusal here is decided against `state`, so it is written at that version: a landing since moves the stream,
+        // the write fails, and the block runs again over the newer list.
+        const refuseAt = (reason: PayloadOf<'PrSubmitRefused'>['reason'], detail: string) =>
+          recordPrRefused(project, n, { reason, detail }, ports.store, state).pipe(Effect.asVoid)
+        const held: PayloadOf<'PrInProgress'>['tickets'] = []
+        const notKept: PayloadOf<'PrDraftTicketAdded'>[] = []
+        for (const t of state.draft) {
+          const ask = ['merge-base', '--is-ancestor', t.mergeCommit, frozenSha] as const
+          const answer = yield* ports.git(project, ask)
+          // 0 yes, 1 no; anything else is git failing, never *not an ancestor*.
+          if (answer.code === 0) {
+            const events = yield* Effect.tryPromise({
+              try: () => ports.store.read(ticketStream(project, t.ticket)),
+              catch: asError,
+            })
+            held.push({
+              ticket: t.ticket,
+              mergeCommit: t.mergeCommit,
+              title: reduceTicket(events).title ?? `#${t.ticket}`,
+            })
+          } else if (answer.code === 1) notKept.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, from: n })
+          else return yield* refuseAt('git', gitSaid(ask, answer))
+        }
+        if (held.length === 0) {
+          return yield* refuseAt(
+            'nothing-landed',
+            `no ticket has landed on ${personal} that a PR does not already hold`,
+          )
+        }
+        yield* recordPrInProgress(project, n, { branch: personal, main, frozenSha, tickets: held }, ports.store, {
+          state,
+          notKept,
+        })
+      }),
+    )
   })
 
 /**
@@ -944,7 +974,8 @@ const serveRetry = (ports: PrPorts, project: string, n: number): Effect.Effect<v
  * **Back** (#1314): the draft is closed on the code host and the PR is `PrClosed`, which returns its tickets to Draft. They stay
  * on `branch.personal`, nothing is reverted, and the PR branch is not deleted. A `closePull` that fails records nothing and the
  * request is served again; a `422` that says it is closed already is recorded as closed. On another remote, or before the
- * draft was opened, there is nothing to close and `PrClosed` alone is recorded.
+ * draft was opened, there is nothing to close and `PrClosed` is recorded, with the PR's tickets handed back to the draft in the same
+ * transaction (two streams).
  */
 const serveBack = (ports: PrPorts, project: string, n: number): Effect.Effect<void, Error> =>
   Effect.gen(function* () {

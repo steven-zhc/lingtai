@@ -110,6 +110,14 @@ async function landed(store: EventStore, issue: string) {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: `m${issue}`, base: 'lingtai-team' } },
   ])
+  // The draft is the PR's own list (ADR 0131 §2): a ticket landing on the personal branch joins it while it is a draft.
+  const pr1 = await store.read(prStream('lingtai', 1))
+  const status = pr1.length === 0 ? null : reducePr(pr1).status
+  if (status === null || status === 'draft') {
+    await store.append(prStream('lingtai', 1), pr1.length, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
+    ])
+  }
 }
 
 /** A PR 1 walked to its draft on GitHub (or, on another remote, to In review), holding tickets 1 and 2. */
@@ -160,6 +168,30 @@ describe('the sweep learns what became of the open PR', () => {
     await sweep(p)
     expect(w.pullCalls.length).toBe(calls)
     expect((await types(store)).filter((t) => t === 'PrClosed')).toHaveLength(1)
+  })
+
+  it('closed without merging hands the PR’s tickets to the draft, naming it, right after PrClosed', async () => {
+    const { store, w } = await inReview()
+    w.pull = { ...open, state: 'closed' }
+    await sweep(ports(store, w))
+    const draft = await pr(store, 2)
+    expect(draft.status).toBe('draft')
+    expect(draft.draft).toEqual([
+      { ticket: '1', mergeCommit: 'm1', from: 1 },
+      { ticket: '2', mergeCommit: 'm2', from: 1 },
+    ])
+    const closed = (await store.read(prStream('lingtai', 1))).at(-1)!
+    expect(closed.type).toBe('PrClosed')
+    expect((await store.read(prStream('lingtai', 2)))[0]!.type).toBe('PrDraftTicketAdded')
+  })
+
+  it('a second sweep of a closed PR hands nothing more', async () => {
+    const { store, w } = await inReview()
+    w.pull = { ...open, state: 'closed' }
+    await sweep(ports(store, w))
+    const head = await store.head(prStream('lingtai', 2))
+    await sweep(ports(store, w))
+    expect(await store.head(prStream('lingtai', 2))).toBe(head)
   })
 
   it('after PrClosed a Submit is accepted and PR 2 holds the closed PR’s tickets', async () => {
@@ -240,6 +272,9 @@ describe('an unfinished close is retried after a later PR merges', () => {
     await sweep(p)
     expect(w.closed).toEqual([])
     await landed(store, '3')
+    await store.append(prStream('lingtai', 2), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '3', mergeCommit: 'm3', from: null } },
+    ])
     await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     await Effect.runPromise(servePr(p, 'lingtai', 2, PUSH_OPEN))
     w.pull = { ...open, merged: true, state: 'closed' }
@@ -315,6 +350,40 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
       },
     ])
   }
+
+  const fixed = async (mergedBack: boolean) => {
+    const { store, w } = await inReview()
+    await landedOnPrBranch(store, '3')
+    const p: PrPorts = {
+      ...ports(store, w),
+      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
+    }
+    await sweep(p)
+    if (mergedBack) {
+      const head = await store.head(prStream('lingtai', 1))
+      await store.append(prStream('lingtai', 1), head, [
+        { type: 'PrMergedBack', actor: 'conductor', data: { prHead: FIX, mergeCommit: 'd'.repeat(40), how: 'clean' } },
+      ])
+    }
+    w.pull = { ...open, state: 'closed' }
+    await sweep(p)
+    return store
+  }
+
+  it('a closed PR does not hand back a pr-fix ticket no merge back carried', async () => {
+    const store = await fixed(false)
+    expect((await pr(store)).status).toBe('closed')
+    expect((await pr(store, 2)).draft.map((t) => t.ticket)).toEqual(['1', '2'])
+  })
+
+  it('a closed PR hands back a pr-fix ticket a merge back carried onto the personal branch', async () => {
+    const store = await fixed(true)
+    expect((await pr(store, 2)).draft).toEqual([
+      { ticket: '1', mergeCommit: 'm1', from: 1 },
+      { ticket: '2', mergeCommit: 'm2', from: 1 },
+      { ticket: '93', mergeCommit: FIX, from: 1 },
+    ])
+  })
 
   it('the sweep tells the PR of a landing it does not hold, once', async () => {
     const { store, w } = await inReview()
