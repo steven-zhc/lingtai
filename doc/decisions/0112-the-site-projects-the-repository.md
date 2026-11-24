@@ -85,7 +85,7 @@ or a board with its stuck work removed, would contradict the pitch.
     catch. The root `.node-version` (`26`) lets a provider's build run the `.ts`
     scripts directly.
 13. **The docs are a book, and a reader goes through it in order.** The reading
-    path is ten chapters in four parts; a reader who goes page by page learns
+    path is eleven chapters in four parts; a reader who goes page by page learns
     every feature they need, simple to deep, without jumping.
 
     | Part                  | #   | Chapter                                                                        | File                 |
@@ -100,6 +100,7 @@ or a board with its stuck work removed, would contradict the pitch.
     | Fit it to your project | 8  | The recipe                                                                     | `recipe.md`          |
     |                       | 9   | Checks, review and spend                                                       | `checks-and-spend.md` |
     |                       | 10  | The sandbox and what an agent can reach                                        | `safety.md`          |
+    |                       | 11  | Solo mode — when to pick it, where work lands, how to switch                   | `solo.md`            |
 
     Chapters 1 and 2 use Chapter Garden, on local tickets, in one home; chapter
     3 adds the reader's own repository to that home.

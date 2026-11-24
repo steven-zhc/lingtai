@@ -28,7 +28,7 @@ installer edits no shell profile.
 
 Enter at the mode question makes a **team** project, which is what the rest of
 the book uses, even if you work alone. Its work lands on a `lingtai-base` branch
-in this checkout, never on `main`. Answer `solo` and work lands on `lingtai-base`
+in this checkout, never on `main`. [Answer `solo`](solo.md) and work lands on `lingtai-base`
 too, but the ticket closes; the rest of the book assumes team.
 
 ## Step 2 — Open one ticket

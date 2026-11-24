@@ -59,4 +59,8 @@ Do not read the sandbox as more than this:
 
 Unsandboxed, the agent reads any file you can, including `~/.lingtai/config.yml` and `~/.ssh`. What a runtime's own settings can narrow is in [the operating guide](operating.md#what-your-own-runtime-configuration-can-narrow). At every tier the agent works in its own worktree, its environment is filtered to a few variables and those your project declares, and the recipe that sets its gates lives outside the worktree. With the sandbox off it can read the file Lingtai's credentials are kept in, where its runtime lets it.
 
-Reference: [requirements](requirements.md), [CLI](cli.md), [reference](reference.md), [operating](operating.md), and [SECURITY.md](../SECURITY.md) to report a vulnerability.
+Reference: [requirements](requirements.md), [CLI](cli.md), [operating](operating.md), [SECURITY.md](../SECURITY.md).
+
+## Next
+
+[Solo mode](solo.md)
