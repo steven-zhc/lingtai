@@ -227,8 +227,14 @@ export function SetupForm({ view }: { view: ReadView }) {
           editor={
             <span>
               <label className="wiz-row">
-                <input type="radio" checked={tickets === 'github'} onChange={() => setTickets('github')} />
+                <input
+                  type="radio"
+                  checked={tickets === 'github'}
+                  disabled={local}
+                  onChange={() => setTickets('github')}
+                />
                 github
+                {local ? <span className="wiz-tag">a local directory has no owner — see the line above</span> : null}
               </label>
               <label className="wiz-row">
                 <input type="radio" checked={tickets === 'db'} onChange={() => setTickets('db')} />
