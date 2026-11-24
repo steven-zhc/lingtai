@@ -5,11 +5,12 @@
 import { prStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
+import { requestPrRetry, readPr } from '@lingtai/project'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type PrWorld, prRequestVerdict } from '../src/pr.ts'
+import { type PrWorld, catchUpLine, prRequestVerdict } from '../src/pr.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
 const MAIN = 'a'.repeat(40)
@@ -97,5 +98,31 @@ describe('a request on a merged PR waiting on its catch-up', () => {
     const answered = await run('rounds', w)
     expect(JSON.stringify(answered.verdict)).not.toContain('the agent is resolving')
     expect(JSON.stringify(answered.verdict)).toContain('served when a conductor runs')
+  })
+
+  it('rounds granted whose attempt then fails are the failure that waits, not the agent resolving', async () => {
+    const store = await waiting()
+    const w = world(store, async () => {
+      const at = (await store.read(prStream('lingtai', 1))).length
+      await store.append(prStream('lingtai', 1), at, [
+        {
+          type: 'SyncRoundStarted',
+          actor: 'conductor',
+          data: { merging: 'back', commit: MAIN, start: HEAD, round: 1, catchUp: true },
+        },
+        { type: 'PrCatchUpFailed', actor: 'conductor', data: { mainSha: MAIN, why: 'conflict', detail: 'spent' } },
+      ] as never)
+    })
+    const answered = await run('rounds', w)
+    expect(answered.code).toBe(1)
+    expect(JSON.stringify(answered.verdict)).not.toContain('the agent is resolving')
+    expect(JSON.stringify(answered.verdict)).toContain('catch-up waiting: conflict')
+  })
+
+  it('a retry releases the wait: the line is no longer waiting while the attempt runs', async () => {
+    const store = await waiting()
+    await Effect.runPromise(requestPrRetry({ project: 'lingtai', n: 1, mode: 'team' }, { by: 'human:steven' }, store))
+    const was = await Effect.runPromise(readPr('lingtai', 1, store))
+    expect(catchUpLine(was!)).not.toContain('waiting')
   })
 })

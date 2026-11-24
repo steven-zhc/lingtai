@@ -576,6 +576,23 @@ const mergeIntoPersonal = (
         Effect.ensuring(dropRef(ports, project, fetchedRef(n, 'main'))),
       )
 
+    /**
+     * The catch-up's own admission, asked again at the start of each of its turns: it may have queued behind a landing
+     * while the project was paused, and a pause must stop what has not yet been pushed. The pause is recorded as `locked`.
+     */
+    const stoppedNow = (): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        if (back || ports.resolver === undefined) return false
+        const stopped = yield* Effect.result(ports.resolver.locked(project))
+        if (Result.isFailure(stopped) || stopped.success === null) return false
+        yield* failed('locked', stopped.success).pipe(
+          Effect.catch((err: Error) =>
+            Effect.sync(() => void ports.log?.(`pr ${n} catch-up: recording it: ${err.message}`)),
+          ),
+        )
+        return true
+      })
+
     const turn = Effect.gen(function* () {
       // Re-read inside the turn: a landing that held the lane first may have changed what is owed.
       const state = yield* readPr(project, n, ports.store).pipe(
@@ -592,6 +609,7 @@ const mergeIntoPersonal = (
         ),
       )
       if (state === null || !owed(state) || (back && state.lastPushed !== owedHead)) return
+      if (yield* stoppedNow()) return
       // Only what is read and tried up to the push is caught here: a read that failed pushed nothing, and is said on
       // the PR's stream. What comes after the push is outside it — a record that fails then must never be turned into
       // a failure that says nothing was pushed.
@@ -674,6 +692,7 @@ const mergeIntoPersonal = (
       Effect.gen(function* () {
         const state = yield* readPr(project, n, ports.store)
         if (state === null || !owed(state) || (back && state.lastPushed !== owedHead)) return { kind: 'done' } as const
+        if (yield* stoppedNow()) return { kind: 'done' } as const
         yield* ports.sweep(project)
         yield* fetchInto(ports, project, [[`refs/heads/${branch}`, fetchedRef(n, 'personal')]])
         const personalNow = yield* resolve(ports, project, fetchedRef(n, 'personal'))

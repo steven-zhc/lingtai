@@ -336,7 +336,7 @@ export const registeredProjects = (): Effect.Effect<readonly string[], Error> =>
 type Ask = 'retry' | 'rounds' | 'back'
 
 /** The catch-up of the personal branch with `main` after a merge (#1371): what it came to, or what it is owed. */
-const catchUpLine = (state: PrState): string => {
+export const catchUpLine = (state: PrState): string => {
   const was = state.catchUp
   const personal = state.branch ?? 'the personal branch'
   if (was === null) return 'catch-up owed'
@@ -345,6 +345,8 @@ const catchUpLine = (state: PrState): string => {
       ? `already had ${was.mainSha.slice(0, 7)}`
       : `caught up ${personal} with ${state.main ?? 'main'} at ${was.mainSha.slice(0, 7)}`
   }
+  // A grant or a retry released the wait: the failure is the history of an attempt now being made, not a state.
+  if (was.released) return 'catch-up released; being tried again'
   return was.why === 'conflict' || was.why === 'red' || was.why === 'lost-push'
     ? `catch-up waiting: ${was.why}`
     : 'catch-up owed'
@@ -425,7 +427,8 @@ export const prRequestVerdict = (
           // that started, or a record that is no longer the failure the request released. The open PR's rules below read a
           // status and a pending that mean nothing here.
           const was = state.catchUp
-          if (ask === 'rounds' && state.rounds.length > rounds0) {
+          // Only while the record is still the released one: a failure recorded since is the current answer, not the round.
+          if (ask === 'rounds' && state.rounds.length > rounds0 && (was === null || was.released)) {
             return accepted('three more rounds given; the agent is resolving', state.status)
           }
           if (was !== null && !was.released) {

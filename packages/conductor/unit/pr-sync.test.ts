@@ -921,6 +921,37 @@ describe('the catch-up', () => {
     expect(catchUpOwed(await state(store))).toBe(true)
   })
 
+  it('a pause that arrives while the catch-up queues behind a landing stops it: nothing is built or pushed', async () => {
+    const store = await merged()
+    const w = aWorld()
+    w.ancestor = (a, b) => a === b
+    const lane = createLandingLane()
+    const release = Deferred.makeUnsafe<void>()
+    const held = Deferred.makeUnsafe<void>()
+    let paused: string | null = null
+    const resolver = { locked: () => Effect.sync(() => paused) } as unknown as PrPorts['resolver']
+    const ticket = Effect.runPromise(
+      lane.through(
+        integrationStream('lingtai', 'lingtai-team'),
+        { runId: 'r1', issue: 2 },
+        { onWait: () => Effect.void },
+        Deferred.succeed(held, void 0).pipe(Effect.andThen(Deferred.await(release))),
+      ),
+    )
+    await Effect.runPromise(Deferred.await(held))
+    const catching = run(store, w, { lane, resolver })
+    await new Promise((r) => setTimeout(r, 10))
+    paused = 'paused by an operator'
+    await Effect.runPromise(Deferred.succeed(release, void 0))
+    await Promise.all([ticket, catching])
+    expect(w.merges).toEqual([])
+    expect((await store.read(prStream('lingtai', 1))).at(-1)).toMatchObject({
+      type: 'PrCatchUpFailed',
+      data: { why: 'locked' },
+    })
+    expect(catchUpOwed(await state(store))).toBe(true)
+  })
+
   it('a failure repeats append once, while it waits', async () => {
     const store = await merged()
     await Effect.runPromise(recordPrCatchUpFailed('lingtai', 1, { mainSha: MAIN, why: 'red', detail: 'x' }, store))
