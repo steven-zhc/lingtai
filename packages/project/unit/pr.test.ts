@@ -22,7 +22,6 @@ import {
   readDraftTickets,
   readUnheldFixLandings,
   recordPrInProgress,
-  recordPrRefused,
   recordPrStepDone,
   draftTarget,
   openPr,

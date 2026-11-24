@@ -164,6 +164,7 @@ describe('team → solo', () => {
 
   it('fails the change, writing nothing, when a PR stream cannot be read', async () => {
     const w = await world(TEAM)
+    await ticket(w.store, '43', 'team')
     const read = w.store.read.bind(w.store)
     w.store.read = ((s: string, ...r: unknown[]) =>
       s.startsWith('pr-') ? Promise.reject(new Error('boom')) : (read as any)(s, ...r)) as typeof w.store.read
