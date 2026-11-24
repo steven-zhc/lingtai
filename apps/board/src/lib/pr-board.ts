@@ -546,7 +546,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       : draftError !== null
         ? 'tickets not in a PR: unknown'
         : open !== null && draftTickets.length === 0
-          ? `${prName(open)} in progress`
+          ? `${prName(open)} ${open.status === 'in-progress' ? 'in progress' : open.status === 'waiting' ? 'waiting on you' : 'in review'}`
           : `${plural(draftTickets.length, 'ticket', 'tickets')} not in a PR yet`
 
   return {

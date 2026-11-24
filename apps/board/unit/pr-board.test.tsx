@@ -164,6 +164,16 @@ describe('prBoard', () => {
     expect(v.strip.notInPr).toBe('PR 3 in progress')
   })
 
+  it('does not call a waiting or in-review PR in progress on the strip', () => {
+    for (const [status, words] of [
+      ['waiting', 'PR 3 waiting on you'],
+      ['in-review', 'PR 3 in review'],
+    ] as const) {
+      const v = prBoard(input([{ n: 3, pr: pr(3, { status, tickets: [tk(1)] }) }], []))
+      expect(v.strip.notInPr).toBe(words)
+    }
+  })
+
   it('draws a PR in progress with its steps from the conductor’s list', () => {
     const p = pr(2, {
       status: 'in-progress',
