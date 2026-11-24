@@ -36,7 +36,7 @@ Treat each limit as an alarm with a reason, and read one that fires as news abou
 - Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.
 - Each automatic path has its own bound, and no restart resets it. Read the ledger early and use `lingtai:hold`.
 
-The day's ceiling is `limits.day_usd` in `~/.lingtai/config.yml`, not in the recipe, and it covers the whole installation. Set it before you run unattended, and before you raise `runtime.concurrency` above 1, which is ignored without one. When the day's recorded spend reaches it, the conductor finishes every pass in flight and pauses until local midnight or `lingtai resume`. [`lingtai ceiling`](cli.md#lingtai-ceiling) raises it for the day.
+The day's ceiling is `limits.day_usd` in `~/.lingtai/config.yml`, not in the recipe, and it covers the whole installation. Set it before you run unattended, and before you raise `runtime.concurrency` above 1, which is ignored without one. When the day's recorded spend reaches it, the conductor finishes every pass in flight and takes no new work until local midnight. `lingtai resume` does not lift it; [`lingtai ceiling`](cli.md#lingtai-ceiling) raises it for the day.
 
 The ceiling counts what runs reported plus rate-card estimates for the runs that reported nothing, such as every Codex run. A run nothing could price is unknown and outside the figure.
 
