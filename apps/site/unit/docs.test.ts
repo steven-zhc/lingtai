@@ -174,8 +174,8 @@ describe('safety is chapter 10, what an agent can reach', () => {
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
-    // #1061: a fact that is not on the first-run path goes to tutorial-more.md.
-    expect(proseOf(body), 'the first-run path has become a reference manual again').toBeLessThan(400)
+    // #1061: a fact that is not on the first-run path goes to tutorial-more.md. The cap is 0112 §14's 800 (#1411).
+    expect(proseOf(body), 'the first-run path has become a reference manual again').toBeLessThan(800)
     expect(body).not.toContain('<details>')
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(body).not.toContain('$VISUAL')
