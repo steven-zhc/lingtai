@@ -30,7 +30,7 @@ The ten steps and their order never change. What runs at each step is yours to n
 | `merge`     | the branch in, verify, push                            |
 | `end`       | runs on every outcome                                  |
 
-A card stops at `proposed`, the only step that decides. It stops there when the recipe names a person at it, or when a limit or a question needs one. When the agent asked something, the board offers **Answer the question**. [When it fails](when-it-fails.md) has what a refusal looks like and what to do at a wait.
+A card stops at `proposed`, the only step that decides. It stops there when the recipe names a person at it, or when a limit or a question needs one. When the agent asked questions with choices, the board offers *Answer and continue the step*; a question in prose has no answer button, only editing the ticket, starting a new attempt or closing. A question a person raised themselves is answered with **Answer the question**. [When it fails](when-it-fails.md) has what a refusal looks like and what to do at a wait.
 
 ## Two ways to go back
 
@@ -38,7 +38,7 @@ A ticket can go round again two ways, and the difference is what matters: **does
 
 |                | Continues the saved branch                                                                                                                                      | Starts over from the base branch                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `restarts` limit caps it.                                          |
+| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `runtime.limits.attempt.refusalFixes` caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `runtime.limits.ticket.newAttempts` caps it.                                          |
 | **You**        | At the wait you choose **Approve and continue** or **Fix the refusal on the saved work**. The saved branch carries on.                                               | At the wait you choose **Start a new attempt from base** or **Add to the ticket and start a new attempt**.                                                                    |
 
 - A fix round is **not** a new attempt. It stays inside the attempt you are in.
