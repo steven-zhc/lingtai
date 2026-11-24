@@ -59,6 +59,7 @@ import {
   claimTransition,
   continueTransition,
   parsePayload,
+  pendingRedoOf,
   releaseTransition,
   cut,
   ticketReducer,
@@ -325,6 +326,25 @@ export function releaseDeadWorkerEffect(
   return releaseWith(ticketId, { by: 'dead-worker', ...input }, store, options)
 }
 
+/** The release a dead worker's claim gets: `StepRedoPending` where the worker's run stopped at a redo's wait. */
+function readRunEvents(
+  store: EventStore,
+  runId: string,
+  released: readonly ToAppend<PayloadOf<'TicketReleased'>>[],
+): Effect.Effect<readonly ToAppend<PayloadOf<'TicketReleased'>>[]> {
+  return Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+    Effect.map((runEvents) => {
+      const pending = pendingRedoOf(runEvents)
+      if (pending === null) return released
+      return released.map((e) => ({
+        ...e,
+        data: { ...e.data, cause: { _tag: 'StepRedoPending' as const, runId, step: pending.step } },
+      }))
+    }),
+    Effect.orElseSucceed(() => released),
+  )
+}
+
 function releaseWith(
   ticketId: string,
   input: Parameters<typeof releaseTransition>[1],
@@ -339,12 +359,19 @@ function releaseWith(
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options)
     const decided = releaseTransition(state, input)
     if (!decided.ok) return { ok: false, refusal: decided.refusal } as const
+    // A worker that died while its run waited to be redone could not say so itself (#1398): the run's own stream
+    // does, so the release names the redo it interrupted and the next claim continues it. A read that fails leaves
+    // the release as it was, with no cause.
+    const events =
+      input.by === 'dead-worker' && state.lifecycle.status === 'claimed'
+        ? yield* readRunEvents(store, state.lifecycle.runId, decided.events)
+        : decided.events
     if (options.beforeAppend !== undefined && state.lifecycle.status === 'claimed') {
       const { runId, worker } = state.lifecycle
       yield* options.beforeAppend({ runId, worker })
     }
     yield* Effect.tryPromise({
-      try: () => store.append(ticketId, state.version, [...decided.events, ...(options.endPlan ?? [])]),
+      try: () => store.append(ticketId, state.version, [...events, ...(options.endPlan ?? [])]),
       catch: (error) => error,
     })
     return { ok: true } as const

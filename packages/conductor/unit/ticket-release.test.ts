@@ -11,9 +11,9 @@ import { releaseDeadWorkerEffect, releaseTicketEffect } from '../src/ticket/comm
 
 const ticketId = ticketStream('lingtai', 9)
 
-async function claimedBy(worker: string) {
+async function claimedBy(worker: string, runId = 'run-1') {
   const store = createMemoryEventStore()
-  await store.append(ticketId, 0, aClaim(makeStream(ticketId), 'run-1', worker))
+  await store.append(ticketId, 0, aClaim(makeStream(ticketId), runId, worker))
   return store
 }
 
@@ -41,5 +41,38 @@ describe('releaseDeadWorkerEffect', () => {
     )
     expect(out).toBeInstanceOf(ConcurrencyError)
     expect((await store.read(ticketId)).filter((e) => e.type === 'TicketReleased')).toHaveLength(1)
+  })
+
+  describe('a worker that died while its run waited to be redone (#1398)', () => {
+    const causeOf = async (store: Awaited<ReturnType<typeof claimedBy>>) => {
+      await Effect.runPromise(releaseDeadWorkerEffect(ticketId, { mine: 'me:1', lock: 'l' }, store))
+      const released = (await store.read(ticketId)).filter((e) => e.type === 'TicketReleased')
+      return (released[0]!.data as { cause: unknown }).cause
+    }
+    const redone = async (store: Awaited<ReturnType<typeof claimedBy>>) => {
+      const e = makeStream('pass-run1')
+      await store.append('pass-run1', 0, [
+        e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 }),
+      ])
+    }
+
+    it('is released with the cause the next claim continues, from the run’s own stream', async () => {
+      const store = await claimedBy('dead:1', 'pass-run1')
+      await redone(store)
+      expect(await causeOf(store)).toEqual({ _tag: 'StepRedoPending', runId: 'pass-run1', step: 'implement' })
+    })
+
+    it('is released with no cause where the run was not at a redo', async () => {
+      expect(await causeOf(await claimedBy('dead:1', 'pass-run1'))).toBeNull()
+    })
+
+    it('is still released, with no cause, where the run’s stream cannot be read', async () => {
+      const store = await claimedBy('dead:1', 'pass-run1')
+      await redone(store)
+      const read = store.read.bind(store)
+      store.read = (stream, ...rest) =>
+        stream === 'pass-run1' ? Promise.reject(new Error('transient')) : read(stream, ...rest)
+      expect(await causeOf(store)).toBeNull()
+    })
   })
 })

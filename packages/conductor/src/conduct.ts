@@ -6096,6 +6096,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         ...(continuation.released.rerun.startedAt === undefined
                           ? {}
                           : { startedAt: continuation.released.rerun.startedAt }),
+                        ...('unread' in continuation.released.rerun && continuation.released.rerun.unread !== undefined
+                          ? { unread: continuation.released.rerun.unread }
+                          : {}),
                       },
                     }
                   : {}),
@@ -6840,7 +6843,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       Effect.ensuring(
         Effect.gen(function* () {
           // Interrupted while a step waited to be redone: the next claim redoes it and quotes what it was to (#1398).
-          const events = yield* Effect.promise(() => store.read(runId)).pipe(Effect.orElseSucceed(() => []))
+          // A read that rejects is a failure here, not a defect, so the release below still happens, as before.
+          const events = yield* Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+            Effect.orElseSucceed(() => []),
+          )
           const pending = pendingRedoOf(events)
           yield* release(
             'the run was interrupted',
