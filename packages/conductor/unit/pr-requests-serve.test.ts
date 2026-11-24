@@ -98,7 +98,8 @@ async function waiting(reason: 'sync-red' | 'sync-conflict' = 'sync-red'): Promi
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('a retry, served', () => {
   it('a branch that is not there and was never pushed: In progress walks again, and nothing is adopted', async () => {

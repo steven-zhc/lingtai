@@ -1,7 +1,6 @@
 import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
-import { requestPrSubmit } from '@lingtai/project'
 /**
  * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
  * In progress's steps.
@@ -98,7 +97,7 @@ describe('the freeze', () => {
     expect(pr.tickets.map((t) => t.ticket)).toEqual(['1', '2'])
     expect(pr.tickets[0]).toEqual({ ticket: '1', mergeCommit: 'm1', title: 'ticket 1' })
     const types = (await store.read(prStream('lingtai', 1))).map((e) => e.type)
-    expect(types).toEqual(['PrSubmitRequested', 'PrInProgress'])
+    expect(types).toEqual(['PrDraftTicketAdded', 'PrSubmitRequested', 'PrInProgress'])
   })
 
   it('refuses nothing-landed when no ticket is held by the frozen commit', async () => {
@@ -107,7 +106,8 @@ describe('the freeze', () => {
     await request(store)
     await serve(ports(store, { reachable: [] }))
     const pr = await state(store)
-    expect(pr.status).toBe('refused')
+    // A draft that holds a ticket goes back to the draft when refused (the reducer), so it can be submitted again.
+    expect(pr.status).toBe('draft')
     expect(pr.refusal?.reason).toBe('nothing-landed')
   })
 

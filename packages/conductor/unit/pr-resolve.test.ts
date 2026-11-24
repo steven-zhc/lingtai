@@ -212,7 +212,7 @@ async function inProgress(): Promise<EventStore> {
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'm1', base: 'lingtai-team' } },
   ])
   await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
-  await store.append(prStream('lingtai', 1), 1, [
+  await store.append(prStream('lingtai', 1), await store.head(prStream('lingtai', 1)), [
     {
       type: 'PrInProgress',
       actor: 'conductor',
@@ -230,7 +230,8 @@ async function inProgress(): Promise<EventStore> {
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 const askSync = (commit = MAIN) => ({
   project: 'lingtai',

@@ -161,7 +161,7 @@ async function inProgress(pushed: boolean): Promise<EventStore> {
       tickets: [{ ticket: '1', mergeCommit: 'm1', title: 't' }],
     },
   }
-  await store.append(prStream('lingtai', 1), 1, [inprogress])
+  await store.append(prStream('lingtai', 1), await store.head(prStream('lingtai', 1)), [inprogress])
   if (pushed) {
     await Effect.runPromise(recordPrPushed('lingtai', 1, { headSha: FROZEN, found: 'pushed' }, store))
     // A later pass through In progress: the push is behind it, the steps start again.

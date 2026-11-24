@@ -145,7 +145,8 @@ function ports(store: EventStore, w: World, options: { summarizer?: boolean } = 
 }
 
 const events = (store: EventStore): Promise<Envelope[]> => store.read(prStream('lingtai', 1))
-const types = async (store: EventStore) => (await events(store)).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await events(store)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const state = async (store: EventStore) => reducePr(await events(store))
 const named = (...names: string[]): PrStep[] => IN_PROGRESS_STEPS.filter((s) => names.includes(s.name))
 const SUBMIT = named('summary', 'push', 'open')

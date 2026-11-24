@@ -16,7 +16,6 @@ import {
   recordPrInProgress,
   recordPrRefused,
   recordPrStepDone,
-  recordPrWaiting,
   draftTarget,
   openPr,
   readDraft,

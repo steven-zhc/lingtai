@@ -146,7 +146,8 @@ async function frozen(): Promise<EventStore> {
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const named = (...names: string[]): readonly PrStep[] => IN_PROGRESS_STEPS.filter((s) => names.includes(s.name))
 const serve = (p: PrPorts, steps: readonly PrStep[]) => Effect.runPromise(servePr(p, 'lingtai', 1, steps))
 const pushesOf = (w: World) => w.remoteCalls.filter((a) => a[0] === 'push')

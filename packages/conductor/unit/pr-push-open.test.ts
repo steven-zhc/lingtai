@@ -2,7 +2,6 @@ import { integrationStream, prDescription, prStream, reducePr, ticketStream } fr
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type OpenPull } from '@lingtai/github'
-import { requestPrSubmit } from '@lingtai/project'
 /**
  * `push` and `open`, In progress's two steps (#1337, 0130 §5): the branch is pushed in its lane turn, never forced, and
  * the PR opens as a draft — each looking before it acts, so a restart pushes and opens nothing twice.
@@ -146,7 +145,8 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
 }
 
 const state = async (store: EventStore) => reducePr(await store.read(prStream('lingtai', 1)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 async function frozen(): Promise<EventStore> {
   const store = createMemoryEventStore()
@@ -276,7 +276,7 @@ describe('push and open', () => {
     const store = await frozen()
     const w = aWorld()
     await serve(ports(store, w), PUSH_ONLY)
-    const before = (await types(store)).length
+    const before = await store.head(prStream('lingtai', 1))
     // A newer pass through In progress at a commit that is not a descendant.
     await store.append(prStream('lingtai', 1), before, [
       {
@@ -295,7 +295,7 @@ describe('push and open', () => {
     w.ancestor = 1
     const calls = w.remoteCalls.length
     await serve(ports(store, w), PUSH_ONLY)
-    expect((await types(store)).length).toBe(before + 1)
+    expect(await store.head(prStream('lingtai', 1))).toBe(before + 1)
     expect(w.remoteCalls.slice(calls).some((a) => a[0] === 'push')).toBe(false)
   })
 

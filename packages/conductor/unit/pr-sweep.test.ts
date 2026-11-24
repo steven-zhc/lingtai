@@ -2,7 +2,6 @@ import { prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
-import { requestPrSubmit } from '@lingtai/project'
 /**
  * The sweep's read of an open PR (#1317, 0130 §5): merged by the host's word or by git, closed on the host, and the
  * tickets of a merged PR closed once. Every append is a transition, so a second sweep says nothing.
@@ -128,7 +127,8 @@ async function inReview(recipe: Recipe = team): Promise<{ store: EventStore; w: 
 }
 
 const pr = async (store: EventStore, n = 1) => reducePr(await store.read(prStream('lingtai', n)))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const sweep = (p: PrPorts) => Effect.runPromise(learnPrEnds(p, ['lingtai']))
 
 describe('the sweep learns what became of the open PR', () => {

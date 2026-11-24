@@ -149,7 +149,8 @@ const aWorld = (checks: CiCheck[]): World => ({
   observed: 0,
 })
 const serve = (p: PrPorts) => Effect.runPromise(servePr(p, 'lingtai', 1, STEPS))
-const types = async (store: EventStore) => (await store.read(prStream('lingtai', 1))).map((e) => e.type)
+const types = async (store: EventStore) =>
+  (await store.read(prStream('lingtai', 1))).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 
 describe('the ci and ready steps', () => {
   it('five green checks: PrChecked green, the mutation with the draft’s node id, then PrOpened', async () => {
