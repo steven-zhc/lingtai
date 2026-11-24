@@ -8,14 +8,17 @@
 # that second witness.
 #
 # It is the unit project only (0060 §1), never `pnpm test:integration`: that
-# half takes 803s and belongs to T11, after the merge, on a separate system:
-# `integration.yml` is that system (#963).
+# half takes 803s and belongs to T11, after the merge lane lands on the studio
+# branch, on the PR into main, and again on the push to main, on a separate
+# system: `integration.yml` is that system (#963, #1403).
 # No `LINGTAI_*` secret goes anywhere near this workflow.
 #
-# It is deliberately not a required status check on `main`. The merge lane
-# does not land through a PR — it is `git merge --no-edit` into the base and
-# a push (`packages/actions/src/merge-action.ts:47`) — so a required check
-# here would refuse every landing the conductor makes.
+# It is deliberately not a GitHub-required status check on the studio branch.
+# The merge lane does not land through a PR there — it is `git merge --no-edit`
+# into the base and a push (`packages/actions/src/merge-action.ts:47`) — so a
+# required check would refuse every landing the conductor makes. In team mode
+# `main` moves only by a PR, and what that PR waits on is Lingtai's own CI step,
+# `pr.ci.required` in the conducting recipe, not a branch-protection rule.
 name: check
 
 on:
