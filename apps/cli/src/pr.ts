@@ -10,7 +10,7 @@ import { readFile } from 'node:fs/promises'
 
 import { describePr, inProgressStepNames, prHostOf } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, prStepRows, prWaitOf } from '@lingtai/domain'
+import { type PrState, catchUpOwed, catchUpWaits, isOpen, openAmong, prStepRows, prWaitOf } from '@lingtai/domain'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import {
@@ -18,7 +18,7 @@ import {
   type PrRequestAnswer,
   editPrSummary,
   grantPrRounds,
-  latestPr,
+  listPrs,
   openPr,
   readPr,
   readPrDraft,
@@ -164,8 +164,9 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       const detail = solo(project, recipe)
       return { code: 1, lines: [detail], json: { outcome: 'refused', reason: 'solo', detail } }
     }
-    const latest = yield* latestPr(project, world.store)
-    const open = yield* openPr(project, world.store)
+    const prs = yield* listPrs(project, world.store)
+    const latest = prs[prs.length - 1] ?? null
+    const open = openAmong(prs)
     const draft: readonly PrDraftTicket[] = yield* readPrDraft(
       project,
       recipe,
@@ -186,6 +187,12 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       lines.push(
         `PR ${ended.n}: ${ended.status}${ended.host === null ? '' : ` (pull request #${ended.host.number})`}${by} at ${ended.ended.at.toISOString()}`,
       )
+    }
+    if (ended !== null && ended.status === 'merged') lines.push(catchUpLine(ended))
+    // An older merged PR whose catch-up is still owed or waiting is not hidden by a newer PR (#1371): each is named by its number.
+    for (const older of prs) {
+      if (older === latest || older.n === null || older.status !== 'merged') continue
+      if (catchUpOwed(older) || catchUpWaits(older)) lines.push(`PR ${older.n}: ${catchUpLine(older)}`)
     }
     if (open !== null && open.n !== null) {
       lines.push(
@@ -328,6 +335,23 @@ export const registeredProjects = (): Effect.Effect<readonly string[], Error> =>
 
 type Ask = 'retry' | 'rounds' | 'back'
 
+/** The catch-up of the personal branch with `main` after a merge (#1371): what it came to, or what it is owed. */
+export const catchUpLine = (state: PrState): string => {
+  const was = state.catchUp
+  const personal = state.branch ?? 'the personal branch'
+  if (was === null) return 'catch-up owed'
+  if (was.outcome === 'caught-up') {
+    return was.mergeCommit === null
+      ? `already had ${was.mainSha.slice(0, 7)}`
+      : `caught up ${personal} with ${state.main ?? 'main'} at ${was.mainSha.slice(0, 7)}`
+  }
+  // A grant or a retry released the wait: the failure is the history of an attempt now being made, not a state.
+  if (was.released) return 'catch-up released; being tried again'
+  return was.why === 'conflict' || was.why === 'red' || was.why === 'lost-push'
+    ? `catch-up waiting: ${was.why}`
+    : 'catch-up owed'
+}
+
 /** The sentence for a request nobody has answered in time: who is conducting. */
 const unanswered = (holder: string | null, what: string): string =>
   holder === null
@@ -347,13 +371,20 @@ export const prRequestVerdict = (
   by: string,
   world: PrWorld,
   waitMs: number = SUBMIT_WAIT_MS,
+  /** `--pr <n>`: the PR the request is about; absent is the open one, else the latest merged PR waiting on its catch-up. */
+  target: number | null = null,
 ): Effect.Effect<Answered, Error> =>
   Effect.gen(function* () {
     const recipe = yield* world.recipe(project)
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
-    const latest = yield* openPr(project, world.store)
-    if (latest === null || latest.n === null) {
+    const prs = yield* listPrs(project, world.store)
+    const askable = (pr: PrState): boolean => pr.n !== null && (isOpen(pr) || catchUpWaits(pr))
+    const latest =
+      target !== null
+        ? (prs.find((pr) => pr.n === target) ?? null)
+        : (openAmong(prs) ?? prs.findLast((pr) => catchUpWaits(pr)) ?? prs[prs.length - 1] ?? null)
+    if (latest === null || latest.n === null || !askable(latest)) {
       return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     }
     const n = latest.n
@@ -368,7 +399,11 @@ export const prRequestVerdict = (
           ? yield* requestPrBack(ref, { by }, world.store)
           : yield* grantPrRounds(
               ref,
-              { by, merging: conflict?.merging ?? 'main', commit: conflict?.commit ?? '' },
+              {
+                by,
+                merging: latest.status === 'merged' ? 'back' : (conflict?.merging ?? 'main'),
+                commit: latest.status === 'merged' ? (latest.catchUp?.mainSha ?? '') : (conflict?.commit ?? ''),
+              },
               world.store,
             )
     if (asked.kind === 'refused') return refusal(1, 'refused', asked.detail, { subject })
@@ -387,12 +422,25 @@ export const prRequestVerdict = (
         if (ask === 'back' && state.status === 'closed') {
           return accepted('closed; its tickets are back in Draft, still on the personal branch', state.status)
         }
-        if (ask === 'rounds' && (state.rounds.length > rounds0 || state.status !== 'in-progress')) {
+        if (latest.status === 'merged' && state.status === 'merged') {
+          // A merged PR's request is served by the catch-up alone, and it is answered by what the catch-up came to: a round
+          // that started, or a record that is no longer the failure the request released. The open PR's rules below read a
+          // status and a pending that mean nothing here.
+          const was = state.catchUp
+          // Only while the record is still the released one: a failure recorded since is the current answer, not the round.
+          if (ask === 'rounds' && state.rounds.length > rounds0 && (was === null || was.released)) {
+            return accepted('three more rounds given; the agent is resolving', state.status)
+          }
+          if (was !== null && !was.released) {
+            return catchUpWaits(state)
+              ? refusal(1, was.why ?? 'catch-up', catchUpLine(state), { subject })
+              : accepted(catchUpLine(state), state.status)
+          }
+        } else if (ask === 'rounds' && (state.rounds.length > rounds0 || state.status !== 'in-progress')) {
           return state.status === 'waiting' && state.wait !== null
             ? accepted(`the agent went again; the PR waits at ${state.wait.step} (${state.wait.reason})`, state.status)
             : accepted('three more rounds given; the agent is resolving', state.status)
-        }
-        if (ask === 'retry' && state.pending === null) {
+        } else if (ask === 'retry' && state.pending === null) {
           if (state.status === 'waiting' && state.wait !== null) {
             return refusal(1, state.wait.reason, state.wait.detail, { subject })
           }
@@ -407,7 +455,7 @@ export const prRequestVerdict = (
     )
     return accepted(
       unanswered(holder, ask === 'back' ? 'taking it back' : ask === 'retry' ? 'checking it' : 'resolving it'),
-      'waiting',
+      latest.status === 'merged' ? 'merged' : 'waiting',
     )
   })
 

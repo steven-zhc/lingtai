@@ -22,6 +22,7 @@ import {
   parseTicketStream,
   prDescription,
   prStream,
+  catchUpOwed,
   ciVerdict,
   reduceTicket,
   ticketStream,
@@ -65,7 +66,7 @@ import { type LandingLane, landingLane } from './landing-lane.ts'
 import { asError, dropRef, fetchInto, fetchedRef, gitSaid, remoteSha, targetRef } from './pr-git.ts'
 import { outsideStep } from './pr-outside.ts'
 import { type PrSummarizer, summaryStep, topupStep } from './pr-summary.ts'
-import { buildStep, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
+import { buildStep, catchUpPersonal, mergeBackOwed, mergePrBack, syncStep } from './pr-sync.ts'
 import { type IssueChannel, tellGitHubEffect } from './tell.ts'
 
 /** `git`'s answer in the project's mirror: its exit code (null when it never ran to one) and its stdout, trimmed. */
@@ -1030,10 +1031,12 @@ export const servePr = (
       if (state.status === 'requested') yield* freezePr(ports, project, n)
       // A person's request is answered before the walk: a back ends the PR, and a retry says where it walks from.
       if (state.pending?.kind === 'back') return yield* serveBack(ports, project, n)
-      if (state.pending?.kind === 'retry') yield* serveRetry(ports, project, n)
+      if (state.pending?.kind === 'retry' && state.status !== 'merged') yield* serveRetry(ports, project, n)
       yield* walkPr(ports, project, n, steps)
       // A PR that reached In review is merged back into `branch.personal`, once, in that branch's lane turn.
       yield* mergePrBack(ports, project, n)
+      // A PR that was merged has `main`'s tip brought into `branch.personal`, once (#1371). Never in the sweep: it pushes.
+      yield* catchUpPersonal(ports, project, n)
       // The description on the code host follows the log: a top-up, a lock's reason, a person's edit (#1318).
       yield* pushDescription(ports, project, n)
     }),
@@ -1059,7 +1062,8 @@ export const servePendingPrs = (
             pr.pending !== null ||
             pr.fixOwed ||
             (pr.descriptionOwed && pr.host !== null && isOpen(pr)) ||
-            mergeBackOwed(pr)) &&
+            mergeBackOwed(pr) ||
+            catchUpOwed(pr)) &&
           pr.n !== null
         ) {
           yield* servePr(ports, project, pr.n, steps).pipe(
