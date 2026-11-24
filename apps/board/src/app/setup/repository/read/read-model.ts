@@ -64,8 +64,6 @@ export interface ReadView {
   writer: LineView<string>
   reviewer: LineView<string>
   tickets: LineView<SetupForm['tickets']>
-  /** Why `github` cannot be chosen (a directory has no owner), or null. */
-  githubOff: string | null
   /** The log already has tickets for this project, so the source is not a choice. */
   ticketsLocked: boolean
   kinds: LineView<string[]>

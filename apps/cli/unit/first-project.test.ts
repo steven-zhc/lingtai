@@ -1753,3 +1753,48 @@ describe('chooseFirstProject — a local team project (#1324)', () => {
     expect(t.calls.filter((c) => c.startsWith('branch '))).toEqual([])
   })
 })
+
+describe('chooseFirstProject — the origin hint for a local directory (#1413)', () => {
+  const run = async (git: GitPlan, history?: PromiseFirstProjectWorld['history']) => {
+    const h = harness({
+      git: {
+        '/repo::rev-parse --show-toplevel': ok('/repo\n'),
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
+        ...git,
+      },
+      projects: [],
+      answers: [''],
+      ...(history === undefined ? {} : { history }),
+    })
+    const result = await chooseFirstProject(h.world, { local: '/repo', defaults: '', mode: 'solo', install: 'none' })
+    return { ...h, result }
+  }
+  const hints = (logged: string[]) => logged.filter((l) => l.includes('lingtai add acme/widget'))
+
+  it('a GitHub origin prints how to take its issues once, and the recipe keeps db', async () => {
+    const { logged, files, result } = await run({
+      '/repo::remote': ok('origin\n'),
+      '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(hints(logged)).toHaveLength(1)
+    expect(files.replaced[`${HOME}/repo/recipe.yml`]).toMatch(/tickets:\s*\n?\s*(source: )?db|source: db/)
+  })
+
+  it('no origin prints no hint', async () => {
+    const { logged } = await run({ '/repo::remote': ok('') })
+    expect(hints(logged)).toEqual([])
+    expect(logged.some((l) => l.includes('on GitHub; a local directory'))).toBe(false)
+  })
+
+  it('a project with history prints no hint', async () => {
+    const { logged } = await run(
+      {
+        '/repo::remote': ok('origin\n'),
+        '/repo::remote get-url origin': ok('https://github.com/acme/widget.git\n'),
+      },
+      async () => ['db-1'] as never,
+    )
+    expect(hints(logged)).toEqual([])
+  })
+})

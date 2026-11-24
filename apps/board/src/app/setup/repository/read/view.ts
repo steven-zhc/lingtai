@@ -3,7 +3,6 @@
  * side: it may import values; the form may not.
  */
 import { everyRuntime } from '@lingtai/agent'
-import { localTicketsOf } from '@lingtai/conductor/add-from-page'
 import { LIMIT_DEFAULTS } from '@lingtai/recipe'
 import {
   LINGTAI_BASE,
@@ -23,7 +22,6 @@ const lineOf = <T, U>(line: Line<T>, pick: (v: T) => U, fallback: U): LineView<U
     : { value: fallback, note: `could not be read: ${line.reason}`, known: false }
 
 export function viewOf(proposal: Proposal, project: string, remote: string | null, team: TeamView): ReadView {
-  const local = proposal.target.kind === 'local'
   const detected = proposal.detected.known ? proposal.detected.value : null
   const checks: CheckView[] =
     detected === null
@@ -44,7 +42,6 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
           })),
         ]
   const tickets = lineOf(proposal.tickets, (t) => t.source, 'db' as const)
-  const ownerless = local ? localTicketsOf(proposal) : null
   return {
     project,
     target: proposal.target,
@@ -66,8 +63,7 @@ export function viewOf(proposal: Proposal, project: string, remote: string | nul
       : [],
     writer: lineOf(proposal.writer, (w) => w ?? '', ''),
     reviewer: lineOf(proposal.reviewer, (w) => w ?? 'none', 'none'),
-    tickets: ownerless === null ? tickets : { value: 'db', note: ownerless.because, known: tickets.known },
-    githubOff: local ? 'a local directory has no owner, so it cannot take GitHub issues yet (#977)' : null,
+    tickets,
     ticketsLocked: proposal.tickets.known && proposal.tickets.because.startsWith('kept:'),
     kinds: lineOf(proposal.kinds, (k) => k, []),
     heldBy: lineOf(proposal.heldBy, (h) => h ?? '', ''),
@@ -124,7 +120,6 @@ export function emptyView(
     writer: unread(''),
     reviewer: unread('none'),
     tickets: unread<ReadView['tickets']['value']>(local ? 'db' : 'github'),
-    githubOff: local ? 'a local directory has no owner, so it cannot take GitHub issues yet (#977)' : null,
     ticketsLocked: false,
     kinds: { value: ['bug', 'feature', 'tech-debt', 'documentation'], note: '', known: true },
     heldBy: unread(''),
