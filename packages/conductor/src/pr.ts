@@ -31,7 +31,7 @@ import { type GitHub, GitHubFailed, PermissionDenied, type PullState } from '@li
 import {
   landingsInFlight,
   listPrs,
-  latestPr,
+  openPr,
   recordPrClosed,
   recordPrMerged,
   readPr,
@@ -1304,7 +1304,7 @@ const mendFixLandings = (ports: PrPorts, project: string, pr: PrState): Effect.E
   })
 
 /**
- * The sweep's read (#1317): for each project, the latest PR if it is open, asked about once; then the tickets of the
+ * The sweep's read (#1317): for each project, the open PR (the highest not in `draft`, which may sit below a draft), asked about once; then the tickets of the
  * merged PRs closed. One project's failure is that project's.
  */
 export const learnPrEnds = (
@@ -1315,8 +1315,8 @@ export const learnPrEnds = (
   Effect.gen(function* () {
     for (const project of projects) {
       yield* Effect.gen(function* () {
-        const latest = yield* latestPr(project, ports.store)
-        if (latest !== null && isOpen(latest) && latest.status !== 'requested') {
+        const latest = yield* openPr(project, ports.store)
+        if (latest !== null && latest.status !== 'requested') {
           // A pr-fix that landed on the PR's branch and never told the PR (the process died between the two): told now,
           // **before** the PR's end is learned — a PR merged meanwhile would refuse the request and lose the fix for good.
           const repaired = yield* Effect.result(mendFixLandings(ports, project, latest))
@@ -1325,7 +1325,7 @@ export const learnPrEnds = (
             ports.log?.(`pr sweep ${project}: ${repaired.failure.message}`)
           } else {
             // Learned from the state the repair left, never the one read before it: the PR's head moved with the fix.
-            const mended = yield* latestPr(project, ports.store)
+            const mended = yield* openPr(project, ports.store)
             if (mended !== null) yield* learnOnePr(ports, memory, project, mended)
           }
         }

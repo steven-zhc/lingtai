@@ -15,6 +15,7 @@ import {
   prStream,
   reducePr,
   reduceTicket,
+  openAmong,
   requestSubmit,
   freezeTransition,
   landedSeq,
@@ -54,7 +55,7 @@ import {
   ticketStream,
   integrationStream,
 } from '@lingtai/domain'
-import type { EventStore } from '@lingtai/event-store/store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { parse as parseYaml } from 'yaml'
@@ -96,6 +97,41 @@ export function latestPr(project: string, store: EventStore): Effect.Effect<PrSt
   return listPrs(project, store).pipe(Effect.map((prs) => prs[prs.length - 1] ?? null))
 }
 
+/** The open PR: the highest-numbered one not in `draft`, when it is open; null otherwise. */
+export function openPr(project: string, store: EventStore): Effect.Effect<PrState | null, Error> {
+  return listPrs(project, store).pipe(Effect.map(openAmong))
+}
+
+/**
+ * The stream the draft is on. The highest PR when it is in `draft` or `requested`, with its stream's version;
+ * otherwise the next number, at version 0 and in no state.
+ */
+export function draftTarget(
+  project: string,
+  store: EventStore,
+): Effect.Effect<{ n: number; version: number; state: PrState['status'] }, Error> {
+  return listPrs(project, store).pipe(Effect.map(draftOf))
+}
+
+const draftOf = (prs: readonly PrState[]): { n: number; version: number; state: PrState['status'] } => {
+  const top = prs[prs.length - 1]
+  if (top === undefined) return { n: 1, version: 0, state: null }
+  if (top.status === 'draft' || top.status === 'requested') {
+    return { n: top.n ?? prs.length, version: top.version, state: top.status }
+  }
+  return { n: (top.n ?? prs.length) + 1, version: 0, state: null }
+}
+
+/** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
+export function readDraft(project: string, store: EventStore): Effect.Effect<PrState['draft'], Error> {
+  return listPrs(project, store).pipe(
+    Effect.map((prs) => {
+      const top = prs[prs.length - 1]
+      return top !== undefined && top.status === 'draft' ? top.draft : []
+    }),
+  )
+}
+
 /** Appends one PR's transition at the head it was read at, if the transition decides anything. */
 const transitionPr = <A>(
   store: EventStore,
@@ -123,9 +159,10 @@ export type SubmitAnswer =
   | { kind: 'refused'; reason: 'solo' | 'open-pr' | 'nothing-landed'; detail: string }
 
 /**
- * A person asks for the personal branch to be submitted. Refused `solo` and `open-pr` without appending; otherwise
- * the next number's stream gets its first event at version 0. **Two Submits at once**: both read the same latest PR
- * and append at version 0 of the same stream; the loser re-reads, finds it open and is refused `open-pr`.
+ * A person asks for the personal branch to be submitted: an event on the draft's own stream, at the version read.
+ * Refused `solo`, `open-pr` (an open PR, even one below a draft, or a draft already `requested`) and
+ * `nothing-landed` (the highest PR is not in `draft`) without appending. **Two Submits at once**: both append at
+ * the draft's version; the loser re-reads, finds it `requested` and is refused `open-pr`.
  */
 export const requestPrSubmit = (
   project: string,
@@ -135,12 +172,24 @@ export const requestPrSubmit = (
 ): Effect.Effect<SubmitAnswer, Error> =>
   withOneRetry(
     Effect.gen(function* () {
-      const previous = yield* latestPr(project, store)
-      const decided = requestSubmit(previous, mode, project, by)
+      const prs = yield* listPrs(project, store)
+      const top = prs[prs.length - 1]
+      const decided = requestSubmit(openAmong(prs), mode, project, by, top?.status === 'draft')
       if (decided.kind === 'refused') return decided
-      const n = (previous?.n ?? 0) + 1
-      yield* Effect.tryPromise({ try: () => store.append(prStream(project, n), 0, [decided.event]), catch: (e) => e })
-      return { kind: 'requested', n } as SubmitAnswer
+      const target = draftOf(prs)
+      // `listPrs` reads the streams one after another, so a PR read early may have moved while a later one was read.
+      // Every stream below the target is read again; one that moved fails this attempt as a lost race, to read afresh.
+      for (const pr of prs) {
+        if (pr.n === null || pr.n === target.n) continue
+        const stream = prStream(project, pr.n)
+        const head = yield* Effect.tryPromise({ try: () => store.head(stream), catch: failed })
+        if (head !== pr.version) return yield* Effect.fail(new ConcurrencyError(stream, pr.version, [head]))
+      }
+      yield* Effect.tryPromise({
+        try: () => store.append(prStream(project, target.n), target.version, [decided.event]),
+        catch: (e) => e,
+      })
+      return { kind: 'requested', n: target.n } as SubmitAnswer
     }),
   )
 

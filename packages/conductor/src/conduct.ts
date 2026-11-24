@@ -57,7 +57,6 @@ import {
   cutOffPromptOf,
   expandPrompt,
   integrationStream,
-  isOpen,
   parsePayload,
   stripEvidence,
   waitWords,
@@ -108,7 +107,7 @@ import {
 } from '@lingtai/domain/wait'
 import { stateDir } from '@lingtai/env'
 import { type EventStore, eventStore, log as theLog, readThroughSnapshot, type Snapshot } from '@lingtai/event-store'
-import { latestPr, observeSandbox, readPr, readUnheldFixLandings, recordPrFixLanded } from '@lingtai/project'
+import { observeSandbox, openPr, readPr, readUnheldFixLandings, recordPrFixLanded } from '@lingtai/project'
 import { readBacklogEffect } from '@lingtai/projector'
 /**
  * One work item, claim through merge — **and since `#256` the sequence is not
@@ -3285,10 +3284,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (continuation === null) {
             attemptCut = null
             if (modeOf(recipe) === 'team' && runnable.kind.toLowerCase().replace(/\s+/g, '-') === PR_FIX_LABEL) {
-              const read = yield* Effect.result(latestPr(project, store))
+              const read = yield* Effect.result(openPr(project, store))
               if (Result.isFailure(read)) return { notClaimed: `the open PR could not be read: ${whyOf(read.failure)}` }
               const open = read.success
-              if (open !== null && isOpen(open)) {
+              if (open !== null) {
                 // A requested PR has no branch yet, and one not yet pushed has nothing on the remote to cut from.
                 if (open.n === null || open.prBranch === null || open.lastPushed === null)
                   return { notClaimed: `the PR branch of PR ${open.n ?? '?'} is not on the remote yet` }

@@ -19,6 +19,7 @@ import {
   editPrSummary,
   grantPrRounds,
   latestPr,
+  openPr,
   readPr,
   readPrDraft,
   requestPrBack,
@@ -164,7 +165,7 @@ export const prReport = (project: string, world: PrWorld): Effect.Effect<PrRepor
       return { code: 1, lines: [detail], json: { outcome: 'refused', reason: 'solo', detail } }
     }
     const latest = yield* latestPr(project, world.store)
-    const open = latest !== null && isOpen(latest) ? latest : null
+    const open = yield* openPr(project, world.store)
     const draft: readonly PrDraftTicket[] = yield* readPrDraft(
       project,
       recipe,
@@ -351,8 +352,8 @@ export const prRequestVerdict = (
     const recipe = yield* world.recipe(project)
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
-    const latest = yield* latestPr(project, world.store)
-    if (latest === null || latest.n === null || !isOpen(latest)) {
+    const latest = yield* openPr(project, world.store)
+    if (latest === null || latest.n === null) {
       return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     }
     const n = latest.n
@@ -427,8 +428,9 @@ export const prSummaryVerdict = (
     const recipe = yield* world.recipe(project)
     const mode = modeOf(recipe)
     if (mode !== 'team') return refusal(1, 'solo', solo(project, recipe), { subject: project })
-    const latest = yield* latestPr(project, world.store)
-    if (latest === null || latest.n === null) return refusal(1, 'no-pr', `${project} has no PR`, { subject: project })
+    const latest = yield* openPr(project, world.store)
+    if (latest === null || latest.n === null)
+      return refusal(1, 'no-pr', `${project} has no PR open`, { subject: project })
     const n = latest.n
     const subject = `${project} PR ${n}`
     const said = (detail: string, extra: Record<string, unknown> = {}): Answered => ({

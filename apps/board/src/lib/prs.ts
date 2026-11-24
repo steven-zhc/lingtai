@@ -9,12 +9,12 @@
 import { inProgressStepNames } from '@lingtai/conductor'
 import { currentRecipe } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import { type PrDraftTicket, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
+import { type PrDraftTicket, openPr, readPr, readPrDraft, readPrEvents, readProject } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { EVERY_LANDED_ROW_DAYS, readTasksEffect } from '@lingtai/projector/task-view'
 import { type Recipe, modeOf } from '@lingtai/recipe'
@@ -55,7 +55,8 @@ export const topPrNumber = (project: string, store: EventStore): Effect.Effect<n
  * cannot be made fails the whole read.
  *
  * With `since`, merged PRs are read newest first and the read stops at the first one merged before it — an open PR is
- * always read, and only the highest one can be open. Nothing older is returned then, which is what #1321 asks.
+ * always read, and only the highest one not in `draft` can be open. A PR in `draft` is left out: the Draft column
+ * is still the computed draft. Nothing older is returned then, which is what #1321 asks.
  */
 export const readProjectPrs = (
   project: string,
@@ -73,6 +74,7 @@ export const readProjectPrs = (
       }
       if (read.success === null) continue
       const pr = read.success
+      if (pr.status === 'draft') continue
       reads.push({ n, pr })
       if (options.since !== undefined && pr.status === 'merged' && pr.ended !== null && pr.ended.at < options.since)
         break
@@ -80,12 +82,10 @@ export const readProjectPrs = (
     return reads.reverse()
   })
 
-/** The count of PRs waiting on the person, reading only the highest PR (one at a time, so no other can wait). */
+/** The count of PRs waiting on the person: the open PR is the only one that can wait. */
 export const waitingPrs = (project: string, store: EventStore): Effect.Effect<number, Error> =>
   Effect.gen(function* () {
-    const top = yield* topPrNumber(project, store)
-    if (top === 0) return 0
-    const pr = yield* readPr(project, top, store)
+    const pr = yield* openPr(project, store)
     return pr !== null && pr.status === 'waiting' ? 1 : 0
   })
 
@@ -328,7 +328,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         if (n === 'next') {
           const prs = yield* readProjectPrs(project, eventStore)
           const draft = yield* readDraftOf(project, recipe, prs)
-          const latest = [...prs].reverse().find((r): r is { n: number; pr: PrState } => 'pr' in r)?.pr ?? null
+          const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
           const view = prPage({
             project,
             recipe,
@@ -336,7 +336,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
             pr: null,
             events: [],
             draft,
-            open: latest !== null && isOpen(latest) ? latest : null,
+            open,
             spend: null,
             stepNames,
             now,

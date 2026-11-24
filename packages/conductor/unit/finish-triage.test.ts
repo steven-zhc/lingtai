@@ -65,7 +65,8 @@ const finish = (s: Awaited<ReturnType<typeof started>>, over: Partial<Parameters
       ...over,
     }),
   )
-const types = async (s: Awaited<ReturnType<typeof started>>) => (await s.store.read(ticketId)).map((e) => e.type)
+const types = async (s: Awaited<ReturnType<typeof started>>) =>
+  (await s.store.read(ticketId)).map((e) => e.type).filter((t) => t !== 'PrDraftTicketAdded')
 const own = async (s: Awaited<ReturnType<typeof started>>) => {
   await Effect.runPromise(
     recordTriageRun(ticketId, {
