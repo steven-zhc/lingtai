@@ -303,6 +303,27 @@ number a repository should be able to choose belongs in the recipe (0016 §7);
 one that governs the log or the board belongs in code, and then this table is
 where its value is written down.
 
+### what a run may reach — `sandbox`, the recipe's
+
+Checked when the recipe resolves, in `packages/recipe/src/sandbox.ts` and
+`sandbox-block.ts` ([ADR 0127](decisions/0127-what-an-agent-can-reach.md) §13). [Safety](safety.md#turning-it-on) shows one complete block.
+
+- `network.allow`, `write` and `deny` only add: none removes a built-in entry. A
+  network entry is a hostname or `*.` and a hostname, with no scheme, port or path.
+- A path is `~/…` or absolute. A relative path is refused.
+- `enabled: false` with `required: true` is refused: a project cannot need a
+  sandbox and not have one.
+- A `write` or a `deny` that is, lies inside or contains a protected path is
+  refused: the deny list, `~/.lingtai`, the mirror, the runtimes' configuration
+  directories (`~/.claude`, `~/.claude.json`, `~/.codex`) and the host's tool and
+  cache directories. `$HOME`, or a path containing it, is refused; `~/work/fixtures`
+  is not. A `deny` is also refused inside the worktree or the mirror, because the
+  run's `allowRead` overrides `denyRead` there.
+- A recipe that still says `runtime.tier` is refused, with its replacement by
+  value (`packages/recipe/src/resolve.ts:295-305`): `tier: sandboxed` becomes
+  `sandbox: { enabled: true, required: true }`, and `tier: guarded` or
+  `tier: open` is deleted. Lingtai does not rewrite the file.
+
 ### what a run is given — `runtime.budget`, the recipe's
 
 Together these are the answer to *what does an agent know about why the last
@@ -1871,7 +1892,7 @@ Three more limits, which a person choosing one should read before the rest:
   scheduling.
 - **Antigravity is never sandboxed in this release**, on any host. A recipe with
   `sandbox.required: true` that names it is refused; see
-  [safety](safety.md#without-the-sandbox).
+  [safety](safety.md#when-the-host-cannot-sandbox).
 - **`model:`** for `antigravity` is one of the models it offers (a `model`
   config option). `copilot` advertises none, so it is an id your account may use
   and is set with `session/set_model`; a wrong id comes back as the reply's text,
