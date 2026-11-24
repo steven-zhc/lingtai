@@ -20,6 +20,9 @@ export {
   recordedOr,
   redoParagraph,
   withRedoParagraph,
+  ENDING_MARK,
+  afterOpeningLines,
+  openingLinesOf,
   rerunId,
   type RedoNote,
 } from './action.ts'
