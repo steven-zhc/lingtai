@@ -141,7 +141,7 @@ describe('concepts is chapter 4, one attempt', () => {
 })
 
 describe('safety is chapter 10, what an agent can reach', () => {
-  it('stays between 600 and 800 words, in four sections, with no Next, and keeps every limit', async () => {
+  it('stays between 600 and 800 words, in four sections and a Next, and keeps every limit', async () => {
     const body = await readFile(path.join(docRoot, 'safety.md'), 'utf8')
     const words = proseOf(body)
     expect(words).toBeGreaterThanOrEqual(600)
@@ -155,7 +155,9 @@ describe('safety is chapter 10, what an agent can reach', () => {
       'Turning it on',
       'What the sandbox does not cover',
       'When the host cannot sandbox',
+      'Next',
     ])
+    expect(body).toContain('(solo.md)')
     for (const limit of [
       "**The run's own token is readable inside it.**",
       "**Codex's login is readable to a Codex run**",
@@ -168,6 +170,18 @@ describe('safety is chapter 10, what an agent can reach', () => {
     ]) {
       expect(body).toContain(limit)
     }
+  })
+})
+
+describe('solo is chapter 11, solo mode', () => {
+  it('stays within 800 words, ends without a Next, and says where work lands', async () => {
+    const body = await readFile(path.join(docRoot, 'solo.md'), 'utf8')
+    expect(proseOf(body)).toBeLessThanOrEqual(800) // #1410
+    expect(headingsOf(body).some((h) => h.depth === 2 && h.text === 'Next')).toBe(false)
+    expect(body).toContain('lingtai-base')
+    expect(body).toContain('branch.main')
+    expect(body).not.toContain('--base <') // add-github refuses --base
+    expect(body).toContain('source.assignee.take') // solo keeps a configured take
   })
 })
 
@@ -562,7 +576,8 @@ describe('the book', () => {
 
   it('gives the first no previous and the last no next', () => {
     expect(neighboursOf('tutorial', all).previous).toBeNull()
-    expect(neighboursOf('safety', all).next).toBeNull()
+    expect(neighboursOf('safety', all).next?.file).toBe('solo.md')
+    expect(neighboursOf('solo', all).next).toBeNull()
   })
 
   it('skips a chapter that is not served', () => {

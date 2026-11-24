@@ -60,7 +60,7 @@ export const DOCS_PUBLIC = false
  * fourteen under it, which are the recipe's vocabulary and were written for a
  * reader who has never seen the source. `safety` is the page the home page's
  * sandbox band links to (#809). `guide` is the habits that make a run cheap and
- * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from `guide` (#1383). Nothing else in `doc/` has been through
+ * predictable (#817, #818). `when-it-fails` is what Lingtai does when something breaks, for a reader who has run the tutorial (#1295). `team` is chapter 2, the team day on Chapter Garden (#1343). `upgrading-to-0.16` is the one page a project made before 0.16 needs to take it over without unholding a ticket (#1330). `tickets` is chapter 6, how to write a ticket an agent can work, taken from `guide` (#1383). `solo` is chapter 11, solo mode (#1410). Nothing else in `doc/` has been through
  * that edit yet. A slug, as `slugOf` gives them; one names itself and, as a
  * directory, everything beneath it.
  *
@@ -79,6 +79,7 @@ export const PUBLIC_SLUGS = [
   'cli',
   'requirements',
   'safety',
+  'solo',
   'guide',
   'upgrading-to-0.16',
   'from-symphony',
@@ -141,6 +142,7 @@ export const BOOK: BookRow[] = [
   { n: 7, part: 'Every day', file: 'when-it-fails.md' },
   { n: 8, part: 'Fit it to your project', file: 'recipe.md' },
   { n: 10, part: 'Fit it to your project', file: 'safety.md' },
+  { n: 11, part: 'Fit it to your project', file: 'solo.md' },
 ]
 
 /** The chapter number a file has in the book, or null. */
@@ -172,7 +174,7 @@ export const SECTIONS: Section[] = [
   {
     id: 'book',
     label: 'The book',
-    note: 'Ten chapters, read in order. Start at 1.',
+    note: 'Eleven chapters, read in order. Start at 1.',
     files: BOOK.map((row) => row.file),
   },
   {
