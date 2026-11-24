@@ -208,7 +208,7 @@ project defaults to team. The mode decides four things:
 | `take` | `all`, or as written | `mine`, and only `mine` |
 | The branch a ticket is cut from and lands on | `branch.main` | `branch.personal` |
 | A ticket ends | `landed` on `main`, and closed | `landed` on your branch, left open on the tracker until its PR merges |
-| Reaching `main` | the landing itself | a PR ([A PR's life](concepts.md#a-prs-life)) |
+| Reaching `main` | the landing itself | a PR ([A PR's life](team.md)) |
 
 ```yaml
 mode: team

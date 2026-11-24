@@ -1,11 +1,8 @@
 # Concepts
 
-*How Lingtai thinks about a ticket*
+*How one attempt goes*
 
-The tutorial has you open one ticket and watch it land. This page is the short
-model behind that: what Lingtai keeps track of, and why a ticket can run, wait,
-carry on, or start again. It uses the tutorial's Chapter Garden project, and it
-needs no knowledge of events or internals.
+Lingtai works a ticket in an **attempt**: ten steps, always in the same order. This chapter follows one attempt in the tutorial's Chapter Garden project, from claim to the end.
 
 ## One ticket, start to finish
 
@@ -33,142 +30,28 @@ The ten steps and their order never change. What runs at each step is yours to n
 | `merge`     | the branch in, verify, push                            |
 | `end`       | runs on every outcome                                  |
 
+A card stops at `proposed`, the only step that decides. It stops there when the recipe names a person at it, or when a limit or a question needs one. When the agent asked questions with choices, the board offers *Answer and continue the step*; a question in prose has no answer button, only editing the ticket, starting a new attempt or closing. A question a person raised themselves is answered with **Answer the question**. [When it fails](when-it-fails.md) has what a refusal looks like and what to do at a wait.
+
 ## Two ways to go back
 
-A ticket can go round again in two different ways, and the difference is the
-most useful thing on this page: **does the next try continue the saved branch,
-or cut a new one from the base branch?**
+A ticket can go round again two ways, and the difference is what matters: **does the next try continue the saved branch, or cut a new one from the base branch?**
 
 |                | Continues the saved branch                                                                                                                                      | Starts over from the base branch                                                                                                                       |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `rounds` limit caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `restarts` limit caps it.                                          |
+| **Lingtai**    | A **fix round**: when `build` goes red or `review` refuses, the agent works again in the same worktree, shown what refused it. The recipe's `runtime.limits.attempt.refusalFixes` caps it. | A **restart**: the ticket is released and claimed again as a new attempt. The recipe's `runtime.limits.ticket.newAttempts` caps it.                                          |
 | **You**        | At the wait you choose **Approve and continue** or **Fix the refusal on the saved work**. The saved branch carries on.                                               | At the wait you choose **Start a new attempt from base** or **Add to the ticket and start a new attempt**.                                                                    |
 
-Some details that are easy to get wrong:
-
 - A fix round is **not** a new attempt. It stays inside the attempt you are in.
-- When you continue the saved work, Lingtai does start an attempt again at `admit`
-  and `prepared`, then jumps to the step you resumed at. It is an attempt resumed
-  on the saved branch, not a fresh one from base, and not the same run carrying
-  on.
-- Starting a new attempt from base spends no restart. The board says it plainly: _This neither spends
-  nor refunds an automatic restart._
-- A new attempt is told about earlier ones and can reuse their commits,
-  but it is new development. It goes through `build` and `review` again.
+- Starting a new attempt from base spends no restart. The board says it plainly: _This neither spends nor refunds an automatic restart._
 
-## Handled for you
-
-The home page and /report show **Handled for you**: one mark per problem a step
-raised. A solid mark is a problem Lingtai got past without you: by a fix round,
-a restart, or by merging the updated base when another change landed (that
-spends neither). A hollow one **needed you**, and /report lists what you did
-about it.
-
-## When a step stops
-
-A step can stop in three ways, and only the first costs you anything.
-
-- **Refused.** The step judged that this change is not right. The work goes back
-  to the agent and spends one round, carrying what refused it.
-- **Did not finish.** The step stopped without judging: a reviewer crashed, or a
-  turn limit ran out. It buys no round, and the attempt stops there.
-- **Asked.** The step stopped without judging, because the agent needs to know
-  something. It buys no round. `proposed` answers it, or you do.
-
-## What one attempt can cost
-
-One attempt is up to `rounds` + 1 agent runs, each bounded by `turns` and `wall`,
-and `restarts` is how many attempts one ticket may buy. `lingtai add` prints the
-whole sum before anything runs.
-
-## What you can do at a wait
-
-When the recipe has a person decide at `proposed`, or when a check refuses and
-the attempt cannot go on by itself, the ticket **waits**. The board shows what it
-is waiting for and offers the moves that make sense:
-
-- **Approve and continue** — carry on from the saved commit. Any refusal at
-  this wait is waived.
-- **Fix the refusal on the saved work** — one more paid fix round on the saved
-  branch. `build` and `review` run again, and neither refusal is waived.
-- **Answer the question** — give the agent the answer it asked for.
-- **Start a new attempt from base** — a new attempt from the base branch; the saved branch
-  is not continued.
-- **Add to the ticket and start a new attempt** — append your text to the ticket, then
-  start a new attempt from the base with it.
-- **Close the ticket** — end it with no further attempt. A reason is required.
+The home page marks each problem Lingtai got past on its own as **Handled for you**; [when it fails](when-it-fails.md) says how. What an attempt can cost is in [checks and spend](checks-and-spend.md).
 
 ## How a ticket ends
 
-- **Landed.** The change merged into the branch the project lands on, and the
-  ticket's work is done. In a **solo** project that branch is `main`, and the
-  ticket is closed. In a **team** project (0.16) it is your own branch, and the
-  ticket stays open on the tracker, labelled `lingtai:landed`, until the PR that
-  holds it merges — see [A PR's life](#a-prs-life).
-- **Closed.** A person ended it at a wait.
-- **Still waiting.** Nothing is lost while it waits. A ticket can stay at a wait
-  for as long as you like; the daemon takes other work meanwhile.
+- **Landed.** The change merged into the branch the project lands on. In a **solo** project that is `main` and the ticket is closed; in a **team** project it is your own branch, and the ticket stays open until its PR merges ([team](team.md)).
+- **Closed.** A person chose **Close the ticket** at a wait, and no further attempt runs.
+- **Still waiting.** Nothing is lost while it waits. It can stay as long as you like, and the daemon takes other work meanwhile.
 
-## A PR's life
+## Next
 
-*New in 0.16, and only in a team project.* A project is **solo** or **team**,
-and the recipe's `mode` says which; a recipe that names no mode is solo, which
-is how Lingtai has always run. A team project takes only the tickets assigned to
-you and lands each on your own branch, `branch.personal`. Lingtai never pushes
-`main` for a team. Between your branch and `main` there is a **PR**: you
-deciding a body of work is ready for the team. A PR has its own board, with five
-states:
-
-- **Draft.** What has landed on your branch and no PR holds yet. It grows as
-  tickets land.
-- **In progress.** You pressed *Submit* (or ran `lingtai pr submit`), and Lingtai
-  is getting the branch ready for review. It freezes your branch at one commit,
-  brings `main` in, builds, takes in whatever others pushed to the PR's branch,
-  has the summary written, pushes, opens the PR on the code host as a draft, waits
-  for the project's CI, tops up the summary, and marks the PR ready. A conflict,
-  or a build that goes red after a merge, goes to an agent first.
-- **Waiting on you.** A step cannot go on without a person, and says why: a
-  conflict the agent could not resolve, a force-push or a deleted PR branch, a
-  red CI run, a code host that cannot open drafts. Nothing else stops: tickets
-  keep landing on your branch. You give the agent more rounds
-  (`lingtai pr rounds`), mend it by hand and check again (`lingtai pr retry`), or
-  take the PR back to Draft (`lingtai pr back`), which closes it on the code host.
-- **In review.** Open on the code host and ready, because the build is green and
-  the CI the project asked for passed (or the project has none), on the commit that is now the PR's head. The team reviews it there.
-- **Merged.** The team merged it into `main`, and every ticket it held is closed.
-  A PR the team closes without merging goes back to Draft.
-
-**One PR at a time.** Tickets keep landing on your branch while a PR is open, and
-*Submit* is refused, naming the open PR, until it is merged or closed.
-
-**A change the review asks for is a `lingtai:pr-fix` ticket.** In team mode it
-ranks ahead of every kind, `bug` included, because the team is waiting on it.
-While a PR is open it is cut from that PR's branch and lands on it, and the PR
-then runs In progress again from bringing `main` in. A project that is not on
-GitHub gets its branch pushed and the description printed, and opens the PR by
-hand. [The GitHub page](github.md#a-team-projects-pr) and
-[the upgrade page](upgrading-to-0.16.md) have the rest.
-
-## The words
-
-| Word                              | What it means, in Chapter Garden                                                                                                      | Where you meet it |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- | --- |
-| **Project, repository, base**     | Chapter Garden is the project. Its repository is where the code lives, and the base branch (`main`) is where finished work lands. In a team project (0.16) work lands on your own branch first.    | the board's project menu, and `branch.main` in the recipe |
-| **Ticket and kind label**         | The story you opened in Step 2. Its kind label, such as `feature`, is what puts it in the queue.                                      | a card on the board, and `source.kinds` in the recipe |
-| **Recipe**                        | A local file you may edit by hand, saying what an attempt does for this project: which agent writes, what checks run, and who decides. The project's log keeps every version of it.                          | `~/.lingtai/<project>/recipe.yml`, and the board's recipe page |
-| **Attempt and agent run**         | An attempt is one try at a ticket. An agent run is one session of the agent inside it. A fix round is another run in the same attempt. A ticket can have several attempts.  | the Attempts section of a ticket's page |
-| **Worktree**                      | A disposable checkout of the base branch where the agent works. It is thrown away at the end; the branch it saved is what remains.    | cut at `admit`, and named on the card |
-| **Checks and review**             | The `npm run check` and `npm run build` the recipe runs at `build`, and a second agent that reads the change cold at `review`. Either can refuse.              | `build` and `review` on the rail |
-| **Wait**                          | The ticket stopped at a person, usually at `proposed`, with a plain sentence saying why.                                              | the board's *Waiting on you* row |
-| **Landing**                       | The merge into the base branch, at `merge`, after nothing is holding it.                                                              | `merge` on the rail, and the board's Landed page |
-| **Event log and board**           | Lingtai records everything that happens as a log. The board is that log, drawn: the place to read what a ticket is doing.             | the board, and `lingtai status` |
-
-## Going further
-
-- [The attempt](the-attempt.html) walks all ten steps and says where a ticket goes
-  when one will not let it past.
-- [The architecture](architecture.html) shows which process is doing what, and
-  where each piece of state lives.
-- [The glossary](glossary.md) maps these words to the code, for readers of the
-  repository.
-- [The recipe guide](recipe.md) shows how to change what an attempt does.
+[The board](board.md) is where you watch an attempt and choose at a wait.
