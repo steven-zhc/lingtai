@@ -137,6 +137,9 @@ export function prBranches(
   const walks: Walk[] = []
   let walk: Walk | null = null
   let frozen: BranchNode | null = null
+  // The commit the personal branch was frozen at: only the first `PrInProgress`'s. A later walk's `frozenSha` is the PR
+  // branch's own head (a pr-fix lands there), which the personal branch does not hold until it is merged back.
+  let personalFrozen: string | null = null
   let backRequested = false
   let closedNode: BranchNode | null = null
   let lastMergedBack: { node: BranchNode; index: number } | null = null
@@ -257,6 +260,7 @@ export function prBranches(
           },
           0,
         )
+      personalFrozen = d.frozenSha
       frozen = add({ lane: 'personal', kind: 'done', label: `${short(d.frozenSha)} frozen`, sha: d.frozenSha }, 0)
     }
     const w: Walk = { n: walks.length + 1, sync: null, how: null, ready: false, tail: null, closed: false }
@@ -274,6 +278,7 @@ export function prBranches(
     switch (e.type) {
       case 'PrInProgress':
         if (w !== null) closeWalk(w)
+        nowNode = null
         start(e, w === null)
         break
       case 'PrOpened':
@@ -286,6 +291,7 @@ export function prBranches(
         // A clean merge is done before its build has run: the merge exists, but *main is in the PR's commit* is not yet true.
         if (d.step === 'sync' && w.sync === null) {
           const s = syncNode(w, 'done', `${short(d.headSha)} sync`, d.headSha, 'todo')
+          if (d.main !== undefined) nodes[nodes.indexOf(s.main)] = { ...s.main, label: short(d.main), sha: d.main }
           w.tail = s.node
         }
         break
@@ -301,7 +307,7 @@ export function prBranches(
               {
                 lane: 'main',
                 kind: 'main',
-                label: `${short(d.mainCommit)} — already in your branch`,
+                label: `${short(d.mainCommit)} — already in ${w.n === 1 ? 'your branch' : 'this PR'}`,
                 sha: d.mainCommit,
               },
               w.n,
@@ -353,6 +359,7 @@ export function prBranches(
         if (w === null) break
         closeWalk(w)
         const d = e.data as PayloadOf<'PrFixLanded'>
+        nowNode = null
         w.tail = add(
           { lane: 'pr', kind: 'ticket', label: `#${d.ticket} pr-fix`, sha: d.mergeCommit, title: d.title },
           w.n,
@@ -369,6 +376,7 @@ export function prBranches(
         )
         if (w.tail !== null) edges.push({ from: w.tail.id, to: node.id, kind: 'back', state: 'done' })
         backHeads.add(d.prHead)
+        nowNode = null
         mergedBackCount++
         lastMergedBack = { node, index: nodes.length - 1 }
         break
@@ -405,6 +413,7 @@ export function prBranches(
           w?.n ?? 0,
         )
         edges.push({ from: main.id, to: node.id, kind: 'catch-up', state: 'done' })
+        nowNode = null
         break
       }
       case 'PrCatchUpFailed': {
@@ -432,6 +441,7 @@ export function prBranches(
         if (w === null) break
         closeWalk(w)
         const d = e.data as PayloadOf<'PrMerged'>
+        nowNode = null
         const end = add({ lane: 'pr', kind: 'done', label: '', sha: d.headSha, hidden: true }, w.n)
         const into = add(
           {
@@ -479,7 +489,7 @@ export function prBranches(
   const tail = latest?.tail ?? null
   if (pr.status === 'in-review' && tail !== null) {
     const owed = pr.lastPushed !== null && !backHeads.has(pr.lastPushed) && !failedHeads.has(pr.lastPushed)
-    const nothing = latest?.how === 'already' && pr.lastPushed !== null && pr.lastPushed === pr.frozenSha
+    const nothing = latest?.how === 'already' && pr.lastPushed !== null && pr.lastPushed === personalFrozen
     if (owed && nothing) words.push('nothing to merge back')
     else if (owed) {
       const back = add({ lane: 'personal', kind: 'todo', label: 'merge back', sha: null }, latest!.n)
@@ -565,6 +575,17 @@ export interface Drawing extends Omit<BranchModel, 'nodes' | 'edges' | 'brace' |
   readonly nowX: number | null
 }
 
+/** What the drawing writes beside a node: its label, and the commit it carries where the label does not already say so. */
+export const shownLabel = (n: BranchNode): string =>
+  n.label === '' || n.hidden
+    ? ''
+    : n.sha === null || n.label.includes(short(n.sha)) || (n.kind === 'ticket' && n.lane === 'personal')
+      ? n.label
+      : `${n.label} · ${short(n.sha)}`
+
+const CHAR = 6.2
+const LABEL_GAP = 10
+
 export const LANE_Y: Record<BranchLane, number> = { main: 56, pr: 156, personal: 256 }
 const GUTTER = 190
 const GAP = 34
@@ -578,6 +599,17 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
   const ns = model.nodes
   const index = new Map(ns.map((n, i) => [n.id, i]))
   const dyOf = (a: number, b: number) => Math.abs(LANE_Y[ns[a]!.lane] - LANE_Y[ns[b]!.lane])
+  // A label is written to the right of its node; two on one side of one lane must not overwrite each other.
+  const prOrder = ns.filter((n) => n.lane === 'pr' && !n.hidden && n.label !== '').map((n) => n.id)
+  const aboveOf = (n: BranchNode): boolean =>
+    n.lane === 'pr' ? prOrder.indexOf(n.id) % 2 === 0 : n.lane === 'main' || n.kind === 'ticket'
+  const reach = ns.map((n) => shownLabel(n).length * CHAR)
+  const sides = new Map<string, number[]>()
+  ns.forEach((n, i) => {
+    if (reach[i] === 0) return
+    const key = `${n.lane}/${aboveOf(n)}`
+    sides.set(key, [...(sides.get(key) ?? []), i])
+  })
   const solve = (step: number): { xs: number[]; ok: boolean } => {
     const xs = ns.map((_, i) => GUTTER + 24 + i * step)
     const lanes: BranchLane[] = ['main', 'pr', 'personal']
@@ -593,6 +625,8 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
       }
       for (const chain of chains)
         for (let k = 1; k < chain.length; k++) raise(chain[k]!, xs[chain[k - 1]!]! + Math.min(GAP, step))
+      for (const side of sides.values())
+        for (let k = 1; k < side.length; k++) raise(side[k]!, xs[side[k - 1]!]! + reach[side[k - 1]!]! + LABEL_GAP)
       for (const [a, b] of links) {
         const dy = dyOf(a, b)
         raise(b, xs[a]! + dy)
@@ -600,7 +634,7 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
       }
       if (!moved) break
     }
-    return { xs, ok: Math.max(0, ...xs) <= width - 24 }
+    return { xs, ok: Math.max(0, ...xs.map((x, i) => x + reach[i]!)) <= width - 8 }
   }
   let step = 60
   let solved = solve(step)
@@ -609,13 +643,15 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
     solved = solve(step)
   }
   const xs = solved.xs
-  const w = Math.max(width, Math.max(0, ...xs) + 24)
+  const w = Math.max(width, Math.max(0, ...xs.map((x, i) => x + reach[i]!)) + 8)
 
-  const prOrder = ns.filter((n) => n.lane === 'pr' && !n.hidden && n.label !== '').map((n) => n.id)
-  const laid: LaidNode[] = ns.map((n, i) => {
-    const above = n.lane === 'pr' ? prOrder.indexOf(n.id) % 2 === 0 : n.lane === 'main' || n.kind === 'ticket'
-    return { ...n, x: xs[i]!, y: LANE_Y[n.lane], above, anchor: xs[i]! > w - 130 ? 'end' : 'start' }
-  })
+  const laid: LaidNode[] = ns.map((n, i) => ({
+    ...n,
+    x: xs[i]!,
+    y: LANE_Y[n.lane],
+    above: aboveOf(n),
+    anchor: 'start' as const,
+  }))
   const at = new Map(laid.map((n) => [n.id, n]))
   const prXs = laid.filter((n) => n.lane === 'pr').map((n) => n.x)
   const brace =

@@ -9,7 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PrDetail } from '../src/app/pr-detail.tsx'
-import { type BranchModel, layoutBranches, prBranches } from '../src/lib/pr-branches.ts'
+import { type BranchModel, layoutBranches, prBranches, shownLabel } from '../src/lib/pr-branches.ts'
 import { prPage } from '../src/lib/pr-page.ts'
 
 const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
@@ -333,9 +333,9 @@ describe('the mock frames, as events', () => {
 
 describe('the edges of the builder', () => {
   it('a sync step done before its build has run has no main sha, and its line is hollow', () => {
-    const m = model([started(), step('sync', 'cafecafe123')])
+    const m = model([started(), ['PrStepDone', { step: 'sync', headSha: 'cafecafe123', main: '856398cdddd' }]])
     expect(on(m, 'pr')[0]).toBe('done:cafecaf sync')
-    expect(on(m, 'main')).toEqual(['main:'])
+    expect(on(m, 'main')).toEqual(['main:856398c'])
     expect(lines(m)).toContain('sync/todo main→pr')
   })
 
@@ -365,6 +365,46 @@ describe('the edges of the builder', () => {
     expect(m.brace?.text).toBe('in this PR: #100 #101 #102 #103 #104 +3')
     expect(m.words).toContain('earlier walks: 2')
     expect(m.nodes.filter((n) => n.lane === 'pr' && n.label.endsWith(' sync'))).toHaveLength(3)
+  })
+
+  it("a pr-fix landed after a merge back: the frozen commit is not the personal branch's, so a merge back is owed", () => {
+    const fixSha = 'f1f1f1f1f1f1'
+    const m = model([
+      started(),
+      ...sync('already', '590940cdddd', '6266142aaaa'),
+      step('build', '6266142aaaa'),
+      pushed('6266142aaaa'),
+      draftOpened,
+      ['PrChecked', { headSha: '6266142aaaa', verdict: 'green', checks: [{ name: 'c', state: 'success', url: '' }] }],
+      opened,
+      mergedBack('6266142aaaa'),
+      ['PrFixLanded', { ticket: '1371', mergeCommit: fixSha, title: 'fix' }],
+      started('pr-fix'),
+      ...sync('already', '590940cdddd', fixSha),
+      step('build', fixSha),
+      pushed(fixSha),
+      green,
+      opened,
+    ])
+    expect(m.words).not.toContain('nothing to merge back')
+    expect(lines(m)).toContain('back/todo pr→personal')
+  })
+
+  it('a failure that was recovered from is not where now stands', () => {
+    const m = model([
+      ...inReview,
+      mergedBack(),
+      ['PrMerged', { how: 'host', headSha: '0ab635bffff', mergeSha: '1234567aaaa' }],
+      ['PrCatchUpFailed', { mainSha: '7654321bbbb', why: 'locked', detail: 'x' }],
+      ['PrCaughtUp', { mainSha: '7654321bbbb', mergeCommit: 'cu1cu1cu1' }],
+    ])
+    expect(m.nodes.find((n) => n.id === m.now)?.kind).not.toBe('waiting')
+    const b = model([
+      ...inReview,
+      ['PrMergeBackFailed', { prHead: '0ab635bffff', why: 'conflict', detail: 'x' }],
+      mergedBack(),
+    ])
+    expect(b.nodes.find((n) => n.id === b.now)?.kind).not.toBe('waiting')
   })
 
   it('a PR with no events yet draws nothing but lanes', () => {
@@ -399,7 +439,7 @@ describe('layoutBranches', () => {
   for (const [name, specs] of Object.entries(frames)) {
     it(`${name}: every line is at 45°, each lane runs forward, all of it fits`, () => {
       const d = layoutBranches(model(specs), 1000)
-      for (const e of d.edges) expect(e.x2 - e.x1).toBe(Math.abs(e.y2 - e.y1))
+      for (const e of d.edges) expect(e.x2 - e.x1).toBeCloseTo(Math.abs(e.y2 - e.y1), 6)
       for (const lane of ['main', 'pr', 'personal']) {
         const xs = d.nodes.filter((n) => n.lane === lane).map((n) => n.x)
         for (let i = 1; i < xs.length; i++) expect(xs[i]!).toBeGreaterThan(xs[i - 1]!)
@@ -411,6 +451,21 @@ describe('layoutBranches', () => {
       expect(d.width).toBe(1000)
     })
   }
+
+  it('labels on one side of one lane do not overlap, and a hidden node draws nothing', () => {
+    const d = layoutBranches(
+      model([
+        ...inReview,
+        mergedBack(),
+        ['PrMerged', { how: 'host', headSha: 'x', mergeSha: '1234567aaaa' }],
+        ['PrCaughtUp', { mainSha: '7654321bbbb', mergeCommit: 'cu' }],
+      ]),
+      1000,
+    )
+    const main = d.nodes.filter((n) => n.lane === 'main' && shownLabel(n) !== '')
+    for (let i = 1; i < main.length; i++)
+      expect(main[i]!.x - main[i - 1]!.x).toBeGreaterThanOrEqual(shownLabel(main[i - 1]!).length * 6)
+  })
 
   it('the PR lane alternates its labels above and below', () => {
     const d = layoutBranches(model([...inReview]), 1000)
@@ -446,8 +501,8 @@ describe('the page draws it', () => {
   it('names the lanes and gives each node a title', () => {
     const out = html([...inReview, mergedBack()])
     expect(out).toContain('studio-pr-2')
-    expect(out).toContain('<title>ef8a4d6 merged back</title>')
-    expect(out).toContain('<title>6266142 frozen</title>')
+    expect(out).toContain('<title>ef8a4d6 merged back · ef8a4d6eeee</title>')
+    expect(out).toContain('<title>6266142 frozen · 6266142aaaa</title>')
   })
 
   it('has no fixed caption and no overlapping "+ n more"', () => {

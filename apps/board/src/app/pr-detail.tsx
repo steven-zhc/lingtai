@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { shownLabel } from '@/lib/pr-branches.ts'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
 import { PrButtons } from './pr-buttons.tsx'
@@ -91,17 +92,21 @@ function Branches({ view }: { view: PrPageView }) {
         )}
         {d.nodes.map((n) => (
           <g key={n.id} className="prp-node-g">
-            <circle cx={n.x} cy={n.y} r={n.kind === 'ticket' ? 4.5 : 7} className={`prp-nd ${n.kind}`}>
-              <title>{n.title ?? (n.label === '' ? n.lane : n.label)}</title>
-            </circle>
-            {n.hidden || n.label === '' ? null : (
+            {n.hidden ? null : (
+              <circle cx={n.x} cy={n.y} r={n.kind === 'ticket' ? 4.5 : 7} className={`prp-nd ${n.kind}`}>
+                <title>
+                  {[n.title ?? (n.label === '' ? n.lane : n.label), n.sha].filter((t) => t !== null).join(' · ')}
+                </title>
+              </circle>
+            )}
+            {shownLabel(n) === '' ? null : (
               <text
-                x={n.x + (n.anchor === 'end' ? 6 : -6)}
+                x={n.x - 6}
                 y={n.above ? n.y - 13 : n.y + 21}
                 textAnchor={n.anchor}
                 className={`prp-svg-t ${n.tone ?? ''}`}
               >
-                {n.label}
+                {shownLabel(n)}
               </text>
             )}
           </g>
