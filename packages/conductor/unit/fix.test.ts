@@ -1,3 +1,4 @@
+import { redoParagraph, withRedoParagraph } from '@lingtai/actions'
 import type { ActionFinding } from '@lingtai/actions'
 import { SEVERITIES, type PromptPart } from '@lingtai/domain'
 import { aTriageStart, aTriaged, aWait, aWaitId } from '@lingtai/domain/test/events'
@@ -1909,6 +1910,16 @@ describe('the fix brief puts what the agent must follow before anything long (#1
     ].map(at)
     expect(order.every((n) => n > -1)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
+  })
+
+  it('replays to exactly one redo paragraph, wherever the builder put it', () => {
+    const redo = redoParagraph({ why: 'a crash', startedAt: 'aaa', head: 'bbb' })
+    const next = redoParagraph({ why: 'a limit', startedAt: 'aaa', head: 'ccc' })
+    const text = brief('the diff text', { redo })
+    const replayed = withRedoParagraph(text, next)
+    expect(replayed.split('This step was interrupted').length).toBe(2)
+    expect(replayed).toContain('committed to ccc')
+    expect(replayed).not.toContain('committed to bbb')
   })
 
   it('has its outcome section within the first 20 000 bytes with a 300 000-byte diff', () => {

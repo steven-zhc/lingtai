@@ -23,6 +23,12 @@ describe('withRedoParagraph', () => {
     expect(withRedoParagraph(`${open}the brief\n\n${before}`, now)).toBe(`${open}${now}\n\nthe brief`)
   })
 
+  it('replaces it in place when a header or the recipe words come before it', () => {
+    const before = redoParagraph({ why: 'a crash', startedAt: 'x', head: 'y' })
+    const brief = `${open}# Header\n\nIntro.\n\n${before}\n\n## Findings\n\nbody`
+    expect(withRedoParagraph(brief, now)).toBe(`${open}# Header\n\nIntro.\n\n${now}\n\n## Findings\n\nbody`)
+  })
+
   it('keeps quoted text that merely starts alike, and the requirements after it', () => {
     const brief = 'Do this.\n\nThis step was interrupted (quoted); more text.\n\nAlso do that.'
     expect(withRedoParagraph(brief, now)).toBe(`${now}\n\n${brief}`)
