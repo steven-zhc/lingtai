@@ -80,7 +80,7 @@ describe('a landing joins the draft in the same transaction', () => {
     expect(await types(store, pr(1))).toEqual(['PrDraftTicketAdded', 'PrSubmitRequested', 'PrInProgress'])
     const [added] = await store.read(pr(2))
     expect(added?.type).toBe('PrDraftTicketAdded')
-    expect((added?.data as { ticket: string }).ticket).toBe('1392')
+    expect(added?.data).toMatchObject({ ticket: '1392' })
     expect(await types(store, ticketId)).toEqual(['TicketLanded'])
   })
 

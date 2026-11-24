@@ -503,6 +503,8 @@ describe('the conductor runs a whole pass, with no world to run in', () => {
     expect(run.ok).toBe(true)
     expect(did).toContain('integrate')
     expect((await store.read(`ticket-${PROJECT}-7`)).map((e) => e.type)).toContain('TicketLanded')
+    // A solo project has no draft: the landing writes the ticket's stream only (ADR 0131 §1).
+    expect(await store.head(`pr-${PROJECT}-1`)).toBe(0)
   })
 
   /**
