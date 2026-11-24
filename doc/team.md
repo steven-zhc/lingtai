@@ -107,11 +107,18 @@ PR <n>: merged by git at 2026-11-24T10:00:00.000Z
 ```
 
 That line means the PR is Merged, not yet that its tickets are closed. The
-conductor records the merge first, then closes the PR's three tickets, the
-first one from chapter 1 included, and then catches `lingtai-base` up with
-`main`. Run `lingtai pr` once more until it no longer prints `catch-up owed`
-and shows a line saying `lingtai-base` has caught up with `main`: by then the
-tickets are closed. Each new ticket from here is one more paid attempt,
+conductor records the merge, closes the PR's three tickets, the first one from
+chapter 1 included, and catches `lingtai-base` up with `main`, but these are
+separate jobs that finish independently, in no promised order. A line saying
+`lingtai-base` has caught up with `main` does not show the tickets are closed.
+Ask for the tickets themselves:
+
+```sh
+lingtai ticket list
+```
+
+The PR's three tickets are closed once none of them is listed; if one still is,
+run it again after a moment. Each new ticket from here is one more paid attempt,
 and each submit one more paid summary, so the cost follows the tickets you open.
 The next ticket starts the next draft.
 
