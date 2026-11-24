@@ -3,11 +3,11 @@
  *
  * Unit, by 0060 §1: a memory log and a fake `DaemonStore` whose `streams()` filters by prefix.
  */
-import { integrationStream, projectStream, ticketStream } from '@lingtai/domain'
+import { integrationStream, projectStream, ticketReducer, ticketStream } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import type { EventStore } from '@lingtai/event-store'
+import { type EventStore, readThroughSnapshot } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { landingsInFlight, readDraft } from '@lingtai/project'
 import { Effect } from 'effect'
@@ -171,7 +171,7 @@ describe('the landings a dead conductor owed', () => {
     }
   })
 
-  it("an event without the pass's decision joins when the recipe changed mid-pass, after the claim", async () => {
+  it("an event without the pass's decision does not join by a recipe that was in force only mid-pass", async () => {
     const { store, daemonStore } = await world()
     const recipe = (personal: string) => `mode: team\nbranch:\n  main: main\n  personal: ${personal}\n`
     const changed = (personal: string) => ({
@@ -181,7 +181,7 @@ describe('the landings a dead conductor owed', () => {
     })
     await store.append(projectStream(PROJECT), 0, [changed(BASE)] as never)
     await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
-    await store.append(projectStream(PROJECT), 1, [changed('other/personal')] as never)
+    await store.append(projectStream(PROJECT), 1, [changed(BASE), changed('other/personal')] as never)
     await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
     const now = {
       ...projectOf(PROJECT),
@@ -191,7 +191,9 @@ describe('the landings a dead conductor owed', () => {
       recordOwedLandingsEffect({ projects: [now], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
     )
     const draft = await Effect.runPromise(readDraft(PROJECT, store))
-    expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
+    expect(draft).toEqual([])
+    const landed = await Effect.runPromise(readThroughSnapshot(store, ticketReducer, OWED, 'all', {}))
+    expect(landed.landed?.mergeCommit).toBe(MERGE)
   })
 
   it('writes nothing for a ticket already landed at that commit', async () => {
