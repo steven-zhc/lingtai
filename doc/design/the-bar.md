@@ -208,9 +208,9 @@ over a left rail of icons, a dock, a drawer, stacked boards and a project home
   a new view for free, and a tool that grows that way ends up overwhelming.
 - **Keys are few and never announced.** `⌘K` searches (#908); `#` anywhere
   outside a field opens it with `#` typed, for a ticket or PR number; `G T`
-  tickets, `G P` PRs, `G S` switch project. Nothing pops up to teach them:
-  each control's tooltip shows its key, so they are learnt by using the
-  mouse. A key is never bound while focus is in a field. More keys (moving
+  tickets, `G P` PRs, `G S` switch project. Nothing pops up to teach
+  them: the palette lists its keys in one line at its foot, and each
+  control's tooltip shows its key. A key is never bound while focus is in a field. More keys (moving
   between cards, a PR's stack, a list of them all) are in
   `doc/milestone/later/keys.md`.
 
