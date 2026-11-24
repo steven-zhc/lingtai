@@ -29,6 +29,14 @@ describe('withRedoParagraph', () => {
     expect(withRedoParagraph(brief, now)).toBe(`${open}# Header\n\nIntro.\n\n${now}\n\n## Findings\n\nbody`)
   })
 
+  it('replaces it when the text before it ends in a single newline, as the recipe words and the split paragraph do', () => {
+    const before = redoParagraph({ why: 'a crash', startedAt: 'x', head: 'y' })
+    const brief = `${open}\n\n## Also for this project\n\nwords\n${before}\n\n# Ticket\n\nbody`
+    const out = withRedoParagraph(brief, now)
+    expect(out).toBe(`${open}\n\n## Also for this project\n\nwords\n${now}\n\n# Ticket\n\nbody`)
+    expect(out.split('This step was interrupted').length).toBe(2)
+  })
+
   it('keeps quoted text that merely starts alike, and the requirements after it', () => {
     const brief = 'Do this.\n\nThis step was interrupted (quoted); more text.\n\nAlso do that.'
     expect(withRedoParagraph(brief, now)).toBe(`${now}\n\n${brief}`)

@@ -1395,13 +1395,13 @@ export function withRedoParagraph(prompt: string, paragraph: string | null | und
   // alike, or is followed by anything it should not be, is the brief's own and stays (#1246). It is found
   // wherever the fresh builders put it: right after the opening lines, or behind a header, the recipe's words
   // or the split paragraph (#1404), or last, in a brief recorded before it moved.
-  const found = new RegExp(`(^|\\n\\n)${REDO_PARAGRAPH}(\\n\\n|$)`).exec(prompt)
+  const found = new RegExp(`(^|\\n)${REDO_PARAGRAPH}(\\n\\n|$)`).exec(prompt)
   if (found !== null && found.index + found[0].length < prompt.length) {
     const lead = found[1]!
     const at = found.index + lead.length
     return `${prompt.slice(0, at)}${paragraph}${prompt.slice(found.index + found[0].length - 2)}`
   }
-  const without = found === null ? prompt : prompt.slice(0, found.index)
+  const without = found === null ? prompt : prompt.slice(0, found.index).replace(/\n+$/, '')
   const opening = openingLinesOf(without)
   return `${opening}${paragraph}\n\n${without.slice(opening.length)}`
 }
