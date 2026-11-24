@@ -270,7 +270,7 @@ This is a gap, not a decision. It is small and it is not ticketed.
 
 ## A team project's PR
 
-*0.16, for a project whose recipe says `mode: team`* ([concepts](concepts.md#a-prs-life)
+*0.16, for a project whose recipe says `mode: team`* ([concepts](team.md)
 has the states). On GitHub:
 
 - **A team project never pushes `main`.** Lingtai pushes your personal branch and

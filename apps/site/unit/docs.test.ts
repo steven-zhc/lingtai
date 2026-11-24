@@ -124,6 +124,22 @@ const proseOf = (text: string) =>
     .trim()
     .split(/\s+/).length
 
+describe('concepts is chapter 4, one attempt', () => {
+  it('stays between 600 and 800 words, in four sections, ending at the board', async () => {
+    const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1376 §2
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual(['One ticket, start to finish', 'Two ways to go back', 'How a ticket ends', 'Next'])
+    expect(body).toContain('(board.md)')
+    expect(body).not.toContain('#a-prs-life')
+  })
+})
+
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
