@@ -1785,6 +1785,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly visit: NonNullable<typeof lastVisit>
       readonly retry: number
       readonly said: string
+      /** The tail of a final message no outcome could be read from (#1398): the redo's brief quotes it. */
+      readonly unread?: string
       readonly why: string
       readonly wait: Duration.Input
     }): Effect.Effect<boolean> =>
@@ -1839,6 +1841,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               why: redo.why,
               startedAt: earlier?.startedAt ?? redo.visit.startedAt ?? redo.visit.context.onSha,
               head: reset.head,
+              ...(redo.unread === undefined ? {} : { unread: redo.unread }),
             },
           },
         }
@@ -2729,6 +2732,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
             decided.yields === 'commit' &&
             decided.result._tag === 'Completed' &&
             decided.result.outcome?._tag === 'AgentFailed'
+          const unread =
+            failed && decided?.result._tag === 'Completed' && decided.result.outcome?._tag === 'AgentFailed'
+              ? decided.result.outcome.said
+              : undefined
           const again = failed
             ? (() => {
                 const redo = redoAgentFailed(stepRedosSpent)
@@ -2741,7 +2748,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
               step: at,
               visit: { context: visitContext, reached: visitedBefore, startedAt: recordedStartedAt },
               retry,
-              said: reason.detail,
+              said: unread ?? reason.detail,
+              ...(unread === undefined ? {} : { unread }),
               why: failed
                 ? `the agent did not finish: ${reason.detail}`
                 : again.expected

@@ -345,6 +345,7 @@ import {
   satisfyTicketEffect,
   type SplitChildBrief,
 } from './ticket/commands.ts'
+import { outcomeFormNote, withUnreadTail } from './unread-tail.ts'
 
 /** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
@@ -5374,8 +5375,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // version the check could not name what it read, so it is not offered.
           const claimedBody = took?.ticket.body ?? brief.ticket.body
           const claimedAt = took?.claimVersion
+          const read = parseImplementOutcome(outcome.text ?? null)
+          if (read !== null && read.form !== 'fence') runLog.note('outcome', outcomeFormNote(read.form))
           const decidedRaw = decideImplementOutcome({
-            declared: parseImplementOutcome(outcome.text ?? null),
+            declared: read?.declared ?? null,
             endedAbnormally: false,
             startedAt,
             head,
@@ -5386,7 +5389,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const decided: ImplementOutcome =
             decidedRaw._tag === 'AlreadyDone' && claimedAt !== undefined
               ? { ...decidedRaw, baseSha: continuation?.diffBaseSha ?? tree.baseSha, bodyVersion: claimedAt }
-              : decidedRaw
+              : decidedRaw._tag === 'AgentFailed' && read === null
+                ? withUnreadTail(decidedRaw, outcome.text ?? null)
+                : decidedRaw
           const moved = head !== startedAt
           // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
           stoppedBy = decided._tag === 'AgentFailed' ? 'agent-failed' : moved ? null : 'no-commits'
@@ -5719,16 +5724,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             failedKind !== 'crash' &&
             failedKind !== 'no-commits' &&
             failedKind !== 'no-structured-answer'
-          const decidedFix =
+          const readFix = fixed.failure == null ? parseImplementOutcome(fixed.text) : null
+          if (readFix !== null && readFix.form !== 'fence') runLog.note('outcome', outcomeFormNote(readFix.form))
+          const decidedFixRaw =
             fixed.failure == null || budgetEnded
               ? decideImplementOutcome({
-                  declared: fixed.failure == null ? parseImplementOutcome(fixed.text) : null,
+                  declared: readFix?.declared ?? null,
                   endedAbnormally: budgetEnded,
                   startedAt: roundStart,
                   head: after,
                   findingsOffered: offered,
                 })
               : null
+          const decidedFix =
+            decidedFixRaw !== null && decidedFixRaw._tag === 'AgentFailed' && fixed.failure == null && readFix === null
+              ? withUnreadTail(decidedFixRaw, fixed.text)
+              : decidedFixRaw
           if (
             !committed ||
             cutOffTransient ||
