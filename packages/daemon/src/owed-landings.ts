@@ -29,7 +29,14 @@
  * per succeeded entry on it.
  */
 import { landTicketEffect } from '@lingtai/conductor/ticket'
-import { integrationStream, landingsStarted, ticketReducer, ticketStreamsOf, type ProjectState } from '@lingtai/domain'
+import {
+  integrationStream,
+  landingsStarted,
+  projectStream,
+  ticketReducer,
+  ticketStreamsOf,
+  type ProjectState,
+} from '@lingtai/domain'
 import { type EventStore, readThroughSnapshot, type SnapshotReadOptions } from '@lingtai/event-store'
 import { draftBranchOf } from '@lingtai/project'
 import { Cause, Effect } from 'effect'
@@ -63,9 +70,17 @@ const recordProject = (
 ) =>
   Effect.gen(function* () {
     const { store } = options
-    // A landing on a team project's `branch.personal` joins the draft with the ticket, as the live pass writes it; the
-    // recorded recipe text is what the reconcile holds, and a landing on any other base (a PR's fix) does not join.
-    const personal = project.recipe === null ? null : draftBranchOf(project.recipe.source)
+    // A landing on a team project's `branch.personal` joins the draft with the ticket, as the live pass writes it, and
+    // a landing on any other base (a PR's fix) does not. Which branch was `branch.personal` is the recipe the landing
+    // was made under, not today's: the recipe texts the project stream recorded, each in force from its own seq.
+    const recipes = (yield* Effect.tryPromise({ try: () => store.read(projectStream(name)), catch: (e) => e }))
+      .filter((e) => e.type === 'ProjectRecipeChanged')
+      .map((e) => ({ seq: e.seq, source: (e.data as { source: string }).source }))
+    const personalAt = (seq: bigint): string | null => {
+      const inForce = recipes.findLast((r) => r.seq < seq) ?? recipes[0]
+      const source = inForce?.source ?? project.recipe?.source
+      return source === undefined ? null : draftBranchOf(source)
+    }
     const lanes = yield* options.withStreams((it) =>
       it.streams({ prefixes: [`int-${name}-%`], types: ['IntegrationSucceeded'] }),
     )
@@ -88,13 +103,14 @@ const recordProject = (
         if (held === undefined || seq > held.seq) latest.set(ticketId, { mergeCommit, base, seq })
       }
     }
-    for (const [ticketId, { mergeCommit, base }] of latest) {
+    for (const [ticketId, { mergeCommit, base, seq }] of latest) {
       const ticket = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options.read)
       if (ticket.landed?.mergeCommit === mergeCommit) continue
       if (options.dryRun) {
         log(`would record the landing of ${ticketId} at ${mergeCommit}, left by a conductor that died`)
         continue
       }
+      const personal = personalAt(seq)
       yield* landTicketEffect(
         ticketId,
         { mergeCommit, base, draft: personal !== null && base === personal ? { project: name } : null },

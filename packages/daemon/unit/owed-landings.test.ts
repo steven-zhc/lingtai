@@ -3,7 +3,7 @@
  *
  * Unit, by 0060 §1: a memory log and a fake `DaemonStore` whose `streams()` filters by prefix.
  */
-import { integrationStream, ticketStream } from '@lingtai/domain'
+import { integrationStream, projectStream, ticketStream } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
@@ -113,6 +113,30 @@ describe('the landings a dead conductor owed', () => {
     } as unknown as ProjectState
     await Effect.runPromise(
       recordOwedLandingsEffect({ projects: [team], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+    )
+    const draft = await Effect.runPromise(readDraft(PROJECT, store))
+    expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
+  })
+
+  it('joins the draft by the recipe the landing was made under, not the one in force at recovery', async () => {
+    const { store, daemonStore } = await world()
+    const recipe = (personal: string) => `mode: team\nbranch:\n  main: main\n  personal: ${personal}\n`
+    const changed = (personal: string) => ({
+      type: 'ProjectRecipeChanged' as const,
+      actor: 'conductor' as const,
+      data: { sourceHash: personal, source: recipe(personal), by: 'file' },
+    })
+    await store.append(projectStream(PROJECT), 0, [changed(BASE)] as never)
+    await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    // The personal branch moved after the crash: today's recipe names another branch.
+    await store.append(projectStream(PROJECT), 1, [changed('other/personal')] as never)
+    const now = {
+      ...projectOf(PROJECT),
+      recipe: { sourceHash: 'x', source: recipe('other/personal'), by: 'file', seq: 9n, at: new Date(0) },
+    } as unknown as ProjectState
+    await Effect.runPromise(
+      recordOwedLandingsEffect({ projects: [now], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
     )
     const draft = await Effect.runPromise(readDraft(PROJECT, store))
     expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
