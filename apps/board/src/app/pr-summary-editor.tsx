@@ -2,7 +2,7 @@
 
 /**
  * The summary, the one field a person edits on a PR's page (#1320): a textarea over the summary alone, and under a rule the
- * generated rest of the description — tickets, `Closes #…`, merge commits and spend — read-only, because an edit to a
+ * generated rest of the description — the tickets and the `Closes #…` line — read-only, because an edit to a
  * `Closes` line would silently stop a ticket closing. Save calls `savePrSummaryNow` with the summary and nothing else.
  */
 import { type ReactNode, useState, useTransition } from 'react'

@@ -152,9 +152,13 @@ branch, the review's changes, and the merge back. One topic, one ADR.
    own round then builds and checks the result from step 2.
 
 5. **The summary is written before the draft opens, and topped up after CI.**
-   The description is generated from the log — the tickets, `Closes #…` for each
-   GitHub ticket still open, each merge commit and its spend; the syncs of §3 are
-   never listed — under a summary the `pr:` agent writes.
+   The description is generated from the log — under a summary the `pr:` agent
+   writes, one `Closes #a, #b, …` line for the GitHub tickets still open, and a
+   footer with the ticket count; with no summary, one `- <title> (#n)` line per
+   ticket first. It carries no spend, no merge commit and no per-ticket sha: spend
+   is for the operator, and stays on the board's PR page. The summary is a short
+   title (60 characters at most) and one bullet per area saying what is now true,
+   with its ticket numbers; the syncs of §3 are never listed.
    - **Step 5** writes the title and summary before the push, so the draft opens
      with them and the code host's notifications carry the real title. The
      summary does not depend on CI. With the project locked (paused, the day's
