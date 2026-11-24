@@ -76,6 +76,16 @@ describe('parseImplementOutcome', () => {
       expect(parseImplementOutcome('{"outcome":"Disputed"}')).toBeNull()
       expect(parseImplementOutcome('{"other":1}')).toBeNull()
     })
+    it('is null where an unknown outcome name sits beside a valid block, in a json fence or on the last line', () => {
+      const ok = fence(J)
+      expect(parseImplementOutcome(`${ok}\n\`\`\`json\n{"outcome":"Done"}\n\`\`\``)).toBeNull()
+      expect(parseImplementOutcome(`${ok}\n{"outcome":"Done"}`)).toBeNull()
+    })
+    it('does not read JSON inside an unclosed fence as a declaration', () => {
+      expect(parseImplementOutcome(`done\n\`\`\`json\n${J}`)).toBeNull()
+      expect(parseImplementOutcome(`done\n\`\`\`text\n${J}`)).toBeNull()
+      expect(parseImplementOutcome(`${fence(J)}\n\`\`\`json\n${J}`)).toBeNull()
+    })
     it('counts a json fence that ends the message once', () => {
       expect(parseImplementOutcome(`x\n\`\`\`json\n${J}\n\`\`\``)?.form).toBe('json-fence')
     })

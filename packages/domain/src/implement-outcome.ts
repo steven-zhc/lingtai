@@ -85,9 +85,8 @@ function blockOf(body: string): Declared | null {
 export type OutcomeForm = 'fence' | 'json-fence' | 'last-line' | 'bare-word'
 
 const JSON_OPENS = /^[ \t]*```json[ \t]*$/gm
-const OUTCOME_NAMES = ['Implemented', 'Disputed', 'Unclear', 'AlreadyDone']
 
-/** A JSON object with an own `outcome` key naming one of the four outcomes: the only JSON that counts as an outcome. */
+/** A JSON object with an own `outcome` key: the only JSON that claims to be an outcome. Whether its name is one of the four is `Block`'s to say, so an unknown name invalidates the message. */
 function looksLikeOutcome(body: string): boolean {
   let json: unknown
   try {
@@ -96,8 +95,17 @@ function looksLikeOutcome(body: string): boolean {
     return false
   }
   if (typeof json !== 'object' || json === null || Array.isArray(json)) return false
-  const name = (json as Record<string, unknown>).outcome
-  return Object.hasOwn(json, 'outcome') && typeof name === 'string' && OUTCOME_NAMES.includes(name)
+  return Object.hasOwn(json, 'outcome')
+}
+
+/** Whether the line at `index` sits inside a fence, closed or not: a fence opens at any ``` line and only a bare ``` closes it. */
+function insideFence(lines: readonly string[], index: number): boolean {
+  let open = false
+  for (const l of lines.slice(0, index)) {
+    if (open) open = !/^[ \t]*```[ \t]*$/.test(l.replace(/\r$/, ''))
+    else open = /^[ \t]*```/.test(l)
+  }
+  return open
 }
 
 interface Candidate {
@@ -116,7 +124,6 @@ interface Candidate {
 export function parseImplementOutcome(text: string | null): { declared: Declared; form: OutcomeForm } | null {
   const answer = text ?? ''
   const found: Candidate[] = []
-  const spans: [number, number][] = []
   for (const open of answer.matchAll(OPENS)) {
     const start = open.index + open[0].length
     const inside = answer.slice(start)
@@ -125,7 +132,6 @@ export function parseImplementOutcome(text: string | null): { declared: Declared
       found.push({ at: open.index, form: 'fence', declared: null })
       continue
     }
-    spans.push([open.index, start + closed.index + closed[0].length])
     const body = inside.slice(0, closed.index).trim()
     found.push(
       body === 'Implemented'
@@ -137,10 +143,12 @@ export function parseImplementOutcome(text: string | null): { declared: Declared
     const start = open.index + open[0].length
     const inside = answer.slice(start)
     const closed = CLOSES.exec(inside)
-    if (closed === null) continue
-    const body = inside.slice(0, closed.index).trim()
+    const body = (closed === null ? inside : inside.slice(0, closed.index)).trim()
     if (!looksLikeOutcome(body)) continue
-    spans.push([open.index, start + closed.index + closed[0].length])
+    if (closed === null) {
+      found.push({ at: open.index, form: 'json-fence', declared: null })
+      continue
+    }
     found.push({ at: open.index, form: 'json-fence', declared: blockOf(body) })
   }
   const lines = answer.split('\n')
@@ -149,7 +157,7 @@ export function parseImplementOutcome(text: string | null): { declared: Declared
   if (end > 0) {
     const line = lines[end - 1]!.trim()
     const at = lines.slice(0, end - 1).reduce((n, l) => n + l.length + 1, 0)
-    if (line.startsWith('{') && looksLikeOutcome(line) && !spans.some(([a, b]) => at >= a && at < b))
+    if (line.startsWith('{') && looksLikeOutcome(line) && !insideFence(lines, end - 1))
       found.push({ at, form: 'last-line', declared: blockOf(line) })
   }
   found.sort((x, y) => x.at - y.at)
