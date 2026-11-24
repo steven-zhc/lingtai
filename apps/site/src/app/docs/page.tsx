@@ -2,7 +2,17 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 
-import { DOCS_PUBLIC, entriesOf, GITHUB_BLOB, HTML_DOCS, SECTIONS, statuses, unpublished } from '@/lib/docs'
+import {
+  chapterOf,
+  chapterTitle,
+  DOCS_PUBLIC,
+  entriesOf,
+  GITHUB_BLOB,
+  HTML_DOCS,
+  SECTIONS,
+  statuses,
+  unpublished,
+} from '@/lib/docs'
 
 import { Bar, Foot } from '../chrome'
 
@@ -74,7 +84,9 @@ export default async function Docs() {
                   return (
                     <li key={entry.slug}>
                       <Link href={`/docs/${entry.slug}/`}>
-                        <span className="t">{entry.title}</span>
+                        <span className="t">
+                          {section.id === 'book' ? chapterTitle(chapterOf(entry.source), entry.title) : entry.title}
+                        </span>
                         {state !== undefined && state !== 'accepted' && <span className="s">{state}</span>}
                         {/* When, for the one list whose shape is a sequence:
                             the decision's own date, not one kept here. A guide
