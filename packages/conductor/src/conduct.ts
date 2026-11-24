@@ -2692,6 +2692,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           Effect.as(null),
           Effect.catchDefect((refused: unknown) => Effect.succeed({ refused })),
         )
+      /** Set when a `RunRefsPublished` append was refused: `saveHead` reads it to know the save did not land (#1398). */
+      let refsAppendFailed = false
       const noteRefs = (
         outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
         headSha: string | null,
@@ -2708,6 +2710,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           ])
           if (failed !== null) {
+            refsAppendFailed = true
             const why = whyOf(failed.refused)
             runLog.note('push', `the account of ${outcome} was not appended — ${why}`)
             log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`)
@@ -6034,7 +6037,21 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             Effect.map((r) => (Result.isSuccess(r) ? r.success.trim() : null)),
           ),
         // The redo's head is on the run's stream before its wait begins, so a kill during it can be continued (#1398).
-        saveHead: () => publishWhatIsCommitted.pipe(Effect.asVoid),
+        saveHead: () =>
+          Effect.gen(function* () {
+            refsAppendFailed = false
+            const detail = yield* publishWhatIsCommitted
+            // A save is a head the run's own stream can re-cut: a push that failed, a row the store refused and a
+            // stream that cannot be read are each a save that did not happen, whatever the publish returned.
+            const events = yield* Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+              Effect.result,
+            )
+            if (Result.isFailure(events))
+              return { failed: `the run's stream could not be read — ${whyOf(events.failure)}` }
+            if (refsAppendFailed) return { failed: 'the account of the publication was not appended' }
+            const head = releasedHeadOf(events.success)
+            return 'cannot' in head ? { failed: detail === null ? head.cannot : `${detail}; ${head.cannot}` } : null
+          }),
         resetToHead: () =>
           Effect.gen(function* () {
             // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left

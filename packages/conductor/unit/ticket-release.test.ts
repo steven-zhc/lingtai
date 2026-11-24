@@ -81,6 +81,22 @@ describe('releaseDeadWorkerEffect', () => {
       expect(await causeOf(store)).toBeNull()
     })
 
+    it('is released with no cause where the head was refused, though the redo was written', async () => {
+      const store = await claimedBy('dead:1', 'pass-run1')
+      const e = makeStream('pass-run1')
+      await store.append('pass-run1', 0, [
+        e('RunRefsPublished', {
+          branch: 'agent/9',
+          arm: 'arm/9',
+          headSha: 'abc1234',
+          outcome: 'refused',
+          detail: 'push refused',
+        }),
+        e('StepRedone', { runId: 'pass-run1', step: 'implement', rerun: 1, said: 'tail', waitMs: 60000 }),
+      ])
+      expect(await causeOf(store)).toBeNull()
+    })
+
     it('is not released where the run’s stream cannot be read, and is where the store recovers', async () => {
       const store = await claimedBy('dead:1', 'pass-run1')
       await redone(store)

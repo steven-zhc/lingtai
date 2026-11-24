@@ -3147,7 +3147,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
   })
 
   it('saves the head before it writes the redo after an unreadable outcome, and for no other redo (#1398)', async () => {
-    const run = async (outcome: 'unreadable' | 'crash') => {
+    const run = async (outcome: 'unreadable' | 'crash', save: { failed: string } | null = null) => {
       const { bodies } = watching()
       const { actionsAt: base } = watchingActions()
       let lap = 0
@@ -3172,7 +3172,7 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
               },
             ]
           : base(step, actions)
-      const { emit, seen } = events()
+      const { emit } = events()
       const order: string[] = []
       await walkOnTestClock({
         recipe: recipeWith({}),
@@ -3185,13 +3185,15 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
         actionsAt,
         saveHead: async () => {
           order.push('saveHead')
+          return save
         },
       })
-      expect(seen.filter((e) => e.type === 'StepRedone')).toHaveLength(1)
       return order
     }
     expect(await run('unreadable')).toEqual(['saveHead', 'StepRedone'])
     expect(await run('crash')).toEqual(['StepRedone'])
+    // A save that left no head to continue from (a refused push, a refused publication row) writes no StepRedone.
+    expect(await run('unreadable', { failed: 'push refused' })).toEqual(['saveHead'])
   })
 
   it('holds the fourth transient crash of an attempt, counted over the attempt and not the step', async () => {

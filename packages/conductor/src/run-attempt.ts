@@ -945,7 +945,7 @@ export interface AttemptOptions {
   /** `AttemptPortOptions.resetToHead`, as a promise (#1245). */
   readonly resetToHead?: () => Promise<{ readonly head: string } | { readonly failed: string }>
   /** `AttemptPortOptions.saveHead`, as a promise (#1398). */
-  readonly saveHead?: () => Promise<void>
+  readonly saveHead?: () => Promise<{ readonly failed: string } | null>
   /**
    * **Whether the command a `build` action refused fails on the base too** (#744, 0108 §13) —
    * asked before a `BuildRed` buys a round, and only when a round is on offer. `mergedOnto` is
@@ -1194,9 +1194,10 @@ export interface AttemptPortOptions {
   /**
    * **Records the head a redo after an unreadable outcome will reset to, before its `StepRedone` is written** (#1398): a process killed
    * during the wait finalizes nothing, so the head the next claim continues from must already be on the run's
-   * stream. An attempt handed none records none, and a stop during its wait is then not continued.
+   * stream. An attempt handed none records none, and a stop during its wait is then not continued. `failed` names a
+   * save that did not leave a head the next claim can continue from: the redo is then not written (it ends at a person).
    */
-  readonly saveHead?: () => Effect.Effect<void>
+  readonly saveHead?: () => Effect.Effect<{ readonly failed: string } | null>
   /** Rebuilds a committed conflict merge's fork point and overlap for a resumed review (#1120). */
   readonly conflictEvidence?: (baseSha: string) => Effect.Effect<{
     readonly fromSha: string
@@ -1803,10 +1804,6 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
     }): Effect.Effect<boolean> =>
       Effect.gen(function* () {
         stepRedosSpent = redo.retry
-        // Only a redo that quotes an unreadable message has a tail a stop must keep (#1398).
-        if (redo.unread !== undefined && options.saveHead !== undefined) yield* options.saveHead()
-        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
-        if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const cannot = (detail: string): boolean => {
           const ending: StepDidNotFinish = {
             ending: 'did-not-finish',
@@ -1820,6 +1817,12 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           end = unansweredEnd(redo.step, { runId: options.context.runId }, ending)
           return false
         }
+        // Only a redo that quotes an unreadable message has a tail a stop must keep (#1398). A save that did not
+        // leave a head to continue from writes no `StepRedone`: a stop during the wait would release with no cause.
+        const saved = redo.unread !== undefined && options.saveHead !== undefined ? yield* options.saveHead() : null
+        if (saved !== null) return cannot(`its head could not be saved before the wait — ${saved.failed}`)
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait)
+        if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const reset =
           options.resetToHead === undefined
             ? { failed: 'this attempt was handed no way to reset the worktree' }
