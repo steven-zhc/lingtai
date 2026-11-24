@@ -1060,6 +1060,8 @@ export interface AttemptOptions {
       readonly accountReruns: number
       readonly why: string
       readonly startedAt?: string
+      /** The tail of the unreadable message the interrupted redo was about to quote (#1398). */
+      readonly unread?: string
     }
     /**
      * **The first visit of `step` continues what a person answered** (#1254, 0108 §22): the step asked, the answers are in
@@ -2468,6 +2470,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                   why: accountRerun.why,
                   startedAt: accountRerun.startedAt ?? onSha,
                   head: onSha,
+                  ...(accountRerun.unread === undefined ? {} : { unread: accountRerun.unread }),
                 },
               }
             : options.from?.answered !== undefined &&

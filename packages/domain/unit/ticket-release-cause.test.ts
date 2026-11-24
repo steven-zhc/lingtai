@@ -10,6 +10,7 @@ import {
   continueTransition,
   decodeTicket,
   encodeTicket,
+  pendingRedoOf,
   reduceTicket,
   ticketReducer,
 } from '../src/index.ts'
@@ -111,5 +112,28 @@ describe('continueTransition on a queued ticket', () => {
       ok: false,
       refusal: { reason: 'not-approved', status: 'backlog' },
     })
+  })
+})
+
+describe('a stop during a redo wait (#1398)', () => {
+  const waiting = { _tag: 'StepRedoPending' as const, runId: 'r1', step: 'implement' as const }
+
+  it('is a cause the next claim continues', () => {
+    expect(continuableRelease(reduceTicket(released(waiting as never)))).toMatchObject({ runId: 'r1' })
+  })
+
+  it('names the redo the stop interrupted, with what it recorded, only while no step has started since', () => {
+    const e = makeStream('attempt-r1')
+    const redone = e('StepRedone', {
+      runId: 'r1',
+      step: 'implement',
+      rerun: 1,
+      said: 'Implemented, but in prose',
+      waitMs: 60000,
+    })
+    expect(pendingRedoOf([redone])).toEqual({ step: 'implement', said: 'Implemented, but in prose' })
+    const started = e('StepStarted', { runId: 'r1', step: 'implement', round: 1 } as never)
+    expect(pendingRedoOf([redone, started])).toBeNull()
+    expect(pendingRedoOf([])).toBeNull()
   })
 })

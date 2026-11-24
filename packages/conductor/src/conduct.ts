@@ -53,6 +53,7 @@ import {
   releasesOf,
   stepStartedAtOf,
   continuableRelease,
+  pendingRedoOf,
   cutOffPromptOf,
   expandPrompt,
   integrationStream,
@@ -1512,8 +1513,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           }
         }
-        if (cause._tag !== 'AccountLimit') return null
-        {
+        if (cause._tag !== 'AccountLimit' && cause._tag !== 'StepRedoPending') return null
+        if (cause._tag === 'AccountLimit') {
           // The first claim after the lock lifts. A lock that stands again is a race with a fresh one: this
           // never becomes an ordinary claim from the base, which is the cost this continuation removes.
           const locked = yield* readAccount(store, cause.runtime).pipe(
@@ -1530,9 +1531,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const head = releasedHeadOf(releasedEvents)
         const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
-        const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
-        // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
-        const accountReruns = releases + personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
+        const ticketReleases = yield* Effect.promise(() => store.read(ticketId))
+        const releases = releasesOf(ticketReleases, releasedFrom.runId, cause._tag)
+        // A redo the stop interrupted keeps the tail it was about to quote (#1398): what `StepRedone.said` recorded.
+        const pendingRedo = cause._tag === 'StepRedoPending' ? pendingRedoOf(releasedEvents) : null
+        // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218). An account limit's
+        // releases and a redo's are counted together, so no two reruns of one attempt share a dispatch id.
+        const accountReruns =
+          releasesOf(ticketReleases, releasedFrom.runId, 'AccountLimit') +
+          releasesOf(ticketReleases, releasedFrom.runId, 'StepRedoPending') +
+          personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
         const cutOff = cutOffPromptOf(releasedEvents)
         // The call the wall cut off is the release's own step: another step's last call is not it.
         const cutOffFor = cutOff !== null && cutOff.for.step === cause.step ? cutOff.for : null
@@ -1553,7 +1561,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           readClipped: undefined,
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : '',
-          resumedWaitId: `account-limit:${releases}` as WaitId,
+          resumedWaitId: `${cause._tag === 'AccountLimit' ? 'account-limit' : 'redo-pending'}:${releases}` as WaitId,
           roundsSpent: spent.rounds,
           personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
@@ -1582,8 +1590,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     for: cutOffFor,
                     prompt: recordedPrompt,
                     accountReruns,
-                    why: "the account's limit cut it off",
+                    why:
+                      cause._tag === 'AccountLimit'
+                        ? "the account's limit cut it off"
+                        : 'the conductor stopped while it waited to be redone',
                     startedAt: stepStartedAtOf(releasedEvents, cutOffFor.step) ?? undefined,
+                    ...(pendingRedo === null ? {} : { unread: pendingRedo.said }),
                   }
                 : { for: null, prompt: null, accountReruns },
           },
@@ -6825,7 +6837,17 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }),
       // A run that was interrupted still has to give the item back. `release` is
       // idempotent, so the paths above that already released are unaffected.
-      Effect.ensuring(release('the run was interrupted')),
+      Effect.ensuring(
+        Effect.gen(function* () {
+          // Interrupted while a step waited to be redone: the next claim redoes it and quotes what it was to (#1398).
+          const events = yield* Effect.promise(() => store.read(runId)).pipe(Effect.orElseSucceed(() => []))
+          const pending = pendingRedoOf(events)
+          yield* release(
+            'the run was interrupted',
+            pending === null ? null : { _tag: 'StepRedoPending', runId, step: pending.step },
+          )
+        }),
+      ),
     )
   })
   return run.pipe(
