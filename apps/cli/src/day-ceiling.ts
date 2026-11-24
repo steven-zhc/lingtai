@@ -63,7 +63,8 @@ export function spendStall(lags: readonly ProjectionLag[], now: Date, startedAt?
   const since = Math.max(row.updatedAt?.getTime() ?? -Infinity, startedAt?.getTime() ?? -Infinity)
   const quiet = Number.isFinite(since) ? now.getTime() - since : null
   if (quiet !== null && quiet <= STALL_AFTER_MS) return null
-  const moved = quiet === null ? 'has never moved' : `last moved ${ago(quiet)} ago`
+  const moved =
+    row.updatedAt === null ? 'has never moved' : `last moved ${ago(now.getTime() - row.updatedAt.getTime())} ago`
   return `the spend projection is ${row.lag} behind and ${moved}`
 }
 
