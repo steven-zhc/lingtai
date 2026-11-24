@@ -62,6 +62,8 @@ export interface ConflictAsk {
   /** Where the build is recorded (`int-{project}-{base}`), as the sync's and the merge back's own are. */
   readonly buildBase: string
   readonly checkId: string
+  /** The catch-up after the PR merged, not the merge back: only the catch-up's rounds are still wanted once the PR is merged. */
+  readonly catchUp?: boolean
 }
 
 export type ResolveEnd =
@@ -576,8 +578,9 @@ export const resolveRounds = (
     for (;;) {
       const state = yield* readPr(project, n, ports.store)
       if (state === null) return yield* Effect.fail(new Error(`${stream} has no events`))
-      // A PR merged or closed meanwhile refuses every round for good: stop here, holding nothing, rather than read it again.
-      if (!conflictOpen(state)) {
+      // A PR closed meanwhile stops every round; a merged one stops the merge back's (its resolution is discarded, and the
+      // catch-up waits behind this resolver), and the catch-up's only while none is owed — a grant or a retry reopens it.
+      if (!conflictOpen(state, ask.catchUp === true)) {
         return { kind: 'unknown', why: `the PR is ${state.status} now: no more rounds are counted on it` } as const
       }
       // A review whose `StepEnded` committed and whose refusal did not (a stop between the two writes) is refused here, from
@@ -614,6 +617,7 @@ export const resolveRounds = (
           start: ask.start,
           round: next,
           ...(red === null ? {} : { why: 'red' as const }),
+          ...(ask.catchUp === true ? { catchUp: true } : {}),
         },
         ports.store,
       )

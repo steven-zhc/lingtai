@@ -538,6 +538,12 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   SyncRoundRefused: (d) =>
     `Round ${need(d, 'round')} of the conflict agent was refused at ${need(d, 'step')}: ${clip(d['said'])}`,
   PrMergeBackFailed: (d) => `The PR branch could not be merged back (${need(d, 'why')}): ${clip(d['detail'])}`,
+  PrCaughtUp: (d) =>
+    d['mergeCommit'] === null
+      ? `The personal branch already had main at ${sha(d, 'mainSha')}`
+      : `The personal branch was caught up with main at ${sha(d, 'mainSha')} as ${sha(d, 'mergeCommit')}`,
+  PrCatchUpFailed: (d) =>
+    `The personal branch could not be caught up with main (${need(d, 'why')}): ${clip(d['detail'])}`,
   PrMerged: (d) =>
     d['how'] === 'host'
       ? 'The PR was merged, as the code host reports'

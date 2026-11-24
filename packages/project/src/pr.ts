@@ -52,6 +52,8 @@ import {
   syncRefusalTransition,
   mergedBackTransition,
   mergeBackFailedTransition,
+  caughtUpTransition,
+  catchUpFailedTransition,
   summaryWrittenTransition,
   summaryNotWrittenTransition,
   descriptionPushedTransition,
@@ -463,6 +465,32 @@ export const recordPrMergeBackFailed = (
     project,
     n,
     (state) => mergeBackFailedTransition(state, failed),
+    (_state, appended) => appended,
+  )
+
+/** The personal branch was caught up with `main` after the merge (#1371). Once per PR; the answer says whether it was already there. */
+export const recordPrCaughtUp = (project: string, n: number, caught: PayloadOf<'PrCaughtUp'>, store: EventStore) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => caughtUpTransition(state, caught),
+    (state, appended): 'recorded' | 'already' | 'refused' =>
+      appended ? 'recorded' : state.catchUp?.outcome === 'caught-up' ? 'already' : 'refused',
+  )
+
+/** The catch-up did not complete; `unknown` and `locked` stay owed. Once per answer. */
+export const recordPrCatchUpFailed = (
+  project: string,
+  n: number,
+  failed: PayloadOf<'PrCatchUpFailed'>,
+  store: EventStore,
+) =>
+  transitionPr(
+    store,
+    project,
+    n,
+    (state) => catchUpFailedTransition(state, failed),
     (_state, appended) => appended,
   )
 
