@@ -57,18 +57,18 @@ personal branch, not `main`.
 ## Submit the PR
 
 ```sh
-lingtai pr
+lingtai pr <repo>
 ```
 
 ```text
 draft: 1 ticket(s) landed on <login>/<machine>
 ```
 
-The draft is the project's next PR, not yet submitted. It holds the tickets landed
+`<repo>` is the repository's name, `chapter-garden` being the other project in this home: with two projects registered, `lingtai pr` alone is refused. The draft is the project's next PR, not yet submitted. It holds the tickets landed
 on your personal branch since the last PR was frozen. Then submit it:
 
 ```sh
-lingtai pr submit
+lingtai pr submit <repo>
 ```
 
 A submit with nothing landed is refused, and a refused submit returns the PR to the
@@ -77,15 +77,17 @@ request on GitHub. If the repository has a workflow that runs on `pull_request`,
 the PR waits for every check on its head; if it has none, the PR page says there
 is no CI step. Nothing in the recipe is needed for that: `pr.ci.required` only
 narrows which checks count. When the checks pass, the PR is topped up with its
-summary and marked ready, on the head they passed. Run `lingtai pr` to follow it.
+summary and marked ready, on the head they passed. Run `lingtai pr <repo>` to follow it.
 
 ## A review asks for a change
 
-Review the PR on GitHub as you would anyone's. When a review comment asks for a
-change, it comes back as a ticket labelled `lingtai:pr-fix`. That ticket is
-cut from the PR's branch and lands on it, so the fix is another commit on the same
-PR. The PR stays ready and does not go back to a draft, and CI runs again on the
-new head.
+Review the PR on GitHub as you would anyone's. Lingtai does not read review
+comments, so a comment alone starts nothing. To send the change back, open the PR's
+page on the board and choose *New pr-fix ticket*: it opens GitHub's new-issue form
+with the `lingtai:pr-fix` label and a title put in. Write what must change, assign
+the issue to yourself, and create it. That ticket is cut from the PR's branch and
+lands on it, so the fix is another commit on the same PR. The PR stays ready and
+does not go back to a draft, and CI runs again on the new head.
 
 ## Merge it
 
