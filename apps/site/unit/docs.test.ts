@@ -124,6 +124,23 @@ const proseOf = (text: string) =>
     .trim()
     .split(/\s+/).length
 
+describe('connect-github is chapter 3, your own repository', () => {
+  it('stays between 600 and 800 words, ends on Next, and sets no second home', async () => {
+    const body = await readFile(path.join(docRoot, 'connect-github.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1382
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .at(-1)?.text,
+    ).toBe('Next')
+    expect(body).toContain('(concepts.md)')
+    expect(body).not.toContain('export LINGTAI_HOME')
+    expect(body).not.toContain('--base')
+  })
+})
+
 describe('concepts is chapter 4, one attempt', () => {
   it('stays between 600 and 800 words, in four sections, ending at the board', async () => {
     const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')
@@ -140,8 +157,31 @@ describe('concepts is chapter 4, one attempt', () => {
   })
 })
 
+describe('checks-and-spend is chapter 9, what is checked and what is spent', () => {
+  it('stays between 600 and 800 words, in four sections and a Next, and keeps the ceiling', async () => {
+    const body = await readFile(path.join(docRoot, 'checks-and-spend.md'), 'utf8')
+    const words = proseOf(body)
+    expect(words).toBeGreaterThanOrEqual(600)
+    expect(words).toBeLessThanOrEqual(800) // #1386
+    expect(
+      headingsOf(body)
+        .filter((h) => h.depth === 2)
+        .map((h) => h.text),
+    ).toEqual([
+      'What goes at build:',
+      'Who reviews',
+      'What a run and a day may spend',
+      'Where you see what was spent',
+      'Next',
+    ])
+    expect(body).toContain('(safety.md)')
+    expect(body).toContain('Read `error_max_turns` as *the ticket was wrong*, not *the number was low*.')
+    expect(body).toContain('limits.day_usd')
+  })
+})
+
 describe('safety is chapter 10, what an agent can reach', () => {
-  it('stays between 600 and 800 words, in four sections, with no Next, and keeps every limit', async () => {
+  it('stays between 600 and 800 words, in four sections and a Next, and keeps every limit', async () => {
     const body = await readFile(path.join(docRoot, 'safety.md'), 'utf8')
     const words = proseOf(body)
     expect(words).toBeGreaterThanOrEqual(600)
@@ -155,7 +195,9 @@ describe('safety is chapter 10, what an agent can reach', () => {
       'Turning it on',
       'What the sandbox does not cover',
       'When the host cannot sandbox',
+      'Next',
     ])
+    expect(body).toContain('(solo.md)')
     for (const limit of [
       "**The run's own token is readable inside it.**",
       "**Codex's login is readable to a Codex run**",
@@ -171,11 +213,23 @@ describe('safety is chapter 10, what an agent can reach', () => {
   })
 })
 
+describe('solo is chapter 11, solo mode', () => {
+  it('stays within 800 words, ends without a Next, and says where work lands', async () => {
+    const body = await readFile(path.join(docRoot, 'solo.md'), 'utf8')
+    expect(proseOf(body)).toBeLessThanOrEqual(800) // #1410
+    expect(headingsOf(body).some((h) => h.depth === 2 && h.text === 'Next')).toBe(false)
+    expect(body).toContain('lingtai-base')
+    expect(body).toContain('branch.main')
+    expect(body).not.toContain('--base <') // add-github refuses --base
+    expect(body).toContain('source.assignee.take') // solo keeps a configured take
+  })
+})
+
 describe('the tutorial stays a first-run path', () => {
   it('keeps the beginner path to init, one ticket and start', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial.md'), 'utf8')
-    // #1061: a fact that is not on the first-run path goes to tutorial-more.md.
-    expect(proseOf(body), 'the first-run path has become a reference manual again').toBeLessThan(400)
+    // #1061: a fact that is not on the first-run path goes to tutorial-more.md. The cap is 0112 §14's 800 (#1411).
+    expect(proseOf(body), 'the first-run path has become a reference manual again').toBeLessThan(800)
     expect(body).not.toContain('<details>')
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(body).not.toContain('$VISUAL')
@@ -195,30 +249,24 @@ describe('the tutorial stays a first-run path', () => {
     ])
   })
 
-  it('keeps the options, the hold, the refusal and GitHub on the second page', async () => {
+  it('keeps the options, the hold and the refusal on the second page', async () => {
     const body = await readFile(path.join(docRoot, 'tutorial-more.md'), 'utf8')
     expect(body).not.toContain('<details')
     expect(body).not.toContain('CHAPTER_GARDEN_DIR')
     expect(await servable()).toContain('tutorial-more.md')
     const hold = body.indexOf('\n## Hold every attempt')
     const refusal = body.indexOf('\n## Watch a check refuse')
-    const github = body.indexOf('\n## Part 2')
+    expect(body).not.toContain('## Part 2')
+    expect(body).not.toContain('--base')
     expect(hold).toBeGreaterThan(0)
     expect(refusal).toBeGreaterThan(hold)
-    expect(github).toBeGreaterThan(refusal)
     expect(proseOf(body.slice(hold, refusal)), 'the hold has become a manual').toBeLessThan(400) // #1061
-    expect(proseOf(body.slice(refusal, github)), 'the refusal step has become a manual').toBeLessThan(350)
-    expect(proseOf(body.slice(github)), 'the GitHub half has become a reference manual').toBeLessThan(600)
+    expect(proseOf(body.slice(refusal)), 'the refusal step has become a manual').toBeLessThan(350)
     expect(
       headingsOf(body)
         .filter((h) => h.depth === 2)
         .map((h) => h.text),
-    ).toEqual([
-      'What each init option means',
-      'Hold every attempt for approval',
-      'Watch a check refuse',
-      'Part 2 — Move the project to GitHub',
-    ])
+    ).toEqual(['What each init option means', 'Hold every attempt for approval', 'Watch a check refuse'])
   })
 
   it('keeps the repository-detection list on the recipe page, with no disclosure', async () => {
@@ -306,10 +354,10 @@ describe('where a link inside a document goes', () => {
     expect(resolveHref('tutorial.md', 'when-it-fails.md', (f) => served.includes(f))).toBe('/docs/when-it-fails/')
   })
 
-  it('publishes the best practices page', async () => {
+  it('publishes the checks and spend page', async () => {
     const served = await servable()
-    expect(served).toContain('guide.md')
-    expect(resolveHref('tutorial.md', 'guide.md', (f) => served.includes(f))).toBe('/docs/guide/')
+    expect(served).toContain('checks-and-spend.md')
+    expect(resolveHref('tutorial.md', 'checks-and-spend.md', (f) => served.includes(f))).toBe('/docs/checks-and-spend/')
   })
 
   it('publishes the recipe guide beside the tutorial without publishing the reference', async () => {
@@ -552,7 +600,7 @@ describe('the book', () => {
 
   it('gives the chapters either side of one', () => {
     const near = neighboursOf('concepts', all)
-    expect(near.previous?.file).toBe('team.md')
+    expect(near.previous?.file).toBe('connect-github.md')
     expect(near.next?.file).toBe('board.md')
     expect(neighboursOf('board', all).previous?.file).toBe('concepts.md')
     expect(neighboursOf('board', all).next?.file).toBe('tickets.md')
@@ -562,13 +610,14 @@ describe('the book', () => {
 
   it('gives the first no previous and the last no next', () => {
     expect(neighboursOf('tutorial', all).previous).toBeNull()
-    expect(neighboursOf('safety', all).next).toBeNull()
+    expect(neighboursOf('safety', all).next?.file).toBe('solo.md')
+    expect(neighboursOf('solo', all).next).toBeNull()
   })
 
   it('skips a chapter that is not served', () => {
     const without = new Set(all)
     without.delete('concepts')
-    expect(neighboursOf('team', without).next?.file).toBe('board.md')
+    expect(neighboursOf('team', without).next?.file).toBe('connect-github.md')
     expect(neighboursOf('when-it-fails', without).previous?.file).toBe('tickets.md')
     expect(neighboursOf('concepts', without)).toEqual({ previous: null, next: null })
   })

@@ -1,4 +1,4 @@
-import { prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { integrationStream, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type PullState } from '@lingtai/github'
@@ -24,6 +24,14 @@ const elsewhere = {
   repo: { remote: '/srv/git/lingtai.git' },
 } as unknown as Recipe
 const FROZEN = 'f'.repeat(40)
+const MAIN = 'a'.repeat(40)
+/** What the mirror says of `main` for the freeze: its own sha, which holds none of the draft's tickets. */
+const mainAnswer = (args: readonly string[]) =>
+  args[0] === 'rev-parse' && args[3]?.startsWith('refs/heads/main')
+    ? { code: 0, stdout: `${MAIN}\n`, stderr: '' }
+    : args[0] === 'merge-base' && args[3] === MAIN
+      ? { code: 1, stdout: '', stderr: '' }
+      : null
 
 interface World {
   pull: PullState | Error
@@ -69,7 +77,6 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
   return {
     store,
     recipe: () => Effect.succeed(recipe),
-    candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }]),
     fetch: () => Effect.sync(() => void w.fetches++),
     projects: () => Effect.succeed(['lingtai']),
     tickets: () => Effect.succeed(channel),
@@ -80,13 +87,15 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     github: () => Effect.succeed(github),
     facts: (_p, tickets) => Effect.succeed(tickets.map((ticket) => ({ ticket, open: true, spend: 0 }))),
     git: (_p, args) =>
-      Effect.sync(() => {
-        w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
-        if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
-        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
-        return { code: w.reach, stdout: '', stderr: '' }
-      }),
+      mainAnswer(args) !== null
+        ? Effect.succeed(mainAnswer(args)!)
+        : Effect.sync(() => {
+            w.gitCalls.push([...args])
+            if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+            if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
+            if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
+            return { code: w.reach, stdout: '', stderr: '' }
+          }),
     remote: (_p, args) =>
       Effect.succeed(
         args[0] === 'ls-remote' ? { code: 0, stdout: '', stderr: '' } : { code: 0, stdout: '', stderr: '' },
@@ -259,7 +268,6 @@ describe('an unfinished close is retried after a later PR merges', () => {
     const base = ports(store, w)
     const p: PrPorts = {
       ...base,
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
       tickets: () =>
         Effect.succeed({
           closeIssue: async (issue: number) => {
@@ -318,6 +326,8 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
     await landed(store, '1')
     await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     const w = aWorld()
+    // The freeze reads the remote too (the PR branch name), so it is served first, before the remote hangs.
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, []))
     let asked = 0
     const p: PrPorts = {
       ...ports(store, w),
@@ -349,6 +359,21 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
         data: { mergeCommit: FIX, base: 'lingtai-team-pr-1' },
       },
     ])
+    // The integrator names the ticket by its stream id on the lane of the branch it landed on: that is where the sweep
+    // finds the tickets to decide (#1395).
+    const lane = integrationStream('lingtai', 'lingtai-team-pr-1')
+    await store.append(lane, await store.head(lane), [
+      {
+        type: 'IntegrationSucceeded',
+        actor: 'conductor',
+        data: {
+          ticketId: ticketStream('lingtai', '9' + issue),
+          branch: 'agent/9' + issue,
+          base: 'lingtai-team-pr-1',
+          mergeCommit: FIX,
+        },
+      },
+    ])
   }
 
   const fixed = async (mergedBack: boolean) => {
@@ -356,7 +381,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     await landedOnPrBranch(store, '3')
     const p: PrPorts = {
       ...ports(store, w),
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
     }
     await sweep(p)
     if (mergedBack) {
@@ -390,7 +414,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     await landedOnPrBranch(store, '3')
     const p: PrPorts = {
       ...ports(store, w),
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
     }
     await sweep(p)
     const fixes = (await store.read(prStream('lingtai', 1))).filter((e) => e.type === 'PrFixLanded')
@@ -405,7 +428,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     await landedOnPrBranch(store, '3')
     const p: PrPorts = {
       ...ports(store, w),
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
     }
     await sweep(p)
     await Effect.runPromise(servePr(p, 'lingtai', 1, PUSH_OPEN))
@@ -420,7 +442,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
     await sweep({
       ...ports(store, w),
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
     })
     const state = await pr(store)
     expect(state.status).toBe('merged')
@@ -434,7 +455,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const base = ports(store, w)
     const p: PrPorts = {
       ...base,
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
       // Only the old head reaches main; the fix's commit does not.
       git: (project, args) =>
         args[0] === 'merge-base' && args.includes(FROZEN)
@@ -455,7 +475,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const base = ports(store, w)
     const p: PrPorts = {
       ...base,
-      candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }]),
     }
     await sweep(p)
     // A person added a commit on top of the fix, and the host merged that one; git knows the fix is in it.
@@ -477,8 +496,7 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const { store, w } = await inReview()
     await landedOnPrBranch(store, '3')
     const base = ports(store, w)
-    const candidates = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
-    await sweep({ ...base, candidates })
+    await sweep(base)
     const head = 'd'.repeat(40)
     w.pull = { ...open, state: 'closed', merged: true, headSha: head, mergeCommitSha: 'e'.repeat(40) }
     // The branch fetch succeeds without the head; only the PR's own ref brings it, and the ref is dropped afterwards.
@@ -487,7 +505,6 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const asked: string[][] = []
     const p: PrPorts = {
       ...base,
-      candidates,
       fetch: () => Effect.void,
       remote: (project, args) => {
         asked.push([...args])
@@ -525,12 +542,17 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     const { store, w } = await inReview()
     await landedOnPrBranch(store, '3')
     w.pull = { ...open, state: 'closed', merged: true, mergeCommitSha: 'e'.repeat(40) }
-    const withFix = () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '93' }])
     let failing = true
-    const p: PrPorts = {
-      ...ports(store, w),
-      candidates: () => (failing ? Effect.fail(new Error('the read failed')) : withFix()),
-    }
+    // The ticket's own stream is what the repair reads; it cannot be read the first time.
+    const flaky: EventStore = Object.create(store, {
+      read: {
+        value: (id: string) =>
+          failing && id === ticketStream('lingtai', '93')
+            ? Promise.reject(new Error('the read failed'))
+            : store.read(id),
+      },
+    })
+    const p: PrPorts = ports(flaky, w)
     await sweep(p)
     expect(await types(store)).not.toContain('PrMerged')
     failing = false
@@ -548,7 +570,7 @@ describe('a pr-fix landing on the PR branch (#1341)', () => {
     expect((await pr(store)).status).toBe('merged')
     const before = (await types(store)).length
     await landedOnPrBranch(store, '3')
-    await sweep({ ...ports(store, w), candidates: () => Effect.succeed([{ issue: '1' }, { issue: '93' }]) })
+    await sweep(ports(store, w))
     expect(await types(store)).toHaveLength(before)
   })
 })

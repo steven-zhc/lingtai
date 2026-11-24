@@ -30,6 +30,14 @@ const team = {
   runtime: { agent: 'claude-code' },
 } as unknown as Recipe
 const FROZEN = 'f'.repeat(40)
+const MAIN = 'a'.repeat(40)
+/** What the mirror says of `main` for the freeze: its own sha, which holds none of the draft's tickets. */
+const mainAnswer = (args: readonly string[]) =>
+  args[0] === 'rev-parse' && args[3]?.startsWith('refs/heads/main')
+    ? { code: 0, stdout: `${MAIN}\n`, stderr: '' }
+    : args[0] === 'merge-base' && args[3] === MAIN
+      ? { code: 1, stdout: '', stderr: '' }
+      : null
 
 async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
   await store.append(ticketStream('lingtai', issue), 0, [
@@ -126,7 +134,6 @@ function ports(store: EventStore, w: World, options: { summarizer?: boolean } = 
   return {
     store,
     recipe: () => Effect.succeed(team),
-    candidates: () => Effect.succeed([{ issue: '1' }, { issue: '2' }, { issue: '3' }]),
     fetch: () => Effect.void,
     projects: () => Effect.succeed(['lingtai']),
     merge: () => Effect.succeed({ kind: 'failed', text: 'never merges' }),
@@ -138,13 +145,15 @@ function ports(store: EventStore, w: World, options: { summarizer?: boolean } = 
     facts: (_project, tickets) =>
       Effect.succeed(tickets.map((ticket) => ({ ticket, open: w.open[ticket] ?? null, spend: 0.5 }))),
     git: (_project, args) =>
-      Effect.succeed(
-        args[0] === 'rev-parse'
-          ? { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
-          : args[0] === 'diff'
-            ? { code: 0, stdout: ` src/${args[args.length - 1]}.ts | 2 +-\n`, stderr: '' }
-            : { code: 0, stdout: '', stderr: '' },
-      ),
+      mainAnswer(args) !== null
+        ? Effect.succeed(mainAnswer(args)!)
+        : Effect.succeed(
+            args[0] === 'rev-parse'
+              ? { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+              : args[0] === 'diff'
+                ? { code: 0, stdout: ` src/${args[args.length - 1]}.ts | 2 +-\n`, stderr: '' }
+                : { code: 0, stdout: '', stderr: '' },
+          ),
     remote: (_project, args) =>
       Effect.sync(() => {
         if (args[0] === 'ls-remote') {

@@ -5,6 +5,8 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from 'rea
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it, vi } from 'vitest'
 
+import { findMarkdownField, markdownField, typeInto } from '../test/markdown-field.ts'
+
 const harness = vi.hoisted(() => ({
   values: [] as unknown[],
   cursor: 0,
@@ -126,14 +128,14 @@ it('can submit a new answer after a successful wait while the editor stays mount
     return mount(waitId, () => editor(waitId))
   }
 
-  control(render(first), 'textarea').props.onChange?.({ target: { value: 'First answer' } })
+  typeInto(render(first), 'First answer')
   control(render(first), 'button').props.onClick?.()
   await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(first))
   expect(harness.submit).toHaveBeenCalledTimes(1)
   expect(control(render(first), 'button').props.disabled).toBe(true)
 
   render(null)
-  control(render(next), 'textarea').props.onChange?.({ target: { value: 'Second answer' } })
+  typeInto(render(next), 'Second answer')
   expect(control(render(next), 'button').props.disabled).toBe(false)
   control(render(next), 'button').props.onClick?.()
   await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(next))
@@ -153,9 +155,9 @@ it('keeps an unsent answer visible but unsendable after another person ends the 
     return mount(currentWaitId, () => editor(currentWaitId))
   }
 
-  control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My unsent answer' } })
+  typeInto(render(waitId), 'My unsent answer')
   const afterMove = render(null)
-  expect(control(afterMove, 'textarea').props.value).toBe('My unsent answer')
+  expect(markdownField(afterMove).props.value).toBe('My unsent answer')
   expect(() => control(afterMove, 'button')).toThrow()
   expect(renderToStaticMarkup(afterMove)).toContain('Your unsent draft is below; copy it before leaving.')
 })
@@ -168,12 +170,12 @@ it('does not call a submitted answer an unsent draft after Follow ends the wait'
     return mount(currentWaitId, () => editor(currentWaitId))
   }
 
-  control(render(waitId), 'textarea').props.onChange?.({ target: { value: 'My submitted answer' } })
+  typeInto(render(waitId), 'My submitted answer')
   control(render(waitId), 'button').props.onClick?.()
   await vi.waitFor(() => expect((harness.values[2] as { doneWaitId: unknown }).doneWaitId).toBe(waitId))
 
   const afterFollow = render(null)
-  expect(control(afterFollow, 'textarea').props.value).toBe('My submitted answer')
+  expect(markdownField(afterFollow).props.value).toBe('My submitted answer')
   expect(renderToStaticMarkup(afterFollow)).toContain('back in the queue')
   expect(renderToStaticMarkup(afterFollow)).not.toContain('Your unsent draft is below')
 })
@@ -188,12 +190,12 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
   const pick = (answerId: string) =>
     (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
 
-  expect(control(render(first, 'A'), 'textarea').props.value).toBe('- Which? — A')
+  expect(markdownField(render(first, 'A')).props.value).toBe('- Which? — A')
   pick('B')
-  expect(control(render(first, 'A'), 'textarea').props.value).toBe('- Which? — B')
-  control(render(first, 'A'), 'textarea').props.onChange?.({ target: { value: 'My own answer' } })
+  expect(markdownField(render(first, 'A')).props.value).toBe('- Which? — B')
+  typeInto(render(first, 'A'), 'My own answer')
   pick('A')
-  expect(control(render(first, 'A'), 'textarea').props.value).toBe('My own answer')
+  expect(markdownField(render(first, 'A')).props.value).toBe('My own answer')
   control(render(first, 'A'), 'button').props.onClick?.()
   await vi.waitFor(() =>
     expect(harness.submit).toHaveBeenCalledWith({
@@ -204,7 +206,7 @@ it('follows triage picks until a manual edit, then resets the draft on the next 
     }),
   )
 
-  expect(control(render(next, 'A', 'Where?'), 'textarea').props.value).toBe('- Where? — A')
+  expect(markdownField(render(next, 'A', 'Where?')).props.value).toBe('- Where? — A')
 })
 
 const writesNothing = () => {
@@ -230,13 +232,13 @@ it('adds a discussion answer under the picks, writes nothing, and stops followin
   const pick = (answerId: string) =>
     (harness.triage as { pick: (index: number, answerId: string) => void }).pick(0, answerId)
 
-  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A')
+  expect(markdownField(render('A')).props.value).toBe('- Which? — A')
   addToDraft('Because the lock is held.')
-  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A\n\nBecause the lock is held.')
+  expect(markdownField(render('A')).props.value).toBe('- Which? — A\n\nBecause the lock is held.')
   pick('B')
-  expect(control(render('A'), 'textarea').props.value).toBe('- Which? — A\n\nBecause the lock is held.')
+  expect(markdownField(render('A')).props.value).toBe('- Which? — A\n\nBecause the lock is held.')
   addToDraft('And a second thing.')
-  expect(control(render('A'), 'textarea').props.value).toBe(
+  expect(markdownField(render('A')).props.value).toBe(
     '- Which? — A\n\nBecause the lock is held.\n\nAnd a second thing.',
   )
   writesNothing()
@@ -246,9 +248,9 @@ it('adds a discussion answer into an empty body draft as the draft itself', () =
   resetAdd()
   const waitId = aWaitId()
   const render = () => mount(waitId, () => editor(waitId), { by: body })
-  expect(control(render(), 'textarea').props.value).toBe('')
+  expect(markdownField(render()).props.value).toBe('')
   addToDraft('Reasoned in Discussion.')
-  expect(control(render(), 'textarea').props.value).toBe('Reasoned in Discussion.')
+  expect(markdownField(render()).props.value).toBe('Reasoned in Discussion.')
   writesNothing()
 })
 
@@ -259,15 +261,15 @@ it('adds a discussion answer to the answer box, opening it, and the person still
     mount(waitId, () => Requeue({ project: 'lingtai', issue: 112, waitId, asked: true, question: 'Which helper?' }), {
       by: asked,
     })
-  expect(findControl(render(), 'textarea')).toBeNull()
+  expect(findMarkdownField(render())).toBeNull()
   addToDraft('Use the first helper.')
   const open = render()
-  expect(control(open, 'textarea').props.value).toBe('Use the first helper.')
+  expect(markdownField(open).props.value).toBe('Use the first helper.')
   expect(findControl(open, 'input')).toBeNull()
   writesNothing()
 
   addToDraft('It is already tested.')
-  expect(control(render(), 'textarea').props.value).toBe('Use the first helper.\n\nIt is already tested.')
+  expect(markdownField(render()).props.value).toBe('Use the first helper.\n\nIt is already tested.')
   writesNothing()
 
   control(render(), 'button').props.onClick?.()
@@ -290,7 +292,7 @@ it('does not add when no text-writing resolution is the one drawn first', () => 
   render()
   expect((harness.triage as { target: unknown }).target).toBeNull()
   addToDraft('Ignored.')
-  expect(control(render(), 'textarea').props.value).toBe('')
+  expect(markdownField(render()).props.value).toBe('')
   writesNothing()
 })
 
@@ -341,9 +343,9 @@ it.each([
     expect(html).toContain(`<p>${question}</p>`)
     expect(html).toContain('Your answer')
     expect(html).toContain('>Answer</button>')
-    expect(control(render(), 'textarea').props.placeholder).toBe('every attempt at this ticket is told this')
+    expect(markdownField(render()).props.placeholder).toBe('every attempt at this ticket is told this')
 
-    control(render(), 'textarea').props.onChange?.({ target: { value: 'Use the first option' } })
+    typeInto(render(), 'Use the first option')
     control(render(), 'button').props.onClick?.()
     await vi.waitFor(() =>
       expect(harness.submit).toHaveBeenCalledWith({
@@ -469,10 +471,10 @@ it("draws what the agent asked as choices, and keeps the agent's picks apart fro
   expect(html).toContain('Recommended')
   expect(html).not.toContain('Which file?')
   // The body box is prefilled with the agent's composition, which the person may still edit.
-  expect(control(render(), 'textarea').props.value).toBe('- Which helper? — A')
+  expect(markdownField(render()).props.value).toBe('- Which helper? — A')
 
   triage().pick(0, 'B', 'asked')
-  expect(control(render(), 'textarea').props.value).toBe('- Which helper? — B')
+  expect(markdownField(render()).props.value).toBe('- Which helper? — B')
   // Triage's picks are what `Start over` sends, and the agent's answer id is not one of its.
   expect(triage().picks).toEqual({})
 })

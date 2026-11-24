@@ -25,7 +25,6 @@ const view = (target: ReadView['target']): ReadView => ({
   writer: line('claude-code'),
   reviewer: line('claude-code'),
   tickets: line('github' as const),
-  githubOff: null,
   ticketsLocked: false,
   kinds: line(['bug']),
   heldBy: line('agent:hold'),

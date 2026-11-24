@@ -1625,6 +1625,13 @@ export const IntegrationSucceeded = z.object({
   branch: z.string(),
   base: z.string(),
   mergeCommit: z.string(),
+  /**
+   * Whether the pass that made this landing was to join the draft with it: team mode and `base` its recipe's
+   * `branch.personal`, as the pass resolved the recipe it holds. It is bound here, to the attempt, so a recovery after
+   * a crash reads what the pass decided and not a recipe edited since. Absent on an event written before it existed,
+   * and recovery then reads the recipe in force at the event.
+   */
+  draft: z.boolean().optional(),
 })
 /** @summary The conductor ran a project's check command on the base branch and recorded whether it passed. */
 export const BaseChecked = z.object({
@@ -2561,7 +2568,7 @@ export const PrDraftTicketAdded = z.object({
 })
 
 /** Why a submit was refused; a closed set a reader can switch on. */
-const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'git'])
+const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'main-missing', 'git'])
 
 /**
  * A submit was refused while it was served: the PR's number is spent and the stream ends here.
@@ -2607,7 +2614,12 @@ export const PrFixLanded = z.object({
  *
  * @summary One of a PR's In progress steps finished, on the head commit it ran on.
  */
-export const PrStepDone = z.object({ step: z.string().min(1), headSha: z.string().min(1) })
+export const PrStepDone = z.object({
+  step: z.string().min(1),
+  headSha: z.string().min(1),
+  /** The `main` commit a clean sync merged (#1373); absent on every other step and on events written before it. */
+  main: z.string().min(1).optional(),
+})
 
 /** Why a PR waits on a person; each step's ticket extends the set with its own. */
 const PrWaitReason = z.enum([

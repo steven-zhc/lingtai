@@ -3,13 +3,13 @@
  *
  * Unit, by 0060 §1: a memory log and a fake `DaemonStore` whose `streams()` filters by prefix.
  */
-import { integrationStream, ticketStream } from '@lingtai/domain'
+import { integrationStream, projectStream, ticketReducer, ticketStream } from '@lingtai/domain'
 import type { ProjectState } from '@lingtai/domain'
 import { aClaim, aLanding } from '@lingtai/domain/test/events'
 import { makeStream } from '@lingtai/domain/test/support'
-import type { EventStore } from '@lingtai/event-store'
+import { type EventStore, readThroughSnapshot } from '@lingtai/event-store'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { landingsInFlight } from '@lingtai/project'
+import { landingsInFlight, readDraft } from '@lingtai/project'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
@@ -64,10 +64,10 @@ const attempted = (ticket: string) => ({
   actor: 'conductor' as const,
   data: { ticketId: ticket, branch: 'agent/1', headSha: 'b'.repeat(40) },
 })
-const succeeded = (ticket: string, mergeCommit = MERGE, base = BASE) => ({
+const succeeded = (ticket: string, mergeCommit = MERGE, base = BASE, draft?: boolean) => ({
   type: 'IntegrationSucceeded' as const,
   actor: 'conductor' as const,
-  data: { ticketId: ticket, branch: 'agent/1', base, mergeCommit },
+  data: { ticketId: ticket, branch: 'agent/1', base, mergeCommit, ...(draft === undefined ? {} : { draft }) },
 })
 
 const typesOf = async (store: { read(s: string): Promise<{ type: string }[]> }, stream: string) =>
@@ -95,6 +95,105 @@ describe('the landings a dead conductor owed', () => {
     expect(landed?.data).toMatchObject({ mergeCommit: MERGE, base: BASE })
     expect(lines).toEqual([`recorded the landing of ${OWED} at ${MERGE}, left by a conductor that died`])
     expect(await Effect.runPromise(landingsInFlight(PROJECT, BASE, store))).toEqual([])
+  })
+
+  it('joins the draft of a team project when the landing is on its personal branch, and not on a PR branch', async () => {
+    const { store, daemonStore } = await world()
+    await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    const team = {
+      ...projectOf(PROJECT),
+      recipe: {
+        sourceHash: 'h',
+        source: `mode: team\nbranch:\n  main: main\n  personal: ${BASE}\n`,
+        by: 'file',
+        seq: 1n,
+        at: new Date(0),
+      },
+    } as unknown as ProjectState
+    await Effect.runPromise(
+      recordOwedLandingsEffect({ projects: [team], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+    )
+    const draft = await Effect.runPromise(readDraft(PROJECT, store))
+    expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
+  })
+
+  it('joins the draft by the recipe the landing was made under, not the one in force at recovery', async () => {
+    const { store, daemonStore } = await world()
+    const recipe = (personal: string) => `mode: team\nbranch:\n  main: main\n  personal: ${personal}\n`
+    const changed = (personal: string) => ({
+      type: 'ProjectRecipeChanged' as const,
+      actor: 'conductor' as const,
+      data: { sourceHash: personal, source: recipe(personal), by: 'file' },
+    })
+    await store.append(projectStream(PROJECT), 0, [changed(BASE)] as never)
+    await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    // The personal branch moved after the crash: today's recipe names another branch.
+    await store.append(projectStream(PROJECT), 1, [changed('other/personal')] as never)
+    const now = {
+      ...projectOf(PROJECT),
+      recipe: { sourceHash: 'x', source: recipe('other/personal'), by: 'file', seq: 9n, at: new Date(0) },
+    } as unknown as ProjectState
+    await Effect.runPromise(
+      recordOwedLandingsEffect({ projects: [now], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+    )
+    const draft = await Effect.runPromise(readDraft(PROJECT, store))
+    expect(draft.map((t) => [t.ticket, t.mergeCommit])).toEqual([['1', MERGE]])
+  })
+
+  it("joins the draft by the pass's own decision when the recipe changed while it ran, before the success", async () => {
+    const recipe = (personal: string) => `mode: team\nbranch:\n  main: main\n  personal: ${personal}\n`
+    const changed = (personal: string) => ({
+      type: 'ProjectRecipeChanged' as const,
+      actor: 'conductor' as const,
+      data: { sourceHash: personal, source: recipe(personal), by: 'file' },
+    })
+    for (const [draft, expected] of [
+      [true, [['1', MERGE]]],
+      [false, []],
+    ] as const) {
+      const { store, daemonStore } = await world()
+      await store.append(projectStream(PROJECT), 0, [changed(BASE)] as never)
+      await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+      // The pass resolved the recipe above; the personal branch moved mid-pass, before it pushed.
+      await store.append(projectStream(PROJECT), 1, [changed('other/personal')] as never)
+      await store.append(LANE, 0, [attempted(OWED), succeeded(OWED, MERGE, BASE, draft)] as never)
+      const now = {
+        ...projectOf(PROJECT),
+        recipe: { sourceHash: 'x', source: recipe('other/personal'), by: 'file', seq: 9n, at: new Date(0) },
+      } as unknown as ProjectState
+      await Effect.runPromise(
+        recordOwedLandingsEffect({ projects: [now], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+      )
+      const joined = await Effect.runPromise(readDraft(PROJECT, store))
+      expect(joined.map((t) => [t.ticket, t.mergeCommit])).toEqual(expected)
+    }
+  })
+
+  it("an event without the pass's decision does not join by a recipe that was in force only mid-pass", async () => {
+    const { store, daemonStore } = await world()
+    const recipe = (personal: string) => `mode: team\nbranch:\n  main: main\n  personal: ${personal}\n`
+    const changed = (personal: string) => ({
+      type: 'ProjectRecipeChanged' as const,
+      actor: 'conductor' as const,
+      data: { sourceHash: personal, source: recipe(personal), by: 'file' },
+    })
+    await store.append(projectStream(PROJECT), 0, [changed(BASE)] as never)
+    await store.append(OWED, 0, aClaim(makeStream(OWED), 'r1', DEAD))
+    await store.append(projectStream(PROJECT), 1, [changed(BASE), changed('other/personal')] as never)
+    await store.append(LANE, 0, [attempted(OWED), succeeded(OWED)] as never)
+    const now = {
+      ...projectOf(PROJECT),
+      recipe: { sourceHash: 'x', source: recipe('other/personal'), by: 'file', seq: 9n, at: new Date(0) },
+    } as unknown as ProjectState
+    await Effect.runPromise(
+      recordOwedLandingsEffect({ projects: [now], store, read: {}, withStreams: (fn) => fn(daemonStore) }),
+    )
+    const draft = await Effect.runPromise(readDraft(PROJECT, store))
+    expect(draft).toEqual([])
+    const landed = await Effect.runPromise(readThroughSnapshot(store, ticketReducer, OWED, 'all', {}))
+    expect(landed.landed?.mergeCommit).toBe(MERGE)
   })
 
   it('writes nothing for a ticket already landed at that commit', async () => {

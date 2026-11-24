@@ -35,8 +35,8 @@ describe('the sitemap', () => {
   })
 
   it('dates a doc by its own file and the events page by the catalogue it is drawn from', () => {
-    const pages = sitemapPages(['guide.md', 'plugins/index.md'], true)
-    expect(pages.find((p) => p.path === '/docs/guide/')?.source).toBe('doc/guide.md')
+    const pages = sitemapPages(['checks-and-spend.md', 'plugins/index.md'], true)
+    expect(pages.find((p) => p.path === '/docs/checks-and-spend/')?.source).toBe('doc/checks-and-spend.md')
     expect(pages.find((p) => p.path === '/docs/plugins/')?.source).toBe('doc/plugins/index.md')
     expect(pages.find((p) => p.path === '/docs/events/')?.source).toBe('doc/events.json')
     expect(pages.find((p) => p.path === '/docs/')?.source).toBeNull()
