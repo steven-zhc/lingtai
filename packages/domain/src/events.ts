@@ -2568,7 +2568,7 @@ export const PrDraftTicketAdded = z.object({
 })
 
 /** Why a submit was refused; a closed set a reader can switch on. */
-const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'git'])
+const PrRefusalReason = z.enum(['solo', 'open-pr', 'nothing-landed', 'personal-missing', 'main-missing', 'git'])
 
 /**
  * A submit was refused while it was served: the PR's number is spent and the stream ends here.

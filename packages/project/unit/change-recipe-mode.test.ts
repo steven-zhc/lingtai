@@ -54,6 +54,7 @@ const frozen = (tickets: string[]) => ({
   branch: 'team',
   main: 'main',
   frozenSha: 'f'.repeat(40),
+  prBranch: 'lingtai-team-pr-1',
   tickets: tickets.map((t) => ({ ticket: t, mergeCommit: `m${t}`, title: `t${t}` })),
 })
 

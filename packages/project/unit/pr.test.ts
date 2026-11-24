@@ -61,6 +61,7 @@ const frozen = (tickets: { ticket: string; mergeCommit: string; title: string }[
   branch: 'lingtai-team',
   main: 'main',
   frozenSha: 'f'.repeat(40),
+  prBranch: 'lingtai-team-pr-1',
   tickets,
 })
 

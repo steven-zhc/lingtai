@@ -152,8 +152,14 @@ async function frozen(): Promise<EventStore> {
         ...p,
         git: (project, args) =>
           args[0] === 'rev-parse'
-            ? Effect.succeed({ code: 0, stdout: `${FROZEN}\n`, stderr: '' })
-            : p.git(project, args),
+            ? Effect.succeed({
+                code: 0,
+                stdout: `${args[3]?.startsWith('refs/heads/main') ? MAIN : FROZEN}\n`,
+                stderr: '',
+              })
+            : args[0] === 'merge-base' && args[3] === MAIN
+              ? Effect.succeed({ code: 1, stdout: '', stderr: '' })
+              : p.git(project, args),
       },
       'lingtai',
       1,

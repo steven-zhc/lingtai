@@ -680,7 +680,13 @@ const inProgress = (data: PayloadOf<'PrInProgress'>): ToAppend<PayloadOf<'PrInPr
 /** The freeze: only a `requested` PR is frozen; anything else decides nothing. */
 export function freezeTransition(
   state: PrState,
-  frozen: { branch: string; main: string; frozenSha: string; tickets: PayloadOf<'PrInProgress'>['tickets'] },
+  frozen: {
+    branch: string
+    main: string
+    frozenSha: string
+    prBranch: string
+    tickets: PayloadOf<'PrInProgress'>['tickets']
+  },
 ): ToAppend<PayloadOf<'PrInProgress'>> | null {
   if (state.status !== 'requested' || state.n === null) return null
   return inProgress({
@@ -688,7 +694,7 @@ export function freezeTransition(
     branch: frozen.branch,
     main: frozen.main,
     frozenSha: frozen.frozenSha,
-    prBranch: `${frozen.branch}-pr-${state.n}`,
+    prBranch: frozen.prBranch,
     tickets: frozen.tickets,
   })
 }
