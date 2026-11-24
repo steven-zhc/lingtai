@@ -91,8 +91,8 @@ or a board with its stuck work removed, would contradict the pitch.
     | Part                  | #   | Chapter                                                                        | File                 |
     | --------------------- | --- | ------------------------------------------------------------------------------ | -------------------- |
     | Get started           | 1   | Land your first ticket — local, every default, about ten minutes              | `tutorial.md`        |
-    |                       | 2   | Team mode, the way we recommend — add a GitHub project, switch to team        | `team.md`            |
-    |                       | 3   | A day in team mode — assign a ticket, it lands on your branch, submit a PR, CI, merge | `pull-requests.md` |
+    |                       | 2   | A day in team mode — two tickets land on your branch, submit a PR, merge it, the tickets close | `team.md` |
+    |                       | 3   | Connect GitHub — add your own repository, assign issues, CI, a review that asks for a change | `connect-github.md` |
     | Understand it         | 4   | How an attempt goes — the ten steps, why a card stops where it does          | `concepts.md`        |
     |                       | 5   | The board — what each column means, the PR view, the keys                     | `board.md`           |
     | Every day             | 6   | Writing a ticket an agent can work                                             | `tickets.md`         |
@@ -101,9 +101,8 @@ or a board with its stuck work removed, would contradict the pitch.
     |                       | 9   | Checks, review and spend                                                       | `checks-and-spend.md` |
     |                       | 10  | The sandbox and what an agent can reach                                        | `safety.md`          |
 
-    Chapters 2 and 3 use [comic-garden](https://github.com/steven-zhc/comic-garden),
-    a template repository made for practising team mode; chapter 1 uses Chapter
-    Garden.
+    Chapters 1 and 2 use Chapter Garden, on local tickets, in one home; chapter
+    3 adds the reader's own repository to that home.
 14. **A chapter is 600–800 words and never more than 800**, counted as `wc -w`
     over the file with fenced code blocks removed. A chapter answers one
     question, and its first screen gives the answer. A shorter chapter is fine
@@ -122,7 +121,7 @@ or a board with its stuck work removed, would contradict the pitch.
     `reference.md`, `design.md`, `roadmap.md`, `why.md`, `from-symphony.md` —
     stay in `doc/` and stay published under §6, but no chapter sends a newcomer
     to them. A chapter that takes over one of them (`tickets.md` from
-    `guide.md`, chapter 2 from `tutorial-more.md`) says so in its own ticket.
+    `guide.md`, chapter 3 from `tutorial-more.md`) says so in its own ticket.
 20. **The slogan and the front page's hero intro are not chapters and are not
     edited under this rule.**
 
