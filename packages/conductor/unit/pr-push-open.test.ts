@@ -41,6 +41,14 @@ async function landed(store: EventStore, issue: string) {
     },
     { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: `m${issue}`, base: 'lingtai-team' } },
   ])
+  // The draft is the PR's own list (ADR 0131 §2): a ticket landing on the personal branch joins it while it is a draft.
+  const pr1 = await store.read(prStream('lingtai', 1))
+  const status = pr1.length === 0 ? null : reducePr(pr1).status
+  if (status === null || status === 'draft') {
+    await store.append(prStream('lingtai', 1), pr1.length, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
+    ])
+  }
 }
 
 interface World {

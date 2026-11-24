@@ -802,7 +802,7 @@ export const freezePr = (ports: PrPorts, project: string, n: number): Effect.Eff
               mergeCommit: t.mergeCommit,
               title: reduceTicket(events).title ?? `#${t.ticket}`,
             })
-          } else if (answer.code === 1) notKept.push(t)
+          } else if (answer.code === 1) notKept.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, from: n })
           else return yield* refuse('git', gitSaid(ask, answer))
         }
         if (held.length === 0) {
