@@ -22,6 +22,14 @@ const elsewhere = {
   repo: { remote: '/srv/git/lingtai.git' },
 } as unknown as Recipe
 const FROZEN = 'f'.repeat(40)
+const MAIN = 'a'.repeat(40)
+/** What the mirror says of `main` for the freeze: its own sha, which holds none of the draft's tickets. */
+const mainAnswer = (args: readonly string[]) =>
+  args[0] === 'rev-parse' && args[3]?.startsWith('refs/heads/main')
+    ? { code: 0, stdout: `${MAIN}\n`, stderr: '' }
+    : args[0] === 'merge-base' && args[3] === MAIN
+      ? { code: 1, stdout: '', stderr: '' }
+      : null
 const OTHER = 'e'.repeat(40)
 const REF = 'refs/heads/lingtai-team-pr-1'
 
@@ -115,22 +123,24 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     facts: (_project, tickets) =>
       Effect.succeed(tickets.map((ticket) => ({ ticket, open: w.open[ticket] ?? null, spend: 0.5 }))),
     git: (_project, args) =>
-      Effect.succeed(
-        args[0] === 'rev-parse'
-          ? args[3]?.startsWith('refs/lingtai/pr/1/back')
-            ? { code: 1, stdout: '', stderr: '' }
-            : { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
-          : args[0] === 'cat-file'
-            ? { code: w.object, stdout: '', stderr: '' }
-            : {
-                code:
-                  args[1] === '--is-ancestor' && args[3] === FROZEN && args[2]?.startsWith('m')
-                    ? 0
-                    : (w.ancestorOf?.(args[2]!, args[3]!) ?? w.ancestor),
-                stdout: '',
-                stderr: '',
-              },
-      ),
+      mainAnswer(args) !== null
+        ? Effect.succeed(mainAnswer(args)!)
+        : Effect.succeed(
+            args[0] === 'rev-parse'
+              ? args[3]?.startsWith('refs/lingtai/pr/1/back')
+                ? { code: 1, stdout: '', stderr: '' }
+                : { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+              : args[0] === 'cat-file'
+                ? { code: w.object, stdout: '', stderr: '' }
+                : {
+                    code:
+                      args[1] === '--is-ancestor' && args[3] === FROZEN && args[2]?.startsWith('m')
+                        ? 0
+                        : (w.ancestorOf?.(args[2]!, args[3]!) ?? w.ancestor),
+                    stdout: '',
+                    stderr: '',
+                  },
+          ),
     remote: (_project, args) =>
       Effect.sync(() => {
         w.remoteCalls.push([...args])

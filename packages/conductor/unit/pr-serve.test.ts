@@ -22,6 +22,7 @@ import {
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
 const solo = { branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
 const FROZEN = 'f'.repeat(40)
+const MAIN = 'a'.repeat(40)
 
 async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
   await store.append(ticketStream('lingtai', issue), 0, [
@@ -52,7 +53,19 @@ async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
 /** A fake mirror: `personal` resolves to FROZEN (or does not), and `reachable` are the merge commits it holds. */
 function ports(
   store: EventStore,
-  options: { recipe?: Recipe; personal?: boolean; reachable?: string[]; mergeBase?: number } = {},
+  options: {
+    recipe?: Recipe
+    personal?: boolean
+    reachable?: string[]
+    mergeBase?: number
+    /** merge commits `main` holds */
+    onMain?: string[]
+    /** exit code of the question asked of `main` */
+    mainBase?: number
+    mainMissing?: boolean
+    /** branches the remote already has */
+    taken?: string[]
+  } = {},
 ): PrPorts & { calls: string[] } {
   const calls: string[] = []
   return {
@@ -66,16 +79,30 @@ function ports(
     build: () => Effect.succeed({ kind: 'unknown', why: 'this test never builds' }),
     checkedOut: () => Effect.succeed(null),
     tickets: () => Effect.fail(new Error('no ticket channel in this test')),
-    remote: () => Effect.fail(new Error('the freeze never reaches the remote')),
+    remote: (_project, _args) =>
+      Effect.succeed({
+        code: 0,
+        stdout: (options.taken ?? []).map((b) => `${'b'.repeat(40)}\trefs/heads/${b}\n`).join(''),
+        stderr: '',
+      }),
     github: () => Effect.fail(new Error('the freeze never reaches GitHub')),
     facts: () => Effect.succeed([]),
     git: (_project, args) =>
       Effect.sync(() => {
         calls.push(args.join(' '))
+        if (args[0] === 'rev-parse' && args[3]?.startsWith('refs/heads/main')) {
+          return options.mainMissing === true
+            ? { code: 1, stdout: '', stderr: '' }
+            : { code: 0, stdout: `${MAIN}\n`, stderr: '' }
+        }
         if (args[0] === 'rev-parse') {
           return options.personal === false
             ? { code: 1, stdout: '', stderr: '' }
             : { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+        }
+        if (args[3] === MAIN) {
+          if (options.mainBase !== undefined) return { code: options.mainBase, stdout: '', stderr: '' }
+          return { code: (options.onMain ?? []).includes(args[2]!) ? 0 : 1, stdout: '', stderr: '' }
         }
         if (options.mergeBase !== undefined) return { code: options.mergeBase, stdout: '', stderr: '' }
         return { code: (options.reachable ?? []).includes(args[2]!) ? 0 : 1, stdout: '', stderr: '' }
@@ -214,6 +241,52 @@ describe('the freeze', () => {
     await request(store)
     await serve(ports(store, { personal: false }))
     expect((await state(store)).refusal?.reason).toBe('personal-missing')
+  })
+
+  it('drops tickets already on main: held one, notKept empty, draft empty', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await landed(store, '2')
+    await landed(store, '3')
+    await request(store)
+    await serve(ports(store, { reachable: ['m1', 'm2', 'm3'], onMain: ['m1', 'm2'] }))
+    const pr = await state(store)
+    expect(pr.status).toBe('in-progress')
+    expect(pr.tickets.map((t) => t.ticket)).toEqual(['3'])
+    expect(pr.draft).toEqual([])
+    expect((await state(store, 2)).draft).toEqual([])
+  })
+
+  it('refuses git when git exits 128 on the main question, holding nothing', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    await serve(ports(store, { reachable: ['m1'], mainBase: 128 }))
+    const pr = await state(store)
+    expect(pr.refusal?.reason).toBe('git')
+    expect(pr.tickets).toEqual([])
+  })
+
+  it('refuses main-missing when main does not resolve', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    await serve(ports(store, { mainMissing: true }))
+    expect((await state(store)).refusal?.reason).toBe('main-missing')
+  })
+
+  it('skips a PR branch name the remote already has', async () => {
+    const store = createMemoryEventStore()
+    await landed(store, '1')
+    await request(store)
+    await serve(ports(store, { reachable: ['m1'], taken: ['lingtai-team-pr-1'] }))
+    expect((await state(store)).prBranch).toBe('lingtai-team-pr-1-2')
+
+    const again = createMemoryEventStore()
+    await landed(again, '1')
+    await request(again)
+    await serve(ports(again, { reachable: ['m1'], taken: ['lingtai-team-pr-1', 'lingtai-team-pr-1-2'] }))
+    expect((await state(again)).prBranch).toBe('lingtai-team-pr-1-3')
   })
 
   it('a merge-base exit other than 0 or 1 is git, never not-an-ancestor', async () => {

@@ -91,7 +91,12 @@ async function waiting(reason: 'sync-red' | 'sync-conflict' = 'sync-red'): Promi
   const store = createMemoryEventStore()
   await run(submitPr('lingtai', 'team', 'human:steven', store))
   await run(
-    recordPrInProgress('lingtai', 1, { branch: 'lingtai-team', main: 'main', frozenSha: FROZEN, tickets: [] }, store),
+    recordPrInProgress(
+      'lingtai',
+      1,
+      { branch: 'lingtai-team', main: 'main', frozenSha: FROZEN, prBranch: 'lingtai-team-pr-1', tickets: [] },
+      store,
+    ),
   )
   await run(recordPrWaiting('lingtai', 1, { step: 'sync', reason, detail: 'the build is red', headSha: FROZEN }, store))
   return store
@@ -199,6 +204,7 @@ describe('a back, served', () => {
           branch: 'lingtai-team',
           main: 'main',
           frozenSha: FROZEN,
+          prBranch: 'lingtai-team-pr-1',
           tickets: [
             { ticket: '1', mergeCommit: 'm1', title: 't1' },
             { ticket: '2', mergeCommit: 'm2', title: 't2' },

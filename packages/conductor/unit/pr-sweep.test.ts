@@ -24,6 +24,14 @@ const elsewhere = {
   repo: { remote: '/srv/git/lingtai.git' },
 } as unknown as Recipe
 const FROZEN = 'f'.repeat(40)
+const MAIN = 'a'.repeat(40)
+/** What the mirror says of `main` for the freeze: its own sha, which holds none of the draft's tickets. */
+const mainAnswer = (args: readonly string[]) =>
+  args[0] === 'rev-parse' && args[3]?.startsWith('refs/heads/main')
+    ? { code: 0, stdout: `${MAIN}\n`, stderr: '' }
+    : args[0] === 'merge-base' && args[3] === MAIN
+      ? { code: 1, stdout: '', stderr: '' }
+      : null
 
 interface World {
   pull: PullState | Error
@@ -79,13 +87,15 @@ function ports(store: EventStore, w: World, recipe: Recipe = team): PrPorts {
     github: () => Effect.succeed(github),
     facts: (_p, tickets) => Effect.succeed(tickets.map((ticket) => ({ ticket, open: true, spend: 0 }))),
     git: (_p, args) =>
-      Effect.sync(() => {
-        w.gitCalls.push([...args])
-        if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
-        if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
-        if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
-        return { code: w.reach, stdout: '', stderr: '' }
-      }),
+      mainAnswer(args) !== null
+        ? Effect.succeed(mainAnswer(args)!)
+        : Effect.sync(() => {
+            w.gitCalls.push([...args])
+            if (args[0] === 'rev-parse') return { code: 0, stdout: `${FROZEN}\n`, stderr: '' }
+            if (args[0] === 'cat-file') return { code: 0, stdout: '', stderr: '' }
+            if (args[0] === 'merge-base' && args[2]?.startsWith('m')) return { code: 0, stdout: '', stderr: '' }
+            return { code: w.reach, stdout: '', stderr: '' }
+          }),
     remote: (_p, args) =>
       Effect.succeed(
         args[0] === 'ls-remote' ? { code: 0, stdout: '', stderr: '' } : { code: 0, stdout: '', stderr: '' },
@@ -316,6 +326,8 @@ describe('every read the sweep makes is bounded, and only a timeout is called on
     await landed(store, '1')
     await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     const w = aWorld()
+    // The freeze reads the remote too (the PR branch name), so it is served first, before the remote hangs.
+    await Effect.runPromise(servePr(ports(store, w), 'lingtai', 1, []))
     let asked = 0
     const p: PrPorts = {
       ...ports(store, w),

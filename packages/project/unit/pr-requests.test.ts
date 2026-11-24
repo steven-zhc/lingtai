@@ -51,6 +51,7 @@ async function waiting(wait: Partial<PayloadOf<'PrWaiting'>> = {}): Promise<Even
         branch: 'lingtai-team',
         main: 'main',
         frozenSha: A,
+        prBranch: 'lingtai-team-pr-1',
         tickets: [{ ticket: '43', mergeCommit: 'd'.repeat(40), title: 't' }],
       },
       store,
@@ -156,7 +157,12 @@ describe('retry and back', () => {
     const store = createMemoryEventStore()
     await run(submitPr('lingtai', 'team', 'human:steven', store))
     await run(
-      recordPrInProgress('lingtai', 1, { branch: 'lingtai-team', main: 'main', frozenSha: A, tickets: [] }, store),
+      recordPrInProgress(
+        'lingtai',
+        1,
+        { branch: 'lingtai-team', main: 'main', frozenSha: A, prBranch: 'lingtai-team-pr-1', tickets: [] },
+        store,
+      ),
     )
     expect(await run(requestPrBack(ref, { by: 'human:x' }, store))).toMatchObject({
       kind: 'refused',

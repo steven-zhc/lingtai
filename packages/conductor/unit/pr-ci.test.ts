@@ -71,6 +71,7 @@ async function frozen(): Promise<EventStore> {
         branch: 'lingtai-team',
         main: 'main',
         frozenSha: FROZEN,
+        prBranch: 'lingtai-team-pr-1',
         tickets: [{ ticket: '1', mergeCommit: 'm1', title: 't' }],
       },
       store,
