@@ -448,7 +448,8 @@ describe('layoutBranches', () => {
         expect(n.x).toBeGreaterThanOrEqual(d.gutter)
         expect(n.x).toBeLessThanOrEqual(d.width)
       }
-      expect(d.width).toBe(1000)
+      // Labels are written whole, so a crowded frame widens the viewBox rather than overwrite itself; the SVG scales to the card.
+      expect(d.width).toBeGreaterThanOrEqual(1000)
     })
   }
 
