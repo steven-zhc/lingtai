@@ -555,7 +555,9 @@ describe('the book', () => {
     expect(near.previous?.file).toBe('team.md')
     expect(near.next?.file).toBe('board.md')
     expect(neighboursOf('board', all).previous?.file).toBe('concepts.md')
-    expect(neighboursOf('board', all).next?.file).toBe('when-it-fails.md')
+    expect(neighboursOf('board', all).next?.file).toBe('tickets.md')
+    expect(neighboursOf('tickets', all).previous?.file).toBe('board.md')
+    expect(neighboursOf('tickets', all).next?.file).toBe('when-it-fails.md')
   })
 
   it('gives the first no previous and the last no next', () => {
@@ -567,7 +569,7 @@ describe('the book', () => {
     const without = new Set(all)
     without.delete('concepts')
     expect(neighboursOf('team', without).next?.file).toBe('board.md')
-    expect(neighboursOf('when-it-fails', without).previous?.file).toBe('board.md')
+    expect(neighboursOf('when-it-fails', without).previous?.file).toBe('tickets.md')
     expect(neighboursOf('concepts', without)).toEqual({ previous: null, next: null })
   })
 
