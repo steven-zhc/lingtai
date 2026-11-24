@@ -24,6 +24,7 @@ import {
   makeWorktreeAction,
   redoParagraph,
   withRedoParagraph,
+  afterOpeningLines,
   rerunId,
 } from '@lingtai/actions'
 import type { LandedCommit, LandedPath, LandedTitle } from '@lingtai/actions'
@@ -5171,8 +5172,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                 const implementerParts: RecordPart[] =
                   recordedBrief !== null
                     ? [withRedoParagraph(recordedBrief, redoNote)]
-                    : [
-                        ...renderPromptParts(
+                    : afterOpeningLines(
+                        renderPromptParts(
                           options.prompt,
                           { number: Number(brief.ticket.ref), title: brief.ticket.title, body: brief.ticket.body },
                           buildCommands(recipe.steps),
@@ -5193,23 +5194,27 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                             ? {}
                             : { bodyAt: { stream: took.ticketId, version: took.claimVersion } },
                         ),
-                        // The recipe's own words at `implement`, appended (`#266`).
-                        ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
-                        ...(reduced.split === null
-                          ? []
-                          : [
-                              splitReturnParagraph(
-                                splitRead ??
-                                  reduced.split.children.map((c) => ({
-                                    number: c.number,
-                                    title: null,
-                                    stateReason: null,
-                                  })),
-                                doneWhenItems(brief.ticket.body),
-                              ),
-                            ]),
-                        ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
-                      ]
+                        // The recipe's own words at `implement` (`#266`), the split paragraph and the redo
+                        // note are instructions, so they go right after the opening lines, ahead of the
+                        // ticket (#1404).
+                        [
+                          ...(spec.prompt === '' ? [] : [alsoText(spec.prompt)]),
+                          ...(reduced.split === null
+                            ? []
+                            : [
+                                splitReturnParagraph(
+                                  splitRead ??
+                                    reduced.split.children.map((c) => ({
+                                      number: c.number,
+                                      title: null,
+                                      stateReason: null,
+                                    })),
+                                  doneWhenItems(brief.ticket.body),
+                                ),
+                              ]),
+                          ...(redoNote === null ? [] : [`${redoNote}\n\n`]),
+                        ],
+                      )
                 const implementerFor = {
                   _tag: 'Action' as const,
                   step: 'implement' as const,
@@ -5598,11 +5603,11 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                       : continuation?.declined === undefined
                         ? {}
                         : { declined: continuation.declined }),
+                    // Placed by the brief itself, ahead of the long parts (#1404), and still as parts,
+                    // so no recorded offset depends on where the text before them happened to end.
+                    redo: redoNote,
+                    also: spec.prompt,
                   }),
-                  // Appended as a part, never to the finished string, so no recorded offset
-                  // depends on where the text before it happened to end.
-                  ...(spec.prompt === '' ? [] : [`\n\n## Also for this project\n\n${spec.prompt}\n`]),
-                  ...(redoNote === null ? [] : [`\n\n${redoNote}`]),
                 ]
           const fixPrompt = fixParts.map((part) => (typeof part === 'string' ? part : part.text)).join('')
           const fixFor: SpentFor = {
