@@ -499,7 +499,11 @@ fixes the actions, their bounds and the endings that router works inside.
 
 21. **`implement` ends in one of five outcomes: the agent declares it, and the
     facts correct only a declaration that contradicts them.** The agent states
-    its outcome in its final answer. The facts are the sha the step first
+    its outcome in its final answer, as a fenced `outcome` block of JSON; a
+    `json` fence or a last line with the same JSON is read too, and a bare
+    `Implemented` in an `outcome` fence (#1398). Every block found must agree, or
+    nothing is declared, and a redo after that quotes the message's tail and the
+    block to end with. The facts are the sha the step first
     started at, the head now, and the commits between (WIP commits counted,
     known by `RunKeptUncommitted`'s sha).
 

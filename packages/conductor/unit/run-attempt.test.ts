@@ -3146,6 +3146,57 @@ describe('a run a transient API error cut off is run again in place (#1201)', ()
     expect(contexts.map((c) => c.rerun)).toEqual([undefined, 1, 2])
   })
 
+  it('saves the head before it writes the redo after an unreadable outcome, and for no other redo (#1398)', async () => {
+    const run = async (outcome: 'unreadable' | 'crash', save: { failed: string } | null = null) => {
+      const { bodies } = watching()
+      const { actionsAt: base } = watchingActions()
+      let lap = 0
+      const actionsAt: AttemptOptions['actionsAt'] = (step, actions) =>
+        step === 'implement'
+          ? [
+              {
+                name: 'write the change',
+                kind: 'agent',
+                yields: 'commit',
+                run: async () =>
+                  lap++ > 0
+                    ? { ...PASSED, head: 'feedface00' }
+                    : outcome === 'crash'
+                      ? { ...crashed('crash: API Error: 503 upstream'), runtime: 'claude-code' }
+                      : {
+                          verdict: 'did-not-finish' as const,
+                          evidence: 'it said so',
+                          findings: [],
+                          declared: { _tag: 'AgentFailed' as const, why: 'no outcome', said: 'all done' },
+                        },
+              },
+            ]
+          : base(step, actions)
+      const { emit } = events()
+      const order: string[] = []
+      await walkOnTestClock({
+        recipe: recipeWith({}),
+        context,
+        emit: (event) => {
+          if (event.type === 'StepRedone')
+            order.push((event.data as { unread?: boolean }).unread ? 'StepRedone:unread' : 'StepRedone')
+          return emit(event)
+        },
+        bodies,
+        actionsAt,
+        saveHead: async () => {
+          order.push('saveHead')
+          return save
+        },
+      })
+      return order
+    }
+    expect(await run('unreadable')).toEqual(['saveHead', 'StepRedone:unread'])
+    expect(await run('crash')).toEqual(['StepRedone'])
+    // A save that left no head to continue from (a refused push, a refused publication row) writes no StepRedone.
+    expect(await run('unreadable', { failed: 'push refused' })).toEqual(['saveHead'])
+  })
+
   it('holds the fourth transient crash of an attempt, counted over the attempt and not the step', async () => {
     const { bodies } = watching()
     const { actionsAt } = implementing(Array.from({ length: 4 }, () => 'API Error: 503'))

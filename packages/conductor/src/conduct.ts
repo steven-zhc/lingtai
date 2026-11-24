@@ -49,10 +49,10 @@ import {
   triageSpentOf,
   personFixRoundsOf,
   WIP_COMMIT_PREFIX,
-  accountLimitReleases,
   releasesOf,
   stepStartedAtOf,
   continuableRelease,
+  pendingRedoOf,
   cutOffPromptOf,
   expandPrompt,
   integrationStream,
@@ -276,6 +276,7 @@ import {
   landedOnBaseOf,
   priorAttemptsFromState,
   releasedHeadOf,
+  continuableRedoOf,
   type ReleasedHead,
 } from './attempts.ts'
 import { baseCheckFor, baseCheckQuestion } from './base-check.ts'
@@ -345,8 +346,14 @@ import {
   satisfyTicketEffect,
   type SplitChildBrief,
 } from './ticket/commands.ts'
+import { outcomeFormNote, withUnreadTail } from './unread-tail.ts'
 
 /** How many times a person asked for `RedoStep` on `runId`'s waits: one summand of a rerun's dispatch suffix (#1218). */
+/** The releases of `runId` that each started a rerun of it: an account limit's lift and a redo a stop interrupted (#1398). */
+function releaseRerunsOf(ticketEvents: Parameters<typeof releasesOf>[0], runId: string): number {
+  return releasesOf(ticketEvents, runId, 'AccountLimit') + releasesOf(ticketEvents, runId, 'StepRedoPending')
+}
+
 function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string): number {
   // An `AnswerQuestions` continues the asking step the same way, so it spends a suffix too (#1254): two `design` dispatches never share an id.
   return waits.filter(
@@ -1467,7 +1474,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const ticketEvents = yield* Effect.promise(() => store.read(ticketId))
           const releases = releasesOf(ticketEvents, releasedFrom.runId, 'BaseRed')
           const accountReruns =
-            releasesOf(ticketEvents, releasedFrom.runId, 'AccountLimit') +
+            releaseRerunsOf(ticketEvents, releasedFrom.runId) +
             personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
           return {
             step: 'build' as Step,
@@ -1511,8 +1518,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           }
         }
-        if (cause._tag !== 'AccountLimit') return null
-        {
+        if (cause._tag !== 'AccountLimit' && cause._tag !== 'StepRedoPending') return null
+        if (cause._tag === 'AccountLimit') {
           // The first claim after the lock lifts. A lock that stands again is a race with a fresh one: this
           // never becomes an ordinary claim from the base, which is the cost this continuation removes.
           const locked = yield* readAccount(store, cause.runtime).pipe(
@@ -1529,9 +1536,15 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const head = releasedHeadOf(releasedEvents)
         const spent = continuationSpentWithTriage(releasedState, reduced, releasedFrom.runId, releasedEvents)
         // Each lift is one release naming this run, so this rerun's number among them is their count.
-        const releases = accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), releasedFrom.runId)
-        // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218).
-        const accountReruns = releases + personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
+        const ticketReleases = yield* Effect.promise(() => store.read(ticketId))
+        const releases = releasesOf(ticketReleases, releasedFrom.runId, cause._tag)
+        // A redo the stop interrupted keeps the tail it was about to quote (#1398): what `StepRedone.said` recorded.
+        const pendingRedo = cause._tag === 'StepRedoPending' ? pendingRedoOf(releasedEvents) : null
+        // A person's rerun of this attempt is a rerun too: its dispatch id is its own (#1218). An account limit's
+        // releases and a redo's are counted together, so no two reruns of one attempt share a dispatch id.
+        const accountReruns =
+          releaseRerunsOf(ticketReleases, releasedFrom.runId) +
+          personRerunsOf(waitsFromState(reduced), releasedFrom.runId)
         const cutOff = cutOffPromptOf(releasedEvents)
         // The call the wall cut off is the release's own step: another step's last call is not it.
         const cutOffFor = cutOff !== null && cutOff.for.step === cause.step ? cutOff.for : null
@@ -1552,7 +1565,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           readClipped: undefined,
           roundLimit: undefined,
           onSha: 'at' in head ? head.at : '',
-          resumedWaitId: `account-limit:${releases}` as WaitId,
+          resumedWaitId: `${cause._tag === 'AccountLimit' ? 'account-limit' : 'redo-pending'}:${releases}` as WaitId,
           roundsSpent: spent.rounds,
           personRounds: spent.personRounds,
           baseMergesSpent: spent.baseMerges,
@@ -1581,8 +1594,12 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                     for: cutOffFor,
                     prompt: recordedPrompt,
                     accountReruns,
-                    why: "the account's limit cut it off",
+                    why:
+                      cause._tag === 'AccountLimit'
+                        ? "the account's limit cut it off"
+                        : 'the conductor stopped while it waited to be redone',
                     startedAt: stepStartedAtOf(releasedEvents, cutOffFor.step) ?? undefined,
+                    ...(pendingRedo === null ? {} : { unread: pendingRedo.said }),
                   }
                 : { for: null, prompt: null, accountReruns },
           },
@@ -1612,7 +1629,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         const head = releasedHeadOf(runEvents)
         const spent = continuationSpentWithTriage(runState, reduced, options.continuing.runId, runEvents)
         const accountReruns =
-          accountLimitReleases(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
+          releaseRerunsOf(yield* Effect.promise(() => store.read(ticketId)), options.continuing.runId) +
           personRerunsOf(waitsFromState(reduced), options.continuing.runId)
         const cutOff = cutOffPromptOf(runEvents)
         // The call the stop cut off is the rerun step's own: another step's last call is not it.
@@ -2678,6 +2695,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           Effect.as(null),
           Effect.catchDefect((refused: unknown) => Effect.succeed({ refused })),
         )
+      /** Set when a `RunRefsPublished` append was refused: `saveHead` reads it to know the save did not land (#1398). */
+      let refsAppendFailed = false
       const noteRefs = (
         outcome: 'published' | 'nothing-committed' | 'already-published' | 'arm-only' | 'refused' | 'unrecorded',
         headSha: string | null,
@@ -2694,6 +2713,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             },
           ])
           if (failed !== null) {
+            refsAppendFailed = true
             const why = whyOf(failed.refused)
             runLog.note('push', `the account of ${outcome} was not appended — ${why}`)
             log(`RunRefsPublished (${outcome}) was refused by the store: ${why}`)
@@ -5374,8 +5394,10 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           // version the check could not name what it read, so it is not offered.
           const claimedBody = took?.ticket.body ?? brief.ticket.body
           const claimedAt = took?.claimVersion
+          const read = parseImplementOutcome(outcome.text ?? null)
+          if (read !== null && read.form !== 'fence') runLog.note('outcome', outcomeFormNote(read.form))
           const decidedRaw = decideImplementOutcome({
-            declared: parseImplementOutcome(outcome.text ?? null),
+            declared: read?.declared ?? null,
             endedAbnormally: false,
             startedAt,
             head,
@@ -5386,7 +5408,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           const decided: ImplementOutcome =
             decidedRaw._tag === 'AlreadyDone' && claimedAt !== undefined
               ? { ...decidedRaw, baseSha: continuation?.diffBaseSha ?? tree.baseSha, bodyVersion: claimedAt }
-              : decidedRaw
+              : decidedRaw._tag === 'AgentFailed' && read === null
+                ? withUnreadTail(decidedRaw, outcome.text ?? null)
+                : decidedRaw
           const moved = head !== startedAt
           // `keepUncommittedWork` still reads *no commits* where nothing moved (#1243).
           stoppedBy = decided._tag === 'AgentFailed' ? 'agent-failed' : moved ? null : 'no-commits'
@@ -5719,16 +5743,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             failedKind !== 'crash' &&
             failedKind !== 'no-commits' &&
             failedKind !== 'no-structured-answer'
-          const decidedFix =
+          const readFix = fixed.failure == null ? parseImplementOutcome(fixed.text) : null
+          if (readFix !== null && readFix.form !== 'fence') runLog.note('outcome', outcomeFormNote(readFix.form))
+          const decidedFixRaw =
             fixed.failure == null || budgetEnded
               ? decideImplementOutcome({
-                  declared: fixed.failure == null ? parseImplementOutcome(fixed.text) : null,
+                  declared: readFix?.declared ?? null,
                   endedAbnormally: budgetEnded,
                   startedAt: roundStart,
                   head: after,
                   findingsOffered: offered,
                 })
               : null
+          const decidedFix =
+            decidedFixRaw !== null && decidedFixRaw._tag === 'AgentFailed' && fixed.failure == null && readFix === null
+              ? withUnreadTail(decidedFixRaw, fixed.text)
+              : decidedFixRaw
           if (
             !committed ||
             cutOffTransient ||
@@ -6009,6 +6039,22 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           gitAskedEffect(['rev-parse', 'HEAD']).pipe(
             Effect.map((r) => (Result.isSuccess(r) ? r.success.trim() : null)),
           ),
+        // The redo's head is on the run's stream before its wait begins, so a kill during it can be continued (#1398).
+        saveHead: () =>
+          Effect.gen(function* () {
+            refsAppendFailed = false
+            const detail = yield* publishWhatIsCommitted
+            // A save is a head the run's own stream can re-cut: a push that failed, a row the store refused and a
+            // stream that cannot be read are each a save that did not happen, whatever the publish returned.
+            const events = yield* Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+              Effect.result,
+            )
+            if (Result.isFailure(events))
+              return { failed: `the run's stream could not be read — ${whyOf(events.failure)}` }
+            if (refsAppendFailed) return { failed: 'the account of the publication was not appended' }
+            const head = releasedHeadOf(events.success)
+            return 'cannot' in head ? { failed: detail === null ? head.cannot : `${detail}; ${head.cannot}` } : null
+          }),
         resetToHead: () =>
           Effect.gen(function* () {
             // **Never reset over work that was not saved** (0108 §20, #1245): a keep that failed left
@@ -6073,6 +6119,9 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
                         ...(continuation.released.rerun.startedAt === undefined
                           ? {}
                           : { startedAt: continuation.released.rerun.startedAt }),
+                        ...('unread' in continuation.released.rerun && continuation.released.rerun.unread !== undefined
+                          ? { unread: continuation.released.rerun.unread }
+                          : {}),
                       },
                     }
                   : {}),
@@ -6814,7 +6863,28 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
       }),
       // A run that was interrupted still has to give the item back. `release` is
       // idempotent, so the paths above that already released are unaffected.
-      Effect.ensuring(release('the run was interrupted')),
+      Effect.ensuring(
+        Effect.gen(function* () {
+          // Interrupted while a step waited to be redone: the next claim redoes it and quotes what it was to (#1398).
+          // A stream that cannot be read is not a stream with no redo in it: the read is asked again, and where it
+          // still fails nothing is released, so the claim is the dead-worker scan's, which reads the stream itself.
+          const events = yield* Effect.tryPromise({ try: () => store.read(runId), catch: (error) => error }).pipe(
+            Effect.retry({ times: 2 }),
+            Effect.result,
+          )
+          if (Result.isFailure(events)) {
+            log(
+              `the run was interrupted and its stream could not be read, so its claim is left to the scan: ${whyOf(events.failure)}`,
+            )
+            return
+          }
+          const pending = continuableRedoOf(events.success)
+          yield* release(
+            'the run was interrupted',
+            pending === null ? null : { _tag: 'StepRedoPending', runId, step: pending.step },
+          )
+        }),
+      ),
     )
   })
   return run.pipe(

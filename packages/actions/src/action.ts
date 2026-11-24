@@ -514,6 +514,8 @@ export interface RedoNote {
   readonly head: string
   /** The key of the body section that holds the answers to what this step asked (#1254): the step continues, it was not interrupted. */
   readonly answered?: string
+  /** The last 300 characters of a final message no outcome could be read from (#1398): quoted back with the block to end with. */
+  readonly unread?: string
 }
 
 export interface ActionContext {
@@ -1354,7 +1356,7 @@ export function withRedoParagraph(prompt: string, paragraph: string | null | und
   // Only the generated paragraph itself, as the brief's last paragraph: quoted text that merely starts alike,
   // or is followed by anything, is the brief's own and stays (#1246).
   const trailing =
-    /\n\nThis step was interrupted \([^\n]*\); it began at [^\n]* and is committed to [^\n]*\. Carry on, and do not redo what is committed\.$/
+    /\n\nThis step was interrupted \([^\n]*\); it began at [^\n]* and is committed to [^\n]*\. Carry on, and do not redo what is committed\.(?:\n\nYour last message ended:\n\n(?: {4}[^\n]*\n)*\nNo outcome could be read from it\.[^\n]*\n\n {4}```outcome\n {4}\{"outcome": "Implemented"\}\n {4}```\n\nor another block as the brief above shows it\.)?$/
   return `${prompt.replace(trailing, '')}\n\n${paragraph}`
 }
 
@@ -1369,7 +1371,14 @@ export function redoParagraph(redo: RedoNote, kept: readonly string[] = []): str
     return `You stopped this step to ask a person, and they answered: the answers are in the ticket body, between the \`<!-- lingtai:answer ${redo.answered} -->\` and \`<!-- /lingtai:answer -->\` markers. Your work so far is committed to ${redo.head}; carry on from it with the answers, do not ask again what they settle, and do not redo what is committed.`
   const saved = kept.length === 0 ? '' : `, including any unfinished work Lingtai saved for you (${kept.join(', ')})`
   const began = redo.startedAt === redo.head ? `it began at ${redo.head}` : `it began at ${redo.startedAt}`
-  return `This step was interrupted (${redo.why}); ${began} and is committed to ${redo.head}${saved}. Carry on, and do not redo what is committed.`
+  const base = `This step was interrupted (${redo.why}); ${began} and is committed to ${redo.head}${saved}. Carry on, and do not redo what is committed.`
+  if (redo.unread === undefined) return base
+  // Indented, so a ``` in the quoted text cannot close or open a fence of the brief's own.
+  const quoted = redo.unread
+    .split(/\r?\n/)
+    .map((l) => `    ${l}`)
+    .join('\n')
+  return `${base}\n\nYour last message ended:\n\n${quoted}\n\nNo outcome could be read from it. End your next message with the block, and nothing after it:\n\n    \`\`\`outcome\n    {"outcome": "Implemented"}\n    \`\`\`\n\nor another block as the brief above shows it.`
 }
 
 /** `id`, with `:rerun:<n>` when this visit is a rerun in place (#1201): a session id is never reused. */

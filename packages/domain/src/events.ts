@@ -313,6 +313,12 @@ export const ReleaseCause = z.discriminatedUnion('_tag', [
     step: z.enum(['design', 'implement', 'review']),
     runtime: RuntimeId,
   }),
+  /**
+   * The conductor stopped while a step waited to be redone after an unreadable outcome (#1398). The
+   * attempt stays the ticket's: the next claim redoes `step` on the saved head, and the redo's brief
+   * quotes the `StepRedone.said` of the wait it interrupted.
+   */
+  z.object({ _tag: z.literal('StepRedoPending'), runId: z.string(), step: z.enum(['design', 'implement', 'review']) }),
 ])
 export type ReleaseCause = z.infer<typeof ReleaseCause>
 
@@ -1763,6 +1769,8 @@ export const StepRedone = z.object({
   waitMs: z.number().int().nonnegative(),
   /** Written by #1224–#1249 rows only; nothing reads it since #1249 (`stepRedos` is the bound), kept so old rows parse. */
   askedAgain: z.boolean().optional(),
+  /** Set where `said` is the tail of a message no outcome could be read from (#1398): only such a redo quotes it again after a stop. */
+  unread: z.boolean().optional(),
 })
 
 /**
