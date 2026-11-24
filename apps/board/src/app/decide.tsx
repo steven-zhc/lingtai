@@ -398,7 +398,7 @@ export function EditBodyAndRequeue({
   reason: WaitReason | null
   /**
    * Which card this is drawn in (#1344): `answer` is the choices the page has not drawn elsewhere and the button that
-   * sends them, `edit` the textarea and its button, `all` the whole form.
+   * sends them, `edit` the answer field and its button, `all` the whole form.
    */
   part?: 'all' | 'answer' | 'edit'
   /** The wait offers the answering but no body edit: only the picked answers and their button are drawn (#1254). */
@@ -450,7 +450,7 @@ export function EditBodyAndRequeue({
         ? reason.proposal
         : null
   const question = asking === null ? null : askedText(asking)
-  // The answer button writes the picked answers, never the textarea: where the text was changed it is not offered (#1254).
+  // The answer button writes the picked answers, never the field: where the text was changed it is not offered (#1254).
   const edited = waitId !== null && body?.waitId === waitId && body.text !== composed
 
   const answerAllowed = reason !== null && allowedResolutions(reason, triaged).includes('AnswerQuestions')
@@ -479,6 +479,7 @@ export function EditBodyAndRequeue({
         <label className="reason">
           <span>{question !== null ? 'Your answer' : 'Text to add to the ticket body'}</span>
           <MarkdownField
+            aria-label={question !== null ? 'Your answer' : 'Text to add to the ticket body'}
             value={currentText}
             placeholder={question !== null ? 'every attempt at this ticket is told this' : undefined}
             onChange={(text) => {
@@ -658,6 +659,7 @@ export function Requeue({
         <span>{withdrawing ? 'Why withdraw it? (optional)' : asked ? 'Your answer' : 'Why? (optional)'}</span>
         {asked && !withdrawing ? (
           <MarkdownField
+            aria-label="Your answer"
             autoFocus
             value={note}
             onChange={setNote}

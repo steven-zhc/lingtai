@@ -2293,7 +2293,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 }
 .chatask, .chatask textarea, .chatask .mdf, .chatprop, .chattrace { min-width: 0; }
 .chatprop .btnrow { flex-wrap: wrap; }
-/* Grows with what is typed (`Discussion` sets the height), to a bound, and then
+/* Grows with what is typed (the editor sizes itself to its content), to a bound, and then
    scrolls in itself: a long question takes room from the conversation above it
    only so far (#173). */
 .chatask textarea, .chatask .mdf {

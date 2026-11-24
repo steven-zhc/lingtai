@@ -138,7 +138,8 @@ export function OutgoingEditor({
         </div>
       ) : (
         <div className="outbox">
-          {/* Raw text. No toolbar, no rendering, no escaping: what is typed
+          {/* Raw text. No toolbar, no escaping, and the Markdown is only drawn
+              formatted as a preview, never rewritten: what is typed
               here reaches the agent unaltered, inside a block that names who
               wrote it and says it applies to this attempt only. */}
           <MarkdownField

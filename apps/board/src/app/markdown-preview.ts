@@ -6,7 +6,21 @@
  * `defaultKeymap`'s Enter (`insertNewlineAndIndent` strips a trailing hard break), and the line separator
  * (`\r\n` would be split and joined back with `\n`).
  */
-import { defaultKeymap, history, historyKeymap, insertNewline } from '@codemirror/commands'
+import {
+  defaultKeymap,
+  deleteCharBackward,
+  deleteCharBackwardStrict,
+  history,
+  historyKeymap,
+  indentLess,
+  indentMore,
+  indentSelection,
+  insertBlankLine,
+  insertNewline,
+  insertNewlineAndIndent,
+  toggleComment,
+  toggleLineComment,
+} from '@codemirror/commands'
 import { markdown } from '@codemirror/lang-markdown'
 import { syntaxTree } from '@codemirror/language'
 import {
@@ -45,8 +59,24 @@ export function changeFor(doc: string, value: string): { from: number; to: numbe
   return { from, to: end, insert: value.slice(from, tail) }
 }
 
-/** The Enter binding: a newline and nothing else, so `- a␠␠` and `1. a` come back as typed. */
-export const enterBinding = { key: 'Enter', run: insertNewline }
+/** The Enter binding: a newline and nothing else, so `- a␠␠` and `1. a` come back as typed. Shift-Enter is the same. */
+export const enterBinding = { key: 'Enter', shift: insertNewline, run: insertNewline }
+
+/** Default commands that rewrite whitespace or add text of their own; none of them is bound here. */
+const REWRITING = new Set<unknown>([
+  insertNewlineAndIndent,
+  insertBlankLine,
+  indentSelection,
+  indentMore,
+  indentLess,
+  toggleComment,
+  toggleLineComment,
+])
+
+/** `defaultKeymap` without the commands that would change the text on their own; Backspace deletes one character. */
+export const textKeymap = defaultKeymap
+  .filter((b) => ![b.run, b.shift].some((c) => c && REWRITING.has(c)))
+  .map((b) => (b.run === deleteCharBackward ? { ...b, run: deleteCharBackwardStrict } : b))
 
 const hide = Decoration.replace({})
 const dim = Decoration.mark({ class: 'md-dim' })
@@ -126,7 +156,10 @@ export function buildDecorations(state: EditorState, focused: boolean, readOnly:
         if (/^[-*+]$/.test(text) && !isActive(from)) out.push(bullet.range(from, to))
         else if (to > from) out.push(mark('md-listmark').range(from, to))
       } else if (MARKERS.has(name) && to > from) {
-        if (isActive(from)) out.push(dim.range(from, to))
+        if (name === 'URL' && node.node.parent?.name === 'Autolink') {
+          // `<https://x>` shows its address; only the angle brackets are marks.
+          out.push(mark('md-link').range(from, to))
+        } else if (isActive(from)) out.push(dim.range(from, to))
         else if (name === 'QuoteMark') {
           const spaced = doc.sliceString(to, to + 1) === ' ' ? to + 1 : to
           out.push(hide.range(from, spaced))
@@ -198,23 +231,28 @@ const theme = EditorView.theme({
 
 export type PreviewOptions = { readOnly: boolean; placeholder?: Extension }
 
+/** What does not depend on the props: the parser, wrapping and the look. */
+export function baseExtensions(): Extension[] {
+  return [EditorState.lineSeparator.of('\n'), markdown({ addKeymap: false }), EditorView.lineWrapping, theme]
+}
+
 /**
- * The extensions the field runs on. `doc.toString()` is what was typed: see the head of this file for what is
- * switched off to keep it so. There is no `indentWithTab` (Tab moves focus, as in a textarea), no `indentOnInput`
- * and no `closeBrackets`.
+ * What depends on `readOnly`: the decorations (a read-only field never shows Markdown), editability and the keys.
+ * Kept apart so the editor can swap it when the prop changes. There is no `indentWithTab` (Tab moves focus, as in a
+ * textarea), no `indentOnInput` and no `closeBrackets`, and no default key that re-indents or rewrites whitespace.
  */
-export function previewExtensions({ readOnly, placeholder }: PreviewOptions): Extension[] {
+export function modeExtensions(readOnly: boolean): Extension[] {
   return [
-    EditorState.lineSeparator.of('\n'),
-    markdown({ addKeymap: false }),
-    EditorView.lineWrapping,
-    theme,
     previewPlugin(readOnly),
     ...(readOnly
       ? [EditorView.editable.of(false), EditorState.readOnly.of(true)]
-      : [history(), Prec.high(keymap.of([enterBinding])), keymap.of([...defaultKeymap, ...historyKeymap])]),
-    ...(placeholder ? [placeholder] : []),
+      : [history(), Prec.high(keymap.of([enterBinding])), keymap.of([...textKeymap, ...historyKeymap])]),
   ]
+}
+
+/** The extensions the field runs on, for a state built at once. See the head of this file for what is switched off. */
+export function previewExtensions({ readOnly, placeholder }: PreviewOptions): Extension[] {
+  return [...baseExtensions(), ...modeExtensions(readOnly), ...(placeholder ? [placeholder] : [])]
 }
 
 /** A change from outside, ready to dispatch: only the middle that differs, annotated so it is not echoed. */

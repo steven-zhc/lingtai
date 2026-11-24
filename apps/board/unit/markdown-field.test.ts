@@ -1,7 +1,13 @@
 import { EditorState, type Transaction } from '@codemirror/state'
 import { describe, expect, it } from 'vitest'
 
-import { buildDecorations, changeFor, enterBinding, previewExtensions } from '../src/app/markdown-preview.ts'
+import {
+  buildDecorations,
+  changeFor,
+  enterBinding,
+  previewExtensions,
+  textKeymap,
+} from '../src/app/markdown-preview.ts'
 
 const stateOf = (doc: string, readOnly = false) =>
   EditorState.create({ doc, extensions: previewExtensions({ readOnly }) })
@@ -27,6 +33,15 @@ describe('MarkdownField hands back exactly what was typed (#1372)', () => {
   it.each(['**a**', '- a', '1. a', '# h\n> q\n```\ncode\n```', 'a  \r\nb', '1. a\n1. b\n3. c'])('keeps %j', (text) => {
     expect(typed(text).doc.toString()).toBe(text)
     expect(stateOf(text).doc.toString()).toBe(text)
+  })
+
+  it('Shift-Enter is a newline too, and no default key re-indents', () => {
+    let state = stateOf('a  b').update({ selection: { anchor: 1 } }).state
+    enterBinding.shift({ state, dispatch: (tr: Transaction) => (state = tr.state) } as never)
+    expect(state.doc.toString()).toBe('a\n  b')
+    const keys = textKeymap.flatMap((b) => [b.key, b.mac, b.win, b.linux]).filter(Boolean)
+    expect(keys).not.toContain('Enter')
+    expect(keys.some((k) => /Alt-\\|Mod-\[|Mod-\]|Mod-\//.test(k!))).toBe(false)
   })
 
   it('Enter is a newline and nothing else: no list continuation, no renumbering, no stripped hard break', () => {
@@ -67,6 +82,19 @@ describe('the preview is decoration only', () => {
     const state = stateOf(doc)
     expect(count(doc, false)).toBeGreaterThan(0)
     expect(state.doc.toString()).toBe(doc)
+  })
+  it('an autolink keeps its address visible off the cursor line', () => {
+    const doc = '<https://example.com>'
+    const state = stateOf(doc)
+    const hidden: [number, number][] = []
+    buildDecorations(state, false, false).between(0, doc.length, (from, to, d) => {
+      if (to > from && !d.spec.class) hidden.push([from, to])
+    })
+    // Only the two angle brackets are replaced.
+    expect(hidden).toEqual([
+      [0, 1],
+      [20, 21],
+    ])
   })
   it('a read-only field never shows Markdown, however it is focused', () => {
     const doc = '**a**'

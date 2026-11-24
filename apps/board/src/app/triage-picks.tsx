@@ -300,7 +300,11 @@ export function TriageChoices({
       {ownChosen ? (
         <label className="triage-own">
           <span>Your own answer</span>
-          <MarkdownField value={selected.own} onChange={(text) => draft?.setOwn(index, text, source)} />
+          <MarkdownField
+            aria-label="Your own answer"
+            value={selected.own}
+            onChange={(text) => draft?.setOwn(index, text, source)}
+          />
         </label>
       ) : null}
     </fieldset>
