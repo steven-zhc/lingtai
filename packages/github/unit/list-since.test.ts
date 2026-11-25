@@ -8,9 +8,9 @@
  */
 import { generateKeyPairSync } from 'node:crypto'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createGitHubClient } from '../src/index.ts'
+import { forgetGitHubAuthCache, createGitHubClient } from '../src/index.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -78,6 +78,7 @@ const client = () =>
 const at = (minutes: number) => new Date(since.getTime() + minutes * 60_000).toISOString()
 
 describe('listIssuesSince', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   it('lists an issue created in the window when more than a thousand older issues were updated in it', async () => {

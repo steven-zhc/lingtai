@@ -363,6 +363,85 @@ export const installationToken = (
     )
   })
 
+type TokenSource = Effect.Effect<string, GitHubFailed>
+
+/**
+ * What a process has learned from GitHub about one App (#1433), keyed by the App
+ * id — which is not secret — and never by the credentials object, which
+ * `githubClientAuth()` builds afresh on every call.
+ */
+interface AuthCache {
+  repos: Map<string, Installation>
+  tokens: Map<number, TokenSource>
+}
+const authCaches = new Map<string, AuthCache>()
+
+const authCacheOf = (auth: AppAuth): AuthCache => {
+  let cache = authCaches.get(auth.appId)
+  if (cache === undefined) {
+    cache = { repos: new Map(), tokens: new Map() }
+    authCaches.set(auth.appId, cache)
+  }
+  return cache
+}
+
+const repoKey = (owner: string, repo: string): string => `${owner}/${repo}`.toLowerCase()
+
+/** Empties the cache; for tests, which count requests. */
+export const forgetGitHubAuthCache = (): void => {
+  authCaches.clear()
+}
+
+/**
+ * The installation covering `owner/repo`, asked of GitHub once per process. Only a
+ * success is kept. Onboarding reads `installationForRepo` instead, uncached, for
+ * the permissions. Two first lookups may both ask: one extra request, once.
+ */
+export const installationOf = (
+  auth: AppAuth,
+  owner: string,
+  repo: string,
+): Effect.Effect<Installation, GitHubFailed | NotInstalledError> =>
+  Effect.gen(function* () {
+    const cache = authCacheOf(auth)
+    const key = repoKey(owner, repo)
+    const hit = cache.repos.get(key)
+    if (hit !== undefined) return hit
+    const found = yield* installationForRepoEffect(auth, owner, repo)
+    cache.repos.set(key, found)
+    return found
+  })
+
+/** The installation's token source, built once per process so its refresh spans every client. */
+export const tokenSourceOf = (auth: AppAuth, installationId: number): Effect.Effect<TokenSource> =>
+  Effect.gen(function* () {
+    const cache = authCacheOf(auth)
+    const hit = cache.tokens.get(installationId)
+    if (hit !== undefined) return hit
+    const source = yield* installationToken(auth, installationId)
+    cache.tokens.set(installationId, source)
+    return source
+  })
+
+/**
+ * Forgets exactly what failed: the token source and the repository's installation,
+ * each only if it is still the one that was used, so a slow failure from an old
+ * client cannot delete what a newer one has just built.
+ */
+export const forgetAuthEntry = (
+  auth: AppAuth,
+  owner: string,
+  repo: string,
+  installation: Installation,
+  source: TokenSource,
+): void => {
+  const cache = authCaches.get(auth.appId)
+  if (cache === undefined) return
+  if (cache.tokens.get(installation.id) === source) cache.tokens.delete(installation.id)
+  const key = repoKey(owner, repo)
+  if (cache.repos.get(key) === installation) cache.repos.delete(key)
+}
+
 /** One repository an installation can see. */
 export interface VisibleRepository {
   owner: string

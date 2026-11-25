@@ -1099,8 +1099,9 @@ export async function askProject(
  * Takes the projects rather than loading them, so the bar names what it could
  * show (#86).
  *
- * **It asks GitHub nothing** (#884). The recipe is a local file; what GitHub
- * offers is `githubQueue`'s, started after the page has gone out. The filters
+ * **It asks GitHub almost nothing** (#884, #1433). The recipe is a local file; the
+ * client the filter carries asks GitHub only the first time a process sees a
+ * project, then again when its token expires. What GitHub offers is `githubQueue`'s, started after the page has gone out. The filters
  * that resolved are handed on as `askable`, so a recipe is still read once per
  * project per render — reading one twice is how a render gets expensive.
  *

@@ -1,15 +1,16 @@
 /**
  * The Effect-shaped client and its promise face (#1025): one failure type, one
- * token cache per client, and a rejection that is the `GitHubFailed` itself.
+ * token cache per installation per process (#1433), and a rejection that is the `GitHubFailed` itself.
  */
 import { generateKeyPairSync } from 'node:crypto'
 
 import { Effect } from 'effect'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import {
   appInstallationsEffect,
   createGitHubClient,
+  forgetGitHubAuthCache,
   GitHubFailed,
   makeGitHub,
   type AppAuth,
@@ -39,6 +40,7 @@ const token = () => json({ token: 'ghs_x', expires_at: new Date(Date.now() + 3_6
 const issue = { number: 1, title: 't', body: '', labels: [], state: 'open', html_url: 'https://example.invalid/1' }
 
 describe('the GitHub client as Effects', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   it('asks for one token across several calls', async () => {
@@ -122,5 +124,56 @@ describe('the GitHub client as Effects', () => {
     const error = await Effect.runPromise(Effect.flip(appInstallationsEffect(reader)))
     expect(error).toBeInstanceOf(GitHubFailed)
     expect(error.status).toBe(0)
+  })
+})
+
+describe('the process-wide installation and token cache (#1433)', () => {
+  beforeEach(() => forgetGitHubAuthCache())
+  afterEach(() => vi.unstubAllGlobals())
+
+  const counting = (mint: () => Response = token) => {
+    const seen = { lookups: 0, mints: 0 }
+    vi.stubGlobal('fetch', async (url: string) => {
+      const u = String(url)
+      if (u.endsWith('/installation')) {
+        seen.lookups++
+        return json({ id: 1, account: { login: 'o' }, permissions: {}, repository_selection: 'selected' })
+      }
+      if (u.includes('/access_tokens')) {
+        seen.mints++
+        return mint()
+      }
+      return json(issue)
+    })
+    return seen
+  }
+  const bare = { auth, owner: 'o', repo: 'r' }
+
+  it('asks one installation GET and one token POST for two clients', async () => {
+    const seen = counting()
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        yield* (yield* makeGitHub(bare)).getIssue(1)
+        yield* (yield* makeGitHub({ ...bare, auth: { ...auth } })).getIssue(1)
+      }),
+    )
+    expect(seen).toEqual({ lookups: 1, mints: 1 })
+  })
+
+  it('drops the entry when a token mint answers 404', async () => {
+    const seen = counting(() => json({ message: 'Not Found' }, 404))
+    const attempt = Effect.gen(function* () {
+      const github = yield* makeGitHub(bare)
+      yield* github.getIssue(1)
+    })
+    await expect(Effect.runPromise(attempt)).rejects.toBeInstanceOf(GitHubFailed)
+    await expect(Effect.runPromise(attempt)).rejects.toBeInstanceOf(GitHubFailed)
+    expect(seen.lookups).toBe(2)
+  })
+
+  it('makes no installation GET when the client is given its installation', async () => {
+    const seen = counting()
+    await Effect.runPromise(Effect.flatMap(makeGitHub(options), (github) => github.getIssue(1)))
+    expect(seen).toEqual({ lookups: 0, mints: 1 })
   })
 })

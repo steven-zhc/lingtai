@@ -2,8 +2,8 @@ import { generateKeyPairSync } from 'node:crypto'
 
 import { accountStream, reduceAccount } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { createGitHubClient, GitHubFailed, type Installation } from '@lingtai/github'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { forgetGitHubAuthCache, createGitHubClient, GitHubFailed, type Installation } from '@lingtai/github'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { githubLimitPort } from '../src/account.ts'
 
@@ -29,6 +29,8 @@ const answer = (status: number, headers: Record<string, string>, message: string
         })
       : new Response(JSON.stringify({ message }), { status: status, headers }),
   )
+
+beforeEach(() => forgetGitHubAuthCache())
 
 afterEach(() => vi.unstubAllGlobals())
 

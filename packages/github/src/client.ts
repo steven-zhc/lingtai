@@ -19,8 +19,9 @@ import {
   type Installation,
   NotInstalledError,
   githubJson,
-  installationForRepoEffect,
-  installationToken,
+  forgetAuthEntry,
+  installationOf,
+  tokenSourceOf,
   runGitHub,
 } from './app.ts'
 import { type GhRun, ghTokenEffect, liveGh } from './gh.ts'
@@ -717,9 +718,9 @@ function toIssue(raw: {
 }
 
 /**
- * Builds the Effect-shaped client. The token cache is made here, once, inside
- * the Effect that makes the client — a cache made per call would pass every
- * test and ask GitHub for a token on every request.
+ * Builds the Effect-shaped client. The installation and the token source come
+ * from a process-wide cache keyed by App id (#1433), so a process asks GitHub
+ * once per repository and once per token lifetime, not once per client.
  *
  * `signal` is not an option: interruption replaces it.
  */
@@ -767,19 +768,36 @@ export const makeGitHub = (
     const locking = lockingWith(options.onRateLimited)
     let installation: Installation | null = null
     let token: E<string>
+    let forget: () => void = () => {}
     if (isGh(auth)) {
       // No installation: the saved login is a person's, and each call asks `gh` afresh.
       const run = options.gh ?? liveGh
       token = Effect.suspend(() => ghTokenEffect(run))
     } else {
-      installation = options.installation ?? (yield* locking(installationForRepoEffect(auth, owner, repo)))
-      token = yield* installationToken(auth, installation.id)
+      const found: Installation = options.installation ?? (yield* locking(installationOf(auth, owner, repo)))
+      installation = found
+      const source = yield* tokenSourceOf(auth, found.id)
+      // A mint answering 401 or 404 says the installation or key is no longer good: forget it.
+      // A git 401 never reaches here; the next mint or request drops the entry instead.
+      token = Effect.tapError(source, (err) =>
+        err.status === 401 || err.status === 404
+          ? Effect.sync(() => forgetAuthEntry(auth, owner, repo, found, source))
+          : Effect.void,
+      )
+      forget = () => forgetAuthEntry(auth, owner, repo, found, source)
     }
 
     const build = (port: RateLimitedPort | undefined): GitHub => {
       const locking = lockingWith(port)
       const send = <T>(method: string, path: string, body?: unknown): E<T> =>
-        locking(Effect.flatMap(token, (t) => githubJson<T>(method, path, t, body)))
+        locking(
+          Effect.flatMap(token, (t) =>
+            // Only a 401 here: a 404 is as likely a missing issue as a lost installation.
+            Effect.tapError(githubJson<T>(method, path, t, body), (err) =>
+              err.status === 401 ? Effect.sync(forget) : Effect.void,
+            ),
+          ),
+        )
 
       const repoPath = `/repos/${owner}/${repo}`
 

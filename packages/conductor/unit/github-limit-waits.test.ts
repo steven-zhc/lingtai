@@ -2,10 +2,10 @@ import { generateKeyPairSync } from 'node:crypto'
 
 import { accountStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { createGitHubClient, GitHubFailed, type Installation, makeGitHub } from '@lingtai/github'
+import { forgetGitHubAuthCache, createGitHubClient, GitHubFailed, type Installation, makeGitHub } from '@lingtai/github'
 import { Effect, Fiber } from 'effect'
 import { TestClock } from 'effect/testing'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { githubLimitPort, reachAccountLimit } from '../src/account.ts'
 
@@ -41,6 +41,8 @@ const stub = (replies: Response[]) => {
 const limited = () =>
   new Response(JSON.stringify({ message: 'slow down' }), { status: 429, headers: { 'retry-after': '60' } })
 const branch = () => new Response(JSON.stringify({ default_branch: 'main' }), { status: 200 })
+
+beforeEach(() => forgetGitHubAuthCache())
 
 afterEach(() => vi.unstubAllGlobals())
 
