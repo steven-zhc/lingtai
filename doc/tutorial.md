@@ -12,7 +12,7 @@ You need Git, Claude Code or Codex signed in, and Node.js 26.13.0 with npm. See
 
 ## Step 1 — Set up this machine
 
-Install, clone, register. Press Enter at each question.
+Install Lingtai, clone the site and register it. Press Enter at each question to take the default.
 
 ```sh
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
@@ -34,7 +34,7 @@ If `lingtai` is not found, add `~/.local/bin` to `PATH`.
 | Codex only | Codex | Codex |
 | Both | Claude Code | Codex |
 
-Another vendor's reviewer catches more; one suffices.
+A reviewer from another vendor catches more of what the writer missed, but one agent is enough for this book.
 
 Enter at the mode question makes a **team** project; [`solo`](solo.md) is the other.
 
@@ -64,8 +64,8 @@ lingtai start
 ```
 
 Leave it running; `Ctrl+C` stops after the attempt in flight. In a second
-terminal run `lingtai board`: no login, every address; `board.host: 127.0.0.1`
-in `~/.lingtai/config.yml` keeps it local.
+terminal run `lingtai board` to watch it. The board has no login and listens on every network address; `board.host: 127.0.0.1`
+in `~/.lingtai/config.yml` keeps it on this machine.
 
 If review raises findings, the card stops in **Waiting on you**:
 
@@ -78,12 +78,11 @@ If review raises findings, the card stops in **Waiting on you**:
 
 When the card is **Landed**:
 
-![The card in Landed, on your branch, numbered 1 to 4.](img/tutorial-board.png)
+![The card in Landed, on your branch, numbered 1 to 3.](img/tutorial-board.png)
 
 1. **Landed**: merged into your branch.
 2. **on your branch**: not yet on `main`.
 3. **1 not in a PR yet**: waits for your PR.
-4. Today's spend.
 
 Look at what landed:
 

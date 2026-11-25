@@ -32,6 +32,7 @@ const MARKS: { selector: string; why: string }[] = [
   { selector: '.pr-rail::before', why: 'a rail bar' },
   { selector: '.sk-bar', why: 'a skeleton bar' },
   { selector: '.sbx-skeleton', why: 'the shape of the shield it stands in for' },
+  { selector: '.mode-skeleton::after', why: 'the glyph’s trunk, a bar' },
   { selector: '.ld-head p', why: 'the highlighter behind inline text' },
   { selector: 'a.ti:focus-visible', why: 'the focus ring around a title’s text' },
 ]
