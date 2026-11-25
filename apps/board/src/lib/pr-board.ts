@@ -106,8 +106,6 @@ export interface ColumnView {
   readonly tone: Tone
   readonly count: number
   readonly cards: readonly (CardView | FailedCard)[]
-  /** Merged only: what folds under *▸ N older*. */
-  readonly older: readonly CardView[]
   readonly empty: string
   /** Set when a PR stream could not be read and may belong here: the count is a floor and the empty line says so. */
   readonly unread?: boolean
@@ -131,8 +129,8 @@ export interface PrBoardView {
 
 /** How many slips a card draws. */
 export const SLIPS_SHOWN = 3
-/** Merged PRs drawn before the rest fold. */
-export const MERGED_OPEN = 3
+/** Merged PRs the Merged column shows: the most recent, and nothing older is read (#1422). */
+export const MERGED_SHOWN = 5
 
 /** What a person reads for each reason a PR waits. Typed on the enum, so a new reason is a type error here. */
 export const WAIT_WORDS: Record<WaitReason, string> = {
@@ -581,7 +579,6 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         ...COL_DRAFT,
         count: draftCards.length === 0 || draftError !== null ? 0 : draftTickets.length,
         cards: draftCards,
-        older: [],
         empty:
           requested !== null
             ? `Nothing has landed since ${prName(requested)} was submitted. Tickets that land now join ${prName(requested)} until it starts, then the next PR.`
@@ -594,7 +591,6 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         ...COL_PROGRESS,
         count: progress.length,
         cards: progress,
-        older: [],
         empty: 'No PR is being built.',
         note: 'The order every PR goes through: bring main in · build · conflict agent · push · CI · summary',
       },
@@ -602,7 +598,6 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         ...COL_WAITING,
         count: waiting.length,
         cards: waiting,
-        older: [],
         empty: unread ? unreadEmpty : 'Nothing is waiting on you.',
         unread,
         note: null,
@@ -611,16 +606,14 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         ...COL_REVIEW,
         count: review.length,
         cards: review,
-        older: [],
         empty: unread ? unreadEmpty : 'No PR is in review.',
         unread,
         note: null,
       },
       {
         ...COL_MERGED,
-        count: mergedAll.length,
-        cards: mergedAll.slice(0, MERGED_OPEN),
-        older: mergedAll.slice(MERGED_OPEN).filter((c): c is CardView => !c.failed),
+        count: Math.min(mergedAll.length, MERGED_SHOWN),
+        cards: mergedAll.slice(0, MERGED_SHOWN),
         empty: unread ? unreadEmpty : 'Nothing has merged yet.',
         unread,
         note: null,

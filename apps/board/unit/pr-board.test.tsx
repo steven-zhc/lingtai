@@ -117,6 +117,54 @@ describe('the read, with concurrency', () => {
     expect(reads.every((r) => 'pr' in r)).toBe(true)
   })
 
+  const tenMerged = async () => {
+    const store = createMemoryEventStore()
+    for (let n = 1; n <= 10; n++) {
+      await store.append(prStream('p', n), 0, [requested])
+      await store.append(prStream('p', n), 1, [merged])
+    }
+    const read: string[] = []
+    const real = store.read.bind(store)
+    store.read = async (id: string) => {
+      read.push(id)
+      return real(id)
+    }
+    return { store, read }
+  }
+
+  it('with `merged: 5`, reads five of ten merged PRs and returns them oldest first; without it, all ten', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { store, read } = await tenMerged()
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { merged: 5 }))
+    expect(reads.map((r) => r.n)).toEqual([6, 7, 8, 9, 10])
+    expect(read.toSorted()).toEqual([6, 7, 8, 9, 10].map((n) => prStream('p', n)).toSorted())
+    const all = await Effect.runPromise(readProjectPrs('p', store))
+    expect(all.map((r) => r.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+
+  it('with `merged: 5`, a draft above the merged PRs is read and not counted or returned', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { store, read } = await tenMerged()
+    await store.append(prStream('p', 11), 0, [
+      {
+        type: 'PrDraftTicketAdded',
+        actor: 'conductor',
+        data: { ticket: '1', mergeCommit: 'c'.repeat(40), from: null },
+      },
+    ])
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { merged: 5 }))
+    expect(reads.map((r) => r.n)).toEqual([6, 7, 8, 9, 10])
+    expect(read.toSorted()).toEqual([6, 7, 8, 9, 10, 11].map((n) => prStream('p', n)).toSorted())
+  })
+
+  it('the open PR and the draft read only the newest streams, however many merged before them', async () => {
+    const { openPr, readDraftTickets } = await import('@lingtai/project')
+    const { store, read } = await tenMerged()
+    expect(await Effect.runPromise(openPr('p', store))).toBeNull()
+    expect(await Effect.runPromise(readDraftTickets('p', store))).toEqual([])
+    expect(new Set(read)).toEqual(new Set([prStream('p', 10)]))
+  })
+
   it('returns the serial order with the reads overlapping, never more than READ_CONCURRENCY at once', async () => {
     const { readProjectPrs } = await import('../src/lib/prs.ts')
     const { READ_CONCURRENCY } = await import('@lingtai/project')
@@ -357,8 +405,8 @@ describe('prBoard', () => {
     expect(card.meta).toEqual(['CI ✓ 2/2'])
   })
 
-  it('draws four merged PRs as three and 1 older, newest first', () => {
-    const merged = [1, 2, 3, 4].map((n) => ({
+  it('draws seven merged PRs as the five newest, newest first, with no fold', () => {
+    const merged = [1, 2, 3, 4, 5, 6, 7].map((n) => ({
       n,
       pr: pr(n, {
         status: 'merged',
@@ -369,8 +417,9 @@ describe('prBoard', () => {
       }),
     }))
     const c = col(prBoard(input(merged, [])), 'merged')
-    expect((c.cards as CardView[]).map((x) => x.name)).toEqual(['PR 4', 'PR 3', 'PR 2'])
-    expect(c.older.map((x) => x.name)).toEqual(['PR 1'])
+    expect((c.cards as CardView[]).map((x) => x.name)).toEqual(['PR 7', 'PR 6', 'PR 5', 'PR 4', 'PR 3'])
+    expect(c.count).toBe(5)
+    expect('older' in c).toBe(false)
     expect(c.cards[0]).toMatchObject({ sub: ['11-18 · 1 ticket closed'] })
   })
 
