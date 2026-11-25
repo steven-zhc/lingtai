@@ -285,7 +285,13 @@ body {
 /* The place line (0.16): `Lingtai / project ▾ / Tickets · Recipe`. One object, the place; the views are part of it. */
 .bar .place { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; }
 .place .slash { color: var(--rule-2); font-family: var(--mono); font-size: 12px; }
-.place .crumb { font-family: var(--mono); font-size: 10.5px; color: var(--muted); padding: 2px 7px; }
+.place .crumb { font-family: var(--sans); font-size: inherit; color: var(--muted); padding: 2px 7px; }
+/* The project's name is the brand's equal (nav-final.html:73). With a menu it is the summary; without one it is
+   the first `.crumb` after the leading slash — positional, because the tail is a `.crumb` too and must stay regular. */
+.place .filter > summary,
+.place > .slash:first-child + .crumb {
+  font-family: var(--sans); font-size: inherit; font-weight: 600; color: var(--ink); letter-spacing: -0.01em;
+}
 .place .views { display: inline-flex; align-items: center; gap: 2px; }
 .place .view {
   font-size: 13px; color: var(--muted); text-decoration: none; padding: 3px 8px;
