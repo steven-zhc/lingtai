@@ -73,7 +73,7 @@ If review raises findings, the card stops in **Waiting on you**:
 
 1. **Waiting on you**: nothing more is spent until you answer.
 2. **review** is red: built, then refused.
-3. The findings. On the card's page: another writer round, a new attempt, or approve.
+3. The findings. Open the card to see what you can do next.
 4. **Landed** is empty until review passes or you approve.
 
 When the card is **Landed**:
@@ -90,6 +90,17 @@ Look at what landed:
 git -C chapter-garden log -1 --stat lingtai-base
 git -C chapter-garden diff main...lingtai-base
 ```
+
+To read it on the site, start it from a second clone; Lingtai keeps landing into the first:
+
+```sh
+git clone -b lingtai-base chapter-garden garden-preview
+cd garden-preview && npm ci && npm run dev
+```
+
+Open `http://localhost:4321/en/` and the story you picked:
+
+![The new chapter in Chapter Garden, highlighted in the story's contents.](img/tutorial-site.png)
 
 The next chapter takes it to `main` in a PR. To OK each landing first, declare
 a `human:` at `proposed:`; see [the recipe](recipe.md).
