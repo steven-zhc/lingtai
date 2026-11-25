@@ -671,6 +671,7 @@ export const STREAMS = {
   GitHubAppCreated: ['ctl-'],
   TriageStarted: ['ticket-'],
   WaitTriaged: ['ticket-'],
+  ProjectPrNumbered: ['prj-'],
   PluginFailed: ['ext-'],
 } as const satisfies { readonly [T in EventType]: readonly StreamPrefix[] }
 

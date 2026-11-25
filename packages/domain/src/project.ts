@@ -58,6 +58,13 @@ export interface ProjectState {
   /** The sandbox state the project's runs last met, and the run that met it. */
   sandboxObserved: (PayloadOf<'ProjectSandboxObserved'> & { seq: bigint; at: Date }) | null
 
+  /**
+   * The highest PR number the project has recorded (`ProjectPrNumbered`), the highest PR a reader may name. Null is
+   * *none recorded*, which for a project whose PRs predate the record is not *no PRs* — a writer finds the highest
+   * once and records it (ADR 0131 §1).
+   */
+  highestPr: number | null
+
   version: number
   lastSeq: bigint | null
 }
@@ -75,6 +82,7 @@ export const emptyProject: ProjectState = {
   paused: null,
   recipe: null,
   sandboxObserved: null,
+  highestPr: null,
   version: 0,
   lastSeq: null,
 }
@@ -138,6 +146,11 @@ export function reduceProjectEvent(state: ProjectState, event: Envelope): Projec
 
     case 'ProjectResumed':
       return { ...state, ...at, paused: null }
+
+    case 'ProjectPrNumbered': {
+      const d = event.data as PayloadOf<'ProjectPrNumbered'>
+      return { ...state, ...at, highestPr: Math.max(state.highestPr ?? 0, d.n) }
+    }
 
     default:
       // See the note in ticket.ts: ignored, not rejected.

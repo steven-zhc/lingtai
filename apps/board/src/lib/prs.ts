@@ -1,9 +1,9 @@
 /**
  * What the board reads of a project's PRs (#1319): server-only, over the log and nothing else.
  *
- * **Numbers are found by `head`, never by listing streams** — `listPrs`' own rule in `@lingtai/project`. The board's
- * *is a PR open?* must be the answer `requestPrSubmit` refuses on, and a prefix listing would also take `pr-lingtai-x-3`
- * for `lingtai`'s and sort `pr-a-10` before `pr-a-9`. The one difference from `listPrs`: one unreadable stream is
+ * **The highest PR is the project stream's record** (`highestPr`, ADR 0131 §1), never found by probing or listing
+ * streams — `listPrs`' own rule in `@lingtai/project`. The board's *is a PR open?* must be the answer `requestPrSubmit`
+ * refuses on, and a prefix listing would also take `pr-lingtai-x-3` for `lingtai`'s and sort `pr-a-10` before `pr-a-9`. The one difference from `listPrs`: one unreadable stream is
  * returned as itself and the others are still read, so a card can say what it could not read.
  */
 import { inProgressStepNames } from '@lingtai/conductor'
@@ -12,7 +12,7 @@ import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } fro
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import { type PrDraftTicket, READ_CONCURRENCY, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
+import { type PrDraftTicket, READ_CONCURRENCY, highestPr, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -40,17 +40,6 @@ import type { LandedWhereRead } from './where-landed.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
-/** The highest PR number with any event: one past it is the next. Zero when there is none. A failed read is an error. */
-export const topPrNumber = (project: string, store: EventStore): Effect.Effect<number, Error> =>
-  Effect.gen(function* () {
-    let n = 0
-    for (;;) {
-      const head = yield* Effect.tryPromise({ try: () => store.head(prStream(project, n + 1)), catch: failed })
-      if (head === 0) return n
-      n++
-    }
-  })
-
 /**
  * Every PR of `project`, in number order. A stream that cannot be read is `{ n, error }` in its place; a listing that
  * cannot be made fails the whole read.
@@ -69,7 +58,7 @@ export const readProjectPrs = (
   options: { since?: Date; merged?: number } = {},
 ): Effect.Effect<PrRead[], Error> =>
   Effect.gen(function* () {
-    const top = yield* topPrNumber(project, store)
+    const top = (yield* highestPr(project, store)).highest ?? 0
     const reads: PrRead[] = []
     let merged = 0
     // Newest first, a chunk at a time: the reads in a chunk run together, and the `since` cut is applied to the chunk's

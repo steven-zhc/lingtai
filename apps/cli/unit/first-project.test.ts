@@ -69,6 +69,7 @@ const project = (name: string, owner: string | null): ProjectState => ({
   paused: null,
   recipe: null,
   sandboxObserved: null,
+  highestPr: null,
   version: 1,
   lastSeq: 1n,
 })
