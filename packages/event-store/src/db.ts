@@ -18,8 +18,8 @@ import contractJson from './prisma/contract.json' with { type: 'json' }
  * Each call constructs its own `pg.Pool`. Close what you open — `await
  * client.close()` — or the process will not exit.
  */
-export function createDb(url: string = postgresUrl()) {
-  return postgres<Contract>({ contractJson, url })
+export function createDb(url: string = postgresUrl(), poolOptions?: { idleTimeoutMillis?: number }) {
+  return postgres<Contract>({ contractJson, url, ...(poolOptions === undefined ? {} : { poolOptions }) })
 }
 
 export type Db = ReturnType<typeof createDb>

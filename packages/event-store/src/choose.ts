@@ -44,7 +44,7 @@ import { closableOnceEffect } from './closable.ts'
 import { createDb } from './db.ts'
 import { Events, type EventsPort, makePostgresEvents } from './event-store.ts'
 import { createPostgresLog, type Log } from './log.ts'
-import { makePostgresLogSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
+import { KEPT_IDLE_MS, makePostgresLogSql, makePostgresQueries, Queries, type QueriesPort } from './queries.ts'
 import { makeSqlSnapshots, Snapshots, type SnapshotsPort } from './snapshots.ts'
 import { promiseLogSql, promiseQueries, promiseSnapshots, promiseStore, promiseWaker } from './store-face.ts'
 import { LogSql, type LogSqlPort, type TicketSql } from './ticket-sql.ts'
@@ -99,7 +99,7 @@ const openEffect: Effect.Effect<Opened> = Effect.gen(function* () {
     // `LINGTAI_DATABASE_URL`, which is the fallback that could name a different
     // database, and never a direct name that points at one either: a stale one
     // left exported is the same split by another route.
-    const db = createDb(choice.url)
+    const db = createDb(choice.url, { idleTimeoutMillis: KEPT_IDLE_MS })
     const events = makePostgresEvents(db)
     const queries = makePostgresQueries({ url: choice.url })
     const logSql = makePostgresLogSql({ url: choice.url })
