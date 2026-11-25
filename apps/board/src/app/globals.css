@@ -3558,6 +3558,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .pr-count { font-size: 0.75rem; opacity: 0.85; }
 .pr-card.draft .pr-head { background: var(--pr-done); color: var(--pr-navy-deep); border-bottom: 1px dashed var(--pr-dusk); }
 .pr-card.draft { border: 1px dashed var(--pr-dusk); }
+.pr-card.draft .pr-head a, .pr-card.draft .pr-head a:visited { color: var(--pr-navy-deep); }
 .pr-card.progress .pr-head { background: var(--signal); }
 .pr-card.progress.queued .pr-head { background: var(--pr-queued); }
 .pr-submitted { margin: 0.75rem 0 0; padding: 0.4rem 0.7rem; border: 1px solid var(--pass); border-radius: 4px; background: var(--pr-ok-tint); color: var(--pr-ok-ink); font-size: 0.85rem; }
