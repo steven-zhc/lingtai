@@ -15,6 +15,7 @@ const recipe = (extra: object) =>
     repo: { submodules: false },
     env: { plantAt: '.env.local' },
     runtime: {},
+    branch: { main: 'main' },
     ...extra,
   })
 
