@@ -26,7 +26,7 @@ import {
   accountsFor,
   currentRecipe,
 } from '@lingtai/conductor'
-import { readBlockersEffect } from '@lingtai/conductor/blockers'
+import { cachedBlockers, readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import {
   explainQueueEffect,
@@ -504,7 +504,7 @@ export const readStatus = (
           client: tickets,
           queue: queueOf(recipe),
           selection: selectionOf(recipe),
-          landed: landedFor({ recipe, links: filter.links, store: eventStore, project: name }),
+          landed: landedFor({ recipe, links: cachedBlockers(name, filter.links ?? null), store: eventStore, project: name }),
         }).pipe(
           Effect.map((found) => ({ found })),
           recovering((err) => Effect.succeed({ failed: err.message })),

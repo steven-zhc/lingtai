@@ -159,7 +159,9 @@ function BlockedCard({
             ))}
           </div>
           <p className="bkwhen">
-            {open.length === 0
+            {skip.held !== undefined
+              ? skip.held
+              : open.length === 0
               ? 'starts on the next turn'
               : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
           </p>

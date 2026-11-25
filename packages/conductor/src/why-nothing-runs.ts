@@ -272,6 +272,18 @@ export function whyNothingRuns(facts: WhyFacts, blockers: readonly BlockedSkip[]
             }
           : longThrough(path),
       ]
+    // The queue's own reason, when it could not release this ticket by what landed on `branch.personal` (#1423): the
+    // blockers it re-read are not what held it, so they are not what is said.
+    if (start && at.held !== undefined) {
+      const held = at.held
+      return [
+        {
+          key: `held:${held}`,
+          kind: 'blockers-unread',
+          describe: (n) => `${plural(n, 'ticket is', 'tickets are')} held: ${held}`,
+        },
+      ]
+    }
     const read = at.blockers
     if (read === null)
       return [

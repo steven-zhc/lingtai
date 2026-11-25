@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 
-import type { Offered } from './discover.ts'
+import type { LandedOptions, Offered } from './discover.ts'
 import type { TicketLink, TicketLinks } from './filter.ts'
 
 /**
@@ -17,6 +17,8 @@ export type BlockedSkip = {
   title: string
   kind: string | null
   blockedBy: number | null
+  /** Why a team project's queue could not release it by what landed on the personal branch (#1423), when it could not. */
+  held?: string
   blockers: { ok: true; issues: readonly TicketLink[] } | { ok: false; problem: string } | null
   unread: boolean
 }
@@ -54,6 +56,7 @@ export const readBlockersEffect = (
     blockedBy: s.blockedBy,
     blockers: null,
     unread: links !== null && i >= BLOCKERS_READ_MOST,
+    ...(blocked[i]!.held === undefined ? {} : { held: blocked[i]!.held }),
   }))
   if (links === null) return Effect.succeed(out)
   const at = now()
@@ -79,4 +82,43 @@ export const readBlockersEffect = (
     )
   })
   return Effect.all(reads, { concurrency: 'unbounded' }).pipe(Effect.as(out))
+}
+
+/**
+ * A link reader that answers from, and fills, the same cache `readBlockersEffect` reads (#1423): the discovery read
+ * of a blocked ticket's blockers and the board's or status's explaining it are one request, not two. For the board
+ * and `lingtai status` only; the conductor reads fresh, since it keeps no state across a pass.
+ */
+export function cachedBlockers(
+  project: string,
+  links: TicketLinks,
+  now: () => number = Date.now,
+): LandedOptions['links'] | null {
+  if (links === null) return null
+  return {
+    // A getter, as `ticketLinksOf`'s is: building this reads nothing from the client.
+    get repository() {
+      return links.repository
+    },
+    listBlockedBy: (issue, blockedBy) => {
+      const key = `${project}#${issue}`
+      const count = blockedBy ?? null
+      const hit = blockerCache.get(key)
+      if (hit && hit.blockedBy === count && now() - hit.at < BLOCKERS_FRESH_MS) {
+        return hit.blockers.ok ? Promise.resolve(hit.blockers.issues) : Promise.reject(new Error(hit.blockers.problem))
+      }
+      const at = now()
+      return links.listBlockedBy(issue).then(
+        (issues) => {
+          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues } })
+          return issues
+        },
+        (error: unknown) => {
+          const problem = error instanceof Error ? error.message : String(error)
+          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem } })
+          throw error
+        },
+      )
+    },
+  }
 }

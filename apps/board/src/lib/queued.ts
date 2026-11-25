@@ -1,4 +1,5 @@
-import { landedFor, rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
+import { cachedBlockers } from '@lingtai/conductor/blockers'
+import { landedFor, landedNote, rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { held as heldBy } from '@lingtai/daemon/control'
@@ -38,7 +39,7 @@ import { eventStore } from '@lingtai/event-store'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
-import { ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { branchOf, ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
 
@@ -186,6 +187,11 @@ export interface QueuedView {
    * #131 exists to remove.
    */
   dependenciesUnread: string | null
+  /**
+   * *its blockers #1420 landed on <branch>* when the queue took this ticket though GitHub still lists it blocked
+   * (#1423), else null or absent.
+   */
+  landed?: string | null
   /** What pressing the button runs. Null when the recipe could not be read. */
   plan: PlanView | null
   /**
@@ -337,7 +343,7 @@ export async function queuedFor(input: {
       client: filter.tickets,
       queue: queueOf(filter.recipe),
       selection: selectionOf(filter.recipe),
-      landed: landedFor({ recipe: filter.recipe, links: filter.links, store: eventStore, project }),
+      landed: landedFor({ recipe: filter.recipe, links: cachedBlockers(project, filter.links ?? null), store: eventStore, project }),
     })
     const runnable = await selectRunnable({
       project,
@@ -361,13 +367,14 @@ export async function queuedFor(input: {
       notOffered: listed
         ? null
         : skipped
-          ? NOT_OFFERED[skipped.reason]
+          ? (skipped.held ?? NOT_OFFERED[skipped.reason])
           : 'GitHub is not listing it among the open issues',
       runnableAt: until === null ? null : until.toISOString(),
       paused,
       project,
       locks,
       dependenciesUnread: offered.dependenciesUnread,
+      landed: landedNote(offered, issue, branchOf(filter.recipe)),
       plan,
       kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
       // `selectRunnable`'s own fallback (`queue.ts`), so this describes the order it used.

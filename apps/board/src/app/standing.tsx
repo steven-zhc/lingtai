@@ -193,6 +193,7 @@ function QueuedBand({
         )}
       </div>
       {resolved && view?.dependenciesUnread ? <p className="refusal">{view.dependenciesUnread}</p> : null}
+      {resolved && view?.landed ? <p className="fact">{view.landed}</p> : null}
       {!resolved || view !== null ? (
         <>
           <h3 className="bandsub">What Attempt {next} will do</h3>

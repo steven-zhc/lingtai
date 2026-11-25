@@ -13,6 +13,7 @@ vi.mock('@lingtai/conductor/discover', () => ({
   runnableNow: vi.fn(),
   rankedKinds: (kinds: string[]) => kinds,
   landedFor: () => undefined,
+  landedNote: () => null,
 }))
 vi.mock('@lingtai/conductor/filter', () => ({
   projectFilter: vi.fn(),

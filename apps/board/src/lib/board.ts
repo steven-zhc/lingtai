@@ -1,6 +1,10 @@
 import { passOverBaseRed } from '@lingtai/conductor'
-import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
-import { landedFor, passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
+import {
+  BLOCKERS_READ_MOST,
+  cachedBlockers,
+  forgetBlockers,
+  readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
+import { landedFor, landedNote, passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -78,7 +82,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode, context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -1007,7 +1011,8 @@ export async function askProject(
                 // As the conductor reads it, or the board draws a ticket blocked that a pass is taking (#1423).
                 landed: landedFor({
                   recipe: filter.recipe,
-                  links: filter.links,
+                  // Through the blocker cache, so `queue.blockers` below finds what this read fetched.
+                  links: cachedBlockers(filter.project, filter.links ?? null, options.now ?? Date.now),
                   store: eventStore,
                   project: filter.project,
                 }),
@@ -1495,7 +1500,8 @@ export async function githubQueue(
         turns: null,
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
-        note: null,
+        // A ticket GitHub still marks blocked, taken because its blockers landed on `branch.personal` (#1423).
+        note: landedNote(offered, r.issue, branchOf(filter.recipe)),
         short: null,
         split: null,
         cause: null,

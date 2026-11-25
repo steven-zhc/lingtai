@@ -469,7 +469,11 @@ export interface BlockerRead {
  */
 export interface LandedOptions {
   /** What reads a ticket's blockers: all of them, open or closed, or a throw. */
-  links: { repository: string; listBlockedBy(issue: number): Promise<readonly BlockerRead[]> }
+  links: {
+    repository: string
+    /** `blockedBy` is GitHub's open count the listing gave, which a caller that caches the read keys it by. */
+    listBlockedBy(issue: number, blockedBy?: number): Promise<readonly BlockerRead[]>
+  }
   /** The log and project whose PRs say which tickets joined a draft. */
   store: EventStore
   project: string
@@ -477,9 +481,18 @@ export interface LandedOptions {
   branch: string
 }
 
+/** The most blockers one page of the read carries; a list longer than this holds the ticket (#1423). */
+export const BLOCKERS_PAGE = 100
+
 /** How an offered ticket says its open blockers had landed. One phrase, as `dependenciesUnread` is. */
 export function blockersLanded(landed: readonly number[], branch: string): string {
   return `its blockers ${landed.map((n) => `#${n}`).join(', ')} landed on ${branch}`
+}
+
+/** What an offered ticket says about blockers it was taken past, or null for one GitHub's summary did not hold (#1423). */
+export function landedNote(offered: Pick<Offered, 'runnable'>, ref: string | number, branch: string): string | null {
+  const landed = offered.runnable.find((r) => String(r.ref) === String(ref))?.landedBlockers
+  return landed === undefined ? null : blockersLanded(landed, branch)
 }
 
 /** How a `blocked-by` skip says its blockers could not be read. */
@@ -606,13 +619,16 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           null
       ) {
         const read = yield* Effect.tryPromise({
-          try: () => landed.links.listBlockedBy(issue.number),
+          try: () => landed.links.listBlockedBy(issue.number, issue.dependencies!.blockedBy),
           catch: (error) => error,
         }).pipe(
           Effect.map((blockers) => ({ ok: true as const, blockers })),
           Effect.catch((error: unknown) => Effect.succeed({ ok: false as const, why: whyOf(error) })),
         )
         if (!read.ok) held = blockersUnread(read.why)
+        // One page is what the read is allowed: a list that says there are more than a page holds the issue.
+        else if (read.blockers.length > BLOCKERS_PAGE)
+          held = blockersUnread(`it has more than ${BLOCKERS_PAGE} blockers, which is more than one page`)
         else if (read.blockers.length === 0) held = blockersUnread('GitHub listed none, though it counts some open')
         else {
           drafted ??= yield* readDraftedTickets(landed.project, landed.store).pipe(
