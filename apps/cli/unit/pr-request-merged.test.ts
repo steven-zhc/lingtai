@@ -6,6 +6,7 @@ import { prStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { requestPrRetry, readPr } from '@lingtai/project'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -36,6 +37,7 @@ async function waiting(): Promise<EventStore> {
     { type: 'PrMerged', actor: 'conductor', data: { how: 'host', headSha: HEAD, mergeSha: 'c'.repeat(40) } },
     { type: 'PrCatchUpFailed', actor: 'conductor', data: { mainSha: MAIN, why: 'conflict', detail: 'x' } },
   ] as never)
+  await recordPrNumber(store, 'lingtai', 1)
   return store
 }
 

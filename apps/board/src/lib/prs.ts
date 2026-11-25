@@ -12,7 +12,15 @@ import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } fro
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import { type PrDraftTicket, READ_CONCURRENCY, highestPr, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
+import {
+  type PrDraftTicket,
+  READ_CONCURRENCY,
+  highestPr,
+  openPr,
+  readDraftTickets,
+  readPr,
+  readPrEvents,
+} from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'

@@ -369,12 +369,14 @@ export const requestPrSubmit = (
         const head = yield* Effect.tryPromise({ try: () => store.head(stream), catch: failed })
         if (head !== pr.version) return yield* Effect.fail(new ConcurrencyError(stream, pr.version, [head]))
       }
+      const own = { streamId: prStream(project, target.n), expectedVersion: target.version, events: [decided.event] }
+      const numbered = numberBatch(project, target.n, numbering)
       yield* Effect.tryPromise({
+        // The common Submit records no number, and is the single append it always was.
         try: () =>
-          store.appendAll([
-            { streamId: prStream(project, target.n), expectedVersion: target.version, events: [decided.event] },
-            ...numberBatch(project, target.n, numbering),
-          ]),
+          numbered.length === 0
+            ? store.append(own.streamId, own.expectedVersion, own.events).then(() => undefined)
+            : store.appendAll([own, ...numbered]),
         catch: (e) => e,
       })
       return { kind: 'requested', n: target.n } as SubmitAnswer

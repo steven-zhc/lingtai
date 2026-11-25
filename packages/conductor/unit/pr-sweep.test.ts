@@ -15,6 +15,8 @@ import { IN_PROGRESS_STEPS, type PrPorts, learnPrEnds, makePrHandlers, servePr }
 
 /** `push` and `open`: this file is about the sweep; `sync` and `build` are `pr-sync.test.ts`'s. */
 const PUSH_OPEN = IN_PROGRESS_STEPS.filter((s) => s.name === 'push' || s.name === 'open')
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
+
 import type { IssueChannel } from '../src/tell.ts'
 
 const team = { mode: 'team', branch: { main: 'main', personal: 'lingtai-team' } } as unknown as Recipe
@@ -126,6 +128,7 @@ async function landed(store: EventStore, issue: string) {
     await store.append(prStream('lingtai', 1), pr1.length, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
     ])
+    await recordPrNumber(store, 'lingtai', 1)
   }
 }
 
@@ -283,6 +286,7 @@ describe('an unfinished close is retried after a later PR merges', () => {
     await store.append(prStream('lingtai', 2), 0, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '3', mergeCommit: 'm3', from: null } },
     ])
+    await recordPrNumber(store, 'lingtai', 2)
     await Effect.runPromise(submitPr('lingtai', 'team', 'human:steven', store))
     await Effect.runPromise(servePr(p, 'lingtai', 2, PUSH_OPEN))
     w.pull = { ...open, merged: true, state: 'closed' }

@@ -2,6 +2,7 @@ import { prStream, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHubClient, Issue, Label } from '@lingtai/github'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 /**
  * Discovery, and the queue it feeds.
  *
@@ -819,8 +820,10 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
   /** PR 1 with `ticket` in its draft, carried as far as `through` says. */
   const prWith = async (store: EventStore, ticket: string, through: 'draft' | 'in-progress' | 'merged' | 'closed') => {
     const stream = prStream(PROJECT, 1)
-    const append = async (events: Parameters<EventStore['append']>[2]) =>
-      store.append(stream, await store.head(stream), events)
+    const append = async (events: Parameters<EventStore['append']>[2]) => {
+      await store.append(stream, await store.head(stream), events)
+      await recordPrNumber(store, PROJECT, 1)
+    }
     await append([{ type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket, mergeCommit: 'm', from: null } }])
     if (through === 'draft') return
     await append([{ type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } }])
