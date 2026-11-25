@@ -29,7 +29,8 @@
 import { PUBLISHING_LABEL } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store/store'
 import { readDraftedTickets } from '@lingtai/project'
-import type { AssigneeRule, QueueSettings, Selection } from '@lingtai/recipe'
+import type { AssigneeRule, QueueSettings, Recipe, Selection } from '@lingtai/recipe'
+import { branchOf, selectionOf } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
 // `ticketStream` and its inverse moved to `domain` (0022): the projector
@@ -492,14 +493,14 @@ export function blockersUnread(why: string): string {
  * `runnableNowEffect` asks this one function, so the pass, `take`, `lingtai now`, status and the board agree.
  */
 export function landedFor(input: {
-  selection: Selection
+  recipe: Recipe
   links: LandedOptions['links'] | null
   store: EventStore
   project: string
-  branch: string
 }): LandedOptions | undefined {
-  if (input.selection.mode !== 'team' || input.selection.tickets === 'db' || input.links === null) return undefined
-  return { links: input.links, store: input.store, project: input.project, branch: input.branch }
+  const selection = selectionOf(input.recipe)
+  if (selection.mode !== 'team' || selection.tickets === 'db' || input.links == null) return undefined
+  return { links: input.links, store: input.store, project: input.project, branch: branchOf(input.recipe) }
 }
 
 /**

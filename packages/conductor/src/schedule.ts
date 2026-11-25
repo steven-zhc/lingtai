@@ -239,11 +239,10 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         queue: queueOf(options.recipe),
         selection: selectionOf(options.recipe),
         landed: landedFor({
-          selection: selectionOf(options.recipe),
+          recipe: options.recipe,
           links: linksOfClient(options.discovery ?? options.client),
           store: options.store ?? eventStore,
           project: name,
-          branch: branchOf(options.recipe),
         }),
       }).pipe(Effect.orDie)
       // **A red base is the project's** (#1208, 0108 §13): while its head is the commit the red was recorded

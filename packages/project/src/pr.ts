@@ -15,6 +15,7 @@ import {
   type ToAppend,
   prStream,
   reducePr,
+  reducePrEvent,
   reduceTicket,
   openAmong,
   requestSubmit,
@@ -181,12 +182,16 @@ const LANDED_PR_STATUSES: ReadonlySet<NonNullable<PrState['status']>> = new Set(
 export function draftedTicketsIn(streams: readonly (readonly Envelope[])[]): Set<string> {
   const drafted = new Set<string>()
   for (const events of streams) {
-    if (events.length === 0) continue
-    const status = reducePr(events).status
-    if (status === null || !LANDED_PR_STATUSES.has(status)) continue
+    // The union of every draft the stream ever had: a ticket joins `draft` and `PrInProgress` empties it, so the
+    // draft at the end forgets it. Read through the reducer and never by event type (`one-reducer.test.ts`).
+    let state = emptyPr
+    const joined = new Set<string>()
     for (const event of events) {
-      if (event.type === 'PrDraftTicketAdded') drafted.add((event.data as { ticket: string }).ticket)
+      state = reducePrEvent(state, event)
+      for (const t of state.draft) joined.add(t.ticket)
     }
+    if (state.status === null || !LANDED_PR_STATUSES.has(state.status)) continue
+    for (const t of joined) drafted.add(t)
   }
   return drafted
 }

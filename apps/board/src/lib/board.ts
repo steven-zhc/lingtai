@@ -78,7 +78,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { branchOf, modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode, context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -1006,11 +1006,10 @@ export async function askProject(
                 selection: selectionOf(filter.recipe),
                 // As the conductor reads it, or the board draws a ticket blocked that a pass is taking (#1423).
                 landed: landedFor({
-                  selection: selectionOf(filter.recipe),
+                  recipe: filter.recipe,
                   links: filter.links,
                   store: eventStore,
                   project: filter.project,
-                  branch: branchOf(filter.recipe),
                 }),
               }),
             catch: (err) => err,

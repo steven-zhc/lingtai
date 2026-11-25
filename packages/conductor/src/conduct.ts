@@ -3284,13 +3284,7 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             selection: selectionOf(recipe),
             only: [options.issue],
             // The same reading the pass's pick made, or `take` would refuse the ticket it was handed (#1423).
-            landed: landedFor({
-              selection: selectionOf(recipe),
-              links: linksOfClient(tickets),
-              store,
-              project,
-              branch: branchOf(recipe),
-            }),
+            landed: landedFor({ recipe, links: linksOfClient(tickets), store, project }),
           }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {

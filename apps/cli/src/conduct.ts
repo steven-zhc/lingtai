@@ -553,13 +553,7 @@ export function conductWork(
         client: discovery,
         queue: queueOf(resolved.recipe),
         selection: selectionOf(resolved.recipe),
-        landed: landedFor({
-          selection: selectionOf(resolved.recipe),
-          links: linksOfClient(discovery),
-          store,
-          project: name,
-          branch: branchOf(resolved.recipe),
-        }),
+        landed: landedFor({ recipe: resolved.recipe, links: linksOfClient(discovery), store, project: name }),
       }).pipe(Effect.orDie)
       // **A red base passes a requested ticket over too** (#1208): the same look the queue makes, so a `now`
       // cannot claim a ticket the base would only release again. The request stays pending, and is said.

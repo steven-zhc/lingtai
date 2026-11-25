@@ -38,7 +38,7 @@ import { eventStore } from '@lingtai/event-store'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
-import { branchOf, ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
 
@@ -337,13 +337,7 @@ export async function queuedFor(input: {
       client: filter.tickets,
       queue: queueOf(filter.recipe),
       selection: selectionOf(filter.recipe),
-      landed: landedFor({
-        selection: selectionOf(filter.recipe),
-        links: filter.links,
-        store: eventStore,
-        project,
-        branch: branchOf(filter.recipe),
-      }),
+      landed: landedFor({ recipe: filter.recipe, links: filter.links, store: eventStore, project }),
     })
     const runnable = await selectRunnable({
       project,

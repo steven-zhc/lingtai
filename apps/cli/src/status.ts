@@ -504,13 +504,7 @@ export const readStatus = (
           client: tickets,
           queue: queueOf(recipe),
           selection: selectionOf(recipe),
-          landed: landedFor({
-            selection: selectionOf(recipe),
-            links: filter.links,
-            store: eventStore,
-            project: name,
-            branch: branchOf(recipe),
-          }),
+          landed: landedFor({ recipe, links: filter.links, store: eventStore, project: name }),
         }).pipe(
           Effect.map((found) => ({ found })),
           recovering((err) => Effect.succeed({ failed: err.message })),

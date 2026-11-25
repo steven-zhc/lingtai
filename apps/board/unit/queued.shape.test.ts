@@ -9,7 +9,11 @@ vi.mock('@lingtai/project', async (orig) => ({
   ...(await orig<object>()),
   readProject: vi.fn(async () => ({ name: 'p' })),
 }))
-vi.mock('@lingtai/conductor/discover', () => ({ runnableNow: vi.fn(), rankedKinds: (kinds: string[]) => kinds }))
+vi.mock('@lingtai/conductor/discover', () => ({
+  runnableNow: vi.fn(),
+  rankedKinds: (kinds: string[]) => kinds,
+  landedFor: () => undefined,
+}))
 vi.mock('@lingtai/conductor/filter', () => ({
   projectFilter: vi.fn(),
   stepPlan: vi.fn(),
