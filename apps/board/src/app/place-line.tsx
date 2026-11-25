@@ -75,25 +75,29 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
 
 function View({ v, here }: { v: PlaceView; here: string | undefined }) {
   const current = v.id === here
-  const Anchor = v.choose === undefined ? Link : ProjectLink
-  return (
-    <Anchor
-      {...(v.choose === undefined ? {} : { choice: v.choose.project })}
-      className={current ? 'view on' : 'view'}
-      href={v.href}
-      aria-current={current ? 'page' : undefined}
-      title={
-        v.key === undefined ? undefined : `${v.label} · G ${v.key}${v.unread === undefined ? '' : ` · ${v.unread}`}`
-      }
-      {...(v.key === undefined ? {} : { 'data-go': v.key.toLowerCase() })}
-    >
+  const props = {
+    className: current ? 'view on' : 'view',
+    href: v.href,
+    'aria-current': current ? ('page' as const) : undefined,
+    title: v.key === undefined ? undefined : `${v.label} · G ${v.key}${v.unread === undefined ? '' : ` · ${v.unread}`}`,
+    ...(v.key === undefined ? {} : { 'data-go': v.key.toLowerCase() }),
+  }
+  const body = (
+    <>
       {v.label}
       {v.badge === undefined ? null : (
         <span className="badge" title={v.badge.title}>
           {v.badge.n}
         </span>
       )}
-    </Anchor>
+    </>
+  )
+  return v.choose === undefined ? (
+    <Link {...props}>{body}</Link>
+  ) : (
+    <ProjectLink choice={v.choose.project} {...props}>
+      {body}
+    </ProjectLink>
   )
 }
 
