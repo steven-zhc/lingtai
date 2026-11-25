@@ -97,6 +97,29 @@ export function listPrs(project: string, store: EventStore): Effect.Effect<PrSta
   })
 }
 
+/**
+ * The PRs that decide the open PR and the draft, in number order: the highest PR, and every one below it down to the
+ * first not in `draft` (inclusive). `openAmong` and `draftIn` look at nothing else, so older streams are never read —
+ * the cost does not grow with the project's history. The numbers are still found by `head`.
+ */
+const listTailPrs = (project: string, store: EventStore): Effect.Effect<PrState[], Error> =>
+  Effect.gen(function* () {
+    let top = 0
+    for (;;) {
+      const head = yield* Effect.tryPromise({ try: () => store.head(prStream(project, top + 1)), catch: failed })
+      if (head === 0) break
+      top++
+    }
+    const tail: PrState[] = []
+    for (let n = top; n >= 1; n--) {
+      const pr = yield* readPr(project, n, store)
+      if (pr === null) continue
+      tail.push(pr)
+      if (pr.status !== 'draft') break
+    }
+    return tail.reverse()
+  })
+
 /** The project's highest-numbered PR, or null if it never had one. */
 export function latestPr(project: string, store: EventStore): Effect.Effect<PrState | null, Error> {
   return listPrs(project, store).pipe(Effect.map((prs) => prs[prs.length - 1] ?? null))
@@ -104,7 +127,7 @@ export function latestPr(project: string, store: EventStore): Effect.Effect<PrSt
 
 /** The open PR: the highest-numbered one not in `draft`, when it is open; null otherwise. */
 export function openPr(project: string, store: EventStore): Effect.Effect<PrState | null, Error> {
-  return listPrs(project, store).pipe(Effect.map(openAmong))
+  return listTailPrs(project, store).pipe(Effect.map(openAmong))
 }
 
 /**
@@ -151,7 +174,7 @@ export function draftBatchFor(
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
 export function readDraft(project: string, store: EventStore): Effect.Effect<PrState['draft'], Error> {
-  return listPrs(project, store).pipe(Effect.map(draftIn))
+  return listTailPrs(project, store).pipe(Effect.map(draftIn))
 }
 
 /** The draft among PRs already read: the highest one's tickets while it is `draft`, else none. One read, one answer. */
