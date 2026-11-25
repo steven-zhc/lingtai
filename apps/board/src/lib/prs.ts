@@ -12,7 +12,7 @@ import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } fro
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import { type PrDraftTicket, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
+import { type PrDraftTicket, READ_CONCURRENCY, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
@@ -67,18 +67,27 @@ export const readProjectPrs = (
   Effect.gen(function* () {
     const top = yield* topPrNumber(project, store)
     const reads: PrRead[] = []
-    for (let n = top; n >= 1; n--) {
-      const read = yield* readPr(project, n, store).pipe(Effect.result)
-      if (read._tag === 'Failure') {
-        reads.push({ n, error: read.failure.message })
-        continue
+    // Newest first, a chunk at a time: the reads in a chunk run together, and the `since` cut is applied to the chunk's
+    // results in order, so what is returned is what the serial walk returned. Reads past the cut in its own chunk are
+    // dropped, errors included.
+    for (let high = top; high >= 1; high -= READ_CONCURRENCY) {
+      const chunk = Array.from({ length: Math.min(READ_CONCURRENCY, high) }, (_, i) => high - i)
+      const results = yield* Effect.forEach(chunk, (n) => readPr(project, n, store).pipe(Effect.result), {
+        concurrency: READ_CONCURRENCY,
+      })
+      for (const [i, read] of results.entries()) {
+        const n = chunk[i]!
+        if (read._tag === 'Failure') {
+          reads.push({ n, error: read.failure.message })
+          continue
+        }
+        if (read.success === null) continue
+        const pr = read.success
+        if (pr.status === 'draft') continue
+        reads.push({ n, pr })
+        if (options.since !== undefined && pr.status === 'merged' && pr.ended !== null && pr.ended.at < options.since)
+          return reads.reverse()
       }
-      if (read.success === null) continue
-      const pr = read.success
-      if (pr.status === 'draft') continue
-      reads.push({ n, pr })
-      if (options.since !== undefined && pr.status === 'merged' && pr.ended !== null && pr.ended.at < options.since)
-        break
     }
     return reads.reverse()
   })
@@ -138,8 +147,10 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
     const view = await Effect.runPromise(
       Effect.gen(function* () {
-        const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
-        const draft = yield* readDraftOf(project)
+        const [prs, draft] = yield* Effect.all(
+          [Effect.tryPromise({ try: () => prsOf(project), catch: failed }), readDraftOf(project)],
+          { concurrency: 2 },
+        )
         const spend = yield* spendByPr(
           project,
           prs.map((r) => r.n),
@@ -190,8 +201,10 @@ export async function readLandedWhere(project: string): Promise<LandedWhereRead>
     if (modeOf(recipe) !== 'team') return { kind: 'solo' }
     return await Effect.runPromise(
       Effect.gen(function* () {
-        const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
-        const draft = yield* readDraftOf(project)
+        const [prs, draft] = yield* Effect.all(
+          [Effect.tryPromise({ try: () => prsOf(project), catch: failed }), readDraftOf(project)],
+          { concurrency: 2 },
+        )
         return { kind: 'team', prs, draft } as const
       }),
     )
