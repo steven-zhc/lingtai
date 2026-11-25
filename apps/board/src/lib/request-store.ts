@@ -25,7 +25,7 @@ export function memoStore(store: EventStore): EventStore {
   const heads = new Map<string, Promise<number>>()
   const forget = (streams: readonly string[]): void => {
     for (const id of streams) {
-      for (const key of [...reads.keys()]) if (key.startsWith(`${id}\0`)) reads.delete(key)
+      for (const key of reads.keys()) if (key.startsWith(`${id}\0`)) reads.delete(key)
       heads.delete(id)
     }
   }
