@@ -1,5 +1,5 @@
 import { createPublicKey } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
+import { readFile, statfs } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { isSea } from 'node:sea'
@@ -178,6 +178,7 @@ import pg from 'pg'
 import { parse as parseYaml } from 'yaml'
 
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
+import { type CleanListing, cleanListingEffect } from './clean.ts'
 import { readDaySpend } from './day-ceiling.ts'
 import { lift } from './exit.ts'
 import { heading, LABEL_COLUMN, labelled, renderNextLine, section, symbol, width } from './output.ts'
@@ -1258,6 +1259,8 @@ export interface DoctorReach {
   shapes: (p: Projection) => Effect.Effect<ProjectionShape, unknown>
   lockHolder: () => Effect.Effect<Awaited<ReturnType<typeof conductorLockHolder>>, unknown>
   orphans: () => Effect.Effect<Orphan[], unknown>
+  /** What `lingtai clean` would list and the bytes free where the home is; injectable so a unit test reads neither. */
+  diskSpace?: () => Effect.Effect<{ listing: CleanListing; free: number }, unknown>
   /** `SnapshotStore.census` of the log this machine chose; the process log's own where absent. */
   snapshots?: () => Effect.Effect<SnapshotCensusRow[], unknown>
   titles: () => Effect.Effect<Awaited<ReturnType<typeof readTasks>>, unknown>
@@ -1886,6 +1889,91 @@ function orphans(
   return Effect.map(
     recovering(fetch(), () => null),
     orphansRow,
+  )
+}
+
+/** 1 GiB of orphan worktrees, in KB as `clean` sizes them. */
+export const ORPHANS_WARN_KB = 1024 * 1024
+/** 5 GiB free, in bytes. */
+export const FREE_WARN_BYTES = 5 * 1024 ** 3
+
+const gib = (n: number): string => `${(n / 1024 ** 3).toFixed(1)} GB`
+
+/**
+ * `disk: space` — orphan worktrees `lingtai clean` would remove, and the disk they sit on. The orphan
+ * rule is `clean`'s own, read from its listing rather than restated: doctor's `worktrees: reconciliation`
+ * row has a different one and must not be used here. Only ever `ok` or `warn`.
+ */
+export function diskSpaceRow(listing: Read2<CleanListing>, free: Read2<number>): CheckResult {
+  const name = 'disk: space'
+  const title = 'Orphan worktrees and free disk space'
+  const problems: string[] = []
+  let orphanKb = 0
+  if (!listing.ok) {
+    problems.push(`the orphans could not be counted: ${listing.reason}`)
+  } else {
+    const bad: string[] = []
+    for (const dir of listing.value.unreadable) bad.push(`${dir} could not be read`)
+    for (const item of listing.value.items) {
+      if (item.kind !== 'worktree') continue
+      if (item.verdict.verdict === 'unchecked') bad.push(`${item.name} could not be checked: ${item.verdict.reason}`)
+      else if (item.verdict.verdict === 'remove') {
+        if (item.sizeKb === null) bad.push(`${item.name} could not be sized`)
+        else orphanKb += item.sizeKb
+      }
+    }
+    if (bad.length > 0) {
+      problems.push(`the orphans could not be counted: ${bad.join('; ')}`)
+    }
+  }
+  if (orphanKb >= ORPHANS_WARN_KB) {
+    problems.push(`orphan worktrees take ${gib(orphanKb * 1024)} (warns at ${gib(ORPHANS_WARN_KB * 1024)})`)
+  }
+  if (!free.ok) {
+    problems.push(`free space could not be read: ${free.reason}`)
+  } else if (free.value < FREE_WARN_BYTES) {
+    problems.push(`${gib(free.value)} free (warns below ${gib(FREE_WARN_BYTES)})`)
+  }
+  if (problems.length === 0 && free.ok) {
+    return {
+      name,
+      title,
+      status: 'ok',
+      detail: `orphan worktrees take ${gib(orphanKb * 1024)}; ${gib(free.value)} free`,
+    }
+  }
+  return { name, title, status: 'warn', detail: problems.join('; '), fix: 'lingtai clean' }
+}
+
+type Read2<A> = { ok: true; value: A } | { ok: false; reason: string }
+
+const readOfEffect = <A>(e: Effect.Effect<A, unknown>): Effect.Effect<Read2<A>> =>
+  e.pipe(
+    Effect.map((value): Read2<A> => ({ ok: true, value })),
+    Effect.catch((err) =>
+      Effect.succeed<Read2<A>>({ ok: false, reason: err instanceof Error ? err.message : String(err) }),
+    ),
+  )
+
+/** Bytes free on the filesystem holding `home`; a rejection keeps its own message (ENOENT, EACCES). */
+export const freeBytes = (home: string): Effect.Effect<number, Error> =>
+  Effect.tryPromise({ try: () => statfs(home), catch: (e) => (e instanceof Error ? e : new Error(String(e))) }).pipe(
+    Effect.map((s) => Number(s.bavail) * Number(s.bsize)),
+  )
+
+function diskSpace(fetch: DoctorReach['diskSpace']): Effect.Effect<CheckResult> {
+  if (fetch !== undefined) {
+    return Effect.map(readOfEffect(fetch()), (r) =>
+      r.ok ? diskSpaceRow({ ok: true, value: r.value.listing }, { ok: true, value: r.value.free }) : diskSpaceRow(r, r),
+    )
+  }
+  const home = process.env['LINGTAI_HOME'] ?? `${process.env['HOME'] ?? '.'}/.lingtai`
+  return Effect.map(
+    Effect.all({
+      listing: readOfEffect(cleanListingEffect({ home })),
+      free: readOfEffect(freeBytes(home)),
+    }),
+    ({ listing, free }) => diskSpaceRow(listing, free),
   )
 }
 
@@ -4146,6 +4234,8 @@ export function runDoctor(
       )
     }
 
+    // Outside the store branches: free space and orphans do not depend on the Postgres or store checks passing.
+    yield* step('disk space', diskSpace(reach.diskSpace).pipe(Effect.map(push)))
     yield* step(
       'GitHub',
       Effect.gen(function* () {
@@ -4288,7 +4378,7 @@ const OTHER = 'Other'
  * here is the order the sections are drawn in, within a tier (see `renderDoctor`).
  */
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
-  ['Machine', ['node', 'packages load under Node', 'release']],
+  ['Machine', ['node', 'packages load under Node', 'release', 'disk']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections', 'snapshots']],
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates', 'account']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],

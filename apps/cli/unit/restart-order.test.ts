@@ -8,7 +8,13 @@ import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { controlCommand } from '../src/daemon.ts'
-import { prepareRestart, restartSupervised, type RestartArgs, type RestartFacts } from '../src/restart.ts'
+import {
+  gatingFailures,
+  prepareRestart,
+  restartSupervised,
+  type RestartArgs,
+  type RestartFacts,
+} from '../src/restart.ts'
 
 vi.mock('../src/project-pause.ts', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../src/project-pause.ts')>()),
@@ -124,5 +130,11 @@ describe('controlCommand', () => {
     const code = await Effect.runPromise(controlCommand('pause', {}))
     expect(code).toBe(1)
     expect(error.mock.calls).toEqual([['boom']])
+  })
+})
+
+describe('a disk: space warning', () => {
+  it('is not a failure the restart gates on', () => {
+    expect(gatingFailures([{ status: 'warn' }])).toBe(0)
   })
 })
