@@ -21,7 +21,7 @@ const ticks = async (n = 5) => {
   for (let i = 0; i < n; i++) await new Promise((r) => setImmediate(r))
 }
 
-function world() {
+function world(now?: () => number) {
   const release = Deferred.makeUnsafe<void>()
   const record: string[] = []
   const daemon: DaemonPort = {
@@ -46,6 +46,7 @@ function world() {
     clearListening: () => void record.push('clearListening'),
     services: Context.empty(),
     exit: (code) => void record.push(`exit ${code}`),
+    ...(now ? { now } : {}),
   })
   return { stopping, release, record }
 }
@@ -75,9 +76,11 @@ describe('a SIGINT while a pass is in flight', () => {
   })
 
   it('a second press stops now, without waiting for the pass and without interrupting it', async () => {
-    const { stopping, release, record } = world()
+    let t = 0
+    const { stopping, release, record } = world(() => t)
     stopping.onSignal('SIGINT')
     await ticks()
+    t = 600
     stopping.onSignal('SIGINT')
     await ticks()
 
@@ -88,5 +91,24 @@ describe('a SIGINT while a pass is in flight', () => {
     expect(record).not.toContain('interrupted')
     expect(lines.filter((l) => l.startsWith('draining —'))).toHaveLength(1)
     Deferred.doneUnsafe(release, Effect.void)
+  })
+
+  it.each([
+    ['SIGINT', 'SIGINT'],
+    ['SIGTERM', 'SIGINT'],
+  ])('%s then %s 10 ms apart is one press: it drains and does not stop now (#1437)', async (a, b) => {
+    let t = 0
+    const { stopping, release, record } = world(() => t)
+    stopping.onSignal(a)
+    t = 10
+    stopping.onSignal(b)
+    await ticks()
+
+    expect(lines.filter((l) => l.startsWith('draining —'))).toHaveLength(1)
+    expect(lines.some((l) => l.startsWith('stopping now'))).toBe(false)
+    Deferred.doneUnsafe(release, Effect.void)
+    await ticks()
+    expect(record).toContain('loop.stop')
+    expect(record.some((r) => r.startsWith('exit'))).toBe(false)
   })
 })
