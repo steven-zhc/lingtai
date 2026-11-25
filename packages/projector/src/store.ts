@@ -38,7 +38,7 @@ import { Context, Effect } from 'effect'
 // the reducer that produces it is worth more than a file with no edges.
 import type { BacklogEntry, BacklogStatus } from './backlog.ts'
 import type { SpendRow } from './spend.ts'
-import type { TaskCard } from './task-view.ts'
+import type { TaskCard, TaskState } from './task-view.ts'
 import type { TicketReportRow } from './ticket-report.ts'
 
 /** A row, as a store hands it back. Column names, not field names. */
@@ -399,6 +399,20 @@ export interface ProjectionStore {
   close(): Promise<void>
 }
 
+/** What `taskStates` asks: one project's rows, for exactly these issue references. */
+export interface TaskStatesQuery {
+  project: string
+  issues: readonly string[]
+}
+
+/** The part of a `task_view` row queue selection decides on. */
+export interface TaskStateRow {
+  issue: string
+  state: TaskState
+  lastAttemptAt: Date | null
+  repairPending: boolean
+}
+
 /**
  * `ProjectionContext` as Effects. A driver or SQLite error is a defect.
  */
@@ -427,6 +441,14 @@ export interface ProjectionsPort {
   lag(name: string): Effect.Effect<ProjectionLag>
   lags(): Effect.Effect<ProjectionLag[]>
   tasks(query: TaskQuery): Effect.Effect<TaskCard[], ProjectionShapeError>
+  /**
+   * The state and backoff fields of the named issues of one project, and no
+   * more (#1440). No retention cutoff — a closed row is still the log's opinion
+   * — and an issue with no row is simply absent. `project` is required: without
+   * it the same issue number would match in every project. Empty `issues` is
+   * `[]` with no query.
+   */
+  taskStates(query: TaskStatesQuery): Effect.Effect<TaskStateRow[]>
   taskProjects(query: Pick<TaskQuery, 'retentionDays'>): Effect.Effect<string[]>
   backlog(query: BacklogQuery): Effect.Effect<BacklogEntry[]>
   spend(query: SpendQuery): Effect.Effect<SpendRow[]>

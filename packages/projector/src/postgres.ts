@@ -31,6 +31,8 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TaskStateRow,
+  TaskStatesQuery,
   TicketReportLandedQuery,
   TicketReportQuery,
 } from './store.ts'
@@ -469,6 +471,22 @@ export function makePostgresProjections(
         args,
       )
       return yield* mapRows(() => r.map(toCard))
+    }),
+
+    taskStates: Effect.fn('Projections.taskStates')(function* (query: TaskStatesQuery) {
+      if (query.issues.length === 0) return []
+      const r = yield* rows(
+        `select issue, state, last_attempt_at, repair_pending
+         from task_view
+         where project = $1 and issue = any($2::text[])`,
+        [query.project, [...query.issues]],
+      )
+      return r.map((row): TaskStateRow => ({
+        issue: row.issue as string,
+        state: row.state as TaskState,
+        lastAttemptAt: (row.last_attempt_at as Date | null) ?? null,
+        repairPending: row.repair_pending === true,
+      }))
     }),
 
     taskProjects: Effect.fn('Projections.taskProjects')(function* (query: Pick<TaskQuery, 'retentionDays'>) {
