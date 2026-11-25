@@ -69,7 +69,7 @@ export function RecipeText({
       ) : (
         <>
           <FileBar path={path}>
-            <button type="button" className="rfile-edit" onClick={() => setEditing(true)}>
+            <button type="button" className="btn" onClick={() => setEditing(true)}>
               Edit
             </button>
           </FileBar>

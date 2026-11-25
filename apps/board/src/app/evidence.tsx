@@ -148,7 +148,7 @@ export function RunDiff({ project, baseSha, headSha }: { project: string; baseSh
   return (
     <div>
       <button
-        className="btn"
+        className="btn sm"
         onClick={() =>
           startTransition(async () => {
             const result = await loadDiff({ project, baseSha, headSha })

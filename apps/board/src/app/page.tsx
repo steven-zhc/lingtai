@@ -273,6 +273,7 @@ export function Card({
             taskId={card.taskId}
             waitId={card.waitId}
             move={card.move}
+            small
           />
         ) : null}
       </article>
@@ -481,7 +482,7 @@ export function Card({
           appends nothing and the reducer went on calling them `backlog`. */}
       {card.column === 'queued' ? (
         <div className="btnrow">
-          <Close project={card.project} issue={Number(card.ref)} waitId={null} />
+          <Close project={card.project} issue={Number(card.ref)} waitId={null} small />
         </div>
       ) : null}
     </article>
@@ -504,7 +505,7 @@ export function ColumnLabel({ label }: { label: string }) {
  */
 export function LandedCount({ count, only }: { count: number; only: string | undefined }) {
   return (
-    <Link className="ctbtn" href={landedLink(only)} title="what Lingtai changed, newest first">
+    <Link className="btn sm" href={landedLink(only)} title="what Lingtai changed, newest first">
       <span className="ct">{count}</span>
       <span className="lbl">all</span>
       <span aria-hidden="true">→</span>

@@ -474,7 +474,7 @@ export function Filters({ query, kinds }: { query: ReportQuery; kinds: readonly 
           </label>
         ))}
       </fieldset>
-      <button type="submit">apply</button>
+      <button type="submit" className="btn sm">apply</button>
       <span className="rp-window">
         {day(query.window.from)} → {day(last)}
       </span>

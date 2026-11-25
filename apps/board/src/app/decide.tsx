@@ -59,7 +59,7 @@ import { TriageChoices, useTriageDraft, type Sending } from './triage-picks.tsx'
 export type Recommended = 'approve' | 'reject' | 'requeue' | 'answer' | null
 
 /**
- * Which of the two moves wears the amber. Amber appears once per screen.
+ * Which of the two moves is the primary. A block (card, row, panel) has at most one primary.
  *
  * Not exported: this is a client module, and a server component calling a
  * function from one gets a reference rather than the function.
@@ -116,7 +116,7 @@ export function Decide({
    */
   refusing: boolean
   /**
-   * What this wait recommends, when it recommends anything. Approve wears amber
+   * What this wait recommends, when it recommends anything. Approve is the primary
    * only when it is recommended; an absent recommendation marks no control.
    */
   recommended?: Recommended
@@ -391,11 +391,14 @@ export function EditBodyAndRequeue({
   triaged = null,
   answerOnly = false,
   part = 'all',
+  primary = false,
 }: {
   project: string
   issue: number
   waitId: WaitId | null
   reason: WaitReason | null
+  /** Save and start is the block's one primary: the resolution is recommended. */
+  primary?: boolean
   /**
    * Which card this is drawn in (#1344): `answer` is the choices the page has not drawn elsewhere and the button that
    * sends them, `edit` the answer field and its button, `all` the whole form.
@@ -521,7 +524,7 @@ export function EditBodyAndRequeue({
       ) : null}
       {showEdit && waitId !== null ? (
         <button
-          className="btn"
+          className={primary ? 'btn pri' : 'btn'}
           disabled={pending || doneWaitId === waitId || !currentText.trim()}
           onClick={() => {
             if (!currentText.trim()) return
@@ -755,6 +758,7 @@ export function Close({
   waitId,
   prefill,
   primary = false,
+  small = false,
 }: {
   project: string
   issue: number
@@ -769,6 +773,8 @@ export function Close({
   /** Triage's own sentence for the hold being closed, when there is one. Still a box the person edits. */
   prefill?: string | null
   primary?: boolean
+  /** On a queued home card, where Close is the card's only move. */
+  small?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -785,7 +791,7 @@ export function Close({
     return (
       <div className="decide">
         <div className="btnrow">
-          <button className={primary ? 'btn pri' : 'btn'} onClick={() => setAsking(true)}>
+          <button className={`${primary ? 'btn pri' : 'btn'}${small ? ' sm' : ''}`} onClick={() => setAsking(true)}>
             Close
           </button>
         </div>
@@ -908,13 +914,13 @@ export function Send({
   /** 1-based, as the outgoing box numbers it. The button says this number. */
   attempt: number
   /**
-   * Whether this is the amber one.
+   * Whether this is the primary.
    *
    * Decided by the caller and not by a `Recommended` here, because it takes two
    * facts and this component has one of them: the recommendation, and whether
-   * `Decide` is on the row beside it with an Approve already wearing the amber.
-   * **Amber appears once per screen** (layout notes), and a row with two primary
-   * buttons dilutes it exactly as a second decorative use would.
+   * `Decide` is on the row beside it with an Approve already the primary.
+   * A block (card, row, panel) has at most one primary, and a row with two
+   * dilutes it.
    */
   primary: boolean
 }) {
@@ -986,7 +992,6 @@ export function RunNow({
   issue,
   holding,
   primary = true,
-  go = false,
 }: {
   project: string
   /** The issue number as GitHub numbers it, which is what `RunRequested` carries. */
@@ -1000,13 +1005,11 @@ export function RunNow({
    */
   holding: string | null
   /**
-   * Whether this is the amber one. **Amber appears once per screen** (layout
-   * notes), and on a queued page this is the move — there is no Approve beside
-   * it — so it carries it by default.
+   * Whether this is the primary. A block (card, row, panel) has at most one
+   * primary, and on a queued page this is the move — there is no Approve beside
+   * it.
    */
   primary?: boolean
-  /** Teal rather than amber, for a move that is not what a person is being waited on for. */
-  go?: boolean
 }) {
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
@@ -1019,7 +1022,7 @@ export function RunNow({
     <div className="decide">
       <div className="btnrow">
         <button
-          className={primary ? 'btn pri' : go ? 'btn go' : 'btn'}
+          className={primary ? 'btn pri' : 'btn'}
           disabled={pending}
           onClick={() => {
             setPending(true)
@@ -1067,11 +1070,14 @@ export function TriageMove({
   taskId,
   waitId,
   move,
+  small = false,
 }: {
   project: string
   issue: number
   taskId: string
   waitId: WaitId
+  /** On a waiting home card, where this is the card's one primary. */
+  small?: boolean
   move: { resolution: Resolution['_tag']; onSha: string | null; note: string | null; clippedLimit?: number }
 }) {
   const [pending, setPending] = useState(false)
@@ -1114,7 +1120,7 @@ export function TriageMove({
     return (
       <div className="decide">
         <div className="btnrow">
-          <Link className="btn pri" href={`/task/${encodeURIComponent(taskId)}#${anchor}`}>
+          <Link className={small ? 'btn pri sm' : 'btn pri'} href={`/task/${encodeURIComponent(taskId)}#${anchor}`}>
             {label}
           </Link>
         </div>
@@ -1125,7 +1131,7 @@ export function TriageMove({
   return (
     <div className="decide">
       <div className="btnrow">
-        <button className="btn pri" disabled={pending} onClick={click}>
+        <button className={small ? 'btn pri sm' : 'btn pri'} disabled={pending} onClick={click}>
           {pending ? 'working…' : label}
         </button>
       </div>

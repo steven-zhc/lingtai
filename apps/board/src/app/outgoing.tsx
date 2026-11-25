@@ -164,7 +164,7 @@ export function OutgoingEditor({
               </button>
             ) : null}
             <button
-              className={sendable ? 'btn' : 'btn go'}
+              className="btn"
               disabled={busy || draft.trim() === ''}
               onClick={() => run(draft)}
             >

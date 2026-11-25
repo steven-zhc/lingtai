@@ -261,7 +261,7 @@ export function BlockedList({
                       <Link
                         href={stamped(h.allowHref, stamp)}
                         prefetch={false}
-                        className={time === 'clock' ? 'sbbtn' : undefined}
+                        className="btn sm"
                       >
                         Allow on this project
                       </Link>

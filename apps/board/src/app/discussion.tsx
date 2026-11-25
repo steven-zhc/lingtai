@@ -504,7 +504,8 @@ export function Discussion({
    */
   quiet?: boolean
 }) {
-  const pri = quiet ? 'btn' : 'btn pri'
+  // The waiting page (`state === 'blocked'`) draws Ask as a secondary: the decision block there is the moves above it.
+  const pri = quiet || state === 'blocked' ? 'btn' : 'btn pri'
   const [question, setQuestion] = useState('')
   const [refusal, setRefusal] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)

@@ -162,7 +162,7 @@ a, a:where(:visited) {
 }
 .bar a, .place .view, .tab, .addp, .navlink, .rtab, .sbswitch a, .ld-filter a, .rp-seg a,
 .ti, .heldlist .ti, .pr-name, .pr-head a, .lmeta, .pr-slip-id, .pr-slip-title, .rp-table td.t a, .eg-n,
-.iss, .ltag, .ctbtn, .bk, .pr-btn, .sbbtn, a.btn, .wiz-primary { text-decoration: none; }
+.iss, .ltag, .bk, a.btn { text-decoration: none; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -171,7 +171,7 @@ a, a:where(:visited) {
    block, column and panel heading. A page's own heading rule keeps layout only; a rule that sets
    type or colour on one of the old heading selectors fails unit/section-heading.test.ts. These rules
    sit here, before any page section, so the child reset below loses ties to the later rules that
-   style a count or a time on purpose (.ctbtn .lbl, .col-h .ct, .hfr-k .when). */
+   style a count or a time on purpose (.col-h .ct, .hfr-k .when). */
 .sec-h {
   font-family: var(--sans);
   font-size: var(--fs-xs);
@@ -476,9 +476,6 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
    .col-h: the "On their way in" strip shares that class. */
 .col > .col-h { min-height: 36px; }
 .col-h .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.ctbtn { display: inline-flex; align-items: baseline; gap: 6px; color: var(--accent-ink); border: 1px solid var(--rule-2); border-radius: 999px; padding: 3px 10px 4px; background: var(--surface); }
-.ctbtn .lbl { font-size: var(--fs-xs); letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
-.ctbtn:hover { border-color: var(--accent); }
 
 /* The Waiting lane is a compact reading list at the reference's 440px width.
    Its count and card hierarchy stay distinct from the other lanes. */
@@ -923,8 +920,8 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .held { display: grid; gap: 4px; }
 .diag { margin: 0; font-size: var(--fs-sm); color: var(--ink); line-height: 1.5; }
 .did { margin: 0; font-size: var(--fs-sm); color: var(--muted); line-height: 1.5; }
-/* The recommendation is the sentence the primary button is the end of, so it
-   carries the primary button's colour and nothing else does. */
+/* Amber is the recommendation's sentence: a person is being waited on. The
+   primary button, which is teal, is the action that sentence ends in. */
 .rec { margin: 0; font-size: var(--fs-sm); color: var(--signal); line-height: 1.5; }
 .rec strong { font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
 .refusal {
@@ -942,9 +939,9 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .regressions { color: var(--fail); }
 
 /* --- deciding -------------------------------------------------------------
-   The board stops being a status page here. Amber is the primary action
-   because amber is already "a human is the thing being waited on", and the
-   button is the end of that sentence. */
+   The board stops being a status page here. Amber is the recommendation's
+   sentence, because a person is being waited on; teal is the action that
+   sentence ends in. */
 
 .decide { display: grid; gap: 6px; }
 /* Every row of moves, and the only rule that makes one: the task page's
@@ -953,21 +950,20 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
    height of that form (#155) — #152 had fixed one row and not the class. */
 .btnrow { display: flex; gap: 5px; flex-wrap: wrap; align-items: flex-start; }
 .btn {
-  font: 600 var(--fs-xs)/1.4 var(--sans);
-  padding: 3px 8px;
+  font: 600 var(--fs-sm)/1.4 var(--sans);
+  padding: 6px 12px;
   border-radius: var(--radius);
   border: 1px solid var(--rule-2);
-  color: var(--muted);
+  color: var(--accent-ink);
   background: var(--surface);
   cursor: pointer;
 }
-.btn:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.btn:hover:not(:disabled) { border-color: var(--accent); }
 .btn:disabled { opacity: 0.5; cursor: default; }
-.btn.pri { background: var(--signal); border-color: var(--signal); color: #fff; }
-.btn.pri:hover:not(:disabled) { color: #fff; }
-/* Teal, not amber: a move that is not the thing a person is being waited on for. */
-.btn.go { background: var(--accent); border-color: var(--accent); color: #fff; }
-.btn.go:hover:not(:disabled) { color: #fff; filter: brightness(1.08); }
+.btn.pri { background: var(--accent); border-color: var(--accent); color: var(--surface); }
+.btn.pri:hover:not(:disabled) { background: var(--accent-ink); border-color: var(--accent-ink); }
+.btn.pri[aria-busy='true']:disabled { opacity: 1; cursor: progress; }
+.btn.sm { font-size: var(--fs-xs); padding: 4px 9px; }
 .bandsub { margin: 0.9rem 0 0.3rem; }
 .planlist { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.2rem; font-size: var(--fs-md); }
 .planlist li { display: flex; gap: 0.6rem; min-width: 0; overflow-wrap: anywhere; }
@@ -976,12 +972,6 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .closedrow { margin-top: 0.7rem; font-size: var(--fs-md); }
 .closedrow > summary { cursor: pointer; }
 .closedrow > summary .outfact, .closedrow > summary .hint { margin-left: 0.5rem; color: var(--ink-2); }
-/* The Resume confirmation, which renders inside `.bar`. Not `pri`: that is a
-   solid amber, and the bar's amber is the Waiting lane's, and never the bar's (#134). It confirms
-   lifting a hold, so it wears the hold's colour — the same one as the `paused`
-   chip beside it. */
-.btn.held { color: var(--held); border-color: var(--held); background: var(--held-soft); font-weight: 600; }
-.btn.held:hover:not(:disabled) { color: var(--held); border-color: var(--held); }
 
 .reason { display: grid; gap: 3px; font-size: var(--fs-xs); color: var(--muted); }
 .reason input, .reason textarea, .reason .mdf {
@@ -1800,23 +1790,7 @@ details[open] > summary::before { content: "▾"; }
 .sresolutionaction .btn {
   width: 100%;
   max-width: 100%;
-  min-height: 2.875rem;
-  padding: 0.55rem 0.85rem;
-  color: var(--ink);
-  font: 600 0.875rem/1.4 var(--sans);
   white-space: normal;
-}
-.sresolutionaction .btn.pri,
-.sresolution--recommended[data-resolution='EditBodyAndStartNewAttempt'] .sresolutionaction .btn {
-  background: var(--accent);
-  border-color: var(--accent);
-  color: var(--surface);
-}
-.sresolutionaction .btn.pri:hover:not(:disabled),
-.sresolution--recommended[data-resolution='EditBodyAndStartNewAttempt'] .sresolutionaction .btn:hover:not(:disabled) {
-  background: var(--accent-ink);
-  border-color: var(--accent-ink);
-  color: var(--surface);
 }
 
 @media (max-width: 48rem) {
@@ -2020,8 +1994,7 @@ details[open] > summary::before { content: "▾"; }
    discussion's reason — it is a place you do something.
 
    Neutral, like the discussion. The amber on this page is the rule at the left
-   and the primary button inside the editor; the box itself carrying it would
-   dilute both. */
+   ; the box itself carrying it would dilute it. */
 /* A column rather than a grid, so one child can take the room that is left and
    scroll in it while the head and the buttons keep theirs (#132). */
 .outgoing {
@@ -2135,8 +2108,8 @@ details[open] > summary::before { content: "▾"; }
    you do something, rather than a thing you read (layout notes).
 
    Neutral throughout. The amber on this page is the rule at the left and the
-   primary button; a box that also carried it would dilute both, and the only
-   amber in here is the Ask button, which is the thing that will run. */
+   rule at the left; a box that also carried it would dilute it. The Ask
+   button is teal, and secondary on the waiting page. */
 /* A column, in three parts that do not move: the meter, the conversation, and
    the box you type in. The conversation is the only one that grows, and it
    grows into a scroller rather than into the page — the input box and the
@@ -2356,9 +2329,6 @@ details[open] > summary::before { content: "▾"; }
 .chatask { display: grid; gap: 0.35rem; }
 .detail--waiting .chatask { grid-template-columns: minmax(0, 1fr) auto; align-items: start; gap: 0.5rem; }
 .detail--waiting .chatask .btnrow { flex-wrap: nowrap; }
-.detail--waiting .chatask .btn { min-height: 2.5rem; padding-inline: 1rem; }
-.detail--waiting .chatask .btn.pri { background: transparent; border-color: var(--accent); color: var(--accent-ink); }
-.detail--waiting .chatask .btn.pri:hover:not(:disabled) { background: var(--accent); color: #fff; }
 @media (max-width: 30rem) {
   .detail--waiting .chatask { grid-template-columns: minmax(0, 1fr); }
 }
@@ -3273,7 +3243,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .wiz-list { list-style: none; padding: 0; margin: 0; display: grid; gap: 2px; }
 .wiz-ok { color: var(--pass); }
 .wiz-foot { display: flex; justify-content: space-between; align-items: center; }
-.wiz-primary { color: var(--accent-ink); background: var(--accent-soft); border: 1px solid var(--accent); padding: 4px 11px; }
 
 /* The sandbox's one shield before health's dot (#1183). Four states, not levels: off is grey and empty, never an alarm. */
 .sbx { display: inline-flex; align-items: center; cursor: pointer; list-style: none; }
@@ -3325,7 +3294,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbfig.hold b { color: var(--signal); }
 .sbblocked { border: 1px solid color-mix(in srgb, var(--signal) 25%, var(--rule)); background: color-mix(in srgb, var(--signal-soft) 45%, var(--surface)); border-radius: var(--radius); padding: 14px 16px 6px; }
 .sbblocked td.mono { font: 500 13px var(--mono); }
-.sbbtn { font: 500 12.5px var(--sans); border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: var(--radius); padding: 4px 11px; white-space: nowrap; }
 .sbtag { font: 500 11.5px var(--mono); padding: 1px 8px; border-radius: var(--radius); color: var(--muted); border: 1px solid var(--rule); }
 .sbtag.agent { background: var(--held-soft); border-color: color-mix(in srgb, var(--held) 25%, transparent); color: var(--held); }
 .sbtag.agent span { font-size: 11px; }
@@ -3585,10 +3553,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .pr-slip.more { color: var(--pr-dusk); }
 .pr-hand pre { white-space: pre-wrap; font-size: 0.75rem; background: var(--pr-tint); padding: 0.4rem; border-radius: var(--radius); }
 .pr-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-.pr-btn { font: inherit; font-size: 0.8rem; border: 1px solid var(--pr-navy-deep); background: var(--surface); color: var(--pr-navy-deep); border-radius: var(--radius); padding: 0.15rem 0.6rem; cursor: pointer; }
-.pr-btn.primary { background: var(--pr-navy-deep); color: var(--pr-on-fill); }
-.pr-btn:disabled { opacity: 0.45; cursor: not-allowed; }
-.pr-btn.primary[aria-busy='true']:disabled { opacity: 1; cursor: progress; }
 .pr-spin { display: inline-block; width: 0.7em; height: 0.7em; margin-right: 0.35em; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: pr-spin 0.8s linear infinite; vertical-align: -0.05em; }
 @keyframes pr-spin { to { transform: rotate(360deg); } }
 .pr-why, .pr-refusal { flex-basis: 100%; margin: 0.2rem 0 0; font-size: 0.78rem; color: var(--pr-dusk); }
@@ -3616,10 +3580,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .rp-filters input[type=date], .rp-filters select {
   font: 12px var(--mono); background: var(--surface); color: var(--ink);
   border: 1px solid var(--rule); border-radius: var(--radius); padding: 3px 6px;
-}
-.rp-filters button {
-  font: 12px var(--sans); background: var(--accent-soft); color: var(--accent-ink);
-  border: 1px solid var(--rule-2); border-radius: var(--radius); padding: 4px 11px; cursor: pointer;
 }
 .rp-kinds { display: inline-flex; flex-wrap: wrap; gap: 4px 12px; border: 0; margin: 0 0 0 auto; padding: 0; }
 .rp-kinds legend { float: left; padding: 0; margin-right: 8px; }
@@ -3793,7 +3753,9 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .s2-k { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
 .s2-note { grid-column: 2 / 4; font-size: 11px; color: var(--muted); }
 .s2-line:last-child { border-bottom: 0; }
-.s2-change { grid-column: 3; grid-row: 1; font: inherit; font-size: 11px; background: transparent; border: 0; color: var(--accent-ink); cursor: pointer; }
+.s2-change { grid-column: 3; grid-row: 1; }
+/* The suggested branch name, inside a sentence: a link's look, not a button. */
+.s2-change.mono { font: inherit; background: none; border: 0; padding: 0; color: var(--accent-ink); text-decoration: underline; cursor: pointer; }
 .s2-checks { display: grid; gap: 2px; }
 .s2-h { margin: 14px 0 4px; }
 .s2-limits { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12px; }
@@ -3807,11 +3769,9 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .rfile-bar { flex: none; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 14px; border-bottom: 1px solid var(--rule); background: var(--surface-2); }
 .rfile-bar b { font: 500 12px var(--mono); color: var(--ink); }
 .rfile-bar small { font: 11px var(--mono); color: var(--muted); flex: 1; min-width: 0; overflow-wrap: anywhere; }
-.rfile-edit { white-space: nowrap; font: 12px var(--sans); color: var(--accent-ink); background: var(--surface); border: 1px solid var(--rule-2); border-radius: var(--radius); padding: 3px 14px; cursor: pointer; }
 .rfile .s2-yaml { max-height: none; min-height: 0; flex: 0 1 auto; border: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .rfile-said { flex: none; max-height: 30vh; overflow: auto; padding: 8px 12px; border-bottom: 1px solid var(--rule); font-size: 12px; }
 .rfile-said pre.fail { margin: 0; }
-.rfile-edit:disabled { opacity: 0.5; cursor: default; }
 .s2-left { display: grid; gap: 14px; }
 .detail-body.detail-body-wide { max-width: 110rem; }
 .s2.s2-even { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
@@ -3856,15 +3816,11 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .pbanner b { font-weight: 600; }
 .pbanner .what a { color: var(--held); font-weight: 500; }
 .pbanner .sub { color: var(--held); opacity: .85; font-size: var(--fs-sm); }
-.pbanner button { font: inherit; font-size: var(--fs-xs); line-height: 16px; padding: 0 7px; border: 1px solid var(--held); border-radius: var(--radius); background: var(--surface); color: var(--held); cursor: pointer; }
 .pbanner .grow { flex: 1; }
 .pbrow { display: flex; align-items: center; flex-wrap: wrap; gap: 6px 14px; }
 .pbrow.passed, .pbrow.passed .sub { color: var(--muted); opacity: 1; }
 .pbrow.passed { background: var(--surface); border-radius: var(--radius); padding: 2px 6px; }
 .pbanner input { font: inherit; font-size: var(--fs-sm); width: 6ch; padding: 0 4px; border: 1px solid var(--held); border-radius: var(--radius); background: var(--surface); color: var(--held); }
-.pbanner button:disabled { opacity: .5; cursor: default; }
-button.navlink { font-family: inherit; cursor: pointer; }
-.navlink.held { border-color: var(--held); background: var(--held-soft); color: var(--held); }
 
 /* The Sandbox tab (#1161): the attempt switcher, the parts, and the small state mark. */
 .sbswitch { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: flex-end; margin-bottom: 0.75rem; }
