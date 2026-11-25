@@ -19,7 +19,7 @@
  * `process.moduleLoadList` back.
  */
 import { chosenStore } from '@lingtai/env'
-import { closableOnceEffect, type ClosableOnceEffect } from '@lingtai/event-store'
+import { closableOnceEffect, type ClosableOnceEffect, KEPT_IDLE_MS } from '@lingtai/event-store'
 import { Effect } from 'effect'
 
 import { makePostgresProjections } from './postgres.ts'
@@ -41,6 +41,8 @@ export interface ProjectionStoreOptions {
   max?: number
   /** Let an idle Postgres pool stop holding the event loop. */
   allowExitOnIdle?: boolean
+  /** How long an idle Postgres connection is kept; left out, pg's default applies. */
+  idleTimeoutMillis?: number
 }
 
 /**
@@ -63,6 +65,7 @@ export const openProjections = (options: ProjectionStoreOptions = {}): Effect.Ef
           url: options.url ?? choice.url,
           ...(options.max === undefined ? {} : { max: options.max }),
           ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
+          ...(options.idleTimeoutMillis === undefined ? {} : { idleTimeoutMillis: options.idleTimeoutMillis }),
         }),
       )
     }
@@ -83,11 +86,20 @@ export class ProcessProjectionsClosedError extends Error {
  * One port per process for every read that names no `url` (#793): a board
  * render made five to eight reads and paid a fresh connection for each. Four
  * connections, since a render runs its reads in parallel. `allowExitOnIdle`
- * as well as the explicit close, for a script that never closes anything.
+ * as well as the explicit close, for a script that never closes anything — which
+ * is also why the connections can be kept `KEPT_IDLE_MS` rather than pg's 10 s:
+ * a board idle past 10 s paid for new ones on its next render (#1434; the cost
+ * is argued at `KEPT_IDLE_MS` in the event store's `queries.ts`).
  * Built at import and running nothing: a failed open is remembered and repeated.
  */
+export const PROCESS_PROJECTIONS: ProjectionStoreOptions = {
+  max: 4,
+  allowExitOnIdle: true,
+  idleTimeoutMillis: KEPT_IDLE_MS,
+}
+
 const process_ = closableOnceEffect(
-  openProjections({ max: 4, allowExitOnIdle: true }),
+  openProjections(PROCESS_PROJECTIONS),
   (p) => p.close(),
   () => new ProcessProjectionsClosedError(),
 )

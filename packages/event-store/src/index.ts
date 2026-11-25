@@ -43,6 +43,7 @@ export {
 export { readThroughSnapshot, type SnapshotReadObserver, type SnapshotReadOptions } from './snapshot-read.ts'
 export { type Log, type PostgresLogOptions } from './log.ts'
 export {
+  KEPT_IDLE_MS,
   type EndedOutcome,
   type EndedWithoutEnd,
   type LogQueries,
