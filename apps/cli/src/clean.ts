@@ -174,7 +174,7 @@ export interface CleanOptions {
   readonly log?: (line: string) => void
 }
 
-interface Item {
+export interface CleanItem {
   readonly kind: 'worktree' | 'log'
   readonly project: string
   readonly name: string
@@ -269,10 +269,20 @@ const judgeWorktree = (
 const judgeLog = (o: { store: EventStore; own: boolean; index: ClaimIndex }, name: string) =>
   readRun(o.store, o.own, o.index, name.slice(0, -'.log'.length)).pipe(Effect.map((run) => classifyLog({ run })))
 
-/** Run the command; the exit code is 1 when anything could not be checked or removed. */
-export const cleanEffect = (options: CleanOptions) =>
+export interface CleanListing {
+  readonly items: readonly CleanItem[]
+  /** Directories that could not be read, relative to the home. Not an empty directory. */
+  readonly unreadable: readonly string[]
+}
+
+interface Listed extends CleanListing {
+  readonly items: CleanItem[]
+  readonly ctx: { home: string; now: number; port: CleanPort; store: EventStore; own: boolean; index: ClaimIndex }
+  readonly registeredBy: Map<string, Read<ReadonlySet<string>>>
+}
+
+const listEffect = (options: Omit<CleanOptions, 'yes'>) =>
   Effect.gen(function* () {
-    const log = options.log ?? console.log
     const port = options.port ?? realPort
     const now = options.now ?? Date.now()
     const own = options.store === undefined
@@ -280,14 +290,13 @@ export const cleanEffect = (options: CleanOptions) =>
     const { home } = options
     const ctx = { home, now, port, store, own, index: { cached: null } as ClaimIndex }
 
-    let failed = false
+    const unreadable: string[] = []
     // A directory that cannot be read is not an empty one: say so and exit 1.
     const listOf = (path: string, kind: 'dirs' | 'logs') =>
       port.list(path, kind).pipe(
         Effect.catch(() =>
           Effect.sync(() => {
-            failed = true
-            log(`unchecked ${relative(home, path)}  could not be checked: the directory could not be read`)
+            unreadable.push(relative(home, path))
             return [] as readonly string[]
           }),
         ),
@@ -298,7 +307,7 @@ export const cleanEffect = (options: CleanOptions) =>
         ? [options.project]
         : [...new Set([...(yield* projectNames('worktrees')), ...(yield* projectNames('runs'))])].sort()
 
-    const items: Item[] = []
+    const items: CleanItem[] = []
     const registeredBy = new Map<string, Read<ReadonlySet<string>>>()
 
     for (const project of projects) {
@@ -327,14 +336,36 @@ export const cleanEffect = (options: CleanOptions) =>
       if (item.verdict.verdict === 'keep' && !LISTED_KEEPS.has(item.verdict.reason)) continue
       item.sizeKb = yield* port.sizeKb(item.path).pipe(Effect.catch(() => Effect.succeed(null)))
     }
+    return { items, unreadable, ctx, registeredBy } as Listed
+  })
+
+/**
+ * What `clean` would list, judged by its one rule and removing nothing. `lingtai doctor` reads
+ * this rather than carrying a second orphan rule.
+ */
+export const cleanListingEffect = (options: Omit<CleanOptions, 'yes'>): Effect.Effect<CleanListing> =>
+  listEffect(options).pipe(Effect.map(({ items, unreadable }) => ({ items, unreadable })))
+
+/** Run the command; the exit code is 1 when anything could not be checked or removed. */
+export const cleanEffect = (options: CleanOptions) =>
+  Effect.gen(function* () {
+    const log = options.log ?? console.log
+    const port = options.port ?? realPort
+    const { home } = options
+    const { items, unreadable, ctx, registeredBy } = yield* listEffect(options)
+    let failed = false
+    for (const dir of unreadable) {
+      failed = true
+      log(`unchecked ${dir}  could not be checked: the directory could not be read`)
+    }
 
     const sizeWord = (kb: number | null): string =>
       kb === null ? '?' : kb >= 1024 ? `${(kb / 1024).toFixed(1)} MB` : `${kb} KB`
-    const line = (tag: string, item: Item, reason: string) =>
+    const line = (tag: string, item: CleanItem, reason: string) =>
       log(`${tag.padEnd(9)} ${relative(home, item.path)}  ${sizeWord(item.sizeKb)}  ${reason}`)
 
     // Re-judged immediately before each removal: the verdict may have moved.
-    const removed: Item[] = []
+    const removed: CleanItem[] = []
     const pruneProjects = new Set<string>()
     for (const item of items) {
       const v = item.verdict
@@ -388,7 +419,7 @@ export const cleanEffect = (options: CleanOptions) =>
 /** The reasons worth a line even though they are kept: what a person may want to act on. */
 const LISTED_KEEPS: ReadonlySet<string> = new Set(['uncommitted changes', UNKNOWN_LOG])
 
-const removeItem = (port: CleanPort, home: string, item: Item, registeredSet: Read<ReadonlySet<string>>) =>
+const removeItem = (port: CleanPort, home: string, item: CleanItem, registeredSet: Read<ReadonlySet<string>>) =>
   Effect.gen(function* () {
     if (item.kind === 'log') return yield* port.removeFile(item.path)
     const isRegistered = registeredSet.ok && registeredSet.value.has(item.path)
