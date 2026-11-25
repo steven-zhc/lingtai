@@ -1,6 +1,6 @@
 import { passOverBaseRed } from '@lingtai/conductor'
 import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
-import { passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
+import { landedFor, passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -78,7 +78,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode, context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -1004,6 +1004,14 @@ export async function askProject(
                 client: filter.tickets,
                 queue: queueOf(filter.recipe),
                 selection: selectionOf(filter.recipe),
+                // As the conductor reads it, or the board draws a ticket blocked that a pass is taking (#1423).
+                landed: landedFor({
+                  selection: selectionOf(filter.recipe),
+                  links: filter.links,
+                  store: eventStore,
+                  project: filter.project,
+                  branch: branchOf(filter.recipe),
+                }),
               }),
             catch: (err) => err,
           }),

@@ -40,7 +40,7 @@ import { Effect } from 'effect'
 
 import { fetchedHead, lookAtBase, passOverBaseRed } from './base-red.ts'
 import { type TurnClient, type RunOnceOptions, type RunOnceResult, runOnce } from './conduct.ts'
-import { runnableNowEffect } from './discover.ts'
+import { landedFor, linksOfClient, runnableNowEffect } from './discover.ts'
 import type { PersonalBranchPort } from './personal-branch.ts'
 import type { AgentHost, Repo } from './ports.ts'
 import { selectRunnable } from './queue.ts'
@@ -238,6 +238,13 @@ export function runQueue(options: ScheduleOptions): Effect.Effect<ScheduleResult
         client: options.discovery ?? options.client,
         queue: queueOf(options.recipe),
         selection: selectionOf(options.recipe),
+        landed: landedFor({
+          selection: selectionOf(options.recipe),
+          links: linksOfClient(options.discovery ?? options.client),
+          store: options.store ?? eventStore,
+          project: name,
+          branch: branchOf(options.recipe),
+        }),
       }).pipe(Effect.orDie)
       // **A red base is the project's** (#1208, 0108 §13): while its head is the commit the red was recorded
       // on, every ticket is passed over as `base-red`. The mirror is read only for a base that is red, and a

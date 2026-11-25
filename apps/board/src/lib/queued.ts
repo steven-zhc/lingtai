@@ -1,4 +1,4 @@
-import { rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
+import { landedFor, rankedKinds, runnableNow, type SkipReason } from '@lingtai/conductor/discover'
 import { projectFilter, type StepPlan } from '@lingtai/conductor/filter'
 import { backingOff, heldUntil, selectRunnable } from '@lingtai/conductor/queue'
 import { held as heldBy } from '@lingtai/daemon/control'
@@ -34,10 +34,11 @@ import { held as heldBy } from '@lingtai/daemon/control'
  * *no queue position*, and only the reason tells them apart (#76).
  */
 import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
+import { eventStore } from '@lingtai/event-store'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
-import { ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
+import { branchOf, ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
 
@@ -336,6 +337,13 @@ export async function queuedFor(input: {
       client: filter.tickets,
       queue: queueOf(filter.recipe),
       selection: selectionOf(filter.recipe),
+      landed: landedFor({
+        selection: selectionOf(filter.recipe),
+        links: filter.links,
+        store: eventStore,
+        project,
+        branch: branchOf(filter.recipe),
+      }),
     })
     const runnable = await selectRunnable({
       project,
