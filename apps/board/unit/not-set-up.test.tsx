@@ -7,10 +7,10 @@ import { renderToStaticMarkup } from 'react-dom/server'
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const loadBoard = vi.hoisted(() => vi.fn())
+const startBoard = vi.hoisted(() => vi.fn())
 const choice = vi.hoisted(() => ({ now: {} as unknown }))
 
-vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), loadBoard }))
+vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), startBoard }))
 vi.mock('@lingtai/env', async (orig) => ({
   ...(await orig<object>()),
   storeChoice: () => choice.now,
@@ -47,14 +47,14 @@ describe('the setup screen', () => {
 })
 
 describe('/ with the store refused', () => {
-  beforeEach(() => loadBoard.mockClear())
+  beforeEach(() => startBoard.mockClear())
 
   it('draws the setup screen, reads no log and opens no event stream', async () => {
     choice.now = { because: 'nothing chosen', refused: 'nothing on this machine says which store it runs' }
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
     expect(html).toContain('Nothing is set up in ~/lingtai-trial/a.')
     expect(html).toContain('lingtai init')
-    expect(loadBoard).not.toHaveBeenCalled()
+    expect(startBoard).not.toHaveBeenCalled()
     expect(html).not.toContain('class="health')
   })
 
@@ -63,7 +63,7 @@ describe('/ with the store refused', () => {
     const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
     expect(html).toContain('config.yml names two stores')
     expect(html).not.toContain('Nothing is set up')
-    expect(loadBoard).not.toHaveBeenCalled()
+    expect(startBoard).not.toHaveBeenCalled()
   })
 })
 

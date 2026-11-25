@@ -10,7 +10,12 @@ import { prerender } from 'react-dom/static'
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const loadBoard = vi.hoisted(() => vi.fn<(project?: string) => Promise<unknown>>(() => new Promise<never>(() => {})))
+const startBoard = vi.hoisted(() =>
+  vi.fn<(project?: string) => { queueAsk: Promise<unknown>; board: Promise<unknown> }>(() => ({
+    queueAsk: new Promise<never>(() => {}),
+    board: new Promise<never>(() => {}),
+  })),
+)
 const never = vi.hoisted(() => () => new Promise<never>(() => {}))
 const reads = vi.hoisted(() => ({
   registered: vi.fn(),
@@ -20,7 +25,7 @@ const reads = vi.hoisted(() => ({
   lag: vi.fn(),
 }))
 
-vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), loadBoard }))
+vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), startBoard }))
 vi.mock('../src/lib/locks.ts', async (orig) => ({
   ...(await orig<object>()),
   readRegistered: reads.registered,
@@ -66,20 +71,23 @@ const suspenseKeys = (tree: ReactNode): (string | null)[] => {
 
 /** Every read pending, the state of a switch that has just been clicked. */
 const allPending = () => {
-  loadBoard.mockReset().mockImplementation(never)
+  startBoard.mockReset().mockImplementation(() => ({ queueAsk: never(), board: never() }))
   for (const r of Object.values(reads)) r.mockReset().mockImplementation(never)
 }
 
 /** Every read answers, and the board's answer is the project's own: it names `<project>-sibling`. */
 const allAnswer = () => {
-  loadBoard.mockReset().mockImplementation(async (project?: string) => ({
-    columns: COLUMNS.map((c) => ({ id: c.id, label: c.label, cards: [] })),
-    projects: [project ?? 'none', `${project ?? 'none'}-sibling`],
-    pending: [],
-    askable: [],
-    known: [],
-    queueOrder: [],
-    ticketSources: new Map(),
+  startBoard.mockReset().mockImplementation((project?: string) => ({
+    queueAsk: Promise.resolve({ askable: [], known: new Set<string>() }),
+    board: Promise.resolve({
+      columns: COLUMNS.map((c) => ({ id: c.id, label: c.label, cards: [] })),
+      projects: [project ?? 'none', `${project ?? 'none'}-sibling`],
+      pending: [],
+      askable: [],
+      known: new Set<string>(),
+      queueOrder: [],
+      ticketSources: new Map(),
+    }),
   }))
   reads.registered.mockReset().mockResolvedValue([])
   reads.control.mockReset().mockResolvedValue({ paused: false })
@@ -136,9 +144,9 @@ describe('the shell, with every read pending', () => {
     )
   })
 
-  it('calls loadBoard once per render', async () => {
+  it('calls startBoard once per render', async () => {
     renderToStaticMarkup(await render('lingtai'))
-    expect(loadBoard).toHaveBeenCalledTimes(1)
+    expect(startBoard).toHaveBeenCalledTimes(1)
   })
 })
 
@@ -168,7 +176,7 @@ describe('the boundaries', () => {
     expect(b).not.toContain('c-sibling')
     expect(c).toContain('c-sibling')
     expect(c).not.toContain('b-sibling')
-    expect(loadBoard.mock.calls.map(([project]) => project)).toEqual(['b', 'c'])
+    expect(startBoard.mock.calls.map(([project]) => project)).toEqual(['b', 'c'])
   })
 
   it('draw a part as soon as the reads it needs answer, whatever else is still pending', async () => {

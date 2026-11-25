@@ -1772,7 +1772,30 @@ export function railCandidates(tasks: readonly TaskCard[]): RailCandidate[] {
  * state the system can be in, and it is the state it is in before the first
  * run. Showing fictional work would be worse than showing none.
  */
-export async function loadBoard(project?: string): Promise<Board> {
+export function loadBoard(project?: string): Promise<Board> {
+  return startBoard(project).board
+}
+
+/** What GitHub's half of the Queued column needs, known before the board is (#1430). */
+export type QueueAsk = { askable: AskableFilter[]; known: Set<string> }
+
+/**
+ * `loadBoard`, with the part the queue needs handed out early (#1430):
+ * `queueAsk` settles once the task rows and the recipes are read, while
+ * `board.progress` and the rest are still being read. `board` waits for the same
+ * promise, so the two reject together, as they did when they were one.
+ */
+export function startBoard(project?: string): { queueAsk: Promise<QueueAsk>; board: Promise<Board> } {
+  const first = readBoardStart(project)
+  const queueAsk = first.then((f) => f.queueAsk)
+  // `board` carries the rejection to whoever awaits it; this keeps a caller that
+  // takes only `board` from leaving the same rejection unhandled.
+  queueAsk.catch(() => {})
+  const board = first.then((f) => f.board)
+  return { queueAsk, board }
+}
+
+async function readBoardStart(project?: string): Promise<{ queueAsk: Promise<QueueAsk>; board: Promise<Board> }> {
   // Three reads, none of which is an argument to another, so they wait
   // together. In series they were three round trips laid end to end before the
   // first question had been put to GitHub (#112) — and the last of them,
@@ -1803,100 +1826,108 @@ export async function loadBoard(project?: string): Promise<Board> {
   // `currentSpend` reads the table and reports its lag, the way `task_view` is
   // read: the board holds no projector, and the conductor lock's holder
   // follows `spend` (0100 §13; #786, reversing #498's reducer).
-  const [queued, spend, daemon, triageDeclared] = await Promise.all([
-    timed('board.recipes', () =>
-      queueFilters(registered.filter((p) => project === undefined || p.project === project)),
-    ),
-    // Not measured, so not claimed: a skipped read has no lag to report, and
-    // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
-    // this is a board with nothing to bill rather than a lag read that
-    // failed — the two used to read identically as a bare `lag: null`
-    // (`#498`'s review).
-    tasks.length === 0
-      ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
-      : timed('spend.read', () => currentSpend({ ticket: tasks.map((t) => t.taskId) })),
-    // The beacon's row, once for the board: the page reads the same one, and
-    // a failed read reaches the board as an error there as it does on the page,
-    // rather than leaving the cards to say less than the page will.
-    timed('daemon.status', () => readStatus()),
-    // Which projects declare `triage:`, read from the recipe as the page reads
-    // it (`loadCurrentTriageStatus`) and not off the queue filter, whose GitHub
-    // client can fail for a project whose recipe is perfectly readable.
-    all === null
-      ? Promise.resolve(null)
-      : timed('triage.declared', () =>
-          declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
-        ),
-  ])
-  // After the recipes too, and for the same reason: a gate's timeout is the
-  // denominator a running card measures against, and it is in the recipe this
-  // just read.
-  const { progress, fixHeads, roundsOpened } = await timed('board.progress', () => laneProgress(tasks, queued.plans))
-  // Keyed by project, for `held`'s fallback when a run's own stream named no
-  // ceiling of its own — this loop already resolved every recipe, and reading
-  // one twice is how a render gets expensive (`queued.limits`'s own doc).
-  const limitsByProject = new Map(queued.limits.map((l) => [l.project, l]))
-  const systemLines = await timed('board.system', () => standingSystemLines(tasks, limitsByProject))
-  // Keyed by ticket, so every card's bill is a lookup rather than a scan of
-  // the whole board's spend on every card.
-  const spendByTicket = new Map<string, SpendRow[]>()
-  for (const row of spend.rows) {
-    if (row.ticket === null) continue
-    const rows = spendByTicket.get(row.ticket)
-    if (rows) rows.push(row)
-    else spendByTicket.set(row.ticket, [row])
-  }
-  const now = Date.now()
-  const fromLog = tasks.map((t) => {
-    // A ticket whose runs predate `RunSpent` contributes not one row here —
-    // `billOf` would reduce it to five empty bills, which reads as nothing
-    // spent rather than as unknown (0110 §7, `#498`'s review).
-    const rowsForTicket = spendByTicket.get(t.taskId) ?? []
-    const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
-    const opened = roundsOpened.get(t.taskId)
-    const granted = grantedOf(rowsForTicket.filter((row) => row.pass === t.runId))
-    return toCard(
-      t,
-      t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
-      progress.get(t.taskId) ?? null,
-      // By kind and by project, because a label's colour is the repository's:
-      // two projects can both have a `bug` and colour it differently, and the
-      // cards say which repository they are from for the same reason.
-      // The last colours a queue answer gave (#884): this render does not
-      // wait for GitHub, so a colour is the previous render's, or none.
-      lastKindColor(t.project, t.kind),
-      limitsByProject.get(t.project) ?? null,
-      bills.Work,
-      bills.Answering,
-      triageContextFor(triageDeclared, t.project, daemon),
-      fixHeads.get(t.taskId) ?? null,
-      opened === undefined ? null : { spent: spentOf(opened, granted), granted },
-      systemLines.get(t.taskId) ?? null,
-    )
-  })
+  const queuedRead = timed('board.recipes', () =>
+    queueFilters(registered.filter((p) => project === undefined || p.project === project)),
+  )
   // A task released back to the queue has a row *and* is offered by GitHub, so
   // it would otherwise appear twice. The row wins: it carries the attempts —
-  // `githubQueue` applies that with this set (#884).
-  const known = new Set(fromLog.map((c) => c.taskId))
+  // `githubQueue` applies that with this set (#884). Built once, from the same
+  // `tasks` read the cards come from, and the board's own `known` is this set.
+  const queueAsk: Promise<QueueAsk> = queuedRead.then((q) => ({
+    askable: q.askable,
+    known: new Set(tasks.map((t) => t.taskId)),
+  }))
+  const board = (async (): Promise<Board> => {
+    const ask = await queueAsk
+    const [queued, spend, daemon, triageDeclared] = await Promise.all([
+      queuedRead,
+      // Not measured, so not claimed: a skipped read has no lag to report, and
+      // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
+      // this is a board with nothing to bill rather than a lag read that
+      // failed — the two used to read identically as a bare `lag: null`
+      // (`#498`'s review).
+      tasks.length === 0
+        ? Promise.resolve({ rows: [] as SpendRow[], currency: { lag: null, skipped: true } as SpendCurrency })
+        : timed('spend.read', () => currentSpend({ ticket: tasks.map((t) => t.taskId) })),
+      // The beacon's row, once for the board: the page reads the same one, and
+      // a failed read reaches the board as an error there as it does on the page,
+      // rather than leaving the cards to say less than the page will.
+      timed('daemon.status', () => readStatus()),
+      // Which projects declare `triage:`, read from the recipe as the page reads
+      // it (`loadCurrentTriageStatus`) and not off the queue filter, whose GitHub
+      // client can fail for a project whose recipe is perfectly readable.
+      all === null
+        ? Promise.resolve(null)
+        : timed('triage.declared', () =>
+            declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
+          ),
+    ])
+    // After the recipes too, and for the same reason: a gate's timeout is the
+    // denominator a running card measures against, and it is in the recipe this
+    // just read.
+    const { progress, fixHeads, roundsOpened } = await timed('board.progress', () => laneProgress(tasks, queued.plans))
+    // Keyed by project, for `held`'s fallback when a run's own stream named no
+    // ceiling of its own — this loop already resolved every recipe, and reading
+    // one twice is how a render gets expensive (`queued.limits`'s own doc).
+    const limitsByProject = new Map(queued.limits.map((l) => [l.project, l]))
+    const systemLines = await timed('board.system', () => standingSystemLines(tasks, limitsByProject))
+    // Keyed by ticket, so every card's bill is a lookup rather than a scan of
+    // the whole board's spend on every card.
+    const spendByTicket = new Map<string, SpendRow[]>()
+    for (const row of spend.rows) {
+      if (row.ticket === null) continue
+      const rows = spendByTicket.get(row.ticket)
+      if (rows) rows.push(row)
+      else spendByTicket.set(row.ticket, [row])
+    }
+    const now = Date.now()
+    const fromLog = tasks.map((t) => {
+      // A ticket whose runs predate `RunSpent` contributes not one row here —
+      // `billOf` would reduce it to five empty bills, which reads as nothing
+      // spent rather than as unknown (0110 §7, `#498`'s review).
+      const rowsForTicket = spendByTicket.get(t.taskId) ?? []
+      const bills = withNoSpendFallback(billOf(rowsForTicket), t.attempts, rowsForTicket)
+      const opened = roundsOpened.get(t.taskId)
+      const granted = grantedOf(rowsForTicket.filter((row) => row.pass === t.runId))
+      return toCard(
+        t,
+        t.state === 'queued' ? heldUntil(t, queued.backoffMs.get(t.project) ?? 0, now) : null,
+        progress.get(t.taskId) ?? null,
+        // By kind and by project, because a label's colour is the repository's:
+        // two projects can both have a `bug` and colour it differently, and the
+        // cards say which repository they are from for the same reason.
+        // The last colours a queue answer gave (#884): this render does not
+        // wait for GitHub, so a colour is the previous render's, or none.
+        lastKindColor(t.project, t.kind),
+        limitsByProject.get(t.project) ?? null,
+        bills.Work,
+        bills.Answering,
+        triageContextFor(triageDeclared, t.project, daemon),
+        fixHeads.get(t.taskId) ?? null,
+        opened === undefined ? null : { spent: spentOf(opened, granted), granted },
+        systemLines.get(t.taskId) ?? null,
+      )
+    })
+    const columns = toColumns(fromLog, queued.problems)
+    recordColumnCounts(project, columns)
 
-  const columns = toColumns(fromLog, queued.problems)
-  recordColumnCounts(project, columns)
-
-  return {
-    columns,
-    askable: queued.askable,
-    known,
-    queueOrder: queued.kindOrder,
-    ticketSources: queued.ticketSources,
-    // Unfiltered, deliberately. This is the list the filter is chosen *from*,
-    // so narrowing it to the current choice would remove every way back to the
-    // rest — including "all".
-    projects: filterOptions(names, onBoard),
-    // Narrowed like the columns are: a filter on one repository is a reader
-    // saying which repository they are looking at, and another one arriving is
-    // as much a distraction here as a card would be.
-    pending: pending.filter((p) => project === undefined || p.project === project),
-  }
+    return {
+      columns,
+      askable: ask.askable,
+      known: ask.known,
+      queueOrder: queued.kindOrder,
+      ticketSources: queued.ticketSources,
+      // Unfiltered, deliberately. This is the list the filter is chosen *from*,
+      // so narrowing it to the current choice would remove every way back to the
+      // rest — including "all".
+      projects: filterOptions(names, onBoard),
+      // Narrowed like the columns are: a filter on one repository is a reader
+      // saying which repository they are looking at, and another one arriving is
+      // as much a distraction here as a card would be.
+      pending: pending.filter((p) => project === undefined || p.project === project),
+    }
+  })()
+  return { queueAsk, board }
 }
 
 /**
