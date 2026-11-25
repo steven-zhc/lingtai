@@ -1838,8 +1838,9 @@ async function readBoardStart(project?: string): Promise<{ queueAsk: Promise<Que
     known: new Set(tasks.map((t) => t.taskId)),
   }))
   const board = (async (): Promise<Board> => {
-    const ask = await queueAsk
-    const [queued, spend, daemon, triageDeclared] = await Promise.all([
+    // `queueAsk` is derived from `queuedRead`, so it is not awaited ahead of the
+    // rest: spend, the beacon and triage run beside the recipes, as before.
+    const [queued, spend, daemon, triageDeclared, ask] = await Promise.all([
       queuedRead,
       // Not measured, so not claimed: a skipped read has no lag to report, and
       // `{ lag: 0 }` would say it checked. `skipped: true` tells `spendChip`
@@ -1861,6 +1862,7 @@ async function readBoardStart(project?: string): Promise<{ queueAsk: Promise<Que
         : timed('triage.declared', () =>
             declaredTriage(registered.filter((p) => project === undefined || p.project === project)),
           ),
+      queueAsk,
     ])
     // After the recipes too, and for the same reason: a gate's timeout is the
     // denominator a running card measures against, and it is in the recipe this

@@ -16,6 +16,7 @@ const startBoard = vi.hoisted(() =>
     board: new Promise<never>(() => {}),
   })),
 )
+const askProject = vi.hoisted(() => vi.fn())
 const never = vi.hoisted(() => () => new Promise<never>(() => {}))
 const reads = vi.hoisted(() => ({
   registered: vi.fn(),
@@ -25,7 +26,7 @@ const reads = vi.hoisted(() => ({
   lag: vi.fn(),
 }))
 
-vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), startBoard }))
+vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), startBoard, askProject }))
 vi.mock('../src/lib/locks.ts', async (orig) => ({
   ...(await orig<object>()),
   readRegistered: reads.registered,
@@ -147,6 +148,19 @@ describe('the shell, with every read pending', () => {
   it('calls startBoard once per render', async () => {
     renderToStaticMarkup(await render('lingtai'))
     expect(startBoard).toHaveBeenCalledTimes(1)
+  })
+
+  it('asks GitHub once per project from `queueAsk` while `board` never settles (#1430)', async () => {
+    const filter = { project: 'lingtai', ok: true }
+    startBoard.mockReset().mockImplementation(() => ({
+      queueAsk: Promise.resolve({ askable: [filter], known: new Set<string>() }),
+      board: never(),
+    }))
+    askProject.mockReset().mockImplementation(async (f: unknown) => ({ state: 'unanswered', filter: f, problem: 'x' }))
+    // Two renders' worth of boundaries awaiting the queue is still one ask: the page starts it once.
+    renderToStaticMarkup(await render('lingtai'))
+    await vi.waitFor(() => expect(askProject).toHaveBeenCalledTimes(1))
+    expect(askProject.mock.calls[0]?.[0]).toBe(filter)
   })
 })
 

@@ -7,7 +7,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
  * `laneProgress`'s first await is the snapshot writer, so a writer that never
  * answers stands in for a progress read that never finishes.
  */
-const mocks = vi.hoisted(() => ({ stall: true, readTasks: vi.fn() }))
+const mocks = vi.hoisted(() => ({
+  stall: true,
+  readTasks: vi.fn(),
+  spend: vi.fn(),
+  release: null as null | (() => void),
+  hold: false,
+}))
 
 vi.mock('@lingtai/projector/task-view', async (orig) => ({
   ...(await orig<object>()),
@@ -22,15 +28,18 @@ vi.mock('@lingtai/project', async (orig) => ({
 }))
 vi.mock('@lingtai/conductor/filter', async (orig) => ({
   ...(await orig<object>()),
-  projectFilter: vi.fn(async (p: ProjectState) => ({
-    project: p.project,
-    ok: true,
-    kinds: ['bug'],
-    backoffMs: 0,
-    limits: { rounds: 2, newAttempts: 0, turns: 150, wall: '1h', wallMs: 3_600_000 },
-    plan: new Map(),
-    recipe: { source: {} },
-  })),
+  projectFilter: vi.fn(async (p: ProjectState) => {
+    if (mocks.hold) await new Promise<void>((r) => (mocks.release = r))
+    return {
+      project: p.project,
+      ok: true,
+      kinds: ['bug'],
+      backoffMs: 0,
+      limits: { rounds: 2, newAttempts: 0, turns: 150, wall: '1h', wallMs: 3_600_000 },
+      plan: new Map(),
+      recipe: { source: {} },
+    }
+  }),
 }))
 vi.mock('@lingtai/daemon/control', async (orig) => ({
   ...(await orig<object>()),
@@ -38,13 +47,15 @@ vi.mock('@lingtai/daemon/control', async (orig) => ({
 }))
 vi.mock('../src/lib/spend.ts', async (orig) => ({
   ...(await orig<object>()),
-  currentSpend: vi.fn(async () => ({ rows: [], currency: { lag: 0 } })),
+  currentSpend: mocks.spend,
 }))
 vi.mock('../src/lib/snapshot-writer.ts', () => ({
   boardWriterOrNone: vi.fn(() => (mocks.stall ? new Promise<never>(() => {}) : Promise.resolve(undefined))),
 }))
 
 import { githubQueue, startBoard, type AskableFilter, type ProjectQueue } from '../src/lib/board.ts'
+
+mocks.spend.mockResolvedValue({ rows: [], currency: { lag: 0 } })
 
 const row = {
   taskId: 'ticket-lingtai-1',
@@ -81,7 +92,11 @@ const row = {
   repairPending: false,
 }
 
-afterEach(() => vi.clearAllMocks())
+afterEach(() => {
+  vi.clearAllMocks()
+  mocks.spend.mockResolvedValue({ rows: [], currency: { lag: 0 } })
+  mocks.hold = false
+})
 
 describe('the queue ask', () => {
   it('is made while board.progress has not answered', async () => {
@@ -116,5 +131,16 @@ describe('the queue ask', () => {
     mocks.readTasks.mockResolvedValue([row])
     const { queueAsk, board } = startBoard()
     expect((await board).known).toBe((await queueAsk).known)
+  })
+
+  it('reads spend beside the recipes, not after them', async () => {
+    mocks.stall = false
+    mocks.hold = true
+    mocks.spend.mockResolvedValue({ rows: [], currency: { lag: 0 } })
+    mocks.readTasks.mockResolvedValue([row])
+    const { board } = startBoard()
+    await vi.waitFor(() => expect(mocks.spend).toHaveBeenCalledTimes(1))
+    mocks.release?.()
+    await board
   })
 })
