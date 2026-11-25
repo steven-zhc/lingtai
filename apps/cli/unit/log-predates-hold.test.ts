@@ -52,6 +52,7 @@ const reach: DoctorReach = {
   shapes: (p: Projection) => Effect.succeed({ projection: p.name, matched: [], absent: [], drift: [] }),
   lockHolder: () => Effect.succeed(null),
   orphans: () => Effect.succeed([]),
+  diskSpace: () => Effect.succeed({ listing: { items: [], unreadable: [] }, free: 100 * 1024 ** 3 }),
   titles: () => Effect.succeed([]),
   settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
