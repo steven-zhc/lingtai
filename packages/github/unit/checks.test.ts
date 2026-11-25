@@ -2,9 +2,9 @@
 import { generateKeyPairSync } from 'node:crypto'
 
 import { Effect } from 'effect'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { makeGitHub, PermissionDenied, type AppAuth, type Installation } from '../src/index.ts'
+import { forgetGitHubAuthCache, makeGitHub, PermissionDenied, type AppAuth, type Installation } from '../src/index.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -32,6 +32,7 @@ const github = (answer: (url: string, init: { method?: string; body?: string }) 
 }
 
 describe('the checks reads and the ready mutation', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   it('reads the check runs by the fields named', async () => {

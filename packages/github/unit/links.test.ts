@@ -10,9 +10,16 @@
  */
 import { generateKeyPairSync } from 'node:crypto'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { createGitHubClient, GitHubFailed, PermissionDenied, type AppAuth, type Installation } from '../src/index.ts'
+import {
+  forgetGitHubAuthCache,
+  createGitHubClient,
+  GitHubFailed,
+  PermissionDenied,
+  type AppAuth,
+  type Installation,
+} from '../src/index.ts'
 
 const { privateKey } = generateKeyPairSync('rsa', {
   modulusLength: 2048,
@@ -76,6 +83,7 @@ function linked(number: number, over: Record<string, unknown> = {}): Record<stri
 const REPO = '/repos/steven-zhc/lingtai'
 
 describe('sub-issue and blocked-by links', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   async function client() {

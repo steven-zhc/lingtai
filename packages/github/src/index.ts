@@ -2,6 +2,7 @@ export {
   appInstallationsEffect,
   appJwt,
   createAppReader,
+  forgetGitHubAuthCache,
   GITHUB_API,
   GitHubFailed,
   gapRemedyLines,
