@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 320" role="img" aria-labelledby="title description">
+<title id="title">A ticket lands on your branch, and main moves only through a PR</title>
+<desc id="description">A ticket's attempt lands on your branch, lingtai-base, with nobody asked; lingtai pr submit freezes it as lingtai-base-pr-n, and only a person's merge commit moves main. Everything landed since the last PR is the draft, and the tickets close when the PR merges.</desc>
+<style>
+:root{--fg:#0f181c;--mute:#51636a;--line:#8aa0a6;--fill:rgba(11,106,112,.06);--acc:#0b6a70;--accf:rgba(11,106,112,.14)}
+@media (prefers-color-scheme:dark){:root{--fg:#dde6e8;--mute:#93a7ad;--line:#5d757b;--fill:rgba(84,198,204,.07);--acc:#54c6cc;--accf:rgba(84,198,204,.16)}}
+text{font:13px ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;fill:var(--fg)}
+.title{font-size:15px;font-weight:700}.step{font-size:10.5px;fill:var(--mute)}.name{font-size:13px;font-weight:600}.note{font-size:12px;fill:var(--mute)}.acct{fill:var(--acc);font-size:12px;font-weight:600}
+.box{fill:var(--fill);stroke:var(--line);stroke-width:1.2}.accent{fill:var(--accf);stroke:var(--acc);stroke-width:1.5}.lane{fill:none;stroke:var(--line);stroke-width:1;stroke-dasharray:5 4}
+.arrow{fill:none;stroke:var(--line);stroke-width:1.5;marker-end:url(#arrow)}.back{fill:none;stroke:var(--acc);stroke-width:1.8;marker-end:url(#arrow)}
+</style>
+<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z" fill="context-stroke"/></marker></defs>
+<rect class="lane" x="10" y="8" width="844" height="162" rx="8"/>
+<text class="title" x="26" y="30">lingtai-base · your branch</text>
+<rect class="box" x="26" y="44" width="140" height="52" rx="6"/><text class="step" x="34" y="60">1</text><text class="name" x="34" y="80">Ticket</text>
+<rect class="box" x="194" y="44" width="140" height="52" rx="6"/><text class="step" x="202" y="60">2</text><text class="name" x="202" y="80">Attempt</text>
+<rect class="box" x="362" y="44" width="140" height="52" rx="6"/><text class="step" x="370" y="60">3</text><text class="name" x="370" y="80">Lands on lingtai-base</text>
+<rect class="box" x="530" y="44" width="140" height="52" rx="6"/><text class="step" x="538" y="60">4</text><text class="name" x="538" y="80">Draft</text>
+<rect class="box" x="698" y="44" width="140" height="52" rx="6"/><text class="step" x="706" y="60">5</text><text class="name" x="706" y="80">lingtai pr submit</text>
+<path class="arrow" d="M166 70H192"/><path class="arrow" d="M334 70H360"/><path class="arrow" d="M502 70H528"/><path class="arrow" d="M670 70H696"/>
+<text class="note" x="34" y="116">A local ticket, or an</text><text class="note" x="34" y="132">issue assigned to you</text>
+<text class="note" x="202" y="116">An agent writes it;</text><text class="note" x="202" y="132">checks and review pass</text>
+<text class="note" x="370" y="116">Nobody asked.</text><text class="note" x="370" y="132">Tickets stay open.</text>
+<text class="note" x="538" y="116">Everything landed</text><text class="note" x="538" y="132">since the last PR</text>
+<text class="note" x="698" y="116">Freezes one commit,</text><text class="note" x="698" y="132">pushes it to</text><text class="note" x="698" y="148">lingtai-base-pr-&lt;n&gt;</text>
+<path class="back" d="M826 96V208"/>
+<rect class="lane" x="10" y="190" width="844" height="112" rx="8"/>
+<text class="title" x="26" y="212">main</text>
+<rect class="accent" x="530" y="226" width="296" height="60" rx="6"/><text class="step" x="540" y="242">6</text>
+<text class="acct" x="540" y="259">A person merges lingtai-base-pr-&lt;n&gt;</text>
+<text class="note" x="540" y="277">Merge commit · tickets close</text>
+</svg>

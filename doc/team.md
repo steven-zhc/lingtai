@@ -15,6 +15,10 @@ project is the default for every new project, even for one person, because the
 review you would want from a colleague is the review of one PR, and the
 history stays readable: one merge commit per PR.
 
+![A ticket's attempt lands on your branch, lingtai-base, with nobody asked; lingtai pr submit freezes it as lingtai-base-pr-<n>, and only a person's merge commit moves main.](img/team-flow.svg)
+
+[Open the diagram at full size](img/team-flow.svg).
+
 ## Two more tickets
 
 Pick two other stories from the bookshelf, one for each ticket, so the two
