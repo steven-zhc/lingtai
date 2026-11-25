@@ -215,7 +215,12 @@ export interface StoppingPorts {
   services: Context.Context<never>
   /** `process.exit`, because a pass in flight holds the event loop open. */
   exit?: (code: number) => void
+  /** The clock, in ms; `Date.now` by default, so a test moves it (#1437). */
+  now?: () => number
 }
+
+/** A signal this soon after the first is the same press (#1437). */
+const SAME_PRESS_MS = 500
 
 /**
  * Stopping: the first Ctrl+C drains, the second (or a `--timeout`, or `--force`) stops now.
@@ -229,6 +234,7 @@ export interface StoppingPorts {
  */
 export function daemonStopping(ports: StoppingPorts) {
   const exit = ports.exit ?? ((code: number) => process.exit(code))
+  const now = ports.now ?? Date.now
   const fork = Effect.runForkWith(ports.services)
   /** The request the loop read, when the log is what began this; and a start that could not record itself. */
   const state: { asked: ShutdownRequest | null; failedStart: string | null } = { asked: null, failedStart: null }
@@ -336,10 +342,19 @@ export function daemonStopping(ports: StoppingPorts) {
   // the same two presses, because it used to be the worse of the two: it
   // reached the daemon alone, orphaned the agent, and took with it the code
   // that would have appended the outcome (#87).
+  //
+  // A signal within 500 ms of the first is the same press, and is not counted
+  // (#1437): under `pnpm lingtai daemon` a group signal, which is what Ctrl+C
+  // sends, reaches node directly and again through pnpm's forwarded copy, so
+  // one press arrived twice and skipped the drain. The window starts at the
+  // first signal and an ignored one does not extend it.
   let signals = 0
+  let firstAt = 0
   const onSignal = (signal: string): void => {
+    if (signals > 0 && now() - firstAt < SAME_PRESS_MS) return
     signals += 1
     if (signals === 1) {
+      firstAt = now()
       fork(drain(signal === 'SIGINT' ? 'ctrl-c' : signal, null))
       return
     }
