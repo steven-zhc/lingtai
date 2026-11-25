@@ -20,7 +20,7 @@ import {
   askProject,
   githubQueue,
   issueUrl,
-  loadBoard,
+  startBoard,
   queuedStanding,
   selectedProject,
   columnSkeletonCount,
@@ -735,7 +735,7 @@ type LockRead = Awaited<ReturnType<typeof readProjectLocks>>
  * render as "nothing is paused", which is the exact silence #77 is about.
  */
 function startReads(param: string | undefined) {
-  const board = loadBoard(param)
+  const { board, queueAsk } = startBoard(param)
   const registeredRead = timed('projects.read', () => readRegistered())
   const registered = registeredRead.catch(() => [])
   // A failed register read is [] above; this says so, so a quiet team project is reported unread rather than left out.
@@ -749,7 +749,7 @@ function startReads(param: string | undefined) {
     timed('spend.day', () => control.then((c) => readDayReading(undefined, c)), { failed: (r) => r.day === null }),
   )
   const lags = board.then(() => timed('projections.lag', () => projectionLag()).then(footerLags, () => null))
-  return { board, registered, registeredUnread, control, day, lags }
+  return { board, queueAsk, registered, registeredUnread, control, day, lags }
 }
 type Reads = ReturnType<typeof startReads>
 
@@ -1211,21 +1211,20 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   if (started === undefined) throw new Error('measure did not start the reads')
   const ctx: Ctx = { reads: started, locks: readProjectLocks(), measured, param }
   // GitHub's half of the Queued column (#884). It needs the board's `askable`
-  // and nothing else, so it waits for `board` alone: the day's spend and the
-  // lags are not its reads. `.then` is registered here, outside `/`'s scope,
+  // and `known` and nothing else, so it waits for the recipes and the task rows
+  // alone (`queueAsk`): the progress, the day's spend and the lags are not its
+  // reads (#1430). `.then` is registered here, outside `/`'s scope,
   // and `measure` opens a scope of its own, so these timings land in the
   // `/ queue` array and never in the one already serialised. Started once and
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
-  const queue: Promise<GithubQueue> = ctx.reads.board
-    .then((board) =>
+  const queue: Promise<GithubQueue> = ctx.reads.queueAsk
+    .then((ask) =>
       measure(
         () =>
-          timed('board.queue', () =>
-            githubQueue(board.askable, board.known, (f) => askProject(f, { explain: readWhy })),
-          ),
+          timed('board.queue', () => githubQueue(ask.askable, ask.known, (f) => askProject(f, { explain: readWhy }))),
         { label: '/ queue' },
       ).then((answered) => {
-        recordQueuedOffered(param, board.askable, answered[0].problems)
+        recordQueuedOffered(param, ask.askable, answered[0].problems)
         return answered
       }),
     )
