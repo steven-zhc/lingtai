@@ -509,7 +509,7 @@ export function HandledPanel({
   problems: readonly HandledProblem[] | null
 }) {
   const head = (
-    <div className="hfr-k">
+    <div className="hfr-k sec-h">
       <span className="l">
         <CheckMark />
         Handled for you
@@ -721,7 +721,7 @@ export function HandledPanel({
           </div>
         </div>
         <div className="hfr-days">
-          <div className="h">per day · share without you</div>
+          <div className="h sec-h">per day · share without you</div>
           <div className="hfr-cols" style={{ gap: days.length <= 14 ? 14 : days.length <= 31 ? 3 : 0 }}>
             {days.map((d, i) => {
               const dayShare = shareWithoutYou(d.system, d.you)
@@ -748,7 +748,7 @@ export function HandledPanel({
             })}
           </div>
           <div className="hfr-feed">
-            <div className="h">
+            <div className="h sec-h">
               <span>latest</span>
               <Link href={href('all', null)} scroll={false}>
                 all {n} →

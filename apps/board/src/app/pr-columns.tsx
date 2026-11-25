@@ -93,7 +93,7 @@ const Failed = ({ card }: { card: FailedCard }) => (
 function Column({ project, column }: { project: string; column: ColumnView }) {
   return (
     <section className={`pr-col ${column.tone}`} aria-label={column.title}>
-      <h2>
+      <h2 className={`sec-h${column.tone === 'waiting' ? ' wait' : ''}`}>
         {column.title}{' '}
         <span className="pr-n">
           {column.count}
@@ -145,7 +145,7 @@ export function PrBoardSkeleton() {
       <div className="pr-cols">
         {PR_COLUMNS.map((c) => (
           <section key={c.id} className={`pr-col ${c.tone}`} aria-label={c.title}>
-            <h2>
+            <h2 className={`sec-h${c.tone === 'waiting' ? ' wait' : ''}`}>
               {c.title}{' '}
               <span className="pr-n">
                 <span className="sk-bar sk-n" aria-hidden="true" />
