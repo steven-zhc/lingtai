@@ -157,7 +157,7 @@ describe("the home page's argument", () => {
     ])
     const links = [...home.matchAll(/href="(\/docs?\/[^"]*)"/g)].map((m) => m[1])
     const allowed = ['/docs/tutorial/', '/docs/requirements/', '/docs/safety/', '/docs/team/']
-    expect(links.every((l) => allowed.includes(l))).toBe(true)
+    expect(links.every((l) => l !== undefined && allowed.includes(l))).toBe(true)
     expect(home).toContain('href="#setup"')
   })
 
