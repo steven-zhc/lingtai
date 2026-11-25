@@ -15,6 +15,8 @@ export {
   linksOfClient,
   runnableNow,
   runnableNowEffect,
+  type BlockerRead,
+  type LandedOptions,
   type Considered,
   type Offered,
   type RunnableNowOptions,
