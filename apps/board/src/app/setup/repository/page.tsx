@@ -23,6 +23,7 @@ import { Effect } from 'effect'
 
 import { Bar } from '@/app/bar.tsx'
 
+import { ObjectTitle } from '../../object-title.tsx'
 import type { Source } from './pick-model.ts'
 import { PickRepository } from './pick-repository.tsx'
 import { viewOf } from './view.ts'
@@ -63,10 +64,7 @@ export default async function PickRepositoryPage({ searchParams }: { searchParam
 
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">Repository</span>
-            <span className="hfact">step 1 — which one</span>
-          </h2>
+          <ObjectTitle tag="setup" tone="muted" title="Repository" meta="step 1 — which one" />
           {params.requested === '1' && app ? (
             <p className="note">
               The install was requested, and an organisation owner has to approve it on GitHub. Once they have, reload

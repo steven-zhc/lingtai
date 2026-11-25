@@ -116,6 +116,7 @@ describe('the draft', () => {
     expect(v.kind).toBe(draft.kind)
     expect(v.header.name).toBe('Next PR')
     expect(v.poster.word).toBe('DRAFT')
+    expect(v.poster.tone).toBe('draft')
     expect(labels(v)).toEqual(['Submit PR'])
     expect(v.buttons[0]?.disabled).toBeUndefined()
     expect(v.steps).toEqual([])
@@ -582,12 +583,21 @@ describe('the summary', () => {
   })
 })
 
+describe('the tag colour comes from the status, not the display word (#1459)', () => {
+  it('a submitted PR is the queued card, not a navy one', () => {
+    const v = page([requested])
+    expect(v.poster.word).toBe('SUBMITTED')
+    expect(v.poster.tone).toBe('queued')
+  })
+})
+
 describe('what the code host says', () => {
   it('a failed read is drawn as the failure, never as closed or merged; the log keeps its state', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]])
     const line = hostLine({ status: 'in-review' }, { kind: 'failed', reason: 'rate limited' })
     expect(line).toEqual({ text: 'GitHub could not be asked: rate limited', failed: true })
     expect(v.poster.word).toBe('IN REVIEW')
+    expect(v.poster.tone).toBe('navy')
   })
   it('merged on the host before the log says so is a note, and the buttons follow the log', () => {
     const v = page([requested, started, draftOpened, green, ['PrOpened', { host: 'github', number: 88, url: 'u' }]])

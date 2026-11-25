@@ -29,6 +29,8 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
 
 import { Bar } from '@/app/bar.tsx'
 
+import { ObjectTitle } from '../../object-title.tsx'
+
 export const dynamic = 'force-dynamic'
 
 export default async function GitHubApp() {
@@ -55,10 +57,12 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
 
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">GitHub App</span>
-            <span className="hfact">
-              {offer.configured !== null
+          <ObjectTitle
+            tag="setup"
+            tone="muted"
+            title="GitHub App"
+            meta={
+              offer.configured !== null
                 ? 'already configured'
                 : offer.minted !== null
                   ? 'created here, and not finished'
@@ -66,9 +70,9 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
                     ? 'step 0 — Lingtai talks to GitHub as an App, not as a token'
                     : offer.unreadable !== null
                       ? 'config.yml could not be read'
-                      : 'the log did not answer'}
-            </span>
-          </h2>
+                      : 'the log did not answer'
+            }
+          />
 
           {outcome === null ? null : outcome.ok ? <Created outcome={outcome} /> : <Refused refusal={outcome.refusal} />}
 

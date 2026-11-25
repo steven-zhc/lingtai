@@ -815,7 +815,7 @@ it worth arguing — because what stands there is **larger than the table below*
 and describing it as a straggler or two is how somebody ticks the epic's last
 box over work nobody did. The same rule run over
 `{apps,packages}/*/{unit,integration,test}/` reads **at most 329 occurrences in
-83 files**, counted 2026-11-23 — up from 226 in 47 because `#516`'s pair rule
+84 files**, counted 2026-11-25 — up from 226 in 47 because `#516`'s pair rule
 below is the same rule for this purpose and is counted here with it, and down
 from 661 in 62 the four words carried alone because `#247` had to
 carry the halves as far as compiling and asserting against a `src/` whose event

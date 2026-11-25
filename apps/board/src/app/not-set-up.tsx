@@ -11,6 +11,7 @@
 import type { StoreRefused } from '@lingtai/env'
 
 import { Bar } from './bar.tsx'
+import { ObjectTitle } from './object-title.tsx'
 
 export function NotSetUp({
   home,
@@ -26,9 +27,7 @@ export function NotSetUp({
       <Bar project={undefined} />
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">Setup</span>
-          </h2>
+          <ObjectTitle tag="setup" tone="muted" title="Setup" />
           {nothing ? (
             <>
               <p>Nothing is set up in {home.shown}.</p>

@@ -17,6 +17,7 @@ import { Effect } from 'effect'
 
 import { Bar } from '@/app/bar.tsx'
 
+import { ObjectTitle } from '../../../object-title.tsx'
 import type { TeamView } from './read-model.ts'
 import { SetupForm } from './setup-form.tsx'
 import { emptyView, viewOf } from './view.ts'
@@ -64,10 +65,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
       </Bar>
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">Repository</span>
-            <span className="hfact">{fact}</span>
-          </h2>
+          <ObjectTitle tag="setup" tone="muted" title="Repository" meta={fact} />
           {body}
         </section>
       </div>

@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import { shownLabel } from '@/lib/pr-branches.ts'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
+import { ObjectTitle, joinMeta } from './object-title.tsx'
 import { PrButtons } from './pr-buttons.tsx'
 import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
@@ -142,19 +143,22 @@ export function PrDetail({
 }) {
   return (
     <div className="prp">
-      <header className="prp-head">
-        <span className="prp-chip">
-          <Mark />
-          {view.header.name}
-        </span>
-        <h1 className="prp-title">{view.header.title}</h1>
-        {view.header.host === null ? null : (
-          <a className="prp-host-link" href={view.header.host.href} target="_blank" rel="noreferrer">
-            {view.header.host.label}
-          </a>
-        )}
-        <p className="prp-sub">{view.sub}</p>
-      </header>
+      <ObjectTitle
+        tag={view.poster.word.toLowerCase()}
+        tone={view.poster.tone}
+        title={view.header.title}
+        meta={joinMeta([
+          <>
+            <Mark /> {view.header.name}
+          </>,
+          view.header.host === null ? null : (
+            <a href={view.header.host.href} target="_blank" rel="noreferrer">
+              {view.header.host.label}
+            </a>
+          ),
+          view.sub,
+        ])}
+      />
       <div className="prp-grid">
         <div className="prp-main">
           <section className="prp-panel" aria-label="Where it is">
