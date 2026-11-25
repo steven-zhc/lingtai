@@ -26,9 +26,11 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
+import type { ModeMark } from '@/lib/mode-mark.ts'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
+import { ProjectModeMark } from './mode-glyph'
 import { ProjectLink } from './project-link'
 import { ProjectSandboxMark } from './sandbox-mark'
 
@@ -51,6 +53,7 @@ export function ProjectRows({
   registered,
   locks,
   sandbox,
+  mode,
 }: {
   filters: string[]
   only: string | undefined
@@ -59,6 +62,8 @@ export function ProjectRows({
   locks: LockMap
   /** Each project's sandbox state (#1166); absent draws no mark. */
   sandbox?: ReadonlyMap<string, SandboxState>
+  /** Each project's mode (#1463); absent draws no mark. */
+  mode?: ReadonlyMap<string, ModeMark>
 }) {
   const { where, why } = addTarget(app)
   // What choosing a row gives, said once; the text is per project.
@@ -94,13 +99,14 @@ export function ProjectRows({
           href={`/?project=${encodeURIComponent(p)}`}
           {...(only === p ? current : {})}
         >
-          {sandbox?.get(p) === undefined ? (
+          {sandbox?.get(p) === undefined && mode?.get(p) === undefined ? (
             p
           ) : (
             // The row spreads its children apart: name and mark are one child, so the mark stays beside the name.
             <span className="pname">
               {p}
-              <ProjectSandboxMark state={sandbox.get(p)} />
+              <ProjectSandboxMark state={sandbox?.get(p)} />
+              <ProjectModeMark mark={mode?.get(p)} />
             </span>
           )}
           {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}

@@ -107,6 +107,12 @@ describe('the home rail', () => {
     expect(slot).toBeGreaterThan(-1)
     expect(slot).toBeLessThan(health)
     const between = rail.slice(slot + "sandboxSlot(param, key('sandbox'))".length, health)
-    expect(between.replace(/\{\/\*[\s\S]*?\*\/\}/g, '').trim()).toBe('}')
+    // The mode slot sits between the shield and the dot (#1463).
+    expect(
+      between
+        .replace(/\{\/\*[\s\S]*?\*\/\}/g, '')
+        .replace("{modeSlot(ctx.reads.board, param, key('mode'))}", '')
+        .trim(),
+    ).toBe('}')
   })
 })

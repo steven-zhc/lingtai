@@ -141,7 +141,7 @@ describe('the shell, with every read pending', () => {
     )
     // the rail's paused slot is the pulse and not an absence
     expect(html).toMatch(
-      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
+      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?(<span class="mode-mark mode-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
     )
   })
 
@@ -207,7 +207,7 @@ describe('the boundaries', () => {
     expect(html).not.toContain('sk-line')
     // Queued waits for the board and GitHub, not the day's spend: its empty line is drawn too, so all four columns count
     expect(html).not.toMatch(
-      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
+      /<span class="rail">(<span class="sbx sbx-skeleton" aria-hidden="true"><\/span>)?(<span class="mode-mark mode-skeleton" aria-hidden="true"><\/span>)?<span class="live"><\/span><span class="ct-pulse"/,
     )
     // the day's spend and the lags did not answer: the footer is still its frame, never \$0
     expect(html).toMatch(
