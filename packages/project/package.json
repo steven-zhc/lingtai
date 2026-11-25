@@ -6,6 +6,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./test/seed-recipe": "./test/seed-recipe.ts",
+    "./test/pr-numbers": "./test/pr-numbers.ts",
     "./test/submit": "./test/submit.ts"
   },
   "scripts": {

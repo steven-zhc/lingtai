@@ -96,6 +96,8 @@ vi.mock('@lingtai/projector', async (orig) => ({
 }))
 vi.mock('../src/lib/snapshot-writer.ts', () => ({ boardWriterOrNone: vi.fn(async () => undefined) }))
 
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
+
 import { pauseSlot } from '../src/app/lock-banner.tsx'
 import { viewsFor } from '../src/app/place-line.tsx'
 import { readProjectLocks, readRegistered } from '../src/lib/locks.ts'
@@ -138,6 +140,7 @@ beforeEach(async () => {
     },
   ])
   for (const n of PRS) await store.append(prStream('p', n), 0, [requested])
+  await recordPrNumber(store, 'p', PRS.length)
 })
 
 describe('one request reads each stream once (#1420)', () => {
@@ -148,7 +151,8 @@ describe('one request reads each stream once (#1420)', () => {
     expect(count(h.heads, prStream('p', 1))).toBeLessThanOrEqual(1)
     // Nothing was recorded: the one `prj` read is not a retry after an append.
     expect((await h.inner.read(projectStream('p'))).map((e) => e.type)).not.toContain('ProjectRefused')
-    expect(await h.inner.head(projectStream('p'))).toBe(2)
+    // The configuration, the recipe's text and the recorded PR number: rendering appended nothing.
+    expect(await h.inner.head(projectStream('p'))).toBe(3)
   })
 
   it('reads them all again in the next request: never across requests', async () => {

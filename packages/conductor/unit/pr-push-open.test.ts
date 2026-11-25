@@ -2,6 +2,7 @@ import { integrationStream, prDescription, prStream, reducePr, ticketStream } fr
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, GitHubFailed, type OpenPull } from '@lingtai/github'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 /**
  * `push` and `open`, In progress's two steps (#1337, 0130 §5): the branch is pushed in its lane turn, never forced, and
  * the PR opens as a draft — each looking before it acts, so a restart pushes and opens nothing twice.
@@ -56,6 +57,7 @@ async function landed(store: EventStore, issue: string) {
     await store.append(prStream('lingtai', 1), pr1.length, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
     ])
+    await recordPrNumber(store, 'lingtai', 1)
   }
 }
 

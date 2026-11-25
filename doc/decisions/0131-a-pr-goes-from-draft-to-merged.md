@@ -41,6 +41,14 @@ branch, the review's changes, and the merge back. One topic, one ADR.
    ticket, mergeCommit, from }`, where `from` is the PR that handed the ticket
    back, or null for a landing. Adding a ticket twice is adding it once, and the
    later merge commit stands.
+
+   **The project records its PRs' numbers.** A write that reaches
+   `pr-{project}-{n}` with `n` above the highest the project stream records
+   appends `ProjectPrNumbered { n }` to `prj-{project}` in the same
+   transaction, so the highest PR is read from the project and never found by
+   probing streams. A project whose PRs predate the record has its highest
+   found by the next write, once, and recorded then; until that write a reader
+   sees no PRs.
    - **A landing on `branch.personal` writes two streams in one transaction**:
      `TicketLanded` on the ticket's and `PrDraftTicketAdded` on the draft's
      ([0129](0129-one-module-owns-each-aggregate.md) §5,
