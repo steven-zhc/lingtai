@@ -104,11 +104,7 @@ describe('lingtai clean — worktrees', () => {
 
   it('keeps a running attempt, a young one and one with uncommitted changes; removes the hour-old clean one with --yes', async () => {
     const r = await run(world(), await seeded(), true)
-    expect(r.calls).toEqual([
-      `worktree remove ${HOME}/worktrees/lingtai/pass-done`,
-      `rm ${HOME}/worktrees/lingtai/pass-done`,
-      'prune',
-    ])
+    expect(r.calls).toEqual([`worktree remove ${HOME}/worktrees/lingtai/pass-done`, 'prune'])
     expect(r.out).toContain('uncommitted changes')
     expect(r.code).toBe(0)
   })
@@ -120,10 +116,33 @@ describe('lingtai clean — worktrees', () => {
     expect(r.out).toContain('lingtai clean --yes')
   })
 
-  it('removes a directory git does not know with rm, and never asks it for status', async () => {
+  it('removes a clean directory git does not know with rm, after asking it for status', async () => {
     const w: World = { worktrees: { 'pass-stray': { ageMs: OLD, registered: false } }, logs: [] }
     const r = await run(w, await seeded(), true)
     expect(r.calls).toEqual([`rm ${HOME}/worktrees/lingtai/pass-stray`, 'prune'])
+  })
+
+  it('keeps a directory git does not know when status shows edits', async () => {
+    const w: World = {
+      worktrees: { 'pass-stray': { ageMs: OLD, registered: false, status: '?? recovered.ts\n' } },
+      logs: [],
+    }
+    const r = await run(w, await seeded(), true)
+    expect(r.calls).toEqual([])
+    expect(r.out).toContain('uncommitted changes')
+  })
+
+  it('keeps a claimed attempt whose run stream has no ticketId yet', async () => {
+    const store = await seeded()
+    await store.append(T(4), 0, aClaim(makeStream(T(4)), 'pass-fresh'))
+    const w: World = { worktrees: { 'pass-fresh': { ageMs: OLD } }, logs: [] }
+    const r = await run(w, store, true)
+    expect(r.calls).toEqual([])
+  })
+
+  it('does not delete a replacement left at the path after git removed the worktree', async () => {
+    const r = await run(world(), await seeded(), true)
+    expect(r.calls.filter((c) => c.startsWith('rm '))).toEqual([])
   })
 })
 
@@ -132,10 +151,27 @@ describe('lingtai clean — run logs', () => {
     const w: World = { worktrees: {}, logs: ['pass-done.log', 'pass-owed.log', 'chat-1.log'] }
     const r = await run(w, await seeded(), true)
     expect(r.calls).toEqual([`unlink ${HOME}/runs/lingtai/pass-done.log`])
+    expect(r.out).toContain('runs/lingtai/chat-1.log')
+    expect(r.out).toContain('unknown: no ticket names this run')
   })
 })
 
 describe('lingtai clean — a read that fails', () => {
+  it('reports a directory that cannot be listed and exits 1', async () => {
+    const w: World = { worktrees: { 'pass-done': { ageMs: OLD } }, logs: ['pass-done.log'] }
+    const fake = fakePort(w)
+    const failing: CleanPort = {
+      ...fake.port,
+      list: (path, kind) =>
+        path === `${HOME}/worktrees/lingtai` || path === `${HOME}/runs/lingtai`
+          ? Effect.fail(new Error('EACCES'))
+          : fake.port.list(path, kind),
+    }
+    const r = await run(w, await seeded(), true, failing)
+    expect(r.code).toBe(1)
+    expect(r.out).toContain('could not be checked')
+  })
+
   it('keeps everything and exits 1 when the log cannot be read', async () => {
     const store = await seeded()
     const broken: EventStore = { ...store, read: () => Promise.reject(new Error('disk full')) }

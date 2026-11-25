@@ -49,7 +49,7 @@ export interface WorktreeFacts {
   /** Milliseconds since the directory was modified. */
   readonly ageMs: Read<number>
   readonly run: Read<RunFacts>
-  /** `git status --porcelain`; only asked of a registered worktree. */
+  /** `git status --porcelain`, asked of every directory, registered or not. */
   readonly status: Read<string>
 }
 
@@ -66,16 +66,17 @@ export function classifyWorktree(f: WorktreeFacts): Verdict {
       return { verdict: 'keep', reason: 'running' }
     }
   }
-  if (f.registered.value) {
-    if (!f.status.ok) return { verdict: 'unchecked', reason: 'git status failed' }
-    if (f.status.value.trim() !== '') return { verdict: 'keep', reason: 'uncommitted changes' }
-  }
+  // A directory git does not know may hold recovered edits too: status is asked of every one.
+  if (!f.status.ok) return { verdict: 'unchecked', reason: 'git status failed' }
+  if (f.status.value.trim() !== '') return { verdict: 'keep', reason: 'uncommitted changes' }
   const why = lifecycle === null ? 'no run in the log names it' : `its ticket is ${lifecycle.status}`
   return {
     verdict: 'remove',
     reason: f.registered.value ? `orphan worktree: ${why}` : `not a git worktree: ${why}`,
   }
 }
+
+const UNKNOWN_LOG = 'unknown: no ticket names this run'
 
 export interface LogFacts {
   readonly run: Read<RunFacts>
@@ -84,7 +85,7 @@ export interface LogFacts {
 export function classifyLog(f: LogFacts): Verdict {
   if (!f.run.ok) return { verdict: 'unchecked', reason: 'the log could not be read' }
   const { ticketId, lifecycle } = f.run.value
-  if (ticketId === null || lifecycle === null) return { verdict: 'keep', reason: 'unknown: no ticket names this run' }
+  if (ticketId === null || lifecycle === null) return { verdict: 'keep', reason: UNKNOWN_LOG }
   const { status } = lifecycle
   if (status === 'landed' || status === 'closed' || status === 'satisfied') {
     return { verdict: 'remove', reason: `ticket ${ticketId} is ${status}` }
@@ -116,7 +117,10 @@ const missingIsFine = <A>(e: Effect.Effect<A, unknown>, ok: A): Effect.Effect<A,
 
 export const realPort: CleanPort = {
   list: (path, kind) =>
-    attempt(() => readdir(path, { withFileTypes: true })).pipe(
+    missingIsFine(
+      attempt(() => readdir(path, { withFileTypes: true })),
+      [],
+    ).pipe(
       Effect.map((entries) =>
         entries
           .filter((e) => (kind === 'dirs' ? e.isDirectory() : e.isFile() && e.name.endsWith('.log')))
@@ -174,13 +178,52 @@ const passOf = (name: string): string => name.split(':')[0] ?? name
 
 const mirrorOf = (home: string, project: string): string => join(home, 'repos', `${project}.git`)
 
-const readRun = (store: EventStore, own: boolean, id: string): Effect.Effect<Read<RunFacts>> =>
+/**
+ * Which ticket stream claimed or continued each run, read from the whole log. A run's own
+ * stream names its ticket only once `RunStarted` is written, which a long prepared action
+ * can postpone for an hour; the claim names it from the first moment.
+ */
+export interface ClaimIndex {
+  cached: Read<ReadonlyMap<string, string>> | null
+}
+
+const loadClaims = (store: EventStore): Effect.Effect<Read<ReadonlyMap<string, string>>> =>
+  readOf(
+    Effect.gen(function* () {
+      const byRun = new Map<string, string>()
+      let from = 0n
+      for (;;) {
+        const page = yield* attempt(() => store.readAll(from, 1000))
+        if (page.length === 0) return byRun as ReadonlyMap<string, string>
+        for (const e of page) {
+          if (e.type !== 'TicketClaimed' && e.type !== 'TicketContinued') continue
+          const runId = (e.data as { runId?: unknown } | undefined)?.runId
+          if (typeof runId === 'string') byRun.set(runId, e.streamId)
+        }
+        from = page[page.length - 1]!.seq
+      }
+    }),
+  )
+
+const claimsOf = (store: EventStore, index: ClaimIndex) =>
+  Effect.gen(function* () {
+    if (index.cached === null) index.cached = yield* loadClaims(store)
+    return index.cached
+  })
+
+const readRun = (store: EventStore, own: boolean, index: ClaimIndex, id: string): Effect.Effect<Read<RunFacts>> =>
   Effect.gen(function* () {
     const events = yield* attempt(() => store.read(id))
-    const ticketId =
+    const named =
       events
         .map((e) => (e.data as { ticketId?: string } | undefined)?.ticketId)
         .find((t): t is string => typeof t === 'string') ?? null
+    let ticketId = named
+    if (ticketId === null) {
+      const claims = yield* claimsOf(store, index)
+      if (!claims.ok) return { ok: false } as Read<RunFacts>
+      ticketId = claims.value.get(id) ?? null
+    }
     if (ticketId === null) return { ok: true, value: { ticketId: null, lifecycle: null } } as const
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', {
       snapshots: own ? processLog.snapshots : undefined,
@@ -197,7 +240,7 @@ const readOf = <A>(e: Effect.Effect<A, unknown>): Effect.Effect<Read<A>> =>
 
 /** Gather the facts for one worktree and classify it. */
 const judgeWorktree = (
-  o: { home: string; now: number; port: CleanPort; store: EventStore; own: boolean },
+  o: { home: string; now: number; port: CleanPort; store: EventStore; own: boolean; index: ClaimIndex },
   project: string,
   name: string,
   registeredSet: Read<ReadonlySet<string>>,
@@ -208,14 +251,13 @@ const judgeWorktree = (
       ? { ok: true, value: registeredSet.value.has(path) }
       : { ok: false }
     const ageMs = yield* readOf(o.port.ageMs(path, o.now))
-    const run = yield* readRun(o.store, o.own, passOf(name))
-    const status =
-      registered.ok && registered.value ? yield* readOf(o.port.status(path)) : ({ ok: true, value: '' } as Read<string>)
+    const run = yield* readRun(o.store, o.own, o.index, passOf(name))
+    const status = yield* readOf(o.port.status(path))
     return classifyWorktree({ pass: passOf(name), registered, ageMs, run, status })
   })
 
-const judgeLog = (o: { store: EventStore; own: boolean }, name: string) =>
-  readRun(o.store, o.own, name.slice(0, -'.log'.length)).pipe(Effect.map((run) => classifyLog({ run })))
+const judgeLog = (o: { store: EventStore; own: boolean; index: ClaimIndex }, name: string) =>
+  readRun(o.store, o.own, o.index, name.slice(0, -'.log'.length)).pipe(Effect.map((run) => classifyLog({ run })))
 
 /** Run the command; the exit code is 1 when anything could not be checked or removed. */
 export const cleanEffect = (options: CleanOptions) =>
@@ -226,10 +268,21 @@ export const cleanEffect = (options: CleanOptions) =>
     const own = options.store === undefined
     const store = options.store ?? eventStore
     const { home } = options
-    const ctx = { home, now, port, store, own }
+    const ctx = { home, now, port, store, own, index: { cached: null } as ClaimIndex }
 
-    const projectNames = (kind: 'worktrees' | 'runs') =>
-      port.list(join(home, kind), 'dirs').pipe(Effect.catch(() => Effect.succeed([] as readonly string[])))
+    let failed = false
+    // A directory that cannot be read is not an empty one: say so and exit 1.
+    const listOf = (path: string, kind: 'dirs' | 'logs') =>
+      port.list(path, kind).pipe(
+        Effect.catch(() =>
+          Effect.sync(() => {
+            failed = true
+            log(`unchecked ${relative(home, path)}  could not be checked: the directory could not be read`)
+            return [] as readonly string[]
+          }),
+        ),
+      )
+    const projectNames = (kind: 'worktrees' | 'runs') => listOf(join(home, kind), 'dirs')
     const projects =
       options.project !== undefined
         ? [options.project]
@@ -237,14 +290,11 @@ export const cleanEffect = (options: CleanOptions) =>
 
     const items: Item[] = []
     const registeredBy = new Map<string, Read<ReadonlySet<string>>>()
-    let failed = false
 
     for (const project of projects) {
       const registeredSet = yield* readOf(port.registered(mirrorOf(home, project)))
       registeredBy.set(project, registeredSet)
-      const dirs = yield* port
-        .list(join(home, 'worktrees', project), 'dirs')
-        .pipe(Effect.catch(() => Effect.succeed([] as readonly string[])))
+      const dirs = yield* listOf(join(home, 'worktrees', project), 'dirs')
       for (const name of [...dirs].sort()) {
         const verdict = yield* judgeWorktree(ctx, project, name, registeredSet)
         items.push({
@@ -256,9 +306,7 @@ export const cleanEffect = (options: CleanOptions) =>
           sizeKb: null,
         })
       }
-      const logs = yield* port
-        .list(join(home, 'runs', project), 'logs')
-        .pipe(Effect.catch(() => Effect.succeed([] as readonly string[])))
+      const logs = yield* listOf(join(home, 'runs', project), 'logs')
       for (const name of [...logs].sort()) {
         const verdict = yield* judgeLog(ctx, name)
         items.push({ kind: 'log', project, name, path: join(home, 'runs', project, name), verdict, sizeKb: null })
@@ -289,6 +337,7 @@ export const cleanEffect = (options: CleanOptions) =>
         line('remove', item, v.reason)
         removed.push(item)
       } else {
+        ctx.index.cached = null
         const again =
           item.kind === 'worktree'
             ? yield* judgeWorktree(ctx, item.project, item.name, registeredBy.get(item.project)!)
@@ -327,12 +376,14 @@ export const cleanEffect = (options: CleanOptions) =>
   })
 
 /** The reasons worth a line even though they are kept: what a person may want to act on. */
-const LISTED_KEEPS: ReadonlySet<string> = new Set(['uncommitted changes'])
+const LISTED_KEEPS: ReadonlySet<string> = new Set(['uncommitted changes', UNKNOWN_LOG])
 
 const removeItem = (port: CleanPort, home: string, item: Item, registeredSet: Read<ReadonlySet<string>>) =>
   Effect.gen(function* () {
     if (item.kind === 'log') return yield* port.removeFile(item.path)
     const isRegistered = registeredSet.ok && registeredSet.value.has(item.path)
-    if (isRegistered) yield* port.removeWorktree(mirrorOf(home, item.project), item.path)
+    // Git removes the whole directory of a registered worktree. A second recursive delete would
+    // act on whatever stands at the path by then, which may be a continuation's new worktree.
+    if (isRegistered) return yield* port.removeWorktree(mirrorOf(home, item.project), item.path)
     yield* port.rmDir(item.path)
   })
