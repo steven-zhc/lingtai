@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
   askClaudeTokenForRecipe,
   claudeTokenCommand,
+  echoLine,
   maskTokens,
   type ClaudeTokenWorld,
   type SetupTokenRun,
@@ -85,6 +86,46 @@ describe('claude setup-token spawner', () => {
     await go(askClaudeTokenForRecipe(x.w, sandboxed))
     expect(x.state.file).toContain(FAKE)
     expect(everything(x)).not.toContain(FAKE)
+  })
+
+  it('a real-looking run is echoed once per line, without the advice, and the token is still captured', async () => {
+    const welcome = ['Welcome to Claude Code v2.1.331', ' This will guide you through long-lived auth token setup']
+    const box = '╭──────────╮\n│ Paste code here │\n╰──────────╯'
+    const frames = ['·', '✢', '✳', '✶', '✻', '✽']
+    const chunks = [
+      '\x1b[2K\x1b[1A' + welcome.join('\n') + '\n',
+      welcome.join('\n') + "\n Browser didn't open? Use the URL below to sign in (c to copy)\n",
+      'https://claude.ai/oauth/authorize?x=1\n Paste code here if prompted\n',
+      box + welcome[0] + '\n' + welcome[1] + '\n',
+      ...frames.map((f) => ` ${f} Finishing sign-in…${welcome[0]}\n${welcome[1]}\n`),
+      ' ✔ Long-lived authentication token created\n Your OAuth token (valid for 1 year):\r\n',
+      ` sk-ant-oat`,
+      `01-${FAKE.slice(13)}\n Store this token securely. You won't be able to see it again.\n`,
+      ' Use this token by setting: export CLAUDE_CODE_OAUTH_TOKEN=<token>\n',
+      ' You can revoke it later at https://claude.ai/settings/claude-code\n',
+    ]
+    const x = world({ chunks })
+    await go(askClaudeTokenForRecipe(x.w, sandboxed))
+    const text = x.logs.join('\n')
+    const count = (s: string) => x.logs.filter((l) => l.includes(s)).length
+    expect(count('Welcome to Claude Code')).toBe(1)
+    expect(count('https://claude.ai/oauth/authorize')).toBe(1)
+    expect(count('Paste code here if prompted')).toBe(1)
+    expect(count('Paste code here')).toBe(2)
+    expect(count('Finishing sign-in')).toBe(1)
+    expect(text).not.toMatch(/export CLAUDE_CODE_OAUTH_TOKEN|Store this token securely/)
+    expect(text).toContain('Long-lived authentication token created')
+    expect(text).toContain('revoke it later')
+    expect(x.state.file).toContain(FAKE)
+    expect(x.logs.some((l) => /sk-ant-oat01-(?!…\(hidden\))/.test(l))).toBe(false)
+    expect(everything(x)).not.toContain(FAKE)
+  })
+
+  it('echoLine masks again after control characters are removed', () => {
+    const out = echoLine(`x sk-ant-oat01-ab\x1b[0m\rcd tail`, new Set())
+    expect(out?.includes('\x1b') || out?.includes('\r')).toBe(false)
+    expect(out).not.toContain('abcd')
+    expect(echoLine(`sk-ant-oat01-ab\x1b[1Acd`, new Set())).not.toContain('abcd')
   })
 
   it('maskTokens hides every run', () => {
