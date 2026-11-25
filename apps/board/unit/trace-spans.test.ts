@@ -17,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   readTasks: vi.fn(),
   readState: vi.fn(),
+  readDraftTickets: vi.fn(),
 }))
 
 vi.mock('@lingtai/projector/task-view', async (orig) => ({
@@ -27,6 +28,7 @@ vi.mock('@lingtai/projector/task-view', async (orig) => ({
 vi.mock('@lingtai/project', async (orig) => ({
   ...(await orig<object>()),
   loadAllProjects: vi.fn(async () => []),
+  readDraftTickets: mocks.readDraftTickets,
 }))
 vi.mock('@lingtai/conductor/snapshot-state', async (orig) => ({
   ...(await orig<object>()),
@@ -57,7 +59,7 @@ import { githubJson } from '../../../packages/github/src/app.ts'
 import { createGhReader } from '../../../packages/github/src/gh-reader.ts'
 import { githubQueue, loadBoard, type AskableFilter } from '../src/lib/board.ts'
 import { readControlOnce } from '../src/lib/locks.ts'
-import { loadPrBoard, loadPrDetail, readProjectPrs } from '../src/lib/prs.ts'
+import { loadPrBoard, loadPrDetail, readDraftOf, readProjectPrs } from '../src/lib/prs.ts'
 import { memoStore } from '../src/lib/request-store.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
 import { ApiContext, boardTracer, measure, timed, traced } from '../src/lib/timing.ts'
@@ -303,6 +305,15 @@ describe('the PR pages', () => {
   })
 })
 
+const page = <T>(name: string, fn: () => Promise<T>) =>
+  trace.getTracer('lingtai-board').startActiveSpan(name, async (s) => {
+    try {
+      return await fn()
+    } finally {
+      s.end()
+    }
+  })
+
 describe('the event store head seam', () => {
   const fakeOver = (head: () => Promise<number>) => {
     const calls = { n: 0 }
@@ -314,15 +325,6 @@ describe('the event store head seam', () => {
     } as unknown as ReturnType<typeof createMemoryEventStore>
     return { calls, store: promiseStore(fromPromiseStore(fake)) }
   }
-  const page = <T>(name: string, fn: () => Promise<T>) =>
-    trace.getTracer('lingtai-board').startActiveSpan(name, async (s) => {
-      try {
-        return await fn()
-      } finally {
-        s.end()
-      }
-    })
-
   it('measures one physical read for concurrent waiters, with the count and no id', async () => {
     installTraceSeams()
     let resolve!: (n: number) => void
@@ -417,5 +419,17 @@ describe('the event store head seam', () => {
     const heads = all.filter((s) => s.name === 'events.head')
     expect(heads.length).toBeGreaterThan(0)
     for (const h of heads.slice(0, 2)) expect(parentOf(all, h)?.name).toBe('pr.numbers')
+  })
+})
+
+describe('a failure recovered after the phase', () => {
+  it('leaves pr.draft marked as an error while the page still gets an answer', async () => {
+    const { Effect } = await import('effect')
+    mocks.readDraftTickets.mockReturnValue(Effect.fail(new Error('connection refused')))
+    const got = await page('pr.board', () => Effect.runPromise(readDraftOf('p').pipe(Effect.withTracer(boardTracer))))
+    expect(got).toEqual({ error: 'connection refused' })
+    const draft = (await spans()).find((s) => s.name === 'pr.draft')!
+    expect(draft.status.code).toBe(2)
+    expect(JSON.stringify(draft.attributes)).not.toContain('refused')
   })
 })

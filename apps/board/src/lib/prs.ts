@@ -131,9 +131,8 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
  * board and a PR's page both ask here, so the two cannot decide the draft differently.
  */
 export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { error: string }> =>
-  tracedEffect(
-    'pr.draft',
-    readDraftTickets(project, requestStore()).pipe(Effect.catch((err) => Effect.succeed({ error: err.message }))),
+  tracedEffect('pr.draft', readDraftTickets(project, requestStore())).pipe(
+    Effect.catch((err) => Effect.succeed({ error: err.message })),
   )
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
@@ -297,8 +296,8 @@ const ticketFacts = (
         // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
         const rows = yield* tracedEffect(
           'spend.read',
-          readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(Effect.orElseSucceed(() => null)),
-        )
+          readSpendEffect({ project, ticket: ticketStream(project, ticket) }),
+        ).pipe(Effect.orElseSucceed(() => null))
         const open = yield* openRead
         const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
         const spend =
