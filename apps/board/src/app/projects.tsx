@@ -29,6 +29,7 @@ import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
+import { ProjectLink } from './project-link'
 import { ProjectSandboxMark } from './sandbox-mark'
 
 /** Where `+` lands and why: step 0 before the App answers, the picker after. */
@@ -76,13 +77,19 @@ export function ProjectRows({
   return (
     <div className="menu pm">
       {filters.length > 1 ? (
-        <Link className={`tab${only === undefined ? ' on' : ''}`} href="/" {...(only === undefined ? current : {})}>
+        <ProjectLink
+          choice={undefined}
+          className={`tab${only === undefined ? ' on' : ''}`}
+          href="/?project="
+          {...(only === undefined ? current : {})}
+        >
           all projects
-        </Link>
+        </ProjectLink>
       ) : null}
       {filters.map((p) => (
-        <Link
+        <ProjectLink
           key={p}
+          choice={p}
           className={`tab prj${only === p ? ' on' : ''}`}
           href={`/?project=${encodeURIComponent(p)}`}
           {...(only === p ? current : {})}
@@ -98,7 +105,7 @@ export function ProjectRows({
           )}
           {isPaused(locks.get(p)) ? <span className="pause-tag">paused</span> : null}
           {hint(p) === null ? null : <span className="phint">{hint(p)}</span>}
-        </Link>
+        </ProjectLink>
       ))}
       {/* Last row: the affordance lives in the menu it belongs to (#216, 0.16), and is not a third. */}
       <Link className="tab" href={where} title={why}>

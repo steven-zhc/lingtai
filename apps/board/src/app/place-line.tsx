@@ -11,6 +11,8 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { ProjectLink } from './project-link'
+
 export interface PlaceView {
   id: 'tickets' | 'prs' | 'recipe' | (string & {})
   label: string
@@ -21,6 +23,8 @@ export interface PlaceView {
   badge?: { n: number; title: string }
   /** Set when the badge's count could not be read: the title says so and no count is drawn. */
   unread?: string
+  /** Set on `Tickets`: following it is a person choosing this project (`undefined`: all), so the click remembers it (#1435). */
+  choose?: { project: string | undefined }
 }
 
 /** At most four views on the line; a fifth goes into `More ▾`. */
@@ -37,9 +41,15 @@ export function placeViews<T>(views: readonly T[]): { line: T[]; more: T[] } {
  */
 export const viewsFor = (project: string | undefined, prs?: { waiting: number | null }): PlaceView[] =>
   project === undefined
-    ? [{ id: 'tickets', label: 'Tickets', href: '/', key: 'T' }]
+    ? [{ id: 'tickets', label: 'Tickets', href: '/?project=', key: 'T', choose: { project: undefined } }]
     : [
-        { id: 'tickets', label: 'Tickets', href: `/?project=${encodeURIComponent(project)}`, key: 'T' },
+        {
+          id: 'tickets',
+          label: 'Tickets',
+          href: `/?project=${encodeURIComponent(project)}`,
+          key: 'T',
+          choose: { project },
+        },
         ...(prs === undefined
           ? []
           : [
@@ -65,23 +75,29 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
 
 function View({ v, here }: { v: PlaceView; here: string | undefined }) {
   const current = v.id === here
-  return (
-    <Link
-      className={current ? 'view on' : 'view'}
-      href={v.href}
-      aria-current={current ? 'page' : undefined}
-      title={
-        v.key === undefined ? undefined : `${v.label} · G ${v.key}${v.unread === undefined ? '' : ` · ${v.unread}`}`
-      }
-      {...(v.key === undefined ? {} : { 'data-go': v.key.toLowerCase() })}
-    >
+  const props = {
+    className: current ? 'view on' : 'view',
+    href: v.href,
+    'aria-current': current ? ('page' as const) : undefined,
+    title: v.key === undefined ? undefined : `${v.label} · G ${v.key}${v.unread === undefined ? '' : ` · ${v.unread}`}`,
+    ...(v.key === undefined ? {} : { 'data-go': v.key.toLowerCase() }),
+  }
+  const body = (
+    <>
       {v.label}
       {v.badge === undefined ? null : (
         <span className="badge" title={v.badge.title}>
           {v.badge.n}
         </span>
       )}
-    </Link>
+    </>
+  )
+  return v.choose === undefined ? (
+    <Link {...props}>{body}</Link>
+  ) : (
+    <ProjectLink choice={v.choose.project} {...props}>
+      {body}
+    </ProjectLink>
   )
 }
 

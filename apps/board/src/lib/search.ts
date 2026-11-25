@@ -19,6 +19,8 @@ export interface Entry {
   label: string
   detail?: string
   href: string
+  /** Set on a `Projects` entry: the name a pick remembers (#1435), so nothing parses it back out of `href`. */
+  project?: string
   keys: string[]
   /** The number a query of just digits finds this by at rank 0; `hash` when `#<n>` names it (a ticket, a PR with a host number). */
   number?: { value: string; hash: boolean }
@@ -121,6 +123,7 @@ export function buildIndex({
       group: 'Projects',
       label: p,
       href: `/?project=${encodeURIComponent(p)}`,
+      project: p,
       keys: [p],
     })
   }

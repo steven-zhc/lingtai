@@ -1178,7 +1178,8 @@ async function CardsPart({
 }
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  const param = (await searchParams).project
+  // `/?project=` is *all projects*: `''` must never reach the reads as a project name (#1435).
+  const param = (await searchParams).project || undefined
   // Before any read of the log: a refused store makes `loadBoard` throw the
   // same sentence, and Next would show that as its default error page. The
   // screen below says it instead, and mounts no `Live` — there is no log to
