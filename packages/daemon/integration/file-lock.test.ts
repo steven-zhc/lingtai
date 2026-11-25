@@ -4,8 +4,8 @@
  * The exclusion is the whole point of the package, so a fake lock would test
  * nothing: every holder here that has to be *another* holder is another
  * process, because a lock that only excludes itself is the bug #178's attempt 1
- * shipped. And this file runs on Linux in CI as well as on a Mac
- * (`.github/workflows/lock.yml`) — that attempt passed on the machine it was
+ * shipped. And this file runs on Linux in CI (`.github/workflows/integration.yml`)
+ * as well as on a Mac (`.github/workflows/lock.yml`) — that attempt passed on the machine it was
  * written on and threw on the other.
  *
  * Each test has its own directory, so nothing here touches `~/.lingtai/locks`.
