@@ -17,7 +17,7 @@ import type { Envelope, EventType, ToAppend } from '@lingtai/domain'
 import { Cause, Deferred, Effect, Exit } from 'effect'
 
 import { ConcurrencyError, type EventStore, type EventsPort, type StreamBatch } from './event-store.ts'
-import { observedRead } from './observe.ts'
+import { observedHead, observedRead } from './observe.ts'
 import type { LogQueries, QueriesPort } from './queries.ts'
 import { type Snapshot, type SnapshotKey, type SnapshotsPort, type SnapshotStore } from './snapshots.ts'
 import { follow, type FollowCell, type FollowOptions, type SubscribeOptions } from './subscribe.ts'
@@ -54,7 +54,7 @@ export function promiseStore(events: EventsPort): EventStore {
     append: (streamId, expectedVersion, batch) => appendFace(events, streamId, expectedVersion, batch),
     appendAll: (batches) => appendAllFace(events, batches),
     read: (streamId, fromVersion) => observedRead(streamId, () => readFace(events, streamId, fromVersion)),
-    head: (streamId) => headFace(events, streamId),
+    head: (streamId) => observedHead(streamId, () => headFace(events, streamId)),
     readTypes: (streamId, types, fromVersion) =>
       observedRead(streamId, () => readTypesFace(events, streamId, types, fromVersion)),
     readAll: (fromSeq, limit) => readAllFace(events, fromSeq, limit),

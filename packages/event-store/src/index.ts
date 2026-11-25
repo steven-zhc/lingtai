@@ -109,7 +109,16 @@ export {
   promiseSnapshots,
   promiseStore,
 } from './store-face.ts'
-export { kindOf, type ReadInfo, type ReadObserver, setReadObserver } from './observe.ts'
+export {
+  type HeadInfo,
+  type HeadObserver,
+  kindOf,
+  observedHead,
+  type ReadInfo,
+  type ReadObserver,
+  setHeadObserver,
+  setReadObserver,
+} from './observe.ts'
 export { follow, type FollowOptions, subscribe, type SubscribeOptions, type Subscription } from './subscribe.ts'
 export { CHANNEL, type WakeListener, type WakeSession, type Waker } from './wake.ts'
 export { parseTimestamptz } from './timestamptz.ts'
