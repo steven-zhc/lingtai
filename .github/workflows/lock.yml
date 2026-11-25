@@ -1,15 +1,16 @@
-# The lock, on both platforms 1.0 ships (#193).
+# The lock, on a Mac — the macOS half of both platforms 1.0 ships (#193).
 #
 # #178's attempt 1 locked through SQLite's `unix-flock` VFS, which is compiled
 # in only on Apple's builds: its tests passed on the Mac they were written on and
 # the locker threw on Linux. So the tests that prove the lock — the contract, a
-# killed holder, the queue `service shutdown` waits in — run on Linux here, and
-# on a Mac beside it, rather than wherever somebody happens to work.
+# killed holder, the queue `service shutdown` waits in — run on both platforms
+# rather than wherever somebody happens to work. The Linux half is
+# `integration.yml`, which runs this file with the rest of the integration
+# project, so this workflow no longer repeats it on Linux.
 #
-# One Node, `.node-version`'s (#430) — the floor used to be lower and this
-# matrix carried a second leg for it, but `engines` now names the same Node
-# this repository runs everywhere else, so there is no second Node left to
-# prove the lock against.
+# One Node, `.node-version`'s (#430) — `engines` names the same Node this
+# repository runs everywhere else, so there is no second Node to prove the lock
+# against.
 #
 # No database: the lock needs none. It is an `integration` test all the same —
 # it spawns holders and writes lock files, and both are outside the system
@@ -27,11 +28,7 @@ permissions:
 
 jobs:
   lock:
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: [ubuntu-24.04, macos-15]
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6

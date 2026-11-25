@@ -13,11 +13,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { viewsFor } from '../src/app/place-line.tsx'
-import { PrColumns } from '../src/app/pr-columns.tsx'
+import { PrBoardSkeleton, PrColumns } from '../src/app/pr-columns.tsx'
 import {
   type CardView,
   type PrBoardInput,
   type PrRead,
+  PR_COLUMNS,
   WAIT_WORDS,
   prBoard,
   prName,
@@ -79,6 +80,117 @@ describe('the read', () => {
   })
 })
 
+/** Turns of the microtask queue, so a test orders reads without a timer (0060 §1). */
+const turns = async (n: number) => {
+  for (let i = 0; i < n; i++) await Promise.resolve()
+}
+
+describe('the read, with concurrency', () => {
+  const requested = { type: 'PrSubmitRequested', actor: 'human:x', data: { by: 'human:x' } } as const
+  const merged = {
+    type: 'PrMerged',
+    actor: 'conductor',
+    data: { how: 'host', headSha: 'a'.repeat(40), mergeSha: 'b'.repeat(40) },
+  } as const
+
+  it('stops at the first PR merged before `since`, mid-chunk, and never returns what is older', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    // PR n merges on day n. `since` is day 10.5: PR 10 is the first merged before it, newest first.
+    let day = 0
+    const store = createMemoryEventStore({ now: () => new Date(Date.UTC(2026, 0, 1 + day)) })
+    for (let n = 1; n <= 30; n++) {
+      day = n
+      await store.append(prStream('p', n), 0, [requested])
+      await store.append(prStream('p', n), 1, [merged])
+    }
+    const real = store.read.bind(store)
+    // PR 8 is older than the crossing PR and in its chunk (10, 9, 8, … after 14–7 is read together): its failure is dropped.
+    store.read = async (id: string) => {
+      if (id === prStream('p', 8)) throw new Error('disk gone')
+      return real(id)
+    }
+    const since = new Date(Date.UTC(2026, 0, 1 + 10, 12))
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { since }))
+    expect(reads.map((r) => r.n)).toEqual([
+      10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+    ])
+    expect(reads.every((r) => 'pr' in r)).toBe(true)
+  })
+
+  const tenMerged = async () => {
+    const store = createMemoryEventStore()
+    for (let n = 1; n <= 10; n++) {
+      await store.append(prStream('p', n), 0, [requested])
+      await store.append(prStream('p', n), 1, [merged])
+    }
+    const read: string[] = []
+    const real = store.read.bind(store)
+    store.read = async (id: string) => {
+      read.push(id)
+      return real(id)
+    }
+    return { store, read }
+  }
+
+  it('with `merged: 5`, reads five of ten merged PRs and returns them oldest first; without it, all ten', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { store, read } = await tenMerged()
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { merged: 5 }))
+    expect(reads.map((r) => r.n)).toEqual([6, 7, 8, 9, 10])
+    expect(read.toSorted()).toEqual([6, 7, 8, 9, 10].map((n) => prStream('p', n)).toSorted())
+    const all = await Effect.runPromise(readProjectPrs('p', store))
+    expect(all.map((r) => r.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+  })
+
+  it('with `merged: 5`, a draft above the merged PRs is read and not counted or returned', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { store, read } = await tenMerged()
+    await store.append(prStream('p', 11), 0, [
+      {
+        type: 'PrDraftTicketAdded',
+        actor: 'conductor',
+        data: { ticket: '1', mergeCommit: 'c'.repeat(40), from: null },
+      },
+    ])
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { merged: 5 }))
+    expect(reads.map((r) => r.n)).toEqual([6, 7, 8, 9, 10])
+    expect(read.toSorted()).toEqual([6, 7, 8, 9, 10, 11].map((n) => prStream('p', n)).toSorted())
+  })
+
+  it('the open PR and the draft read only the newest streams, however many merged before them', async () => {
+    const { openPr, readDraftTickets } = await import('@lingtai/project')
+    const { store, read } = await tenMerged()
+    expect(await Effect.runPromise(openPr('p', store))).toBeNull()
+    expect(await Effect.runPromise(readDraftTickets('p', store))).toEqual([])
+    expect(new Set(read)).toEqual(new Set([prStream('p', 10)]))
+  })
+
+  it('returns the serial order with the reads overlapping, never more than READ_CONCURRENCY at once', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { READ_CONCURRENCY } = await import('@lingtai/project')
+    const store = createMemoryEventStore()
+    for (let n = 1; n <= 20; n++) await store.append(prStream('p', n), 0, [requested])
+    const serial = await Effect.runPromise(readProjectPrs('p', store))
+    const real = store.read.bind(store)
+    let inFlight = 0
+    let most = 0
+    // The higher the number, the longer the wait: the PRs read last finish first.
+    store.read = async (id: string) => {
+      const n = Number(id.split('-').pop())
+      inFlight++
+      most = Math.max(most, inFlight)
+      await turns(n)
+      inFlight--
+      return real(id)
+    }
+    const reads = await Effect.runPromise(readProjectPrs('p', store))
+    expect(reads).toEqual(serial)
+    expect(reads.map((r) => r.n)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+    expect(most).toBeGreaterThan(1)
+    expect(most).toBeLessThanOrEqual(READ_CONCURRENCY)
+  })
+})
+
 describe('prBoard', () => {
   it('draws Submit with its cost line when no PR is open', () => {
     const v = prBoard(input([]))
@@ -88,6 +200,12 @@ describe('prBoard', () => {
     expect(draft.sub.join(' ')).toContain('≤ 20 turns, 5 min')
     expect(v.strip.branches).toBe('foundry → main')
     expect(v.strip.notInPr).toBe('2 tickets not in a PR yet')
+  })
+
+  it('links the draft card to the page listing every draft ticket', () => {
+    const draft = cards(prBoard(input([], [tk(1), tk(2), tk(3), tk(4), tk(5)])), 'draft')[0]!
+    expect(draft.href).toBe('/pr/p/next')
+    expect(draft.more).toBe(2)
   })
 
   it('disables Submit beside an open PR, naming it', () => {
@@ -293,8 +411,8 @@ describe('prBoard', () => {
     expect(card.meta).toEqual(['CI ✓ 2/2'])
   })
 
-  it('draws four merged PRs as three and 1 older, newest first', () => {
-    const merged = [1, 2, 3, 4].map((n) => ({
+  it('draws seven merged PRs as the five newest, newest first, with no fold', () => {
+    const merged = [1, 2, 3, 4, 5, 6, 7].map((n) => ({
       n,
       pr: pr(n, {
         status: 'merged',
@@ -305,8 +423,9 @@ describe('prBoard', () => {
       }),
     }))
     const c = col(prBoard(input(merged, [])), 'merged')
-    expect((c.cards as CardView[]).map((x) => x.name)).toEqual(['PR 4', 'PR 3', 'PR 2'])
-    expect(c.older.map((x) => x.name)).toEqual(['PR 1'])
+    expect((c.cards as CardView[]).map((x) => x.name)).toEqual(['PR 7', 'PR 6', 'PR 5', 'PR 4', 'PR 3'])
+    expect(c.count).toBe(5)
+    expect('older' in c).toBe(false)
     expect(c.cards[0]).toMatchObject({ sub: ['11-18 · 1 ticket closed'] })
   })
 
@@ -443,5 +562,29 @@ describe('the board never appends to a pr- stream', () => {
       if (!file.endsWith('app/actions.ts'))
         expect(text, file).not.toMatch(/\b(requestPr[A-Z]\w*|grantPrRounds|recordPr\w*)\(/)
     }
+  })
+})
+
+describe('PrBoardSkeleton (#1419)', () => {
+  const html = renderToStaticMarkup(<PrBoardSkeleton />)
+  const titles = PR_COLUMNS.map((c) => c.title)
+  const sections = html.split('<section ').slice(1)
+
+  it('draws one section per column of the shared constant, in order', () => {
+    expect([...html.matchAll(/<section [^>]*aria-label="([^"]*)"/g)].map((m) => m[1])).toEqual(titles)
+  })
+
+  it('puts one card skeleton in each column', () => {
+    expect(sections).toHaveLength(titles.length)
+    for (const s of sections) expect(s.match(/class="sk-card"/g)).toHaveLength(1)
+  })
+
+  it('has no words but the titles', () => {
+    expect(
+      html
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe(titles.join(' '))
   })
 })

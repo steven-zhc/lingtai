@@ -1,6 +1,12 @@
 import { passOverBaseRed } from '@lingtai/conductor'
-import { BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
-import { passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
+import {
+  BLOCKERS_READ_MOST,
+  cachedBlockers,
+  forgetBlockers,
+  readBlockersEffect,
+  type BlockedSkip,
+} from '@lingtai/conductor/blockers'
+import { landedFor, landedNote, passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -78,7 +84,7 @@ import {
   type TaskState,
 } from '@lingtai/projector/task-view'
 import type { ResolvedRecipe } from '@lingtai/recipe'
-import { modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
+import { branchOf, modeOf, queueOf, selectionOf, ticketSourceOf, type TicketSource } from '@lingtai/recipe/settings'
 import { SpanStatusCode, context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 
@@ -1004,6 +1010,14 @@ export async function askProject(
                 client: filter.tickets,
                 queue: queueOf(filter.recipe),
                 selection: selectionOf(filter.recipe),
+                // As the conductor reads it, or the board draws a ticket blocked that a pass is taking (#1423).
+                landed: landedFor({
+                  recipe: filter.recipe,
+                  // Through the blocker cache, so `queue.blockers` below finds what this read fetched.
+                  links: cachedBlockers(filter.project, filter.links ?? null, options.now ?? Date.now),
+                  store: eventStore,
+                  project: filter.project,
+                }),
               }),
             catch: (err) => err,
           }),
@@ -1331,6 +1345,11 @@ export interface GithubQueue {
   why?: { project: string; why: WhyNothingRuns }[]
   /** Task ids of cards a red base holds: queued and drawn, but never counted runnable or *taken first* (#1216). */
   baseHeld?: Set<string>
+  /**
+   * `landedNote`'s sentence for each ticket the log already has a card for, keyed by task id (#1423): that card is
+   * drawn from the log and not from `cards`, so the sentence reaches it here.
+   */
+  landed?: Map<string, string>
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1372,6 +1391,7 @@ export async function githubQueue(
   const parents = new Map<string, number>()
   const why: { project: string; why: WhyNothingRuns }[] = []
   const baseHeldIds = new Set<string>()
+  const landedKnown = new Map<string, string>()
   let answered = 0
   let runnable = 0
 
@@ -1467,7 +1487,12 @@ export async function githubQueue(
     }
     for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
       if (!answer.runnable.includes(r)) baseHeldIds.add(r.taskId)
-      if (known.has(r.taskId)) continue
+      // A ticket the log has a card for is drawn from the log, so it gets the sentence by task id (#1423).
+      const landedSaid = landedNote(offered, r.issue, () => branchOf(filter.recipe))
+      if (known.has(r.taskId)) {
+        if (landedSaid !== null) landedKnown.set(r.taskId, landedSaid)
+        continue
+      }
       cards.push({
         taskId: r.taskId,
         project: filter.project,
@@ -1488,7 +1513,8 @@ export async function githubQueue(
         turns: null,
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
-        note: null,
+        // A ticket GitHub still marks blocked, taken because its blockers landed on `branch.personal` (#1423).
+        note: landedSaid,
         short: null,
         split: null,
         cause: null,
@@ -1534,6 +1560,7 @@ export async function githubQueue(
     parents,
     why,
     baseHeld: baseHeldIds,
+    landed: landedKnown,
     asked: askable.length,
     answered,
     runnable: answered < askable.length && runnable === 0 ? null : runnable,

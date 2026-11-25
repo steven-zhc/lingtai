@@ -18,13 +18,15 @@ import {
   type BaseHead,
   projectFilter,
   rankedKinds,
+  blockersLanded,
+  landedFor,
   runnableNowEffect,
   type ClientFor,
   type RecipeFor,
   accountsFor,
   currentRecipe,
 } from '@lingtai/conductor'
-import { readBlockersEffect } from '@lingtai/conductor/blockers'
+import { cachedBlockers, readBlockersEffect } from '@lingtai/conductor/blockers'
 import { selectRunnableEffect } from '@lingtai/conductor/queue'
 import {
   explainQueueEffect,
@@ -391,6 +393,11 @@ export interface ProjectStatus {
   passedOverLine: string | null
   /** `discover.ts`'s sentence when GitHub sent no dependency summary, else null. */
   dependenciesUnread: string | null
+  /**
+   * One line per ticket the team queue took, or kept passed over, because of what landed on `branch.personal`
+   * (#1423): `discover.ts`'s sentences, each led by the ticket. Absent or empty when none.
+   */
+  landedLines?: readonly string[]
   /** What could start next, in `selectRunnable`'s order. */
   runnable: StatusRow[]
   /** Every row the log has for this project. */
@@ -485,6 +492,7 @@ export const readStatus = (
       let lookedAt: BaseRedLook | null = null
       let passed: string | null = null
       let unread: string | null = null
+      let landedLines: string[] = []
       if (filter.ok) {
         // After where this project's tickets actually live (#389).
         source = sourceName(ticketSourceOf(filter.recipe))
@@ -496,6 +504,12 @@ export const readStatus = (
           client: tickets,
           queue: queueOf(recipe),
           selection: selectionOf(recipe),
+          landed: landedFor({
+            recipe,
+            links: cachedBlockers(name, filter.links ?? null),
+            store: eventStore,
+            project: name,
+          }),
         }).pipe(
           Effect.map((found) => ({ found })),
           recovering((err) => Effect.succeed({ failed: err.message })),
@@ -522,6 +536,14 @@ export const readStatus = (
           skipped = seen.skipped.map((s) => ({ ref: s.ref, reason: s.reason }))
           passed = passedOver(seen.skipped)
           unread = found.dependenciesUnread
+          landedLines = [
+            ...found.runnable.flatMap((r) =>
+              r.landedBlockers === undefined
+                ? []
+                : [`#${r.ref}: ${blockersLanded(r.landedBlockers, branchOf(recipe))}`],
+            ),
+            ...found.skipped.flatMap((k) => (k.held === undefined ? [] : [`#${k.ref}: ${k.held}`])),
+          ]
         }
       }
 
@@ -680,6 +702,7 @@ export const readStatus = (
         passedOver: skipped,
         passedOverLine: passed,
         dependenciesUnread: unread,
+        landedLines,
         runnable: runnable.map((r) => rowOf({ ...r, state: 'queued' }, newAttemptsByTask.get(r.taskId) ?? 0)),
         known: yield* Effect.forEach(
           tasks,
@@ -827,6 +850,7 @@ export function renderStatus(
       else if (p.eligible !== null) queue.push(offerLine(p.source, p.eligible, p.passedOverLine).trim())
     }
     if (p.dependenciesUnread !== null) queue.push(`(${p.dependenciesUnread})`)
+    for (const line of p.landedLines ?? []) queue.push(`(${line})`)
     // `--all` widens the listing to everything the project has a row for.
     const ids = new Set(p.known.map((t) => t.taskId))
     const rows = options.all ? [...p.known, ...p.runnable.filter((r) => !ids.has(r.taskId))] : p.runnable

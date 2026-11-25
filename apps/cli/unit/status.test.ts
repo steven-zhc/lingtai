@@ -1,3 +1,4 @@
+import { blockersLanded } from '@lingtai/conductor'
 import {
   ceilingFacts,
   NO_ACCOUNTS,
@@ -319,6 +320,23 @@ describe('statusJson', () => {
         },
       ],
     })
+  })
+})
+
+describe('renderStatus says what landed on the personal branch (#1423)', () => {
+  const withLines = (landedLines: readonly string[]): StatusReport => ({
+    ...fixture,
+    projects: [{ ...fixture.projects[0]!, landedLines }, ...fixture.projects.slice(1)],
+  })
+
+  it('prints the line for a ticket taken despite GitHub marking it blocked', () => {
+    const line = `#1396: ${blockersLanded([1395], 'steven-zhc/studio')}`
+    const plain = renderStatus(withLines([line]), { all: false }).join('\n')
+    expect(plain).toContain('(#1396: its blockers #1395 landed on steven-zhc/studio)')
+  })
+
+  it('prints nothing for a project with none', () => {
+    expect(renderStatus(fixture, { all: false }).join('\n')).not.toContain('landed on')
   })
 })
 

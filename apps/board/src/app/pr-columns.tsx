@@ -5,9 +5,10 @@
  */
 import Link from 'next/link'
 
-import type { CardView, ColumnView, FailedCard, PrBoardView } from '@/lib/pr-board.ts'
+import { type CardView, type ColumnView, type FailedCard, PR_COLUMNS, type PrBoardView } from '@/lib/pr-board.ts'
 
 import { PrButtons } from './pr-buttons.tsx'
+import { Skeleton } from './skeleton.tsx'
 
 const BranchMark = () => (
   <svg className="pr-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -103,14 +104,6 @@ function Column({ project, column }: { project: string; column: ColumnView }) {
       {column.cards.map((c) =>
         c.failed ? <Failed key={c.key} card={c} /> : <PrCard key={c.key} project={project} card={c} />,
       )}
-      {column.older.length === 0 ? null : (
-        <details className="older">
-          <summary>▸ {column.older.length} older</summary>
-          {column.older.map((c) => (
-            <PrCard key={c.key} project={project} card={c} />
-          ))}
-        </details>
-      )}
       {column.note === null ? null : <p className="pr-note">{column.note}</p>}
     </section>
   )
@@ -132,6 +125,34 @@ export function PrColumns({ project, view }: { project: string; view: PrBoardVie
       <div className="pr-cols">
         {view.columns.map((c) => (
           <Column key={c.id} project={project} column={c} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+/**
+ * What `/pr/<project>` draws while it loads (#1319, #1419): the board's own frame — the strip and the five columns
+ * with their titles — and a card-shaped skeleton in each, so the real cards arrive in place. The titles come from
+ * `PR_COLUMNS`, never written here; the counts and the strip are bars, and there are no other words (0111 §15).
+ */
+export function PrBoardSkeleton() {
+  return (
+    <div className="pr-board">
+      <p className="pr-strip">
+        <span className="sk-bar sk-line sk-strip" aria-hidden="true" />
+      </p>
+      <div className="pr-cols">
+        {PR_COLUMNS.map((c) => (
+          <section key={c.id} className={`pr-col ${c.tone}`} aria-label={c.title}>
+            <h2>
+              {c.title}{' '}
+              <span className="pr-n">
+                <span className="sk-bar sk-n" aria-hidden="true" />
+              </span>
+            </h2>
+            <Skeleton shape="card" count={1} />
+          </section>
         ))}
       </div>
     </div>

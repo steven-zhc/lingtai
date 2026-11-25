@@ -15,6 +15,7 @@ import {
   type ToAppend,
   prStream,
   reducePr,
+  reducePrEvent,
   reduceTicket,
   openAmong,
   requestSubmit,
@@ -96,6 +97,29 @@ export function listPrs(project: string, store: EventStore): Effect.Effect<PrSta
   })
 }
 
+/**
+ * The PRs that decide the open PR and the draft, in number order: the highest PR, and every one below it down to the
+ * first not in `draft` (inclusive). `openAmong` and `draftIn` look at nothing else, so older streams are never read —
+ * the cost does not grow with the project's history. The numbers are still found by `head`.
+ */
+const listTailPrs = (project: string, store: EventStore): Effect.Effect<PrState[], Error> =>
+  Effect.gen(function* () {
+    let top = 0
+    for (;;) {
+      const head = yield* Effect.tryPromise({ try: () => store.head(prStream(project, top + 1)), catch: failed })
+      if (head === 0) break
+      top++
+    }
+    const tail: PrState[] = []
+    for (let n = top; n >= 1; n--) {
+      const pr = yield* readPr(project, n, store)
+      if (pr === null) continue
+      tail.push(pr)
+      if (pr.status !== 'draft') break
+    }
+    return tail.reverse()
+  })
+
 /** The project's highest-numbered PR, or null if it never had one. */
 export function latestPr(project: string, store: EventStore): Effect.Effect<PrState | null, Error> {
   return listPrs(project, store).pipe(Effect.map((prs) => prs[prs.length - 1] ?? null))
@@ -103,7 +127,7 @@ export function latestPr(project: string, store: EventStore): Effect.Effect<PrSt
 
 /** The open PR: the highest-numbered one not in `draft`, when it is open; null otherwise. */
 export function openPr(project: string, store: EventStore): Effect.Effect<PrState | null, Error> {
-  return listPrs(project, store).pipe(Effect.map(openAmong))
+  return listTailPrs(project, store).pipe(Effect.map(openAmong))
 }
 
 /**
@@ -150,13 +174,64 @@ export function draftBatchFor(
 
 /** The tickets the draft holds: the highest PR's `draft` while it is in `draft`, else none. */
 export function readDraft(project: string, store: EventStore): Effect.Effect<PrState['draft'], Error> {
-  return listPrs(project, store).pipe(Effect.map(draftIn))
+  return listTailPrs(project, store).pipe(Effect.map(draftIn))
 }
 
 /** The draft among PRs already read: the highest one's tickets while it is `draft`, else none. One read, one answer. */
 export function draftIn(prs: readonly PrState[]): PrState['draft'] {
   const top = prs[prs.length - 1]
   return top !== undefined && top.status === 'draft' ? top.draft : []
+}
+
+/**
+ * The statuses of a PR whose draft tickets are on `branch.personal`'s history: a refused or closed PR may never have
+ * had its code reach it (#1423).
+ */
+const LANDED_PR_STATUSES: ReadonlySet<NonNullable<PrState['status']>> = new Set([
+  'draft',
+  'requested',
+  'in-progress',
+  'waiting',
+  'in-review',
+  'merged',
+])
+
+/**
+ * The tickets that *joined a draft* (`PrDraftTicketAdded`) in PRs of these streams whose status says the code is on the
+ * personal branch, as the issue numbers they were written with (#1423). Not `PrState.draft ∪ PrState.tickets`: a
+ * `PrInProgress` empties `draft`, and a pr-fix lands on the PR's own branch, so `tickets` holds tickets that are not
+ * on the personal branch. Pure, over envelopes already read.
+ */
+export function draftedTicketsIn(streams: readonly (readonly Envelope[])[]): Set<string> {
+  const drafted = new Set<string>()
+  for (const events of streams) {
+    // The union of every draft the stream ever had: a ticket joins `draft` and `PrInProgress` empties it, so the
+    // draft at the end forgets it. Read through the reducer and never by event type (`one-reducer.test.ts`).
+    let state = emptyPr
+    const joined = new Set<string>()
+    for (const event of events) {
+      state = reducePrEvent(state, event)
+      for (const t of state.draft) joined.add(t.ticket)
+    }
+    // A pr-fix lands on the PR's branch; a successful merge back is what puts its code on `branch.personal`, whatever
+    // the PR's status is now (`PrState.mergedBackTickets`).
+    for (const t of state.mergedBackTickets) drafted.add(t)
+    if (state.status === null || !LANDED_PR_STATUSES.has(state.status)) continue
+    for (const t of joined) drafted.add(t)
+  }
+  return drafted
+}
+
+/** `draftedTicketsIn` over every PR of a project. A failed read is the error, never *none drafted*. */
+export function readDraftedTickets(project: string, store: EventStore): Effect.Effect<ReadonlySet<string>, Error> {
+  return Effect.gen(function* () {
+    const streams: Envelope[][] = []
+    for (let n = 1; ; n++) {
+      const head = yield* Effect.tryPromise({ try: () => store.head(prStream(project, n)), catch: failed })
+      if (head === 0) return draftedTicketsIn(streams)
+      streams.push(yield* readPrEvents(project, n, store))
+    }
+  })
 }
 
 /** Appends one PR's transition at the head it was read at, if the transition decides anything. */
@@ -612,6 +687,16 @@ export function draftBranchOf(source: string): string | null {
 }
 
 /**
+ * How many of a page's independent per-item reads (a PR stream, a draft ticket) run at once, per reader. Unbounded, a
+ * project with hundreds of items would open hundreds of reads on the store together and every other reader would wait
+ * behind them. The board's Postgres log is one `pg.Pool` per process (`choose.ts`: "one `pg.Pool` for a Postgres
+ * machine"; `db.ts`: "Each call constructs its own `pg.Pool`") and no `max` is passed, so `pg`'s own default of 10
+ * clients applies. The bound is per reader: the PRs and the draft are read side by side, so the page peaks at twice
+ * this plus the bar's reads, and what is over the pool's size queues inside the board process's pool.
+ */
+export const READ_CONCURRENCY = 8
+
+/**
  * The tickets the draft holds, each with its title: `readDraft`'s list in the stream's order (the order they joined),
  * and one read of each ticket's own stream for the title (`#<issue>` where it has none). Only the PR streams and the
  * draft's tickets are read — never every ticket that ever landed. A failed read fails the whole read: it is never
@@ -620,14 +705,18 @@ export function draftBranchOf(source: string): string | null {
 export function readDraftTickets(project: string, store: EventStore): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     const draft = yield* readDraft(project, store)
-    const tickets: PrDraftTicket[] = []
-    for (const t of draft) {
-      const state = reduceTicket(
-        yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, t.ticket)), catch: failed }),
-      )
-      tickets.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: state.title ?? `#${t.ticket}` })
-    }
-    return tickets
+    // `forEach` returns in input order, which is the stream's order; the first failure interrupts the reads in flight.
+    return yield* Effect.forEach(
+      draft,
+      (t) =>
+        Effect.tryPromise({ try: () => store.read(ticketStream(project, t.ticket)), catch: failed }).pipe(
+          Effect.map((events): PrDraftTicket => {
+            const state = reduceTicket(events)
+            return { ticket: t.ticket, mergeCommit: t.mergeCommit, title: state.title ?? `#${t.ticket}` }
+          }),
+        ),
+      { concurrency: READ_CONCURRENCY },
+    )
   })
 }
 

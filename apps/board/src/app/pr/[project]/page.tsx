@@ -18,14 +18,13 @@ import { TimingMeta } from '@/lib/timing-meta'
 import { FooterFetched } from '../../footer-fetched'
 import { Follow } from '../../live'
 import { LockBanner, pauseSlot } from '../../lock-banner'
-import { PrColumns } from '../../pr-columns'
+import { PrBoardSkeleton, PrColumns } from '../../pr-columns'
 import { RecipeBar } from '../../recipe/[project]/recipe-bar'
-import { Skeleton } from '../../skeleton'
 
 export const dynamic = 'force-dynamic'
 
-async function Board({ project }: { project: string }) {
-  const [read, timings] = await loadPrBoard(project)
+async function Board({ project, load }: { project: string; load: ReturnType<typeof loadPrBoard> }) {
+  const [read, timings] = await load
   const meta = <TimingMeta timings={timings} />
   if (read.kind === 'unknown')
     return (
@@ -64,17 +63,29 @@ async function Board({ project }: { project: string }) {
 
 export default async function Page({ params }: { params: Promise<{ project: string }> }) {
   const name = decodeURIComponent((await params).project)
-  // A listing that fails is said, not drawn as a menu with no projects in it.
-  let listingError: string | null = null
-  const projects = await readRegistered().catch((err: unknown) => {
-    listingError = (err as Error).message
-    return []
-  })
+  // The board's load starts before any read of the bar, so the two run together. The branch below marks the promise
+  // handled while this page is still awaiting the bar; `Board`'s own `await` still sees a rejection.
+  const load = loadPrBoard(name)
+  load.catch(() => undefined)
+  // The bar's reads depend on nothing of each other.
+  const [listing, onBoardListing, locks, views, pause] = await Promise.all([
+    readRegistered().then(
+      (projects) => ({ projects, error: null as string | null }),
+      (err: unknown) => ({ projects: [] as Awaited<ReturnType<typeof readRegistered>>, error: (err as Error).message }),
+    ),
+    onBoardProjects().then(
+      (onBoard) => ({ onBoard, error: null as string | null }),
+      (err: unknown) => ({ onBoard: [] as string[], error: (err as Error).message }),
+    ),
+    readProjectLocks(),
+    placeViewsOf(name),
+    pauseSlot(name),
+  ])
+  // A listing that fails is said, not drawn as a menu with no projects in it; the registered listing's message wins.
+  const listingError = listing.error ?? onBoardListing.error
+  const projects = listing.projects
+  const onBoard = onBoardListing.onBoard
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
-  const onBoard = await onBoardProjects().catch((err: unknown) => {
-    listingError ??= (err as Error).message
-    return [] as string[]
-  })
   return (
     <Follow>
       <main className="detail pr-page">
@@ -84,10 +95,10 @@ export default async function Page({ params }: { params: Promise<{ project: stri
           filters={filterOptions(registered, onBoard)}
           registered={registered}
           app={hasGitHubAuth()}
-          locks={lockMap(await readProjectLocks())}
+          locks={lockMap(locks)}
           sandbox={sandboxStates(projects)}
-          views={await placeViewsOf(name)}
-          pause={await pauseSlot(name)}
+          views={views}
+          pause={pause}
         />
         <LockBanner project={name} />
         {listingError === null ? null : (
@@ -95,8 +106,8 @@ export default async function Page({ params }: { params: Promise<{ project: stri
             The list of projects could not be read: {listingError}
           </p>
         )}
-        <Suspense fallback={<Skeleton shape="card" count={5} />}>
-          <Board project={name} />
+        <Suspense fallback={<PrBoardSkeleton />}>
+          <Board project={name} load={load} />
         </Suspense>
       </main>
       <FooterFetched />

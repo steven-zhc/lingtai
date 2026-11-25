@@ -283,7 +283,7 @@ import { baseCheckFor, baseCheckQuestion } from './base-check.ts'
 import { proposeBaseFix } from './base-fix.ts'
 import { baseStateEffect, buildRunsOf } from './base-red.ts'
 import { agentBranch } from './branches.ts'
-import { runnableNowEffect, type TicketSource } from './discover.ts'
+import { landedFor, linksOfClient, runnableNowEffect, type TicketSource } from './discover.ts'
 import type { TerminalOutcome } from './end-step.ts'
 import { readWhatAFileKept } from './file-port.ts'
 import { fixBriefParts, grantedAdviceFromState } from './fix.ts'
@@ -3283,6 +3283,8 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
             queue,
             selection: selectionOf(recipe),
             only: [options.issue],
+            // The same reading the pass's pick made, or `take` would refuse the ticket it was handed (#1423).
+            landed: landedFor({ recipe, links: linksOfClient(tickets), store, project }),
           }).pipe(Effect.orDie)
           const runnable = found.runnable.find((r) => r.ref === String(options.issue))
           if (!runnable) {

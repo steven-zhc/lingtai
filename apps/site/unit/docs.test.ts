@@ -141,6 +141,16 @@ describe('connect-github is chapter 3, your own repository', () => {
   })
 })
 
+describe('team is chapter 2, and draws its one flow', () => {
+  it('stays within 800 words and embeds the diagram with its full-size link', async () => {
+    const body = await readFile(path.join(docRoot, 'team.md'), 'utf8')
+    expect(proseOf(body)).toBeLessThanOrEqual(800) // #1425
+    expect(body).toContain('(img/team-flow.svg)')
+    expect(body).toContain('[Open the diagram at full size](img/team-flow.svg)')
+    await expect(readFile(path.join(docRoot, 'img/team-flow.svg'), 'utf8')).resolves.toContain('<svg')
+  })
+})
+
 describe('concepts is chapter 4, one attempt', () => {
   it('stays between 600 and 800 words, in four sections, ending at the board', async () => {
     const body = await readFile(path.join(docRoot, 'concepts.md'), 'utf8')

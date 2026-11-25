@@ -1,4 +1,4 @@
-import { ticketStream } from '@lingtai/domain'
+import { prStream, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHubClient, Issue, Label } from '@lingtai/github'
@@ -13,6 +13,9 @@ import type { AssigneeRule, QueueSettings } from '@lingtai/recipe'
 import { beforeAll, describe, expect, it } from 'vitest'
 
 import {
+  blockersLanded,
+  blockersUnread,
+  type BlockerRead,
   rankedKinds,
   considerIssue,
   DEPENDENCIES_UNREAD,
@@ -769,5 +772,169 @@ describe('team mode and the landed label (#1310)', () => {
   it('passes over lingtai:pr-fix in solo mode, even with bug on it and nothing excluded', () => {
     expect(skip({ labels: ['bug', 'Lingtai:PR-Fix'] }, SOLO)).toBe('pr-fix-elsewhere')
     expect(skip({ labels: ['lingtai:pr-fix'] }, SOLO)).toBe('pr-fix-elsewhere')
+  })
+})
+
+describe('runnableNow in a team project: a blocker that landed on branch.personal (#1423)', () => {
+  const TEAM = { mode: 'team', tickets: 'github' } as const
+  const teamQueue: QueueSettings = { ...queue, assignee: { take: 'mine', login: 'steven-zhc' } }
+  const PROJECT = 'lingtai'
+  const REPO = 'steven-zhc/lingtai'
+  const sha = 'a'.repeat(40)
+
+  /** #1396, blocked by one open blocker as GitHub's summary says, and assigned to this machine. */
+  const dependent = (over: Partial<Issue> = {}) =>
+    issue({
+      number: 1396,
+      labels: ['feature'],
+      assignees: ['steven-zhc'],
+      dependencies: { blockedBy: 1, totalBlockedBy: 1 },
+      ...over,
+    })
+
+  const blocker = (over: Partial<BlockerRead> = {}): BlockerRead => ({
+    repository: REPO,
+    number: 1395,
+    title: 'the blocker',
+    state: 'open',
+    ...over,
+  })
+
+  /** A counting fake for the per-issue read: what it answers, and how often it was asked. */
+  const links = (answer: readonly BlockerRead[] | Error) => {
+    const asked: number[] = []
+    return {
+      asked,
+      links: {
+        repository: REPO,
+        listBlockedBy: async (n: number) => {
+          asked.push(n)
+          if (answer instanceof Error) throw answer
+          return answer
+        },
+      },
+    }
+  }
+
+  /** PR 1 with `ticket` in its draft, carried as far as `through` says. */
+  const prWith = async (store: EventStore, ticket: string, through: 'draft' | 'in-progress' | 'merged' | 'closed') => {
+    const stream = prStream(PROJECT, 1)
+    const append = async (events: Parameters<EventStore['append']>[2]) =>
+      store.append(stream, await store.head(stream), events)
+    await append([{ type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket, mergeCommit: 'm', from: null } }])
+    if (through === 'draft') return
+    await append([{ type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } }])
+    await append([
+      {
+        type: 'PrInProgress',
+        actor: 'conductor',
+        data: {
+          because: 'submit',
+          branch: 'team',
+          main: 'main',
+          frozenSha: sha,
+          prBranch: 'team-pr-1',
+          tickets: [{ ticket, mergeCommit: 'm', title: 't' }],
+        },
+      },
+    ])
+    if (through === 'merged') {
+      await append([{ type: 'PrMerged', actor: 'conductor', data: { how: 'host', headSha: sha, mergeSha: sha } }])
+    }
+    if (through === 'closed') await append([{ type: 'PrClosed', actor: 'conductor', data: { headSha: sha } }])
+  }
+
+  const ask = async (
+    store: EventStore,
+    read: ReturnType<typeof links>,
+    issues: Issue[] = [dependent()],
+    selection: typeof TEAM | typeof SOLO = TEAM,
+  ) =>
+    runnableNow({
+      selection,
+      client: fakeClient(issues, PROJECT),
+      queue: teamQueue,
+      ...(selection.mode === 'team'
+        ? { landed: { links: read.links, store, project: PROJECT, branch: 'steven-zhc/studio' } }
+        : {}),
+    })
+
+  it('a blocker in the draft is landed: the dependent is offered and the offer names the blocker', async () => {
+    const store = createMemoryEventStore()
+    await prWith(store, '1395', 'draft')
+    const read = links([blocker()])
+    const found = await ask(store, read)
+    expect(found.runnable.map((r) => r.ref)).toEqual(['1396'])
+    expect(found.runnable[0]?.landedBlockers).toEqual([1395])
+    expect(found.skipped).toEqual([])
+    expect(read.asked).toEqual([1396])
+    expect(blockersLanded([1395], 'steven-zhc/studio')).toBe('its blockers #1395 landed on steven-zhc/studio')
+  })
+
+  it('a blocker in no draft and no PR holds: passed over as blocked-by', async () => {
+    const found = await ask(createMemoryEventStore(), links([blocker()]))
+    expect(found.runnable).toEqual([])
+    expect(found.skipped.map((s) => [s.ref, s.reason, s.held])).toEqual([[1396, 'blocked-by', undefined]])
+  })
+
+  it('a blocker list that cannot be read holds the dependent and says why', async () => {
+    const found = await ask(createMemoryEventStore(), links(new Error('rate limited')))
+    expect(found.runnable).toEqual([])
+    expect(found.skipped[0]).toMatchObject({ reason: 'blocked-by', held: blockersUnread('rate limited') })
+    expect(found.skipped[0]?.held).toBe('could not read its blockers: rate limited')
+  })
+
+  it("a blocker in another repository holds even when its number is in this project's draft", async () => {
+    const store = createMemoryEventStore()
+    await prWith(store, '1395', 'draft')
+    const found = await ask(store, links([blocker({ repository: 'someone/else' })]))
+    expect(found.skipped.map((s) => s.reason)).toEqual(['blocked-by'])
+  })
+
+  it('a blocker in a merged PR does not hold; one in a closed, unmerged PR does', async () => {
+    const merged = createMemoryEventStore()
+    await prWith(merged, '1395', 'merged')
+    expect((await ask(merged, links([blocker()]))).runnable.map((r) => r.ref)).toEqual(['1396'])
+
+    const inFlight = createMemoryEventStore()
+    await prWith(inFlight, '1395', 'in-progress')
+    expect((await ask(inFlight, links([blocker()]))).runnable.map((r) => r.ref)).toEqual(['1396'])
+
+    const closed = createMemoryEventStore()
+    await prWith(closed, '1395', 'closed')
+    expect((await ask(closed, links([blocker()]))).skipped.map((s) => s.reason)).toEqual(['blocked-by'])
+  })
+
+  it('a full page of blockers holds the dependent and says so, though every one is closed', async () => {
+    const many = Array.from({ length: 100 }, (_, i) => blocker({ number: 2000 + i, state: 'closed' }))
+    const found = await ask(createMemoryEventStore(), links(many))
+    expect(found.runnable).toEqual([])
+    expect(found.skipped[0]).toMatchObject({ reason: 'blocked-by' })
+    expect(found.skipped[0]?.held).toContain('100 blockers or more')
+    expect(found.skipped[0]?.blockersRead).toMatchObject({ ok: false })
+  })
+
+  it('every blocker has to be closed or landed: one still open and unlanded holds', async () => {
+    const store = createMemoryEventStore()
+    await prWith(store, '1395', 'draft')
+    const read = links([blocker(), blocker({ number: 1394 }), blocker({ number: 1300, state: 'closed' })])
+    expect((await ask(store, read)).skipped.map((s) => s.reason)).toEqual(['blocked-by'])
+  })
+
+  it('asks nothing in solo mode, nor of an issue GitHub counts no open blocker for, nor of one another rule refuses', async () => {
+    const solo = links([blocker()])
+    expect((await ask(createMemoryEventStore(), solo, [dependent()], SOLO)).skipped.map((s) => s.reason)).toEqual([
+      'blocked-by',
+    ])
+    expect(solo.asked).toEqual([])
+
+    const clear = links([blocker()])
+    const found = await ask(createMemoryEventStore(), clear, [
+      dependent({ dependencies: { blockedBy: 0, totalBlockedBy: 1 } }),
+      dependent({ number: 1397, assignees: ['somebody-else'] }),
+    ])
+    expect(found.runnable.map((r) => r.ref)).toEqual(['1396'])
+    expect(found.skipped.map((s) => [s.ref, s.reason])).toEqual([[1397, 'blocked-by']])
+    expect(clear.asked).toEqual([])
   })
 })

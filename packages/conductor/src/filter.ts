@@ -229,7 +229,8 @@ export type ProjectFilter =
 /** What the board asks for a ticket's blockers: the repository its numbers belong to, and the read. */
 export type TicketLinks = {
   repository: string
-  listBlockedBy(issue: number): Promise<readonly TicketLink[]>
+  /** `firstPageOnly`: one request, whose 100 may be the start of a longer list (#1423). */
+  listBlockedBy(issue: number, firstPageOnly?: boolean): Promise<readonly TicketLink[]>
 } | null
 
 export type { TicketLink }
@@ -244,7 +245,7 @@ function ticketLinksOf(project: string, tickets: TicketSource, gh: GitHubClient 
       get repository() {
         return `${gh.owner}/${gh.repo}`
       },
-      listBlockedBy: (n) => gh.listBlockedBy(n),
+      listBlockedBy: (n, firstPageOnly) => gh.listBlockedBy(n, firstPageOnly),
     }
   }
   if (hasTicketLinks(tickets)) return { repository: project, listBlockedBy: (n) => tickets.listBlockedBy(n) }
