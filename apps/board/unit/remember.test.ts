@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
-import { homeRedirect, projectCookie } from '../src/lib/remember.ts'
+import { homeRedirect, projectCookie, rememberedProject } from '../src/lib/remember.ts'
 
 const q = (s: string) => new URLSearchParams(s)
 
@@ -37,5 +37,18 @@ describe('the proxy never writes', () => {
   it('has no cookie write', () => {
     const s = readFileSync(new URL('../src/proxy.ts', import.meta.url), 'utf8')
     expect(s).not.toMatch(/cookies\.set|Set-Cookie/i)
+  })
+})
+
+describe('rememberedProject', () => {
+  it('reads the pair, decoded', () => {
+    expect(rememberedProject('x=1; lingtai-project=a%20b; y=2')).toBe('a b')
+  })
+  it('reads a pair with no = as absent, so the redirect is all projects', () => {
+    expect(rememberedProject('lingtai-project')).toBeUndefined()
+    expect(homeRedirect(q(''), rememberedProject('lingtai-project'))).toBe('/?project=')
+  })
+  it('reads an undecodable value as absent', () => {
+    expect(rememberedProject('lingtai-project=%E0%A4%A')).toBeUndefined()
   })
 })

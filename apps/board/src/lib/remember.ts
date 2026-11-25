@@ -26,6 +26,24 @@ export function homeRedirect(search: URLSearchParams, remembered: string | undef
   return `/?${q.toString().replace(/\+/g, '%20')}`
 }
 
+/**
+ * The remembered name out of a raw `Cookie` header. A `lingtai-project` pair
+ * with no `=` is malformed and reads as absent (Next's parser would say `'true'`),
+ * as does a value that cannot be decoded.
+ */
+export function rememberedProject(header: string | null | undefined): string | undefined {
+  for (const pair of (header ?? '').split(';')) {
+    const i = pair.indexOf('=')
+    if (i < 0 || pair.slice(0, i).trim() !== PROJECT_COOKIE) continue
+    try {
+      return decodeURIComponent(pair.slice(i + 1).trim())
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
+}
+
 /** The cookie line for a choice; `undefined` is *all projects*. Not `HttpOnly`: the browser writes it. */
 export function projectCookie(choice: string | undefined): string {
   return `${PROJECT_COOKIE}=${encodeURIComponent(choice ?? '')}; Path=/; SameSite=Lax; Max-Age=${YEAR}`

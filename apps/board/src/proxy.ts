@@ -6,10 +6,10 @@
  */
 import { NextResponse, type NextRequest } from 'next/server'
 
-import { homeRedirect, PROJECT_COOKIE } from './lib/remember.ts'
+import { homeRedirect, rememberedProject } from './lib/remember.ts'
 
 export function proxy(request: NextRequest) {
-  const target = homeRedirect(request.nextUrl.searchParams, request.cookies.get(PROJECT_COOKIE)?.value)
+  const target = homeRedirect(request.nextUrl.searchParams, rememberedProject(request.headers.get('cookie')))
   return target === null ? NextResponse.next() : NextResponse.redirect(new URL(target, request.url), 307)
 }
 

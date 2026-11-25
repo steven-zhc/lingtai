@@ -9,6 +9,7 @@ import { rememberProject } from '@/lib/remember'
 export function ProjectLink({
   choice,
   onClick,
+  onAuxClick,
   ...rest
 }: ComponentProps<typeof Link> & { choice: string | undefined }) {
   return (
@@ -17,6 +18,11 @@ export function ProjectLink({
       onClick={(e) => {
         rememberProject(choice)
         onClick?.(e)
+      }}
+      // A middle click opens the project in another tab and fires `auxclick`, not `click`.
+      onAuxClick={(e) => {
+        if (e.button === 1) rememberProject(choice)
+        onAuxClick?.(e)
       }}
     />
   )
