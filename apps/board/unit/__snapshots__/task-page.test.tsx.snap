@@ -1,9 +1,9 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
 exports[`a blocked task > is arranged as the four questions, then the record 1`] = `
-"coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from Attempt 1 of 1 ↓ Search ⌘K Ctrl K Report #147 ↗
-state: waiting on you 4h 33m
-subject: the reviewer crashes on a reused session id The whole ticket ↓ claim admit prepared design implement build review proposed merge end proposed:review refused
+"coords: ticket-lingtai-147 since 2026-09-14 04:27 UTC from Attempt 1 of 1 ↓ Search ⌘K Ctrl K Report
+state: waiting on you
+subject: the reviewer crashes on a reused session id #147 ↗ · 4h 33m The whole ticket ↓ claim admit prepared design implement build review proposed merge end proposed:review refused
 where: Where it is
 why: the proposed step refused: the reviewer did not finish (crash): Error: Session ID 1d391e10 is already in use.
 discussion: discussion this conversation asked · 2 messages · no limit No triage analysis for this decision human:steven did the reviewer run at all? assistant No — it crashed on start. read no files human:steven so is requeue safe? assistant waiting for the daemon to answer Ask
@@ -14,9 +14,9 @@ record: Ticket · Sandbox · Attempt 1"
 `;
 
 exports[`a running task > is arranged with the live log where a refusal would be 1`] = `
-"coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from Attempt 1 of 1 ↓ Search ⌘K Ctrl K Report #147 ↗
-state: running [between steps]
-subject: the reviewer crashes on a reused session id The whole ticket ↓ claim admit prepared design implement build review proposed merge end agent 4h33m
+"coords: ticket-lingtai-147 since 2026-09-14 08:40 UTC from Attempt 1 of 1 ↓ Search ⌘K Ctrl K Report
+state: running
+subject: the reviewer crashes on a reused session id #147 ↗ · [between steps] The whole ticket ↓ claim admit prepared design implement build review proposed merge end agent 4h33m
 running: Between steps. The run log · not reading
 discussion: discussion reads the log, the ticket and the code — it cannot run anything Ask
 moves: 

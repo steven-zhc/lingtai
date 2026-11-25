@@ -216,6 +216,7 @@ describe("the bar's amber", () => {
    * nobody thought of as the bar's — `.btn.pri`, a solid amber, on the Resume
    * confirmation `paused.tsx` opens inside the row.
    */
+  const barSources: string[] = []
   const barClasses = (() => {
     const read = (f: string) => readFileSync(new URL(`../src/app/${f}`, import.meta.url), 'utf8')
     const page = read('page.tsx')
@@ -243,6 +244,7 @@ describe("the bar's amber", () => {
       read('continue-today.tsx'),
       read('recipe/[project]/recipe-bar.tsx'),
     ]
+    barSources.push(...sources)
     const names = new Set<string>()
     for (const src of sources) {
       // `className="a b"` and ``className={`a ${x ? " b" : ""}`}`` alike: every
@@ -279,6 +281,19 @@ describe("the bar's amber", () => {
       })
 
     expect(onTheBar).toEqual([])
+  })
+
+  /**
+   * #1458: `.btn.pri` is teal now, so it passes the amber check above wherever it renders. The bar's rule moves to
+   * the source: nothing the bar mounts says `pri` in a class. Matched on the raw text, because `pause-button.tsx`
+   * builds its class from a conditional the attribute parser does not read.
+   */
+  it('has no primary button in any file it mounts', () => {
+    expect(barClasses.size).toBeGreaterThan(0)
+    for (const src of barSources) {
+      expect(src).not.toMatch(/\bbtn pri\b/)
+      expect(src).not.toMatch(/['"`]pri['"`]/)
+    }
   })
 
   /** The guard above is only as good as its reading of the source. */

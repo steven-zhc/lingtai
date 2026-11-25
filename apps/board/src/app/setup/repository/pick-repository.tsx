@@ -72,7 +72,7 @@ export function PickRepository({ source }: { source: Source }) {
               ))}
               {source.list.installUrl !== null ? (
                 <p className="note">
-                  <a href={source.list.installUrl}>Install the App</a>
+                  <a href={source.list.installUrl}>Install the App ↗</a>
                 </p>
               ) : null}
             </>
@@ -154,11 +154,11 @@ export function PickRepository({ source }: { source: Source }) {
 
       <p className="btnrow">
         {choice === null ? (
-          <button type="button" className="btn go" disabled>
+          <button type="button" className="btn pri" disabled>
             Next
           </button>
         ) : (
-          <a className="btn go" href={nextHref(choice)}>
+          <a className="btn pri" href={nextHref(choice)}>
             Next
           </a>
         )}

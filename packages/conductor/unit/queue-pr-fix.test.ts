@@ -2,7 +2,7 @@
 import { Effect } from 'effect'
 import { describe, expect, it, vi } from 'vitest'
 
-vi.mock('@lingtai/projector', () => ({ readTasks: async () => [] }))
+vi.mock('@lingtai/projector', () => ({ readTaskStatesEffect: () => Effect.succeed([]) }))
 
 const { selectRunnableEffect } = await import('../src/queue.ts')
 

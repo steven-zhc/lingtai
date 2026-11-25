@@ -20,6 +20,7 @@ import type { BlockDiagnosis, BlockRecommendation } from './events.ts'
  */
 import { diagnoseRefusal } from './failure/explain.ts'
 import type { Proposal } from './proposal.ts'
+import type { ExcludedCandidate } from './route.ts'
 import { askedText } from './triage.ts'
 import type { Finding, RefusalReason } from './vocabulary.ts'
 import type { EscalationBecause, AttemptRef, Resolution, TriageResult, WaitReason } from './wait.ts'
@@ -182,6 +183,17 @@ export function baseRedText(because: { command: string; base: string; baseSha: s
  * escalated wait's `why` — `''` where the router has nothing to add beyond
  * the proposal itself.
  */
+/** Words for a judge choosing a candidate the offer excluded; shared with the conductor's run-log sentence so the two cannot drift (#1447). */
+export function unavailableText(excluded: ExcludedCandidate): string {
+  if (excluded.because._tag !== 'CeilingReached') return `the judge chose \`${excluded.id}\`, which nothing holds it to`
+  return excluded.because.by === 'grant'
+    ? `the judge chose \`${excluded.id}\`, and ${GRANT_USED_TEXT}`
+    : `the judge chose \`${excluded.id}\`, and \`${excluded.because.ceiling}\` is spent`
+}
+
+/** The person's granted round is used; the recipe's ceilings are untouched (#1447). */
+export const GRANT_USED_TEXT = 'the round a person granted is used, so the next step is theirs'
+
 function reasonTextOf(because: EscalationBecause): string {
   switch (because._tag) {
     case 'NotAsked':
@@ -195,9 +207,7 @@ function reasonTextOf(because: EscalationBecause): string {
     case 'UnknownCandidate':
       return `the judge named "${because.candidate}", which was not offered`
     case 'CandidateUnavailable':
-      return because.excluded.because._tag === 'CeilingReached'
-        ? `the judge chose \`${because.excluded.id}\`, and \`${because.excluded.because.ceiling}\` is spent`
-        : `the judge chose \`${because.excluded.id}\`, which nothing holds it to`
+      return unavailableText(because.excluded)
   }
 }
 

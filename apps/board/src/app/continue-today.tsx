@@ -33,6 +33,7 @@ export function ContinueToday({ suggested }: { suggested: number }) {
       </label>
       <button
         type="button"
+        className="btn sm"
         disabled={pending || !valid}
         onClick={() => {
           if (!valid) return

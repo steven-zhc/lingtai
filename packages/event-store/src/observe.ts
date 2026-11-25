@@ -44,3 +44,34 @@ export function observedRead<T extends readonly unknown[]>(streamId: string, run
     }),
   )
 }
+
+/**
+ * The twin of `ReadObserver` for `head` (#1441): one physical head read, by stream kind and never by id. It sits in
+ * `promiseStore`, under `memoStore`, so a second waiter on a shared promise never reaches it.
+ */
+export type HeadInfo = { readonly kind: string }
+
+/** Runs `run`, which calls `report` with the head once the read has returned. */
+export type HeadObserver = <T>(info: HeadInfo, run: (report: (head: number) => void) => Promise<T>) => Promise<T>
+
+const HEAD_KEY = Symbol.for('lingtai.event-store.headObserver')
+type HeadHolder = { [HEAD_KEY]?: HeadObserver | undefined }
+
+export function setHeadObserver(observer: HeadObserver | undefined): void {
+  ;(globalThis as HeadHolder)[HEAD_KEY] = observer
+}
+
+/**
+ * `run`, as it is with no observer: the same promise, no hop. With one, `report` is called after the read resolves, so a
+ * rejection reaches the caller untouched and reports no count. A head of `0` is a successful read of an absent stream.
+ */
+export function observedHead(streamId: string, run: () => Promise<number>): Promise<number> {
+  const observer = (globalThis as HeadHolder)[HEAD_KEY]
+  if (observer === undefined) return run()
+  return observer({ kind: kindOf(streamId) }, (report) =>
+    run().then((head) => {
+      report(head)
+      return head
+    }),
+  )
+}

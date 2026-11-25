@@ -29,10 +29,10 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
     <span className="btnrow">
       {mode === 'idle' ? (
         <>
-          <button className="btn pri" onClick={() => setMode('accept')}>
+          <button className="btn pri sm" onClick={() => setMode('accept')}>
             Accept…
           </button>
-          <button className="btn" onClick={() => setMode('decline')}>
+          <button className="btn sm" onClick={() => setMode('decline')}>
             Decline…
           </button>
         </>
@@ -44,7 +44,7 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
             <input type="checkbox" checked={hold} onChange={(e) => setHold(e.target.checked)} /> lingtai:hold
           </label>
           <button
-            className="btn pri"
+            className="btn pri sm"
             disabled={pending || !kind.trim()}
             onClick={() =>
               startTransition(async () => {
@@ -54,7 +54,7 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
           >
             {pending ? '…' : 'Open the issue'}
           </button>
-          <button className="btn" disabled={pending} onClick={() => setMode('idle')}>
+          <button className="btn sm" disabled={pending} onClick={() => setMode('idle')}>
             Cancel
           </button>
         </>
@@ -63,7 +63,7 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
         <>
           <input aria-label="reason" placeholder="why" value={reason} onChange={(e) => setReason(e.target.value)} />
           <button
-            className="btn"
+            className="btn sm"
             disabled={pending || !reason.trim()}
             onClick={() =>
               startTransition(async () => {
@@ -73,7 +73,7 @@ export function DecideFinding({ project, entryKey }: { project: string; entryKey
           >
             {pending ? '…' : 'Decline'}
           </button>
-          <button className="btn" disabled={pending} onClick={() => setMode('idle')}>
+          <button className="btn sm" disabled={pending} onClick={() => setMode('idle')}>
             Cancel
           </button>
         </>
@@ -99,7 +99,7 @@ export function OpenAccepted({ project, entryKey }: { project: string; entryKey:
   return (
     <span className="btnrow">
       <button
-        className="btn pri"
+        className="btn pri sm"
         disabled={pending}
         onClick={() =>
           startTransition(async () => {

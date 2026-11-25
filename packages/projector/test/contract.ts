@@ -762,6 +762,46 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('reads the state fields of the named issues only, whatever their age (#1440)', async () => {
+      const f = await make()
+      const old = new Date(Date.now() - 400 * 86_400_000).toISOString()
+      const attempt = '2026-11-25T00:00:00.000Z'
+      const other = `${f.project}-other`
+      try {
+        await f.store.transact((ctx) => createFace(taskViewProjection, ctx))
+        await f.store.transact(async (ctx) => {
+          const row = (
+            project: string,
+            issue: string,
+            state: string,
+            closedAt: string | null,
+            at: string | null,
+            repair: boolean,
+          ) =>
+            ctx.query(
+              `insert into task_view
+                 (task_id, project, issue, state, updated_at, updated_seq, closed_at, last_attempt_at, repair_pending, ticket)
+               values ($1, $2, $3, $4, $5, $6, $7, $8, $9, '{}')`,
+              [`t-${project}-${issue}`, project, issue, state, new Date().toISOString(), 1, closedAt, at, repair],
+            )
+          await row(f.project, '12', 'queued', null, attempt, true)
+          await row(f.project, '120', 'running', null, null, false)
+          await row(f.project, '012', 'waiting', null, null, false)
+          await row(f.project, '7', 'closed', old, null, false)
+          await row(other, '12', 'blocked', null, null, false)
+        })
+        const read = (project: string, issues: string[]) => Effect.runPromise(f.port.taskStates({ project, issues }))
+        expect(await read(f.project, ['12', '99'])).toEqual([
+          { issue: '12', state: 'queued', lastAttemptAt: new Date(attempt), repairPending: true },
+        ])
+        expect((await read(f.project, ['7'])).map((r) => r.state)).toEqual(['closed'])
+        expect((await read(other, ['12'])).map((r) => r.state)).toEqual(['blocked'])
+        expect(await read(f.project, [])).toEqual([])
+      } finally {
+        await f.close()
+      }
+    })
+
     it('fills ticket and project on a RunSpent through the RunStarted on its own stream', async () => {
       const f = await make()
       const task = f.stream('wi', '44')

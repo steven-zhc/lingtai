@@ -9,6 +9,7 @@ import type { ReactNode } from 'react'
 import { shownLabel } from '@/lib/pr-branches.ts'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
+import { ObjectTitle, joinMeta } from './object-title.tsx'
 import { PrButtons } from './pr-buttons.tsx'
 import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
@@ -142,23 +143,26 @@ export function PrDetail({
 }) {
   return (
     <div className="prp">
-      <header className="prp-head">
-        <span className="prp-chip">
-          <Mark />
-          {view.header.name}
-        </span>
-        <h1 className="prp-title">{view.header.title}</h1>
-        {view.header.host === null ? null : (
-          <a className="prp-host-link" href={view.header.host.href} target="_blank" rel="noreferrer">
-            {view.header.host.label}
-          </a>
-        )}
-        <p className="prp-sub">{view.sub}</p>
-      </header>
+      <ObjectTitle
+        tag={view.poster.word.toLowerCase()}
+        tone={view.poster.tone}
+        title={view.header.title}
+        meta={joinMeta([
+          <>
+            <Mark /> {view.header.name}
+          </>,
+          view.header.host === null ? null : (
+            <a href={view.header.host.href} target="_blank" rel="noreferrer">
+              {view.header.host.label}
+            </a>
+          ),
+          view.sub,
+        ])}
+      />
       <div className="prp-grid">
         <div className="prp-main">
           <section className="prp-panel" aria-label="Where it is">
-            <h2>Where it is</h2>
+            <h2 className="sec-h">Where it is</h2>
             <p className="prp-poster">
               <b className={`prp-word ${view.poster.word.toLowerCase().replace(/ /g, '-')}`}>{view.poster.word}</b>{' '}
               <span className="prp-small">{view.poster.line}</span>
@@ -176,7 +180,7 @@ export function PrDetail({
 
           {view.kind === 'draft' ? null : (
             <section className="prp-panel" aria-label="What Lingtai did">
-              <h2>What Lingtai did — the last time through In progress</h2>
+              <h2 className="sec-h">What Lingtai did — the last time through In progress</h2>
               {view.stepsNote === null ? null : <p className="prp-small">{view.stepsNote}</p>}
               <ol className="prp-steps">
                 {view.steps.map((s) => (
@@ -199,7 +203,7 @@ export function PrDetail({
           )}
 
           <section className="prp-panel" aria-label="Its tickets">
-            <h2>{`Its tickets · ${view.tickets.length}${view.kind === 'pr' ? ', in the order they landed' : ''}`}</h2>
+            <h2 className="sec-h">{`Its tickets · ${view.tickets.length}${view.kind === 'pr' ? ', in the order they landed' : ''}`}</h2>
             {view.tickets.length === 0 ? (
               <p className="prp-small">no tickets</p>
             ) : (
@@ -222,7 +226,7 @@ export function PrDetail({
 
           {view.summary === null || view.n === null ? null : (
             <section className="prp-panel" aria-label="Summary">
-              <h2>Summary — the PR&apos;s description on GitHub</h2>
+              <h2 className="sec-h">Summary — the PR&apos;s description on GitHub</h2>
               <PrSummaryEditor
                 project={project}
                 n={view.n}
@@ -235,7 +239,7 @@ export function PrDetail({
 
         <aside className="prp-side">
           <section className="prp-panel" aria-label="Do">
-            <h2>Do</h2>
+            <h2 className="sec-h">Do</h2>
             {view.doNote === null ? null : <p className="prp-small">{view.doNote}</p>}
             {view.wait === null ? null : (
               <div className="prp-wait">
@@ -264,7 +268,7 @@ export function PrDetail({
           </section>
 
           <section className="prp-panel" aria-label="Facts">
-            <h2>Facts</h2>
+            <h2 className="sec-h">Facts</h2>
             <dl className="prp-facts">
               {view.facts.map((f) => (
                 <div key={f.label}>
@@ -277,7 +281,7 @@ export function PrDetail({
 
           {view.kind === 'draft' ? null : (
             <section className="prp-panel" aria-label="CI">
-              <h2>{`CI · ${view.checks.head}`}</h2>
+              <h2 className="sec-h">{`CI · ${view.checks.head}`}</h2>
               <ul className="prp-checks">
                 {view.checks.rows.map((c) => (
                   <li key={c.name} className={c.failing ? 'failing' : ''}>
@@ -295,7 +299,7 @@ export function PrDetail({
 
           {view.kind === 'draft' ? null : (
             <section className="prp-panel" aria-label="History">
-              <h2>History</h2>
+              <h2 className="sec-h">History</h2>
               <ul className="prp-history">
                 {view.history.map((h, i) => (
                   <li key={`${h.at}-${i}`}>

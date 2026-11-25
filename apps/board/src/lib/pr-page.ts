@@ -24,6 +24,7 @@ import {
 } from '@lingtai/domain'
 import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
 
+import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
 import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
@@ -151,7 +152,13 @@ export interface PrPageView {
     readonly host: { readonly label: string; readonly href: string } | null
   }
   readonly sub: string
-  readonly poster: { readonly word: string; readonly where: string; readonly line: string }
+  readonly poster: {
+    readonly word: string
+    /** The tag's colour, from the status and not the display word: `requested` says SUBMITTED but is the queued card. */
+    readonly tone: Tone
+    readonly where: string
+    readonly line: string
+  }
   readonly strip: readonly StripState[]
   /** The three branches as the events draw them (#1373); null where it cannot be drawn rather than drawn empty. */
   readonly drawing: Drawing | null
@@ -218,6 +225,13 @@ const POSTER: Record<string, string> = {
   refused: 'REFUSED',
   merged: 'MERGED',
   closed: 'CLOSED',
+}
+
+const POSTER_TONE: Record<string, Tone> = {
+  waiting: 'fail',
+  merged: 'pass',
+  'in-progress': 'accent',
+  requested: 'queued',
 }
 
 const CHECK_WORDS: Record<string, string> = {
@@ -509,6 +523,7 @@ export function prPage(input: PrPageInput): PrPageView {
   const where = hostOpen ? 'ON GITHUB' : ''
   const poster = {
     word: POSTER[pr.status ?? ''] ?? String(pr.status).toUpperCase(),
+    tone: POSTER_TONE[pr.status ?? ''] ?? 'navy',
     where,
     line: [where, lastEvent === null ? '' : age(lastEvent, input.now)].filter((x) => x !== '').join(' · '),
   }
@@ -696,7 +711,7 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
     n: null,
     header: { name: DRAFT_NAME, title: 'no title yet — the agent writes one at submit', host: null },
     sub: `${personal} → ${main} · ${error === null ? plural(tickets.length, 'ticket', 'tickets') : 'tickets unknown'}`,
-    poster: { word: 'DRAFT', where: 'ON YOUR MACHINE', line: 'ON YOUR MACHINE' },
+    poster: { word: 'DRAFT', tone: 'draft', where: 'ON YOUR MACHINE', line: 'ON YOUR MACHINE' },
     strip: stripOf(null),
     drawing: drawingOf(null, [], input, main, personal),
     steps: [],

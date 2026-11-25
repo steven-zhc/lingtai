@@ -3033,6 +3033,13 @@ export const AccountLimitLifted = z.union([
 export const ProjectResumed = z.object({ project: z.string().min(1), by: z.string() })
 
 /**
+ * A write reached `pr-{project}-{n}` with `n` above the highest the project recorded (ADR 0131 §1).
+ *
+ * @summary The project's highest PR number.
+ */
+export const ProjectPrNumbered = z.object({ n: z.number().int().positive() })
+
+/**
  * What a restarted daemon found that the log did not predict, and what it did.
  *
  * **Recorded, not quietly repaired.** A system that silently tidies up after
@@ -3287,6 +3294,7 @@ export const EVENTS = {
   ProjectRecovered,
   ProjectPaused,
   ProjectResumed,
+  ProjectPrNumbered,
   PrDraftTicketAdded,
   PrSubmitRequested,
   PrSubmitRefused,
@@ -3429,6 +3437,7 @@ export const EVENT_AT = {
   ProjectRecovered: ['outside'],
   ProjectPaused: ['outside'],
   ProjectResumed: ['outside'],
+  ProjectPrNumbered: ['outside'],
   PrDraftTicketAdded: ['outside'],
   PrSubmitRequested: ['outside'],
   PrSubmitRefused: ['outside'],

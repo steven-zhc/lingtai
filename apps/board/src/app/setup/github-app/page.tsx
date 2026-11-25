@@ -29,6 +29,8 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
 
 import { Bar } from '@/app/bar.tsx'
 
+import { ObjectTitle } from '../../object-title.tsx'
+
 export const dynamic = 'force-dynamic'
 
 export default async function GitHubApp() {
@@ -55,10 +57,12 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
 
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">GitHub App</span>
-            <span className="hfact">
-              {offer.configured !== null
+          <ObjectTitle
+            tag="setup"
+            tone="muted"
+            title="GitHub App"
+            meta={
+              offer.configured !== null
                 ? 'already configured'
                 : offer.minted !== null
                   ? 'created here, and not finished'
@@ -66,9 +70,9 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
                     ? 'step 0 — Lingtai talks to GitHub as an App, not as a token'
                     : offer.unreadable !== null
                       ? 'config.yml could not be read'
-                      : 'the log did not answer'}
-            </span>
-          </h2>
+                      : 'the log did not answer'
+            }
+          />
 
           {outcome === null ? null : outcome.ok ? <Created outcome={outcome} /> : <Refused refusal={outcome.refusal} />}
 
@@ -217,7 +221,7 @@ function Created({ outcome }: { outcome: Extract<Offer['outcome'], { ok: true }>
       </p>
       <p className="note">
         Next, install it —{' '}
-        <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>github.com/apps/{outcome.slug}</a> — and
+        <a href={`https://github.com/apps/${outcome.slug}/installations/new`}>github.com/apps/{outcome.slug} ↗</a> — and
         pick the repositories it may see. Creating is not installing. Once it is installed, choose the repository in the
         terminal: <code>pnpm lingtai add</code>.
       </p>
@@ -249,12 +253,12 @@ function Configured({
       {installUrl === null ? (
         <p className="note">
           The App was configured by hand, so Lingtai does not know its name. Install it from{' '}
-          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps</a>, then choose the
+          <a href="https://github.com/settings/apps">Settings → Developer settings → GitHub Apps ↗</a>, then choose the
           repository with <code>pnpm lingtai add</code>.
         </p>
       ) : (
         <p className="note">
-          Install it on a repository — <a href={installUrl}>{installUrl}</a> — then choose it with{' '}
+          Install it on a repository — <a href={installUrl}>{installUrl} ↗</a> — then choose it with{' '}
           <code>pnpm lingtai add</code>.
         </p>
       )}
@@ -289,7 +293,7 @@ function Unfinished({ minted, keyPath }: { minted: { appId: string; slug: string
       <p className="note">
         GitHub hands a private key over exactly once, so that one cannot be fetched again. The way out is to generate a
         new key on the App&rsquo;s own page —{' '}
-        <a href={`https://github.com/settings/apps/${minted.slug}`}>github.com/settings/apps/{minted.slug}</a> (an
+        <a href={`https://github.com/settings/apps/${minted.slug}`}>github.com/settings/apps/{minted.slug} ↗</a> (an
         organisation&rsquo;s App is under that organisation&rsquo;s Settings → Developer settings → GitHub Apps) →
         General → Private keys — and follow <code>doc/operating.md</code> from step 2. Creating another App below also
         works; delete this one on that page if you do.

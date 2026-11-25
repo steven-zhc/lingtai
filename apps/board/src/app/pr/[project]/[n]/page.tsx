@@ -24,9 +24,17 @@ import { RecipeBar } from '../../../recipe/[project]/recipe-bar'
 
 export const dynamic = 'force-dynamic'
 
-async function Detail({ project, n }: { project: string; n: number | 'next' | null }) {
-  if (n === null) return <p className="pr-note">There is no PR numbered like that.</p>
-  const [read, timings] = await loadPrDetail(project, n)
+async function Detail({
+  project,
+  n,
+  load,
+}: {
+  project: string
+  n: number | 'next' | null
+  load: ReturnType<typeof loadPrDetail> | null
+}) {
+  if (n === null || load === null) return <p className="pr-note">There is no PR numbered like that.</p>
+  const [read, timings] = await load
   const withMeta = (node: ReactNode) => (
     <>
       <TimingMeta timings={timings} />
@@ -74,16 +82,30 @@ export default async function Page({ params }: { params: Promise<{ project: stri
   const raw = await params
   const name = decodeURIComponent(raw.project)
   const n = raw.n === 'next' ? 'next' : /^[1-9]\d*$/.test(raw.n) ? Number(raw.n) : null
-  let listingError: string | null = null
-  const projects = await readRegistered().catch((err: unknown) => {
-    listingError = (err as Error).message
-    return []
-  })
+  // The detail load starts before any read of the bar, so the two run together. An invalid `n` starts none. The branch
+  // below marks the promise handled while this page is still awaiting the bar; `Detail`'s own `await` still sees a
+  // rejection.
+  const load = n === null ? null : loadPrDetail(name, n)
+  load?.catch(() => undefined)
+  // The bar's reads depend on nothing of each other.
+  const [listing, onBoardListing, locks, views, pause] = await Promise.all([
+    readRegistered().then(
+      (projects) => ({ projects, error: null as string | null }),
+      (err: unknown) => ({ projects: [] as Awaited<ReturnType<typeof readRegistered>>, error: (err as Error).message }),
+    ),
+    onBoardProjects().then(
+      (onBoard) => ({ onBoard, error: null as string | null }),
+      (err: unknown) => ({ onBoard: [] as string[], error: (err as Error).message }),
+    ),
+    readProjectLocks(),
+    placeViewsOf(name),
+    pauseSlot(name),
+  ])
+  // The registered listing's message wins over the onboard listing's.
+  const listingError = listing.error ?? onBoardListing.error
+  const projects = listing.projects
+  const onBoard = onBoardListing.onBoard
   const registered = projects.map((p) => p.project).filter((p): p is string => p !== null)
-  const onBoard = await onBoardProjects().catch((err: unknown) => {
-    listingError ??= (err as Error).message
-    return [] as string[]
-  })
   return (
     <Follow>
       <main className="detail pr-page">
@@ -94,10 +116,10 @@ export default async function Page({ params }: { params: Promise<{ project: stri
           filters={filterOptions(registered, onBoard)}
           registered={registered}
           app={hasGitHubAuth()}
-          locks={lockMap(await readProjectLocks())}
+          locks={lockMap(locks)}
           sandbox={sandboxStates(projects)}
-          views={await placeViewsOf(name)}
-          pause={await pauseSlot(name)}
+          views={views}
+          pause={pause}
         />
         <LockBanner project={name} />
         {listingError === null ? null : (
@@ -106,7 +128,7 @@ export default async function Page({ params }: { params: Promise<{ project: stri
           </p>
         )}
         <Suspense fallback={null}>
-          <Detail project={name} n={n} />
+          <Detail project={name} n={n} load={load} />
         </Suspense>
       </main>
       <FooterFetched />

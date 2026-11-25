@@ -1,4 +1,4 @@
-import { prStream, reducePr, freezeTransition, ticketStream } from '@lingtai/domain'
+import { prStream, projectStream, reducePr, reduceProject, freezeTransition, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 import { readDraft } from '@lingtai/project'
@@ -83,6 +83,25 @@ describe('a landing joins the draft in the same transaction', () => {
     expect(added?.type).toBe('PrDraftTicketAdded')
     expect(added?.data).toMatchObject({ ticket: '1392' })
     expect(await types(store, ticketId)).toEqual(['TicketLanded'])
+  })
+
+  it('a conflict on the project stream, where another writer recorded the number first, writes again (#1446)', async () => {
+    const store = createMemoryEventStore()
+    // PR 1 exists and the project records nothing, so this landing walks, records 1, and meets the other writer.
+    await store.append(pr(1), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '7', mergeCommit: 'm7', from: null } },
+    ])
+    const { wrapped, calls } = refusingOnce(store, async () => {
+      await store.append(projectStream('lingtai'), 0, [
+        { type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } },
+      ])
+    })
+    await land(wrapped, { project: 'lingtai' })
+    expect(calls()).toBe(2)
+    expect(await types(store, ticketId)).toEqual(['TicketLanded'])
+    expect(await types(store, pr(1))).toEqual(['PrDraftTicketAdded', 'PrDraftTicketAdded'])
+    expect(await types(store, projectStream('lingtai'))).toEqual(['ProjectPrNumbered'])
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(1)
   })
 
   it('a conflict on the ticket’s stream is a defect, and neither stream is written', async () => {

@@ -52,7 +52,7 @@ export function PrSummaryEditor({
       />
       {summary.refusal === null ? (
         <div className="pr-actions">
-          <button type="button" className="pr-btn primary" disabled={pending} onClick={save}>
+          <button type="button" className="btn" disabled={pending} onClick={save}>
             {summary.saveLabel}
           </button>
         </div>

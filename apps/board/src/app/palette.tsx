@@ -5,7 +5,7 @@
  * page, mounted once in `RootLayout`. It is a key and not an object on the bar
  * (`doc/design/the-bar.md`).
  *
- * **This file imports types, `./skeleton` and `@/lib/search` only.** A
+ * **This file imports types, `./skeleton`, `@/lib/remember` and `@/lib/search` only.** A
  * server-only import reaching a `"use client"` graph is caught by the Next
  * build after the merge and by nothing before it (#230); `unit/palette.test.tsx`
  * holds this file to that. `PaletteView` is pure for the same reason the rest of
@@ -15,6 +15,7 @@
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
+import { rememberProject } from '@/lib/remember'
 import {
   type Entry,
   type GoState,
@@ -85,7 +86,7 @@ export function PaletteView({
           const rows = results.flatMap((e, i) => (e.group === g ? [{ e, i }] : []))
           if (rows.length === 0) return []
           return [
-            <li key={`h-${g}`} role="presentation" className="palette-group">
+            <li key={`h-${g}`} role="presentation" className="palette-group sec-h">
               {g}
             </li>,
             ...rows.map(({ e, i }) => (
@@ -227,6 +228,9 @@ export function Palette() {
   }
 
   const go = (href: string, newTab: boolean) => {
+    // Opening a project is a person choosing it, in a new tab too (#1435).
+    const project = results.find((e) => e.href === href && e.group === 'Projects')?.project
+    if (project !== undefined) rememberProject(project)
     if (newTab) {
       window.open(href, '_blank', 'noopener')
       return

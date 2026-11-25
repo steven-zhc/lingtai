@@ -142,8 +142,19 @@ bars have no health either — and on no card or landed row: the state is the pr
 ticket says the same thing ten times. The filter's menu keeps a small mark beside each project's name,
 the one place projects are told apart; the banners under the bar say *degraded* and *stopped* in words.
 
+**The mode is part of health too, from #1463.** A 16 px icon sits between the shield and the dot: a
+git branch for `team`, one line with a dot at each end for `solo`. It is not a fourth object, for the
+reason the shield is not: where a ticket's work lands, on `main` or on a personal branch that reaches
+`main` only when a PR merges, is part of *is the system doing what I configured it to*. It has no text;
+its sentence (`team · lands on steven-zhc/studio; main moves when a PR merges`) is its name and tooltip,
+and it leads to the recipe's Mode card. It is `--muted` always, because a mode is not a state and has
+no good or bad value. It is on the home bar only, and only with a project chosen; with *all projects*
+the bar has none, and each project's row in the filter's menu draws a 14 px one after its shield. It
+reads the recipe the board already read (`board.askable`), so it adds no read to a render.
+
 It is in the code in `.rail`, before `<Health>` (`apps/board/src/app/page.tsx`), fed by
-`sandbox-slot.tsx`. `apps/board/unit/projects.test.tsx` holds the code to the set *filter, health*.
+`sandbox-slot.tsx` and `mode-slot.tsx`. `apps/board/unit/projects.test.tsx` holds the code to the set
+*filter, health*, and `apps/board/unit/mode-mark.test.tsx` holds the order shield, mode, dot.
 
 ### An affordance inside an object is not a new object
 

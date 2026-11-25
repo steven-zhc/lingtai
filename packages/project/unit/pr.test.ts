@@ -8,14 +8,16 @@ import {
   prStream,
   projectStream,
   reducePr,
+  reduceProject,
   ticketStream,
 } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import type { EventStore } from '@lingtai/event-store/store'
+import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
+  draftBatchFor,
   landingsInFlight,
   latestPr,
   listPrs,
@@ -31,6 +33,7 @@ import {
   readPr,
   requestPrSubmit,
 } from '../src/pr.ts'
+import { recordPrNumber } from '../test/pr-numbers.ts'
 import { submitPr } from '../test/submit.ts'
 
 const run = <A>(e: Effect.Effect<A, Error>) => Effect.runPromise(e)
@@ -74,8 +77,10 @@ const draftTicket = (ticket: string) => ({
   data: { ticket, mergeCommit: `m${ticket}`, from: null },
 })
 /** A ticket joins PR `n`'s draft, through the stream so the reducer decides the state. */
-const addToDraft = async (store: EventStore, n: number, ticket: string) =>
-  store.append(prStream('lingtai', n), await store.head(prStream('lingtai', n)), [draftTicket(ticket)])
+const addToDraft = async (store: EventStore, n: number, ticket: string) => {
+  await store.append(prStream('lingtai', n), await store.head(prStream('lingtai', n)), [draftTicket(ticket)])
+  await recordPrNumber(store, 'lingtai', n)
+}
 const heads = async (store: EventStore, upTo = 3) =>
   Promise.all(Array.from({ length: upTo }, (_, i) => store.head(prStream('lingtai', i + 1))))
 const close = async (store: EventStore, n: number) =>
@@ -331,7 +336,11 @@ describe('the draft (#1395)', () => {
     expect(draft.map((t) => t.ticket)).toEqual(['7', '31'])
     const tickets = [...asked].filter((id) => id.startsWith('ticket-')).sort()
     expect(tickets).toEqual([ticketStream('lingtai', '31'), ticketStream('lingtai', '7')].sort())
-    expect([...asked].filter((id) => !id.startsWith('ticket-')).every((id) => id.startsWith('pr-lingtai-'))).toBe(true)
+    expect(
+      [...asked]
+        .filter((id) => !id.startsWith('ticket-'))
+        .every((id) => id.startsWith('pr-lingtai-') || id === projectStream('lingtai')),
+    ).toBe(true)
   })
 
   it('reads the tickets together, at most READ_CONCURRENCY at once, and returns them in the order they joined', async () => {
@@ -576,5 +585,167 @@ describe('readDraftedTickets (#1423)', () => {
 
   it('no PR at all: nothing drafted', async () => {
     expect([...(await run(readDraftedTickets('lingtai', createMemoryEventStore())))]).toEqual([])
+  })
+})
+
+/** A store that remembers which streams `head` was asked about. */
+const headCounting = (inner: EventStore) => {
+  const heads: string[] = []
+  const store: EventStore = {
+    ...inner,
+    head: async (id) => {
+      heads.push(id)
+      return inner.head(id)
+    },
+  }
+  return { store, heads, probes: () => heads.filter((id) => id.startsWith('pr-')) }
+}
+
+/** A PR stream built by hand with one draft ticket, and nothing recorded on the project. */
+const unrecorded = async (store: EventStore, n: number, tickets: string[], ending?: 'merged') => {
+  await store.append(
+    prStream('lingtai', n),
+    0,
+    tickets.map((t) => draftTicket(t)),
+  )
+  if (ending === 'merged') {
+    const at = await store.head(prStream('lingtai', n))
+    await store.append(prStream('lingtai', n), at, [
+      { type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } },
+      {
+        type: 'PrInProgress',
+        actor: 'conductor',
+        data: { ...frozen(tickets.map((t) => ({ ticket: t, mergeCommit: `m${t}`, title: t }))), because: 'submit' },
+      },
+      {
+        type: 'PrMerged',
+        actor: 'conductor',
+        data: { how: 'host', headSha: 'f'.repeat(40), mergeSha: 'c'.repeat(40) },
+      },
+    ] as never)
+  }
+}
+const types = async (store: EventStore, id: string) => (await store.read(id)).map((e) => e.type)
+
+describe('the project records its PRs’ numbers (#1446)', () => {
+  it('a landing into a project with no record probes once and records the highest it found', async () => {
+    const inner = createMemoryEventStore()
+    for (const n of [1, 2, 3]) await unrecorded(inner, n, [String(n)], n < 3 ? 'merged' : undefined)
+    const { store, probes } = headCounting(inner)
+    // A reader sees no PRs, and never probes to look.
+    expect(await run(listPrs('lingtai', store))).toEqual([])
+    expect(await run(openPr('lingtai', store))).toBeNull()
+    expect([...(await run(readDraftedTickets('lingtai', store)))]).toEqual([])
+    expect(probes()).toEqual([])
+    // A writer neither starts at 1 nor collides: PR 3 is the draft, and the highest, 3, is recorded with it.
+    const batches = await run(draftBatchFor('lingtai', { ticket: '9', mergeCommit: 'm9', from: null }, store))
+    expect(probes()).toEqual([1, 2, 3, 4].map((n) => prStream('lingtai', n)))
+    expect(batches.map((b) => b.streamId)).toEqual([prStream('lingtai', 3), projectStream('lingtai')])
+    expect(batches[1]!.events).toMatchObject([{ type: 'ProjectPrNumbered', data: { n: 3 } }])
+    await store.appendAll(batches)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.n)).toEqual([1, 2, 3])
+    // A second landing into the same draft records nothing and walks nothing.
+    const walked = probes().length
+    const second = await run(draftBatchFor('lingtai', { ticket: '10', mergeCommit: 'm10', from: null }, store))
+    expect(second.map((b) => b.streamId)).toEqual([prStream('lingtai', 3)])
+    expect(probes().length).toBe(walked)
+  })
+
+  it('a landing past a merged highest opens the next number and records it', async () => {
+    const inner = createMemoryEventStore()
+    for (const n of [1, 2, 3]) await unrecorded(inner, n, [String(n)], 'merged')
+    const batches = await run(draftBatchFor('lingtai', { ticket: '9', mergeCommit: 'm9', from: null }, inner))
+    expect(batches.map((b) => b.streamId)).toEqual([prStream('lingtai', 4), projectStream('lingtai')])
+    expect(batches[1]!.events).toMatchObject([{ type: 'ProjectPrNumbered', data: { n: 4 } }])
+  })
+
+  it('with a number recorded, no reader asks head about any pr- stream', async () => {
+    const inner = createMemoryEventStore()
+    for (const n of [1, 2, 3]) await unrecorded(inner, n, [String(n)])
+    await recordPrNumber(inner, 'lingtai', 3)
+    const { store, heads } = headCounting(inner)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.n)).toEqual([1, 2, 3])
+    await run(openPr('lingtai', store))
+    await run(readDraft('lingtai', store))
+    await run(draftTarget('lingtai', store))
+    await run(latestPr('lingtai', store))
+    await run(readDraftedTickets('lingtai', store))
+    expect(heads).toEqual([])
+  })
+
+  it('the freeze hand-off that opens n + 1 records n + 1', async () => {
+    const store = createMemoryEventStore()
+    await addToDraft(store, 1, '1')
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    const state = await run(readPr('lingtai', 1, store))
+    const handed = [{ ticket: '2', mergeCommit: 'm2', from: null }]
+    await run(
+      recordPrInProgress('lingtai', 1, frozen([{ ticket: '1', mergeCommit: 'm1', title: 't' }]), store, {
+        state: state!,
+        notKept: handed,
+      }),
+    )
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(2)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.n)).toEqual([1, 2])
+  })
+
+  it('two writers racing for the next number: one records it, the other conflicts on the project and lands on retry', async () => {
+    const store = createMemoryEventStore()
+    for (const n of [1, 2]) await unrecorded(store, n, [String(n)], 'merged')
+    const first = await run(draftBatchFor('lingtai', { ticket: '8', mergeCommit: 'm8', from: null }, store))
+    const second = await run(draftBatchFor('lingtai', { ticket: '9', mergeCommit: 'm9', from: null }, store))
+    await store.appendAll(first)
+    const lost = await store.appendAll(second).then(
+      () => null,
+      (e: unknown) => e,
+    )
+    expect(lost).toBeInstanceOf(ConcurrencyError)
+    expect((lost as ConcurrencyError).streamId).toBe(prStream('lingtai', 3))
+    const again = await run(draftBatchFor('lingtai', { ticket: '9', mergeCommit: 'm9', from: null }, store))
+    expect(again.map((b) => b.streamId)).toEqual([prStream('lingtai', 3)])
+    await store.appendAll(again)
+    expect(await types(store, prStream('lingtai', 3))).toEqual(['PrDraftTicketAdded', 'PrDraftTicketAdded'])
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
+  })
+
+  it('the freeze of a requested legacy PR with nothing to hand over records the highest', async () => {
+    const store = createMemoryEventStore()
+    for (const n of [1, 2]) await unrecorded(store, n, [String(n)], 'merged')
+    await unrecorded(store, 3, ['3'])
+    await store.append(prStream('lingtai', 3), 1, [
+      { type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } },
+    ])
+    const state = await run(readPr('lingtai', 3, store))
+    const ok = await run(
+      recordPrInProgress('lingtai', 3, frozen([{ ticket: '3', mergeCommit: 'm3', title: 't' }]), store, {
+        state: state!,
+        notKept: [],
+      }),
+    )
+    expect(ok).toBe(true)
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.n)).toEqual([1, 2, 3])
+  })
+
+  it('an unpinned write to a legacy PR records the highest, and a recorded project appends only the PR event', async () => {
+    const store = createMemoryEventStore()
+    for (const n of [1, 2]) await unrecorded(store, n, [String(n)], 'merged')
+    await unrecorded(store, 3, ['3'])
+    await store.append(prStream('lingtai', 3), 1, [
+      { type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } },
+    ])
+    await run(recordPrInProgress('lingtai', 3, frozen([{ ticket: '3', mergeCommit: 'm3', title: 't' }]), store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
+    const version = reduceProject(await store.read(projectStream('lingtai'))).version
+    await run(recordPrStepDone('lingtai', 3, { step: 'build', headSha: 'a'.repeat(40) }, store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).version).toBe(version)
+  })
+
+  it('a request on a legacy PR records the highest', async () => {
+    const store = createMemoryEventStore()
+    await unrecorded(store, 1, ['1'])
+    await unrecorded(store, 2, ['2'])
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(2)
   })
 })

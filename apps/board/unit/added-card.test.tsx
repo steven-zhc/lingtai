@@ -30,6 +30,14 @@ describe('step 3 for a team project (#1325)', () => {
     expect(solo).not.toContain('— team')
     expect(solo).not.toContain('Next: assign yourself')
   })
+
+  it('a local team project is told to open a ticket, not to assign an issue', () => {
+    const out = html(ok({ mode: 'team', personal: 'lingtai-base', github: false }))
+    expect(out).toContain('Next: open a ticket and press Start.')
+    expect(out).toContain('every local ticket')
+    expect(out).not.toContain('assigned to you')
+    expect(out).not.toContain('assign yourself an issue')
+  })
 })
 
 describe('step 3', () => {

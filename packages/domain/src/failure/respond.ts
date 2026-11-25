@@ -676,7 +676,14 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       return
     }
     if (spent.rounds >= policy.refusalFixes) {
-      unavailable.push({ id, because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } })
+      unavailable.push({
+        id,
+        because: {
+          _tag: 'CeilingReached',
+          ceiling: 'refusalFixes',
+          ...(policy.grantCapped?.refusalFixes ? { by: 'grant' as const } : {}),
+        },
+      })
       return
     }
     available.push({ id, next: { _tag: 'FixRefusal', to, round: spent.rounds + 1 } })
@@ -688,7 +695,14 @@ export function offerFor(proposal: Proposal, policy: RoutingPolicy, spent: Spent
       return
     }
     if (spent.newAttempts >= policy.newAttempts) {
-      unavailable.push({ id: 'restart', because: { _tag: 'CeilingReached', ceiling: 'newAttempts' } })
+      unavailable.push({
+        id: 'restart',
+        because: {
+          _tag: 'CeilingReached',
+          ceiling: 'newAttempts',
+          ...(policy.grantCapped?.newAttempts ? { by: 'grant' as const } : {}),
+        },
+      })
       return
     }
     available.push({

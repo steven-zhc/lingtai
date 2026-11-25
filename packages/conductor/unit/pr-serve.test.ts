@@ -1,6 +1,7 @@
 import { integrationStream, prStepRows, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ConcurrencyError, type EventStore } from '@lingtai/event-store/store'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 /**
  * Serving a PR (0130 §5, #1316): the freeze against a fake git that answers by exit code, and the walk through
  * In progress's steps.
@@ -47,6 +48,7 @@ async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
     await store.append(prStream('lingtai', 1), pr1.length, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
     ])
+    await recordPrNumber(store, 'lingtai', 1)
   }
 }
 

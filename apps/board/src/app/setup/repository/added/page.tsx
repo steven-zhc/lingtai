@@ -14,6 +14,7 @@ import { Bar } from '@/app/bar.tsx'
 import { claudeTokenSetAt } from '@/app/setup/claude-token/save.ts'
 import { TokenForm } from '@/app/setup/claude-token/token-form.tsx'
 
+import { ObjectTitle } from '../../../object-title.tsx'
 import { AddedCard, type Added } from './added-card.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -93,17 +94,13 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
       </Bar>
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">Repository</span>
-            <span className="hfact">added</span>
-          </h2>
+          <ObjectTitle tag="setup" tone="muted" title="Repository" meta="added" />
           <AddedCard {...added} />
         </section>
         {token.say === 'unreadable' ? (
           <section>
-            <h2>
-              <span className="hlab">Claude Code token</span>
-              <span className="hfact">unknown</span>
+            <h2 className="sec-h">
+              Claude Code token <small>unknown</small>
             </h2>
             <p>
               {token.why} — this project's sandboxed Claude Code runs may be refused for want of a token. Fix the file,
@@ -113,9 +110,8 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
         ) : null}
         {token.say === 'ask' ? (
           <section>
-            <h2>
-              <span className="hlab">Claude Code token</span>
-              <span className="hfact">needed</span>
+            <h2 className="sec-h">
+              Claude Code token <small>needed</small>
             </h2>
             <p>
               This project's sandboxed Claude Code runs are refused until a token is set. Run{' '}

@@ -40,6 +40,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { modeMark } from '@/lib/mode-mark.ts'
 import { elapsed } from '@/lib/progress'
 import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
@@ -63,6 +64,7 @@ import { HandledCard, HandledFootnote } from './handled-card.tsx'
 import { Health } from './health.tsx'
 import { HomeFrame } from './home-frame.tsx'
 import { LockRows, pauseSlot } from './lock-banner.tsx'
+import { modeSlot } from './mode-slot.tsx'
 import { NotSetUp } from './not-set-up.tsx'
 import { Paused } from './paused.tsx'
 import { Pending } from './pending.tsx'
@@ -273,6 +275,7 @@ export function Card({
             taskId={card.taskId}
             waitId={card.waitId}
             move={card.move}
+            small
           />
         ) : null}
       </article>
@@ -481,7 +484,7 @@ export function Card({
           appends nothing and the reducer went on calling them `backlog`. */}
       {card.column === 'queued' ? (
         <div className="btnrow">
-          <Close project={card.project} issue={Number(card.ref)} waitId={null} />
+          <Close project={card.project} issue={Number(card.ref)} waitId={null} small />
         </div>
       ) : null}
     </article>
@@ -504,7 +507,7 @@ export function ColumnLabel({ label }: { label: string }) {
  */
 export function LandedCount({ count, only }: { count: number; only: string | undefined }) {
   return (
-    <Link className="ctbtn" href={landedLink(only)} title="what Lingtai changed, newest first">
+    <Link className="btn sm" href={landedLink(only)} title="what Lingtai changed, newest first">
       <span className="ct">{count}</span>
       <span className="lbl">all</span>
       <span aria-hidden="true">→</span>
@@ -824,7 +827,8 @@ const CountPending = () => (
 async function readMenu({ reads, locks, param }: Ctx) {
   const [board, registered, lockRead] = await Promise.all([reads.board, reads.registered, locks])
   const { only } = shape(board, param)
-  return { filters: board.projects, only, registered, ...lockShape(lockRead, only, registered) }
+  const mode = new Map(board.askable.map((f) => [f.project, modeMark(f.recipe)]))
+  return { filters: board.projects, only, registered, mode, ...lockShape(lockRead, only, registered) }
 }
 
 async function MenuRows({ ctx, app }: { ctx: Ctx; app: boolean }) {
@@ -837,6 +841,7 @@ async function MenuRows({ ctx, app }: { ctx: Ctx; app: boolean }) {
       registered={m.registeredNames}
       locks={m.projectLocks}
       sandbox={m.sandbox}
+      mode={m.mode}
     />
   )
 }
@@ -851,6 +856,7 @@ async function FilterSlot({ ctx, app }: { ctx: Ctx; app: boolean }) {
       registered={m.registeredNames}
       locks={m.projectLocks}
       sandbox={m.sandbox}
+      mode={m.mode}
     />
   )
   // Nothing configured is the one board with somewhere to go: the sentence is the link (#169).
@@ -1178,7 +1184,8 @@ async function CardsPart({
 }
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  const param = (await searchParams).project
+  // `/?project=` is *all projects*: `''` must never reach the reads as a project name (#1435).
+  const param = (await searchParams).project || undefined
   // Before any read of the log: a refused store makes `loadBoard` throw the
   // same sentence, and Next would show that as its default error page. The
   // screen below says it instead, and mounts no `Live` — there is no log to
@@ -1305,6 +1312,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               dot when something is wrong, so a mark behind them would jump (#1183). Outside Health, which holds the
               subscription; its own keyed boundary, so a project switch remounts it. */}
             {sandboxSlot(param, key('sandbox'))}
+            {/* The mode, between the shield and the dot: where a ticket's work lands is part of whether the system does
+              what was configured. Handed the board the page already awaits, so it reads no recipe of its own (#1463). */}
+            {modeSlot(ctx.reads.board, param, key('mode'))}
             <Health
               projectKey={projectKey}
               project={ctx.param}
@@ -1365,7 +1375,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               id={col.id === 'waiting' ? 'waiting' : undefined}
               className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
             >
-              <header className="col-h">
+              <header className={`col-h sec-h${col.id === 'waiting' ? ' wait' : ''}`}>
                 <ColumnLabel label={col.label} />
                 <Suspense key={key(`count-${col.id}`)} fallback={<CountPending />}>
                   <CountPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />

@@ -72,35 +72,65 @@ function HeldRow({ row, showProject, tag }: { row: HeldTicket | EpicTicket; show
 }
 
 /**
- * The foot of Queued (#955): tickets a person holds and epics with nothing
- * queued, folded into one closed line so they are counted and named without
- * taking the column.
+ * The foot of Queued (#1464): one sentence under a hairline, after the cards,
+ * so the column's first card starts where the other lanes' do. It joins the
+ * runnable and blocker counts to the tickets a person holds and the epics with
+ * nothing queued (#955). When anything is held the whole sentence is the
+ * closed fold's summary and the held list opens below it; otherwise it is a
+ * plain line; with nothing to say it draws nothing.
  */
-function HeldFold({
+function QueuedFoot({
+  runnable,
+  waiting,
   held,
   epics,
   showProject,
 }: {
+  runnable: number
+  waiting: number
   held: readonly HeldTicket[]
   epics: readonly EpicTicket[]
   showProject: boolean
 }) {
-  if (held.length + epics.length === 0) return null
+  const counts =
+    waiting === 0 ? (
+      runnable === 0 ? null : (
+        <>
+          <b>{runnable}</b> runnable
+        </>
+      )
+    ) : (
+      <>
+        {runnable === 0 ? (
+          'nothing runnable'
+        ) : (
+          <>
+            <b>{runnable}</b> runnable
+          </>
+        )}{' '}
+        · <b>{waiting}</b> waiting on a blocker
+      </>
+    )
+  if (held.length + epics.length === 0) return counts === null ? null : <p className="qfoot">{counts}</p>
   return (
-    <details className="heldfold">
+    <details className="heldfold qfoot">
       <summary>
-        {held.length > 0 ? (
-          <>
-            <b>{held.length}</b> held
-          </>
-        ) : null}
-        {held.length > 0 && epics.length > 0 ? ' · ' : null}
-        {epics.length > 0 ? (
-          <>
-            <b>{epics.length}</b> {epics.length === 1 ? 'epic' : 'epics'}
-          </>
-        ) : null}
-        <span className="hw">· a person lifts it</span>
+        {counts}
+        {counts === null ? null : ' · '}
+        <span className="qheld">
+          {held.length > 0 ? (
+            <>
+              <b>{held.length}</b> held
+            </>
+          ) : null}
+          {held.length > 0 && epics.length > 0 ? ' · ' : null}
+          {epics.length > 0 ? (
+            <>
+              <b>{epics.length}</b> {epics.length === 1 ? 'epic' : 'epics'}
+            </>
+          ) : null}
+          <span className="hw">· a person lifts it</span>
+        </span>
       </summary>
       <ul className="heldlist">
         {held.map((h) => (
@@ -430,33 +460,12 @@ export function QueuedAnswered({
   const arriving = new Set(github.cards.map((c) => c.taskId))
   const waiting = github.blocked.length
   const drawn = github.blocked.filter((b) => !b.unread)
-  const unread = waiting - drawn.length
   const heldByBase = github.baseHeld ?? new Set<string>()
   const { entries, next, headed } = groupQueue(cards, drawn, order, github.parents, github.epics, true, heldByBase)
   const runnableCount = cards.filter((c) => !heldByBase.has(c.taskId)).length
-  const summary =
-    waiting === 0 ? (
-      runnableCount === 0 ? null : (
-        <p className="qsum">
-          <b>{runnableCount}</b> runnable
-        </p>
-      )
-    ) : (
-      <p className="qsum">
-        {runnableCount === 0 ? (
-          'nothing runnable'
-        ) : (
-          <>
-            <b>{runnableCount}</b> runnable
-          </>
-        )}{' '}
-        · <b>{waiting}</b> waiting on a blocker
-      </p>
-    )
   return (
     <>
       <WhyNothingRuns why={github.why ?? []} showProject={projects.size > 1} />
-      {summary}
       <Problems recipe problems={unreadable} />
       <Problems recipe={false} problems={github.problems} />
       {github.notes.map((n) => (
@@ -478,8 +487,9 @@ export function QueuedAnswered({
           github={github}
         />
       )}
-      {unread > 0 ? <p className="qsum">+{unread} more waiting on a blocker</p> : null}
-      <HeldFold
+      <QueuedFoot
+        runnable={runnableCount}
+        waiting={waiting}
         held={github.held}
         epics={github.epics.filter((e) => !headed.has(`${e.project}#${e.ref}`))}
         showProject={projects.size > 1}

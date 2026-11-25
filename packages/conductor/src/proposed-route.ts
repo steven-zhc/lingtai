@@ -34,6 +34,8 @@ import {
   type RoutingPolicy,
   type RuntimeId,
   type Spent,
+  GRANT_USED_TEXT,
+  unavailableText,
 } from '@lingtai/domain'
 import type { AttemptRef, Cause } from '@lingtai/domain/wait'
 import type { BuiltInJudge, JudgeWhen } from '@lingtai/recipe'
@@ -271,10 +273,16 @@ function causeReply(
           : `a new attempt was bought, ${counted('newAttempts', 1)}`
       return { _tag: 'Selected', candidate: id, why: `${says}; ${bought} — ${answer.why}`, cause: answer.cause }
     }
-    case 'askPerson':
-      return action.why._tag === 'limit'
-        ? person(`\`${action.why.bound}\` is spent, ${counted(action.why.bound)}`)
-        : person('a person is asked')
+    case 'askPerson': {
+      const why = action.why
+      if (why._tag !== 'limit') return person('a person is asked')
+      const grantCapped = offer.unavailable.some(
+        (c) => c.because._tag === 'CeilingReached' && c.because.by === 'grant' && c.because.ceiling === why.bound,
+      )
+      return person(
+        grantCapped ? `${GRANT_USED_TEXT}, ${counted(why.bound)}` : `\`${why.bound}\` is spent, ${counted(why.bound)}`,
+      )
+    }
     default:
       return person(`${action._tag} is not an action a judge's cause can buy`)
   }
@@ -296,11 +304,15 @@ function causeReply(
 function notAskedWhy(offer: RouteOffer): string {
   if (offer.available.length < 2) {
     if (offer.unavailable.length === 0) return 'nothing but a person was on offer'
-    const reasons = offer.unavailable.map((c) =>
-      c.because._tag === 'CeilingReached'
-        ? `\`${c.id}\` — \`${c.because.ceiling}\` is spent`
-        : `\`${c.id}\` — nothing holds an agent to it`,
-    )
+    const granted = offer.unavailable.filter((c) => c.because._tag === 'CeilingReached' && c.because.by === 'grant')
+    const reasons = offer.unavailable
+      .filter((c) => !granted.includes(c))
+      .map((c) =>
+        c.because._tag === 'CeilingReached'
+          ? `\`${c.id}\` — \`${c.because.ceiling}\` is spent`
+          : `\`${c.id}\` — nothing holds an agent to it`,
+      )
+    if (granted.length > 0) reasons.push(`${granted.map((c) => `\`${c.id}\``).join(', ')} — ${GRANT_USED_TEXT}`)
     return `nothing but a person was on offer (${reasons.join(', ')})`
   }
   const when = whenOf(offer.proposal)
@@ -313,9 +325,7 @@ function notAskedWhy(offer: RouteOffer): string {
 
 /** `reasonTextOf`'s own words (`adapters.ts`), read here for the run log's own sentence rather than for the `Hold`, which `escalatedHold` builds independently off the structured reason. */
 function unavailableWhy(excluded: ExcludedCandidate): string {
-  return excluded.because._tag === 'CeilingReached'
-    ? `the judge chose \`${excluded.id}\`, and \`${excluded.because.ceiling}\` is spent`
-    : `the judge chose \`${excluded.id}\`, which nothing holds it to`
+  return unavailableText(excluded)
 }
 
 /**

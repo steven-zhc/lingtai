@@ -20,7 +20,6 @@ const selectors = [...css.matchAll(/(?:^|\})\s*([^{}@][^{}]*)\{/g)].flatMap((m) 
 
 const BAND = [
   '.triage-band',
-  '.triage-label',
   '.triage-head',
   '.triage-head .triage-cause',
   '.triage-cause',

@@ -19,6 +19,7 @@ const ADR_GROUPS: Record<(typeof GROUPS)[number], string[]> = {
     'rollback',
     'uninstall',
     'doctor',
+    'clean',
     'projection',
     'events',
     'token',

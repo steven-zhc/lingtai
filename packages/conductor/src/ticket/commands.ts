@@ -938,7 +938,7 @@ export function landTicketEffect(
     // Read once: a write to the ticket's stream between here and the append is a conflict, and a defect.
     const state = yield* readThroughSnapshot(store, ticketReducer, ticketId, 'all', options).pipe(Effect.orDie)
     for (;;) {
-      const batch = yield* draftBatchFor(
+      const batches = yield* draftBatchFor(
         draft.project,
         { ticket: named.issue, mergeCommit: input.mergeCommit, from: null },
         store,
@@ -946,13 +946,14 @@ export function landTicketEffect(
       const written = yield* Effect.result(
         Effect.tryPromise({
           // The ticket's batch first: when both streams moved, the one named is the ticket's.
-          try: () => store.appendAll([{ streamId: ticketId, expectedVersion: state.version, events }, batch]),
+          try: () => store.appendAll([{ streamId: ticketId, expectedVersion: state.version, events }, ...batches]),
           catch: (e) => e,
         }),
       )
       if (Result.isSuccess(written)) return
       const refused = written.failure
-      if (refused instanceof ConcurrencyError && refused.streamId === batch.streamId) {
+      // The draft's stream, or the project's when another writer recorded a PR number first.
+      if (refused instanceof ConcurrencyError && batches.some((b) => b.streamId === refused.streamId)) {
         yield* Effect.logWarning(`landing ${ticketId}: the draft of ${draft.project} moved, writing again`)
         continue
       }

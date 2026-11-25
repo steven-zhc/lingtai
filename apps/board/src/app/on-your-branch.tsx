@@ -56,7 +56,7 @@ export function OnYourBranchView({ where }: { where: WhereOnBranch }) {
               is a new ticket ·{' '}
               {change.kind === 'link' ? (
                 <a href={change.href} target="_blank" rel="noreferrer">
-                  New pr-fix ticket
+                  New pr-fix ticket ↗
                 </a>
               ) : (
                 <>

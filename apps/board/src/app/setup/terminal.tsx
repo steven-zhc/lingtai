@@ -12,6 +12,7 @@
  * reads the env, this stays a reducer over its props.
  */
 import { Bar } from '../bar.tsx'
+import { ObjectTitle } from '../object-title.tsx'
 
 export function TerminalScreen({ gh = false }: { gh?: boolean }) {
   return (
@@ -23,10 +24,7 @@ export function TerminalScreen({ gh = false }: { gh?: boolean }) {
 
       <div className="detail-body">
         <section>
-          <h2>
-            <span className="hlab">Repository</span>
-            <span className="hfact">choose it in the terminal</span>
-          </h2>
+          <ObjectTitle tag="setup" tone="muted" title="Repository" meta="choose it in the terminal" />
           {gh ? (
             <p className="note">
               This machine reaches GitHub with the saved <code>gh</code> login, so there is no App to install. Choosing

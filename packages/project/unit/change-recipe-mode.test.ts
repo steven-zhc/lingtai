@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 import { modeSwitchMessage } from '../src/change.ts'
 import { ProjectFiles, changeRecipe, recipePath } from '../src/index.ts'
 import { draftTarget, recordPrClosed, recordPrDraftOpened, recordPrInProgress, recordPrMerged } from '../src/pr.ts'
+import { recordPrNumber } from '../test/pr-numbers.ts'
 /** `changeRecipe` refuses team → solo while work is stranded (0130 §1, #1328): memory log, `Map` files. */
 import { submitPr } from '../test/submit.ts'
 
@@ -48,6 +49,7 @@ async function ticket(store: EventStore, issue: string, base: string, closed = f
   await store.append(prStream('app', target.n), target.version, [
     { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
   ])
+  await recordPrNumber(store, 'app', target.n)
 }
 
 const frozen = (tickets: string[]) => ({

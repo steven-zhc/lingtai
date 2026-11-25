@@ -385,6 +385,7 @@ const SAMPLES = {
       by: { _tag: 'Mechanical' },
     },
   ],
+  ProjectPrNumbered: [{ n: 3 }],
   PluginFailed: [{ name: 'notify', eventType: 'TicketLanded', project: null, reason: 'boom' }],
 } satisfies { [K in EventType]: PayloadOf<K>[] }
 

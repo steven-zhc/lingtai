@@ -1,4 +1,4 @@
-import { setReadObserver } from '@lingtai/event-store'
+import { setHeadObserver, setReadObserver } from '@lingtai/event-store'
 import { setRequestObserver } from '@lingtai/github'
 import { setAcquireObserver } from '@lingtai/projector'
 
@@ -36,6 +36,18 @@ export function installTraceSeams(): void {
         run((events) => {
           // Set only once the read returned: a failed read has no count, never `0`.
           span.setAttribute('lingtai.count', events)
+        }),
+      { 'lingtai.stream': info.kind },
+    ),
+  )
+  // One span for each physical head read, under whichever caller started it: a shared waiter never reaches here (#1441).
+  setHeadObserver((info, run) =>
+    traced(
+      'events.head',
+      (span) =>
+        run((head) => {
+          // A head of `0` is an absent stream, read successfully; a failed read has no count.
+          span.setAttribute('lingtai.count', head)
         }),
       { 'lingtai.stream': info.kind },
     ),

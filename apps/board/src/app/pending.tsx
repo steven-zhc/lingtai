@@ -42,7 +42,7 @@ export function Pending({ projects }: { projects: PendingProject[] }) {
   if (projects.length === 0) return null
   return (
     <section className="pending">
-      <header className="col-h">
+      <header className="col-h sec-h">
         <span>On their way in</span>
         <span className="ct">{projects.length}</span>
       </header>
@@ -89,7 +89,7 @@ function PendingCard({ project }: { project: PendingProject }) {
       ) : (
         <div className="btnrow">
           <button
-            className="btn"
+            className="btn sm"
             disabled={busy}
             onClick={() => {
               setRefusal(null)

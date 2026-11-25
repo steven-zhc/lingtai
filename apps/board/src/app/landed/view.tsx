@@ -97,9 +97,9 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
         {row.mergeCommit === null ? null : commit === null ? (
           <span>{row.mergeCommit.slice(0, 7)}</span>
         ) : (
-          <a href={commit}>{row.mergeCommit.slice(0, 7)}</a>
+          <a href={commit}>{row.mergeCommit.slice(0, 7)} ↗</a>
         )}
-        {ref === null ? null : issue === null ? <span>#{ref.issue}</span> : <a href={issue}>#{ref.issue}</a>}
+        {ref === null ? null : issue === null ? <span>#{ref.issue}</span> : <a href={issue}>#{ref.issue} ↗</a>}
       </span>
     </p>
   )
@@ -166,14 +166,8 @@ function Card({
           rest: '',
         }
       : leadOf(row.summary)
-  const ref = ticketRef(row)
   return (
     <article className="ld-card" style={{ '--kind': colour, '--pop': kindPopOf(row.kind) } as CSSProperties}>
-      {ref === null ? null : (
-        <span className="ld-mark" aria-hidden="true">
-          {ref.issue}
-        </span>
-      )}
       <p className="ld-caption mono">{row.title ?? row.ticket}</p>
       <div className="ld-head">
         <DocumentBody source="summary" text={lead} rawClass="" />
@@ -270,28 +264,22 @@ export function LandedView({
         : 'nothing has landed yet'
   return (
     <>
-      <header className="ld-header">
+      <dl className="ld-totals" data-landed-sum={sumText(totals)}>
         <div>
-          <h1>landed</h1>
-          <p>what Lingtai changed, newest first</p>
+          <dt>landed</dt>
+          <dd>{totals.landed}</dd>
         </div>
-        <dl className="ld-totals" data-landed-sum={sumText(totals)}>
-          <div>
-            <dt>landed</dt>
-            <dd>{totals.landed}</dd>
-          </div>
-          <div>
-            <dt>spent</dt>
-            <dd>{costText(totals.money)}</dd>
-          </div>
-          <div>
-            <dt>changed</dt>
-            <dd>
-              <b className="add">+{totals.insertions}</b> <b className="del">−{totals.deletions}</b>
-            </dd>
-          </div>
-        </dl>
-      </header>
+        <div>
+          <dt>spent</dt>
+          <dd>{costText(totals.money)}</dd>
+        </div>
+        <div>
+          <dt>changed</dt>
+          <dd>
+            <b className="add">+{totals.insertions}</b> <b className="del">−{totals.deletions}</b>
+          </dd>
+        </div>
+      </dl>
       <KindFilter query={query} kinds={env.kinds} />
       <div data-landed-page="">
         {data.backlogError === null ? null : (

@@ -509,6 +509,7 @@ export const project: ProjectState = {
   paused: null,
   recipe: null,
   sandboxObserved: null,
+  highestPr: null,
   version: 2,
   lastSeq: null,
 }

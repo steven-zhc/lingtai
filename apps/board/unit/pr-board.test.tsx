@@ -7,6 +7,7 @@ import { join } from 'node:path'
 
 import { type PrState, emptyPr, prStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 import type { Recipe } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { renderToStaticMarkup } from 'react-dom/server'
@@ -56,12 +57,32 @@ describe('the read', () => {
     const store = createMemoryEventStore()
     // 1..10: a PR numbered 9 with no 1–8 cannot exist (`requestPrSubmit` appends at one past the highest).
     for (let n = 1; n <= 10; n++) await store.append(prStream('lingtai', n), 0, [requested])
+    await recordPrNumber(store, 'lingtai', 10)
     // `pr-lingtai-x-3` is `lingtai-x`'s PR 3 — and the very stream a prefix listing would hand to `lingtai`.
     for (let n = 1; n <= 3; n++) await store.append(prStream('lingtai-x', n), 0, [requested])
+    await recordPrNumber(store, 'lingtai-x', 3)
     const reads = await Effect.runPromise(readProjectPrs('lingtai', store))
     expect(reads.map((r) => r.n)).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
     const other = await Effect.runPromise(readProjectPrs('lingtai-x', store))
     expect(other.map((r) => r.n)).toEqual([1, 2, 3])
+  })
+
+  it('finds the highest PR on the project stream and asks head about no pr- stream (#1446)', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const inner = createMemoryEventStore()
+    for (let n = 1; n <= 3; n++) await inner.append(prStream('p', n), 0, [requested])
+    await recordPrNumber(inner, 'p', 3)
+    const heads: string[] = []
+    const store = {
+      ...inner,
+      head: async (id: string) => {
+        heads.push(id)
+        return inner.head(id)
+      },
+    }
+    const reads = await Effect.runPromise(readProjectPrs('p', store))
+    expect(reads.map((r) => r.n)).toEqual([1, 2, 3])
+    expect(heads).toEqual([])
   })
 
   it('reads an unreadable stream as itself and still reads the others', async () => {
@@ -69,6 +90,7 @@ describe('the read', () => {
     const store = createMemoryEventStore()
     await store.append(prStream('p', 1), 0, [requested])
     await store.append(prStream('p', 2), 0, [requested])
+    await recordPrNumber(store, 'p', 2)
     const real = store.read.bind(store)
     store.read = async (id: string) => {
       if (id === prStream('p', 1)) throw new Error('disk gone')
@@ -102,6 +124,7 @@ describe('the read, with concurrency', () => {
       day = n
       await store.append(prStream('p', n), 0, [requested])
       await store.append(prStream('p', n), 1, [merged])
+      await recordPrNumber(store, 'p', n)
     }
     const real = store.read.bind(store)
     // PR 8 is older than the crossing PR and in its chunk (10, 9, 8, … after 14–7 is read together): its failure is dropped.
@@ -122,11 +145,13 @@ describe('the read, with concurrency', () => {
     for (let n = 1; n <= 10; n++) {
       await store.append(prStream('p', n), 0, [requested])
       await store.append(prStream('p', n), 1, [merged])
+      await recordPrNumber(store, 'p', n)
     }
     const read: string[] = []
     const real = store.read.bind(store)
     store.read = async (id: string) => {
-      read.push(id)
+      // The project stream is read for the highest PR; the question here is which PR streams are.
+      if (id.startsWith('pr-')) read.push(id)
       return real(id)
     }
     return { store, read }
@@ -152,6 +177,7 @@ describe('the read, with concurrency', () => {
         data: { ticket: '1', mergeCommit: 'c'.repeat(40), from: null },
       },
     ])
+    await recordPrNumber(store, 'p', 11)
     const reads = await Effect.runPromise(readProjectPrs('p', store, { merged: 5 }))
     expect(reads.map((r) => r.n)).toEqual([6, 7, 8, 9, 10])
     expect(read.toSorted()).toEqual([6, 7, 8, 9, 10, 11].map((n) => prStream('p', n)).toSorted())
@@ -170,6 +196,7 @@ describe('the read, with concurrency', () => {
     const { READ_CONCURRENCY } = await import('@lingtai/project')
     const store = createMemoryEventStore()
     for (let n = 1; n <= 20; n++) await store.append(prStream('p', n), 0, [requested])
+    await recordPrNumber(store, 'p', 20)
     const serial = await Effect.runPromise(readProjectPrs('p', store))
     const real = store.read.bind(store)
     let inFlight = 0
@@ -561,6 +588,18 @@ describe('the board never appends to a pr- stream', () => {
       if (/prStream\(/.test(text)) expect(text, file).not.toMatch(/\.append\(/)
       if (!file.endsWith('app/actions.ts'))
         expect(text, file).not.toMatch(/\b(requestPr[A-Z]\w*|grantPrRounds|recordPr\w*)\(/)
+    }
+  })
+})
+
+describe('column headings (#1456)', () => {
+  it('wears sec-h wait on Waiting on you and sec-h on the rest', () => {
+    for (const html of [
+      renderToStaticMarkup(<PrColumns project="p" view={prBoard(input([]))} />),
+      renderToStaticMarkup(<PrBoardSkeleton />),
+    ]) {
+      expect(html).toContain('<h2 class="sec-h wait">Waiting on you')
+      for (const t of ['Draft', 'In progress', 'In review', 'Merged']) expect(html).toContain(`<h2 class="sec-h">${t}`)
     }
   })
 })

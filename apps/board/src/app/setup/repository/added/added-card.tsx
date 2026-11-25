@@ -93,10 +93,12 @@ export function AddedCard(props: Added) {
         <div className="wiz-team">
           <ModeGraph mode="team" />
           <p className="note">
-            Lingtai takes the issues assigned to you, works on <code>{read.personal}</code>, and sends nothing to main
-            until you submit a PR.
+            Lingtai takes {read.github ? 'the issues assigned to you' : 'every local ticket'}, works on{' '}
+            <code>{read.personal}</code>, and sends nothing to main until you submit a PR.
           </p>
-          <p className="note">Next: assign yourself an issue and press Start.</p>
+          <p className="note">
+            {read.github ? 'Next: assign yourself an issue and press Start.' : 'Next: open a ticket and press Start.'}
+          </p>
         </div>
       ) : null}
       <ul className="wiz-list">
@@ -130,7 +132,7 @@ export function AddedCard(props: Added) {
       <div className="wiz-foot">
         <a href={`/recipe/${p}?edit=1`}>Edit the recipe</a>
         {ticket !== null ? (
-          <a className="wiz-primary" href={ticket}>
+          <a className="btn pri" href={ticket}>
             Open the first ticket →
           </a>
         ) : null}

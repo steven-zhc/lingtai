@@ -12,6 +12,7 @@
  */
 import { spawn } from 'node:child_process'
 import { join } from 'node:path'
+import { stripVTControlCharacters } from 'node:util'
 
 import { claudeTokenState, stateDir } from '@lingtai/env'
 import {
@@ -31,6 +32,47 @@ const TOKEN_RUN = /sk-ant-oat01-[A-Za-z0-9_-]+/g
 
 /** A line with every token run in it replaced, so the terminal never shows one. */
 export const maskTokens = (line: string): string => line.replace(TOKEN_RUN, 'sk-ant-oat01-…(hidden)')
+
+/** Claude's advice for someone keeping the token themselves; Lingtai has already saved it, so it is not shown. */
+const ADVICE = { startsWith: 'Store this token securely', includes: 'export CLAUDE_CODE_OAUTH_TOKEN' }
+
+const BOX = /[─-╿]/g
+const SPINNER = /^[·✢✳✶✻✽*]\s*/
+
+/**
+ * What to print for a line of `claude setup-token`, or null to print nothing.
+ * Only ever called on a line `maskTokens` has already seen, and it masks again
+ * after control sequences are removed. It decides what is shown, never what is
+ * captured. `shown` holds the keys already printed this run.
+ */
+export const echoLine = (raw: string, shown: Set<string>): string | null => {
+  const clean = (s: string): string =>
+    maskTokens(
+      // oxlint-disable-next-line no-control-regex
+      stripVTControlCharacters(maskTokens(s)).replace(/[\u0000-\u0008\u000a-\u001f\u007f]/g, ''),
+    )
+  const text = clean(raw).trimEnd()
+  let key = text.trim()
+  const afterBox = key
+    .split(/[─-╿]/)
+    .pop()!
+    .trim()
+  if (/[─-╿]/.test(key)) key = afterBox !== '' ? afterBox : key.replace(BOX, '').trim()
+  key = key.replace(SPINNER, '').trim()
+  // A redraw glues the welcome block onto the end of a frame: drop a tail that was already shown.
+  let out = text
+  for (const k of shown) {
+    if (k.length >= 10 && key.length > k.length && key.endsWith(k)) {
+      key = key.slice(0, -k.length).trim()
+      out = out.trimEnd().slice(0, -k.length).trimEnd()
+    }
+  }
+  if (key === '') return null
+  if (key.startsWith(ADVICE.startsWith) || key.includes(ADVICE.includes)) return null
+  if (shown.has(key)) return null
+  shown.add(key)
+  return out
+}
 
 /** How the child ended: its code, or that there is no `claude` to run. Chunks go to `onChunk` as they arrive. */
 export type SetupTokenRun = { code: number | null } | { missing: true }
@@ -69,10 +111,12 @@ export const takeFromSetupToken = (
 ): Effect.Effect<{ token: Redacted.Redacted<string> } | { fallback: string }> =>
   Effect.promise(() => {
     const found: string[] = []
+    const shown = new Set<string>()
     let pending = ''
     const line = (text: string): void => {
       for (const m of text.matchAll(TOKEN_RUN)) found.push(m[0])
-      world.log(maskTokens(text))
+      const out = echoLine(text, shown)
+      if (out !== null) world.log(out)
     }
     const onChunk = (chunk: string): void => {
       pending += chunk

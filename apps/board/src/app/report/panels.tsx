@@ -216,10 +216,10 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
             strokeWidth="1.5"
           />
         ))}
-        <text x="90" y="86" textAnchor="middle" style={{ font: '600 17px var(--mono)', fill: 'var(--ink)' }}>
+        <text x="90" y="86" textAnchor="middle" style={{ font: '600 var(--fs-lg) var(--mono)', fill: 'var(--ink)' }}>
           {total === 0 ? '—' : dollars(total)}
         </text>
-        <text x="90" y="106" textAnchor="middle" style={{ font: '11px var(--mono)', fill: 'var(--muted)' }}>
+        <text x="90" y="106" textAnchor="middle" style={{ font: 'var(--fs-xs) var(--mono)', fill: 'var(--muted)' }}>
           {unknown > 0 ? `+ ${unknown} unknown` : 'in the window'}
         </text>
       </svg>
@@ -474,7 +474,9 @@ export function Filters({ query, kinds }: { query: ReportQuery; kinds: readonly 
           </label>
         ))}
       </fieldset>
-      <button type="submit">apply</button>
+      <button type="submit" className="btn sm">
+        apply
+      </button>
       <span className="rp-window">
         {day(query.window.from)} → {day(last)}
       </span>
@@ -509,7 +511,7 @@ export function HandledPanel({
   problems: readonly HandledProblem[] | null
 }) {
   const head = (
-    <div className="hfr-k">
+    <div className="hfr-k sec-h">
       <span className="l">
         <CheckMark />
         Handled for you
@@ -721,7 +723,7 @@ export function HandledPanel({
           </div>
         </div>
         <div className="hfr-days">
-          <div className="h">per day · share without you</div>
+          <div className="h sec-h">per day · share without you</div>
           <div className="hfr-cols" style={{ gap: days.length <= 14 ? 14 : days.length <= 31 ? 3 : 0 }}>
             {days.map((d, i) => {
               const dayShare = shareWithoutYou(d.system, d.you)
@@ -748,7 +750,7 @@ export function HandledPanel({
             })}
           </div>
           <div className="hfr-feed">
-            <div className="h">
+            <div className="h sec-h">
               <span>latest</span>
               <Link href={href('all', null)} scroll={false}>
                 all {n} →

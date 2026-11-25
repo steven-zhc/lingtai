@@ -215,7 +215,7 @@ export function SandboxSection({
   const reach = own?.network.allow ?? []
   return (
     <section className="rcard" id="sandbox">
-      <h3 className="rcard-h">
+      <h3 className="rcard-h sec-h">
         <span>Sandbox</span>
         <small className="src">← {at}</small>
       </h3>

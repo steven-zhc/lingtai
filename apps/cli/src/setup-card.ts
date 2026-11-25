@@ -220,7 +220,16 @@ export function renderSetupCard(facts: SetupCardFacts): string {
                   recipe.approves ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking',
                 ] as const,
               ]),
-          ...(recipe.team === undefined ? [] : [['next', 'assign yourself an issue, then lingtai start'] as const]),
+          ...(recipe.team === undefined
+            ? []
+            : [
+                [
+                  'next',
+                  recipe.team.login === null
+                    ? 'open a ticket with lingtai ticket new, then lingtai start'
+                    : 'assign yourself an issue, then lingtai start',
+                ] as const,
+              ]),
         ],
       },
     )

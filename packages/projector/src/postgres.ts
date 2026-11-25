@@ -31,6 +31,8 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TaskStateRow,
+  TaskStatesQuery,
   TicketReportLandedQuery,
   TicketReportQuery,
 } from './store.ts'
@@ -223,6 +225,8 @@ export interface PostgresProjectionStoreOptions {
   max?: number
   /** Let an idle pool stop holding the event loop: for a pool that is shared and so never ended per read. */
   allowExitOnIdle?: boolean
+  /** How long an idle connection is kept; left out, pg's default (10 s) applies. */
+  idleTimeoutMillis?: number
 }
 
 /**
@@ -307,11 +311,15 @@ export function queryRows(pool: QueryPool, text: string, args?: unknown[]): Prom
 }
 
 /** `Projections` over a `pg.Pool`. A driver error is a defect, as itself. */
-export function makePostgresProjections(options: PostgresProjectionStoreOptions = {}): ProjectionsPort {
-  const pool = new pg.Pool({
+export function makePostgresProjections(
+  options: PostgresProjectionStoreOptions = {},
+  create: (config: pg.PoolConfig) => pg.Pool = (config) => new pg.Pool(config),
+): ProjectionsPort {
+  const pool = create({
     connectionString: options.url ?? postgresUrl(),
     max: options.max ?? 2,
     ...(options.allowExitOnIdle ? { allowExitOnIdle: true } : {}),
+    ...(options.idleTimeoutMillis === undefined ? {} : { idleTimeoutMillis: options.idleTimeoutMillis }),
   })
   listenForIdleErrors(pool)
 
@@ -463,6 +471,22 @@ export function makePostgresProjections(options: PostgresProjectionStoreOptions 
         args,
       )
       return yield* mapRows(() => r.map(toCard))
+    }),
+
+    taskStates: Effect.fn('Projections.taskStates')(function* (query: TaskStatesQuery) {
+      if (query.issues.length === 0) return []
+      const r = yield* rows(
+        `select issue, state, last_attempt_at, repair_pending
+         from task_view
+         where project = $1 and issue = any($2::text[])`,
+        [query.project, [...query.issues]],
+      )
+      return r.map((row): TaskStateRow => ({
+        issue: row.issue as string,
+        state: row.state as TaskState,
+        lastAttemptAt: (row.last_attempt_at as Date | null) ?? null,
+        repairPending: row.repair_pending === true,
+      }))
     }),
 
     taskProjects: Effect.fn('Projections.taskProjects')(function* (query: Pick<TaskQuery, 'retentionDays'>) {

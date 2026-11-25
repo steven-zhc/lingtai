@@ -111,7 +111,7 @@ export function AttemptTab({ detail, now = Date.now() }: { detail: AttemptTabDet
       </p>
       {run.landing == null ? null : <LandingLineView line={run.landing} />}
 
-      <h3 className="asechead">Steps</h3>
+      <h3 className="asechead sec-h">Steps</h3>
       {/* All ten, always — including the ones nothing was configured at. A step
           that is merely omitted looks exactly like a step that was configured
           and silently did not run, and only one of those is our bug (ADR 0016
