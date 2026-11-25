@@ -283,15 +283,21 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
     expect(out).toContain('starts on the next turn')
   })
 
-  it('summarises with and without runnable tickets, and leaves the header alone', () => {
+  it('draws the counts as one foot after the cards, never above them', () => {
     const blocked = [skip(10, { ok: true, issues: [issue(1)] })]
+    const out = draw({ blocked }, 1)
+    expect(out).not.toContain('qsum')
+    expect(out.indexOf('qfoot')).toBeGreaterThan(out.indexOf('q-blocked'))
+    expect(out).toContain('<p class="qfoot"><b>1</b> runnable · <b>1</b> waiting on a blocker</p>')
     expect(draw({ blocked }, 2)).toContain('<b>2</b> runnable · <b>1</b> waiting on a blocker')
     const none = draw({ blocked })
     expect(none).toContain('nothing runnable · <b>1</b> waiting on a blocker')
     expect(none).not.toContain('EMPTY')
-    expect(draw({}, 2)).toContain('<b>2</b> runnable</p>')
-    expect(draw({})).not.toContain('qsum')
-    expect(draw({})).toContain('EMPTY')
+    expect(draw({}, 2)).toContain('<p class="qfoot"><b>2</b> runnable</p>')
+    const empty = draw({})
+    expect(empty).not.toContain('qfoot')
+    expect(empty).not.toContain('heldfold')
+    expect(empty).toContain('EMPTY')
   })
 
   it('says a read failed, and counts a skip past the read limit without a card', () => {
@@ -303,7 +309,7 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
       ],
     })
     expect(out).toContain('blockers could not be read')
-    expect(out).toContain('+2 more waiting on a blocker')
+    expect(out).not.toContain('more waiting on a blocker')
     expect(out).toContain('<b>3</b> waiting on a blocker')
     expect(out.match(/q-blocked/g)).toHaveLength(1)
   })
@@ -313,8 +319,8 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
       held: [held(5), held(6, { kind: null, kindColor: null, label: 'Needs-Design' })],
       epics: [epic(7)],
     })
-    expect(out).toContain('<details class="heldfold">')
-    expect(out).not.toMatch(/<details class="heldfold"[^>]* open/)
+    expect(out).toContain('<details class="heldfold qfoot">')
+    expect(out).not.toMatch(/<details class="heldfold qfoot"[^>]* open/)
     expect(out).toContain('<b>2</b> held · <b>1</b> epic<span class="hw">· a person lifts it</span>')
     expect(out).toContain('<span class="hl">agent:hold</span>')
     expect(out).toContain('<span class="hl">Needs-Design</span>')
@@ -323,6 +329,14 @@ describe('the Queued column draws the tickets a blocker holds (#960)', () => {
     expect(out.indexOf('heldfold')).toBeGreaterThan(out.indexOf('EMPTY'))
     // Only the coloured ones draw a dot; the kindless held row and the colourless epic do not.
     expect(out.match(/class="kdot"/g)).toHaveLength(1)
+  })
+
+  it('joins the counts and the held fold into one summary', () => {
+    const out = draw({ blocked: [skip(10, { ok: true, issues: [issue(1)] })], held: [held(5)] }, 2)
+    const summary = out.match(/<summary>(.*?)<\/summary>/)?.[1] ?? ''
+    expect(summary).toContain(
+      '<b>2</b> runnable · <b>1</b> waiting on a blocker · <span class="qheld"><b>1</b> held<span class="hw">',
+    )
   })
 
   it('words the summary for held only and for epics only, and draws nothing for neither', () => {
