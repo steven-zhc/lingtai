@@ -1349,6 +1349,23 @@ const ceilingCommand = Command.make('ceiling', {}, () =>
     return exitWith(2)
   }),
 ).pipe(Command.withDescription(definitionOf('ceiling').task), Command.withSubcommands([ceilingRaiseCommand]))
+const clean = Command.make(
+  'clean',
+  {
+    project: Argument.String('project').pipe(Argument.optional),
+    yes: Flag.Boolean('yes').pipe(Flag.withDefault(false)),
+    noColor,
+  },
+  (args) =>
+    daemonHandler(args, () =>
+      Effect.gen(function* () {
+        const { cleanEffect } = yield* lift(() => import('./clean.ts'))
+        const home = process.env['LINGTAI_HOME'] ?? `${process.env['HOME'] ?? '.'}/.lingtai`
+        return yield* cleanEffect({ home, project: given(args.project), yes: args.yes })
+      }),
+    ),
+).pipe(Command.withDescription(definitionOf('clean').task))
+
 const accountLift = Command.make(
   'lift',
   { account: Argument.String('account').pipe(Argument.optional), noColor },
@@ -1545,6 +1562,7 @@ export const root = Command.make('lingtai').pipe(
     restart,
     shutdown,
     accountCommand,
+    clean,
     pause,
     resume,
     ceilingCommand,
