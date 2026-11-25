@@ -150,7 +150,19 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-a { color: var(--accent-ink); }
+/* Links (doc/design/the-board-style.md §Links, #1457): a link is a text link, teal and underlined,
+   unless it is navigation, a whole card or row, or a button. Those opt out in the one rule below, and
+   unit/links.test.ts fails on `text-decoration: none` anywhere else. `:where` keeps `:visited` at
+   the specificity of a bare `a`, so a visited class rule (`.iss`, `.navlink`) still beats it. */
+a, a:where(:visited) {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+}
+.bar a, .place .view, .tab, .addp, .navlink, .rtab, .sbswitch a, .ld-filter a, .rp-seg a,
+.ti, .heldlist .ti, .pr-name, .pr-head a, .lmeta, .pr-slip-id, .pr-slip-title, .rp-table td.t a, .eg-n,
+.iss, .ltag, .ctbtn, .bk, .pr-btn, .sbbtn, a.btn, .wiz-primary { text-decoration: none; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -238,7 +250,7 @@ a { color: var(--accent-ink); }
    own auto margin, so the rail before it does not carry one. */
 .bar .topnav { display: flex; gap: 4px; margin-left: auto; }
 .navlink {
-  font-size: var(--fs-md); font-weight: 500; color: var(--ink); text-decoration: none;
+  font-size: var(--fs-md); font-weight: 500; color: var(--ink);
   padding: 5px 12px; border: 1px solid var(--rule); border-radius: var(--radius);
   background: var(--surface, transparent);
 }
@@ -341,7 +353,7 @@ a { color: var(--accent-ink); }
 .tab {
   font-family: var(--mono); font-size: var(--fs-xs);
   padding: 2px 7px; border-radius: var(--radius);
-  border: 1px solid transparent; color: var(--muted); text-decoration: none;
+  border: 1px solid transparent; color: var(--muted);
 }
 .tab:hover { color: var(--ink); border-color: var(--rule-2); }
 .tab.on { color: var(--accent-ink); border-color: var(--accent); background: var(--accent-soft); }
@@ -356,7 +368,7 @@ a { color: var(--accent-ink); }
 .addp {
   display: inline-flex; align-items: center; justify-content: center;
   width: 20px; height: 20px; font-family: var(--mono); font-size: var(--fs-md);
-  color: var(--muted); text-decoration: none;
+  color: var(--muted);
   border: 1px solid var(--rule); border-radius: var(--radius);
 }
 .addp:hover { border-color: var(--accent); color: var(--ink); }
@@ -372,7 +384,7 @@ a { color: var(--accent-ink); }
 }
 .place .views { display: inline-flex; align-items: center; gap: 2px; }
 .place .view {
-  font-size: var(--fs-md); color: var(--muted); text-decoration: none; padding: 3px 8px;
+  font-size: var(--fs-md); color: var(--muted); padding: 3px 8px;
   border-bottom: 2px solid transparent; display: inline-flex; gap: 5px; align-items: center;
 }
 .place .view:hover { color: var(--ink); }
@@ -464,7 +476,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
    .col-h: the "On their way in" strip shares that class. */
 .col > .col-h { min-height: 36px; }
 .col-h .ct { font-family: var(--mono); font-variant-numeric: tabular-nums; }
-.ctbtn { display: inline-flex; align-items: baseline; gap: 6px; text-decoration: none; color: var(--accent-ink); border: 1px solid var(--rule-2); border-radius: 999px; padding: 3px 10px 4px; background: var(--surface); }
+.ctbtn { display: inline-flex; align-items: baseline; gap: 6px; color: var(--accent-ink); border: 1px solid var(--rule-2); border-radius: 999px; padding: 3px 10px 4px; background: var(--surface); }
 .ctbtn .lbl { font-size: var(--fs-xs); letter-spacing: 0.04em; text-transform: none; font-weight: 500; }
 .ctbtn:hover { border-color: var(--accent); }
 
@@ -553,7 +565,6 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   font-size: var(--fs-md);
   font-weight: 600;
   line-height: 1.35;
-  text-decoration: none;
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -811,7 +822,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 /* The reference, now that it goes somewhere. Inherits the `.id` line's colour
    rather than taking the accent: which ticket is context, and a second coloured
    link on every card would compete with the title, which is the subject. */
-.iss { color: inherit; text-decoration: none; }
+.iss { color: inherit; }
 .iss:hover { color: var(--accent-ink); text-decoration: underline; text-underline-offset: 2px; }
 
 /* --- queued ---------------------------------------------------------------
@@ -826,7 +837,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
    amber is reserved for a person being waited on. */
 .egroup { border: 1px solid var(--rule); background: color-mix(in srgb, var(--surface) 55%, transparent); border-radius: var(--radius); padding: 10px 10px 4px; margin-bottom: 12px; }
 .eg-h { display: flex; gap: 8px; align-items: baseline; margin-bottom: 6px; }
-.eg-n { font-family: var(--mono); font-size: var(--fs-sm); color: var(--accent-ink); text-decoration: none; font-weight: 500; }
+.eg-n { font-family: var(--mono); font-size: var(--fs-sm); color: var(--accent-ink); font-weight: 500; }
 .eg-t { font-size: var(--fs-sm); font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .eg-h2 { display: flex; gap: 10px; align-items: center; margin-bottom: 10px; }
 .eg-hx { min-width: 0; flex: 1; }
@@ -868,13 +879,13 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 /* The rest of the line is the task page. Clipped rather than wrapped: a row
    that wraps is a card again, in two lines instead of one. */
 .lmeta {
-  color: inherit; text-decoration: none;
+  color: inherit;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .lmeta:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
 .ltag {
   margin-left: auto; padding: 0 5px; border-radius: var(--radius); white-space: nowrap; flex: none;
-  font-size: var(--fs-2xs); text-decoration: none;
+  font-size: var(--fs-2xs);
 }
 .ltag-branch { background: var(--accent-soft); color: var(--accent-ink); }
 .ltag-pr { background: var(--pr-soft, #e5e9f3); color: var(--pr-ink, #4a5d8a); }
@@ -889,8 +900,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
   font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted);
 }
 .lfoot.unread { color: var(--fail); border-color: var(--fail); }
-.lfoot-link { margin-left: auto; color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
-.lfoot-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.lfoot-link { margin-left: auto; white-space: nowrap; }
 .older > summary { padding: 7px 2px 3px; font-family: var(--mono); font-size: var(--fs-xs); }
 
 .diff {
@@ -1275,7 +1285,7 @@ details[open] > summary::before { content: "▾"; }
 }
 .swant { margin: 0; max-width: 62rem; color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
 .topening { max-width: 62rem; font-size: 0.85rem; color: var(--ink-2); }
-.topening > a { display: inline-block; margin-top: 0.5rem; color: var(--accent-ink); }
+.topening > a { display: inline-block; margin-top: 0.5rem; }
 
 /* Rank 8: every identifier the page has, once, as one muted line in the bar
    (#152). It was the block's own last line, and the attempt row printed the
@@ -1332,10 +1342,8 @@ details[open] > summary::before { content: "▾"; }
   font-family: var(--mono);
   font-size: 0.85rem;
   color: var(--accent-ink);
-  text-decoration: none;
   white-space: nowrap;
 }
-a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 .stitle {
   max-width: 62rem;
   font-size: 0.95rem;
@@ -1898,8 +1906,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   color: var(--muted);
   overflow-wrap: anywhere;
 }
-.sptr { margin-left: auto; font-family: var(--mono); color: var(--accent-ink); text-decoration: none; }
-.sptr:hover { text-decoration: underline; text-underline-offset: 2px; }
+.sptr { margin-left: auto; font-family: var(--mono); }
 
 /* --- the two boxes, and the moves above them (#152) -----------------------
    Side by side above ~64rem, stacked below it. The outgoing prompt is first in
@@ -2399,7 +2406,6 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
   border-bottom: 2px solid transparent;
   color: var(--muted);
   cursor: pointer;
-  text-decoration: none;
 }
 .rtab:hover { color: var(--ink); }
 /* The selected tab, read off the same attribute a screen reader does rather
@@ -2470,8 +2476,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
    decide on has to carry the request and not only the response (#87). */
 .tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
 .ttitle { margin: 0 0 0.7rem; font-size: 1.05rem; font-weight: 600; line-height: 1.35; color: var(--ink); }
-.tlink { font-family: var(--mono); font-size: 0.7rem; color: var(--accent-ink); text-decoration: none; }
-.tlink:hover { text-decoration: underline; text-underline-offset: 2px; }
+.tlink { font-family: var(--mono); font-size: 0.7rem; }
 /* Collapsed, because the body is a document and a page that opens three
    screens tall is its own kind of unreadable — the trade the evidence
    disclosures already make. Absent would be a different thing entirely. */
@@ -3004,7 +3009,7 @@ a.sref:hover { text-decoration: underline; text-underline-offset: 2px; }
 
 /* The card title is the link to all of the above. The whole title, because a
    smaller target on the one control every card has is a target you aim at. */
-a.ti { color: inherit; text-decoration: none; }
+a.ti { color: inherit; }
 a.ti:hover { text-decoration: underline; text-underline-offset: 2px; }
 a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 
@@ -3155,7 +3160,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .ld .add { color: var(--pass); font-weight: 500; }
 .ld .del { color: var(--fail); font-weight: 500; }
 .ld-filter { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 2px; border: 1px solid var(--rule); border-radius: var(--radius); align-self: flex-start; }
-.ld-filter a { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius); font-size: var(--fs-sm); color: var(--ink-2); text-decoration: none; }
+.ld-filter a { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: var(--radius); font-size: var(--fs-sm); color: var(--ink-2); }
 .ld-filter a[aria-current] { background: var(--surface-2); color: var(--ink); }
 .ld-filter i { width: 8px; height: 8px; border-radius: 2px; display: inline-block; }
 .ld-day { display: grid; grid-template-columns: 150px minmax(0, 1fr); gap: 20px; padding: 18px 0; }
@@ -3224,12 +3229,12 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .heldlist { list-style: none; margin: 4px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .heldlist li { display: flex; flex-direction: column; gap: 2px; padding: 6px 8px; border-left: 2px solid var(--rule-2); }
 .heldlist .hl { font-family: var(--mono); font-size: var(--fs-xs); color: var(--muted); border: 1px solid var(--rule-2); border-radius: var(--radius); padding: 0 5px; align-self: flex-start; }
-.heldlist .ti { font-size: var(--fs-sm); color: var(--muted); text-decoration: none; }
+.heldlist .ti { font-size: var(--fs-sm); color: var(--muted); }
 .bkline { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 2px; font-size: var(--fs-sm); }
 .bkk { color: var(--muted); }
 .bk {
   display: inline-flex; align-items: baseline; gap: 5px; font-family: var(--mono); font-size: var(--fs-sm);
-  text-decoration: none; border: 1px solid var(--rule-2); border-radius: var(--radius); padding: 1px 6px;
+  border: 1px solid var(--rule-2); border-radius: var(--radius); padding: 1px 6px;
   background: var(--surface); color: var(--ink-2);
 }
 .bk .bst { font-family: var(--sans); font-size: var(--fs-xs); color: var(--muted); }
@@ -3320,7 +3325,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbfig.hold b { color: var(--signal); }
 .sbblocked { border: 1px solid color-mix(in srgb, var(--signal) 25%, var(--rule)); background: color-mix(in srgb, var(--signal-soft) 45%, var(--surface)); border-radius: var(--radius); padding: 14px 16px 6px; }
 .sbblocked td.mono { font: 500 13px var(--mono); }
-.sbbtn { font: 500 12.5px var(--sans); border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: var(--radius); padding: 4px 11px; white-space: nowrap; text-decoration: none; }
+.sbbtn { font: 500 12.5px var(--sans); border: 1px solid var(--accent); color: var(--accent); background: var(--surface); border-radius: var(--radius); padding: 4px 11px; white-space: nowrap; }
 .sbtag { font: 500 11.5px var(--mono); padding: 1px 8px; border-radius: var(--radius); color: var(--muted); border: 1px solid var(--rule); }
 .sbtag.agent { background: var(--held-soft); border-color: color-mix(in srgb, var(--held) 25%, transparent); color: var(--held); }
 .sbtag.agent span { font-size: 11px; }
@@ -3366,7 +3371,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .whynot{display:flex;flex-direction:column;gap:2px;margin:2px 2px 10px;padding:7px 10px 8px;border-radius: var(--radius);
   font-size:var(--fs-sm);line-height:1.5;border:1px solid var(--rule-2);border-left-width:3px;background:var(--surface);color:var(--ink-2)}
 .whynot .wk{font-family:var(--mono);font-size:var(--fs-2xs);letter-spacing:.06em;text-transform:uppercase}
-.whynot a{color:inherit;text-decoration:underline;text-underline-offset:2px}
 .whynot code{font-family:var(--mono);font-size:var(--fs-sm)}
 .whynot .more{color:var(--muted)}
 .whynot.person{border-color:var(--signal);background:var(--signal-soft)} .whynot.person .wk{color:var(--signal)}
@@ -3381,7 +3385,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .hfr-k .l{display:flex;align-items:center;gap:8px}
 .hfr-k .when{color:var(--muted);letter-spacing:.06em}
 .hfr-hero{display:flex;align-items:center;gap:18px;margin:18px 0 4px}
-.hfr-hero b a,.hfr-hero .side a{color:inherit;text-decoration:none;border-bottom:1px dotted var(--rule-2)}
 .hfr-hero b{font-family:var(--poster);font-weight:400;font-size:76px;line-height:1;margin-top:-6px;color:var(--ink)}
 .hfr-hero .t{font-size:16px;color:var(--ink-2);line-height:1.35}
 .hfr-hero .side{margin-left:auto;display:flex;gap:28px;text-align:right}
@@ -3402,7 +3405,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .hfr-t td .y2{color:var(--ink-2)}
 .hfr-t tr.grp td.n{font-family:var(--mono);font-size:12px;color:var(--ink);letter-spacing:0}
 .hfr-t tr.g1 td{padding-top:0 !important;padding-bottom:8px !important;line-height:1.2}
-.hfr-t td.n a{font-family:var(--mono);font-size:13px;color:var(--ink);text-decoration:none;border-bottom:1px dotted var(--rule-2)}
+.hfr-t td.n a{font-family:var(--mono);font-size:13px}
 .hfr-t td.n .z{color:var(--rule-2)}
 .hfr-t tr.grp td{padding:16px 0 6px;border-bottom:1px solid var(--rule);font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .hfr-t tr.you .dot{background:transparent;box-shadow:inset 0 0 0 1.5px var(--rule-2)}
@@ -3417,12 +3420,12 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .hfr-col .d{font-size:11px;color:var(--muted);white-space:nowrap}
 .hfr-feed{margin-top:22px}
 .hfr-feed .h{padding-bottom:8px;border-bottom:1px solid var(--rule);display:flex;justify-content:space-between}
-.hfr-feed .h a{color:var(--accent-ink);text-decoration:none;letter-spacing:.04em}
+.hfr-feed .h a{letter-spacing:.04em}
 .hfr-feed ul{list-style:none;margin:0;padding:0}
 .hfr-feed li{display:grid;grid-template-columns:9px 1fr auto;gap:10px;align-items:baseline;padding:8px 0;border-bottom:1px solid var(--rule);font-size:12.5px}
 .hfr-feed li .dot{width:8px;height:8px;border-radius:2px;align-self:center}
 .hfr-feed li .m{color:var(--ink-2);line-height:1.35}
-.hfr-feed li .m a{font-family:var(--mono);color:var(--ink);text-decoration:none;margin-right:6px}
+.hfr-feed li .m a{font-family:var(--mono);margin-right:6px}
 .hfr-feed li .m .d{color:var(--pass);font-weight:500}
 .hfr-feed li .t{font-family:var(--mono);font-size:11px;color:var(--muted);white-space:nowrap}
 .hfr-feed li .ok{color:var(--pass)}
@@ -3432,9 +3435,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .hfr-t .w.other{color:var(--muted)}
 .hfr-stack i.you{background:transparent}
 .hfr-note{margin:14px 0 0;font-size:12.5px;color:var(--muted)}
-.hfr-back{display:inline-block;margin:14px 0 8px;font-size:12.5px;color:var(--accent-ink);text-decoration:none}
+.hfr-back{display:inline-block;margin:14px 0 8px;font-size:12.5px}
 .hfr-pager{display:flex;justify-content:space-between;margin-top:10px;font-size:12.5px}
-.hfr-pager a{color:var(--accent-ink);text-decoration:none}
 @media (max-width:900px){.hfr-body{grid-template-columns:minmax(0,1fr);gap:28px}.hfr-hero{flex-wrap:wrap}}
 /* the check mark's colours are the label's, which is text and not a series */
 .hfr-k svg circle{fill:var(--pass-soft);stroke:var(--pass)}
@@ -3460,11 +3462,10 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .handled-leg .d { color: var(--pass); font-weight: 500; }
 .handled-leg li b { margin-left: auto; font-family: var(--mono); font-weight: 500; color: var(--ink); font-size: var(--fs-sm); }
 .handled-leg li.more { border-top: 1px dashed var(--rule-2); border-bottom: 0; }
-.handled-leg li.more a { color: var(--accent-ink); text-decoration: none; }
 .handled-leg li.more i { box-shadow: inset 0 0 0 1.5px var(--rule-2); }
 .handled-f { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 10px; padding-top: 11px; border-top: 1px solid var(--rule); font-size: var(--fs-sm); color: var(--muted); }
 .handled-f b { color: var(--ink); font-weight: 600; }
-.handled-f a { font-family: var(--mono); color: var(--accent-ink); text-decoration: none; white-space: nowrap; }
+.handled-f a { font-family: var(--mono); white-space: nowrap; }
 
 /* One PR's page (#1320, doc/milestone/0.16.0/team-mode/pr-detail.html): the header, two columns, and panels that stack
    under 820px as the mock does. Every colour is a variable (the `--pr-*` ones are declared in :root and again in the dark block); the PRs board's `.pr-*` classes are reused. */
@@ -3584,7 +3585,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .pr-slip.more { color: var(--pr-dusk); }
 .pr-hand pre { white-space: pre-wrap; font-size: 0.75rem; background: var(--pr-tint); padding: 0.4rem; border-radius: var(--radius); }
 .pr-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-top: 0.5rem; }
-.pr-btn { font: inherit; font-size: 0.8rem; border: 1px solid var(--pr-navy-deep); background: var(--surface); color: var(--pr-navy-deep); border-radius: var(--radius); padding: 0.15rem 0.6rem; cursor: pointer; text-decoration: none; }
+.pr-btn { font: inherit; font-size: 0.8rem; border: 1px solid var(--pr-navy-deep); background: var(--surface); color: var(--pr-navy-deep); border-radius: var(--radius); padding: 0.15rem 0.6rem; cursor: pointer; }
 .pr-btn.primary { background: var(--pr-navy-deep); color: var(--pr-on-fill); }
 .pr-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .pr-btn.primary[aria-busy='true']:disabled { opacity: 1; cursor: progress; }
@@ -3688,13 +3689,13 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .rp-table .num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); font-size: 12px; }
 .rp-table td.t { max-width: 380px; }
 .rp-table td.t .why { color: var(--muted); font-size: 11.5px; }
-.rp-table td.t a { color: var(--ink); text-decoration: none; }
+.rp-table td.t a { color: var(--ink); }
 .rp-table td.t a:hover { color: var(--accent-ink); text-decoration: underline; }
 .rp-xt td.cell, .rp-xt th.c { text-align: center; font-family: var(--mono); font-size: 12px; min-width: 64px; }
 .rp-xt td.rl { color: var(--ink-2); white-space: nowrap; }
 .rp-xt tr.tot td { border-top: 1px solid var(--rule-2); color: var(--muted); }
 .rp-seg { display: inline-flex; align-self: flex-start; border: 1px solid var(--rule); border-radius: var(--radius); overflow: hidden; font-size: 12px; }
-.rp-seg a { padding: 4px 11px; color: var(--ink-2); text-decoration: none; }
+.rp-seg a { padding: 4px 11px; color: var(--ink-2); }
 .rp-seg a + a { border-left: 1px solid var(--rule); }
 .rp-seg a.on { background: var(--accent-soft); color: var(--accent-ink); font-weight: 600; }
 @media (max-width: 900px) {
@@ -3853,7 +3854,7 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
    amber is the Waiting lane's, and never the bar's. */
 .pbanner { display: flex; flex-direction: column; gap: 4px; padding: 7px 16px; background: var(--held-soft); border-bottom: 1px solid var(--held); color: var(--held); font-size: var(--fs-sm); }
 .pbanner b { font-weight: 600; }
-.pbanner .what a { color: var(--held); font-weight: 500; text-decoration: none; }
+.pbanner .what a { color: var(--held); font-weight: 500; }
 .pbanner .sub { color: var(--held); opacity: .85; font-size: var(--fs-sm); }
 .pbanner button { font: inherit; font-size: var(--fs-xs); line-height: 16px; padding: 0 7px; border: 1px solid var(--held); border-radius: var(--radius); background: var(--surface); color: var(--held); cursor: pointer; }
 .pbanner .grow { flex: 1; }
@@ -3867,7 +3868,7 @@ button.navlink { font-family: inherit; cursor: pointer; }
 
 /* The Sandbox tab (#1161): the attempt switcher, the parts, and the small state mark. */
 .sbswitch { display: flex; flex-wrap: wrap; gap: 0.6rem; justify-content: flex-end; margin-bottom: 0.75rem; }
-.sbswitch a { color: var(--muted); text-decoration: none; font-family: var(--mono); }
+.sbswitch a { color: var(--muted); font-family: var(--mono); }
 .sbswitch a[aria-current='page'] { color: var(--ink); border-bottom: 2px solid var(--accent); }
 .sandbox { display: flex; flex-direction: column; gap: 22px; }
 .sandbox .sbh { margin: 0 0 10px; }
