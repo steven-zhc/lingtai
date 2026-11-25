@@ -216,10 +216,10 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
             strokeWidth="1.5"
           />
         ))}
-        <text x="90" y="86" textAnchor="middle" style={{ font: '600 17px var(--mono)', fill: 'var(--ink)' }}>
+        <text x="90" y="86" textAnchor="middle" style={{ font: '600 var(--fs-lg) var(--mono)', fill: 'var(--ink)' }}>
           {total === 0 ? '—' : dollars(total)}
         </text>
-        <text x="90" y="106" textAnchor="middle" style={{ font: '11px var(--mono)', fill: 'var(--muted)' }}>
+        <text x="90" y="106" textAnchor="middle" style={{ font: 'var(--fs-xs) var(--mono)', fill: 'var(--muted)' }}>
           {unknown > 0 ? `+ ${unknown} unknown` : 'in the window'}
         </text>
       </svg>
