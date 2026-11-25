@@ -1896,6 +1896,10 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           refusalFixes: roundLimit,
           newAttempts: restartLimit,
           conflictResolutions: ceilings.conflictResolutions,
+          grantCapped: {
+            ...(!limitIsAllowance ? { refusalFixes: true as const } : {}),
+            ...(options.from?.grant !== undefined && !options.from.byTriage ? { newAttempts: true as const } : {}),
+          },
         }
         const spentNow = {
           rounds: roundsSpent - personRounds,

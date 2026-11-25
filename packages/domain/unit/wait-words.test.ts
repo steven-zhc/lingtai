@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { SETUP_HOLD_TEXT, waitWords } from '../src/wait-words.ts'
+import { SETUP_HOLD_TEXT, unavailableText, waitWords } from '../src/wait-words.ts'
 import { recommendedResolution, type WaitReason } from '../src/wait.ts'
 
 describe('waitWords', () => {
@@ -293,5 +293,22 @@ describe('waitWords', () => {
     expect(waitWords(pushed, { branch: 'agent/1', base: 'main', findings: [] }).diagnosis?.recommendation?.action).toBe(
       'approve',
     )
+  })
+})
+
+describe('unavailableText (#1447)', () => {
+  it('keeps the recipe sentence for a ceiling without `by`, as an event written before it reads', () => {
+    expect(unavailableText({ id: 'fix-lines', because: { _tag: 'CeilingReached', ceiling: 'refusalFixes' } })).toBe(
+      'the judge chose `fix-lines`, and `refusalFixes` is spent',
+    )
+  })
+
+  it("names the person's grant when the grant capped it", () => {
+    const text = unavailableText({
+      id: 'restart',
+      because: { _tag: 'CeilingReached', ceiling: 'newAttempts', by: 'grant' },
+    })
+    expect(text).toContain('the round a person granted is used')
+    expect(text).not.toContain('is spent')
   })
 })

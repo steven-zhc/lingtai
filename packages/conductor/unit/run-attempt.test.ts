@@ -1582,6 +1582,36 @@ describe('a granted fix round', () => {
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
 
+  it("a lap that spends a person's grant says the grant is used, not that the recipe's ceilings are spent (#1447)", async () => {
+    const { bodies } = watching()
+    const { emit } = events()
+    const { actionsAt } = watchingActions({
+      implement: [{ ...committedSomething('fix'), run: async () => ({ ...PASSED, head: COMMITTED }) }],
+      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
+    })
+
+    const result = await runAttempt({
+      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      context,
+      emit,
+      bodies,
+      actionsAt,
+      ceilings: { refusalFixes: 6, conflictResolutions: 3, newAttempts: 2, newAttemptsSpent: 0 },
+      from: {
+        step: 'implement',
+        waive: [],
+        roundsSpent: 1,
+        grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+      },
+    })
+
+    expect(result.end._tag).toBe('WaitOnPerson')
+    const why = result.routes[0]?.why ?? ''
+    expect(why).toContain('the round a person granted is used')
+    expect(why).not.toContain('`refusalFixes` is spent')
+    expect(why).not.toContain('`newAttempts` is spent')
+  })
+
   it("a triage grant after two people's fix rounds still has the recipe's automatic fixes left (#1258)", async () => {
     let implementations = 0
     const { bodies } = watching()
