@@ -1955,6 +1955,12 @@ const readOfEffect = <A>(e: Effect.Effect<A, unknown>): Effect.Effect<Read2<A>> 
     ),
   )
 
+/** Bytes free on the filesystem holding `home`; a rejection keeps its own message (ENOENT, EACCES). */
+export const freeBytes = (home: string): Effect.Effect<number, Error> =>
+  Effect.tryPromise({ try: () => statfs(home), catch: (e) => (e instanceof Error ? e : new Error(String(e))) }).pipe(
+    Effect.map((s) => Number(s.bavail) * Number(s.bsize)),
+  )
+
 function diskSpace(fetch: DoctorReach['diskSpace']): Effect.Effect<CheckResult> {
   if (fetch !== undefined) {
     return Effect.map(readOfEffect(fetch()), (r) =>
@@ -1965,9 +1971,7 @@ function diskSpace(fetch: DoctorReach['diskSpace']): Effect.Effect<CheckResult> 
   return Effect.map(
     Effect.all({
       listing: readOfEffect(cleanListingEffect({ home })),
-      free: readOfEffect(
-        Effect.tryPromise(() => statfs(home)).pipe(Effect.map((s) => Number(s.bavail) * Number(s.bsize))),
-      ),
+      free: readOfEffect(freeBytes(home)),
     }),
     ({ listing, free }) => diskSpaceRow(listing, free),
   )
@@ -4149,7 +4153,6 @@ export function runDoctor(
         snapshotCensus(reach.snapshots ?? (() => lift(() => log.snapshots.census()))).pipe(Effect.map(push)),
       )
       yield* step('orphans', orphans(reach.orphans).pipe(Effect.map(push)))
-      yield* step('disk space', diskSpace(reach.diskSpace).pipe(Effect.map(push)))
       // Read once and handed to both: the two rows below name issues, and a
       // number on its own is homework for whoever is reading them (#258).
       const titles = yield* step('issue titles', issueTitles(reach.titles))
@@ -4211,7 +4214,6 @@ export function runDoctor(
         snapshotCensus(reach.snapshots ?? (() => lift(() => direct_.census()))).pipe(Effect.map(push)),
       )
       yield* step('orphans', orphans().pipe(Effect.map(push)))
-      yield* step('disk space', diskSpace(reach.diskSpace).pipe(Effect.map(push)))
       // The projection and not the audit connection: this is what the rows are
       // *called*, not what they assert, so it is read where every other
       // projection read here is read (#258).
@@ -4232,6 +4234,8 @@ export function runDoctor(
       )
     }
 
+    // Outside the store branches: free space and orphans do not depend on the Postgres or store checks passing.
+    yield* step('disk space', diskSpace(reach.diskSpace).pipe(Effect.map(push)))
     yield* step(
       'GitHub',
       Effect.gen(function* () {

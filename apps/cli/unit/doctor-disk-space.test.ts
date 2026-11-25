@@ -1,7 +1,8 @@
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { CleanItem, CleanListing } from '../src/clean.ts'
-import { diskSpaceRow } from '../src/doctor.ts'
+import { diskSpaceRow, freeBytes } from '../src/doctor.ts'
 
 const MB = 1024
 const GB = 1024 * 1024 * 1024
@@ -49,5 +50,13 @@ describe('disk: space', () => {
     const r = diskSpaceRow({ ok: true, value: listing() }, { ok: false, reason: 'ENOENT' })
     expect(r.status).toBe('warn')
     expect(r.detail).toContain('ENOENT')
+  })
+})
+
+describe('freeBytes', () => {
+  it('keeps the statfs failure reason, not the Effect wrapper message', async () => {
+    const err = await Effect.runPromise(Effect.flip(freeBytes('/nonexistent/lingtai-home')))
+    expect(err.message).toContain('ENOENT')
+    expect(err.message).not.toContain('Effect.tryPromise')
   })
 })
