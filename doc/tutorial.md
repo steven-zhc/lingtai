@@ -2,20 +2,19 @@
 
 *Tutorial — get one ticket to land*
 
-Use [Chapter Garden](https://github.com/steven-zhc/chapter-garden), a small
-Astro site for jointly written novels, to try Lingtai: set up a project, create
-a ticket and let an agent work on it.
+Try Lingtai on [Chapter Garden](https://github.com/steven-zhc/chapter-garden),
+a small Astro site for jointly written novels: set up, open a ticket, let an
+agent work on it.
 
 ## Before you start
 
-You need Git, Claude Code installed and signed in, and Node.js 26.13.0 with npm
-for Chapter Garden. Everything else Lingtai needs, and when, is on
-[requirements](requirements.md).
+You need Git, Claude Code or Codex installed and signed in, and Node.js 26.13.0
+with npm. The rest is on [requirements](requirements.md).
 
 ## Step 1 — Set up this machine
 
-Install Lingtai, clone Chapter Garden over HTTPS and register it. Press Enter at
-each question.
+Install Lingtai, clone Chapter Garden and register it. Press Enter at each
+question.
 
 ```sh
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
@@ -23,24 +22,34 @@ git clone https://github.com/steven-zhc/chapter-garden.git
 lingtai init --local chapter-garden
 ```
 
-The defaults turn the sandbox on, and with it on `init` runs `claude setup-token`
-once, which opens a browser to sign in. If you skip it, the first ticket fails
-until you run `lingtai token claude`; see
-[requirements](requirements.md#tokens-for-a-sandboxed-run).
+With the sandbox on, `init` runs `claude setup-token` once and opens a browser to
+sign in. If you skip it, the first ticket fails until you run `lingtai token
+claude`; see [requirements](requirements.md#tokens-for-a-sandboxed-run).
 
 If your shell cannot find `lingtai`, add `~/.local/bin` to your `PATH`; the
 installer edits no shell profile.
 
-Enter at the mode question makes a **team** project, which is what the rest of
-the book uses, even if you work alone. Its work lands on a `lingtai-base` branch
-in this checkout, never on `main`. [Answer `solo`](solo.md) and work lands on `lingtai-base`
-too, but the ticket closes; the rest of the book assumes team.
+`init` picks the writer and reviewer from what is signed in:
+
+| Signed in | Writes | Reviews |
+|---|---|---|
+| Claude Code only | Claude Code | Claude Code |
+| Codex only | Codex | Codex |
+| Both | Claude Code | Codex |
+
+A reviewer from another vendor catches more, but one is enough here.
+
+Enter at the mode question makes a **team** project, which the book uses even
+alone; [`solo`](solo.md) is the other answer.
+
+![A ticket's attempt lands on your branch, lingtai-base, with nobody asked; lingtai pr submit freezes it as lingtai-base-pr-<n>, and only a person's merge commit moves main.](img/team-flow.svg)
+
+[Open the diagram at full size](img/team-flow.svg).
 
 ## Step 2 — Open one ticket
 
-Pick a story from the [Chapter Garden bookshelf](https://cg.hczhang.com/en/) and
-create the ticket. Run it once: a second run is a second ticket and a second
-paid attempt.
+Pick a story from the [Chapter Garden bookshelf](https://cg.hczhang.com/en/)
+and create the ticket. Run it once; a second run is a second paid ticket.
 
 ```sh
 lingtai ticket new --title "Add the next chapter to The Sun's Ninth Minute" --label feature \
@@ -51,34 +60,44 @@ Continue when Lingtai prints `created #N`.
 
 ## Step 3 — Start
 
-Starting runs at least two paid agent runs, the writer and the AI review, on
-your signed-in Claude Code account, and more if a check refuses and buys a fix
-round. With Codex signed in as well, the reviewer is Codex. The attempt then
-lands on `lingtai-base` with nobody asked; `main` is never touched.
+Starting runs at least two paid agent runs, the writer and the reviewer, on the
+accounts above, and more if a check buys a fix round.
 
 ```sh
 lingtai start
 ```
 
 Leave it running; `Ctrl+C` stops it after the attempt in flight. In a second
-terminal, run `lingtai board` to watch. The board has no login and listens on
-every address; `board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to
-this machine.
+terminal, run `lingtai board`. It has no login and listens on every address;
+`board.host: 127.0.0.1` in `~/.lingtai/config.yml` keeps it to this machine.
 
-When the card is **Landed**, look at what landed:
+![The board with the ticket's card in Waiting on you after the reviewer raised findings, numbered 1 to 4.](img/tutorial-board-waiting.png)
+
+1. **Waiting on you**: the card stops here when the reviewer finds something it will not pass. Nothing more is spent until you answer.
+2. **review** is red: the writer's change built and its checks passed, and the reviewer refused it.
+3. The reviewer's findings, in its own words. On the card's page you answer them: another round for the writer, a new attempt, or approve as it stands.
+4. **Landed** is still empty: nothing reaches your branch until review passes or you approve.
+
+A card can stop in **Waiting on you** after review; answer it on its page.
+
+When the card is **Landed**:
+
+![The board with the ticket's card in Landed, on your branch, numbered 1 to 4.](img/tutorial-board.png)
+
+1. **Landed**: the ticket's change is merged into your branch.
+2. **on your branch**: it is on the branch Lingtai lands on, not yet on `main`.
+3. **1 not in a PR yet**: in team mode, landed tickets wait here until you submit a pull request.
+4. Today's spend, what this run cost so far.
+
+Look at what landed:
 
 ```sh
 git -C chapter-garden log -1 --stat lingtai-base
 git -C chapter-garden diff main...lingtai-base
 ```
 
-If `lingtai-base` is checked out, the landing holds until you switch to another
-branch. In a team project the ticket stays open after landing, and local tickets
-are yours to take. Getting the change onto `main` is a PR, which is the next
-chapter.
-
-The change lands on its own once your checks at `build:` and the AI review pass.
-To OK each landing first, declare a `human:` at `proposed:`; see
+The ticket stays open after landing; the next chapter takes the change to `main`
+in a PR. To OK each landing first, declare a `human:` at `proposed:`; see
 [the recipe](recipe.md).
 
 ## Next
