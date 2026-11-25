@@ -1,0 +1,271 @@
+{
+  "initial_comparison": {
+    "captured_at_utc": "2026-11-25T15:00:31.828Z",
+    "kind": "serial read-only single-client query comparison; no concurrent load; not a production request replay",
+    "samples": [
+      {
+        "round": 0,
+        "name": "full_sorted_cards",
+        "query_transfer_pg_decode_ms": 536.412041,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671178,
+        "json_stringify_ms": 21.471708000000035
+      },
+      {
+        "round": 0,
+        "name": "narrow_all_states",
+        "query_transfer_pg_decode_ms": 12.286458999999923,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511,
+        "json_stringify_ms": 1.494874999999979
+      },
+      {
+        "round": 0,
+        "name": "narrow_ten_fixture_candidates",
+        "query_transfer_pg_decode_ms": 7.483499999999935,
+        "returned_rows": 10,
+        "decoded_json_bytes": 1025,
+        "json_stringify_ms": 0.0359169999999267
+      },
+      {
+        "round": 1,
+        "name": "full_sorted_cards",
+        "query_transfer_pg_decode_ms": 267.44770900000015,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671178,
+        "json_stringify_ms": 20.461624999999913
+      },
+      {
+        "round": 1,
+        "name": "narrow_all_states",
+        "query_transfer_pg_decode_ms": 16.904207999999926,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511,
+        "json_stringify_ms": 1.5385420000000067
+      },
+      {
+        "round": 1,
+        "name": "narrow_ten_fixture_candidates",
+        "query_transfer_pg_decode_ms": 95.03129200000012,
+        "returned_rows": 10,
+        "decoded_json_bytes": 1025,
+        "json_stringify_ms": 0.04270900000005895
+      },
+      {
+        "round": 2,
+        "name": "full_sorted_cards",
+        "query_transfer_pg_decode_ms": 200.5127500000001,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671178,
+        "json_stringify_ms": 13.308416999999963
+      },
+      {
+        "round": 2,
+        "name": "narrow_all_states",
+        "query_transfer_pg_decode_ms": 19.93508299999985,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511,
+        "json_stringify_ms": 1.684500000000071
+      },
+      {
+        "round": 2,
+        "name": "narrow_ten_fixture_candidates",
+        "query_transfer_pg_decode_ms": 5.672500000000127,
+        "returned_rows": 10,
+        "decoded_json_bytes": 1025,
+        "json_stringify_ms": 0.01887499999997999
+      }
+    ],
+    "connect_ms": 50.101208,
+    "table": {
+      "rows": 892,
+      "heap_row_bytes": "2202737",
+      "verdicts_heap_bytes": "338267"
+    },
+    "fixture_candidate_count": 10,
+    "full_sorted_cards_explain": {
+      "Plan": {
+        "Node Type": "Sort",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Startup Cost": 402.13,
+        "Total Cost": 404.35,
+        "Plan Rows": 889,
+        "Plan Width": 3121,
+        "Actual Startup Time": 5.292,
+        "Actual Total Time": 5.335,
+        "Actual Rows": 892,
+        "Actual Loops": 1,
+        "Disabled": false,
+        "Sort Key": [
+          "(CASE WHEN (state = 'waiting'::text) THEN updated_at ELSE NULL::timestamp with time zone END)",
+          "((NULLIF(regexp_replace(issue, '\\D'::text, ''::text, 'g'::text), ''::text))::bigint)"
+        ],
+        "Sort Method": "quicksort",
+        "Sort Space Used": 1561,
+        "Sort Space Type": "Memory",
+        "Shared Hit Blocks": 325,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0,
+        "Plans": [
+          {
+            "Node Type": "Seq Scan",
+            "Parent Relationship": "Outer",
+            "Parallel Aware": false,
+            "Async Capable": false,
+            "Relation Name": "task_view",
+            "Alias": "t",
+            "Startup Cost": 0,
+            "Total Cost": 358.59,
+            "Plan Rows": 889,
+            "Plan Width": 3121,
+            "Actual Startup Time": 0.024,
+            "Actual Total Time": 1.316,
+            "Actual Rows": 892,
+            "Actual Loops": 1,
+            "Disabled": false,
+            "Filter": "((project = 'lingtai'::text) AND ((closed_at IS NULL) OR (closed_at > (now() - ('36500 days'::cstring)::interval))))",
+            "Rows Removed by Filter": 8,
+            "Shared Hit Blocks": 325,
+            "Shared Read Blocks": 0,
+            "Shared Dirtied Blocks": 0,
+            "Shared Written Blocks": 0,
+            "Local Hit Blocks": 0,
+            "Local Read Blocks": 0,
+            "Local Dirtied Blocks": 0,
+            "Local Written Blocks": 0,
+            "Temp Read Blocks": 0,
+            "Temp Written Blocks": 0
+          }
+        ]
+      },
+      "Planning": {
+        "Shared Hit Blocks": 3,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.19,
+      "Triggers": [],
+      "Execution Time": 5.736
+    },
+    "narrow_all_states_explain": {
+      "Plan": {
+        "Node Type": "Seq Scan",
+        "Parallel Aware": false,
+        "Async Capable": false,
+        "Relation Name": "task_view",
+        "Alias": "t",
+        "Startup Cost": 0,
+        "Total Cost": 347.48,
+        "Plan Rows": 889,
+        "Plan Width": 20,
+        "Actual Startup Time": 0.021,
+        "Actual Total Time": 0.816,
+        "Actual Rows": 892,
+        "Actual Loops": 1,
+        "Disabled": false,
+        "Filter": "((project = 'lingtai'::text) AND ((closed_at IS NULL) OR (closed_at > (now() - ('36500 days'::cstring)::interval))))",
+        "Rows Removed by Filter": 8,
+        "Shared Hit Blocks": 325,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning": {
+        "Shared Hit Blocks": 3,
+        "Shared Read Blocks": 0,
+        "Shared Dirtied Blocks": 0,
+        "Shared Written Blocks": 0,
+        "Local Hit Blocks": 0,
+        "Local Read Blocks": 0,
+        "Local Dirtied Blocks": 0,
+        "Local Written Blocks": 0,
+        "Temp Read Blocks": 0,
+        "Temp Written Blocks": 0
+      },
+      "Planning Time": 0.135,
+      "Triggers": [],
+      "Execution Time": 0.863
+    }
+  },
+  "sort_controls": {
+    "captured_at_utc": "2026-11-25T15:01:23.786Z",
+    "kind": "column width and sort controls; serial read-only single-client queries",
+    "samples": [
+      {
+        "round": 0,
+        "name": "full_unsorted",
+        "query_transfer_pg_decode_ms": 521.107,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671440
+      },
+      {
+        "round": 0,
+        "name": "narrow_same_sort",
+        "query_transfer_pg_decode_ms": 99.67425000000003,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511
+      },
+      {
+        "round": 1,
+        "name": "full_unsorted",
+        "query_transfer_pg_decode_ms": 346.2215419999999,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671440
+      },
+      {
+        "round": 1,
+        "name": "narrow_same_sort",
+        "query_transfer_pg_decode_ms": 16.074708999999984,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511
+      },
+      {
+        "round": 2,
+        "name": "full_unsorted",
+        "query_transfer_pg_decode_ms": 337.60370799999987,
+        "returned_rows": 892,
+        "decoded_json_bytes": 3671440
+      },
+      {
+        "round": 2,
+        "name": "narrow_same_sort",
+        "query_transfer_pg_decode_ms": 12.639333999999963,
+        "returned_rows": 892,
+        "decoded_json_bytes": 90511
+      }
+    ]
+  },
+  "historical_witness": {
+    "trace_id": "7586ea73d67784a403b62dd6c8ecd2f9",
+    "queue_select_s": 2.156,
+    "projection_acquire_s": 0.003516333
+  },
+  "limits": [
+    "Current serialized single-client diagnostic does not replay historical concurrency or attribute every millisecond of the 2.156-second production span.",
+    "decoded_json_bytes is UTF-8 JSON serialization of decoded rows, not measured PostgreSQL wire bytes.",
+    "EXPLAIN ANALYZE does not include client transfer, pg decode or full toCard conversion.",
+    "The ten candidate references are a fixture selected from recent task rows, not the original GitHub offer.",
+    "No raw row bodies or database credentials are retained."
+  ]
+}

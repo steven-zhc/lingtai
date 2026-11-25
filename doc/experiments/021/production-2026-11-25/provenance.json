@@ -1,0 +1,61 @@
+{
+  "captured_at_utc": "2026-11-25T14:53:42.777500+00:00",
+  "kind": "observed production traffic; no assistant-generated load",
+  "source_query": {
+    "url": "http://harbor:16686/api/v3/traces",
+    "service_name": "lingtai-board",
+    "start_time_min": "2026-11-25T13:00:00Z",
+    "start_time_max": "2026-11-25T14:50:00Z",
+    "search_depth": 10000,
+    "raw_traces": true
+  },
+  "source_sha256": "d811c70be9fb256446794de7ee5bfdc636b826458ff9a5e621ed3cdbed1cc4a7",
+  "raw_request_count": 458,
+  "primary_request_count": 456,
+  "checkout_commit": "b95689564cf72a757fa57a76c65d5381e7529c02",
+  "runtime_evidence": {
+    "pid": 69841,
+    "parent_pid": 69806,
+    "started_at_local": "2026-11-25T00:39:02-06:00",
+    "cwd": "/Users/steven/workspace/lingtai/dist/board/apps/board",
+    "parent_command": "pnpm lingtai board start --no-open",
+    "build_id": "b95689564cf72a757fa57a76c65d5381e7529c02",
+    "build_id_mtime_utc": "2026-11-25T06:38:53.584262+00:00",
+    "runtime_commit_in_resource": null,
+    "mode": "production standalone; build file and process corroborate version; resource has service.name only"
+  },
+  "witness_trace_ids": [
+    "2363229aeb386dc3fc844b9493d57704",
+    "56eff6b84742f59158c94d32a41f055c",
+    "7586ea73d67784a403b62dd6c8ecd2f9",
+    "6aa5f0b873a0ec466318769434422277",
+    "b796d00af8e80d27d5b1e4e7fdb49652",
+    "eb49f743a383fba5f77f5d7f42b855de",
+    "e2de51c0ec69211fa6ebe8d6a809e7eb",
+    "9034b2d2e46887df0693352c3d5329c9",
+    "16bfd56360635edbe0471e56167d2255",
+    "235d5b62fc5725bb4b88fd1958fc38ae"
+  ],
+  "witness_span_count": 663,
+  "witness_missing_parent_counts": {
+    "2363229aeb386dc3fc844b9493d57704": 0,
+    "56eff6b84742f59158c94d32a41f055c": 0,
+    "7586ea73d67784a403b62dd6c8ecd2f9": 0,
+    "6aa5f0b873a0ec466318769434422277": 0,
+    "b796d00af8e80d27d5b1e4e7fdb49652": 0,
+    "eb49f743a383fba5f77f5d7f42b855de": 0,
+    "e2de51c0ec69211fa6ebe8d6a809e7eb": 0,
+    "9034b2d2e46887df0693352c3d5329c9": 0,
+    "16bfd56360635edbe0471e56167d2255": 0,
+    "235d5b62fc5725bb4b88fd1958fc38ae": 0
+  },
+  "limitations": [
+    "Server request completion is not browser click-to-paint or response delivery.",
+    "Unknown browser identity, active concurrency, exact selected project/filter and cold/warm state.",
+    "Draft ticket count is now 1-4 in homepage samples and 4 in PR list; old cohort had 21 and older baseline roughly 800 historical candidate reads.",
+    "PR list group has fewer than 30 clean RSC requests; descriptive P95 only.",
+    "One request crossing the window end is excluded by the reducer.",
+    "Two early-ended requests have late-running children and are excluded only from primary analysis, retained in raw summaries.",
+    "No controlled causal estimate across versions, workloads or development versus production mode."
+  ]
+}

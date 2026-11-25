@@ -1,0 +1,77 @@
+[
+  {
+    "number": 1439,
+    "title": "perf(board): start PR detail reads alongside the navigation bar",
+    "url": "https://github.com/steven-zhc/lingtai/issues/1439",
+    "state": "OPEN",
+    "createdAt": "2026-11-25T14:59:49Z",
+    "labels": [
+      "bug",
+      "lingtai:hold"
+    ],
+    "assignees": [
+      "steven-zhc"
+    ],
+    "review": "read back and matched; failure/concurrency/privacy/gate boundaries checked; no hard blocking dependencies required"
+  },
+  {
+    "number": 1440,
+    "title": "perf(queue): read only offered tasks and selection fields",
+    "url": "https://github.com/steven-zhc/lingtai/issues/1440",
+    "state": "OPEN",
+    "createdAt": "2026-11-25T15:03:38Z",
+    "labels": [
+      "lingtai:hold",
+      "tech-debt"
+    ],
+    "assignees": [
+      "steven-zhc"
+    ],
+    "review": "read back and matched; failure/concurrency/privacy/gate boundaries checked; no hard blocking dependencies required"
+  },
+  {
+    "number": 1441,
+    "title": "measure(board): attribute PR discovery, recipe and spend waits",
+    "url": "https://github.com/steven-zhc/lingtai/issues/1441",
+    "state": "OPEN",
+    "createdAt": "2026-11-25T15:03:46Z",
+    "labels": [
+      "lingtai:hold",
+      "tech-debt"
+    ],
+    "assignees": [
+      "steven-zhc"
+    ],
+    "review": "read back and matched; failure/concurrency/privacy/gate boundaries checked; no hard blocking dependencies required"
+  },
+  {
+    "number": 1442,
+    "title": "measure(board): distinguish response finish from early close",
+    "url": "https://github.com/steven-zhc/lingtai/issues/1442",
+    "state": "OPEN",
+    "createdAt": "2026-11-25T15:05:07Z",
+    "labels": [
+      "lingtai:hold",
+      "tech-debt"
+    ],
+    "assignees": [
+      "steven-zhc"
+    ],
+    "review": "read back and matched; failure/concurrency/privacy/gate boundaries checked; no hard blocking dependencies required"
+  },
+  {
+    "number": 1443,
+    "title": "measure(board): benchmark clicks until destination content is ready",
+    "url": "https://github.com/steven-zhc/lingtai/issues/1443",
+    "state": "OPEN",
+    "createdAt": "2026-11-25T15:05:14Z",
+    "labels": [
+      "lingtai:hold",
+      "tech-debt"
+    ],
+    "assignees": [
+      "steven-zhc"
+    ],
+    "review": "read back and matched; failure/concurrency/privacy/gate boundaries checked; no hard blocking dependencies required"
+  }
+]
