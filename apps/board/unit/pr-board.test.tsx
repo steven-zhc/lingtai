@@ -13,11 +13,12 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { viewsFor } from '../src/app/place-line.tsx'
-import { PrColumns } from '../src/app/pr-columns.tsx'
+import { PrBoardSkeleton, PrColumns } from '../src/app/pr-columns.tsx'
 import {
   type CardView,
   type PrBoardInput,
   type PrRead,
+  PR_COLUMNS,
   WAIT_WORDS,
   prBoard,
   prName,
@@ -443,5 +444,29 @@ describe('the board never appends to a pr- stream', () => {
       if (!file.endsWith('app/actions.ts'))
         expect(text, file).not.toMatch(/\b(requestPr[A-Z]\w*|grantPrRounds|recordPr\w*)\(/)
     }
+  })
+})
+
+describe('PrBoardSkeleton (#1419)', () => {
+  const html = renderToStaticMarkup(<PrBoardSkeleton />)
+  const titles = PR_COLUMNS.map((c) => c.title)
+  const sections = html.split('<section ').slice(1)
+
+  it('draws one section per column of the shared constant, in order', () => {
+    expect([...html.matchAll(/<section [^>]*aria-label="([^"]*)"/g)].map((m) => m[1])).toEqual(titles)
+  })
+
+  it('puts one card skeleton in each column', () => {
+    expect(sections).toHaveLength(titles.length)
+    for (const s of sections) expect(s.match(/class="sk-card"/g)).toHaveLength(1)
+  })
+
+  it('has no words but the titles', () => {
+    expect(
+      html
+        .replace(/<[^>]*>/g, '')
+        .replace(/\s+/g, ' ')
+        .trim(),
+    ).toBe(titles.join(' '))
   })
 })

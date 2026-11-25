@@ -27,6 +27,17 @@ export const clock = (d: Date): string => d.toISOString().slice(11, 16)
 
 export type Tone = 'draft' | 'progress' | 'queued' | 'waiting' | 'review' | 'merged'
 
+/** The board's five columns, once: the view and the loading skeleton both read this, so a rename moves both (#1419). */
+export const PR_COLUMNS = [
+  { id: 'draft', title: 'Draft', tone: 'draft' },
+  { id: 'progress', title: 'In progress', tone: 'progress' },
+  { id: 'waiting', title: 'Waiting on you', tone: 'waiting' },
+  { id: 'review', title: 'In review', tone: 'review' },
+  { id: 'merged', title: 'Merged', tone: 'merged' },
+] as const satisfies readonly { readonly id: string; readonly title: string; readonly tone: Tone }[]
+
+const [COL_DRAFT, COL_PROGRESS, COL_WAITING, COL_REVIEW, COL_MERGED] = PR_COLUMNS
+
 export interface Slip {
   readonly ticket: string
   readonly title: string
@@ -567,9 +578,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     waiting: waitingCount,
     columns: [
       {
-        id: 'draft',
-        title: 'Draft',
-        tone: 'draft',
+        ...COL_DRAFT,
         count: draftCards.length === 0 || draftError !== null ? 0 : draftTickets.length,
         cards: draftCards,
         older: [],
@@ -582,9 +591,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         note: null,
       },
       {
-        id: 'progress',
-        title: 'In progress',
-        tone: 'progress',
+        ...COL_PROGRESS,
         count: progress.length,
         cards: progress,
         older: [],
@@ -592,9 +599,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         note: 'The order every PR goes through: bring main in · build · conflict agent · push · CI · summary',
       },
       {
-        id: 'waiting',
-        title: 'Waiting on you',
-        tone: 'waiting',
+        ...COL_WAITING,
         count: waiting.length,
         cards: waiting,
         older: [],
@@ -603,9 +608,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         note: null,
       },
       {
-        id: 'review',
-        title: 'In review',
-        tone: 'review',
+        ...COL_REVIEW,
         count: review.length,
         cards: review,
         older: [],
@@ -614,9 +617,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         note: null,
       },
       {
-        id: 'merged',
-        title: 'Merged',
-        tone: 'merged',
+        ...COL_MERGED,
         count: mergedAll.length,
         cards: mergedAll.slice(0, MERGED_OPEN),
         older: mergedAll.slice(MERGED_OPEN).filter((c): c is CardView => !c.failed),
