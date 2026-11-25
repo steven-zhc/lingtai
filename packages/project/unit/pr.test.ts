@@ -20,6 +20,7 @@ import {
   latestPr,
   listPrs,
   readDraftTickets,
+  READ_CONCURRENCY,
   readUnheldFixLandings,
   recordPrInProgress,
   recordPrStepDone,
@@ -329,6 +330,32 @@ describe('the draft (#1395)', () => {
     const tickets = [...asked].filter((id) => id.startsWith('ticket-')).sort()
     expect(tickets).toEqual([ticketStream('lingtai', '31'), ticketStream('lingtai', '7')].sort())
     expect([...asked].filter((id) => !id.startsWith('ticket-')).every((id) => id.startsWith('pr-lingtai-'))).toBe(true)
+  })
+
+  it('reads the tickets together, at most READ_CONCURRENCY at once, and returns them in the order they joined', async () => {
+    const inner = createMemoryEventStore()
+    for (let i = 1; i <= 20; i++) await addToDraft(inner, 1, String(i))
+    const serial = await run(readDraftTickets('lingtai', inner))
+    let inFlight = 0
+    let most = 0
+    // Later tickets wait fewer turns, so they finish first.
+    const store: EventStore = Object.create(inner, {
+      read: {
+        value: async (id: string) => {
+          if (!id.startsWith('ticket-')) return inner.read(id)
+          inFlight++
+          most = Math.max(most, inFlight)
+          for (let i = 0; i < 40 - Number(id.split('-').pop()); i++) await Promise.resolve()
+          inFlight--
+          return inner.read(id)
+        },
+      },
+    })
+    const draft = await run(readDraftTickets('lingtai', store))
+    expect(draft).toEqual(serial)
+    expect(draft.map((t) => t.ticket)).toEqual(Array.from({ length: 20 }, (_, i) => String(i + 1)))
+    expect(most).toBeGreaterThan(1)
+    expect(most).toBeLessThanOrEqual(READ_CONCURRENCY)
   })
 
   it('fails when a ticket stream cannot be read: never an empty draft', async () => {

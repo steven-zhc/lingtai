@@ -80,6 +80,69 @@ describe('the read', () => {
   })
 })
 
+/** Turns of the microtask queue, so a test orders reads without a timer (0060 §1). */
+const turns = async (n: number) => {
+  for (let i = 0; i < n; i++) await Promise.resolve()
+}
+
+describe('the read, with concurrency', () => {
+  const requested = { type: 'PrSubmitRequested', actor: 'human:x', data: { by: 'human:x' } } as const
+  const merged = {
+    type: 'PrMerged',
+    actor: 'conductor',
+    data: { how: 'host', headSha: 'a'.repeat(40), mergeSha: 'b'.repeat(40) },
+  } as const
+
+  it('stops at the first PR merged before `since`, mid-chunk, and never returns what is older', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    // PR n merges on day n. `since` is day 10.5: PR 10 is the first merged before it, newest first.
+    let day = 0
+    const store = createMemoryEventStore({ now: () => new Date(Date.UTC(2026, 0, 1 + day)) })
+    for (let n = 1; n <= 30; n++) {
+      day = n
+      await store.append(prStream('p', n), 0, [requested])
+      await store.append(prStream('p', n), 1, [merged])
+    }
+    const real = store.read.bind(store)
+    // PR 8 is older than the crossing PR and in its chunk (10, 9, 8, … after 14–7 is read together): its failure is dropped.
+    store.read = async (id: string) => {
+      if (id === prStream('p', 8)) throw new Error('disk gone')
+      return real(id)
+    }
+    const since = new Date(Date.UTC(2026, 0, 1 + 10, 12))
+    const reads = await Effect.runPromise(readProjectPrs('p', store, { since }))
+    expect(reads.map((r) => r.n)).toEqual([
+      10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30,
+    ])
+    expect(reads.every((r) => 'pr' in r)).toBe(true)
+  })
+
+  it('returns the serial order with the reads overlapping, never more than READ_CONCURRENCY at once', async () => {
+    const { readProjectPrs } = await import('../src/lib/prs.ts')
+    const { READ_CONCURRENCY } = await import('@lingtai/project')
+    const store = createMemoryEventStore()
+    for (let n = 1; n <= 20; n++) await store.append(prStream('p', n), 0, [requested])
+    const serial = await Effect.runPromise(readProjectPrs('p', store))
+    const real = store.read.bind(store)
+    let inFlight = 0
+    let most = 0
+    // The higher the number, the longer the wait: the PRs read last finish first.
+    store.read = async (id: string) => {
+      const n = Number(id.split('-').pop())
+      inFlight++
+      most = Math.max(most, inFlight)
+      await turns(n)
+      inFlight--
+      return real(id)
+    }
+    const reads = await Effect.runPromise(readProjectPrs('p', store))
+    expect(reads).toEqual(serial)
+    expect(reads.map((r) => r.n)).toEqual(Array.from({ length: 20 }, (_, i) => i + 1))
+    expect(most).toBeGreaterThan(1)
+    expect(most).toBeLessThanOrEqual(READ_CONCURRENCY)
+  })
+})
+
 describe('prBoard', () => {
   it('draws Submit with its cost line when no PR is open', () => {
     const v = prBoard(input([]))

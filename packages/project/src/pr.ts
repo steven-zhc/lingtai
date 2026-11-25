@@ -612,6 +612,16 @@ export function draftBranchOf(source: string): string | null {
 }
 
 /**
+ * How many of a page's independent per-item reads (a PR stream, a draft ticket) run at once, per reader. Unbounded, a
+ * project with hundreds of items would open hundreds of reads on the store together and every other reader would wait
+ * behind them. The board's Postgres log is one `pg.Pool` per process (`choose.ts`: "one `pg.Pool` for a Postgres
+ * machine"; `db.ts`: "Each call constructs its own `pg.Pool`") and no `max` is passed, so `pg`'s own default of 10
+ * clients applies. The bound is per reader: the PRs and the draft are read side by side, so the page peaks at twice
+ * this plus the bar's reads, and what is over the pool's size queues inside the board process's pool.
+ */
+export const READ_CONCURRENCY = 8
+
+/**
  * The tickets the draft holds, each with its title: `readDraft`'s list in the stream's order (the order they joined),
  * and one read of each ticket's own stream for the title (`#<issue>` where it has none). Only the PR streams and the
  * draft's tickets are read — never every ticket that ever landed. A failed read fails the whole read: it is never
@@ -620,14 +630,18 @@ export function draftBranchOf(source: string): string | null {
 export function readDraftTickets(project: string, store: EventStore): Effect.Effect<PrDraftTicket[], Error> {
   return Effect.gen(function* () {
     const draft = yield* readDraft(project, store)
-    const tickets: PrDraftTicket[] = []
-    for (const t of draft) {
-      const state = reduceTicket(
-        yield* Effect.tryPromise({ try: () => store.read(ticketStream(project, t.ticket)), catch: failed }),
-      )
-      tickets.push({ ticket: t.ticket, mergeCommit: t.mergeCommit, title: state.title ?? `#${t.ticket}` })
-    }
-    return tickets
+    // `forEach` returns in input order, which is the stream's order; the first failure interrupts the reads in flight.
+    return yield* Effect.forEach(
+      draft,
+      (t) =>
+        Effect.tryPromise({ try: () => store.read(ticketStream(project, t.ticket)), catch: failed }).pipe(
+          Effect.map((events): PrDraftTicket => {
+            const state = reduceTicket(events)
+            return { ticket: t.ticket, mergeCommit: t.mergeCommit, title: state.title ?? `#${t.ticket}` }
+          }),
+        ),
+      { concurrency: READ_CONCURRENCY },
+    )
   })
 }
 
