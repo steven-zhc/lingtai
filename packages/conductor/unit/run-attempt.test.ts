@@ -1582,6 +1582,40 @@ describe('a granted fix round', () => {
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
 
+  it("a granted lap whose review refuses says the grant is used, once, not that the recipe's ceilings are spent (#1447)", async () => {
+    const { bodies } = watching()
+    const { emit } = events()
+    const finding: ActionFinding = {
+      file: 'packages/conductor/src/run-attempt.ts',
+      line: 1,
+      claim: 'a blocker',
+      failureScenario: 'it does the wrong thing',
+      severity: 'major',
+    }
+    const result = await runAttempt({
+      recipe: recipeWith({}),
+      context,
+      emit,
+      bodies,
+      actionsAt: watchingActions({
+        review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker', findings: [finding] })],
+      }).actionsAt,
+      ceilings: { refusalFixes: 6, conflictResolutions: 3, newAttempts: 2, newAttemptsSpent: 0 },
+      from: {
+        step: 'review',
+        waive: [],
+        roundsSpent: 1,
+        grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
+      },
+    })
+
+    expect(result.end._tag).toBe('WaitOnPerson')
+    const why = result.routes[0]?.why ?? ''
+    expect(why).toContain('`fix-lines`, `restart` — the round a person granted is used')
+    expect(why.split('the round a person granted is used')).toHaveLength(2)
+    expect(why).not.toContain('is spent')
+  })
+
   it("a triage grant after two people's fix rounds still has the recipe's automatic fixes left (#1258)", async () => {
     let implementations = 0
     const { bodies } = watching()
