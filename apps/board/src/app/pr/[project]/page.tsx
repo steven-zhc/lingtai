@@ -18,9 +18,8 @@ import { TimingMeta } from '@/lib/timing-meta'
 import { FooterFetched } from '../../footer-fetched'
 import { Follow } from '../../live'
 import { LockBanner, pauseSlot } from '../../lock-banner'
-import { PrColumns } from '../../pr-columns'
+import { PrBoardSkeleton, PrColumns } from '../../pr-columns'
 import { RecipeBar } from '../../recipe/[project]/recipe-bar'
-import { Skeleton } from '../../skeleton'
 
 export const dynamic = 'force-dynamic'
 
@@ -95,7 +94,7 @@ export default async function Page({ params }: { params: Promise<{ project: stri
             The list of projects could not be read: {listingError}
           </p>
         )}
-        <Suspense fallback={<Skeleton shape="card" count={5} />}>
+        <Suspense fallback={<PrBoardSkeleton />}>
           <Board project={name} />
         </Suspense>
       </main>
