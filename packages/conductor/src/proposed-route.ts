@@ -273,14 +273,16 @@ function causeReply(
           : `a new attempt was bought, ${counted('newAttempts', 1)}`
       return { _tag: 'Selected', candidate: id, why: `${says}; ${bought} — ${answer.why}`, cause: answer.cause }
     }
-    case 'askPerson':
-      return action.why._tag === 'limit'
-        ? person(
-            offer.unavailable.some((c) => c.because._tag === 'CeilingReached' && c.because.by === 'grant')
-              ? `${GRANT_USED_TEXT}, ${counted(action.why.bound)}`
-              : `\`${action.why.bound}\` is spent, ${counted(action.why.bound)}`,
-          )
-        : person('a person is asked')
+    case 'askPerson': {
+      const why = action.why
+      if (why._tag !== 'limit') return person('a person is asked')
+      const grantCapped = offer.unavailable.some(
+        (c) => c.because._tag === 'CeilingReached' && c.because.by === 'grant' && c.because.ceiling === why.bound,
+      )
+      return person(
+        grantCapped ? `${GRANT_USED_TEXT}, ${counted(why.bound)}` : `\`${why.bound}\` is spent, ${counted(why.bound)}`,
+      )
+    }
     default:
       return person(`${action._tag} is not an action a judge's cause can buy`)
   }

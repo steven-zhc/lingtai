@@ -1582,23 +1582,27 @@ describe('a granted fix round', () => {
     expect(result.routes).toMatchObject([{ from: 'build', to: 'waiting' }])
   })
 
-  it("a lap that spends a person's grant says the grant is used, not that the recipe's ceilings are spent (#1447)", async () => {
+  it("a granted lap whose review refuses says the grant is used, once, not that the recipe's ceilings are spent (#1447)", async () => {
     const { bodies } = watching()
     const { emit } = events()
-    const { actionsAt } = watchingActions({
-      implement: [{ ...committedSomething('fix'), run: async () => ({ ...PASSED, head: COMMITTED }) }],
-      build: [canned('check', { verdict: 'failed', evidence: 'still red', findings: [] })],
-    })
-
+    const finding: ActionFinding = {
+      file: 'packages/conductor/src/run-attempt.ts',
+      line: 1,
+      claim: 'a blocker',
+      failureScenario: 'it does the wrong thing',
+      severity: 'major',
+    }
     const result = await runAttempt({
-      recipe: recipeWith({ build: [{ name: 'check', run: 'false' }] }),
+      recipe: recipeWith({}),
       context,
       emit,
       bodies,
-      actionsAt,
+      actionsAt: watchingActions({
+        review: [canned('cold reviewer', { verdict: 'failed', evidence: 'a blocker', findings: [finding] })],
+      }).actionsAt,
       ceilings: { refusalFixes: 6, conflictResolutions: 3, newAttempts: 2, newAttemptsSpent: 0 },
       from: {
-        step: 'implement',
+        step: 'review',
         waive: [],
         roundsSpent: 1,
         grant: { why: 'human grant', asked: null, printed: { step: 'review', detail: 'fix findings' } },
@@ -1607,9 +1611,9 @@ describe('a granted fix round', () => {
 
     expect(result.end._tag).toBe('WaitOnPerson')
     const why = result.routes[0]?.why ?? ''
-    expect(why).toContain('the round a person granted is used')
-    expect(why).not.toContain('`refusalFixes` is spent')
-    expect(why).not.toContain('`newAttempts` is spent')
+    expect(why).toContain('`fix-lines`, `restart` — the round a person granted is used')
+    expect(why.split('the round a person granted is used')).toHaveLength(2)
+    expect(why).not.toContain('is spent')
   })
 
   it("a triage grant after two people's fix rounds still has the recipe's automatic fixes left (#1258)", async () => {

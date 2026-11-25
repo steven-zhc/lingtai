@@ -37,8 +37,9 @@ function route(
   limits: { refusalFixes: number; newAttempts: number },
   used: { rounds: number; newAttempts: number },
   personAsks = 0,
+  grantCapped?: { refusalFixes?: true; newAttempts?: true },
 ) {
-  const policy = { ...limits, conflictResolutions: 2 }
+  const policy = { ...limits, conflictResolutions: 2, ...(grantCapped ? { grantCapped } : {}) }
   const spent = { ...used, baseMerges: 0, conflictRounds: 0, stepRedos: 0, landingRetries: 0 }
   const offer: RouteOffer = offerFor(proposal, policy, spent)
   const judge = (_on: Judging): Effect.Effect<Judged> =>
@@ -81,6 +82,19 @@ describe('a judge at findings answers a cause (#1257)', () => {
       candidate: 'hand-to-person',
       cause: { _tag: 'UndecidedQuestion' },
     })
+  })
+
+  it("names the person's grant for a grant-capped bound, and the bound itself for an unrelated limit (#1447)", () => {
+    const capped = { refusalFixes: true } as const
+    const grant = route(FIXABLE, { refusalFixes: 1, newAttempts: 2 }, { rounds: 1, newAttempts: 0 }, 0, capped)
+    const grantWhy = (grant as { why: string }).why
+    expect(grantWhy).toContain('the round a person granted is used')
+    expect(grantWhy).not.toContain('is spent')
+    // Five person asks stop an UndecidedQuestion on `personAsks`, though the grant also capped `refusalFixes` and a restart is still left.
+    const asks = route(QUESTION, { refusalFixes: 1, newAttempts: 2 }, { rounds: 1, newAttempts: 0 }, 5, capped)
+    const asksWhy = (asks as { why: string }).why
+    expect(asksWhy).toContain('`personAsks` is spent')
+    expect(asksWhy).not.toContain('granted')
   })
 
   it('a stored reply without a cause still parses', () => {
