@@ -405,6 +405,11 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 /* An empty lane that is empty *because* somebody stopped it. Matches the chip
    in the bar, so the two read as one statement rather than two coincidences. */
 .empty.held { color: var(--held); }
+/* The first thing in a board column starts at the column's top, like a card.
+   Scoped to the columns: the task page's tabs keep .empty's own spacing. The
+   Waiting note sits one .arrive wrapper down. The fault box keeps its padding. */
+.cards-in > p.empty, .cards-in > .arrive > p.empty { margin: 0; }
+.cards-in > p.empty:not(.broken), .cards-in > .arrive > p.empty:not(.broken) { padding-top: 0; }
 
 /* An empty column says nothing in muted grey. A column that could not be filled
    has to read as a fault, or it is the empty column again (#76). */
