@@ -141,15 +141,18 @@ describe('the client graph', () => {
     expect(s).toMatch(/^['"]use client['"]/m)
     for (const from of valueImports(s)) {
       expect(from.startsWith('@lingtai/')).toBe(false)
-      if (from.startsWith('@/')) expect(from).toBe('@/lib/search')
+      if (from.startsWith('@/')) expect(['@/lib/search', '@/lib/remember']).toContain(from)
     }
   })
-  it.each(['../src/app/skeleton.tsx', '../src/lib/search.ts'])('%s has no value import of the server', (p) => {
-    for (const from of valueImports(src(p))) {
-      expect(from.startsWith('@lingtai/')).toBe(false)
-      expect(from.startsWith('@/')).toBe(false)
-    }
-  })
+  it.each(['../src/app/skeleton.tsx', '../src/lib/search.ts', '../src/lib/remember.ts'])(
+    '%s has no value import of the server',
+    (p) => {
+      for (const from of valueImports(src(p))) {
+        expect(from.startsWith('@lingtai/')).toBe(false)
+        expect(from.startsWith('@/')).toBe(false)
+      }
+    },
+  )
 })
 
 describe('the page list', () => {

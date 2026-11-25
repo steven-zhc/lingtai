@@ -218,7 +218,7 @@ describe('the filter is one menu', () => {
     const out = html(['a', 'b'], true)
 
     expect(out).toContain('<summary title="Projects · G S">all projects ')
-    expect(ascending(order(out, ['/', '/?project=a', '/?project=b']))).toBe(true)
+    expect(ascending(order(out, ['/?project=', '/?project=a', '/?project=b']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
     expect(out).toMatch(/aria-current="page"[^>]*>all projects</)
   })
