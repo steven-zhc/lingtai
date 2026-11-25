@@ -707,4 +707,45 @@ describe('the project records its PRs’ numbers (#1446)', () => {
     expect(await types(store, prStream('lingtai', 3))).toEqual(['PrDraftTicketAdded', 'PrDraftTicketAdded'])
     expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
   })
+
+  it('the freeze of a requested legacy PR with nothing to hand over records the highest', async () => {
+    const store = createMemoryEventStore()
+    for (const n of [1, 2]) await unrecorded(store, n, [String(n)], 'merged')
+    await unrecorded(store, 3, ['3'])
+    await store.append(prStream('lingtai', 3), 1, [
+      { type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } },
+    ])
+    const state = await run(readPr('lingtai', 3, store))
+    const ok = await run(
+      recordPrInProgress('lingtai', 3, frozen([{ ticket: '3', mergeCommit: 'm3', title: 't' }]), store, {
+        state: state!,
+        notKept: [],
+      }),
+    )
+    expect(ok).toBe(true)
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
+    expect((await run(listPrs('lingtai', store))).map((p) => p.n)).toEqual([1, 2, 3])
+  })
+
+  it('an unpinned write to a legacy PR records the highest, and a recorded project appends only the PR event', async () => {
+    const store = createMemoryEventStore()
+    for (const n of [1, 2]) await unrecorded(store, n, [String(n)], 'merged')
+    await unrecorded(store, 3, ['3'])
+    await store.append(prStream('lingtai', 3), 1, [
+      { type: 'PrSubmitRequested', actor: 'human:steven', data: { by: 'human:steven' } },
+    ])
+    await run(recordPrInProgress('lingtai', 3, frozen([{ ticket: '3', mergeCommit: 'm3', title: 't' }]), store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(3)
+    const version = reduceProject(await store.read(projectStream('lingtai'))).version
+    await run(recordPrStepDone('lingtai', 3, { step: 'build', headSha: 'a'.repeat(40) }, store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).version).toBe(version)
+  })
+
+  it('a request on a legacy PR records the highest', async () => {
+    const store = createMemoryEventStore()
+    await unrecorded(store, 1, ['1'])
+    await unrecorded(store, 2, ['2'])
+    await run(requestPrSubmit('lingtai', 'team', 'human:steven', store))
+    expect(reduceProject(await store.read(projectStream('lingtai'))).highestPr).toBe(2)
+  })
 })

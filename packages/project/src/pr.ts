@@ -227,9 +227,11 @@ const draftOf = (prs: readonly PrState[]): { n: number; version: number; state: 
 
 /**
  * The batches that add a landed ticket to the draft, **not an append**: the caller writes them with the ticket's own
- * (ADR 0131 §1). The first is `draftTarget`'s stream at the version it was read at, the event the PR's own transition;
- * a second records the PR's number on the project stream when the project has not recorded it yet.
- * A transition that declines is a defect — `draftTarget` never names a PR in a status that refuses.
+ * (ADR 0131 §1). The first is the stream of the highest PR *that exists* at the version it was read at (a project that
+ * records nothing is walked once for it), the event the PR's own transition; a second records the number on the project
+ * stream when the project has not recorded it yet. That is `draftTarget`'s stream only once the project records its
+ * number: `draftTarget` is a reader and reads nothing a project has not recorded.
+ * A transition that declines is a defect — the draft is never a PR in a status that refuses.
  */
 export function draftBatchFor(
   project: string,
@@ -312,10 +314,33 @@ export function readDraftedTickets(project: string, store: EventStore): Effect.E
 }
 
 /**
- * Appends one PR's transition at the head it was read at, if the transition decides anything. **It never touches the
- * project stream**: it is handed an `n` whose stream already has events, so it cannot raise the highest, and recording
- * its own `n` while the project records nothing could record 6 where 7 exists and hide the draft from every reader.
- * The writes that can reach a new number are the ones that use `numberBatch`.
+ * Appends `events` to PR `n`'s stream at `version`, and — in the same `appendAll` — the project's record of its numbers
+ * when it has not recorded `n` (`numberBatch`): **an existing stream does not mean a recorded number**, a project from
+ * before `ProjectPrNumbered` has PRs and no record, and the first write to any of them is what ends that (ADR 0131 §1).
+ * A project that already records `n` appends the single event it always did. A lost race on the project stream is a
+ * `ConcurrencyError`, which the caller's retry reads again.
+ */
+const appendOnPr = (
+  store: EventStore,
+  project: string,
+  n: number,
+  version: number,
+  events: ToAppend[],
+): Effect.Effect<void, unknown> =>
+  Effect.gen(function* () {
+    const numbered = numberBatch(project, n, yield* numberingOf(project, store))
+    yield* Effect.tryPromise({
+      try: () =>
+        numbered.length === 0
+          ? store.append(prStream(project, n), version, events).then(() => undefined)
+          : store.appendAll([{ streamId: prStream(project, n), expectedVersion: version, events }, ...numbered]),
+      catch: (e) => e,
+    })
+  })
+
+/**
+ * Appends one PR's transition at the head it was read at, if the transition decides anything, and records the PR's
+ * number when the project has not (`appendOnPr`). The writes that can reach a new number also use `numberBatch`.
  */
 const transitionPr = <A>(
   store: EventStore,
@@ -329,10 +354,7 @@ const transitionPr = <A>(
       const state = reducePr(yield* readPrEvents(project, n, store))
       const next = transition(state)
       if (next === null) return answer(state, false)
-      yield* Effect.tryPromise({
-        try: () => store.append(prStream(project, n), state.version, [next]),
-        catch: (e) => e,
-      })
+      yield* appendOnPr(store, project, n, state.version, [next])
       return answer(state, true)
     }),
   )
@@ -396,10 +418,7 @@ export const recordPrRefused = (
       Effect.gen(function* () {
         const next = refuseTransition(decided, refusal)
         if (next === null) return false
-        yield* Effect.tryPromise({
-          try: () => store.append(prStream(project, n), decided.version, [next]),
-          catch: (e) => e,
-        })
+        yield* appendOnPr(store, project, n, decided.version, [next])
         return true
       }).pipe(Effect.mapError((e) => (e instanceof ConcurrencyError ? e : failed(e))))
     : transitionPr(
@@ -424,7 +443,7 @@ const draftEvents = (tickets: readonly PayloadOf<'PrDraftTicketAdded'>[]): ToApp
  *
  * With `decided`, the write is pinned to the version of the `PrState` the freeze asked git about: `PrInProgress` on
  * stream `n` at that version, and the tickets the commit does not hold on stream `n + 1` (the next draft), in one
- * `appendAll`. **No retry in here, and no read of PR `n`** (only of the project's numbering, when tickets are handed over): a landing between the freeze's read and its write moves
+ * `appendAll`. **No retry in here, and no read of PR `n`** (only of the project's numbering): a landing between the freeze's read and its write moves
  * stream `n`, the write fails with a `ConcurrencyError`, and the caller reads, asks git and decides again. Nothing to
  * hand over is today's single append. Without `decided` it reads the PR itself and hands nothing over.
  */
@@ -455,10 +474,10 @@ export const recordPrInProgress = (
       const next = prStream(project, n + 1)
       const head = yield* Effect.tryPromise({ try: () => store.head(next), catch: failed })
       batches.push({ streamId: next, expectedVersion: head, events: handed })
-      // Opening `n + 1` is a number the project may not record yet; a lost race on the project stream is a
-      // `ConcurrencyError` like the others, and the caller reads and decides again.
-      batches.push(...numberBatch(project, n + 1, yield* numberingOf(project, store)))
     }
+    // `n` or `n + 1` is a number the project may not record yet; a lost race on the project stream is a
+    // `ConcurrencyError` like the others, and the caller reads and decides again.
+    batches.push(...numberBatch(project, handed.length > 0 ? n + 1 : n, yield* numberingOf(project, store)))
     yield* Effect.tryPromise({ try: () => store.appendAll(batches), catch: (e) => e })
     return true
   }).pipe(Effect.mapError((e) => (e instanceof ConcurrencyError ? e : failed(e))))
@@ -921,10 +940,7 @@ const requestOnPr = <E>(
       const state = events.length === 0 ? null : reducePr(events)
       const decided = transition(state)
       if (decided.kind === 'refused') return { kind: 'refused', detail: decided.detail } as PrRequestAnswer
-      yield* Effect.tryPromise({
-        try: () => store.append(prStream(pr.project, pr.n), state?.version ?? 0, [decided.event]),
-        catch: (e) => e,
-      })
+      yield* appendOnPr(store, pr.project, pr.n, state?.version ?? 0, [decided.event])
       return { kind: 'appended' } as PrRequestAnswer
     }),
   )
