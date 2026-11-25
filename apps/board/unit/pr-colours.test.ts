@@ -2,6 +2,8 @@ import { readFileSync } from 'node:fs'
 
 import { describe, expect, it } from 'vitest'
 
+import { rulesOf } from '../test/css-rules.ts'
+
 // #1444: the PR pages read colour variables only, so dark mode (which changes the
 // variables) reaches them. Rules are picked by selector, never by line range.
 const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'utf8')
@@ -9,33 +11,10 @@ const css = readFileSync(new URL('../src/app/globals.css', import.meta.url), 'ut
 const PREFIXES = ['.pr-', '.prp-', '.obs-']
 const LITERAL = /#[0-9a-fA-F]{3,8}\b|rgba?\(|hsla?\(/
 
-// Walks every block at any depth. A block's own declarations are its text outside child
-// blocks; it counts as a PR rule when its selector or any enclosing selector names a prefix,
+// A block counts as a PR rule when its selector or any enclosing selector names a prefix,
 // so nested CSS (`.pr-card { &:hover { … } }`) is covered as well as `@media` wrappers.
 export const scan = (source: string) => {
-  const bare = source.replace(/\/\*[\s\S]*?\*\//g, '')
-  const rules: { selector: string; body: string; chain: string }[] = []
-  const stack: { selector: string; own: string }[] = []
-  let text = ''
-  for (const ch of bare) {
-    if (ch === '{') {
-      stack.push({ selector: text.slice(text.lastIndexOf(';') + 1).trim(), own: '' })
-      text = ''
-    } else if (ch === '}') {
-      const top = stack.pop()
-      if (top) {
-        const chain = [...stack.map((f) => f.selector), top.selector]
-        rules.push({ selector: top.selector, body: top.own + text, chain: chain.join(' ') })
-      }
-      text = ''
-    } else {
-      text += ch
-    }
-    if (ch === ';' && stack.length > 0) {
-      stack[stack.length - 1]!.own += text
-      text = ''
-    }
-  }
+  const rules = rulesOf(source)
   const picked = rules.filter((r) => PREFIXES.some((p) => r.chain.includes(p)))
   return {
     rules: picked,

@@ -220,7 +220,7 @@ const theme = EditorView.theme({
   '.md-h3': { fontSize: '1.15em' },
   '.md-strong': { fontWeight: '700' },
   '.md-em': { fontStyle: 'italic' },
-  '.md-code': { fontFamily: 'var(--mono)', background: 'var(--surface-2)', borderRadius: '3px' },
+  '.md-code': { fontFamily: 'var(--mono)', background: 'var(--surface-2)', borderRadius: 'var(--radius)' },
   '.md-link': { color: 'var(--accent-ink)', textDecoration: 'underline' },
   '.md-quote': { borderLeft: '3px solid var(--rule-2)', paddingLeft: '0.75em', color: 'var(--muted)' },
   '.md-fenced': { fontFamily: 'var(--mono)', background: 'var(--surface-2)', paddingLeft: '0.5em' },
