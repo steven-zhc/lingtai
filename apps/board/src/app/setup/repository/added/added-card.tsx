@@ -132,7 +132,7 @@ export function AddedCard(props: Added) {
       <div className="wiz-foot">
         <a href={`/recipe/${p}?edit=1`}>Edit the recipe</a>
         {ticket !== null ? (
-          <a className="wiz-primary" href={ticket}>
+          <a className="btn pri" href={ticket}>
             Open the first ticket →
           </a>
         ) : null}

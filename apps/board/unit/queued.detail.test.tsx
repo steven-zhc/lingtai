@@ -643,9 +643,9 @@ describe('the queued panel, filled (#912)', () => {
     expect(html).not.toContain('v-secret')
   })
 
-  it('has nothing amber and nothing recommended, and Run it now is teal', () => {
-    expect(html).not.toContain('btn pri')
+  it('has nothing recommended, and Run it now is its one primary', () => {
+    expect(html.match(/btn pri/g)).toHaveLength(1)
     expect(html).not.toContain('sresolution--recommended')
-    expect(html).toContain('class="btn go"')
+    expect(html).toContain('class="btn pri"')
   })
 })

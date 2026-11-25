@@ -10,11 +10,22 @@ import type { Button } from '@/lib/pr-board.ts'
 
 import { moreRoundsNow, retryPrNow, submitPrNow } from './actions.ts'
 
-export function PrButtons({ project, n, buttons }: { project: string; n: number | null; buttons: readonly Button[] }) {
+export function PrButtons({
+  project,
+  n,
+  buttons,
+  small = false,
+}: {
+  project: string
+  n: number | null
+  buttons: readonly Button[]
+  small?: boolean
+}) {
   const [pending, startTransition] = useTransition()
   const [refusal, setRefusal] = useState<string | null>(null)
   const [clicked, setClicked] = useState<string | null>(null)
   if (buttons.length === 0) return null
+  const size = small ? ' sm' : ''
   const run = (go: () => Promise<{ ok: boolean; detail: string }>) => {
     setRefusal(null)
     startTransition(async () => {
@@ -30,14 +41,14 @@ export function PrButtons({ project, n, buttons }: { project: string; n: number 
             {b.label}: <code>{b.command}</code> — {b.note}
           </p>
         ) : b.kind === 'link' ? (
-          <a key={b.label} className="pr-btn" href={b.href} target="_blank" rel="noreferrer">
+          <a key={b.label} className={`btn${size}`} href={b.href} target="_blank" rel="noreferrer">
             {b.label}
           </a>
         ) : (
           <button
             key={b.label}
             type="button"
-            className={b.kind === 'submit' ? 'pr-btn primary' : 'pr-btn'}
+            className={`${b.kind === 'submit' ? 'btn pri' : 'btn'}${size}`}
             aria-busy={pending && clicked === b.label && b.kind === 'submit' ? true : undefined}
             disabled={pending || b.disabled !== undefined}
             title={b.disabled}

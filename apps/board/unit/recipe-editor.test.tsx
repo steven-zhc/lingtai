@@ -56,7 +56,7 @@ it('RecipeForm renders the fallback textarea, posts text once from a hidden inpu
   expect(html.indexOf('Validate and save')).toBeGreaterThan(-1)
   expect(html.indexOf('Validate and save')).toBeLessThan(html.indexOf('Close</button>'))
   expect(html.indexOf('Close</button>')).toBeLessThan(html.indexOf('<textarea'))
-  expect(html).toMatch(/<button type="button" class="rfile-edit">Close<\/button>/)
+  expect(html).toMatch(/<button type="button" class="btn">Close<\/button>/)
   expect(html).not.toContain('rfile-said')
   expect(html).toMatch(/<input type="hidden" name="text"/)
   const source = readFileSync(fileURLToPath(new URL(formPath, import.meta.url)), 'utf8')

@@ -1783,6 +1783,9 @@ export function Standing({
                                   waitId={visible ? waitId : null}
                                   reason={standing.reason}
                                   triaged={triageAdvised}
+                                  primary={
+                                    tag === 'EditBodyAndStartNewAttempt' && recommended === 'EditBodyAndStartNewAttempt'
+                                  }
                                 />
                               ) : null}
                               {visible && tag === 'ConfirmSatisfied' && waitId !== null ? (
@@ -1849,13 +1852,7 @@ export function Standing({
                         a.queued === null || project === null || !actable || missingOf(a) ? (
                           <p className="empty">Its place in the queue could not be read.</p>
                         ) : (
-                          <RunNow
-                            project={project}
-                            issue={String(issue)}
-                            holding={runNowCaption(a.queued)}
-                            primary={false}
-                            go
-                          />
+                          <RunNow project={project} issue={String(issue)} holding={runNowCaption(a.queued)} primary />
                         )
                       }
                     </Gh>

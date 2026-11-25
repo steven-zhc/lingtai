@@ -89,7 +89,7 @@ function PendingCard({ project }: { project: PendingProject }) {
       ) : (
         <div className="btnrow">
           <button
-            className="btn"
+            className="btn sm"
             disabled={busy}
             onClick={() => {
               setRefusal(null)

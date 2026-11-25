@@ -30,8 +30,7 @@ const REQUIRED = [
   '.pr-name',
   '.pr-slip-title',
   '.ltag',
-  '.ctbtn',
-  '.pr-btn',
+  'a.btn',
 ]
 
 const optOut = rules.find((r) => squash(r.selector).includes('.bar a'))

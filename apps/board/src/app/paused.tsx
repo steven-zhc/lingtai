@@ -53,10 +53,10 @@ export function Paused({ reason }: { by?: string | null; reason: string | null }
       </span>
       {asking ? (
         <span className="btnrow">
-          {/* `held` and not `pri`: this renders inside the bar, and a solid
-              amber button would be a second amber beside the headline (#134). */}
+          {/* Secondary and small: this renders inside the bar, and nothing in the bar is a
+              primary (#134, #1458). */}
           <button
-            className="btn held"
+            className="btn sm"
             disabled={pending}
             onClick={() => {
               setRefusal(null)
@@ -72,12 +72,12 @@ export function Paused({ reason }: { by?: string | null; reason: string | null }
           >
             {pending ? '…' : 'Resume every project — fix the recipe first?'}
           </button>
-          <button className="btn" disabled={pending} onClick={() => setAsking(false)}>
+          <button className="btn sm" disabled={pending} onClick={() => setAsking(false)}>
             Cancel
           </button>
         </span>
       ) : (
-        <button className="btn" onClick={() => setAsking(true)}>
+        <button className="btn sm" onClick={() => setAsking(true)}>
           Resume
         </button>
       )}

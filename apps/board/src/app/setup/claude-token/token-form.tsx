@@ -18,7 +18,9 @@ export function TokenForm({ isSet }: { isSet: boolean }) {
       }}
     >
       <input type="password" name="token" autoComplete="off" aria-label="Claude Code token" required />
-      <button type="submit">{isSet ? 'Replace the token' : 'Save the token'}</button>
+      <button type="submit" className="btn pri">
+        {isSet ? 'Replace the token' : 'Save the token'}
+      </button>
       {said === null ? null : <p role="status">{said}</p>}
     </form>
   )

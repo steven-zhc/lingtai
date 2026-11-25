@@ -136,7 +136,7 @@ describe('the mode block (#1325)', () => {
     )
     expect(html).not.toContain('kept current')
     expect(html).not.toContain('before each ticket')
-    expect(html.match(/<button type="button" class="btn go"/g)).toHaveLength(1)
+    expect(html.match(/<button type="button" class="btn pri"/g)).toHaveLength(1)
   })
 
   it('a directory’s team project names no login and takes every ticket', async () => {
