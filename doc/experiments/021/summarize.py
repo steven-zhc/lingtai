@@ -115,7 +115,7 @@ def main():
     if not rows:
         raise ValueError("no completed HTTP requests in the selected window")
     with (args.output / "requests.csv").open("w", newline="") as stream:
-        writer = csv.DictWriter(stream, fieldnames=list(rows[0]))
+        writer = csv.DictWriter(stream, fieldnames=list(rows[0]), lineterminator="\n")
         writer.writeheader()
         writer.writerows(rows)
     groups = collections.defaultdict(list)

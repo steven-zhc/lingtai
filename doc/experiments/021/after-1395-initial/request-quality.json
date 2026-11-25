@@ -1,0 +1,68 @@
+[
+  {
+    "trace_id": "d541b61052f4364f86cc1ab140c4e1d9",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "5c62386c35a6d29b447b9b16f60748d0",
+    "children_end_after_request_s": 5.099925167,
+    "exclude_from_primary_comparison": true,
+    "reason": "request ended before measured child work; cancellation or context timing unresolved"
+  },
+  {
+    "trace_id": "2e8e5251178378bff4e999e7b6084c3b",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "353cf1b359a2d9eec24ec54484c460c8",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "d58f27bdd32e23c8e934d7b4dd7555d5",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "a163289f4e4266ddd9edb07521bed8fc",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "d3d2daaffe37751eb00ab2fb217bfd60",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "d81d9f8279b898e023bbb9037bc6a7ab",
+    "children_end_after_request_s": 0.000124292,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "df9fb27b70d60c79220b631da636ea95",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "546a186cef6c758509d595e7b82ff4df",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  },
+  {
+    "trace_id": "d9ac59cfc94605403c0c3099515b8f42",
+    "children_end_after_request_s": 0,
+    "exclude_from_primary_comparison": false,
+    "reason": null
+  }
+]

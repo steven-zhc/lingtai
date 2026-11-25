@@ -1,0 +1,72 @@
+{
+  "window_start_inclusive": "2026-11-24T23:42:35Z",
+  "window_end_exclusive": "2026-11-24T23:49:00Z",
+  "selection": "request start in window and request end no later than window end",
+  "quantiles": "nearest rank: sorted[ceil(p*n)-1]; per-request observations, no time weighting",
+  "duration": "server request completion; not browser paint or exclusive CPU time",
+  "source_sha256": "fdd52b41392da0c08c8d5203a44361c7412f734eb5af09db425f7c7885caf534",
+  "request_count": 11,
+  "excluded_http_spans": {},
+  "groups": [
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "false",
+      "n": 3,
+      "p50_s": 6.143908583,
+      "p95_s": 7.82967625,
+      "max_s": 7.82967625,
+      "http_status_counts": {
+        "200": 3
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 3,
+      "pr_ticket_reads_when_observed": {
+        "n": 3,
+        "p50": 21,
+        "p95": 21,
+        "max": 21
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "true",
+      "n": 6,
+      "p50_s": 3.98451925,
+      "p95_s": 8.759861292,
+      "max_s": 8.759861292,
+      "http_status_counts": {
+        "200": 6
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 6,
+      "pr_ticket_reads_when_observed": {
+        "n": 6,
+        "p50": 21,
+        "p95": 21,
+        "max": 21
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/pr/[project]",
+      "rsc": "false",
+      "n": 2,
+      "p50_s": 3.34267875,
+      "p95_s": 5.124313458,
+      "max_s": 5.124313458,
+      "http_status_counts": {
+        "200": 2
+      },
+      "otel_errors": 0,
+      "requests_with_event_read_spans": 2,
+      "pr_ticket_reads_when_observed": {
+        "n": 2,
+        "p50": 21,
+        "p95": 21,
+        "max": 21
+      }
+    }
+  ]
+}
