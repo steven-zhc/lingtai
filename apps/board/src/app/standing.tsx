@@ -1208,19 +1208,20 @@ export function Standing({
    * metadata line carries `#ref ↗` and what the readout used to carry. GitHub having no such issue draws no state,
    * and says so in the metadata line.
    */
-  const objectTitle =
-    subject === null ? (
-      titled(word, joinMeta(facts(null)))
-    ) : (
-      <Gh g={g} pending={pending} fallback={titled(word, joinMeta([refOf(subject, subject.url), ...facts(null)]))}>
-        {(a) => {
-          const ref = refOf(subject, a.ticket.url ?? subject.url)
-          return missingOf(a)
-            ? titled(undefined, joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>]))
-            : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued))]))
-        }}
-      </Gh>
-    )
+  const objectTitle = (
+    <Gh
+      g={g}
+      pending={pending}
+      fallback={titled(word, joinMeta([subject === null ? null : refOf(subject, subject.url), ...facts(null)]))}
+    >
+      {(a) => {
+        const ref = subject === null ? null : refOf(subject, a.ticket.url ?? subject.url)
+        return subject !== null && missingOf(a)
+          ? titled(undefined, joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>]))
+          : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued))]))
+      }}
+    </Gh>
+  )
   const opening = (
     <Gh g={g} pending={pending} fallback={<TicketContext opening={null} body={null} taskId={taskId} pending />}>
       {(a) => {
