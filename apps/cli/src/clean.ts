@@ -15,7 +15,7 @@ import { readdir, rm, stat, unlink } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { promisify } from 'node:util'
 
-import { reduceTicket, ticketReducer, type TicketLifecycle } from '@lingtai/domain'
+import { reduceTicket, TICKET_STREAM_PREFIX, ticketReducer, type TicketLifecycle } from '@lingtai/domain'
 import { type EventStore, eventStore, log as processLog, readThroughSnapshot } from '@lingtai/event-store'
 import { taskStateOf } from '@lingtai/projector/task-view'
 import { Effect } from 'effect'
@@ -196,7 +196,8 @@ const loadClaims = (store: EventStore): Effect.Effect<Read<ReadonlyMap<string, s
         const page = yield* attempt(() => store.readAll(from, 1000))
         if (page.length === 0) return byRun as ReadonlyMap<string, string>
         for (const e of page) {
-          if (e.type !== 'TicketClaimed' && e.type !== 'TicketContinued') continue
+          // Any event on a ticket's own stream that names a run ties the run to that ticket.
+          if (!e.streamId.startsWith(TICKET_STREAM_PREFIX)) continue
           const runId = (e.data as { runId?: unknown } | undefined)?.runId
           if (typeof runId === 'string') byRun.set(runId, e.streamId)
         }
