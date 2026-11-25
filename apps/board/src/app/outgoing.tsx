@@ -163,11 +163,7 @@ export function OutgoingEditor({
                 {busy ? '…' : `Send attempt ${outgoing.attempt} from base`}
               </button>
             ) : null}
-            <button
-              className="btn"
-              disabled={busy || draft.trim() === ''}
-              onClick={() => run(draft)}
-            >
+            <button className="btn" disabled={busy || draft.trim() === ''} onClick={() => run(draft)}>
               {busy ? '…' : `Add to attempt ${outgoing.attempt}`}
             </button>
             <button className="btn" disabled={busy} onClick={() => setDraft(null)}>

@@ -53,8 +53,8 @@ export function Paused({ reason }: { by?: string | null; reason: string | null }
       </span>
       {asking ? (
         <span className="btnrow">
-          {/* `held` and not `pri`: this renders inside the bar, and a solid
-              amber button would be a second amber beside the headline (#134). */}
+          {/* Secondary and small: this renders inside the bar, and nothing in the bar is a
+              primary (#134, #1458). */}
           <button
             className="btn sm"
             disabled={pending}
