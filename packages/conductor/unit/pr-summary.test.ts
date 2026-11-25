@@ -4,6 +4,7 @@ import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import type { GitHub, OpenPull } from '@lingtai/github'
 import { editPrSummary, recordPrFixLanded } from '@lingtai/project'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 /**
  * The `pr:` agent's summary and top-up (#1318, 0131 §2, §5): written before the draft opens, topped up after CI for each
  * pr-fix that joined, paid as a `RunSpent` on the PR's own stream, and pushed to the code host — where the person's words
@@ -62,6 +63,7 @@ async function landed(store: EventStore, issue: string, base = 'lingtai-team') {
     await store.append(prStream('lingtai', 1), pr1.length, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: issue, mergeCommit: `m${issue}`, from: null } },
     ])
+    await recordPrNumber(store, 'lingtai', 1)
   }
 }
 

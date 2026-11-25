@@ -5,6 +5,7 @@
  */
 import { prStream, ticketStream } from '@lingtai/domain'
 import type { EventStore } from '@lingtai/event-store'
+import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 import { describe, expect, it } from 'vitest'
 
 import { PROJECT, fakeGitHub, fakePorts, issue, memoryStore, once, project, runtime } from '../test/one-attempt.ts'
@@ -42,6 +43,7 @@ async function openPr(store: EventStore, pushed: boolean) {
     ...(pushed ? [{ type: 'PrPushed', actor: 'conductor', data: { headSha: FROZEN, found: 'pushed' } }] : []),
   ]
   await store.append(prStream(PROJECT, 1), 0, events as never)
+  await recordPrNumber(store, PROJECT, 1)
 }
 
 /** A team project is registered on its personal branch, where the recipe is read from. */
@@ -89,6 +91,7 @@ describe('a team lingtai:pr-fix claim', () => {
     await store.append(prStream(PROJECT, 2), 0, [
       { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '9', mergeCommit: 'c9', from: null } },
     ] as never)
+    await recordPrNumber(store, PROJECT, 2)
     const did: string[] = []
     await once(options(store), fakePorts(did, store, true))
     expect((await claims(store))[0]!.data).toMatchObject({ cutFrom: { branch: 'lingtai-team-pr-1', pr: 1 } })

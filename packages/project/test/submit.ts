@@ -7,6 +7,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { Effect } from 'effect'
 
 import { draftTarget, openPr, requestPrSubmit } from '../src/pr.ts'
+import { recordPrNumber } from './pr-numbers.ts'
 
 export const submitPr = (project: string, mode: 'solo' | 'team', by: string, store: EventStore) =>
   Effect.gen(function* () {
@@ -18,6 +19,7 @@ export const submitPr = (project: string, mode: 'solo' | 'team', by: string, sto
           { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: 'seed', mergeCommit: 'c0', from: null } },
         ]),
       )
+      yield* Effect.promise(() => recordPrNumber(store, project, target.n))
     }
     return yield* requestPrSubmit(project, mode, by, store)
   })

@@ -399,7 +399,7 @@ describe('the event store head seam', () => {
     expect((await spans()).filter((s) => s.name === 'events.head')).toHaveLength(0)
   })
 
-  it('nests the heads of PR-number discovery under pr.numbers under the page', async () => {
+  it('nests the read of PR-number discovery under pr.numbers under the page', async () => {
     installTraceSeams()
     const memory = createMemoryEventStore()
     await memory.append('pr-p-1', 0, [discovered('x')])
@@ -416,9 +416,10 @@ describe('the event store head seam', () => {
     const numbers = all.filter((s) => s.name === 'pr.numbers')
     expect(numbers).toHaveLength(1)
     expect(parentOf(all, numbers[0]!)?.name).toBe('pr.board')
-    const heads = all.filter((s) => s.name === 'events.head')
-    expect(heads.length).toBeGreaterThan(0)
-    for (const h of heads.slice(0, 2)) expect(parentOf(all, h)?.name).toBe('pr.numbers')
+    // Discovery is one read of the project stream's record (ADR 0131 §1), no longer a walk of heads.
+    const reads = all.filter((s) => s.name === 'events.read')
+    expect(reads.length).toBeGreaterThan(0)
+    expect(parentOf(all, reads[0]!)?.name).toBe('pr.numbers')
   })
 })
 

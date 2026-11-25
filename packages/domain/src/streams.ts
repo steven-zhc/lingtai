@@ -112,7 +112,8 @@ export function projectStream(project: string): string {
 
 /**
  * `pr-` — **not `prj-`**: the two share two letters, so a reader that tests `startsWith('pr')` takes every project
- * stream for a PR. List `pr-{project}-` (`prStreamsOf`) and keep what `parsePrStream` answers.
+ * stream for a PR. The highest PR is the project's own record (`ProjectPrNumbered`, ADR 0131 §1); a reader that must list
+ * `pr-{project}-` (`prStreamsOf`) keeps what `parsePrStream` answers.
  */
 export const PR_STREAM_PREFIX = 'pr-'
 
