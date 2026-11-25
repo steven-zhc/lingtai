@@ -238,5 +238,7 @@ describe('the team card (#1324)', () => {
   it('a local team project takes every ticket', () => {
     const text = renderSetupCard({ ...facts, recipe: { ...recipe, team: { login: null, personal: 'lingtai-base' } } })
     expect(text).toContain('every ticket — local tickets are yours')
+    expect(text).toContain('open a ticket with lingtai ticket new, then lingtai start')
+    expect(text).not.toContain('assign yourself an issue')
   })
 })
