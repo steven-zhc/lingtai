@@ -52,12 +52,12 @@ const AMBER_MIN_SATURATION = 0.2
 /**
  * The luminance band, from 3:1 against both grounds.
  *
- * The dark card surface is `#131e22` (luminance 0.012), so `(L + 0.05) /
- * 0.062 >= 3` gives the floor; the light surface is `#ffffff`, so `1.05 / (L +
+ * The dark card surface is `#18262b` (luminance 0.0176), so `(L + 0.05) /
+ * 0.0676 >= 3` gives the floor; the light surface is `#ffffff`, so `1.05 / (L +
  * 0.05) >= 3` gives the ceiling. A dot is a small non-text mark, which is what
  * 3:1 is the threshold for.
  */
-const LUM_MIN = 0.14
+const LUM_MIN = 0.153
 const LUM_MAX = 0.3
 
 /**

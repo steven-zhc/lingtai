@@ -15,7 +15,7 @@ import { kindDot } from '../src/lib/kind-colour.ts'
 
 /** The two grounds a dot is drawn on: `--surface` light, `--surface` dark. */
 const LIGHT = '#ffffff'
-const DARK = '#131e22'
+const DARK = '#18262b'
 
 function luminance(hex: string): number {
   const channel = (from: number) => {
