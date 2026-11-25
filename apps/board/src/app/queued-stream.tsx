@@ -159,9 +159,11 @@ function BlockedCard({
             ))}
           </div>
           <p className="bkwhen">
-            {open.length === 0
-              ? 'starts on the next turn'
-              : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
+            {skip.held !== undefined
+              ? skip.held
+              : open.length === 0
+                ? 'starts on the next turn'
+                : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
           </p>
         </>
       )}
@@ -408,7 +410,14 @@ export function QueuedAnswered({
 }) {
   // A ticket GitHub says is held is in the fold, whatever the log still holds
   // for it: it is not runnable, so it neither joins a group nor is *taken first*.
-  const cards = [...withoutHeld(logCards, github), ...github.cards]
+  const landedSaid = github.landed
+  const cards = [
+    ...withoutHeld(logCards, github).map((c) => {
+      const said = landedSaid?.get(c.taskId)
+      return said === undefined ? c : { ...c, note: c.note === null ? said : `${c.note} (${said})` }
+    }),
+    ...github.cards,
+  ]
   // A project only GitHub offers can name projects in this column without
   // changing the others (#884): accepted.
   const projects = new Set([

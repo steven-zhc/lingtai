@@ -15,6 +15,7 @@ import {
   type ToAppend,
   prStream,
   reducePr,
+  reducePrEvent,
   reduceTicket,
   openAmong,
   requestSubmit,
@@ -157,6 +158,57 @@ export function readDraft(project: string, store: EventStore): Effect.Effect<PrS
 export function draftIn(prs: readonly PrState[]): PrState['draft'] {
   const top = prs[prs.length - 1]
   return top !== undefined && top.status === 'draft' ? top.draft : []
+}
+
+/**
+ * The statuses of a PR whose draft tickets are on `branch.personal`'s history: a refused or closed PR may never have
+ * had its code reach it (#1423).
+ */
+const LANDED_PR_STATUSES: ReadonlySet<NonNullable<PrState['status']>> = new Set([
+  'draft',
+  'requested',
+  'in-progress',
+  'waiting',
+  'in-review',
+  'merged',
+])
+
+/**
+ * The tickets that *joined a draft* (`PrDraftTicketAdded`) in PRs of these streams whose status says the code is on the
+ * personal branch, as the issue numbers they were written with (#1423). Not `PrState.draft ∪ PrState.tickets`: a
+ * `PrInProgress` empties `draft`, and a pr-fix lands on the PR's own branch, so `tickets` holds tickets that are not
+ * on the personal branch. Pure, over envelopes already read.
+ */
+export function draftedTicketsIn(streams: readonly (readonly Envelope[])[]): Set<string> {
+  const drafted = new Set<string>()
+  for (const events of streams) {
+    // The union of every draft the stream ever had: a ticket joins `draft` and `PrInProgress` empties it, so the
+    // draft at the end forgets it. Read through the reducer and never by event type (`one-reducer.test.ts`).
+    let state = emptyPr
+    const joined = new Set<string>()
+    for (const event of events) {
+      state = reducePrEvent(state, event)
+      for (const t of state.draft) joined.add(t.ticket)
+    }
+    // A pr-fix lands on the PR's branch; a successful merge back is what puts its code on `branch.personal`, whatever
+    // the PR's status is now (`PrState.mergedBackTickets`).
+    for (const t of state.mergedBackTickets) drafted.add(t)
+    if (state.status === null || !LANDED_PR_STATUSES.has(state.status)) continue
+    for (const t of joined) drafted.add(t)
+  }
+  return drafted
+}
+
+/** `draftedTicketsIn` over every PR of a project. A failed read is the error, never *none drafted*. */
+export function readDraftedTickets(project: string, store: EventStore): Effect.Effect<ReadonlySet<string>, Error> {
+  return Effect.gen(function* () {
+    const streams: Envelope[][] = []
+    for (let n = 1; ; n++) {
+      const head = yield* Effect.tryPromise({ try: () => store.head(prStream(project, n)), catch: failed })
+      if (head === 0) return draftedTicketsIn(streams)
+      streams.push(yield* readPrEvents(project, n, store))
+    }
+  })
 }
 
 /** Appends one PR's transition at the head it was read at, if the transition decides anything. */

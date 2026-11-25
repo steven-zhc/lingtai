@@ -508,8 +508,11 @@ export interface GitHub {
   /** Records that `issue` is blocked by `blocker` (numbers). The same 422 rule as `addSubIssue`. */
   addBlockedBy(issue: number, blocker: number): E<void>
 
-  /** Every issue blocking `issue`, open or closed, across all pages, or a throw. */
-  listBlockedBy(issue: number): E<LinkedIssue[]>
+  /**
+   * Every issue blocking `issue`, open or closed, across all pages, or a throw. `firstPageOnly` asks for one request
+   * and no more: a list of 100 may then be the first page of a longer one (#1423).
+   */
+  listBlockedBy(issue: number, firstPageOnly?: boolean): E<LinkedIssue[]>
 
   /**
    * The current installation token, refreshed if it is about to expire.
@@ -572,7 +575,7 @@ export interface GitHubClient {
   addSubIssue(parent: number, child: number): Promise<void>
   listSubIssues(parent: number): Promise<LinkedIssue[]>
   addBlockedBy(issue: number, blocker: number): Promise<void>
-  listBlockedBy(issue: number): Promise<LinkedIssue[]>
+  listBlockedBy(issue: number, firstPageOnly?: boolean): Promise<LinkedIssue[]>
   token(): Promise<string>
   /** `GitHub.withRateLimited`, in the promise face. */
   withRateLimited(port: RateLimitedPort | undefined): GitHubClient
@@ -812,7 +815,7 @@ export const makeGitHub = (
           (err) => Effect.fail(new PermissionDenied(err, permission, 'read', isGh(auth) ? 'gh' : 'app')),
         )
 
-      const listLinked = (path: string): E<LinkedIssue[]> =>
+      const listLinked = (path: string, firstPageOnly = false): E<LinkedIssue[]> =>
         asLinkCall(
           'read',
           Effect.gen(function* () {
@@ -835,7 +838,7 @@ export const makeGitHub = (
                 const repository = each.repository_url?.replace(/^.*\/repos\//, '') ?? `${owner}/${repo}`
                 out.push({ ...toIssue(each), repository, id: each.id })
               }
-              if (raw.length < 100) break
+              if (raw.length < 100 || firstPageOnly) break
             }
             return out
           }),
@@ -1027,8 +1030,8 @@ export const makeGitHub = (
           )
         }),
 
-        listBlockedBy: Effect.fn('github.listBlockedBy')(function* (issue: number) {
-          return yield* listLinked(`${repoPath}/issues/${issue}/dependencies/blocked_by`)
+        listBlockedBy: Effect.fn('github.listBlockedBy')(function* (issue: number, firstPageOnly?: boolean) {
+          return yield* listLinked(`${repoPath}/issues/${issue}/dependencies/blocked_by`, firstPageOnly)
         }),
 
         listIssuesSince: Effect.fn('github.listIssuesSince')(function* (since: Date) {
@@ -1245,7 +1248,7 @@ const toClient = (github: GitHub): GitHubClient => ({
   addSubIssue: (parent, child) => runGitHub(github.addSubIssue(parent, child)),
   listSubIssues: (parent) => runGitHub(github.listSubIssues(parent)),
   addBlockedBy: (issue, blocker) => runGitHub(github.addBlockedBy(issue, blocker)),
-  listBlockedBy: (issue) => runGitHub(github.listBlockedBy(issue)),
+  listBlockedBy: (issue, firstPageOnly) => runGitHub(github.listBlockedBy(issue, firstPageOnly)),
   withRateLimited: (port) => toClient(github.withRateLimited(port)),
 })
 

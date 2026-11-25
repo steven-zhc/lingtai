@@ -27,7 +27,10 @@
  * discover it at all.
  */
 import { PUBLISHING_LABEL } from '@lingtai/domain'
-import type { AssigneeRule, QueueSettings, Selection } from '@lingtai/recipe'
+import type { EventStore } from '@lingtai/event-store/store'
+import { readDraftedTickets } from '@lingtai/project'
+import type { AssigneeRule, QueueSettings, Recipe, Selection } from '@lingtai/recipe'
+import { branchOf, selectionOf } from '@lingtai/recipe/settings'
 import { Effect } from 'effect'
 
 // `ticketStream` and its inverse moved to `domain` (0022): the projector
@@ -341,6 +344,11 @@ export interface Offered {
     kind: string
     parent: TicketListing['parent']
     subIssues: TicketListing['subIssues']
+    /**
+     * The open blockers GitHub still lists that this queue treated as landed on `branch.personal` (#1423); absent
+     * for an issue GitHub's summary did not hold. `blockersLanded` is how it is said.
+     */
+    landedBlockers?: readonly number[]
   }[]
   /** Every issue that was not runnable, with the reason. */
   skipped: {
@@ -355,6 +363,16 @@ export interface Offered {
     blockedBy: number | null
     parent: TicketListing['parent']
     subIssues: TicketListing['subIssues']
+    /**
+     * Why a `blocked-by` skip in a team project could not be released by what landed on `branch.personal` (#1423):
+     * the blockers could not be read. Absent otherwise. `blockersUnread` is how it is said.
+     */
+    held?: string
+    /**
+     * The blockers discovery read for this skip (#1423), for the explanation to use as read: a list that was not
+     * read whole (a full page) is said as a problem, never as a list.
+     */
+    blockersRead?: BlockersRead
   }[]
   /**
    * What colour this repository gives each kind, `#rrggbb`, keyed by the kind
@@ -441,6 +459,102 @@ export function passedOver(skipped: Offered['skipped']): string | null {
   return `${skipped.length} passed over — ${counted}`
 }
 
+/** A blocker as the queue reads it: the repository its number belongs to, and whether it is open. */
+export interface BlockerRead {
+  repository: string
+  number: number
+  title: string
+  state: 'open' | 'closed'
+}
+
+/** What discovery read of a ticket's blockers, carried on its skip so the explanation does not read them again. */
+export type BlockersRead = { ok: true; issues: readonly BlockerRead[] } | { ok: false; problem: string }
+
+/**
+ * What lets a team project's queue see that a blocker has landed on `branch.personal` (#1423).
+ *
+ * GitHub's summary counts a blocker open until the PR carrying it merges into `main`, and in a team project that
+ * is long after its code is on the branch the next attempt starts from.
+ */
+export interface LandedOptions {
+  /** What reads a ticket's blockers: all of them, open or closed, or a throw. */
+  links: {
+    repository: string
+    /**
+     * The first page of the blockers, one request: a list of `BLOCKERS_PAGE` may be the start of a longer one.
+     * `blockedBy` is GitHub's open count the listing gave, which a caller that caches the read keys it by.
+     */
+    listBlockedBy(issue: number, blockedBy?: number): Promise<readonly BlockerRead[]>
+  }
+  /** The log and project whose PRs say which tickets joined a draft. */
+  store: EventStore
+  project: string
+  /** `branch.personal`, for the sentence. */
+  branch: string
+}
+
+/** The most blockers one page of the read carries; a list longer than this holds the ticket (#1423). */
+export const BLOCKERS_PAGE = 100
+
+/** How an offered ticket says its open blockers had landed. One phrase, as `dependenciesUnread` is. */
+export function blockersLanded(landed: readonly number[], branch: string): string {
+  return `its blockers ${landed.map((n) => `#${n}`).join(', ')} landed on ${branch}`
+}
+
+/** What an offered ticket says about blockers it was taken past, or null for one GitHub's summary did not hold (#1423). */
+export function landedNote(
+  offered: Pick<Offered, 'runnable'>,
+  ref: string | number,
+  branch: () => string,
+): string | null {
+  const landed = offered.runnable.find((r) => String(r.ref) === String(ref))?.landedBlockers
+  return landed === undefined ? null : blockersLanded(landed, branch())
+}
+
+/** How a `blocked-by` skip says its blockers could not be read. */
+export function blockersUnread(why: string): string {
+  return `could not read its blockers: ${why}`
+}
+
+/**
+ * The `landed` option for a caller, or undefined where the queue decides as it always did: a solo project, a project
+ * whose tickets Lingtai keeps itself, and a source with no way to list blockers (#1423). Every caller of
+ * `runnableNowEffect` asks this one function, so the pass, `take`, `lingtai now`, status and the board agree.
+ */
+export function landedFor(input: {
+  recipe: Recipe
+  links: LandedOptions['links'] | null
+  store: EventStore
+  project: string
+}): LandedOptions | undefined {
+  const selection = selectionOf(input.recipe)
+  if (selection.mode !== 'team' || selection.tickets === 'db' || input.links == null) return undefined
+  return { links: input.links, store: input.store, project: input.project, branch: branchOf(input.recipe) }
+}
+
+/**
+ * What lists the blockers of a ticket on a GitHub client, or null for a source that cannot (a test's memory store).
+ * A getter, so building it reads nothing from the client.
+ */
+export function linksOfClient(client: unknown): LandedOptions['links'] | null {
+  const c = client as { owner?: unknown; repo?: unknown; listBlockedBy?: unknown } | null
+  if (c === null || typeof c !== 'object' || typeof c.listBlockedBy !== 'function') return null
+  if (typeof c.owner !== 'string' || typeof c.repo !== 'string') return null
+  const gh = c as {
+    owner: string
+    repo: string
+    listBlockedBy(n: number, firstPageOnly?: boolean): Promise<readonly BlockerRead[]>
+  }
+  return {
+    get repository() {
+      return `${gh.owner}/${gh.repo}`
+    },
+    listBlockedBy: (n) => gh.listBlockedBy(n, true),
+  }
+}
+
+const whyOf = (error: unknown): string => (error instanceof Error ? error.message : String(error))
+
 export interface RunnableNowOptions {
   client: TicketSource
   /**
@@ -456,6 +570,11 @@ export interface RunnableNowOptions {
   selection: Selection
   /** Restricts the read to specific issue numbers. */
   only?: number[]
+  /**
+   * Given in a team project whose tickets are GitHub's: a `blocked-by` skip whose blockers all closed or landed on
+   * `branch.personal` is offered (#1423). Absent is today's behaviour, and so is a solo project's.
+   */
+  landed?: LandedOptions
 }
 
 /**
@@ -491,6 +610,8 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
     const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null }
 
     const unread: number[] = []
+    // Read once, and only when an issue reached the blocker read; a failure is the reason each of them keeps.
+    let drafted: { ok: true; tickets: ReadonlySet<string> } | { ok: false; why: string } | null = null
 
     for (const issue of issues) {
       if (issue.dependencies === null) unread.push(issue.number)
@@ -504,7 +625,65 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
       }
 
       const { skip, label } = considerIssue(issue, queue, selection)
-      if (skip) {
+      let landedBlockers: readonly number[] | undefined
+      let held: string | undefined
+      let blockersRead: BlockersRead | undefined
+      let released = false
+      const landed = options.landed
+      // Only a ticket that GitHub's summary holds, and that nothing after `blocked-by` would pass over either: one
+      // request for it, and none for a ticket `assigned-elsewhere` would refuse anyway.
+      if (
+        landed !== undefined &&
+        skip === 'blocked-by' &&
+        (issue.dependencies?.blockedBy ?? 0) > 0 &&
+        considerIssue({ ...issue, dependencies: { ...issue.dependencies!, blockedBy: 0 } }, queue, selection).skip ===
+          null
+      ) {
+        const read = yield* Effect.tryPromise({
+          try: () => landed.links.listBlockedBy(issue.number, issue.dependencies!.blockedBy),
+          catch: (error) => error,
+        }).pipe(
+          Effect.map((blockers) => ({ ok: true as const, blockers })),
+          Effect.catch((error: unknown) => Effect.succeed({ ok: false as const, why: whyOf(error) })),
+        )
+        if (!read.ok) {
+          held = blockersUnread(read.why)
+          blockersRead = { ok: false, problem: read.why }
+        }
+        // One page is all that was requested, so a full one may be the start of a longer list: it holds the issue.
+        else if (read.blockers.length >= BLOCKERS_PAGE) {
+          const why = `it has ${BLOCKERS_PAGE} blockers or more, which is more than one page reads`
+          held = blockersUnread(why)
+          blockersRead = { ok: false, problem: why }
+        } else if (read.blockers.length === 0) {
+          const why = 'GitHub listed none, though it counts some open'
+          held = blockersUnread(why)
+          blockersRead = { ok: false, problem: why }
+        } else {
+          blockersRead = { ok: true, issues: read.blockers }
+          drafted ??= yield* readDraftedTickets(landed.project, landed.store).pipe(
+            Effect.map((tickets) => ({ ok: true as const, tickets })),
+            Effect.catch((error: unknown) =>
+              Effect.succeed({ ok: false as const, why: `could not read the project's PRs: ${whyOf(error)}` }),
+            ),
+          )
+          if (!drafted.ok) held = blockersUnread(drafted.why)
+          else {
+            const repository = landed.links.repository.toLowerCase()
+            const drafts = drafted.tickets
+            // A blocker holds unless it is closed, or it is this repository's and joined a draft. **A blocker that
+            // landed and was requeued is still in the draft, so it does not hold**: its dependent runs on what landed.
+            const onBranch = (b: BlockerRead) =>
+              b.repository.toLowerCase() === repository && drafts.has(String(b.number))
+            if (read.blockers.every((b) => b.state === 'closed' || onBranch(b))) {
+              released = true
+              const landedOnes = read.blockers.filter((b) => b.state === 'open').map((b) => b.number)
+              if (landedOnes.length > 0) landedBlockers = landedOnes
+            }
+          }
+        }
+      }
+      if (skip && !released) {
         result.skipped.push({
           ref: issue.number,
           reason: skip,
@@ -514,6 +693,8 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           blockedBy: issue.dependencies?.blockedBy ?? null,
           parent: issue.parent,
           subIssues: issue.subIssues,
+          ...(held === undefined ? {} : { held }),
+          ...(blockersRead === undefined ? {} : { blockersRead }),
         })
         continue
       }
@@ -524,6 +705,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
         kind: matched!.kind,
         parent: issue.parent,
         subIssues: issue.subIssues,
+        ...(landedBlockers === undefined ? {} : { landedBlockers }),
       })
     }
 
