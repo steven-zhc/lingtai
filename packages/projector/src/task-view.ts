@@ -67,7 +67,7 @@ import { WaitReason, type TriageFacts } from '@lingtai/domain/wait'
 import { Effect } from 'effect'
 
 import { withStoreEffect } from './choose.ts'
-import type { Projection, ProjectionContextPort, ProjectionLog } from './store.ts'
+import type { Projection, ProjectionContextPort, ProjectionLog, TaskStateRow } from './store.ts'
 import { backfillStateRows, runBefore, ticketBefore } from './ticket-row.ts'
 
 /**
@@ -1049,6 +1049,26 @@ export const readTasksEffect = Effect.fn('projector.readTasks')(function* (optio
       // default.
       retentionDays: options.retentionDays ?? DEFAULT_RETENTION_DAYS,
     }),
+  )
+})
+
+/** What `readTaskStatesEffect` takes: one project, and the issue references to look up. */
+export interface ReadTaskStatesOptions {
+  project: string
+  issues: readonly string[]
+  url?: string | undefined
+}
+
+/**
+ * The state and backoff fields of exactly these issues, with no retention
+ * window (#1440). Queue selection decides on a handful of rows, and an old
+ * closed one is still the log's answer for an issue GitHub keeps listing.
+ * No issues means no store is opened.
+ */
+export const readTaskStatesEffect = Effect.fn('projector.readTaskStates')(function* (options: ReadTaskStatesOptions) {
+  if (options.issues.length === 0) return [] as TaskStateRow[]
+  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
+    p.taskStates({ project: options.project, issues: options.issues }),
   )
 })
 

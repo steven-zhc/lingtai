@@ -51,6 +51,8 @@ import type {
   ProjectionStore,
   SpendQuery,
   TaskQuery,
+  TaskStateRow,
+  TaskStatesQuery,
   TicketReportLandedQuery,
   TicketReportQuery,
 } from './store.ts'
@@ -728,6 +730,25 @@ export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
         ),
       )
       return yield* mapRows(() => rows.map(toCard))
+    }),
+
+    taskStates: Effect.fn('Projections.taskStates')(function* (query: TaskStatesQuery) {
+      if (query.issues.length === 0) return []
+      // `all`, not `allOrEmpty`: a missing table is a failed read here, never "no rows" —
+      // an empty answer would call every offered issue untouched.
+      const rows = yield* read(() =>
+        all(
+          `select issue, state, last_attempt_at, repair_pending from task_view
+           where project = ? and issue in (${query.issues.map(() => '?').join(', ')})`,
+          [query.project, ...query.issues],
+        ),
+      )
+      return rows.map((row): TaskStateRow => ({
+        issue: row.issue as string,
+        state: row.state as TaskState,
+        lastAttemptAt: parseAt(row.last_attempt_at),
+        repairPending: parseBool(row.repair_pending),
+      }))
     }),
 
     taskProjects: Effect.fn('Projections.taskProjects')(function* (query: Pick<TaskQuery, 'retentionDays'>) {

@@ -11,7 +11,7 @@
  * there. A projection reduces; it does not choose what to run next.
  */
 import { ticketStream } from '@lingtai/domain'
-import { readTasks } from '@lingtai/projector'
+import { readTaskStatesEffect } from '@lingtai/projector'
 import type { Selection } from '@lingtai/recipe'
 import { Effect } from 'effect'
 
@@ -82,24 +82,22 @@ export function selectRunnable(options: RunnableOptions): Promise<Runnable[]> {
 export function selectRunnableEffect(options: RunnableOptions): Effect.Effect<Runnable[], unknown> {
   return Effect.gen(function* () {
     const kinds = rankedKinds(options.kinds.length > 0 ? options.kinds : ['bug'], options.mode)
-    // Every row, not just the queued ones: a row's *existence* is what says the
-    // log has an opinion about this issue, and its state is that opinion.
-    const rows = yield* Effect.tryPromise({
-      try: () =>
-        readTasks({
-          project: options.project,
-          retentionDays: 36_500,
-          ...(options.url === undefined ? {} : { url: options.url }),
-        }),
-      catch: (error) => error,
+    // Rank and filter by kind first: an offer dropped here never needed a row.
+    const runnableKinds = options.offered.filter((o) => kinds.includes(o.kind))
+    // Only the rows of what survives, whatever state: a row's *existence* is
+    // what says the log has an opinion about this issue, and its state is that
+    // opinion. No retention window — an old closed row is still authoritative.
+    const rows = yield* readTaskStatesEffect({
+      project: options.project,
+      issues: [...new Set(runnableKinds.map((o) => o.ref))],
+      ...(options.url === undefined ? {} : { url: options.url }),
     })
     const seen = new Map(rows.map((t) => [t.issue, t]))
 
     const now = (options.now ?? new Date()).getTime()
     const backoff = options.backoffMs
 
-    return options.offered
-      .filter((o) => kinds.includes(o.kind))
+    return runnableKinds
       .filter((o) => {
         const row = seen.get(o.ref)
         // No row: Lingtai has never touched it, and GitHub is offering it.
