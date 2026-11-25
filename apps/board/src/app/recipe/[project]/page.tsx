@@ -111,7 +111,7 @@ export function ModeCard({ recipe }: { recipe: Extract<ProjectRecipe, { ok: true
   const mode = modeLines(recipe)
   return (
     <section className="rcard" id="mode">
-      <h3 className="rcard-h">
+      <h3 className="rcard-h sec-h">
         <span>Mode · {mode.mode}</span>
         <small className="src">← {modeSource(recipe)}</small>
       </h3>
@@ -168,7 +168,7 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
     <div className="s2-left">
       <ModeCard recipe={view.recipe} />
       <section className="rcard">
-        <h3 className="rcard-h">
+        <h3 className="rcard-h sec-h">
           <span>What one attempt does, in order</span>
           <small className="src">← {source}</small>
         </h3>
@@ -203,7 +203,7 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
       </section>
 
       <section className="rcard">
-        <h3 className="rcard-h">
+        <h3 className="rcard-h sec-h">
           <span>What an attempt may spend</span>
         </h3>
         <div className="stats">
@@ -232,7 +232,7 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
       </section>
 
       <section className="rcard">
-        <h3 className="rcard-h">
+        <h3 className="rcard-h sec-h">
           <span>Also set</span>
         </h3>
         {view.rows

@@ -137,7 +137,9 @@ describe('current wait triage band', () => {
 
   it('puts the cause chip on the head line, and the evidence once', () => {
     const html = draw(advised({ _tag: 'FixableLines', fixes: [{ path: 'src/a.ts', line: 8, what: 'change this' }] }))
-    expect(html).toMatch(/<div class="triage-head"><span class="triage-label">Triage<\/span><p class="triage-cause /)
+    expect(html).toMatch(
+      /<div class="triage-head"><span class="triage-label sec-h">Triage<\/span><p class="triage-cause /,
+    )
     expect(html.match(/class="triage-evidence"/g)).toHaveLength(1)
   })
 

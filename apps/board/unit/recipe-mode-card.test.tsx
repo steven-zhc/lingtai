@@ -51,3 +51,22 @@ describe('the CI row (#1338)', () => {
     expect(html).toContain('every check ← default')
   })
 })
+
+describe('the card heading (#1456)', () => {
+  it('is a sec-h', () => {
+    const html = renderToStaticMarkup(
+      <ModeCard
+        recipe={RecipeSchema.parse({
+          version: 2,
+          mode: 'team',
+          branch: { main: 'main', personal: 'me/work' },
+          source: { kinds: ['bug'] },
+          repo: { submodules: false },
+          env: { plantAt: '.env.local' },
+          runtime: {},
+        })}
+      />,
+    )
+    expect(html).toContain('class="rcard-h sec-h"')
+  })
+})

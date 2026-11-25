@@ -24,7 +24,7 @@ export function Panel({
 }) {
   return (
     <div className={`rp-panel${wide ? ' wide' : ''}`}>
-      <h2>{title}</h2>
+      <h2 className="sec-h">{title}</h2>
       <p className="sub">{sub}</p>
       {children}
     </div>
