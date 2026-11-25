@@ -202,6 +202,12 @@ describe('prBoard', () => {
     expect(v.strip.notInPr).toBe('2 tickets not in a PR yet')
   })
 
+  it('links the draft card to the page listing every draft ticket', () => {
+    const draft = cards(prBoard(input([], [tk(1), tk(2), tk(3), tk(4), tk(5)])), 'draft')[0]!
+    expect(draft.href).toBe('/pr/p/next')
+    expect(draft.more).toBe(2)
+  })
+
   it('disables Submit beside an open PR, naming it', () => {
     const open = pr(7, { status: 'in-review', host: { number: 88, nodeId: 'n', url: 'u' }, tickets: [tk(3)] })
     const draft = cards(prBoard(input([{ n: 7, pr: open }])), 'draft')[0]!

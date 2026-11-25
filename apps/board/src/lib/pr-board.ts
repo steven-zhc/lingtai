@@ -268,7 +268,7 @@ export interface PrBoardInput {
   readonly newFixFor?: (pr: PrState) => FixTicket | null
 }
 
-const href = (project: string, n: number): string => `/pr/${encodeURIComponent(project)}/${n}`
+const href = (project: string, n: number | 'next'): string => `/pr/${encodeURIComponent(project)}/${n}`
 
 export function prBoard(input: PrBoardInput): PrBoardView {
   const { recipe, project } = input
@@ -348,7 +348,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       name: DRAFT_NAME,
       pill: null,
       count: plural(all.length, 'ticket', 'tickets'),
-      href: null,
+      href: href(project, 'next'),
       sub,
       slips,
       more,
