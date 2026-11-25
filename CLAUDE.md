@@ -81,6 +81,18 @@ The queue passes over anything with an open blocker and counts it as
 `blocked-by`; a closed one holds nothing, and the ticket comes back on its own
 the pass after the last blocker closes, with no hold to remove.
 
+**In a team project a blocker also stops holding once it has landed on
+`branch.personal`** (#1423), because a blocker closes only when its PR merges
+into `main`, and a chain would otherwise never fit in one PR. When GitHub's
+summary says a ticket still has open blockers, the queue reads that ticket's
+blocker list (one request per blocked ticket, never per ticket) and takes it if
+every blocker is closed or is this repository's and has joined a draft.
+`lingtai status` then says *"its blockers #N landed on steven-zhc/studio"*,
+though GitHub still marks it blocked. A blocker list that cannot be read, one
+longer than a page, or a blocker in another repository still holds, and the
+skip says why. So chain tickets meant for the same PR with *blocked by* as
+usual; the dependent starts on a branch that has its blocker's code.
+
 Setting one, and **the id is not the issue number**:
 
     # #164 is blocked by #161 — `issue_id` is the blocker's numeric `.id`,
