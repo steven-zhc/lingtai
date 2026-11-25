@@ -1223,8 +1223,8 @@ details[open] > summary::before { content: "▾"; }
   order: -2;
   margin: 0;
 }
-.swant { margin: 0; max-width: 62rem; color: var(--ink-2); font-size: 0.9rem; line-height: 1.5; overflow-wrap: anywhere; }
-.topening { max-width: 62rem; font-size: 0.85rem; color: var(--ink-2); }
+.swant { margin: 0; max-width: 62rem; color: var(--ink-2); font-size: var(--fs-md); line-height: 1.5; overflow-wrap: anywhere; }
+.topening { max-width: 62rem; font-size: var(--fs-md); color: var(--ink-2); }
 .topening > a { display: inline-block; margin-top: 0.5rem; }
 
 /* Rank 8: every identifier the page has, once, as one muted line in the bar
@@ -1269,7 +1269,7 @@ details[open] > summary::before { content: "▾"; }
    in a column that is otherwise boxes and buttons. The clip that keeps a build
    log out of it is `standingOf`'s, not this rule's: a log shortened by CSS is
    still a log rendered as prose. */
-.squestion { margin: 0; max-width: 62rem; font-size: 0.9rem; line-height: 1.5; color: var(--ink); }
+.squestion { margin: 0; max-width: 62rem; font-size: var(--fs-md); line-height: 1.5; color: var(--ink); }
 
 /* **The four ranks have four sizes, and they descend** (#132). The block used
    to run the other way: the further down you read the more specific it got
@@ -1281,7 +1281,7 @@ details[open] > summary::before { content: "▾"; }
    These override the card's own `.diag`/`.did`/`.rec`, which are sized
    in `px` for a 22rem column. The words are shared (`describeWaitLines`); the sizes
    are not, and never were. */
-.sbody .diag { max-width: 62rem; font-size: 0.95rem; line-height: 1.55; }
+.sbody .diag { max-width: 62rem; font-size: var(--fs-lg); line-height: 1.55; }
 /* Rank 2's own grid, so what refused and the diagnosis' sentence keep the gap
    they had when they were children of `.sbody`.
 
@@ -1299,7 +1299,7 @@ details[open] > summary::before { content: "▾"; }
 /* Rank 3: one sentence, and a step down from the reason (#152). Ink and not
    brass — the rule at the left says who is waited on, and a sentence in amber
    would be a second say. It was `.needs`, `.did` and `.rec` in a row. */
-.sowhat { margin: 0.2rem 0 0; max-width: 62rem; font-size: 0.85rem; line-height: 1.5; color: var(--ink); }
+.sowhat { margin: 0.2rem 0 0; max-width: 62rem; font-size: var(--fs-md); line-height: 1.5; color: var(--ink); }
 
 .triage-band { overflow-wrap: anywhere; }
 .triage-band > p { margin: 0; max-width: 62rem; line-height: 1.5; }
@@ -1313,7 +1313,7 @@ details[open] > summary::before { content: "▾"; }
   margin-bottom: 0.7rem;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: clamp(1.1rem, 2vw, 1.35rem);
+  font-size: var(--fs-xl);
   line-height: 1.4;
   overflow-wrap: anywhere;
 }
@@ -1334,10 +1334,10 @@ details[open] > summary::before { content: "▾"; }
 .triage-band .triage-choice:focus-within { outline: 2px solid var(--accent); outline-offset: 2px; }
 .triage-choice-main { display: flex; align-items: flex-start; gap: 0.6rem; min-width: 0; }
 .triage-choice-main input { flex: none; margin: 0.25rem 0 0; accent-color: var(--accent); }
-.triage-choice-text { min-width: 0; color: var(--ink); font-size: 0.98rem; font-weight: 600; line-height: 1.45; }
+.triage-choice-text { min-width: 0; color: var(--ink); font-size: var(--fs-lg); font-weight: 600; line-height: 1.45; }
 .triage-choice-badges { display: flex; flex-wrap: wrap; gap: 0.35rem 0.6rem; padding-left: 1.4rem; }
 .triage-choice-selected,
-.triage-choice-recommended { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.triage-choice-recommended { font-size: var(--fs-xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .triage-choice-selected { color: var(--accent-ink); }
 .triage-choice-recommended { color: var(--ink-2); }
 
@@ -1390,11 +1390,11 @@ details[open] > summary::before { content: "▾"; }
 .detail--framed .swaiting-head .segs,
 .detail--waiting .swaiting-head .segs { margin: 0; }
 .detail--framed .swaiting-head .slab,
-.detail--waiting .swaiting-head .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
+.detail--waiting .swaiting-head .slab { font-size: var(--fs-sm); }
 .detail--framed .swaiting-head .sbar,
 .detail--waiting .swaiting-head .sbar { height: 6px; }
 .detail--framed .swaiting-head .snow,
-.detail--waiting .swaiting-head .snow { font-size: 0.75rem; }
+.detail--waiting .swaiting-head .snow { font-size: var(--fs-sm); }
 .detail--waiting .swhere { padding-top: 0.75rem; border-top: 1px solid var(--rule); }
 .detail--waiting .swhere--quiet { padding-top: 0; border-top: 0; }
 .detail--waiting .swhere--quiet .sbody { padding-top: 0; }
@@ -1404,7 +1404,7 @@ details[open] > summary::before { content: "▾"; }
   padding-left: 0.85rem;
   border-left: 3px solid var(--accent);
   color: var(--ink);
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
 }
 :is(.detail--waiting, .detail--resolved, .detail--framed) .topening {
   padding-top: 0.65rem;
@@ -1434,7 +1434,7 @@ details[open] > summary::before { content: "▾"; }
   border: 0;
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 0.86rem;
+  font-size: var(--fs-md);
   line-height: 1.5;
 }
 :is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field h2 {
@@ -1450,18 +1450,18 @@ details[open] > summary::before { content: "▾"; }
 }
 :is(.detail--waiting, .detail--resolved) .swhere { gap: 1rem; }
 :is(.detail--waiting, .detail--resolved) .swhere .segs { margin: 0; }
-:is(.detail--waiting, .detail--resolved) .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
+:is(.detail--waiting, .detail--resolved) .swhere .slab { font-size: var(--fs-sm); }
 :is(.detail--waiting, .detail--resolved) .swhere .sbar { height: 6px; }
 :is(.detail--waiting, .detail--resolved) .sbody { gap: 0.55rem; padding-top: 0.9rem; }
 :is(.detail--waiting, .detail--resolved) .squestion,
-:is(.detail--waiting, .detail--resolved) .sbody .diag { font-size: 0.98rem; }
-:is(.detail--waiting, .detail--resolved) .sowhat { font-size: 0.9rem; }
+:is(.detail--waiting, .detail--resolved) .sbody .diag { font-size: var(--fs-lg); }
+:is(.detail--waiting, .detail--resolved) .sowhat { font-size: var(--fs-md); }
 
 .saftermove { display: grid; gap: 0.65rem; min-width: 0; padding: clamp(1.1rem, 2.3vw, 1.8rem); border: 1px solid; overflow-wrap: anywhere; }
 .saftermove h2 { margin: 0; }
 .saftermove p { margin: 0; max-width: 75ch; line-height: 1.45; }
 .saftermove-title { display: flex; flex-wrap: wrap; gap: 0.5rem 0.8rem; align-items: baseline; }
-.saftermove-title strong { font-size: 1.2rem; }
+.saftermove-title strong { font-size: var(--fs-xl); }
 .saftermove--requeued { background: #dfeee4; border-color: #b7d8c2; }
 .saftermove--closed, .saftermove--failed { background: #f6e1de; border-color: #e8c3be; }
 .saftermove--partial { background: #f7ead6; border-color: #e0c9a4; }
@@ -1485,7 +1485,7 @@ details[open] > summary::before { content: "▾"; }
 .detail--running .triage-cause {
   width: fit-content;
   padding: 0.2rem 0.65rem;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   max-width: 100%;
   overflow-wrap: anywhere;
 }
@@ -1495,14 +1495,14 @@ details[open] > summary::before { content: "▾"; }
   max-width: 55ch;
   color: var(--ink);
   font-family: var(--serif);
-  font-size: clamp(1.2rem, 2vw, 1.4rem);
+  font-size: var(--fs-xl);
   line-height: 1.45;
   text-wrap: pretty;
 }
 .detail--waiting .triage-recommendation,
 .detail--queued .triage-recommendation,
 .detail--running .triage-recommendation { color: var(--accent-ink); font-weight: 600; }
-.detail--queued .triage-estimate { margin: 0; color: var(--muted, inherit); font-size: 0.85em; }
+.detail--queued .triage-estimate { margin: 0; color: var(--muted, inherit); font-size: var(--fs-xs); }
 .detail--waiting .triage-evidence { display: grid; gap: 0.6rem; min-width: 0; }
 .detail--waiting .triage-evidence > p { margin: 0; overflow-wrap: anywhere; }
 .detail--waiting .triage-fixes,
@@ -1522,22 +1522,22 @@ details[open] > summary::before { content: "▾"; }
 .detail--waiting .triage-fixes li + li,
 .detail--waiting .triage-hunk + .triage-hunk { border-top: 1px solid var(--rule); }
 .detail--waiting .triage-number,
-.detail--waiting .triage-location { font-family: var(--mono); font-size: 0.78rem; overflow-wrap: anywhere; }
+.detail--waiting .triage-location { font-family: var(--mono); font-size: var(--fs-sm); overflow-wrap: anywhere; }
 .detail--waiting .triage-number { color: var(--accent-ink); }
 .detail--waiting .triage-location { color: var(--ink-2); }
 .detail--waiting .triage-hunk-count { font-family: var(--mono); font-weight: 500; }
 .detail--waiting .triage-hunk-group h3 { margin: 0; padding: 0.65rem 1rem; border-bottom: 1px solid var(--rule); }
 .detail--waiting .triage-hunk { display: grid; grid-template-columns: minmax(8rem, 16rem) minmax(0, 1fr); gap: 0.8rem; padding: 0.8rem 1rem; min-width: 0; }
-.detail--waiting .triage-hunk--mechanical > span:last-child { color: var(--pass); font-size: 0.8rem; font-weight: 600; }
+.detail--waiting .triage-hunk--mechanical > span:last-child { color: var(--pass); font-size: var(--fs-md); font-weight: 600; }
 .detail--waiting .triage-hunk--divergent { border-left: 3px solid var(--signal); }
 .detail--waiting .triage-hunk--divergent fieldset { margin: 0; padding: 0; border: 0; }
-.detail--waiting .triage-hunk--divergent legend { margin-bottom: 0.55rem; font-family: var(--serif); font-size: 1.12rem; line-height: 1.4; }
+.detail--waiting .triage-hunk--divergent legend { margin-bottom: 0.55rem; font-family: var(--serif); font-size: var(--fs-lg); line-height: 1.4; }
 .detail--waiting .triage-evidence > details { overflow-wrap: anywhere; }
 .detail--waiting .triage-band--failed { border-left: 4px solid var(--fail); }
 .detail--waiting .triage-band--failed > p:last-child {
   max-width: 65ch;
   color: var(--ink);
-  font-size: clamp(1.1rem, 2vw, 1.4rem);
+  font-size: var(--fs-xl);
 }
 /* Advice and the follow-up it invites are one reading surface. Pending and
    absent advice keep their own truthful Discussion presentation. */
@@ -1575,9 +1575,9 @@ details[open] > summary::before { content: "▾"; }
 /* The queued panel's facts: new names, so scoped to the band they sit in. */
 .band-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 0.8rem 1.5rem; min-width: 0; }
 .band-facts .fact { display: grid; gap: 0.2rem; align-content: start; min-width: 0; }
-.band-facts .fk { color: var(--ink-2); font-size: 0.72rem; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+.band-facts .fk { color: var(--ink-2); font-size: var(--fs-sm); font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
 .band-facts .fv { overflow-wrap: anywhere; }
-.band-facts .fs { color: var(--ink-2); font-size: 0.82rem; }
+.band-facts .fs { color: var(--ink-2); font-size: var(--fs-md); }
 /* Each allowed outcome has its own reading and action surface. The first card
    gets extra room, while auto-fit lets the remaining cards wrap inside the
    Waiting page's bounded measure. */
@@ -1621,22 +1621,22 @@ details[open] > summary::before { content: "▾"; }
   .sresolutiongrid > .sresolution--recommended:not([hidden]) { grid-row: auto; }
 }
 .sresolutionhead { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.4rem 0.7rem; }
-.sresolutionhead h3 { margin: 0; font-size: 1.05rem; line-height: 1.35; }
+.sresolutionhead h3 { margin: 0; font-size: var(--fs-lg); line-height: 1.35; }
 .sresolutionbadge {
   padding: 0.2rem 0.5rem;
   background: var(--accent);
   color: var(--surface);
-  font-size: 0.67rem;
+  font-size: var(--fs-xs);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
 }
-.sresolutionconsequence { margin: 0; color: var(--ink-2); font-size: 0.86rem; line-height: 1.5; }
-.sresolutioninput { margin: 0; color: var(--accent-ink); font-size: 0.76rem; line-height: 1.4; }
+.sresolutionconsequence { margin: 0; color: var(--ink-2); font-size: var(--fs-md); line-height: 1.5; }
+.sresolutioninput { margin: 0; color: var(--accent-ink); font-size: var(--fs-sm); line-height: 1.4; }
 .sresolutionaction { margin-top: auto; min-width: 0; }
 .sresolutionaction .decide,
 .sresolutionaction .reason { min-width: 0; }
-.sresolutionaction .reason { gap: 0.4rem; font-size: 0.78rem; }
+.sresolutionaction .reason { gap: 0.4rem; font-size: var(--fs-sm); }
 .sresolutionaction .reason input,
 .sresolutionaction .reason textarea,
 .sresolutionaction .reason .mdf {
@@ -1644,7 +1644,7 @@ details[open] > summary::before { content: "▾"; }
   max-width: 100%;
   min-height: 2.5rem;
   padding: 0.55rem 0.75rem;
-  font-size: 0.84rem;
+  font-size: var(--fs-md);
 }
 .sresolutionaction .reason textarea, .sresolutionaction .reason .mdf { min-height: 6rem; }
 .sresolutionaction .btn {
@@ -1675,14 +1675,14 @@ details[open] > summary::before { content: "▾"; }
   padding-left: 0.5rem;
   border-left: 2px solid var(--accent);
 }
-.sreason > summary { font-size: 0.75rem; }
+.sreason > summary { font-size: var(--fs-sm); }
 .ssize { font-family: var(--mono); color: var(--muted); }
 /* Scrolls inside itself, and is bounded: this is a gate's whole output, and a
    block that grows with it would push the moves under it off the screen —
    which is the same failure `.spair` is bounded for. */
 .sraw {
   font-family: var(--mono);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   line-height: 1.55;
   margin: 0.3rem 0 0;
   padding: 0.45rem 0.6rem;
@@ -1704,7 +1704,7 @@ details[open] > summary::before { content: "▾"; }
   padding-left: 0.5rem;
   border-left: 2px solid var(--accent);
 }
-.slog > summary { font-size: 0.75rem; }
+.slog > summary { font-size: var(--fs-sm); }
 .slog .alogbody { height: 14rem; margin-top: 0.3rem; }
 /* Its run ended under a reader: under the refusal, and short, so the quote,
    the sentence and the moves are still on the first screen (#152). */
@@ -1726,7 +1726,7 @@ details[open] > summary::before { content: "▾"; }
   margin: 0.15rem 0 0;
   padding-left: 0.5rem;
   border-left: 2px solid var(--accent);
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
 }
 /* A stated absence, not a blank rank (0016 §4). A gate that refused and printed
    nothing is a different fact from a gate that never ran, and a rank that
@@ -1884,7 +1884,7 @@ details[open] > summary::before { content: "▾"; }
   align-items: baseline;
   gap: 0.6rem;
   margin: 0;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
 }
 .outname {
   font-family: var(--mono);
@@ -1896,7 +1896,7 @@ details[open] > summary::before { content: "▾"; }
    not a thing waiting on anybody. */
 .outonly {
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-xs);
   padding: 0 0.3rem;
   border: 1px solid var(--rule-2);
   border-radius: var(--radius);
@@ -1919,7 +1919,7 @@ details[open] > summary::before { content: "▾"; }
   border: 1px solid var(--rule-2);
   border-radius: var(--radius);
   background: var(--surface);
-  font: 0.68rem/1.55 var(--mono);
+  font: var(--fs-xs)/1.55 var(--mono);
   color: var(--ink-2);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -1930,7 +1930,7 @@ details[open] > summary::before { content: "▾"; }
 .outedit {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
 }
@@ -1938,7 +1938,7 @@ details[open] > summary::before { content: "▾"; }
 .outeditor { display: grid; gap: 0.35rem; align-content: start; }
 .outbox { display: grid; gap: 0.35rem; }
 .outbox textarea, .outbox .mdf {
-  font: 0.75rem/1.55 var(--mono);
+  font: var(--fs-sm)/1.55 var(--mono);
   padding: 0.35rem 0.45rem;
   border: 1px solid var(--rule-2);
   border-radius: var(--radius);
@@ -1946,7 +1946,7 @@ details[open] > summary::before { content: "▾"; }
   color: var(--ink);
   resize: vertical;
 }
-.outnote { margin: 0; font-size: 0.68rem; line-height: 1.5; color: var(--muted); }
+.outnote { margin: 0; font-size: var(--fs-xs); line-height: 1.5; color: var(--muted); }
 
 /* --- what will happen -----------------------------------------------------
    The queued item's other box, beside the document that will be sent. Framed
@@ -1961,7 +1961,7 @@ details[open] > summary::before { content: "▾"; }
    under the button: what the click does is one fact and what is stopping the
    item is another, and a label that tried to be both would be a button whose
    name changes while you read it. */
-.jumps { margin: 0; font-size: 11px; font-family: var(--mono); color: var(--muted); }
+.jumps { margin: 0; font-size: var(--fs-xs); font-family: var(--mono); color: var(--muted); }
 
 /* --- the discussion -------------------------------------------------------
    One of the two objects the decision column allows a frame around — a place
@@ -2003,14 +2003,14 @@ details[open] > summary::before { content: "▾"; }
   background: transparent;
   color: var(--ink-2);
   text-align: left;
-  font: 500 0.85rem var(--sans);
+  font: 500 var(--fs-md) var(--sans);
   cursor: pointer;
 }
 .chatentry span { color: var(--accent-ink); font-family: var(--mono); }
-.chatentry small { color: var(--muted); font: 400 0.78rem var(--sans); }
+.chatentry small { color: var(--muted); font: 400 var(--fs-sm) var(--sans); }
 .chatentry:hover, .chatentry:focus-visible { color: var(--accent-ink); }
 .chat > .chatcontext { display: grid; gap: 0.2rem; flex: 0 1 auto; min-width: 0; min-height: 0; overflow-y: auto; }
-.chatcontext p { margin: 0; font-size: 0.78rem; line-height: 1.45; overflow-wrap: anywhere; }
+.chatcontext p { margin: 0; font-size: var(--fs-sm); line-height: 1.45; overflow-wrap: anywhere; }
 .chatcontextdetail { color: var(--muted); }
 .chat[data-context='failed'] .chatcontextdetail { color: var(--ink-2); }
 .chat[data-context='question'] .chatcontext { color: var(--signal); }
@@ -2039,7 +2039,7 @@ details[open] > summary::before { content: "▾"; }
   justify-content: space-between;
   gap: 0.6rem;
   margin: 0;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
 }
 .chatname {
   font-family: var(--mono);
@@ -2053,7 +2053,7 @@ details[open] > summary::before { content: "▾"; }
 .chatlog.done { opacity: 0.72; }
 .chatturn { display: grid; gap: 0.3rem; min-width: 0; }
 
-.chatq { margin: 0; font-size: 0.8rem; line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
+.chatq { margin: 0; font-size: var(--fs-md); line-height: 1.5; color: var(--ink); white-space: pre-wrap; }
 /* **Turns, not a transcript** (#152): a bubble each, and who said it on top.
    The person's to the right on the teal wash, the assistant's to the left on
    the surface — the two sides are the two authors, so a reader scanning up
@@ -2073,7 +2073,7 @@ details[open] > summary::before { content: "▾"; }
 .chatwho {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 /* The answer grows under this, and only while a writer is touching the trace
@@ -2099,7 +2099,7 @@ details[open] > summary::before { content: "▾"; }
   padding-left: 0.85rem;
   list-style: none;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   color: var(--muted);
   border-left: 2px solid var(--rule-2);
@@ -2109,13 +2109,13 @@ details[open] > summary::before { content: "▾"; }
    `markdown.ts`'s rule, and the default there is never rendered. */
 .chata {
   margin: 0;
-  font-size: 0.8rem;
+  font-size: var(--fs-md);
   line-height: 1.55;
   color: var(--ink);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
-.chatwait { margin: 0; font-size: 0.72rem; color: var(--muted); font-style: italic; }
+.chatwait { margin: 0; font-size: var(--fs-sm); color: var(--muted); font-style: italic; }
 /* What the assistant is doing, while it does it — 0034's mechanism, pointed at
    a chat (#132). A trace and never the answer, so it is set as a log and
    bounded: it must not be able to push the answer that replaces it about. */
@@ -2126,7 +2126,7 @@ details[open] > summary::before { content: "▾"; }
   border-left: 2px solid var(--rule-2);
   background: var(--surface);
 }
-.chatfail { margin: 0; font-size: 0.72rem; color: var(--fail); font-family: var(--mono); }
+.chatfail { margin: 0; font-size: var(--fs-sm); color: var(--fail); font-family: var(--mono); }
 
 /* What it could not establish, at the answer's own weight and not below it.
    #89 cost two attempts because a guess was read as a finding. */
@@ -2134,7 +2134,7 @@ details[open] > summary::before { content: "▾"; }
   margin: 0;
   padding-left: 0.85rem;
   list-style: none;
-  font-size: 0.75rem;
+  font-size: var(--fs-sm);
   line-height: 1.55;
   color: var(--ink-2);
   border-left: 2px solid var(--signal);
@@ -2149,7 +2149,7 @@ details[open] > summary::before { content: "▾"; }
   gap: 0.7rem;
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2167,14 +2167,14 @@ details[open] > summary::before { content: "▾"; }
 .chatpropkind {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-xs);
   text-transform: uppercase;
   letter-spacing: 0.08em;
   color: var(--muted);
 }
 .chatproptext {
   margin: 0;
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   line-height: 1.5;
   color: var(--ink);
   white-space: pre-wrap;
@@ -2182,7 +2182,7 @@ details[open] > summary::before { content: "▾"; }
 .chatheld {
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.66rem;
+  font-size: var(--fs-xs);
   color: var(--pass);
 }
 
@@ -2198,7 +2198,7 @@ details[open] > summary::before { content: "▾"; }
    scrolls in itself: a long question takes room from the conversation above it
    only so far (#173). */
 .chatask textarea, .chatask .mdf {
-  font: 0.8rem/1.5 var(--sans);
+  font: var(--fs-md)/1.5 var(--sans);
   padding: 0.35rem 0.45rem;
   border: 1px solid var(--rule-2);
   border-radius: var(--radius);
@@ -2264,13 +2264,13 @@ details[open] > summary::before { content: "▾"; }
   gap: 0.7rem;
   margin: 0;
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
   color: var(--ink);
 }
 .asechead { margin: 0.2rem 0 0; }
-.asec > summary { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.15rem 0; font-size: 0.7rem; }
+.asec > summary { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.15rem 0; font-size: var(--fs-xs); }
 .rname {
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -2283,7 +2283,7 @@ details[open] > summary::before { content: "▾"; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
   font-variant-numeric: tabular-nums;
 }
@@ -2295,18 +2295,18 @@ details[open] > summary::before { content: "▾"; }
 .rof {
   margin: 0.3rem 0 0;
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   letter-spacing: 0.06em;
   color: var(--ink-2);
 }
 /* What the diagnosis said past rank 3's one sentence. Muted: it is record. */
-.rhow { margin: 0; max-width: 82ch; font-size: 0.8rem; line-height: 1.55; color: var(--ink-2); }
+.rhow { margin: 0; max-width: 82ch; font-size: var(--fs-md); line-height: 1.55; color: var(--ink-2); }
 
 /* The ticket, in the prompt row. What was asked, above what was done — a page you
    decide on has to carry the request and not only the response (#87). */
 .tref { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0 0 0.4rem; }
-.ttitle { margin: 0 0 0.7rem; font-size: 1.05rem; font-weight: 600; line-height: 1.35; color: var(--ink); }
-.tlink { font-family: var(--mono); font-size: 0.7rem; }
+.ttitle { margin: 0 0 0.7rem; font-size: var(--fs-lg); font-weight: 600; line-height: 1.35; color: var(--ink); }
+.tlink { font-family: var(--mono); font-size: var(--fs-xs); }
 /* Collapsed, because the body is a document and a page that opens three
    screens tall is its own kind of unreadable — the trade the evidence
    disclosures already make. Absent would be a different thing entirely. */
@@ -2317,7 +2317,7 @@ details[open] > summary::before { content: "▾"; }
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   font-family: var(--mono);
-  font-size: 11.5px;
+  font-size: var(--fs-sm);
   line-height: 1.6;
   color: var(--ink-2);
   /* Wrapped, not scrolled sideways: a ticket is prose, unlike a diff. */
@@ -2378,7 +2378,7 @@ details[open] > summary::before { content: "▾"; }
   align-items: center;
   padding: 0.55rem 0.85rem;
   font-family: var(--mono);
-  font-size: 0.76rem;
+  font-size: var(--fs-sm);
   color: var(--ink);
 }
 .attempt > summary:hover { color: var(--ink); }
@@ -2387,16 +2387,16 @@ details[open] > summary::before { content: "▾"; }
 .anum { color: var(--ink); }
 /* The failure's kind, the non-zero exit, the release's reason — a pointer to
    the row in this attempt's own history that holds the whole of it. */
-.adetail { font-size: 0.72rem; color: var(--muted); }
+.adetail { font-size: var(--fs-sm); color: var(--muted); }
 .afig {
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
   color: var(--ink-2);
   text-align: right;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 .aage {
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
   color: var(--muted);
   text-align: right;
   font-variant-numeric: tabular-nums;
@@ -2409,7 +2409,7 @@ details[open] > summary::before { content: "▾"; }
   margin: 0.5rem 0 0.6rem;
 }
 .aprompt, .afiles, .alog { margin: 0 0 0.5rem; }
-.aprompt > summary, .afiles > summary, .alog > summary { padding: 0.15rem 0; font-size: 0.7rem; }
+.aprompt > summary, .afiles > summary, .alog > summary { padding: 0.15rem 0; font-size: var(--fs-xs); }
 
 /* The run log (#110), which is the one block on this page that can still be
    growing while you read it. Scrolled rather than tall: it is bounded here and
@@ -2429,7 +2429,7 @@ details[open] > summary::before { content: "▾"; }
   margin: 0;
   padding: 8px 10px;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   line-height: 1.55;
   color: var(--ink-2);
   /* Wrapped, like the prompt and for its reason: the agent's own prose is in
@@ -2457,7 +2457,7 @@ details[open] > summary::before { content: "▾"; }
    provenance line leads because a command whose recipe is unnamed is a claim
    about a run nobody can check; then the reading, then what differs from head,
    then the commands, closed until asked. */
-.arecipe { margin: 0 0 0.5rem; font-size: 0.75rem; }
+.arecipe { margin: 0 0 0.5rem; font-size: var(--fs-sm); }
 .arecipe .rprov { margin: 0 0 0.35rem; }
 /* The reading: `lingtai status`'s rows, in a column that reads *down* the way
    the terminal's does. The name column is the width of the longest of them. */
@@ -2480,7 +2480,7 @@ details[open] > summary::before { content: "▾"; }
 .rfrom { color: var(--muted); overflow-wrap: anywhere; }
 /* `lingtai doctor`'s provenance block: every value, its origin, nothing
    grouped. Under the reading because it is consulted and not read. */
-.prov { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: 0.75rem; }
+.prov { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.15rem; font-size: var(--fs-sm); }
 .prov > li { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: baseline; }
 .pval { min-width: 0; overflow-wrap: anywhere; }
 /* This attempt's value first and head's after it, dimmed: the page is about the
@@ -2563,7 +2563,7 @@ details[open] > summary::before { content: "▾"; }
   border-top: 1px solid var(--rule-2);
   border-bottom: 1px solid var(--rule-2);
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
   color: var(--accent-ink);
   /* **It follows you down the run.** A run here is forty events; a marker you
      passed once cannot answer *which attempt am I reading* at row thirty, which
@@ -2578,7 +2578,7 @@ details[open] > summary::before { content: "▾"; }
    treatment the design uses for a second-rank name — upper case and tracked, a
    step down from a section title and two steps up from a row. */
 .hgname {
-  font-size: 0.95rem;
+  font-size: var(--fs-lg);
   font-weight: 600;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -2603,7 +2603,7 @@ details[open] > summary::before { content: "▾"; }
   display: flex;
   flex-direction: column;
   font-family: var(--mono);
-  font-size: 0.78rem;
+  font-size: var(--fs-sm);
 }
 .history li { border-bottom: 1px solid var(--rule); }
 .history li:last-child { border-bottom: 0; }
@@ -2633,7 +2633,7 @@ details[open] > summary::before { content: "▾"; }
 .history .what {
   color: var(--muted);
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2643,14 +2643,14 @@ details[open] > summary::before { content: "▾"; }
 .history .sum { color: var(--ink); overflow-wrap: anywhere; }
 
 /* Indented past the marker, so an open row reads as belonging to its line. */
-.history .hmeta { margin: 0 0 4px 1.75rem; font-size: 0.7rem; color: var(--muted); }
+.history .hmeta { margin: 0 0 4px 1.75rem; font-size: var(--fs-xs); color: var(--muted); }
 .history .hraw {
   margin: 0 0 0.5rem 1.75rem;
   padding: 6px 8px;
   background: var(--surface-2);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   line-height: 1.5;
   color: var(--ink-2);
   overflow-x: auto;
@@ -2668,7 +2668,7 @@ details[open] > summary::before { content: "▾"; }
   gap: 0.5rem;
   align-items: baseline;
   padding: 0.15rem 0;
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 .history .hdoc > summary:hover { background: var(--surface); }
@@ -2679,7 +2679,7 @@ details[open] > summary::before { content: "▾"; }
   background: var(--surface-2);
   border: 1px solid var(--rule);
   border-radius: var(--radius);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   line-height: 1.6;
   color: var(--ink-2);
   /* Wrapped, not scrolled sideways — a prompt is prose, unlike a diff — and
@@ -2707,7 +2707,7 @@ details[open] > summary::before { content: "▾"; }
   border: 1px solid var(--rule);
   border-radius: var(--radius);
   font-family: var(--sans);
-  font-size: 0.82rem;
+  font-size: var(--fs-md);
   line-height: 1.65;
   color: var(--ink-2);
   overflow-wrap: anywhere;
@@ -2739,7 +2739,7 @@ details[open] > summary::before { content: "▾"; }
    compressed into a half-step above the body and told apart by weight. */
 .md h1, .md h2, .md h3, .md h4, .md h5, .md h6 {
   margin: 1.1rem 0 0.45rem;
-  font-size: 0.88rem;
+  font-size: var(--fs-md);
   font-weight: 600;
   line-height: 1.35;
   color: var(--ink);
@@ -2755,7 +2755,7 @@ details[open] > summary::before { content: "▾"; }
 }
 .md code {
   font-family: var(--mono);
-  font-size: 0.72rem;
+  font-size: var(--fs-sm);
   padding: 0.05rem 0.3rem;
   background: var(--surface);
   border: 1px solid var(--rule);
@@ -2771,7 +2771,7 @@ details[open] > summary::before { content: "▾"; }
   overflow-x: auto;
 }
 .md pre code { padding: 0; background: none; border: 0; }
-.md table { border-collapse: collapse; font-size: 0.76rem; }
+.md table { border-collapse: collapse; font-size: var(--fs-sm); }
 .md th, .md td { padding: 0.25rem 0.55rem; border: 1px solid var(--rule); text-align: left; }
 .md th { background: var(--surface); color: var(--ink); }
 .md hr { border: 0; border-top: 1px solid var(--rule); margin: 1rem 0; }
@@ -2793,7 +2793,7 @@ details[open] > summary::before { content: "▾"; }
    than as something that failed to load. */
 .mdimg {
   font-family: var(--mono);
-  font-size: 0.7rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
 }
 
@@ -2804,7 +2804,7 @@ details[open] > summary::before { content: "▾"; }
 .mdask > summary {
   padding: 0.15rem 0;
   font-family: var(--mono);
-  font-size: 0.68rem;
+  font-size: var(--fs-xs);
   color: var(--muted);
   cursor: default;
 }
@@ -2942,21 +2942,21 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .split-canvas { overflow-x: auto; border: 1px solid var(--rule); background: var(--surface); }
 .split-canvas .react-flow { background: transparent; }
 .split-card { box-sizing: border-box; width: 100%; height: 100%; padding: 0.55rem 0.8rem; display: grid; align-content: center; gap: 0.2rem; background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); box-shadow: inset 4px 0 0 var(--accent); cursor: pointer; transition: opacity 0.15s; }
-.split-card-head { display: flex; justify-content: space-between; gap: 0.5rem; font: 600 0.8rem var(--mono); }
+.split-card-head { display: flex; justify-content: space-between; gap: 0.5rem; font: 600 var(--fs-md) var(--mono); }
 .split-card-kind { color: var(--muted); font-weight: 400; }
-.split-card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 0.85rem; }
-.split-card--parent { background: var(--ink); color: var(--surface); border-color: var(--ink); box-shadow: none; cursor: default; align-content: center; font: 600 0.85rem var(--mono); }
+.split-card-title { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-md); }
+.split-card--parent { background: var(--ink); color: var(--surface); border-color: var(--ink); box-shadow: none; cursor: default; align-content: center; font: 600 var(--fs-md) var(--mono); }
 .split-card--selected { border-color: var(--accent); box-shadow: inset 4px 0 0 var(--accent), 0 0 0 4px var(--accent-soft); }
 .split-card--off { border-style: dashed; background: var(--ground); color: var(--muted); box-shadow: none; }
 .split-card--faded { opacity: 0.35; }
 .split-handle { opacity: 0; pointer-events: none; }
-.split-band { width: 100%; height: 100%; box-sizing: border-box; padding: 0.4rem 0.6rem; background: var(--ground); border: 1px solid var(--rule); font: 600 0.7rem var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
+.split-band { width: 100%; height: 100%; box-sizing: border-box; padding: 0.4rem 0.6rem; background: var(--ground); border: 1px solid var(--rule); font: 600 var(--fs-xs) var(--sans); letter-spacing: 0.07em; text-transform: uppercase; color: var(--muted); }
 .split-panel { display: grid; gap: 0.7rem; padding: 0.85rem 1rem; border: 1px solid var(--rule); background: var(--surface); }
-.split-field { display: grid; gap: 0.25rem; font-size: 0.8rem; color: var(--muted); }
-.split-field input, .split-field textarea { box-sizing: border-box; width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--rule-2); background: var(--ground); color: var(--ink); font: 0.85rem var(--mono); }
-.split-check { display: flex; align-items: center; gap: 0.5rem; min-height: 2rem; font-size: 0.85rem; }
+.split-field { display: grid; gap: 0.25rem; font-size: var(--fs-md); color: var(--muted); }
+.split-field input, .split-field textarea { box-sizing: border-box; width: 100%; padding: 0.5rem 0.6rem; border: 1px solid var(--rule-2); background: var(--ground); color: var(--ink); font: var(--fs-md) var(--mono); }
+.split-check { display: flex; align-items: center; gap: 0.5rem; min-height: 2rem; font-size: var(--fs-md); }
 .split-blockers { display: grid; gap: 0.1rem; margin: 0; padding: 0; border: 0; }
-.split-blockers legend { padding: 0; font-size: 0.8rem; color: var(--muted); }
+.split-blockers legend { padding: 0; font-size: var(--fs-md); color: var(--muted); }
 
 .split-card--written {
   border-color: #0b6a70;
@@ -2970,7 +2970,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 }
 .split-note {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--fs-md);
 }
 .split-note--failed {
   color: #8a3b12;
@@ -3133,11 +3133,11 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 
 /* The Sandbox tab, redrawn to design A (#1237, doc/milestone/0.15.0/sandbox-ui). */
 .sbrows { border-collapse: collapse; width: 100%; }
-.sbrows th { text-align: left; font: 600 11.5px var(--sans); color: var(--muted); padding: 0 10px 7px; border-bottom: 1px solid var(--rule); }
+.sbrows th { text-align: left; font: 600 var(--fs-sm) var(--sans); color: var(--muted); padding: 0 10px 7px; border-bottom: 1px solid var(--rule); }
 .sbrows td { padding: 9px 10px; vertical-align: baseline; border-bottom: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); }
 .sbrows tbody tr:last-child td { border-bottom: 0; }
 .sbrows .r { text-align: right; }
-.sbrows .sbmark { display: inline-flex; align-items: center; gap: 6px; font: 500 11.5px var(--sans); padding: 1px 8px; border-radius: 999px; background: var(--ground); color: var(--muted); }
+.sbrows .sbmark { display: inline-flex; align-items: center; gap: 6px; font: 500 var(--fs-sm) var(--sans); padding: 1px 8px; border-radius: 999px; background: var(--ground); color: var(--muted); }
 .sbrows .sbmark::before { content: ''; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .sbrows .sbmark.pass { background: var(--pass-soft); color: var(--pass); }
 .sbrows .sbmark.hold { background: var(--signal-soft); color: var(--signal); }
@@ -3148,34 +3148,34 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .sbsummary.sbx-sandboxed .sbx-mark { background: var(--pass-soft); color: var(--pass); }
 .sbsummary.sbx-degraded .sbx-mark { background: var(--signal-soft); color: var(--signal); }
 .sbsummary.sbx-stopped .sbx-mark { background: var(--fail-soft); color: var(--fail); }
-.sbsummary-text p { margin: 0; font: 13px var(--sans); color: var(--muted); }
-.sbsummary-text p.sbsummary-head { font: 600 15.5px var(--sans); color: var(--ink); }
+.sbsummary-text p { margin: 0; font: var(--fs-md) var(--sans); color: var(--muted); }
+.sbsummary-text p.sbsummary-head { font: 600 var(--fs-lg) var(--sans); color: var(--ink); }
 .sbsummary-figs { display: flex; gap: 26px; text-align: right; }
-.sbfig { display: block; font-size: 11.5px; color: var(--muted); }
-.sbfig b { display: block; font: 600 20px/1.1 var(--sans); color: var(--ink); }
+.sbfig { display: block; font-size: var(--fs-sm); color: var(--muted); }
+.sbfig b { display: block; font: 600 var(--fs-xl)/1.1 var(--sans); color: var(--ink); }
 .sbfig.hold b { color: var(--signal); }
 .sbblocked { border: 1px solid color-mix(in srgb, var(--signal) 25%, var(--rule)); background: color-mix(in srgb, var(--signal-soft) 45%, var(--surface)); border-radius: var(--radius); padding: 14px 16px 6px; }
-.sbblocked td.mono { font: 500 13px var(--mono); }
-.sbtag { font: 500 11.5px var(--mono); padding: 1px 8px; border-radius: var(--radius); color: var(--muted); border: 1px solid var(--rule); }
+.sbblocked td.mono { font: 500 var(--fs-md) var(--mono); }
+.sbtag { font: 500 var(--fs-sm) var(--mono); padding: 1px 8px; border-radius: var(--radius); color: var(--muted); border: 1px solid var(--rule); }
 .sbtag.agent { background: var(--held-soft); border-color: color-mix(in srgb, var(--held) 25%, transparent); color: var(--held); }
-.sbtag.agent span { font-size: 11px; }
-.sbletter { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 11px var(--mono); color: var(--ink-2); border: 1px solid var(--rule); border-radius: var(--radius); }
+.sbtag.agent span { font-size: var(--fs-xs); }
+.sbletter { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; font: 600 var(--fs-xs) var(--mono); color: var(--ink-2); border: 1px solid var(--rule); border-radius: var(--radius); }
 .sbboxes { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 12px; }
 .sbbox { border: 1px solid var(--rule); border-radius: var(--radius); padding: 13px 14px 8px; background: var(--surface); min-width: 0; }
 .sbbox p { margin: 0.2rem 0; }
-.sbbox-title { display: flex; justify-content: space-between; font: 600 13px var(--sans); }
-.sbbox-title .empty { font: 11.5px var(--sans); }
-.sbgroup > .empty { display: block; font-size: 11.5px; }
-.sbchip { display: inline-block; box-sizing: border-box; font: 12px var(--mono); background: var(--ground); border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); border-radius: var(--radius); padding: 1px 7px; margin: 0 4px 5px 0; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.sbbox-title { display: flex; justify-content: space-between; font: 600 var(--fs-md) var(--sans); }
+.sbbox-title .empty { font: var(--fs-sm) var(--sans); }
+.sbgroup > .empty { display: block; font-size: var(--fs-sm); }
+.sbchip { display: inline-block; box-sizing: border-box; font: var(--fs-sm) var(--mono); background: var(--ground); border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); border-radius: var(--radius); padding: 1px 7px; margin: 0 4px 5px 0; color: var(--ink-2); max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .sbchip.short { background: var(--surface); border-style: dashed; }
 .sbdiffers { list-style: none; margin: 0; border: 1px solid var(--rule); border-radius: var(--radius); padding: 12px 14px; }
 .sbdiffers li { margin: 0.3rem 0; display: grid; grid-template-columns: 28px 230px 1fr; align-items: baseline; min-width: 0; }
 .sbdiffers li > :nth-child(n + 3) { grid-column: 3; }
-.sblegend { margin-top: 12px; background: var(--ground); border-radius: var(--radius); padding: 12px 14px; font: 12px var(--mono); }
+.sblegend { margin-top: 12px; background: var(--ground); border-radius: var(--radius); padding: 12px 14px; font: var(--fs-sm) var(--mono); }
 .sblegend p { margin: 0.1rem 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
 .sblegend p > code:first-child { color: var(--accent-ink); }
 .sbnotes { display: grid; grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr)); gap: 12px; }
-.sbnotes .sbbox { background: var(--ground); border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); font-size: 12.5px; color: var(--ink-2); }
+.sbnotes .sbbox { background: var(--ground); border: 1px solid color-mix(in srgb, var(--rule) 60%, transparent); font-size: var(--fs-sm); color: var(--ink-2); }
 
 /* The recipe page's sandbox card (#1197). */
 .also .src { font: 11px var(--mono); white-space: nowrap; }
@@ -3422,11 +3422,11 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .obs-sketch { width: 100%; height: auto; max-height: 170px; }
 .obs-box { fill: none; stroke: var(--pr-teal); stroke-width: 1.5; }
 .obs-ring { fill: none; stroke: var(--pr-amber); stroke-width: 2; }
-.obs-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.4rem 0; font-size: 0.85rem; }
+.obs-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.4rem 0; font-size: var(--fs-md); }
 .obs-facts dt { color: var(--pr-slate); }
 .obs-facts dd { margin: 0; overflow-wrap: anywhere; }
 .obs-fail { color: var(--fail); }
-.obs-note { font-size: 0.8rem; color: var(--pr-slate); margin: 0.2rem 0; }
+.obs-note { font-size: var(--fs-md); color: var(--pr-slate); margin: 0.2rem 0; }
 @media (max-width: 700px) { .obs-facts { grid-template-columns: 1fr; } }
 
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
@@ -3686,7 +3686,7 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .sandbox { display: flex; flex-direction: column; gap: 22px; }
 .sandbox .sbh { margin: 0 0 10px; }
 .sandbox ul { margin: 0 0 0.5rem; padding-left: 1.1rem; }
-.sbmark { font-family: var(--mono); font-size: 0.85em; }
+.sbmark { font-family: var(--mono); font-size: var(--fs-2xs); }
 
 
 /* The satisfied ending's per-item reading (#1252): one list, on the page and in the confirm wait. */
@@ -3695,17 +3695,17 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .ssatisfied-met { font-weight: 600; }
 .ssatisfied-source { color: var(--muted); }
 .ssatisfiedreading { margin: 8px 0 12px; }
-.triage-choice-hint { color: var(--ink-2); font-size: 0.8rem; }
-.triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: 0.85rem; }
+.triage-choice-hint { color: var(--ink-2); font-size: var(--fs-md); }
+.triage-own { display: grid; gap: 0.3rem; margin-top: 0.65rem; color: var(--ink-2); font-size: var(--fs-md); }
 .triage-own textarea, .triage-own .mdf { width: 100%; min-height: 5rem; font: inherit; color: var(--ink); }
 
 /* The running card (#1290): one facts row, the live log open under it. */
 .running-card .triage-head { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; flex-wrap: wrap; }
 .running-card .triage-head .planlist, .running-card .triage-head .triage-summary { margin: 0; }
 .meters.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.5rem 1rem; margin: 0.5rem 0; }
-.meters.facts .meter dt { font-size: 0.7rem; color: var(--muted); text-transform: uppercase; }
+.meters.facts .meter dt { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; }
 .meters.facts .meter dd { margin: 0; }
-.meters.facts .meter dd.sub { font-size: 0.7rem; color: var(--muted); }
+.meters.facts .meter dd.sub { font-size: var(--fs-xs); color: var(--muted); }
 .livelog { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }
