@@ -162,8 +162,8 @@ function BlockedCard({
             {skip.held !== undefined
               ? skip.held
               : open.length === 0
-              ? 'starts on the next turn'
-              : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
+                ? 'starts on the next turn'
+                : `starts when ${open.join(', ')} ${open.length === 1 ? 'lands' : 'land'}`}
           </p>
         </>
       )}

@@ -3,7 +3,9 @@ import {
   BLOCKERS_READ_MOST,
   cachedBlockers,
   forgetBlockers,
-  readBlockersEffect, type BlockedSkip } from '@lingtai/conductor/blockers'
+  readBlockersEffect,
+  type BlockedSkip,
+} from '@lingtai/conductor/blockers'
 import { landedFor, landedNote, passedOver, rankedKinds, runnableNow } from '@lingtai/conductor/discover'
 import { attemptCeiling } from '@lingtai/conductor/filter'
 import { projectFilter, type StepPlan, type ProjectFilter } from '@lingtai/conductor/filter'
@@ -1501,7 +1503,7 @@ export async function githubQueue(
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
         // A ticket GitHub still marks blocked, taken because its blockers landed on `branch.personal` (#1423).
-        note: landedNote(offered, r.issue, branchOf(filter.recipe)),
+        note: landedNote(offered, r.issue, () => branchOf(filter.recipe)),
         short: null,
         split: null,
         cause: null,

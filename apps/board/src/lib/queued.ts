@@ -343,7 +343,12 @@ export async function queuedFor(input: {
       client: filter.tickets,
       queue: queueOf(filter.recipe),
       selection: selectionOf(filter.recipe),
-      landed: landedFor({ recipe: filter.recipe, links: cachedBlockers(project, filter.links ?? null), store: eventStore, project }),
+      landed: landedFor({
+        recipe: filter.recipe,
+        links: cachedBlockers(project, filter.links ?? null),
+        store: eventStore,
+        project,
+      }),
     })
     const runnable = await selectRunnable({
       project,
@@ -374,7 +379,7 @@ export async function queuedFor(input: {
       project,
       locks,
       dependenciesUnread: offered.dependenciesUnread,
-      landed: landedNote(offered, issue, branchOf(filter.recipe)),
+      landed: landedNote(offered, issue, () => branchOf(filter.recipe)),
       plan,
       kind: offered.runnable.find((o) => o.ref === issue)?.kind ?? null,
       // `selectRunnable`'s own fallback (`queue.ts`), so this describes the order it used.

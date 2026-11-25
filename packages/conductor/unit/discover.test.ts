@@ -904,6 +904,14 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
     expect((await ask(closed, links([blocker()]))).skipped.map((s) => s.reason)).toEqual(['blocked-by'])
   })
 
+  it('more than one page of blockers holds the dependent and says so, though every one is closed', async () => {
+    const many = Array.from({ length: 101 }, (_, i) => blocker({ number: 2000 + i, state: 'closed' }))
+    const found = await ask(createMemoryEventStore(), links(many))
+    expect(found.runnable).toEqual([])
+    expect(found.skipped[0]).toMatchObject({ reason: 'blocked-by' })
+    expect(found.skipped[0]?.held).toContain('more than 100 blockers')
+  })
+
   it('every blocker has to be closed or landed: one still open and unlanded holds', async () => {
     const store = createMemoryEventStore()
     await prWith(store, '1395', 'draft')

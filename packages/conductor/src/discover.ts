@@ -490,9 +490,13 @@ export function blockersLanded(landed: readonly number[], branch: string): strin
 }
 
 /** What an offered ticket says about blockers it was taken past, or null for one GitHub's summary did not hold (#1423). */
-export function landedNote(offered: Pick<Offered, 'runnable'>, ref: string | number, branch: string): string | null {
+export function landedNote(
+  offered: Pick<Offered, 'runnable'>,
+  ref: string | number,
+  branch: () => string,
+): string | null {
   const landed = offered.runnable.find((r) => String(r.ref) === String(ref))?.landedBlockers
-  return landed === undefined ? null : blockersLanded(landed, branch)
+  return landed === undefined ? null : blockersLanded(landed, branch())
 }
 
 /** How a `blocked-by` skip says its blockers could not be read. */

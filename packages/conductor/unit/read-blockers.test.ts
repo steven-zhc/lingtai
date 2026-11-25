@@ -1,7 +1,13 @@
 import { Effect } from 'effect'
 import { beforeEach, describe, expect, it } from 'vitest'
 
-import { BLOCKERS_FRESH_MS, BLOCKERS_READ_MOST, forgetBlockers, readBlockersEffect } from '../src/blockers.ts'
+import {
+  BLOCKERS_FRESH_MS,
+  BLOCKERS_READ_MOST,
+  cachedBlockers,
+  forgetBlockers,
+  readBlockersEffect,
+} from '../src/blockers.ts'
 
 const skip = (ref: number) => ({
   ref,
@@ -47,5 +53,25 @@ describe('readBlockersEffect', () => {
   it('asks nothing when no link reader exists', async () => {
     const out = await Effect.runPromise(readBlockersEffect({ project: 'p', links: null }, [skip(1)] as never, () => 0))
     expect(out[0]).toMatchObject({ blockers: null, unread: false })
+  })
+
+  it('a discovery read through cachedBlockers is the one request: the explaining read finds it', async () => {
+    const { calls, links } = stub()
+    const read = cachedBlockers('p', links, () => 0)!
+    await read.listBlockedBy(7, 1)
+    const out = await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [skip(7)] as never, () => 0))
+    expect(calls).toEqual([7])
+    expect(out[0]?.blockers).toMatchObject({ ok: true })
+    // A failed read is cached as a failure and still rejects.
+    await expect(read.listBlockedBy(2, 1)).rejects.toThrow('boom')
+    await expect(read.listBlockedBy(2, 1)).rejects.toThrow('boom')
+    expect(calls).toEqual([7, 2])
+  })
+
+  it("carries the queue's own reason on the skip it explains", async () => {
+    const { links } = stub()
+    const held = { ...skip(7), held: "could not read the project's PRs: x" }
+    const out = await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [held] as never, () => 0))
+    expect(out[0]?.held).toBe(held.held)
   })
 })
