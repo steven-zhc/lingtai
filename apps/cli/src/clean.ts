@@ -11,7 +11,7 @@
  * in a fake and read back which removals were asked for.
  */
 import { execFile as execFileCb } from 'node:child_process'
-import { readdir, rm, stat, unlink } from 'node:fs/promises'
+import { readdir, realpath, rm, stat, unlink } from 'node:fs/promises'
 import { join, relative } from 'node:path'
 import { promisify } from 'node:util'
 
@@ -142,8 +142,14 @@ export const realPort: CleanPort = {
           ),
       ),
     ),
+  // Status is only an answer about `path` when git's toplevel for it is `path` itself: a `.git`
+  // that points at another repository, or a `core.worktree`, would report on a different tree.
   status: (path) =>
-    attempt(() => execFile('git', ['-C', path, 'status', '--porcelain'])).pipe(Effect.map(({ stdout }) => stdout)),
+    attempt(async () => {
+      const top = (await execFile('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim()
+      if ((await realpath(top)) !== (await realpath(path))) throw new Error(`git reports ${top}, not ${path}`)
+      return (await execFile('git', ['-C', path, 'status', '--porcelain'])).stdout
+    }),
   removeWorktree: (mirror, path) =>
     attempt(() => execFile('git', ['-C', mirror, 'worktree', 'remove', '--force', path])).pipe(
       Effect.asVoid,
