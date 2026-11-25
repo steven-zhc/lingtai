@@ -675,6 +675,22 @@ export const COMMANDS = [
     examples: ['lingtai doctor', 'lingtai doctor --verbose', 'lingtai doctor --json'],
   }),
   define({
+    name: 'clean',
+    group: 'install and upkeep',
+    task: 'remove orphan worktrees and run logs no longer owed',
+    effect: 'changes',
+    usage: [
+      'lingtai clean [<project>] [--yes] [--no-color]',
+      '  Lists each worktree under ~/.lingtai/worktrees that no running attempt',
+      '  uses, untouched for an hour and with no uncommitted changes, and each run',
+      '  log whose ticket landed, closed or was satisfied, with its size and the',
+      '  reason. Takes no lock and appends nothing. Whatever cannot be read is',
+      '  listed as could not be checked and kept, and the exit is 1.',
+      '  --yes               remove what is listed',
+    ],
+    examples: ['lingtai clean', 'lingtai clean lingtai --yes'],
+  }),
+  define({
     name: 'account',
     group: 'daemon',
     task: "lift an account's limit",

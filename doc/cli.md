@@ -706,6 +706,7 @@ lingtai account lift github
 | go back to an older installed version | [lingtai rollback](#lingtai-rollback) |
 | remove everything under ~/.lingtai and the shim | [lingtai uninstall](#lingtai-uninstall) |
 | check everything that can be checked | [lingtai doctor](#lingtai-doctor) |
+| remove orphan worktrees and run logs no longer owed | [lingtai clean](#lingtai-clean) |
 | how far projections lag, and rebuild one | [lingtai projection](#lingtai-projection) |
 | the events this version writes, by step | [lingtai events](#lingtai-events) |
 | set the token a sandboxed Claude Code or Copilot run holds | [lingtai token](#lingtai-token) |
@@ -865,6 +866,27 @@ lingtai doctor [--verbose] [--json] [--no-color] [--fix]
 lingtai doctor
 lingtai doctor --verbose
 lingtai doctor --json
+```
+
+### lingtai clean
+
+Remove orphan worktrees and run logs no longer owed.
+
+Changes state.
+
+```text
+lingtai clean [<project>] [--yes] [--no-color]
+  Lists each worktree under ~/.lingtai/worktrees that no running attempt
+  uses, untouched for an hour and with no uncommitted changes, and each run
+  log whose ticket landed, closed or was satisfied, with its size and the
+  reason. Takes no lock and appends nothing. Whatever cannot be read is
+  listed as could not be checked and kept, and the exit is 1.
+  --yes               remove what is listed
+```
+
+```sh
+lingtai clean
+lingtai clean lingtai --yes
 ```
 
 ### lingtai projection
