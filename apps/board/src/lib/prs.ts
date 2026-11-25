@@ -295,8 +295,9 @@ const ticketFacts = (
                 Effect.orElseSucceed(() => null),
               )
         // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
-        const rows = yield* readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(
-          Effect.orElseSucceed(() => null),
+        const rows = yield* tracedEffect(
+          'spend.read',
+          readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(Effect.orElseSucceed(() => null)),
         )
         const open = yield* openRead
         const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
