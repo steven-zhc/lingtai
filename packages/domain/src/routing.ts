@@ -40,6 +40,8 @@ export type RoutingPolicy = {
   newAttempts: number
   /** The conflict resolutions an attempt may buy: the recipe's own number, never a grant-capped one (#1200); spent as `Spent.conflictRounds`. */
   conflictResolutions: number
+  /** Which of the lower caps above came from a person's grant rather than the recipe (#1447); only words differ. */
+  grantCapped?: { refusalFixes?: true; newAttempts?: true }
 }
 
 /** `CandidateNext`'s own variant for ending at a person — one `_tag` alone, never the list of ids `CandidateId` names (`route.ts:22`). */

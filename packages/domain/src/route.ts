@@ -27,6 +27,8 @@ export type CandidateId = z.infer<typeof CandidateId>
 export const CeilingReached = z.object({
   _tag: z.literal('CeilingReached'),
   ceiling: z.enum(['refusalFixes', 'newAttempts', 'baseBranchMerges', 'conflictResolutions']),
+  /** Set when a person's grant, not the recipe's own ceiling, is what capped the lap (#1447). Absent on every earlier event. */
+  by: z.literal('grant').optional(),
 })
 export type CeilingReached = z.infer<typeof CeilingReached>
 
