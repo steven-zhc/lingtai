@@ -169,3 +169,16 @@ launched through `serve.ts dev` on port 17820. Both after cohorts above therefor
 describe development mode. A fresh production build and a separate navigation
 sample are the next comparison, to isolate development-mode overhead before
 assigning the remaining absolute latency entirely to application reads.
+
+## November 25 production sample
+
+The [production report](021/production-2026-11-25/report.md) records the
+07:00–08:50 CST window after the board switched to a standalone build matching
+`b95689564cf72a757fa57a76c65d5381e7529c02`. The primary RSC medians are
+homepage **1.887 s (n=312)**, PR list **1.371 s (n=22)**, PR detail
+**1.070 s (n=56)** and task **1.469 s (n=33)**. Two roots with late-running
+children remain in raw exports and are excluded from the primary cohort.
+PR-list content starts immediately; remaining priorities are PR-detail header
+serialization, the homepage queue's broad historical task read, and measuring
+unexplained PR-discovery and response-completion intervals. Workloads and
+draft sizes differ, so this remains an observed comparison across versions.
