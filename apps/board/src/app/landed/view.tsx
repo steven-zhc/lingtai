@@ -166,14 +166,8 @@ function Card({
           rest: '',
         }
       : leadOf(row.summary)
-  const ref = ticketRef(row)
   return (
     <article className="ld-card" style={{ '--kind': colour, '--pop': kindPopOf(row.kind) } as CSSProperties}>
-      {ref === null ? null : (
-        <span className="ld-mark" aria-hidden="true">
-          {ref.issue}
-        </span>
-      )}
       <p className="ld-caption mono">{row.title ?? row.ticket}</p>
       <div className="ld-head">
         <DocumentBody source="summary" text={lead} rawClass="" />
