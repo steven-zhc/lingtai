@@ -51,7 +51,7 @@
  * vanishing from a report that then printed `0 failed`.
  */
 import type { EventType } from '@lingtai/domain'
-import { Context, Effect } from 'effect'
+import { Cause, Context, Effect, Exit } from 'effect'
 import pg from 'pg'
 
 import { postgresUrl } from './env.ts'
@@ -205,18 +205,114 @@ export interface QueriesPort {
 
 export class Queries extends Context.Service<Queries, QueriesPort>()('@lingtai/event-store/Queries') {}
 
+/**
+ * How long a kept connection may sit idle before the pool drops it.
+ *
+ * pg-pool's own default is 10 s and Prisma's is 30 s. Against the remote store a
+ * new connection costs 190–430 ms (a TLS handshake) and a query on an open one
+ * about 10 ms; `head` took p50 432 ms after 35 s idle, so a pool that drops its
+ * connections between two board renders gives the cost back. Minutes, not hours:
+ * `createDb`'s pool cannot take `allowExitOnIdle`, so a process that never ends
+ * it lingers this long.
+ */
+export const KEPT_IDLE_MS = 5 * 60_000
+
+/** The part of a `pg.Pool` the questions need, so a test can hand a fake one. */
+export interface PoolLike {
+  on(event: 'error', listener: (err: Error) => void): unknown
+  connect(callback: (err: Error | undefined, client: ClientLike | undefined) => void): unknown
+}
+
+/** The part of a pooled `pg.Client` the questions need. */
+export interface ClientLike {
+  query(text: string, values?: unknown[]): Promise<{ rows: unknown[] }>
+  release(err?: Error | boolean): void
+  on(event: 'error', listener: (err: Error) => void): unknown
+  off(event: 'error', listener: (err: Error) => void): unknown
+}
+
+export interface PostgresPools {
+  poolFor(url: string): PoolLike
+}
+
+/** What the pool's own `error` event says, once: an idle client the server drops (#793). */
+const noteDropped = (err: Error): void => console.error(`lingtai: a store connection dropped (${err.message})`)
+
+/**
+ * One pool per URL, built the first time a URL is seen. `create` is injected so
+ * a test hands a fake. An idle client the server drops emits `error` on the
+ * pool, and with no listener Node throws and the board or the daemon dies
+ * (#793), so every pool gets one.
+ */
+export function makePostgresPools(create: (config: pg.PoolConfig) => PoolLike): PostgresPools {
+  const pools = new Map<string, PoolLike>()
+  return {
+    poolFor: (url) => {
+      const known = pools.get(url)
+      if (known !== undefined) return known
+      const pool = create({ connectionString: url, allowExitOnIdle: true, idleTimeoutMillis: KEPT_IDLE_MS })
+      pool.on('error', noteDropped)
+      pools.set(url, pool)
+      return pool
+    },
+  }
+}
+
+/** The process default: every factory on one URL shares one pool. */
+export const sharedPostgresPools: PostgresPools = makePostgresPools((config) => new pg.Pool(config) as PoolLike)
+
+/**
+ * Acquire a client from the URL's pool, run, release. A failure releases with
+ * the error, which tells pg-pool to discard the client rather than reuse it.
+ * `Effect.promise`, never `tryPromise`: a driver's error must be the defect
+ * itself, not Effect's `UnknownError` around it.
+ */
+const withPooledClient = <T>(
+  pools: PostgresPools,
+  url: () => string,
+  run: (client: ClientLike) => Promise<T>,
+): Effect.Effect<T> => {
+  const dropped = new WeakMap<ClientLike, (err: Error) => void>()
+  return Effect.acquireUseRelease(
+    Effect.promise(
+      () =>
+        new Promise<ClientLike>((resolve, reject) => {
+          pools.poolFor(url()).connect((err, client) => {
+            if (err !== undefined || client === undefined) return reject(err ?? new Error('no client'))
+            // A checked-out client has no listener but ours; attached here, in
+            // the callback, because after a promise hop an error arriving with
+            // the handoff is uncaught.
+            const listener = (e: Error) => noteDropped(e)
+            dropped.set(client, listener)
+            client.on('error', listener)
+            resolve(client)
+          })
+        }),
+    ),
+    (client) => Effect.promise(() => run(client)),
+    (client, exit) =>
+      Effect.sync(() => {
+        const listener = dropped.get(client)
+        if (listener !== undefined) client.off('error', listener)
+        client.release(Exit.isSuccess(exit) ? undefined : (Cause.squash(exit.cause) as Error))
+      }),
+  )
+}
+
 export interface PostgresLogQueriesOptions {
   /** Defaults to `postgresUrl()`, which is what every caller read before this existed. */
   url?: string
+  /** The pools to ask on; the process's shared ones by default. */
+  pools?: PostgresPools
 }
 
 /**
- * A connection per question, opened and closed around it.
+ * Each question takes a client from the URL's shared pool and gives it back.
  *
- * Exactly what the four callers did, and kept rather than pooled on purpose:
- * these are asked by `lingtai doctor`, `lingtai status` and a board render, not
- * in a loop, and a pool held here would be a connection a short command has to
- * remember to end.
+ * It was a `pg.Client` per question, kept on purpose so a short command had no
+ * pool to remember to end. `allowExitOnIdle` removes that cost: an idle pool
+ * never keeps the process alive, and a warm question skips the 190–430 ms of
+ * connection set-up against the remote store.
  */
 export function createPostgresLogQueries(options: PostgresLogQueriesOptions = {}): LogQueries {
   return promiseQueries(makePostgresQueries(options))
@@ -232,21 +328,9 @@ export function makePostgresQueries(options: PostgresLogQueriesOptions = {}): Qu
 
   // `Effect.promise` throughout, never `tryPromise`: a driver's error must be
   // the defect itself, not Effect's `UnknownError` around it. A connect that
-  // fails acquires nothing, so there is nothing to end — as before.
+  const pools = options.pools ?? sharedPostgresPools
   const ask = <T extends Record<string, unknown>>(text: string, values: readonly unknown[] = []): Effect.Effect<T[]> =>
-    Effect.scoped(
-      Effect.gen(function* () {
-        const client = yield* Effect.acquireRelease(
-          Effect.gen(function* () {
-            const c = new pg.Client({ connectionString: url() })
-            yield* Effect.promise(() => c.connect())
-            return c
-          }),
-          (c) => Effect.promise(() => c.end()),
-        )
-        return (yield* Effect.promise(() => client.query<T>(text, [...values]))).rows
-      }),
-    )
+    withPooledClient(pools, url, (client) => client.query(text, [...values]).then((r) => r.rows as T[]))
 
   return {
     projectStreams: Effect.fn('LogQueries.projectStreams')(function* (prefix: string) {
@@ -379,26 +463,22 @@ export function makePostgresQueries(options: PostgresLogQueriesOptions = {}): Qu
 export interface PostgresTicketSqlOptions {
   /** Defaults to `postgresUrl()`. */
   url?: string
+  /** The pools to ask on; the process's shared ones by default. */
+  pools?: PostgresPools
 }
 
 /**
- * `LogSql` over Postgres. A connection per question, opened and closed
- * around it — the same shape `makePostgresQueries` keeps, above, and for
- * the same reason: a pool held here would be a connection the ticket store has
- * to remember to end. The release runs on success, failure and interruption.
+ * `LogSql` over Postgres. Each question takes a client from the URL's shared
+ * pool, the same pool `makePostgresQueries` uses. A pool was once refused here
+ * as a connection the ticket store had to remember to end; `allowExitOnIdle`
+ * (see `makePostgresPools`) is what removes that. The client goes back on
+ * success, and is discarded on failure and interruption.
  */
 export function makePostgresLogSql(options: PostgresTicketSqlOptions = {}): LogSqlPort {
   const url = () => options.url ?? postgresUrl()
 
-  const withClient = <T>(run: (client: pg.Client) => Promise<T>): Effect.Effect<T> =>
-    Effect.acquireUseRelease(
-      Effect.promise(() => {
-        const client = new pg.Client({ connectionString: url() })
-        return client.connect().then(() => client)
-      }),
-      (client) => Effect.promise(() => run(client)),
-      (client) => Effect.promise(() => client.end()),
-    )
+  const pools = options.pools ?? sharedPostgresPools
+  const withClient = <T>(run: (client: ClientLike) => Promise<T>): Effect.Effect<T> => withPooledClient(pools, url, run)
 
   return {
     dialect: 'postgres',
