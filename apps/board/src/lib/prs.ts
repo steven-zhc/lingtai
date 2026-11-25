@@ -21,7 +21,7 @@ import { cache } from 'react'
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { actor } from '@/lib/actor.ts'
 
-import { type FixTicket, type PrBoardView, type PrRead, prBoard, prHolding, prName } from './pr-board.ts'
+import { type FixTicket, MERGED_SHOWN, type PrBoardView, type PrRead, prBoard, prHolding, prName } from './pr-board.ts'
 import {
   type HostRead,
   type PrPageView,
@@ -58,20 +58,29 @@ export const topPrNumber = (project: string, store: EventStore): Effect.Effect<n
  * With `since`, merged PRs are read newest first and the read stops at the first one merged before it — an open PR is
  * always read, and only the highest one not in `draft` can be open. A PR in `draft` is left out: the Draft column
  * is still the computed draft. Nothing older is returned then, which is what #1321 asks.
+ *
+ * With `merged`, the walk stops once that many merged PRs have been read (#1422): a chunk is no longer than the merged
+ * PRs still wanted, so no stream past the last one is read. A failed read, an absent stream or a draft does not count.
+ * With both options the walk stops at whichever comes first.
  */
 export const readProjectPrs = (
   project: string,
   store: EventStore,
-  options: { since?: Date } = {},
+  options: { since?: Date; merged?: number } = {},
 ): Effect.Effect<PrRead[], Error> =>
   Effect.gen(function* () {
     const top = yield* topPrNumber(project, store)
     const reads: PrRead[] = []
+    let merged = 0
     // Newest first, a chunk at a time: the reads in a chunk run together, and the `since` cut is applied to the chunk's
     // results in order, so what is returned is what the serial walk returned. Reads past the cut in its own chunk are
     // dropped, errors included.
-    for (let high = top; high >= 1; high -= READ_CONCURRENCY) {
-      const chunk = Array.from({ length: Math.min(READ_CONCURRENCY, high) }, (_, i) => high - i)
+    for (let high = top; high >= 1;) {
+      const wanted = options.merged === undefined ? Infinity : options.merged - merged
+      if (wanted <= 0) break
+      const size = Math.min(READ_CONCURRENCY, high, wanted)
+      const chunk = Array.from({ length: size }, (_, i) => high - i)
+      high -= size
       const results = yield* Effect.forEach(chunk, (n) => readPr(project, n, store).pipe(Effect.result), {
         concurrency: READ_CONCURRENCY,
       })
@@ -85,6 +94,7 @@ export const readProjectPrs = (
         const pr = read.success
         if (pr.status === 'draft') continue
         reads.push({ n, pr })
+        if (pr.status === 'merged') merged++
         if (options.since !== undefined && pr.status === 'merged' && pr.ended !== null && pr.ended.at < options.since)
           return reads.reverse()
       }
@@ -148,7 +158,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const [prs, draft] = yield* Effect.all(
-          [Effect.tryPromise({ try: () => prsOf(project), catch: failed }), readDraftOf(project)],
+          [readProjectPrs(project, requestStore(), { merged: MERGED_SHOWN }), readDraftOf(project)],
           { concurrency: 2 },
         )
         const spend = yield* spendByPr(

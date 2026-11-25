@@ -104,14 +104,6 @@ function Column({ project, column }: { project: string; column: ColumnView }) {
       {column.cards.map((c) =>
         c.failed ? <Failed key={c.key} card={c} /> : <PrCard key={c.key} project={project} card={c} />,
       )}
-      {column.older.length === 0 ? null : (
-        <details className="older">
-          <summary>▸ {column.older.length} older</summary>
-          {column.older.map((c) => (
-            <PrCard key={c.key} project={project} card={c} />
-          ))}
-        </details>
-      )}
       {column.note === null ? null : <p className="pr-note">{column.note}</p>}
     </section>
   )
