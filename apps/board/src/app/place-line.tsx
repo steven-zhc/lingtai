@@ -11,6 +11,8 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { ProjectLink } from './project-link'
+
 export interface PlaceView {
   id: 'tickets' | 'prs' | 'recipe' | (string & {})
   label: string
@@ -21,6 +23,8 @@ export interface PlaceView {
   badge?: { n: number; title: string }
   /** Set when the badge's count could not be read: the title says so and no count is drawn. */
   unread?: string
+  /** Set on `Tickets`: following it is a person choosing this project (`undefined`: all), so the click remembers it (#1435). */
+  choose?: { project: string | undefined }
 }
 
 /** At most four views on the line; a fifth goes into `More ▾`. */
@@ -37,9 +41,15 @@ export function placeViews<T>(views: readonly T[]): { line: T[]; more: T[] } {
  */
 export const viewsFor = (project: string | undefined, prs?: { waiting: number | null }): PlaceView[] =>
   project === undefined
-    ? [{ id: 'tickets', label: 'Tickets', href: '/', key: 'T' }]
+    ? [{ id: 'tickets', label: 'Tickets', href: '/?project=', key: 'T', choose: { project: undefined } }]
     : [
-        { id: 'tickets', label: 'Tickets', href: `/?project=${encodeURIComponent(project)}`, key: 'T' },
+        {
+          id: 'tickets',
+          label: 'Tickets',
+          href: `/?project=${encodeURIComponent(project)}`,
+          key: 'T',
+          choose: { project },
+        },
         ...(prs === undefined
           ? []
           : [
@@ -65,8 +75,10 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
 
 function View({ v, here }: { v: PlaceView; here: string | undefined }) {
   const current = v.id === here
+  const Anchor = v.choose === undefined ? Link : ProjectLink
   return (
-    <Link
+    <Anchor
+      {...(v.choose === undefined ? {} : { choice: v.choose.project })}
       className={current ? 'view on' : 'view'}
       href={v.href}
       aria-current={current ? 'page' : undefined}
@@ -81,7 +93,7 @@ function View({ v, here }: { v: PlaceView; here: string | undefined }) {
           {v.badge.n}
         </span>
       )}
-    </Link>
+    </Anchor>
   )
 }
 
