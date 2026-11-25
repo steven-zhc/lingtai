@@ -303,23 +303,20 @@ export function Recipe({
 
         <div className="detail-body detail-body-wide">
           <section>
-            <h2>
-              <span className="hlab">Recipe</span>
-              {/* The hash and the branch, so a reader can hold this against an
+            {/* The hash and the branch, so a reader can hold this against an
                 attempt's on the task page — which is the comparison that
                 matters on the day they differ (#217). */}
-              <span className="hfact">
-                {view.ok
-                  ? view.recipe.mode === 'team'
-                    ? `recipe ${view.configHash.slice(0, 12)} · main ${view.recipe.branch.main} · yours ${branchOf(view.recipe)} — what the next attempt gets`
-                    : `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
-                  : view.fault === 'recipe'
-                    ? 'it could not be read, so nothing will be taken from this project'
-                    : view.fault === 'refused'
-                      ? 'it was refused, so nothing will be taken from this project'
-                      : 'it could not be resolved, so nothing will be taken from this project'}
-              </span>
-            </h2>
+            <p className="pagefacts">
+              {view.ok
+                ? view.recipe.mode === 'team'
+                  ? `recipe ${view.configHash.slice(0, 12)} · main ${view.recipe.branch.main} · yours ${branchOf(view.recipe)} — what the next attempt gets`
+                  : `recipe ${view.configHash.slice(0, 12)} · base ${view.ref} — what the next attempt gets`
+                : view.fault === 'recipe'
+                  ? 'it could not be read, so nothing will be taken from this project'
+                  : view.fault === 'refused'
+                    ? 'it was refused, so nothing will be taken from this project'
+                    : 'it could not be resolved, so nothing will be taken from this project'}
+            </p>
 
             {view.ok ? null : (
               /* Named, never an empty page: a recipe that will not parse is the
@@ -379,7 +376,7 @@ export function Recipe({
                and in no line above — and longer than anyone reads. */
             <details>
               <summary>Where every value came from</summary>
-              <p className="hfact">
+              <p className="pagefacts">
                 the recipe at <span className="mono">{underHome(view.at)}</span>, this machine&apos;s{' '}
                 <span className="mono">config.yml</span>, the preset it <span className="mono">extends</span>,
                 detection, or a default

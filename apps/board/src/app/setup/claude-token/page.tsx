@@ -9,6 +9,7 @@ import { liveMachineText } from '@lingtai/setup'
 
 import { Bar } from '@/app/bar.tsx'
 
+import { ObjectTitle } from '../../object-title.tsx'
 import { claudeTokenSetAt } from './save.ts'
 import { TokenForm } from './token-form.tsx'
 
@@ -23,7 +24,7 @@ export default function ClaudeToken() {
         <span className="sep" />
         <span className="mono">claude token</span>
       </Bar>
-      <h1>Claude Code token</h1>
+      <ObjectTitle tag="setup" tone="muted" title="Claude Code token" />
       <p>
         Run <code>claude setup-token</code> in a terminal and paste what it prints.
       </p>

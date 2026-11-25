@@ -269,29 +269,26 @@ function Meters({ m, held, serverNow }: { m: RunningPanelView['meters']; held: s
   )
 }
 
-/** The running state's reading beside its label: the step, then both clocks. */
-function RunningMeta({ view, serverNow }: { view: RunningPanelView; serverNow: number }) {
+/** The running state's facts for the metadata line: the step, then both clocks. */
+function runningFacts(view: RunningPanelView, serverNow: number): ReactNode[] {
   const { head, meters } = view
   const chip = [head.step ?? 'between steps', head.round === null ? null : `fix round ${head.round}`]
     .filter((x) => x !== null)
     .join(' · ')
-  return (
-    <p className="sread" data-rank="state">
-      <span className="sstate">{stateWord('running')}</span>
-      <span className="sage">[{chip}]</span>
-      {meters?.round == null ? null : (
-        <span className="sage">
-          step <Since key={`${meters.runId}:${meters.round.since}`} iso={meters.round.since} serverNow={serverNow} />
-        </span>
-      )}
-      {meters === null ? null : (
-        <span className="sage">
-          attempt{' '}
-          <Since key={`${meters.runId}:${meters.attempt.since}`} iso={meters.attempt.since} serverNow={serverNow} />
-        </span>
-      )}
-    </p>
-  )
+  return [
+    <span>[{chip}]</span>,
+    meters?.round == null ? null : (
+      <span>
+        step <Since key={`${meters.runId}:${meters.round.since}`} iso={meters.round.since} serverNow={serverNow} />
+      </span>
+    ),
+    meters === null ? null : (
+      <span>
+        attempt{' '}
+        <Since key={`${meters.runId}:${meters.attempt.since}`} iso={meters.attempt.since} serverNow={serverNow} />
+      </span>
+    ),
+  ]
 }
 
 function RunningPanel({
@@ -443,6 +440,7 @@ import { Discussion } from './discussion.tsx'
 import { EditPromptAction } from './edit-prompt.tsx'
 import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
+import { ObjectTitle, joinMeta, taskTone } from './object-title.tsx'
 import { OnYourBranch } from './on-your-branch.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
@@ -1177,12 +1175,6 @@ export function Standing({
     ) : (
       <span className="sref">#{subj.ref}</span>
     )
-  const subjectRef =
-    subject === null ? null : (
-      <Gh g={g} pending={pending} fallback={refOf(subject, subject.url)}>
-        {(a) => refOf(subject, a.ticket.url ?? subject.url)}
-      </Gh>
-    )
   const subjectTitle =
     subject === null ? null : (
       <Gh g={g} pending={pending} fallback={<span className="stitle">{subject.title ?? `#${subject.ref}`}</span>}>
@@ -1197,31 +1189,38 @@ export function Standing({
         )}
       </Gh>
     )
-  const readout = (inLine: string | null) =>
-    standing.state === 'running' && standing.running ? (
-      <RunningMeta view={standing.running} serverNow={now} />
-    ) : (
-      <p className="sread" data-rank="state">
-        <span className="sstate">{stateWord(standing.state)}</span>
-        {standing.since !== null ? (
-          <span className="sage" title={standing.since}>
-            {inWords(now - Date.parse(standing.since))}
-          </span>
-        ) : null}
-        {inLine !== null ? <span className="sage">{inLine}</span> : null}
-      </p>
-    )
-  const stateReadout = (
-    <Gh g={g} pending={pending} fallback={readout(null)}>
-      {(a) =>
-        subject !== null && missingOf(a) ? (
-          <p className="refusal">GitHub has no issue #{subject.ref}</p>
-        ) : (
-          readout(a.queued === null ? null : place(a.queued))
-        )
-      }
-    </Gh>
+  const facts = (inLine: string | null): ReactNode[] =>
+    standing.state === 'running' && standing.running
+      ? runningFacts(standing.running, now)
+      : [
+          standing.since !== null ? (
+            <span title={standing.since}>{inWords(now - Date.parse(standing.since))}</span>
+          ) : null,
+          inLine !== null ? <span>{inLine}</span> : null,
+        ]
+  const word = stateWord(standing.state)
+  const tone = taskTone(standing.state)
+  const titled = (lead: string | undefined, meta: ReactNode) => (
+    <ObjectTitle tone={tone} lead={lead} title={subjectTitle} meta={meta} />
   )
+  /*
+   * One header for every state (#1459): the state leads the title line, the ticket's title follows it, and the
+   * metadata line carries `#ref ↗` and what the readout used to carry. GitHub having no such issue draws no state,
+   * and says so in the metadata line.
+   */
+  const objectTitle =
+    subject === null ? (
+      titled(word, joinMeta(facts(null)))
+    ) : (
+      <Gh g={g} pending={pending} fallback={titled(word, joinMeta([refOf(subject, subject.url), ...facts(null)]))}>
+        {(a) => {
+          const ref = refOf(subject, a.ticket.url ?? subject.url)
+          return missingOf(a)
+            ? titled(undefined, joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>]))
+            : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued))]))
+        }}
+      </Gh>
+    )
   const opening = (
     <Gh g={g} pending={pending} fallback={<TicketContext opening={null} body={null} taskId={taskId} pending />}>
       {(a) => {
@@ -1293,15 +1292,7 @@ export function Standing({
         <section className={`standing${mark}`}>
           {isFramed ? (
             <header className="swaiting-head">
-              <div className="swaiting-meta">
-                {subjectRef}
-                {stateReadout}
-              </div>
-              {subjectTitle !== null ? (
-                <h1 className="swaiting-title" data-rank="subject">
-                  {subjectTitle}
-                </h1>
-              ) : null}
+              {objectTitle}
               {subject !== null ? (
                 <div className="sticket">
                   {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
@@ -1334,16 +1325,17 @@ export function Standing({
                 }
               </Gh>
             </header>
-          ) : subject !== null ? (
-            <div className="sticket">
-              <p className="ssubject" data-rank="subject">
-                {subjectRef}
-                {subjectTitle}
-              </p>
-              {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
-              {opening}
-            </div>
-          ) : null}
+          ) : (
+            <>
+              {objectTitle}
+              {subject !== null ? (
+                <div className="sticket">
+                  {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
+                  {opening}
+                </div>
+              ) : null}
+            </>
+          )}
           {standing.afterMove ? (
             <section
               className={`saftermove saftermove--${standing.afterMove.result}`}
@@ -1406,7 +1398,6 @@ export function Standing({
               data-rank="where"
             >
               {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle sec-h">Where it is</h2>}
-              {isFramed ? null : stateReadout}
 
               {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. */}
               {standing.state !== 'queued' && standing.landedOn && project !== null && issue !== null ? (

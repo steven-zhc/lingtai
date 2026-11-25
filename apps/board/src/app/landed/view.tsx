@@ -264,28 +264,22 @@ export function LandedView({
         : 'nothing has landed yet'
   return (
     <>
-      <header className="ld-header">
+      <dl className="ld-totals" data-landed-sum={sumText(totals)}>
         <div>
-          <h1>landed</h1>
-          <p>what Lingtai changed, newest first</p>
+          <dt>landed</dt>
+          <dd>{totals.landed}</dd>
         </div>
-        <dl className="ld-totals" data-landed-sum={sumText(totals)}>
-          <div>
-            <dt>landed</dt>
-            <dd>{totals.landed}</dd>
-          </div>
-          <div>
-            <dt>spent</dt>
-            <dd>{costText(totals.money)}</dd>
-          </div>
-          <div>
-            <dt>changed</dt>
-            <dd>
-              <b className="add">+{totals.insertions}</b> <b className="del">−{totals.deletions}</b>
-            </dd>
-          </div>
-        </dl>
-      </header>
+        <div>
+          <dt>spent</dt>
+          <dd>{costText(totals.money)}</dd>
+        </div>
+        <div>
+          <dt>changed</dt>
+          <dd>
+            <b className="add">+{totals.insertions}</b> <b className="del">−{totals.deletions}</b>
+          </dd>
+        </div>
+      </dl>
       <KindFilter query={query} kinds={env.kinds} />
       <div data-landed-page="">
         {data.backlogError === null ? null : (

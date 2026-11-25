@@ -183,8 +183,50 @@ a, a:where(:visited) {
 .sec-h.wait { color: var(--signal); }
 .sec-h.fail { color: var(--fail); }
 .sec-h.wait:has(.ct.zero) { color: var(--muted); }
-.sec-h :is(.ct, .pr-n, .when, .src, .hfact, small, a) { text-transform: none; letter-spacing: 0; font-weight: 400; }
+.sec-h :is(.ct, .pr-n, .when, .src, small, a) { text-transform: none; letter-spacing: 0; font-weight: 400; }
 .sec-h :is(.ct, .pr-n) { font-family: var(--mono); }
+
+/* The page title of one object (#1459, doc/design/the-board-style.md §Page titles): a state tag, the title and a
+   metadata line, drawn by ObjectTitle and by nothing else. Every size is a --fs-* variable, the radius is
+   --radius and every colour a variable; unit/object-title.test.tsx reads this block. The task page passes
+   `lead` instead of a tag: its state word is the title line's first words, at title size, in the state's colour,
+   because reading exactly that word is the commonest reason to open the page (#80, #87, #89, #94). */
+.ot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; min-width: 0; margin: 0 0 12px; --ot-colour: var(--muted); --ot-text: var(--surface); }
+.ot--signal { --ot-colour: var(--signal); }
+.ot--accent { --ot-colour: var(--accent); }
+.ot--muted { --ot-colour: var(--muted); }
+.ot--pass { --ot-colour: var(--pass); }
+.ot--fail { --ot-colour: var(--fail); }
+.ot--queued { --ot-colour: var(--pr-queued); }
+.ot--navy { --ot-colour: var(--pr-navy-deep); }
+.ot--draft { --ot-colour: var(--pr-done); --ot-text: var(--pr-navy-deep); }
+.ot-tag {
+  font-family: var(--mono);
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius);
+  background: var(--ot-colour);
+  color: var(--ot-text);
+}
+.ot--draft .ot-tag { border: 1px dashed var(--pr-navy-deep); }
+.ot-title {
+  margin: 0;
+  min-width: 0;
+  flex: 1 1 18rem;
+  font-family: var(--sans);
+  font-size: var(--fs-xl);
+  font-weight: 700;
+  line-height: 1.3;
+  color: var(--ink);
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+.ot .sstate { color: var(--ot-colour); }
+.ot-meta { flex: 1 0 100%; margin: 0; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); font-variant-numeric: tabular-nums; }
+.ot-meta a { color: var(--accent-ink); }
+/* The first line of a page that has no title: the recipe's hash and branch (#217). */
+.pagefacts { margin: 0 0 12px; font-family: var(--mono); font-size: var(--fs-2xs); color: var(--muted); }
 
 .bar {
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
@@ -1101,55 +1143,6 @@ details[open] > summary::before { content: "▾"; }
 .unpushed p { margin: 0.4rem 0 0; }
 .unpushed pre { overflow-x: auto; margin: 0.8rem 0 0; }
 
-/* The section's one fact sits at the right of the label's own rule, which is
-   why there is no separate summary band: a band that totals what is under it
-   is a second copy of the same arithmetic, and the two disagree the first time
-   one of them is changed. */
-/* **`> section >`, not a descendant.** The ticket body is rendered markdown, so
-   a ticket written with `## Done when` puts an `h2` inside this subtree. Under
-   a descendant selector that heading would take the display size below and
-   claim to be a section of the page. Only the `Label` component's own heading
-   is a direct child of a section. */
-/* **It stays monospace, upper-cased and letter-spaced, and it keeps its rule.**
-   The size is the only thing that changed. A large sans heading with a negative
-   tracking is the default any page reaches for; this page's own vocabulary is
-   already mono — every seq, sha, duration and cost on it is — so the section
-   name is set in it too, at display size. That is the whole difference between
-   a heading that belongs to this board and one that could sit on any page. */
-.detail-body > section > h2 {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 0.8rem 1.4rem;
-  flex-wrap: wrap;
-  margin: 0 0 1.1rem;
-  padding-bottom: 0.45rem;
-  border-bottom: 1px solid var(--rule-2);
-}
-.detail-body > section > h2 .hlab {
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--fs-2xl);
-  line-height: 1.05;
-  letter-spacing: 0.18em;
-  text-transform: uppercase;
-  color: var(--ink);
-  /* Tracking leaves one space's worth after the last letter. Taken back so the
-     word ends where it looks like it ends. */
-  margin-right: -0.18em;
-}
-/* Small, and not shouted: `23m25s` and `$14.10` are read as numbers rather than
-   as a heading. Tabular figures because these change on every render and a
-   column that shifts under a re-render is one you stop trusting. */
-.detail-body > section > h2 .hfact {
-  font-family: var(--mono);
-  font-weight: 500;
-  font-size: var(--fs-sm);
-  letter-spacing: 0.06em;
-  text-align: right;
-  color: var(--muted);
-  font-variant-numeric: tabular-nums;
-}
 /* The mockup sets the figures in this line a shade darker than their labels,
    with `h3.sec > .fact b`. That rule is deliberately **not** copied here: `fact`
    is a `string`, joined by `totalsFact`, so no `<b>` can exist inside it and the
@@ -1187,7 +1180,6 @@ details[open] > summary::before { content: "▾"; }
    rather than a verdict about what the machinery produced. `landed`, `failed`
    and `blocked` are judgements on a finished thing; `running` is the thing. */
 .standing.live { border-left-color: var(--accent); position: relative; }
-.standing.live .sread .sstate { color: var(--accent); }
 
 /* And the half a colour cannot carry: **this is the only state that will be
    different in a minute.** Every other word on this page is settled — a static
@@ -1215,48 +1207,6 @@ details[open] > summary::before { content: "▾"; }
   .standing.live::before { animation: none; }
 }
 
-/* Two values at one weight. The state, and how long it has held — *blocked* and
-   *blocked for four days* are different facts, and the second is not an
-   annotation on the first. */
-.sread {
-  display: flex;
-  align-items: baseline;
-  gap: 1.1rem;
-  flex-wrap: wrap;
-  margin: 0;
-  font-family: var(--mono);
-  text-transform: uppercase;
-  color: var(--ink);
-  font-variant-numeric: tabular-nums;
-}
-/* **Bigger than a section name, and that is the point.** This word is the whole
-   page's answer — WAITING FOR YOU, RUNNING, LANDED — and a section name is only the
-   name of a section. At 1.15rem it lost that argument to every heading below
-   it, and the commonest reason anybody opens this page is to read exactly this
-   word (#80, #87, #89, #94 were four wrong readings in one day). */
-.sread .sstate {
-  font-size: clamp(1.7rem, 4vw, 2.45rem);
-  line-height: 1;
-  font-weight: 600;
-  /* Tracking this wide is a treatment for capitals; mixed case would fall
-     apart. The negative margin takes back the space after the last letter. */
-  letter-spacing: 0.2em;
-  margin-right: -0.2em;
-}
-/* The second readout: how long you have been the bottleneck. Beside the state
-   rather than under it, because it is a fact of the same rank and not an
-   annotation on the first — and the rule at its left says so without the
-   pseudo-element pipe that used to. */
-.sread .sage {
-  font-size: clamp(1.05rem, 2vw, 1.4rem);
-  line-height: 1;
-  letter-spacing: 0.04em;
-  color: var(--ink-2);
-  padding-left: 1.1rem;
-  padding-block: 0.22em;
-  border-left: 2px solid var(--rule-2);
-}
-.standing.onyou .sread .sstate { color: var(--signal); }
 
 .sticket { display: grid; gap: 0.35rem; margin-bottom: 1rem; }
 .swhere,
@@ -1310,37 +1260,7 @@ details[open] > summary::before { content: "▾"; }
   padding-top: 0.6rem;
   border-top: 1px solid var(--rule);
 }
-/* What was asked, under the state and above the reason.
-
-   Ink and at the block's prose size, because it is the only line on the first
-   screen that says which ticket this is — `.sread` above it says the state and
-   the bar says the stream id. The number is a link and carries the page's one
-   link colour; the title is a sentence and takes the measure. Not amber, and
-   not display-sized: rank 1 is still the state (#132), and this names its
-   subject rather than competing with it. */
-.ssubject {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.6rem;
-  margin: 0;
-  /* Same reason as `.sbody` itself: a title with no spaces cannot be allowed to
-     size the track. */
-  min-width: 0;
-}
-.sref {
-  font-family: var(--mono);
-  font-size: 0.85rem;
-  color: var(--accent-ink);
-  white-space: nowrap;
-}
-.stitle {
-  max-width: 62rem;
-  font-size: 0.95rem;
-  line-height: 1.5;
-  color: var(--ink);
-  overflow-wrap: anywhere;
-}
+.sref { color: var(--accent-ink); white-space: nowrap; }
 
 /* One line, and ink: it is the sentence somebody has to answer. Not amber — the
    rule at the left is already saying who is being waited on.
@@ -1479,59 +1399,6 @@ details[open] > summary::before { content: "▾"; }
 .detail--waiting .swhere--quiet { padding-top: 0; border-top: 0; }
 .detail--waiting .swhere--quiet .sbody { padding-top: 0; }
 .detail--waiting .swhere--quiet:not(:has(.sbody :is(p, div, details, ul) )) { display: none; }
-.detail--framed .swaiting-meta,
-.detail--waiting .swaiting-meta {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0.5rem 1rem;
-  min-width: 0;
-  font-family: var(--mono);
-  color: var(--muted);
-}
-.detail--framed .swaiting-meta .sread,
-.detail--waiting .swaiting-meta .sread { margin-left: auto; }
-.detail--framed .swaiting-title,
-.detail--waiting .swaiting-title { margin: 0; min-width: 0; }
-.detail--framed .swaiting-title .stitle,
-.detail--waiting .swaiting-title .stitle {
-  display: block;
-  max-width: 65rem;
-  font-size: clamp(1.35rem, 2.4vw, 1.7rem);
-  font-weight: 600;
-  line-height: 1.3;
-  letter-spacing: -0.025em;
-  overflow-wrap: anywhere;
-  text-wrap: pretty;
-}
-.detail--framed .swaiting-meta .sread,
-.detail--waiting .swaiting-meta .sread { gap: 0.45rem; }
-.detail--framed .swaiting-meta .sread .sstate,
-.detail--waiting .swaiting-meta .sread .sstate {
-  font-size: 0.85rem;
-  letter-spacing: 0.02em;
-  margin: 0;
-}
-.detail--framed .swaiting-meta .sread .sage,
-.detail--waiting .swaiting-meta .sread .sage {
-  padding: 0;
-  border: 0;
-  color: inherit;
-  font-size: 0.78rem;
-  letter-spacing: 0;
-}
-.detail--framed .swaiting-meta .sage::before,
-.detail--waiting .swaiting-meta .sage::before { content: "· "; }
-:is(.detail--waiting, .detail--resolved) .ssubject { display: flex; flex-direction: column; gap: 0.5rem; }
-:is(.detail--waiting, .detail--resolved) .sref { font-size: 0.78rem; }
-:is(.detail--waiting, .detail--resolved) .stitle {
-  max-width: 60rem;
-  font-size: clamp(1.35rem, 2.6vw, 2rem);
-  font-weight: 600;
-  line-height: 1.28;
-  letter-spacing: -0.025em;
-  text-wrap: pretty;
-}
 :is(.detail--waiting, .detail--resolved) .swant {
   max-width: 70ch;
   padding-left: 0.85rem;
@@ -1582,9 +1449,6 @@ details[open] > summary::before { content: "▾"; }
   }
 }
 :is(.detail--waiting, .detail--resolved) .swhere { gap: 1rem; }
-:is(.detail--waiting, .detail--resolved) .sread { gap: 0.5rem 1rem; }
-:is(.detail--waiting, .detail--resolved) .sread .sstate { font-size: clamp(1.4rem, 3vw, 2rem); }
-:is(.detail--waiting, .detail--resolved) .sread .sage { font-size: clamp(0.95rem, 2vw, 1.2rem); }
 :is(.detail--waiting, .detail--resolved) .swhere .segs { margin: 0; }
 :is(.detail--waiting, .detail--resolved) .swhere .slab { font-size: clamp(0.6rem, 0.9vw, 0.75rem); }
 :is(.detail--waiting, .detail--resolved) .swhere .sbar { height: 6px; }
@@ -1592,10 +1456,6 @@ details[open] > summary::before { content: "▾"; }
 :is(.detail--waiting, .detail--resolved) .squestion,
 :is(.detail--waiting, .detail--resolved) .sbody .diag { font-size: 0.98rem; }
 :is(.detail--waiting, .detail--resolved) .sowhat { font-size: 0.9rem; }
-
-@media (max-width: 40rem) {
-  .detail--waiting .swaiting-meta .sread { margin-left: 0; width: 100%; }
-}
 
 .saftermove { display: grid; gap: 0.65rem; min-width: 0; padding: clamp(1.1rem, 2.3vw, 1.8rem); border: 1px solid; overflow-wrap: anywhere; }
 .saftermove h2 { margin: 0; }
@@ -3120,10 +2980,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
    --kind, one of /report's series; amber is never used, because amber means a
    person is waited on, and a past decision is written in ink. */
 .ld { gap: 1.25rem; max-width: 1040px; margin: 0 auto; }
-.ld-header { display: flex; justify-content: space-between; align-items: flex-end; gap: 24px; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
-.ld-header h1 { font: 500 var(--fs-display)/1.05 var(--serif); margin: 0; letter-spacing: -0.01em; }
-.ld-header p { margin: 4px 0 0; color: var(--muted); font-size: var(--fs-md); }
-.ld-totals { display: flex; gap: 28px; margin: 0; }
+.ld-totals { display: flex; justify-content: flex-end; gap: 28px; margin: 0; border-bottom: 1px solid var(--rule); padding-bottom: 14px; }
 .ld-totals div { text-align: right; }
 .ld-totals dt { font-size: var(--fs-xs); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
 .ld-totals dd { margin: 2px 0 0; font: 500 var(--fs-xl) var(--mono); font-variant-numeric: tabular-nums; }
@@ -3438,11 +3295,6 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 /* One PR's page (#1320, doc/milestone/0.16.0/team-mode/pr-detail.html): the header, two columns, and panels that stack
    under 820px as the mock does. Every colour is a variable (the `--pr-*` ones are declared in :root and again in the dark block); the PRs board's `.pr-*` classes are reused. */
 .prp { margin: 0.75rem 0 2rem; }
-.prp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
-.prp-chip { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.55rem; border-radius: var(--radius); background: var(--pr-navy); color: var(--pr-on-fill); font-family: var(--mono); font-size: 0.8rem; }
-.prp-title { margin: 0; font-size: 1.15rem; flex: 1 1 18rem; }
-.prp-host-link { font-family: var(--mono); font-size: 0.8rem; }
-.prp-sub { flex: 1 0 100%; margin: 0; color: var(--pr-navy); font-size: 0.8rem; font-family: var(--mono); }
 .prp-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 1rem; margin-top: 1rem; }
 .prp-main, .prp-side { display: flex; flex-direction: column; gap: 1rem; min-width: 0; }
 .prp-panel { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 0.75rem 0.9rem; }
