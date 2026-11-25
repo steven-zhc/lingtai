@@ -291,6 +291,12 @@ export const ELSEWHERE: readonly { event: EventType; why: string; file: string; 
     anchor: "type: 'PrDraftTicketAdded',",
   },
   {
+    event: 'ProjectPrNumbered',
+    why: "built inline by `@lingtai/project`'s `numberBatch` and written in the same `appendAll` as the PR event",
+    file: 'packages/project/src/pr.ts',
+    anchor: "type: 'ProjectPrNumbered',",
+  },
+  {
     event: 'PrSubmitRequested',
     why: "returned from a transition; `@lingtai/project`'s `transitionPr` appends it",
     file: 'packages/domain/src/pr.ts',

@@ -503,6 +503,7 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   ProjectRecovered: (d) => `${need(d, 'project')} recovered`,
   ProjectPaused: (d) => `${personName(need(d, 'by'))} paused ${need(d, 'project')}`,
   ProjectResumed: (d) => `${personName(need(d, 'by'))} resumed ${need(d, 'project')}`,
+  ProjectPrNumbered: (d) => `PR ${need(d, 'n')} is the highest the project records`,
   PrDraftTicketAdded: (d) => `${need(d, 'ticket')} joined the PR's draft`,
   PrSubmitRequested: (d) => `${personName(need(d, 'by'))} asked to submit the personal branch as a PR`,
   PrSubmitRefused: (d) => `The PR was not started (${need(d, 'reason')}): ${clip(d['detail'])}`,
