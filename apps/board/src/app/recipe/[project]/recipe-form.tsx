@@ -99,10 +99,10 @@ export function RecipeForm({
             {said.kind === 'added' ? `${said.host} was added for you — not saved` : `${said.host} is already allowed`}
           </span>
         ) : null}
-        <button type="submit" className="rfile-edit" disabled={pending}>
+        <button type="submit" className="btn pri" disabled={pending}>
           Validate and save
         </button>
-        <button type="button" className="rfile-edit" onClick={onClose}>
+        <button type="button" className="btn" onClick={onClose}>
           Close
         </button>
       </FileBar>

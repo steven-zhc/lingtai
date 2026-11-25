@@ -46,7 +46,7 @@ function Line(props: {
       <span className="s2-v">{props.changing ? props.editor : props.shown}</span>
       <span className={props.known === false ? 's2-note wiz-fail' : 's2-note'}>{props.disabled ?? props.note}</span>
       {props.disabled == null ? (
-        <button type="button" className="s2-change" onClick={props.onChange}>
+        <button type="button" className="btn sm s2-change" onClick={props.onChange}>
           {props.changing ? 'done' : 'change'}
         </button>
       ) : null}
@@ -351,7 +351,7 @@ export function SetupForm({ view }: { view: ReadView }) {
                   value={typedCheck}
                   onChange={(e) => setTypedCheck(e.target.value)}
                 />
-                <button type="button" className="s2-change" onClick={addCheck}>
+                <button type="button" className="btn sm s2-change" onClick={addCheck}>
                   add
                 </button>
               </span>
@@ -652,7 +652,7 @@ export function SetupForm({ view }: { view: ReadView }) {
           <a className="btn" href="/setup/repository">
             Back
           </a>
-          <button type="button" className="btn go" disabled={adding || confirming} onClick={add}>
+          <button type="button" className="btn pri" disabled={adding || confirming} onClick={add}>
             {adding ? 'Adding…' : 'Add'}
           </button>
         </p>

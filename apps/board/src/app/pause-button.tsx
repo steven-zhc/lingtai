@@ -17,7 +17,7 @@ export function PauseButton({ project, paused }: { project: string; paused: bool
     <>
       <button
         type="button"
-        className={paused ? 'navlink held' : 'navlink'}
+        className="btn"
         disabled={pending}
         title={paused ? `resume ${project}` : `stop ${project} taking new work; an attempt in flight finishes`}
         onClick={() => {
@@ -43,6 +43,7 @@ export function ResumeButton({ project }: { project: string }) {
     <>
       <button
         type="button"
+        className="btn sm"
         disabled={pending}
         onClick={() => {
           setRefusal(null)
@@ -67,6 +68,7 @@ export function LiftButton({ account }: { account: string }) {
     <>
       <button
         type="button"
+        className="btn sm"
         disabled={pending}
         title={`lift ${account}'s limit now; every project using it may start work again`}
         onClick={() => {

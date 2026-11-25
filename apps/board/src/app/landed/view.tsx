@@ -97,9 +97,9 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
         {row.mergeCommit === null ? null : commit === null ? (
           <span>{row.mergeCommit.slice(0, 7)}</span>
         ) : (
-          <a href={commit}>{row.mergeCommit.slice(0, 7)}</a>
+          <a href={commit}>{row.mergeCommit.slice(0, 7)} ↗</a>
         )}
-        {ref === null ? null : issue === null ? <span>#{ref.issue}</span> : <a href={issue}>#{ref.issue}</a>}
+        {ref === null ? null : issue === null ? <span>#{ref.issue}</span> : <a href={issue}>#{ref.issue} ↗</a>}
       </span>
     </p>
   )

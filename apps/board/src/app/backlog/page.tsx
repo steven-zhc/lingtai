@@ -56,7 +56,7 @@ function Entry({ entry }: { entry: BacklogEntry }) {
           accepted by {entry.decidedBy} →{' '}
           {entry.proposedUrl ? (
             <a href={entry.proposedUrl} target="_blank" rel="noreferrer">
-              #{entry.proposedRef}
+              #{entry.proposedRef} ↗
             </a>
           ) : (
             entry.proposedRef

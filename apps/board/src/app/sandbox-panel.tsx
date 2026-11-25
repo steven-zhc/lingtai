@@ -258,11 +258,7 @@ export function BlockedList({
                   </td>
                   <td>
                     {h.allowHref === null ? null : (
-                      <Link
-                        href={stamped(h.allowHref, stamp)}
-                        prefetch={false}
-                        className={time === 'clock' ? 'sbbtn' : undefined}
-                      >
+                      <Link href={stamped(h.allowHref, stamp)} prefetch={false} className="btn sm">
                         Allow on this project
                       </Link>
                     )}

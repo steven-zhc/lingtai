@@ -78,7 +78,7 @@ export function PrCard({ project, card }: { project: string; card: CardView }) {
             <pre>{card.byHand.join('\n')}</pre>
           </details>
         )}
-        <PrButtons project={project} n={card.n} buttons={card.buttons} />
+        <PrButtons project={project} n={card.n} buttons={card.buttons} small />
       </div>
     </article>
   )

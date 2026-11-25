@@ -246,7 +246,12 @@ describe('the conversation, as turns', () => {
       <Discussion taskId="ticket-lingtai-89" state="running" attempts={2} attempt={2} discussions={[answered]} quiet />,
     )
     expect(quiet).not.toContain('btn pri')
-    expect(render([answered])).toContain('btn pri')
+    // The waiting page draws Ask as a secondary: its decision block is the moves above it.
+    expect(render([answered])).not.toContain('btn pri')
+    const open = renderToStaticMarkup(
+      <Discussion taskId="ticket-lingtai-89" state="approved" attempts={2} attempt={2} discussions={[answered]} />,
+    )
+    expect(open).toContain('btn pri')
   })
 })
 

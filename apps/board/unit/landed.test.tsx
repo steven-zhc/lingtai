@@ -252,7 +252,7 @@ describe('the home page Landed heading and count', () => {
   it('the Landed count is a pill linking to /landed, carrying the project filter', () => {
     const html = renderToStaticMarkup(<LandedCount count={73} only="my repo" />)
     expect(html).toContain('href="/landed?project=my%20repo"')
-    expect(html).toContain('class="ctbtn"')
+    expect(html).toContain('class="btn sm"')
     expect(html).toContain('73')
     expect(html).toContain('all')
     expect(renderToStaticMarkup(<LandedCount count={1} only={undefined} />)).toContain('href="/landed"')

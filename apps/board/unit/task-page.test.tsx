@@ -1134,14 +1134,14 @@ describe('the places that wait for GitHub', () => {
     // The cards' heads and Close are drawn at once; only Run it now's button waits.
     expect(html).toContain('Close the ticket')
     expect(html).toContain('Edit the prompt')
-    expect(html).not.toContain('class="btn go"')
+    expect(html).not.toContain('class="btn pri"')
     expect(html).not.toContain('offered by GitHub')
   })
 
   it('draws a queued ticket whole once the answer is in', () => {
     const t = queuedPage()
     const html = page(t)
-    expect(html).toContain('class="btn go"')
+    expect(html).toContain('class="btn pri"')
     expect(html).toContain('offered by GitHub')
     // the footer's spend skeleton is not GitHub's: look in the page's body
     expect(html.replace(/<footer[\s\S]*<\/footer>/, '')).not.toContain('class="skeleton"')
@@ -1150,21 +1150,21 @@ describe('the places that wait for GitHub', () => {
   it('offers no move on an untouched ticket until GitHub says the issue exists', () => {
     const html = waiting(task([], []))
     expect(html).toContain('Close the ticket')
-    expect(html).not.toContain('class="btn go"')
+    expect(html).not.toContain('class="btn pri"')
   })
 
   it('says GitHub has no such issue, with no state, no queued line and no moves, for a ticket the log never touched', () => {
     const t = queuedPage()
     const html = page(t, { found: false, askedGitHub: true, body: null, problem: '404 on /repos: Not Found' })
     expect(html).toContain('GitHub has no issue #147')
-    expect(html).not.toContain('class="btn go"')
+    expect(html).not.toContain('class="btn pri"')
     expect(html).not.toContain('class="sstate"')
   })
 
   it('says it cannot tell, and still offers the moves, when GitHub could not be asked', () => {
     const html = page(queuedPage(), { found: null, askedGitHub: true, body: null, problem: 'rate limit exceeded' })
     expect(html).toContain('whether it exists is not known here')
-    expect(html).toContain('class="btn go"')
+    expect(html).toContain('class="btn pri"')
   })
 
   it('keeps the page for a ticket the log has touched when GitHub has no such issue', () => {
