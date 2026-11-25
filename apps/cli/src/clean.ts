@@ -145,10 +145,13 @@ export const realPort: CleanPort = {
   // Status is only an answer about `path` when git's toplevel for it is `path` itself: a `.git`
   // that points at another repository, or a `core.worktree`, would report on a different tree.
   status: (path) =>
-    attempt(async () => {
-      const top = (await execFile('git', ['-C', path, 'rev-parse', '--show-toplevel'])).stdout.trim()
-      if ((await realpath(top)) !== (await realpath(path))) throw new Error(`git reports ${top}, not ${path}`)
-      return (await execFile('git', ['-C', path, 'status', '--porcelain'])).stdout
+    Effect.gen(function* () {
+      const git = (...args: string[]) =>
+        attempt(() => execFile('git', ['-C', path, ...args])).pipe(Effect.map(({ stdout }) => stdout))
+      const top = (yield* git('rev-parse', '--show-toplevel')).trim()
+      const [a, b] = yield* attempt(() => Promise.all([realpath(top), realpath(path)]))
+      if (a !== b) return yield* Effect.fail(new Error(`git reports ${top}, not ${path}`))
+      return yield* git('status', '--porcelain')
     }),
   removeWorktree: (mirror, path) =>
     attempt(() => execFile('git', ['-C', mirror, 'worktree', 'remove', '--force', path])).pipe(
