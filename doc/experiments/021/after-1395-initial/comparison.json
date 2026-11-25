@@ -1,0 +1,127 @@
+{
+  "status": "initial_observation_small_samples",
+  "excluded_after_trace_ids": [
+    "5c62386c35a6d29b447b9b16f60748d0",
+    "d541b61052f4364f86cc1ab140c4e1d9"
+  ],
+  "first_observed_home_request_separate": "d541b61052f4364f86cc1ab140c4e1d9",
+  "after_request_quality_exclusions": [
+    "5c62386c35a6d29b447b9b16f60748d0"
+  ],
+  "before_baseline": "before-1395/summary.json (frozen, unchanged)",
+  "after_primary_request_count": 9,
+  "comparisons": [
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "true",
+      "before_duration_s": {
+        "n": 92,
+        "p50": 48.687330875,
+        "p95": 155.781321958,
+        "max": 195.7728115
+      },
+      "after_duration_s": {
+        "n": 5,
+        "p50": 6.239913584,
+        "p95": 8.759861292,
+        "max": 8.759861292
+      },
+      "after_durations_s": [
+        8.618289958,
+        8.759861292,
+        6.239913584,
+        3.132637292,
+        3.98451925
+      ],
+      "median_reduction_percent": 87.18370164916132,
+      "before_pr_ticket_reads": {
+        "n": 92,
+        "p50": 838.0,
+        "p95": 840.0,
+        "max": 840.0
+      },
+      "after_pr_ticket_reads": {
+        "n": 5,
+        "p50": 21.0,
+        "p95": 21.0,
+        "max": 21.0
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/",
+      "rsc": "false",
+      "before_duration_s": {
+        "n": 6,
+        "p50": 61.332828792,
+        "p95": 122.051013625,
+        "max": 122.051013625
+      },
+      "after_duration_s": {
+        "n": 2,
+        "p50": 4.032224792,
+        "p95": 6.143908583,
+        "max": 6.143908583
+      },
+      "after_durations_s": [
+        6.143908583,
+        4.032224792
+      ],
+      "median_reduction_percent": 93.42566636592841,
+      "before_pr_ticket_reads": {
+        "n": 6,
+        "p50": 836.0,
+        "p95": 840.0,
+        "max": 840.0
+      },
+      "after_pr_ticket_reads": {
+        "n": 2,
+        "p50": 21.0,
+        "p95": 21.0,
+        "max": 21.0
+      }
+    },
+    {
+      "method": "GET",
+      "route": "/pr/[project]",
+      "rsc": "false",
+      "before_duration_s": {
+        "n": 3,
+        "p50": 57.455860541,
+        "p95": 165.512457875,
+        "max": 165.512457875
+      },
+      "after_duration_s": {
+        "n": 2,
+        "p50": 3.34267875,
+        "p95": 5.124313458,
+        "max": 5.124313458
+      },
+      "after_durations_s": [
+        5.124313458,
+        3.34267875
+      ],
+      "median_reduction_percent": 94.18217964446866,
+      "before_pr_ticket_reads": {
+        "n": 3,
+        "p50": 825.0,
+        "p95": 836.0,
+        "max": 836.0
+      },
+      "after_pr_ticket_reads": {
+        "n": 2,
+        "p50": 21.0,
+        "p95": 21.0,
+        "max": 21.0
+      }
+    }
+  ],
+  "notes": [
+    "All after groups have fewer than 30 samples; their P95 is a descriptive order statistic, not a stable tail estimate.",
+    "The first observed homepage request is kept separately; cold/warm state of other requests is not proven.",
+    "Two PR direct GET requests were serial assistant checks, not a controlled load test; no after PR RSC observations were available.",
+    "The daemon restarted near the end of this after window; most page samples ran while it was draining the prior version.",
+    "Observed reductions are not a controlled causal estimate: concurrency, traffic, draft size and background work differ."
+  ]
+}

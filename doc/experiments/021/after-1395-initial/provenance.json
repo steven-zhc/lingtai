@@ -1,0 +1,52 @@
+{
+  "created_at_utc": "2026-11-24T23:51:03.938947+00:00",
+  "kind": "initial post-restart observed traffic plus two serial PR GET checks",
+  "source_query": {
+    "service": "lingtai-board",
+    "raw_traces": true,
+    "search_depth": 10000,
+    "start_time_min": "2026-11-24T23:42:35Z",
+    "start_time_max": "2026-11-24T23:49:00Z"
+  },
+  "source_sha256": "fdd52b41392da0c08c8d5203a44361c7412f734eb5af09db425f7c7885caf534",
+  "checkout_commit": "6a7452a34fba084d8048ee1f96e49adddc23bfa5",
+  "cutover_record": "../deployment-1395.json",
+  "raw_request_count": 11,
+  "primary_comparison_request_count": 9,
+  "witness_trace_ids": [
+    "d541b61052f4364f86cc1ab140c4e1d9",
+    "d9ac59cfc94605403c0c3099515b8f42",
+    "df9fb27b70d60c79220b631da636ea95",
+    "546a186cef6c758509d595e7b82ff4df",
+    "5c62386c35a6d29b447b9b16f60748d0"
+  ],
+  "witness_span_count": 557,
+  "manual_pr_get_checks": [
+    {
+      "trace_id": "df9fb27b70d60c79220b631da636ea95",
+      "curl_total_s": 5.135163,
+      "curl_first_byte_s": 2.480557
+    },
+    {
+      "trace_id": "546a186cef6c758509d595e7b82ff4df",
+      "curl_total_s": 3.347185,
+      "curl_first_byte_s": 1.219919
+    }
+  ],
+  "scope_limits": [
+    "All after groups have fewer than 30 samples; their P95 is a descriptive order statistic, not a stable tail estimate.",
+    "The first observed homepage request is kept separately; cold/warm state of other requests is not proven.",
+    "Two PR direct GET requests were serial assistant checks, not a controlled load test; no after PR RSC observations were available.",
+    "The daemon restarted near the end of this after window; most page samples ran while it was draining the prior version.",
+    "Observed reductions are not a controlled causal estimate: concurrency, traffic, draft size and background work differ."
+  ],
+  "witness_missing_parent_counts": {
+    "546a186cef6c758509d595e7b82ff4df": 12,
+    "5c62386c35a6d29b447b9b16f60748d0": 0,
+    "d541b61052f4364f86cc1ab140c4e1d9": 0,
+    "d9ac59cfc94605403c0c3099515b8f42": 0,
+    "df9fb27b70d60c79220b631da636ea95": 12
+  },
+  "witness_parent_note": "PR pre-loader spans retain parents filtered by the current selective exporter. Preserve source parentage; do not invent parents.",
+  "page_runtime_mode": "development; verified live process next dev --turbopack -p 17820 -H 0.0.0.0, parent node ./serve.ts dev"
+}
