@@ -15,9 +15,15 @@
  */
 import { generateKeyPairSync } from 'node:crypto'
 
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { BodyChanged, createGitHubClient, type AppAuth, type Installation } from '../src/index.ts'
+import {
+  forgetGitHubAuthCache,
+  BodyChanged,
+  createGitHubClient,
+  type AppAuth,
+  type Installation,
+} from '../src/index.ts'
 
 // A real key, because the client signs a JWT before it asks for a token —
 // nothing here is about the signing, but it has to succeed for the call to
@@ -68,6 +74,7 @@ function stub(issues: Record<string, unknown>[]) {
 }
 
 describe('listOpenIssues', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   async function client() {
@@ -184,6 +191,7 @@ describe('listOpenIssues', () => {
 })
 
 describe('createIssue', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   async function created(input: { milestone?: number; assignees?: readonly string[] }) {
@@ -240,6 +248,7 @@ describe('createIssue', () => {
  *   `IssueUpdateFailed` the next reconcile picks up.
  */
 describe('the refs a landed ticket leaves', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   /** The token endpoint, then whatever this test wants of the git-refs ones. */
@@ -314,6 +323,7 @@ describe('the refs a landed ticket leaves', () => {
  * and that a mismatch throws instead of reaching it.
  */
 describe('updateBody with ifUnchanged', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   function stubIssue(currentBody: string) {
@@ -361,6 +371,7 @@ describe('updateBody with ifUnchanged', () => {
 })
 
 describe('createGitHubClient under gh', () => {
+  beforeEach(() => forgetGitHubAuthCache())
   afterEach(() => vi.unstubAllGlobals())
 
   it('makes no installation call and authorises with the port’s token, asked afresh', async () => {
