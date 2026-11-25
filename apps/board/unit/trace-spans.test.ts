@@ -3,6 +3,7 @@ import {
   fromPromiseStore,
   promiseStore,
   readThroughSnapshot,
+  setHeadObserver,
   setReadObserver,
   type SnapshotReadObserver,
 } from '@lingtai/event-store'
@@ -16,6 +17,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 const mocks = vi.hoisted(() => ({
   readTasks: vi.fn(),
   readState: vi.fn(),
+  readDraftTickets: vi.fn(),
 }))
 
 vi.mock('@lingtai/projector/task-view', async (orig) => ({
@@ -26,6 +28,7 @@ vi.mock('@lingtai/projector/task-view', async (orig) => ({
 vi.mock('@lingtai/project', async (orig) => ({
   ...(await orig<object>()),
   loadAllProjects: vi.fn(async () => []),
+  readDraftTickets: mocks.readDraftTickets,
 }))
 vi.mock('@lingtai/conductor/snapshot-state', async (orig) => ({
   ...(await orig<object>()),
@@ -56,9 +59,10 @@ import { githubJson } from '../../../packages/github/src/app.ts'
 import { createGhReader } from '../../../packages/github/src/gh-reader.ts'
 import { githubQueue, loadBoard, type AskableFilter } from '../src/lib/board.ts'
 import { readControlOnce } from '../src/lib/locks.ts'
-import { loadPrBoard, loadPrDetail } from '../src/lib/prs.ts'
+import { loadPrBoard, loadPrDetail, readDraftOf, readProjectPrs } from '../src/lib/prs.ts'
+import { memoStore } from '../src/lib/request-store.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
-import { measure, timed, traced } from '../src/lib/timing.ts'
+import { ApiContext, boardTracer, measure, timed, traced } from '../src/lib/timing.ts'
 import { installTraceSeams } from '../src/lib/trace-seams.ts'
 
 const none = machineFileFrom('/h/config.yml', null)
@@ -82,6 +86,7 @@ beforeEach(async () => {
 afterEach(() => {
   setRequestObserver(undefined)
   setReadObserver(undefined)
+  setHeadObserver(undefined)
   trace.disable()
   context.disable()
   vi.unstubAllGlobals()
@@ -297,5 +302,134 @@ describe('the PR pages', () => {
       expect(c).toHaveLength(1)
       expect(parentOf(all, c[0]!)?.name).toBe(page)
     }
+  })
+})
+
+const page = <T>(name: string, fn: () => Promise<T>) =>
+  trace.getTracer('lingtai-board').startActiveSpan(name, async (s) => {
+    try {
+      return await fn()
+    } finally {
+      s.end()
+    }
+  })
+
+describe('the event store head seam', () => {
+  const fakeOver = (head: () => Promise<number>) => {
+    const calls = { n: 0 }
+    const fake = {
+      head: () => {
+        calls.n++
+        return head()
+      },
+    } as unknown as ReturnType<typeof createMemoryEventStore>
+    return { calls, store: promiseStore(fromPromiseStore(fake)) }
+  }
+  it('measures one physical read for concurrent waiters, with the count and no id', async () => {
+    installTraceSeams()
+    let resolve!: (n: number) => void
+    const { calls, store } = fakeOver(() => new Promise<number>((r) => (resolve = r)))
+    const memo = memoStore(store)
+    const both = page('page /a', () => Promise.all([memo.head('pr-secret-1'), memo.head('pr-secret-1')]))
+    resolve(4)
+    expect(await both).toEqual([4, 4])
+    expect(calls.n).toBe(1)
+    const all = await spans()
+    const heads = all.filter((s) => s.name === 'events.head')
+    expect(heads).toHaveLength(1)
+    expect(heads[0]!.attributes).toEqual({ 'lingtai.stream': 'pr', 'lingtai.count': 4 })
+    expect(parentOf(all, heads[0]!)?.name).toBe('page /a')
+  })
+
+  it('gives separate requests a span each, under their own page', async () => {
+    installTraceSeams()
+    const { calls, store } = fakeOver(async () => 1)
+    await Promise.all([
+      page('page /a', () => memoStore(store).head('pr-p-1')),
+      page('page /b', () => memoStore(store).head('pr-p-1')),
+    ])
+    expect(calls.n).toBe(2)
+    const all = await spans()
+    const parents = all.filter((s) => s.name === 'events.head').map((s) => parentOf(all, s)?.name)
+    expect(parents.sort()).toEqual(['page /a', 'page /b'])
+  })
+
+  it('counts an absent stream as 0 and OK, and a failure as an error with no count', async () => {
+    installTraceSeams()
+    const absent = fakeOver(async () => 0)
+    await page('page /a', () => memoStore(absent.store).head('pr-p-1'))
+    const boom = new Error('boom')
+    const bad = fakeOver(() => Promise.reject(boom))
+    const memo = memoStore(bad.store)
+    const rejected = page('page /b', () => Promise.allSettled([memo.head('pr-p-1'), memo.head('pr-p-1')]))
+    const results = await rejected
+    expect(results.map((r) => r.status)).toEqual(['rejected', 'rejected'])
+    expect(bad.calls.n).toBe(1)
+    const heads = (await spans()).filter((s) => s.name === 'events.head')
+    expect(heads).toHaveLength(2)
+    const ok = heads.find((s) => s.attributes['lingtai.count'] === 0)!
+    expect(ok.status.code).not.toBe(2)
+    const err = heads.find((s) => s.status.code === 2)!
+    expect(err.attributes).not.toHaveProperty('lingtai.count')
+  })
+
+  it('measures a read again after an append', async () => {
+    installTraceSeams()
+    const calls = { n: 0 }
+    const fake = {
+      head: async () => ++calls.n,
+      append: async () => [],
+    } as unknown as ReturnType<typeof createMemoryEventStore>
+    const memo = memoStore(promiseStore(fromPromiseStore(fake)))
+    await page('page /a', async () => {
+      await memo.head('pr-p-1')
+      await memo.append('pr-p-1', 1, [])
+      await memo.head('pr-p-1')
+    })
+    expect(calls.n).toBe(2)
+    expect((await spans()).filter((s) => s.name === 'events.head')).toHaveLength(2)
+  })
+
+  it('does nothing extra with no observer', async () => {
+    // `installTracing` installs the seams; telemetry off is the observer absent.
+    setHeadObserver(undefined)
+    const { calls, store } = fakeOver(async () => 2)
+    await page('page /a', () => memoStore(store).head('pr-p-1'))
+    expect(calls.n).toBe(1)
+    expect((await spans()).filter((s) => s.name === 'events.head')).toHaveLength(0)
+  })
+
+  it('nests the heads of PR-number discovery under pr.numbers under the page', async () => {
+    installTraceSeams()
+    const memory = createMemoryEventStore()
+    await memory.append('pr-p-1', 0, [discovered('x')])
+    const store = memoStore(promiseStore(fromPromiseStore(memory)))
+    const active = context.active()
+    await page('pr.board', () => {
+      const here = context.active()
+      void active
+      return Effect.runPromise(
+        readProjectPrs('p', store).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, here)),
+      ).catch(() => undefined)
+    })
+    const all = await spans()
+    const numbers = all.filter((s) => s.name === 'pr.numbers')
+    expect(numbers).toHaveLength(1)
+    expect(parentOf(all, numbers[0]!)?.name).toBe('pr.board')
+    const heads = all.filter((s) => s.name === 'events.head')
+    expect(heads.length).toBeGreaterThan(0)
+    for (const h of heads.slice(0, 2)) expect(parentOf(all, h)?.name).toBe('pr.numbers')
+  })
+})
+
+describe('a failure recovered after the phase', () => {
+  it('leaves pr.draft marked as an error while the page still gets an answer', async () => {
+    const { Effect } = await import('effect')
+    mocks.readDraftTickets.mockReturnValue(Effect.fail(new Error('connection refused')))
+    const got = await page('pr.board', () => Effect.runPromise(readDraftOf('p').pipe(Effect.withTracer(boardTracer))))
+    expect(got).toEqual({ error: 'connection refused' })
+    const draft = (await spans()).find((s) => s.name === 'pr.draft')!
+    expect(draft.status.code).toBe(2)
+    expect(JSON.stringify(draft.attributes)).not.toContain('refused')
   })
 })

@@ -15,6 +15,7 @@ import { type GitHub, makeGitHub } from '@lingtai/github'
 import { type PrDraftTicket, READ_CONCURRENCY, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
+import { context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 import { cache } from 'react'
 
@@ -35,7 +36,7 @@ import { projectOf, recipeOf } from './request-reads.ts'
 import { requestStore } from './request-store.ts'
 import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
-import { measure, timed } from './timing.ts'
+import { ApiContext, boardTracer, measure, timed, traced, tracedEffect } from './timing.ts'
 import type { LandedWhereRead } from './where-landed.ts'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
@@ -69,7 +70,7 @@ export const readProjectPrs = (
   options: { since?: Date; merged?: number } = {},
 ): Effect.Effect<PrRead[], Error> =>
   Effect.gen(function* () {
-    const top = yield* topPrNumber(project, store)
+    const top = yield* tracedEffect('pr.numbers', topPrNumber(project, store))
     const reads: PrRead[] = []
     let merged = 0
     // Newest first, a chunk at a time: the reads in a chunk run together, and the `since` cut is applied to the chunk's
@@ -106,7 +107,16 @@ export const readProjectPrs = (
  * `readProjectPrs` for one request, once: every PR, never a `since`, through `requestStore()`. **A reader added later
  * goes through this one**; a page that needs the `since` cut asks `readProjectPrs` itself, and reads through the same store.
  */
-export const prsOf = cache((project: string) => Effect.runPromise(readProjectPrs(project, requestStore())))
+export const prsOf = cache((project: string) => {
+  // The first caller's span, taken here because the run resumes elsewhere (#1359).
+  const active = context.active()
+  return Effect.runPromise(
+    readProjectPrs(project, requestStore()).pipe(
+      Effect.withTracer(boardTracer),
+      Effect.provideService(ApiContext, active),
+    ),
+  )
+})
 
 /** The count of PRs waiting on the person: the open PR is the only one that can wait. */
 export const waitingPrs = (project: string, store: EventStore): Effect.Effect<number, Error> =>
@@ -121,12 +131,14 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
  * board and a PR's page both ask here, so the two cannot decide the draft differently.
  */
 export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { error: string }> =>
-  readDraftTickets(project, requestStore()).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
+  tracedEffect('pr.draft', readDraftTickets(project, requestStore())).pipe(
+    Effect.catch((err) => Effect.succeed({ error: err.message })),
+  )
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
 export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
   Effect.gen(function* () {
-    const rows = yield* readSpendEffect({ project }).pipe(Effect.mapError(failed))
+    const rows = yield* tracedEffect('spend.read', readSpendEffect({ project }).pipe(Effect.mapError(failed)))
     const spend = new Map<number, number>()
     for (const row of rows) {
       if (row.costUsd === null) continue
@@ -153,8 +165,9 @@ export async function readPrPage(project: string): Promise<PrsRead> {
   }
   if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
   try {
-    const { recipe } = await recipeOf(project)
+    const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
+    const active = context.active()
     const view = await Effect.runPromise(
       Effect.gen(function* () {
         const [prs, draft] = yield* Effect.all(
@@ -190,7 +203,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           newFixHref: fixHref(null),
           newFixFor: (pr) => fixHref(prName(pr)),
         })
-      }),
+      }).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, active)),
     )
     return { kind: 'team', recipe, view }
   } catch (err) {
@@ -207,7 +220,7 @@ export async function readLandedWhere(project: string): Promise<LandedWhereRead>
   try {
     const state = await projectOf(project)
     if (state === null || state === undefined) return { kind: 'solo' }
-    const { recipe } = await recipeOf(project)
+    const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
     if (modeOf(recipe) !== 'team') return { kind: 'solo' }
     return await Effect.runPromise(
       Effect.gen(function* () {
@@ -281,9 +294,10 @@ const ticketFacts = (
                 Effect.orElseSucceed(() => null),
               )
         // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
-        const rows = yield* readSpendEffect({ project, ticket: ticketStream(project, ticket) }).pipe(
-          Effect.orElseSucceed(() => null),
-        )
+        const rows = yield* tracedEffect(
+          'spend.read',
+          readSpendEffect({ project, ticket: ticketStream(project, ticket) }),
+        ).pipe(Effect.orElseSucceed(() => null))
         const open = yield* openRead
         const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
         const spend =
@@ -324,8 +338,9 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
   // A local project legitimately records no owner: it is registered all the same.
   if (state === null || state === undefined) return { kind: 'unknown' }
   try {
-    const { recipe } = await recipeOf(project)
+    const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
+    const active = context.active()
     return await Effect.runPromise(
       Effect.gen(function* () {
         const stepNames = inProgressStepNames()
@@ -382,7 +397,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         })
         const ask = githubHosted(recipe) && pr.host !== null && isOpen(pr) ? pr.host.number : null
         return { kind: 'team', recipe, view, status: pr.status, ask } as const
-      }),
+      }).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, active)),
     )
   } catch (err) {
     const words = (err as Error).message
@@ -423,7 +438,7 @@ export async function readHostPull(project: string, number: number): Promise<Hos
 export async function readGeneratedBody(project: string, n: number): Promise<string> {
   const state = await projectOf(project)
   if (state === null || state === undefined) throw new Error(`no project named ${project}`)
-  const { recipe } = await recipeOf(project)
+  const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
   return Effect.runPromise(
     Effect.gen(function* () {
       const pr = reducePr(yield* readPrEvents(project, n, requestStore()))
