@@ -795,6 +795,7 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
   const blocker = (over: Partial<BlockerRead> = {}): BlockerRead => ({
     repository: REPO,
     number: 1395,
+    title: 'the blocker',
     state: 'open',
     ...over,
   })
@@ -910,6 +911,7 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
     expect(found.runnable).toEqual([])
     expect(found.skipped[0]).toMatchObject({ reason: 'blocked-by' })
     expect(found.skipped[0]?.held).toContain('100 blockers or more')
+    expect(found.skipped[0]?.blockersRead).toMatchObject({ ok: false })
   })
 
   it('every blocker has to be closed or landed: one still open and unlanded holds', async () => {

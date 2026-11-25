@@ -368,6 +368,11 @@ export interface Offered {
      * the blockers could not be read. Absent otherwise. `blockersUnread` is how it is said.
      */
     held?: string
+    /**
+     * The blockers discovery read for this skip (#1423), for the explanation to use as read: a list that was not
+     * read whole (a full page) is said as a problem, never as a list.
+     */
+    blockersRead?: BlockersRead
   }[]
   /**
    * What colour this repository gives each kind, `#rrggbb`, keyed by the kind
@@ -458,8 +463,12 @@ export function passedOver(skipped: Offered['skipped']): string | null {
 export interface BlockerRead {
   repository: string
   number: number
+  title: string
   state: 'open' | 'closed'
 }
+
+/** What discovery read of a ticket's blockers, carried on its skip so the explanation does not read them again. */
+export type BlockersRead = { ok: true; issues: readonly BlockerRead[] } | { ok: false; problem: string }
 
 /**
  * What lets a team project's queue see that a blocker has landed on `branch.personal` (#1423).
@@ -618,6 +627,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
       const { skip, label } = considerIssue(issue, queue, selection)
       let landedBlockers: readonly number[] | undefined
       let held: string | undefined
+      let blockersRead: BlockersRead | undefined
       let released = false
       const landed = options.landed
       // Only a ticket that GitHub's summary holds, and that nothing after `blocked-by` would pass over either: one
@@ -636,12 +646,21 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           Effect.map((blockers) => ({ ok: true as const, blockers })),
           Effect.catch((error: unknown) => Effect.succeed({ ok: false as const, why: whyOf(error) })),
         )
-        if (!read.ok) held = blockersUnread(read.why)
+        if (!read.ok) {
+          held = blockersUnread(read.why)
+          blockersRead = { ok: false, problem: read.why }
+        }
         // One page is all that was requested, so a full one may be the start of a longer list: it holds the issue.
-        else if (read.blockers.length >= BLOCKERS_PAGE)
-          held = blockersUnread(`it has ${BLOCKERS_PAGE} blockers or more, which is more than one page reads`)
-        else if (read.blockers.length === 0) held = blockersUnread('GitHub listed none, though it counts some open')
-        else {
+        else if (read.blockers.length >= BLOCKERS_PAGE) {
+          const why = `it has ${BLOCKERS_PAGE} blockers or more, which is more than one page reads`
+          held = blockersUnread(why)
+          blockersRead = { ok: false, problem: why }
+        } else if (read.blockers.length === 0) {
+          const why = 'GitHub listed none, though it counts some open'
+          held = blockersUnread(why)
+          blockersRead = { ok: false, problem: why }
+        } else {
+          blockersRead = { ok: true, issues: read.blockers }
           drafted ??= yield* readDraftedTickets(landed.project, landed.store).pipe(
             Effect.map((tickets) => ({ ok: true as const, tickets })),
             Effect.catch((error: unknown) =>
@@ -675,6 +694,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           parent: issue.parent,
           subIssues: issue.subIssues,
           ...(held === undefined ? {} : { held }),
+          ...(blockersRead === undefined ? {} : { blockersRead }),
         })
         continue
       }

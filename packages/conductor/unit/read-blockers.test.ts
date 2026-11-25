@@ -68,16 +68,18 @@ describe('readBlockersEffect', () => {
     expect(calls).toEqual([7, 2])
   })
 
-  it('the explaining read of the same operation takes the discovery read however long it took', async () => {
+  it('what discovery read rides on the skip: the explanation reads nothing, however late or often it is asked', async () => {
     const { calls, links } = stub()
-    let clock = 0
-    await cachedBlockers('p', links, () => clock)!.listBlockedBy(7, 1)
-    clock = BLOCKERS_FRESH_MS + 1
-    await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [skip(7)] as never, () => clock))
-    expect(calls).toEqual([7])
-    // Taken once: the next operation is judged by age alone.
-    await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [skip(7)] as never, () => clock))
-    expect(calls).toEqual([7, 7])
+    const read = { ok: true as const, issues: [] }
+    const rode = { ...skip(7), blockersRead: read }
+    const full = { ...skip(8), blockersRead: { ok: false as const, problem: 'it has 100 blockers or more' } }
+    for (const clock of [0, BLOCKERS_FRESH_MS + 1, 10_000_000]) {
+      const out = await Effect.runPromise(
+        readBlockersEffect({ project: 'p', links }, [rode, full] as never, () => clock),
+      )
+      expect(out.map((o) => o.blockers)).toEqual([read, full.blockersRead])
+    }
+    expect(calls).toEqual([])
   })
 
   it("carries the queue's own reason on the skip it explains", async () => {

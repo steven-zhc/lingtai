@@ -29,13 +29,7 @@ export const BLOCKERS_READ_MOST = 20
 export const BLOCKERS_FRESH_MS = 60_000
 
 type BlockerRead = NonNullable<BlockedSkip['blockers']>
-/** How long a read made for the queue's own decision is kept for the explaining read of the same operation. */
-const BLOCKERS_OPERATION_MS = 600_000
-/** `pinned`: read by discovery for the operation now under way, so the explaining read takes it however long that took. */
-const blockerCache = new Map<
-  string,
-  { blockedBy: number | null; at: number; blockers: BlockerRead; pinned?: boolean }
->()
+const blockerCache = new Map<string, { blockedBy: number | null; at: number; blockers: BlockerRead }>()
 
 /** Forgets every cached blocker list, so a test can start from *nothing read*. */
 export function forgetBlockers(): void {
@@ -60,24 +54,19 @@ export const readBlockersEffect = (
     title: s.title,
     kind: s.kind,
     blockedBy: s.blockedBy,
-    blockers: null,
-    unread: links !== null && i >= BLOCKERS_READ_MOST,
+    // What discovery read for this very operation rides on the skip, so it is never read a second time (#1423).
+    blockers: s.blockersRead ?? null,
+    unread: links !== null && s.blockersRead === undefined && i >= BLOCKERS_READ_MOST,
     ...(blocked[i]!.held === undefined ? {} : { held: blocked[i]!.held }),
   }))
   if (links === null) return Effect.succeed(out)
   const at = now()
   const reads = out.slice(0, BLOCKERS_READ_MOST).map((entry) => {
+    if (entry.blockers !== null) return Effect.void
     const key = `${owner.project}#${entry.ref}`
     const hit = blockerCache.get(key)
-    const age = hit === undefined ? 0 : at - hit.at
-    if (
-      hit &&
-      hit.blockedBy === entry.blockedBy &&
-      (age < BLOCKERS_FRESH_MS || (hit.pinned === true && age < BLOCKERS_OPERATION_MS))
-    ) {
+    if (hit && hit.blockedBy === entry.blockedBy && at - hit.at < BLOCKERS_FRESH_MS) {
       entry.blockers = hit.blockers
-      // Taken once: the next operation's read is judged by age alone.
-      hit.pinned = false
       return Effect.void
     }
     return Effect.tryPromise({
@@ -118,7 +107,6 @@ export function cachedBlockers(
       const count = blockedBy ?? null
       const hit = blockerCache.get(key)
       if (hit && hit.blockedBy === count && now() - hit.at < BLOCKERS_FRESH_MS) {
-        hit.pinned = true
         return hit.blockers.ok ? Promise.resolve(hit.blockers.issues) : Promise.reject(new Error(hit.blockers.problem))
       }
       const at = now()
@@ -126,12 +114,12 @@ export function cachedBlockers(
         (issues) => {
           // A full page may be the start of a longer list: the explaining read must not draw from it.
           if (issues.length < BLOCKERS_PAGE)
-            blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues }, pinned: true })
+            blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues } })
           return issues
         },
         (error: unknown) => {
           const problem = error instanceof Error ? error.message : String(error)
-          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem }, pinned: true })
+          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem } })
           throw error
         },
       )
