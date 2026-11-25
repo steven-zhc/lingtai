@@ -72,7 +72,7 @@ export function PickRepository({ source }: { source: Source }) {
               ))}
               {source.list.installUrl !== null ? (
                 <p className="note">
-                  <a href={source.list.installUrl}>Install the App</a>
+                  <a href={source.list.installUrl}>Install the App ↗</a>
                 </p>
               ) : null}
             </>
