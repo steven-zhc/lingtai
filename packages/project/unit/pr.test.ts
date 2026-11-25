@@ -561,6 +561,19 @@ describe('readDraftedTickets (#1423)', () => {
     expect([...(await run(readDraftedTickets('lingtai', store)))].sort()).toEqual(['1', '2'])
   })
 
+  it('a pr-fix whose merge back reached the personal branch is found, though the PR is still open', async () => {
+    const store = createMemoryEventStore()
+    await reviewBelowDraft(store)
+    await store.append(prStream('lingtai', 1), await store.head(prStream('lingtai', 1)), [
+      { type: 'PrFixLanded', actor: 'conductor', data: { ticket: '9', mergeCommit: 'm9', title: 'fix' } },
+    ])
+    await store.append(prStream('lingtai', 1), await store.head(prStream('lingtai', 1)), [
+      { type: 'PrMergedBack', actor: 'conductor', data: { prHead: 'm9', mergeCommit: 'mb', how: 'clean' } },
+    ])
+    expect((await run(readPr('lingtai', 1, store)))?.mergedBackTickets).toContain('9')
+    expect([...(await run(readDraftedTickets('lingtai', store)))].sort()).toEqual(['1', '2', '9'])
+  })
+
   it('no PR at all: nothing drafted', async () => {
     expect([...(await run(readDraftedTickets('lingtai', createMemoryEventStore())))]).toEqual([])
   })

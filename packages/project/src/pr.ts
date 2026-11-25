@@ -190,6 +190,9 @@ export function draftedTicketsIn(streams: readonly (readonly Envelope[])[]): Set
       state = reducePrEvent(state, event)
       for (const t of state.draft) joined.add(t.ticket)
     }
+    // A pr-fix lands on the PR's branch; a successful merge back is what puts its code on `branch.personal`, whatever
+    // the PR's status is now (`PrState.mergedBackTickets`).
+    for (const t of state.mergedBackTickets) drafted.add(t)
     if (state.status === null || !LANDED_PR_STATUSES.has(state.status)) continue
     for (const t of joined) drafted.add(t)
   }
