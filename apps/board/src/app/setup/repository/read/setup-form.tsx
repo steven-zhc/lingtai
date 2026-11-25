@@ -379,7 +379,7 @@ export function SetupForm({ view }: { view: ReadView }) {
     ),
     proposed: (
       <>
-        <h3 className="s2-h">A person approves the merge?</h3>
+        <h3 className="s2-h sec-h">A person approves the merge?</h3>
         <fieldset className="wiz-group">
           <label className="wiz-row">
             <input type="radio" checked={!approves} onChange={() => setApproves(false)} />
@@ -489,7 +489,7 @@ export function SetupForm({ view }: { view: ReadView }) {
     <div className="s2">
       <div className="s2-left">
         <section className="rcard">
-          <h3 className="rcard-h">Does anyone else work on this repository?</h3>
+          <h3 className="rcard-h sec-h">Does anyone else work on this repository?</h3>
           <div className="mode-cards" role="radiogroup" aria-label="how you work">
             {modeCard('team', 'Team', [
               'Others push to this repository, or you review before main changes',
@@ -559,7 +559,7 @@ export function SetupForm({ view }: { view: ReadView }) {
         </section>
 
         <section className="rcard">
-          <h3 className="rcard-h">
+          <h3 className="rcard-h sec-h">
             <span>What one attempt does, in order</span>
           </h3>
           <ol className="step-list">
@@ -580,7 +580,7 @@ export function SetupForm({ view }: { view: ReadView }) {
 
         {view.sandbox !== null ? (
           <section className="rcard">
-            <h3 className="rcard-h">Sandbox</h3>
+            <h3 className="rcard-h sec-h">Sandbox</h3>
             {view.sandbox.cannot !== null ? <p className="note wiz-fail">{view.sandbox.cannot}</p> : null}
             <fieldset className="wiz-group">
               <label className="wiz-row">
@@ -615,7 +615,7 @@ export function SetupForm({ view }: { view: ReadView }) {
         ) : null}
 
         <section className="rcard">
-          <h3 className="rcard-h">What an attempt may spend</h3>
+          <h3 className="rcard-h sec-h">What an attempt may spend</h3>
           <div className="s2-limits">
             <label>
               refusal fixes {num(limits.refusalFixes, (refusalFixes) => setLimits({ ...limits, refusalFixes }))}
@@ -659,7 +659,7 @@ export function SetupForm({ view }: { view: ReadView }) {
       </div>
 
       <div className="s2-right">
-        <h3 className="s2-h">recipe.yml</h3>
+        <h3 className="s2-h sec-h">recipe.yml</h3>
         {preview === null ? (
           <p className="note">writing the preview…</p>
         ) : 'refused' in preview ? (

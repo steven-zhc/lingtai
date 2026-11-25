@@ -440,7 +440,7 @@ export function SandboxPanel({
       </section>
 
       <section aria-label="Blocked">
-        <h3 className="sbh">Blocked</h3>
+        <h3 className="sbh sec-h">Blocked</h3>
         <BlockedList blocked={blocked} time="clock" />
         <p className="empty">
           Telemetry hosts are not counted. A refused file read is not listed: srt does not report one.
@@ -448,7 +448,7 @@ export function SandboxPanel({
       </section>
 
       <section aria-label="Runs">
-        <h3 className="sbh">Runs</h3>
+        <h3 className="sbh sec-h">Runs</h3>
         {rows.length === 0 ? (
           <p className="empty">No wrapped run was recorded for this attempt.</p>
         ) : (
@@ -458,7 +458,7 @@ export function SandboxPanel({
 
       {common === null || groups === null || reach === null ? null : (
         <section aria-label="What the runs could reach">
-          <h3 className="sbh">What the runs could reach</h3>
+          <h3 className="sbh sec-h">What the runs could reach</h3>
           {policies.length > 1 ? <p className="empty">What every policy has, listed once.</p> : null}
           <div className="sbboxes">
             <ReachBox title="Reachable" count={common.domains.length}>
@@ -495,7 +495,7 @@ export function SandboxPanel({
           </div>
           {differs.length === 0 ? null : (
             <>
-              <p className="sbh">Where the policies differ</p>
+              <p className="sbh sec-h">Where the policies differ</p>
               <ul className="sbdiffers">
                 {differs.map(({ d, extra, lacks, exceptions }) => (
                   <PolicyDifference

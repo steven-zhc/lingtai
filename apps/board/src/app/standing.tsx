@@ -116,7 +116,7 @@ function QueuedBand({
   return (
     <section className="triage-band triage-band--advised" data-rank="triage">
       <div className="triage-head">
-        <span className="triage-label">
+        <span className="triage-label sec-h">
           {resolved && view !== null && view.position === null ? 'Not in line' : 'In line'}
         </span>
         {resolved ? (
@@ -196,7 +196,7 @@ function QueuedBand({
       {resolved && view?.landed ? <p className="fact">{view.landed}</p> : null}
       {!resolved || view !== null ? (
         <>
-          <h3 className="bandsub">What Attempt {next} will do</h3>
+          <h3 className="bandsub sec-h">What Attempt {next} will do</h3>
           {!resolved ? (
             <Skeleton shape="lines" count={1} />
           ) : view?.plan ? (
@@ -501,21 +501,21 @@ export function TriageBand({
     case 'Queued':
       return (
         <section className="triage-band" data-rank="triage">
-          <span className="triage-label">Triage</span>
+          <span className="triage-label sec-h">Triage</span>
           <p>triage is waiting to run</p>
         </section>
       )
     case 'Running':
       return (
         <section className="triage-band" data-rank="triage">
-          <span className="triage-label">Triage</span>
+          <span className="triage-label sec-h">Triage</span>
           <p>triage is running</p>
         </section>
       )
     case 'Interrupted':
       return (
         <section className="triage-band" data-rank="triage">
-          <span className="triage-label">Triage</span>
+          <span className="triage-label sec-h">Triage</span>
           <p>the daemon stopped during triage; it will be tried again on the next start</p>
         </section>
       )
@@ -524,7 +524,7 @@ export function TriageBand({
       if (result._tag === 'TriageFailed')
         return (
           <section className="triage-band triage-band--failed" data-rank="triage">
-            <span className="triage-label">Triage · failed</span>
+            <span className="triage-label sec-h fail">Triage · failed</span>
             {headLine ? <p>{headLine}</p> : null}
             <p>triage failed: “{result.why}”</p>
           </section>
@@ -569,7 +569,7 @@ export function TriageBand({
               </p>
               {mechanical.length > 0 ? (
                 <div className="triage-hunk-group">
-                  <h3>Mechanical · {mechanical.length}</h3>
+                  <h3 className="sec-h">Mechanical · {mechanical.length}</h3>
                   <ul>
                     {mechanical.map((hunk, index) => (
                       <li key={index} className="triage-hunk triage-hunk--mechanical">
@@ -585,7 +585,7 @@ export function TriageBand({
               ) : null}
               {contradicting.length > 0 ? (
                 <div className="triage-hunk-group">
-                  <h3>Contradicting · {contradicting.length}</h3>
+                  <h3 className="sec-h">Contradicting · {contradicting.length}</h3>
                   <ul>
                     {contradicting.map((hunk, index) => (
                       <li key={index} className="triage-hunk triage-hunk--contradicting">
@@ -601,7 +601,7 @@ export function TriageBand({
               ) : null}
               {divergent.length > 0 ? (
                 <div className="triage-hunk-group">
-                  <h3>
+                  <h3 className="sec-h">
                     Divergent · {divergent.length} {divergent.length === 1 ? 'question' : 'questions'}
                   </h3>
                   <ol style={{ listStyle: 'none', paddingLeft: 0 }}>
@@ -659,7 +659,7 @@ export function TriageBand({
       return (
         <section id="triage" className="triage-band triage-band--advised" data-rank="triage">
           <div className="triage-head">
-            <span className="triage-label">Triage</span>
+            <span className="triage-label sec-h">Triage</span>
             <p className={`triage-cause cause-chip cause-chip--${presentation.chip}`}>{presentation.label}</p>
           </div>
           {headLine ? <p>{headLine}</p> : null}
@@ -746,7 +746,7 @@ function TicketContext({
             .filter(([, value]) => value !== null)
             .map(([label, value]) => (
               <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
-                <h2>{label}</h2>
+                <h2 className="sec-h">{label}</h2>
                 <DocumentBody
                   source="ticket-body"
                   text={references ? `${value!}\n\n${references}` : value!}
@@ -1350,7 +1350,7 @@ export function Standing({
               aria-label="After the move"
               data-rank="after-move"
             >
-              <h2>After the move</h2>
+              <h2 className="sec-h">After the move</h2>
               <p className="saftermove-title">
                 <strong>
                   {standing.afterMove.result === 'closed'
@@ -1382,7 +1382,7 @@ export function Standing({
               aria-label="Body update record"
               data-rank="after-move"
             >
-              <h2>Body update record</h2>
+              <h2 className="sec-h">Body update record</h2>
               <p>
                 {standing.bodyOutcome.result === 'failed' ? 'A body update failed.' : 'A body update was recorded.'}
               </p>
@@ -1405,7 +1405,7 @@ export function Standing({
               aria-label={standing.state === 'queued' ? undefined : 'Where it is'}
               data-rank="where"
             >
-              {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle">Where it is</h2>}
+              {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle sec-h">Where it is</h2>}
               {isFramed ? null : stateReadout}
 
               {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. */}
@@ -1557,7 +1557,7 @@ export function Standing({
             // Never inert on the strength of a split: *writing* is inferred from recent log activity, which a writer
             // that died quietly still leaves behind. The decision lock refuses a move while a writer really runs.
           >
-            {standing.state === 'blocked' ? <h2 className="ssectiontitle">Your decision</h2> : null}
+            {standing.state === 'blocked' ? <h2 className="ssectiontitle sec-h">Your decision</h2> : null}
             {standing.reason?._tag === 'SatisfiedUnconfirmed' ? (
               <div className="ssatisfiedreading">
                 <p>{standing.reason.reading}</p>
@@ -1582,7 +1582,7 @@ export function Standing({
                 />
               </div>
             ) : null}
-            {standing.state === 'queued' ? <h2 className="ssectiontitle">Moves</h2> : null}
+            {standing.state === 'queued' ? <h2 className="ssectiontitle sec-h">Moves</h2> : null}
 
             {/* ---- rank 4: the moves ---------------------------------------------- */}
 

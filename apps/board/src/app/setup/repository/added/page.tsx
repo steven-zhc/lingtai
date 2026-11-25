@@ -101,9 +101,8 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
         </section>
         {token.say === 'unreadable' ? (
           <section>
-            <h2>
-              <span className="hlab">Claude Code token</span>
-              <span className="hfact">unknown</span>
+            <h2 className="sec-h">
+              Claude Code token <span className="hfact">unknown</span>
             </h2>
             <p>
               {token.why} — this project's sandboxed Claude Code runs may be refused for want of a token. Fix the file,
@@ -113,9 +112,8 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
         ) : null}
         {token.say === 'ask' ? (
           <section>
-            <h2>
-              <span className="hlab">Claude Code token</span>
-              <span className="hfact">needed</span>
+            <h2 className="sec-h">
+              Claude Code token <span className="hfact">needed</span>
             </h2>
             <p>
               This project's sandboxed Claude Code runs are refused until a token is set. Run{' '}

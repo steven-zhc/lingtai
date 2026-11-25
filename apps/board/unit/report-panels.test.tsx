@@ -439,10 +439,10 @@ describe('the report grid', () => {
       <ReportGrid report={buildReport({ tickets: [], spend: [], window, project: null, kinds: null })} query={query} />,
     )
     const titles = ['Spend each day', 'Landed each day', 'Spend by purpose', 'By ticket type'].map((t) =>
-      out.indexOf(`<h2>${t}</h2>`),
+      out.indexOf(`>${t}</h2>`),
     )
     expect(titles.every((i) => i >= 0)).toBe(true)
     expect([...titles].sort((a, b) => a - b)).toEqual(titles)
-    expect(out).not.toContain('<h2>Spend</h2>')
+    expect(out).not.toContain('>Spend</h2>')
   })
 })

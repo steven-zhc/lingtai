@@ -85,7 +85,7 @@ export function PaletteView({
           const rows = results.flatMap((e, i) => (e.group === g ? [{ e, i }] : []))
           if (rows.length === 0) return []
           return [
-            <li key={`h-${g}`} role="presentation" className="palette-group">
+            <li key={`h-${g}`} role="presentation" className="palette-group sec-h">
               {g}
             </li>,
             ...rows.map(({ e, i }) => (

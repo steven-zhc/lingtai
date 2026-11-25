@@ -592,6 +592,18 @@ describe('the board never appends to a pr- stream', () => {
   })
 })
 
+describe('column headings (#1456)', () => {
+  it('wears sec-h wait on Waiting on you and sec-h on the rest', () => {
+    for (const html of [
+      renderToStaticMarkup(<PrColumns project="p" view={prBoard(input([]))} />),
+      renderToStaticMarkup(<PrBoardSkeleton />),
+    ]) {
+      expect(html).toContain('<h2 class="sec-h wait">Waiting on you')
+      for (const t of ['Draft', 'In progress', 'In review', 'Merged']) expect(html).toContain(`<h2 class="sec-h">${t}`)
+    }
+  })
+})
+
 describe('PrBoardSkeleton (#1419)', () => {
   const html = renderToStaticMarkup(<PrBoardSkeleton />)
   const titles = PR_COLUMNS.map((c) => c.title)

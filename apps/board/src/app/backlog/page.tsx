@@ -96,7 +96,7 @@ export default async function BacklogPage() {
         <LockBanner project={undefined} />
         <div className="detail-body">
           <section>
-            <h2>Open</h2>
+            <h2 className="sec-h">Open</h2>
             {open.length === 0 ? (
               <p className="why">
                 {chip.current ? 'nothing open' : `nothing open that this page could read — ${chip.title}`}
@@ -110,7 +110,7 @@ export default async function BacklogPage() {
             )}
           </section>
           <section>
-            <h2>Decided</h2>
+            <h2 className="sec-h">Decided</h2>
             {decided.length === 0 ? (
               <p className="why">nothing decided yet</p>
             ) : (

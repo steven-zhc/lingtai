@@ -1365,7 +1365,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
               id={col.id === 'waiting' ? 'waiting' : undefined}
               className={`col${col.id === 'waiting' ? ' hot' : ''}${col.id === 'landed' ? ' quiet' : ''}`}
             >
-              <header className="col-h">
+              <header className={`col-h sec-h${col.id === 'waiting' ? ' wait' : ''}`}>
                 <ColumnLabel label={col.label} />
                 <Suspense key={key(`count-${col.id}`)} fallback={<CountPending />}>
                   <CountPart id={col.id} ctx={ctx} queue={queue} projectKey={projectKey} />

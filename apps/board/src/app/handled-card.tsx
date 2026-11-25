@@ -32,7 +32,7 @@ export function HandledCard({
   const marks = today.marks.reduce((n, m) => n + m.count, 0)
   return (
     <div className="handled">
-      <div className="handled-k">
+      <div className="handled-k sec-h">
         <span className="l">
           <Tick />
           Nothing needs you
