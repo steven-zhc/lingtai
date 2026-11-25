@@ -329,6 +329,98 @@ export function HomePage({ books }: { books: Books | null }) {
             <RouteArrow />
           </div>
 
+          <section className="mode" aria-labelledby="mode-title">
+            <div className="mode-head">
+              <p className="kicker">One person, or a team</p>
+              <h2 id="mode-title">
+                You decide when <code>main</code> moves.
+              </h2>
+              <p className="sub">
+                <code>lingtai add</code> asks <em>Does anyone else work on this repository?</em> Press Enter for team —
+                the default, even when it is only you.
+              </p>
+            </div>
+            <div className="mode-pair">
+              <article className="mode-card">
+                <h3 className="mode-name">Solo</h3>
+                <ol className="mode-flow">
+                  <li>
+                    <code>ticket</code>
+                  </li>
+                  <li>
+                    <code>main</code>
+                  </li>
+                </ol>
+                <p className="mode-note">
+                  <code>lingtai-base</code> for a local project
+                </p>
+                <p>Each ticket lands by itself once its checks pass, and the ticket closes.</p>
+                <p className="mode-for">
+                  <b>For:</b> just you, and you trust the checks.
+                </p>
+              </article>
+              <article className="mode-card mode-card-team">
+                <h3 className="mode-name">
+                  Team <span className="mode-tag">default</span>
+                </h3>
+                <ol className="mode-flow">
+                  <li>
+                    <code>ticket</code>
+                  </li>
+                  <li>
+                    <code>your branch</code>
+                  </li>
+                  <li>
+                    <code>draft</code>
+                  </li>
+                  <li>
+                    <code>PR</code>
+                  </li>
+                  <li>
+                    <code>main</code>
+                  </li>
+                </ol>
+                <p>
+                  Tickets land on your own branch with nobody watching. You submit what has gathered there as one PR,
+                  and <code>main</code> moves only when you merge it.
+                </p>
+                <p className="mode-for">
+                  <b>For:</b> reviewing one PR, as you would a colleague&rsquo;s, and a <code>main</code> whose history
+                  is one merge commit per PR.
+                </p>
+              </article>
+            </div>
+            <div className="mode-use">
+              <h3 className="mode-use-title">Team, in use</h3>
+              <ul className="mode-use-list">
+                <li>
+                  <b>Take.</b> On GitHub a ticket is taken once it is assigned to you; in a local project every ticket
+                  is yours.
+                </li>
+                <li>
+                  <b>Submit.</b> Read your branch, then <code>lingtai pr submit</code>; Lingtai writes the PR&rsquo;s
+                  title and summary.
+                </li>
+                <li>
+                  <b>Change.</b> On the PR&rsquo;s page choose <em>New pr-fix ticket</em>; the fix is another commit on
+                  the same PR.
+                </li>
+                <li>
+                  <b>Red.</b> A conflict with <code>main</code>, or a build that fails after merging it, goes to an
+                  agent first and to you only when the agent cannot mend it. A red CI run comes straight to you: fix it,
+                  then run <code>lingtai pr retry</code>.
+                </li>
+                <li>
+                  <b>Merge.</b> With a merge commit, never a squash: Lingtai cannot see a squashed PR as merged, so it
+                  would stay <em>In review</em>.
+                </li>
+              </ul>
+              <a className="link" href="/docs/team/">
+                How team mode works →
+              </a>
+            </div>
+          </section>
+
           <section className="why-faq">
             <div className="faq">
               <h3 className="faq-title">Common questions</h3>
