@@ -1,6 +1,6 @@
 import { Effect } from 'effect'
 
-import type { LandedOptions, Offered } from './discover.ts'
+import { BLOCKERS_PAGE, type LandedOptions, type Offered } from './discover.ts'
 import type { TicketLink, TicketLinks } from './filter.ts'
 
 /**
@@ -29,7 +29,13 @@ export const BLOCKERS_READ_MOST = 20
 export const BLOCKERS_FRESH_MS = 60_000
 
 type BlockerRead = NonNullable<BlockedSkip['blockers']>
-const blockerCache = new Map<string, { blockedBy: number | null; at: number; blockers: BlockerRead }>()
+/** How long a read made for the queue's own decision is kept for the explaining read of the same operation. */
+const BLOCKERS_OPERATION_MS = 600_000
+/** `pinned`: read by discovery for the operation now under way, so the explaining read takes it however long that took. */
+const blockerCache = new Map<
+  string,
+  { blockedBy: number | null; at: number; blockers: BlockerRead; pinned?: boolean }
+>()
 
 /** Forgets every cached blocker list, so a test can start from *nothing read*. */
 export function forgetBlockers(): void {
@@ -63,8 +69,15 @@ export const readBlockersEffect = (
   const reads = out.slice(0, BLOCKERS_READ_MOST).map((entry) => {
     const key = `${owner.project}#${entry.ref}`
     const hit = blockerCache.get(key)
-    if (hit && hit.blockedBy === entry.blockedBy && at - hit.at < BLOCKERS_FRESH_MS) {
+    const age = hit === undefined ? 0 : at - hit.at
+    if (
+      hit &&
+      hit.blockedBy === entry.blockedBy &&
+      (age < BLOCKERS_FRESH_MS || (hit.pinned === true && age < BLOCKERS_OPERATION_MS))
+    ) {
       entry.blockers = hit.blockers
+      // Taken once: the next operation's read is judged by age alone.
+      hit.pinned = false
       return Effect.void
     }
     return Effect.tryPromise({
@@ -105,17 +118,20 @@ export function cachedBlockers(
       const count = blockedBy ?? null
       const hit = blockerCache.get(key)
       if (hit && hit.blockedBy === count && now() - hit.at < BLOCKERS_FRESH_MS) {
+        hit.pinned = true
         return hit.blockers.ok ? Promise.resolve(hit.blockers.issues) : Promise.reject(new Error(hit.blockers.problem))
       }
       const at = now()
-      return links.listBlockedBy(issue).then(
+      return links.listBlockedBy(issue, true).then(
         (issues) => {
-          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues } })
+          // A full page may be the start of a longer list: the explaining read must not draw from it.
+          if (issues.length < BLOCKERS_PAGE)
+            blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues }, pinned: true })
           return issues
         },
         (error: unknown) => {
           const problem = error instanceof Error ? error.message : String(error)
-          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem } })
+          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem }, pinned: true })
           throw error
         },
       )

@@ -471,7 +471,10 @@ export interface LandedOptions {
   /** What reads a ticket's blockers: all of them, open or closed, or a throw. */
   links: {
     repository: string
-    /** `blockedBy` is GitHub's open count the listing gave, which a caller that caches the read keys it by. */
+    /**
+     * The first page of the blockers, one request: a list of `BLOCKERS_PAGE` may be the start of a longer one.
+     * `blockedBy` is GitHub's open count the listing gave, which a caller that caches the read keys it by.
+     */
     listBlockedBy(issue: number, blockedBy?: number): Promise<readonly BlockerRead[]>
   }
   /** The log and project whose PRs say which tickets joined a draft. */
@@ -528,12 +531,16 @@ export function linksOfClient(client: unknown): LandedOptions['links'] | null {
   const c = client as { owner?: unknown; repo?: unknown; listBlockedBy?: unknown } | null
   if (c === null || typeof c !== 'object' || typeof c.listBlockedBy !== 'function') return null
   if (typeof c.owner !== 'string' || typeof c.repo !== 'string') return null
-  const gh = c as { owner: string; repo: string; listBlockedBy(n: number): Promise<readonly BlockerRead[]> }
+  const gh = c as {
+    owner: string
+    repo: string
+    listBlockedBy(n: number, firstPageOnly?: boolean): Promise<readonly BlockerRead[]>
+  }
   return {
     get repository() {
       return `${gh.owner}/${gh.repo}`
     },
-    listBlockedBy: (n) => gh.listBlockedBy(n),
+    listBlockedBy: (n) => gh.listBlockedBy(n, true),
   }
 }
 
@@ -630,9 +637,9 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           Effect.catch((error: unknown) => Effect.succeed({ ok: false as const, why: whyOf(error) })),
         )
         if (!read.ok) held = blockersUnread(read.why)
-        // One page is what the read is allowed: a list that says there are more than a page holds the issue.
-        else if (read.blockers.length > BLOCKERS_PAGE)
-          held = blockersUnread(`it has more than ${BLOCKERS_PAGE} blockers, which is more than one page`)
+        // One page is all that was requested, so a full one may be the start of a longer list: it holds the issue.
+        else if (read.blockers.length >= BLOCKERS_PAGE)
+          held = blockersUnread(`it has ${BLOCKERS_PAGE} blockers or more, which is more than one page reads`)
         else if (read.blockers.length === 0) held = blockersUnread('GitHub listed none, though it counts some open')
         else {
           drafted ??= yield* readDraftedTickets(landed.project, landed.store).pipe(

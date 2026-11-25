@@ -1345,6 +1345,11 @@ export interface GithubQueue {
   why?: { project: string; why: WhyNothingRuns }[]
   /** Task ids of cards a red base holds: queued and drawn, but never counted runnable or *taken first* (#1216). */
   baseHeld?: Set<string>
+  /**
+   * `landedNote`'s sentence for each ticket the log already has a card for, keyed by task id (#1423): that card is
+   * drawn from the log and not from `cards`, so the sentence reaches it here.
+   */
+  landed?: Map<string, string>
   /** How many projects were asked, and how many of them answered. */
   asked: number
   answered: number
@@ -1386,6 +1391,7 @@ export async function githubQueue(
   const parents = new Map<string, number>()
   const why: { project: string; why: WhyNothingRuns }[] = []
   const baseHeldIds = new Set<string>()
+  const landedKnown = new Map<string, string>()
   let answered = 0
   let runnable = 0
 
@@ -1481,7 +1487,12 @@ export async function githubQueue(
     }
     for (const r of [...answer.runnable, ...(answer.baseHeld ?? [])]) {
       if (!answer.runnable.includes(r)) baseHeldIds.add(r.taskId)
-      if (known.has(r.taskId)) continue
+      // A ticket the log has a card for is drawn from the log, so it gets the sentence by task id (#1423).
+      const landedSaid = landedNote(offered, r.issue, () => branchOf(filter.recipe))
+      if (known.has(r.taskId)) {
+        if (landedSaid !== null) landedKnown.set(r.taskId, landedSaid)
+        continue
+      }
       cards.push({
         taskId: r.taskId,
         project: filter.project,
@@ -1503,7 +1514,7 @@ export async function githubQueue(
         // Nothing has run, so there is nothing to bill.
         costUsd: emptyBill(),
         // A ticket GitHub still marks blocked, taken because its blockers landed on `branch.personal` (#1423).
-        note: landedNote(offered, r.issue, () => branchOf(filter.recipe)),
+        note: landedSaid,
         short: null,
         split: null,
         cause: null,
@@ -1549,6 +1560,7 @@ export async function githubQueue(
     parents,
     why,
     baseHeld: baseHeldIds,
+    landed: landedKnown,
     asked: askable.length,
     answered,
     runnable: answered < askable.length && runnable === 0 ? null : runnable,

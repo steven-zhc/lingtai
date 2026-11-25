@@ -68,6 +68,18 @@ describe('readBlockersEffect', () => {
     expect(calls).toEqual([7, 2])
   })
 
+  it('the explaining read of the same operation takes the discovery read however long it took', async () => {
+    const { calls, links } = stub()
+    let clock = 0
+    await cachedBlockers('p', links, () => clock)!.listBlockedBy(7, 1)
+    clock = BLOCKERS_FRESH_MS + 1
+    await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [skip(7)] as never, () => clock))
+    expect(calls).toEqual([7])
+    // Taken once: the next operation is judged by age alone.
+    await Effect.runPromise(readBlockersEffect({ project: 'p', links }, [skip(7)] as never, () => clock))
+    expect(calls).toEqual([7, 7])
+  })
+
   it("carries the queue's own reason on the skip it explains", async () => {
     const { links } = stub()
     const held = { ...skip(7), held: "could not read the project's PRs: x" }
