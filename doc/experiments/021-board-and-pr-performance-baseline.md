@@ -68,8 +68,8 @@ revision**: the exported service resource had no deployment commit.
   spans for the two witnesses, retaining ids, parentage, source timestamps,
   names and approved scalar measurement attributes. No event bodies, headers,
   free-text errors or full resource payloads are retained.
-- [Cutover record](021/deployment-1395.json): deliberately unconfirmed until
-  the effective running version is established.
+- [Cutover record](021/deployment-1395.json): initially unconfirmed; the later
+  merge, page-process start and daemon-start evidence are now recorded.
 - [The same reducer for the next sample](021/summarize.py): a standard-library
   reader for Jaeger's OTLP JSON export; it refuses to overwrite an output
   directory. The full 89 MB export is not added to the repository; the source
@@ -95,7 +95,8 @@ traffic by timestamp alone.
 At baseline archival time #1395 was OPEN with `lingtai:landed`; its observed
 GitHub `updatedAt` was 2026-11-24T22:37:50Z (16:37:50 CST). That value is an
 issue update, not an exact landing or board deployment time. The frozen trace
-window ended before it. `board_effective_at_utc` remains null until confirmed.
+window ended before it. At archival time `board_effective_at_utc` was left null;
+the later confirmation and its evidence are recorded separately below.
 
 After confirmation:
 
@@ -128,3 +129,43 @@ After confirmation:
 5. Confirm the new revision/path in the after evidence. A faster request alone
    does not prove that #1395 is running. Preserve this before directory and
    append after results without rewriting it.
+
+## First comparison after the restart
+
+Confirmed on 2026-11-24: PR #1416 merged the fix into `main` at **17:40:45 CST**;
+the new board process started at **17:42:35 CST**. The daemon completed its
+drain and recorded `ConductorStarted` at **17:48:53.255 CST**, seq **63014**, on
+commit `6a7452a34fba084d8048ee1f96e49adddc23bfa5`. The page and daemon cutovers
+are distinct. See [the deployment record](021/deployment-1395.json).
+
+The [initial after report](021/after-1395-initial/report.md) preserves the
+17:42:35–17:49:00 CST sample. After separating the first homepage request and
+one prematurely ended request, homepage RSC median is **6.240 s (n=5)** against
+**48.687 s (n=92)** before; both PR direct GET checks take **3.343–5.124 s**.
+Observed PR ticket reads are **21 per request**, rather than roughly 800.
+These small, differently loaded samples establish an initial improvement and
+the disappearance of the full-history read path, not a stable P95 or a
+controlled causal estimate. The before CSV, summary, witness archive and
+checksums are unchanged.
+
+## PR navigation after the daemon restart
+
+The [17:49–17:54 CST navigation sample](021/after-1395-navigation/report.md)
+contains five PR-board RSC requests: **17.070, 27.013, 26.096, 8.783 and
+4.704 seconds**, with median **17.070 seconds**. This is still a small,
+uncontrolled cohort, but directly confirms the user's remaining two-stage
+wait. In the 27-second witness, the PR reader starts after **13.559 seconds**
+of page setup and takes another **13.433 seconds**.
+
+The historical-ticket scan remains absent: 21 draft ticket reads per request.
+The remaining path serializes header setup before content, reads the same
+five PR streams three times, and reads the 21 draft ticket titles one at a
+time. The initial two direct GET checks are not evidence that PR navigation
+is consistently fast. Both after cohorts are retained separately, leaving
+the before archive intact.
+
+The live page process was subsequently confirmed to be **`next dev --turbopack`**,
+launched through `serve.ts dev` on port 17820. Both after cohorts above therefore
+describe development mode. A fresh production build and a separate navigation
+sample are the next comparison, to isolate development-mode overhead before
+assigning the remaining absolute latency entirely to application reads.

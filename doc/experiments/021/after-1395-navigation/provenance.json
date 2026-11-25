@@ -1,0 +1,25 @@
+{
+  "kind": "natural navigation following user report of two-stage waits",
+  "window_start_utc": "2026-11-24T23:49:00Z",
+  "window_end_utc": "2026-11-24T23:54:00Z",
+  "source_sha256": "eea694c588a580f2382b8d606632b8e609c37e82ee84799491f27e377118d26e",
+  "daemon_already_restarted": true,
+  "daemon_started_seq": "63014",
+  "daemon_started_at_utc": "2026-11-24T23:48:53.255Z",
+  "witness_trace_ids": [
+    "077e104be08982f38036bf33ef135b62",
+    "1b53b65c46b2b90381f42835b15d070c",
+    "5000c4c19910c363bfe3baeda913cafb"
+  ],
+  "witness_span_count": 219,
+  "observation": "PR RSC requests still perform 21 ticket reads and 15 PR stream reads. Page bootstrap precedes pr.board; requests overlap in part of the window. No GitHub requests in these PR traces.",
+  "runtime_commit_in_resource": null,
+  "cold_warm_state": "unknown",
+  "concurrency_and_browser_identity": "unknown",
+  "page_runtime_mode": "development; verified live process next dev --turbopack -p 17820 -H 0.0.0.0, parent node ./serve.ts dev",
+  "witness_missing_parent_counts": {
+    "077e104be08982f38036bf33ef135b62": 0,
+    "1b53b65c46b2b90381f42835b15d070c": 0,
+    "5000c4c19910c363bfe3baeda913cafb": 0
+  }
+}
