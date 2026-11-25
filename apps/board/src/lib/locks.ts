@@ -10,6 +10,7 @@
  * paused", which is the silence #77 was about.
  */
 import { accountsFor, liftAccountLimit } from '@lingtai/conductor'
+import { currentRecipe } from '@lingtai/conductor/projects'
 import { raiseDayCeiling, readControl } from '@lingtai/daemon/control'
 import {
   RAISE_REFUSALS,
@@ -28,7 +29,7 @@ import {
   untilFromWords,
 } from '@lingtai/domain'
 import { machineDayCeiling } from '@lingtai/env'
-import { type EventStore, eventStore } from '@lingtai/event-store'
+import { type EventStore, log } from '@lingtai/event-store'
 import { loadProjects, pauseProject, readProjectStateEffect, resumeProject } from '@lingtai/project'
 import { SpanStatusCode, context, trace, type Span } from '@opentelemetry/api'
 import { Context, Effect } from 'effect'
@@ -36,13 +37,28 @@ import { cache } from 'react'
 
 import type { ActionResult } from './diff.ts'
 import { accountsHolding, ceilingToday, isPaused } from './lock-marks.ts'
+import { recipeOf } from './request-reads.ts'
+import { requestStore } from './request-store.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import { ApiContext, boardTracer, traced, tracedSync } from './timing.ts'
 
 const run = Effect.runPromiseWith(Context.empty())
 
-/** The registered projects, read once however many places of one render ask. */
-export const readRegistered = cache(() => traced('projects.load', () => loadProjects()))
+/**
+ * The registered projects, read once however many places of one render ask. Through `requestStore()`, so the `prj`
+ * streams read here are the ones every other reader of the request shares (#1420). The log's members are read at call
+ * time and never spread: `log` is deferred.
+ */
+export const readRegistered = cache(() =>
+  traced('projects.load', () =>
+    loadProjects({
+      store: requestStore(),
+      queries: log.queries,
+      snapshots: log.snapshots,
+      waker: (name) => log.waker(name),
+    }),
+  ),
+)
 
 /**
  * `ctl-conductor`, read once however many places of one render ask (#1006).
@@ -119,7 +135,9 @@ export const readProjectLocks = cache((): Promise<ProjectLocks> =>
         // A failed `acct-` read fails the whole read: unknown is never *not limited*.
         const accounts = await traced('locks.account', (account) =>
           run(
-            accountsFor(eventStore, project).pipe(
+            accountsFor(requestStore(), project, (state) =>
+              state.project ? recipeOf(state.project) : currentRecipe(state),
+            ).pipe(
               Effect.withTracer(boardTracer),
               Effect.provideService(ApiContext, trace.setSpan(context.active(), account)),
             ),

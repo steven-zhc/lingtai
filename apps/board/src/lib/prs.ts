@@ -7,25 +7,16 @@
  * returned as itself and the others are still read, so a card can say what it could not read.
  */
 import { inProgressStepNames } from '@lingtai/conductor'
-import { currentRecipe } from '@lingtai/conductor/projects'
 import { conductorLockHolder } from '@lingtai/daemon'
 import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
-import { eventStore } from '@lingtai/event-store'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
-import {
-  type PrDraftTicket,
-  READ_CONCURRENCY,
-  openPr,
-  readDraftTickets,
-  readPr,
-  readPrEvents,
-  readProject,
-} from '@lingtai/project'
+import { type PrDraftTicket, READ_CONCURRENCY, openPr, readDraftTickets, readPr, readPrEvents } from '@lingtai/project'
 import { readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { Effect } from 'effect'
+import { cache } from 'react'
 
 import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { actor } from '@/lib/actor.ts'
@@ -40,6 +31,8 @@ import {
   prPage,
   ticketsOnGitHub,
 } from './pr-page.ts'
+import { projectOf, recipeOf } from './request-reads.ts'
+import { requestStore } from './request-store.ts'
 import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
 import { measure, timed } from './timing.ts'
@@ -99,6 +92,12 @@ export const readProjectPrs = (
     return reads.reverse()
   })
 
+/**
+ * `readProjectPrs` for one request, once: every PR, never a `since`, through `requestStore()`. **A reader added later
+ * goes through this one**; a page that needs the `since` cut asks `readProjectPrs` itself, and reads through the same store.
+ */
+export const prsOf = cache((project: string) => Effect.runPromise(readProjectPrs(project, requestStore())))
+
 /** The count of PRs waiting on the person: the open PR is the only one that can wait. */
 export const waitingPrs = (project: string, store: EventStore): Effect.Effect<number, Error> =>
   Effect.gen(function* () {
@@ -112,7 +111,7 @@ export const waitingPrs = (project: string, store: EventStore): Effect.Effect<nu
  * board and a PR's page both ask here, so the two cannot decide the draft differently.
  */
 export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { error: string }> =>
-  readDraftTickets(project, eventStore).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
+  readDraftTickets(project, requestStore()).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
 export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
@@ -136,21 +135,22 @@ export type PrsRead =
 /** The page's one read: the recipe, the PRs, the draft (over every landed ticket, never the two-day window), spend. */
 export async function readPrPage(project: string): Promise<PrsRead> {
   // A project that is not registered is `null`; a read that rejected is a failure, never *no such project*.
-  let state: Awaited<ReturnType<typeof readProject>>
+  let state: Awaited<ReturnType<typeof projectOf>>
   try {
-    state = await readProject(project)
+    state = await projectOf(project)
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }
   if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
   try {
-    const { recipe } = await currentRecipe(state)
+    const { recipe } = await recipeOf(project)
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
     const view = await Effect.runPromise(
       Effect.gen(function* () {
-        const [prs, draft] = yield* Effect.all([readProjectPrs(project, eventStore), readDraftOf(project)], {
-          concurrency: 2,
-        })
+        const [prs, draft] = yield* Effect.all(
+          [Effect.tryPromise({ try: () => prsOf(project), catch: failed }), readDraftOf(project)],
+          { concurrency: 2 },
+        )
         const spend = yield* spendByPr(
           project,
           prs.map((r) => r.n),
@@ -195,15 +195,16 @@ export async function readPrPage(project: string): Promise<PrsRead> {
  */
 export async function readLandedWhere(project: string): Promise<LandedWhereRead> {
   try {
-    const state = await readProject(project)
+    const state = await projectOf(project)
     if (state === null || state === undefined) return { kind: 'solo' }
-    const { recipe } = await currentRecipe(state)
+    const { recipe } = await recipeOf(project)
     if (modeOf(recipe) !== 'team') return { kind: 'solo' }
     return await Effect.runPromise(
       Effect.gen(function* () {
-        const [prs, draft] = yield* Effect.all([readProjectPrs(project, eventStore), readDraftOf(project)], {
-          concurrency: 2,
-        })
+        const [prs, draft] = yield* Effect.all(
+          [Effect.tryPromise({ try: () => prsOf(project), catch: failed }), readDraftOf(project)],
+          { concurrency: 2 },
+        )
         return { kind: 'team', prs, draft } as const
       }),
     )
@@ -219,21 +220,21 @@ export async function readLandedWhere(project: string): Promise<LandedWhereRead>
 export async function placeViewsOf(project: string | undefined): Promise<PlaceView[]> {
   if (project === undefined) return viewsFor(undefined)
   // Whether it is a team project is not known when either read fails: `PRs` stays, saying so, and is never dropped.
-  let state: Awaited<ReturnType<typeof readProject>>
+  let state: Awaited<ReturnType<typeof projectOf>>
   try {
-    state = await readProject(project)
+    state = await projectOf(project)
   } catch {
     return viewsFor(project, { waiting: null })
   }
   if (state === null || state === undefined || !state.owner) return viewsFor(project)
   let recipe: Recipe
   try {
-    recipe = (await currentRecipe(state)).recipe
+    recipe = (await recipeOf(project)).recipe
   } catch {
     return viewsFor(project, { waiting: null })
   }
   if (modeOf(recipe) !== 'team') return viewsFor(project)
-  const waiting = await Effect.runPromise(waitingPrs(project, eventStore)).catch(() => null)
+  const waiting = await Effect.runPromise(waitingPrs(project, requestStore())).catch(() => null)
   return viewsFor(project, { waiting })
 }
 
@@ -304,23 +305,23 @@ export type PrDetailRead =
  * the history and each step's duration need them. **A failed read is `failed` with its words, never *no such PR*.**
  */
 export async function readPrDetail(project: string, n: number | 'next'): Promise<PrDetailRead> {
-  let state: Awaited<ReturnType<typeof readProject>>
+  let state: Awaited<ReturnType<typeof projectOf>>
   try {
-    state = await readProject(project)
+    state = await projectOf(project)
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }
   // A local project legitimately records no owner: it is registered all the same.
   if (state === null || state === undefined) return { kind: 'unknown' }
   try {
-    const { recipe } = await currentRecipe(state)
+    const { recipe } = await recipeOf(project)
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
     return await Effect.runPromise(
       Effect.gen(function* () {
         const stepNames = inProgressStepNames()
         const now = new Date()
         if (n === 'next') {
-          const prs = yield* readProjectPrs(project, eventStore)
+          const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
           const draft = yield* readDraftOf(project)
           const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
           const view = prPage({
@@ -337,7 +338,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
           })
           return { kind: 'team', recipe, view, status: null, ask: null } as const
         }
-        const events = yield* readPrEvents(project, n, eventStore)
+        const events = yield* readPrEvents(project, n, requestStore())
         if (events.length === 0) return { kind: 'none' } as const
         const pr = reducePr(events)
         // The spend the page says is the PR's whole: its tickets' runs and its own. A part that could not be read leaves the
@@ -386,7 +387,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
  */
 export async function readHostPull(project: string, number: number): Promise<HostRead> {
   try {
-    const state = await readProject(project)
+    const state = await projectOf(project)
     if (state === null || state === undefined) return { kind: 'failed', reason: `no project named ${project}` }
     if (!hasGitHubAuth()) return { kind: 'failed', reason: 'no GitHub App configured' }
     if (!state.owner) return { kind: 'failed', reason: 'no owner recorded for this project' }
@@ -410,12 +411,12 @@ export async function readHostPull(project: string, number: number): Promise<Hos
  * waits on GitHub, streamed after everything the log answers. A ticket whose read is slow or fails is unknown, never closed.
  */
 export async function readGeneratedBody(project: string, n: number): Promise<string> {
-  const state = await readProject(project)
+  const state = await projectOf(project)
   if (state === null || state === undefined) throw new Error(`no project named ${project}`)
-  const { recipe } = await currentRecipe(state)
+  const { recipe } = await recipeOf(project)
   return Effect.runPromise(
     Effect.gen(function* () {
-      const pr = reducePr(yield* readPrEvents(project, n, eventStore))
+      const pr = reducePr(yield* readPrEvents(project, n, requestStore()))
       const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
       const facts = yield* ticketFacts(
         project,
@@ -444,12 +445,12 @@ export type OnBranchPageRead =
  */
 export const readOnBranch = (project: string): Effect.Effect<OnBranchPageRead> =>
   Effect.gen(function* () {
-    const state = yield* Effect.tryPromise({ try: () => readProject(project), catch: failed })
+    const state = yield* Effect.tryPromise({ try: () => projectOf(project), catch: failed })
     if (state === null || state === undefined) return { kind: 'none' } as const
-    const { recipe } = yield* Effect.tryPromise({ try: () => currentRecipe(state), catch: failed })
+    const { recipe } = yield* Effect.tryPromise({ try: () => recipeOf(project), catch: failed })
     if (modeOf(recipe) !== 'team') return { kind: 'none' } as const
     const read: OnBranchRead = yield* Effect.gen(function* () {
-      const prs = yield* readProjectPrs(project, eventStore)
+      const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
       const draft = yield* readDraftOf(project)
       return { prs, draft }
     }).pipe(Effect.catch((err) => Effect.succeed({ error: err.message })))
@@ -465,11 +466,11 @@ export const readSearchPrs = (
   project: string,
 ): Effect.Effect<{ readonly prs: SearchPr[]; readonly problems: string[] } | 'solo', Error> =>
   Effect.gen(function* () {
-    const state = yield* Effect.tryPromise({ try: () => readProject(project), catch: failed })
+    const state = yield* Effect.tryPromise({ try: () => projectOf(project), catch: failed })
     if (state === null || state === undefined) return 'solo' as const
-    const { recipe } = yield* Effect.tryPromise({ try: () => currentRecipe(state), catch: failed })
+    const { recipe } = yield* Effect.tryPromise({ try: () => recipeOf(project), catch: failed })
     if (modeOf(recipe) !== 'team') return 'solo' as const
-    const reads = yield* readProjectPrs(project, eventStore)
+    const reads = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
     const states = reads.flatMap((r) => ('pr' in r ? [r.pr] : []))
     const problems = reads.flatMap((r) => ('pr' in r ? [] : [`PR ${r.n} of ${project} could not be read`]))
     const prs = states.flatMap((pr): SearchPr[] =>
