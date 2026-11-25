@@ -108,6 +108,11 @@ or a board with its stuck work removed, would contradict the pitch.
     over the file with fenced code blocks removed. A chapter answers one
     question, and its first screen gives the answer. A shorter chapter is fine
     when it answers its question; a longer one is split or cut, never accepted.
+    A chapter reads in 5–6 minutes, and in under 10 for a reader who runs its
+    commands, which matches chapter 1's "about ten minutes" in §13. The reviewer
+    judges the reading time as they judge the word cap; there is no words-per-minute
+    figure, so it is not a second count. §21 says when a chapter uses a figure,
+    and a figure never raises the 800.
 15. **Each fact has one home.** A chapter that needs a fact another page owns
     links to it in one line; it does not explain it again.
 16. **A chapter says what Lingtai is and what to do, not why it was designed
@@ -125,6 +130,29 @@ or a board with its stuck work removed, would contradict the pitch.
     `guide.md`, chapter 3 from `tutorial-more.md`) says so in its own ticket.
 20. **The slogan and the front page's hero intro are not chapters and are not
     edited under this rule.**
+21. **A flow is drawn and a board page is shown, as a figure.** A chapter uses
+    a figure where a picture is understood faster than the sentences that
+    describe it, and has at most three.
+    - A flow (a branch flow, team mode) is an SVG diagram drawn by hand in the
+      house style of `doc/img/concepts.svg`: `role="img"`, `<title>` and
+      `<desc>`, the `:root` colour variables and the dark-mode block. Its alt
+      text equals the SVG's `aria-label` or `<desc>`, and the chapter keeps the
+      line "Open the diagram at full size".
+    - A board page is an annotated screenshot (PNG) from a real run on a real
+      board, never from a mock or from `doc/milestone/…`. The numbers ①②③ are
+      drawn into the image, and a numbered list under it gives one line per
+      number. It carries no full-size link, because `resolveHref` rewrites only
+      `img/*.svg` and the link would go to GitHub.
+    - Files live in `doc/img/`, the one directory the site serves, and a new
+      one is named `<chapter-file>-<what>.svg` or `.png`, where `<chapter-file>`
+      is the chapter's file name without `.md`: `team-flow.svg`,
+      `tutorial-board.png`. The whole name matches `[a-z0-9-]+\.(svg|png)`, or
+      the route will not serve it. Existing `concepts.svg`, `sandbox.svg` and
+      `recipe.svg` keep their names. A PNG is never named `shot-*`, which
+      belongs to the front page (§20).
+    - Alt text is one sentence. It counts toward the 800 words of §14, as does
+      the image's path, because the count removes only fenced code.
+    - A chapter takes on this rule when its own ticket rewrites it.
 
 ## Consequences
 
@@ -139,8 +167,10 @@ or a board with its stuck work removed, would contradict the pitch.
   `LINGTAI_SITE_PUBLIC_PROJECTS`, what the page shows.
 - A new HTML document in `doc/` is unreachable on the site until it is added to
   `HTML_DOCS`.
-- Every chapter is reviewed against §14–§17, and a reviewer may refuse a chapter
-  over 800 words. No test counts the words, so the reviewer is the only check.
+- Every chapter is reviewed against §14–§17 and §21, and a reviewer may refuse a
+  chapter over 800 words. A test counts the words of the chapters that have one;
+  no test counts the reading time or the figures, so the reviewer is the check
+  for those.
 
 ---
 *Replaces archived 0035 in [decisions-archive](../decisions-archive/).*
