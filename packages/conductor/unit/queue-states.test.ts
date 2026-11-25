@@ -76,10 +76,15 @@ describe('selectRunnableEffect over the narrow read', () => {
     expect(stub.calls[0]?.project).toBe('p')
   })
 
-  it('does not read when nothing is offered or nothing is a runnable kind', async () => {
+  // The read is stubbed here, so this pins what the selector hands it — no
+  // refs. That the read then touches no store is `projector/unit/read-task-states.test.ts`.
+  it('hands the read no issues when nothing is offered or nothing is a runnable kind', async () => {
     await select([])
     await select([offer('1', 'enhancement')])
-    expect(stub.calls.every((c) => c.issues.length === 0)).toBe(true)
+    expect(stub.calls).toEqual([
+      { project: 'p', issues: [] },
+      { project: 'p', issues: [] },
+    ])
   })
 
   it.each([

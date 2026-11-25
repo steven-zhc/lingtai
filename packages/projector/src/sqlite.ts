@@ -734,8 +734,10 @@ export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
 
     taskStates: Effect.fn('Projections.taskStates')(function* (query: TaskStatesQuery) {
       if (query.issues.length === 0) return []
+      // `all`, not `allOrEmpty`: a missing table is a failed read here, never "no rows" —
+      // an empty answer would call every offered issue untouched.
       const rows = yield* read(() =>
-        allOrEmpty(
+        all(
           `select issue, state, last_attempt_at, repair_pending from task_view
            where project = ? and issue in (${query.issues.map(() => '?').join(', ')})`,
           [query.project, ...query.issues],

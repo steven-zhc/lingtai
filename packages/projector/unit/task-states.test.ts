@@ -3,8 +3,8 @@
  * queue selection decides on. The Postgres side of the same claims is
  * `test/contract.ts`, which runs only in the integration half.
  */
-import { Effect } from 'effect'
-import { describe, expect, it } from 'vitest'
+import { Effect, Exit } from 'effect'
+import { describe, expect, it, vi } from 'vitest'
 
 import { createSqliteProjectionStore, makeSqliteProjections, openSqliteProjections } from '../src/sqlite.ts'
 import { createFace } from '../src/store-face.ts'
@@ -37,12 +37,12 @@ async function seeded() {
     await row('p', '7', 'closed', OLD, null, 0)
     await row('other', '12', 'blocked', null, null, 0)
   })
-  return port
+  return { port, db }
 }
 
 describe('ProjectionsPort.taskStates', () => {
   it('returns exactly the four fields, for the exact project and issue', async () => {
-    const port = await seeded()
+    const { port } = await seeded()
     const rows = await Effect.runPromise(port.taskStates({ project: 'p', issues: ['12'] }))
     expect(rows).toEqual([
       { issue: '12', state: 'queued', lastAttemptAt: new Date('2026-11-25T00:00:00.000Z'), repairPending: true },
@@ -50,7 +50,7 @@ describe('ProjectionsPort.taskStates', () => {
   })
 
   it('does not match another issue by prefix or by number, nor another project', async () => {
-    const port = await seeded()
+    const { port } = await seeded()
     const rows = await Effect.runPromise(port.taskStates({ project: 'p', issues: ['12', '99'] }))
     expect(rows.map((r) => r.issue)).toEqual(['12'])
     const other = await Effect.runPromise(port.taskStates({ project: 'other', issues: ['12'] }))
@@ -58,13 +58,29 @@ describe('ProjectionsPort.taskStates', () => {
   })
 
   it('still returns a closed row far past the board retention', async () => {
-    const port = await seeded()
+    const { port } = await seeded()
     const rows = await Effect.runPromise(port.taskStates({ project: 'p', issues: ['7'] }))
     expect(rows.map((r) => [r.issue, r.state])).toEqual([['7', 'closed']])
   })
 
   it('answers an empty list with nothing', async () => {
-    const port = await seeded()
+    const { port } = await seeded()
     expect(await Effect.runPromise(port.taskStates({ project: 'p', issues: [] }))).toEqual([])
+  })
+
+  it('prepares no statement for an empty list', async () => {
+    const { port, db } = await seeded()
+    const prepare = vi.spyOn(db, 'prepare')
+    expect(await Effect.runPromise(port.taskStates({ project: 'p', issues: [] }))).toEqual([])
+    expect(prepare).not.toHaveBeenCalled()
+    await Effect.runPromise(port.taskStates({ project: 'p', issues: ['12'] }))
+    expect(prepare).toHaveBeenCalledTimes(1)
+  })
+
+  it('fails, rather than answering empty, when task_view does not exist', async () => {
+    const port = makeSqliteProjections(openSqliteProjections(':memory:'))
+    const exit = await Effect.runPromiseExit(port.taskStates({ project: 'p', issues: ['12'] }))
+    expect(Exit.isFailure(exit)).toBe(true)
+    expect(JSON.stringify(exit, (_k, v) => (v instanceof Error ? v.message : v))).toContain('no such table')
   })
 })
