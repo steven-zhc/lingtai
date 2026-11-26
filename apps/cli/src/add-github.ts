@@ -25,7 +25,12 @@
 import { hostname } from 'node:os'
 import { join } from 'node:path'
 
-import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
+import {
+  checkGhAccessEffect,
+  checkInstallationEffect,
+  type GhAccess,
+  type GithubReach,
+} from '@lingtai/conductor/onboard'
 import { makePersonalBranch as sharedMakePersonalBranch } from '@lingtai/conductor/personal-branch'
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { sandboxHostHere } from '@lingtai/conductor/projects'
@@ -248,6 +253,8 @@ export interface AskedBeforeAdd {
   githubAuth?: 'app'
   /** What a change to the retained recipe left where it was, for the card (#1474). */
   leftBehind?: readonly LeftBehind[]
+  /** How the repository was read here, in the shape the card and the labels take; absent while the App is yet to be made. */
+  reach?: GithubReach
 }
 
 /** An Effect settled to the value or what it threw: a failure and a defect alike, an interruption never. */
@@ -667,9 +674,17 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     hints: recipeResult.hints,
     runtimes,
     answers: recipeResult.answers,
-    ...(changedLeftBehind(recipeResult.changed).length === 0
+    ...(changedLeftBehind(recipeResult.changed, slug).length === 0
       ? {}
-      : { leftBehind: changedLeftBehind(recipeResult.changed) }),
+      : { leftBehind: changedLeftBehind(recipeResult.changed, slug) }),
+    ...(reach === undefined
+      ? {}
+      : {
+          reach:
+            reach.kind === 'gh'
+              ? ({ kind: 'gh', login: ghLogin } as const)
+              : ({ kind: 'app', slug: reach.installation.appSlug ?? null } as const),
+        }),
     ...(appChosen && authFlag === undefined ? { githubAuth: 'app' as const } : {}),
   }
 })

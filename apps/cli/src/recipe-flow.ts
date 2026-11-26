@@ -233,7 +233,7 @@ export interface RecipeChanged {
  * The card's lines for what a GitHub rerun changed (#1474). The commits come from the caller's `commitsOnlyIn`
  * port (a GitHub compare); where that port is absent or could not read, the line gives the command that prints them.
  */
-export function changedLeftBehind(changed: RecipeChanged | undefined): LeftBehind[] {
+export function changedLeftBehind(changed: RecipeChanged | undefined, slug?: string): LeftBehind[] {
   const out: LeftBehind[] = []
   const listing = (commits: string[] | null | undefined, command: string): string =>
     commits === undefined || commits === null
@@ -259,7 +259,9 @@ export function changedLeftBehind(changed: RecipeChanged | undefined): LeftBehin
     } else {
       const command = `git log --oneline origin/${b.to}..origin/${b.from}`
       out.push({
-        what: `${b.to} existed and was left as it was — the commits only ${b.from} has: ${listing(b.commits, command)}`,
+        what:
+          `${b.to} existed and was left as it was — the commits only ${b.from} has: ${listing(b.commits, command)}` +
+          (slug === undefined ? '' : ` — https://github.com/${slug}/compare/${b.to}...${b.from}`),
         command,
       })
     }
