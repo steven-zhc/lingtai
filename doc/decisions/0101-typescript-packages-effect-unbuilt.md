@@ -146,7 +146,7 @@ turn limit, so every idiom it adopts is paid for again on every run.
      phase spans, `AppRender.getBodyResult` → `next.render-body` and
      `NextNodeServer.startResponse` → `next.start-response`, copied under fixed
      names with no attribute, event, link or message, and only under an
-     exported request on a measured route (`/`, `/task/[id]` and its tabs).
+     exported request on a measured route (`/`, `/p/[project]/ticket`, `/p/[project]/ticket/[n]` and its tabs).
      `next.start-response` is an instant (first bytes written) and
      `next.render-body` ends when React finishes rendering, so stream delivery,
      backpressure and disconnect stay unmeasured; the contract is the header of
