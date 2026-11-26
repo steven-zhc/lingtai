@@ -22,7 +22,8 @@ export type BranchLane = 'main' | 'pr' | 'personal'
 export interface BranchLine {
   readonly text: string
   readonly tone?: 'mut' | 'red' | 'sig'
-  readonly walk: number
+  /** Every walk that said this: a repeated line keeps them all, so the cap keeps it while any of them is kept. */
+  readonly walks: readonly number[]
 }
 
 export interface BranchNode {
@@ -46,7 +47,9 @@ export interface BranchNode {
 /** A node as the event loop adds it, one per event; `foldCommits` turns these into dots with their lines. */
 type RawNode = Omit<BranchNode, 'lines'>
 const lineOf = (n: RawNode): BranchLine[] =>
-  n.label === '' || n.hidden ? [] : [{ text: n.label, ...(n.tone === undefined ? {} : { tone: n.tone }), walk: n.walk }]
+  n.label === '' || n.hidden
+    ? []
+    : [{ text: n.label, ...(n.tone === undefined ? {} : { tone: n.tone }), walks: [n.walk] }]
 const oneLine = (n: RawNode): BranchNode => ({ ...n, lines: lineOf(n) })
 
 export interface BranchEdge {
@@ -317,7 +320,13 @@ export function prBranches(
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i]!
       if (n.lane !== 'main') continue
-      if (n.kind === 'merged' && (n.sha === null || n.sha === mainSha)) return n
+      // One connector per dot: a second catch-up (a retry after a failure) cannot leave the same dot at 45° beside the first.
+      if (
+        n.kind === 'merged' &&
+        (n.sha === null || n.sha === mainSha) &&
+        !edges.some((e) => e.from === n.id && e.kind === 'catch-up')
+      )
+        return n
       break
     }
     return add({ lane: 'main', kind: 'main', label: short(mainSha), sha: mainSha }, walkN)
@@ -590,7 +599,7 @@ export function prBranches(
   const walkKept = (n: number) => n === 0 || n > drop
   const kept: BranchNode[] = []
   for (const n of folded.nodes) {
-    const lines = n.lines.filter((l) => walkKept(l.walk))
+    const lines = n.lines.filter((l) => l.walks.some(walkKept))
     if (n.lines.length === 0 ? walkKept(n.walk) : lines.length > 0) kept.push({ ...n, lines })
   }
   const ids = new Set(kept.map((n) => n.id))
@@ -642,11 +651,46 @@ export function foldCommits(
   nodes: readonly RawNode[],
   edges: readonly BranchEdge[],
 ): { nodes: BranchNode[]; edges: BranchEdge[]; into: (n: { id: string }) => string } {
+  // Two connectors at 45° that leave one dot for two dots on one lane (or reach one dot from two on one lane) cannot both
+  // hold, since the layout keeps a lane's dots apart. Where folding would make that, the members stay separate dots.
+  const blocked = new Set<string>()
+  for (;;) {
+    const r = foldWith(nodes, edges, blocked)
+    const lane = new Map(r.nodes.map((n) => [n.id, n.lane]))
+    const ends = new Map<string, string>()
+    const bad = new Set<string>()
+    for (const e of r.edges)
+      for (const [dot, other, side] of [
+        [e.from, e.to, 'from'],
+        [e.to, e.from, 'to'],
+      ] as const) {
+        const key = `${side}/${dot}/${lane.get(other)}`
+        const seen = ends.get(key)
+        if (seen === undefined) ends.set(key, other)
+        else if (seen !== other) bad.add(dot)
+      }
+    let grew = false
+    for (const n of nodes) {
+      const dot = r.into(n)
+      if (bad.has(dot) && n.id !== dot && !blocked.has(n.id)) {
+        blocked.add(n.id)
+        grew = true
+      }
+    }
+    if (!grew) return r
+  }
+}
+
+function foldWith(
+  nodes: readonly RawNode[],
+  edges: readonly BranchEdge[],
+  blocked: ReadonlySet<string>,
+): { nodes: BranchNode[]; edges: BranchEdge[]; into: (n: { id: string }) => string } {
   const out: BranchNode[] = []
   const at = new Map<string, number>()
   const survivor = new Map<string, string>()
   for (const n of nodes) {
-    const key = n.sha === null || n.hidden || n.kind === 'ticket' ? null : `${n.lane}/${n.sha}`
+    const key = n.sha === null || n.hidden || n.kind === 'ticket' || blocked.has(n.id) ? null : `${n.lane}/${n.sha}`
     const i = key === null ? undefined : at.get(key)
     if (i === undefined) {
       if (key !== null) at.set(key, out.length)
@@ -656,7 +700,11 @@ export function foldCommits(
     const s = out[i]!
     survivor.set(n.id, s.id)
     const lines = [...s.lines]
-    for (const l of lineOf(n)) if (lines[lines.length - 1]?.text !== l.text) lines.push(l)
+    for (const l of lineOf(n)) {
+      const last = lines[lines.length - 1]
+      if (last?.text === l.text) lines[lines.length - 1] = { ...last, walks: [...new Set([...last.walks, ...l.walks])] }
+      else lines.push(l)
+    }
     const { tone: _tone, title: _title, ...rest } = s
     out[i] = {
       ...rest,

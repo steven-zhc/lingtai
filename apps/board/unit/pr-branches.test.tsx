@@ -506,6 +506,44 @@ describe('PR 1 as F17 shows it', () => {
   })
 })
 
+describe('PR 1 with a failed catch-up first, and walks that repeat themselves', () => {
+  it('draws the failure and the success without a contradictory layout', () => {
+    const d = layoutBranches(
+      model([
+        ...pr1.slice(0, 6),
+        ['PrCatchUpFailed', { mainSha: 'bae6df3eeee', why: 'conflict', detail: 'x' }],
+        pr1[6]!,
+      ]),
+      1000,
+    )
+    expect(d.width).toBeLessThan(2000)
+    expectNoCollisions(d)
+    for (const e of d.edges) expect(e.x2 - e.x1).toBeCloseTo(Math.abs(e.y2 - e.y1), 6)
+  })
+
+  it('keeps a folded commit while any walk that said its lines is kept', () => {
+    const walk = (n: number): Spec[] => [
+      [
+        'PrInProgress',
+        {
+          because: n === 0 ? 'submit' : 'retry',
+          branch: 'studio',
+          main: 'main',
+          frozenSha: 'f0f0f0f',
+          prBranch: 'studio-pr-2',
+          tickets: [{ ticket: '1', mergeCommit: 'a1a1a1a', title: 't' }],
+        },
+      ],
+      bs('already', '856398cdddd', '0ab635bffff'),
+    ]
+    const m = model([0, 1, 2, 3, 4].flatMap(walk))
+    expect(m.words).toContain('earlier walks: 2')
+    const at = (lane: string, sha: string) => m.nodes.find((n) => n.lane === lane && n.sha === sha)!
+    expect(at('pr', '0ab635bffff').lines.map((l) => l.text)).toEqual(['sync: nothing to merge'])
+    expect(at('main', '856398cdddd').lines.map((l) => l.text)).toEqual(['856398c — already in this PR'])
+  })
+})
+
 describe('layoutBranches', () => {
   const frames: Record<string, Spec[]> = {
     review: [...inReview, mergedBack()],
