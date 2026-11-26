@@ -24,12 +24,14 @@ const MODE_LABELS: Readonly<Record<Mode, string>> = {
   solo: 'Solo — just me: each ticket lands on main by itself',
 }
 
-/** The four lines drawn under the question (`cli-add.html` A). */
+/** The drawing under the question; `liveAsk` hangs each line on clack's gutter. */
 const TEAM_GRAPH: readonly string[] = [
-  'team:  main ──●────────────●──',
-  '                \\          ↗  the PR you send',
-  '      you        ●──●──●──┘',
-  '      Lingtai works on your branch; main only moves through that PR',
+  '',
+  'main          ─●─────────────────●─   ← you merge the PR',
+  '                ╲               ╱',
+  'your branch      ●───●───●─────┘    ← Lingtai lands each ticket here',
+  '',
+  'main only moves through the PR you send.',
 ]
 
 /** *Does anyone else work on this repository?* — Team first, and the default. */

@@ -116,6 +116,20 @@ describe('the confirm before registering (#542, #773)', () => {
     expect(index(world.events, CONFIRM)).toBe(-1)
   })
 
+  it('a team project with declared checks is not asked where it lands', async () => {
+    const world = terminal()
+    await askRecipe(world, at({ mode: 'team', flags: { install: 'none' }, buildFlags: ['npm test'] }))
+    expect(index(world.events, CONFIRM)).toBe(-1)
+  })
+
+  it('a team project with no checks is asked about the checks only', async () => {
+    const world = terminal()
+    await askRecipe(world, at({ mode: 'team', flags: { install: 'none' } }))
+    const asked = world.events.find((e) => CONFIRM.test(e))
+    expect(asked).toContain('nothing checks a diff before review — register anyway?')
+    expect(asked).not.toContain('lands on')
+  })
+
   it('--land hold with a build given has nothing risky left to confirm', async () => {
     const world = terminal()
     await askRecipe(world, at({ flags: { install: 'none', land: 'hold' }, buildFlags: ['npm test'] }))
