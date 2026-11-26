@@ -920,12 +920,16 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .lline { display: flex; gap: 5px; align-items: baseline; }
 .lspend { color: inherit; display: block; }
 .lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-/* The Work figure and the answering pill never clip; only turns give way. In a
-   column too narrow for both they wrap onto a further line rather than run past
-   the column's edge. */
-.lbill { display: flex; flex-wrap: wrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
-.lwork, .lbill > .pill { flex: none; }
-.lturns { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One flex line, never wrapped between items: turns appear only if there is
+   room, and give way first. Turns shrink a thousand times faster than the Work
+   figure and the answering pill, and can shrink to nothing, so those two are
+   not touched until turns are gone. When even they do not fit — a project name
+   taking its share of a ~240px column — each wraps its own text inside its own
+   box (`white-space: normal`, `min-width: 0`) rather than extend past the
+   column's edge. Nothing on this line is clipped or dropped except turns. */
+.lbill { display: flex; flex-wrap: nowrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
+.lwork, .lbill > .pill { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.lturns { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The rest of line 1 is the task page. Clipped rather than wrapped: a row
    that wraps is a card again. */
 .lmeta {
