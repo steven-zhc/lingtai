@@ -63,6 +63,18 @@ export function stoppedAtQuestion(shape: Pick<AskShape, 'kept' | 'startOver' | '
 }
 
 /**
+ * Work a caller needs done before Ctrl+C at a question ends the process: `liveAsk` exits directly, which never
+ * interrupts an Effect fiber, so what a rerun answered is kept here (#1473). Returns the way to take it back out.
+ */
+const beforeCancelExit = new Set<() => Promise<void>>()
+export function onCancelExit(keep: () => Promise<void>): () => void {
+  beforeCancelExit.add(keep)
+  return () => {
+    beforeCancelExit.delete(keep)
+  }
+}
+
+/**
  * `question()`'s live ask. Null with no terminal on both ends (0121 §9), which
  * `question()` turns into its by-name refusal; otherwise a select for a closed
  * list and a text prompt for anything else, each defaulting as the bracket says.
@@ -88,6 +100,7 @@ export async function liveAsk(
           })
   if (clack.isCancel(typed)) {
     console.log(`\n${stoppedAtQuestion(shape)}`)
+    await Promise.all([...beforeCancelExit].map((keep) => keep().catch(() => {})))
     process.exit(130)
   }
   return String(typed)

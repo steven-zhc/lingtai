@@ -2,9 +2,9 @@ import { PassThrough, Writable } from 'node:stream'
 
 /** The live ask (#620): nobody to ask means null, which `question()` turns into the refusal that names the flag. */
 import { SELECT_INSTRUCTIONS } from '@clack/prompts'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { liveAsk, liveSpin, refusal } from '../src/prompt.ts'
+import { liveAsk, liveSpin, onCancelExit, refusal } from '../src/prompt.ts'
 
 const shape = { message: 'the store', defaultValue: '' }
 
@@ -55,6 +55,30 @@ describe('liveAsk at a select', () => {
     expect([...SELECT_INSTRUCTIONS]).toEqual(footer)
     expect(t.text()).toContain('↑/↓ or j/k · space or enter')
     expect(t.text()).not.toContain('Enter: confirm')
+  })
+
+  it('Ctrl+C runs what was registered to keep answers, and only then ends the process (#1473)', async () => {
+    const t = terminal()
+    const order: string[] = []
+    const exit = vi.spyOn(process, 'exit').mockImplementation(((code?: number) => {
+      order.push(`exit ${code}`)
+      return undefined as never
+    }) as never)
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {})
+    const release = onCancelExit(async () => {
+      order.push('kept')
+    })
+    try {
+      const asked = liveAsk('which: ', choices, tty, t)
+      await new Promise((r) => setTimeout(r, 20))
+      t.input.emit('keypress', '\x03', { name: 'c', ctrl: true })
+      await asked
+      expect(order).toEqual(['kept', 'exit 130'])
+    } finally {
+      release()
+      exit.mockRestore()
+      log.mockRestore()
+    }
   })
 })
 

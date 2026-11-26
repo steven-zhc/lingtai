@@ -98,6 +98,7 @@ import {
 } from './github-app.ts'
 import { askGithubAuthEffect, liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
+import { onCancelExit } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
@@ -1070,7 +1071,11 @@ function runLocalBranch(
     const recipeResult = repairOnly
       ? repairResult
       : found !== undefined && existingText !== null
-        ? yield* askingRecipe.pipe(Effect.onInterrupt(() => keepAnswered))
+        ? yield* Effect.acquireUseRelease(
+            Effect.sync(() => onCancelExit(() => Effect.runPromiseWith(services)(keepAnswered))),
+            () => askingRecipe.pipe(Effect.onInterrupt(() => keepAnswered)),
+            (release) => Effect.sync(release),
+          )
         : yield* askingRecipe
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
     if (deferBranch) {
