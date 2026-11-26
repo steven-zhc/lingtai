@@ -1725,6 +1725,18 @@ details[open] > summary::before { content: "▾"; }
    the sentence and the moves are still on the first screen (#152). */
 .slog.ended .alogbody { height: auto; max-height: 5rem; }
 
+/* An answered ask, outside `blocked` (#1495): history, so a rule colour and
+   not the accent a live refusal carries. */
+.past {
+  border-left: 2px solid var(--rule-2);
+  padding: 0.25rem 0.6rem;
+  margin: 0.75rem 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.past b { color: var(--ink-2); font-weight: 500; }
+
 /* One deciding line at rank 2, in two cases. A block that has no diagnosis at
    all — every block written before #83 — keeps its `in attempt N ↓`, because
    `decidingOf` searches back through earlier attempts and a line from one of

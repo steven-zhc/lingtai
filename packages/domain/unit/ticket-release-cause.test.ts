@@ -30,10 +30,10 @@ describe('a release with a cause', () => {
     expect(reduceTicket(released(null)).claims[0]?.ended).toEqual({ kind: 'released', reason: 'walled', cause: null })
   })
 
-  it('round-trips through the codec, and the reducer version is 15', () => {
+  it('round-trips through the codec, and the reducer version is 16', () => {
     const state = reduceTicket(released(limit))
     expect(decodeTicket(encodeTicket(state), 'ticket').claims[0]?.ended).toEqual(state.claims[0]?.ended)
-    expect(ticketReducer.version).toBe(15)
+    expect(ticketReducer.version).toBe(16)
   })
 
   it('names a continuable release only for an AccountLimit', () => {

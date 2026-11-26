@@ -164,7 +164,7 @@ function byName(r: Reading, by: string): string {
 }
 
 /** `human:steven` → `steven`; anything else as it was written. */
-function personName(by: string): string {
+export function personName(by: string): string {
   return by.startsWith('human:') ? by.slice('human:'.length) : by
 }
 

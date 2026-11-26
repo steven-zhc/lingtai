@@ -43,11 +43,13 @@ import {
   type Step,
   type Finding as DomainFinding,
   type SandboxInvocation,
+  type TicketWait,
 } from '@lingtai/domain'
 import {
   allowedResolutions,
   triageStatus,
   type AttemptRef,
+  type Resolution,
   type TriageStatus,
   type WaitReason,
 } from '@lingtai/domain/wait'
@@ -433,6 +435,11 @@ export interface Deciding {
   evidence: string | null
   /** True when `source` is a step (`proposed / build`), false when it is an attempt's outcome. */
   fromStep: boolean
+  /**
+   * Set only outside `blocked`, where the line is an `asked` step (#1495): the wait that answered it, or
+   * `'unmatched'` when none can be named. Absent otherwise, so every other `Deciding` is as it was.
+   */
+  answered?: { asked: string; at: string; by: string; resolution: Resolution['_tag'] } | 'unmatched'
 }
 
 /** `queued` and `running` are the lifecycle's `backlog` and `claimed`, in the board's words. */
@@ -733,6 +740,19 @@ function oneLine(text: string | null): string | null {
  * (`claimed`, `released`, a run that failed with no verdicts) is exactly the
  * one a gate-shaped summary could never name.
  */
+/** The asked arm of `refusalOn`: the run's last step that asked, as a deciding line (#296). */
+function askedOn(run: AttemptView): Deciding | null {
+  const question = [...run.steps].reverse().find((g) => g.state === 'asked')
+  if (!question) return null
+  return {
+    attempt: run.attempt,
+    source: question.step.replace(':', ' / '),
+    line: 'asked — ' + (oneLine(question.evidence) ?? 'no question was recorded'),
+    evidence: question.evidence,
+    fromStep: true,
+  }
+}
+
 function refusalOn(run: AttemptView): Deciding | null {
   /**
    * A gate that never ran stopped this attempt without refusing it (#133).
@@ -798,16 +818,8 @@ function refusalOn(run: AttemptView): Deciding | null {
    * while the two shared an ending, asks a person to acknowledge a failure that
    * did not happen instead of answering what was asked.
    */
-  const question = [...run.steps].reverse().find((g) => g.state === 'asked')
-  if (question) {
-    return {
-      attempt: run.attempt,
-      source: question.step.replace(':', ' / '),
-      line: 'asked — ' + (oneLine(question.evidence) ?? 'no question was recorded'),
-      evidence: question.evidence,
-      fromStep: true,
-    }
-  }
+  const asked = askedOn(run)
+  if (asked) return asked
 
   const refused = [...run.steps].reverse().find((g) => g.state === 'failed')
   if (refused) {
@@ -859,6 +871,39 @@ function decidingOf(runs: readonly AttemptView[], named: AttemptView | null): De
     if (refused !== null) return refused
   }
   return null
+}
+
+/**
+ * Outside `blocked`, an asked deciding line whose wait was answered carries that answer (#1495). The line is
+ * the asked one only when the deciding run's own `askedOn` says the same thing, since `refusalOn` ranks a
+ * did-not-finish above it. Nothing guards a step that stays asked after its run went on through a second wait.
+ */
+function answeredDeciding(
+  deciding: Deciding | null,
+  runs: readonly AttemptView[],
+  waits: readonly TicketWait[],
+  blocked: boolean,
+): Deciding | null {
+  if (deciding === null || blocked) return deciding
+  const run = runs.find((r) => r.attempt === deciding.attempt)
+  const asked = run === undefined ? null : askedOn(run)
+  if (run === undefined || asked === null || asked.source !== deciding.source || asked.evidence !== deciding.evidence)
+    return deciding
+  const wait = [...waits].reverse().find((w) => {
+    if (w.resolution === null) return false
+    const reason = w.reason._tag === 'AskLimit' ? w.reason.asked : w.reason
+    return 'run' in reason && reason.run.runId === run.runId
+  })
+  if (wait === undefined || wait.resolution === null) return { ...deciding, answered: 'unmatched' }
+  return {
+    ...deciding,
+    answered: {
+      asked: wait.at.toISOString(),
+      at: wait.resolution.at.toISOString(),
+      by: wait.resolution.by,
+      resolution: wait.resolution.resolution._tag,
+    },
+  }
 }
 
 /**
@@ -1301,7 +1346,7 @@ export function standingOf(own: readonly Envelope[], runs: readonly AttemptView[
       raw === null
         ? null
         : ([...(run?.steps ?? [])].reverse().find((g) => g.state === 'failed' && quotes(raw, g))?.step ?? null),
-    deciding: decidingOf(runs, run),
+    deciding: answeredDeciding(decidingOf(runs, run), runs, item.waits, blocked),
     newAttempts: item.newAttempts.length,
     // `NewAttemptRecord` carries no ceiling since #502 (`TicketReleased{cause:
     // Restart}` is `{after, restart}` alone — the policy it was spent against

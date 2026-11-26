@@ -20,6 +20,7 @@ import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { Fragment, Suspense, type ReactNode } from 'react'
 
+import { personName } from '@/lib/history'
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import {
@@ -1549,7 +1550,17 @@ export function Standing({
           ) : null}
 
           {standing.state === 'running' && standing.running ? (
-            <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            <>
+              {/* An attempt continued after its ask was answered: the answer is history, the panel is live (#1495). */}
+              {standing.deciding?.answered !== undefined ? (
+                <AnsweredAsk
+                  deciding={standing.deciding}
+                  pointer={standing.deciding.attempt !== standing.attempt}
+                  taskId={taskId}
+                />
+              ) : null}
+              <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            </>
           ) : null}
 
           {standing.state === 'blocked' ? (
@@ -2106,6 +2117,8 @@ function Reason({
     // The block as it was before #83, and the one deciding line is all it has
     // ever had here. Attributed, because it may be an earlier attempt's.
     if (deciding === null) return null
+    if (deciding.answered !== undefined)
+      return <AnsweredAsk deciding={deciding} pointer={deciding.attempt !== attempt} taskId={taskId} />
     return (
       <p className="sevidence">
         <span className="sstep">{deciding.source}</span>
@@ -2165,6 +2178,7 @@ function LastAttempt({
   taskId: string
 }) {
   if (deciding === null) return null
+  if (deciding.answered !== undefined) return <AnsweredAsk deciding={deciding} pointer taskId={taskId} />
   const lead =
     deciding.attempt === attempts ? `the last attempt, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
   const label = `${lead} · ${deciding.fromStep ? 'stopped at ' : ''}${deciding.source}`
@@ -2184,6 +2198,64 @@ function LastAttempt({
       <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
         ↓
       </Link>
+    </p>
+  )
+}
+
+/** What each resolution reads as in an answered-ask line; a `Record`, so a new tag fails typecheck until it has a word. */
+const ANSWER_WORD: Record<Resolution['_tag'], string> = {
+  Approve: 'continue',
+  FixRefusal: 'fix',
+  RedoStep: 'redo',
+  AnswerQuestions: 'answer',
+  StartNewAttempt: 'new attempt',
+  EditBodyAndStartNewAttempt: 'edit and new attempt',
+  AnswerQuestion: 'answer',
+  ConfirmSatisfied: 'satisfied',
+  Split: 'split',
+  Close: 'close',
+}
+
+const clock = (iso: string) => iso.slice(11, 16)
+
+/** An asked step whose wait was answered: one muted history line (#1495), never the waiting style. */
+function AnsweredAsk({
+  deciding,
+  pointer,
+  taskId,
+}: {
+  deciding: NonNullable<StandingView['deciding']>
+  pointer: boolean
+  taskId: string
+}) {
+  const a = deciding.answered
+  if (a === undefined) return null
+  const question = deciding.evidence?.replace(/\s+/g, ' ').trim() || 'no question was recorded'
+  const source = deciding.source.replace(' / ', ' · ')
+  const word =
+    a === 'unmatched'
+      ? null
+      : a.resolution === 'Approve' && deciding.source.startsWith('proposed')
+        ? 'merge'
+        : ANSWER_WORD[a.resolution]
+  return (
+    <p className="past">
+      <b>{source}</b> asked{a === 'unmatched' ? '' : ` at ${clock(a.asked)}`} “{question}” →{' '}
+      {a === 'unmatched' ? (
+        'answered'
+      ) : (
+        <>
+          {personName(a.by)} answered <b>{word}</b> at {clock(a.at)}
+        </>
+      )}
+      {pointer ? (
+        <>
+          {' '}
+          <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
+            in Attempt {deciding.attempt} ↓
+          </Link>
+        </>
+      ) : null}
     </p>
   )
 }

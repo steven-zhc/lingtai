@@ -68,6 +68,8 @@ export interface TicketWait {
   readonly resolution: {
     readonly resolution: Resolution
     readonly by: string
+    /** The `WaitResolved`'s own `at` (#1495). */
+    readonly at: Date
     /** What a system resolution spent, and the number its continuation records for it (#1258). Absent for a person's. */
     readonly spent?: NonNullable<PayloadOf<'WaitResolved'>['spent']>
     /** The resolution's note — kept so a triage resolution whose `WaitTriaged` is missing can still say it (#1259). */
@@ -123,6 +125,7 @@ export function reduceWaits(waits: readonly TicketWait[], event: Envelope): read
               resolution: {
                 resolution: d.resolution,
                 by: d.by,
+                at: event.at,
                 ...(d.spent ? { spent: d.spent } : {}),
                 ...(d.note ? { note: d.note } : {}),
               },
