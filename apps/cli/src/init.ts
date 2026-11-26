@@ -108,7 +108,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { basename, join } from 'node:path'
 
-import { addLocalEffect } from '@lingtai/conductor/onboard'
+import { addEffect, addLocalEffect } from '@lingtai/conductor/onboard'
 import { sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { type ProjectState } from '@lingtai/domain'
@@ -141,6 +141,7 @@ import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lin
 import { Effect } from 'effect'
 import { Document, isMap, parseDocument } from 'yaml'
 
+import { type AddWorld, githubProjectEffect } from './add.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
 import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
@@ -149,6 +150,7 @@ import {
   chooseFirstProjectEffect,
   type FirstProjectWorld,
   type GitResult,
+  livePickerEffect,
   liveGitEffect,
   liveOpen,
   liveSetupReader,
@@ -158,7 +160,7 @@ import {
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
-import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
+import { addSteps, githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
@@ -258,6 +260,16 @@ export interface InitWorld {
    * break a fresh machine.
    */
   doctor: () => Effect.Effect<SetupDoctor, unknown>
+  /**
+   * What `--github <owner>/<repo>` reaches GitHub with — the live ones where absent. `deps` and `labels` are
+   * `AddWorld`'s own; `add` and `picker` are `FirstProjectWorld.github`'s.
+   */
+  githubProject?: {
+    deps?: AddWorld['githubDeps']
+    labels?: AddWorld['labels']
+    add?: FirstProjectWorld['github']['add']
+    picker?: FirstProjectWorld['github']['picker']
+  }
   /** The directory `init` was run in (live: `process.cwd()`) — asked about when this machine already has projects (#756). */
   cwd: string
 }
@@ -434,11 +446,15 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     // machine-wide holds "local" or "github". A machine that already has
     // projects is told what it has and how to add another, rather than asked
     // the question again; an explicit --project or --local names what to do
-    // next and reopens the question on one. (`--github` is `lingtai add`'s own
-    // flag, not `init`'s — `parseArgs` above refuses it, so a GitHub project
-    // here is always named through `--project github` instead; checking for it
-    // below was dead, since it could never be set.)
-    const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined
+    // next and reopens the question on one. `--github <owner>/<repo>` names the
+    // project outright and runs `lingtai add`'s own path for it (`githubProjectEffect`).
+    if (flags['github'] !== undefined && (flags['local'] !== undefined || flags['project'] === 'local')) {
+      return stop(
+        `--github ${flags['github']} and ${flags['local'] !== undefined ? `--local ${flags['local']}` : '--project local'} name two different projects. Pass one or the other. Nothing was written`,
+      )
+    }
+    const explicitChoice =
+      flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
     // Whether the project question is asked at all this run — false when the
     // machine already has projects and nothing named which to add, so the
     // question is not asked again (below), only answered by what is printed
@@ -478,8 +494,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           section('Projects', [
             ...listed,
             paint.muted(
-              'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
-                'the GitHub App on a machine that has only local projects',
+              'lingtai add <owner>/<repo> or lingtai init --github <owner>/<repo> sets up a GitHub project, or ' +
+                'changes one already added; lingtai add asks GitHub-or-directory for another; lingtai init ' +
+                '--project github sets up the GitHub App on a machine that has only local projects',
             ),
           ]),
         )
@@ -604,6 +621,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     let fix: string | undefined
     // A local run's doctor report is part of the card; every other path prints it whole, below.
     let cardDrawn = false
+    // What `lingtai init --github` closes on: the project's own numbered block, as `lingtai add` does.
+    let githubClosing: Parameters<typeof addSteps>[0] | undefined
     // The board's `/setup/repository` page, when the App was just made here.
     let githubSetupUrl: string | undefined
     if (askProject) {
@@ -678,94 +697,116 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
               boardUrl,
               { waitMs: APP_WAIT_MS },
             ),
-          // `init` never gives `chooseFirstProject` a slug — `--github` is
-          // `lingtai add`'s own flag, refused by `parseArgs` above, so
-          // `runGithubBranch`'s `givenSlug` is always null here and returns
-          // before either of these runs (#394's dead-seam finding: `InitWorld`
-          // used to carry a `picker` and an `addGithub` that nothing called).
-          picker: () => {
-            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-          },
-          add: () => {
-            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-          },
+          // `chooseFirstProject` is given a slug only through `--github <owner>/<repo>`, which
+          // `githubProjectEffect` hands it; `--project github` has none, and returns before either of these runs.
+          picker: world.githubProject?.picker ?? livePickerEffect,
+          add: world.githubProject?.add ?? ((opts, log) => addEffect(opts, log)),
         },
       }
-      const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
-      if ('refused' in chosen) {
-        // `boardUrl()` above is the only caller of `startBoard` on this path —
-        // if it was ever asked for, a refusal it hit is the real reason, over
-        // the GitHub-add sentence `chosen.refused` carries for a null URL.
-        const soFar = boardSoFar()
-        if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
-        return stop(chosen.refused)
-      }
-
-      if (chosen.project === 'local') {
-        const recipeFile = recipePath(chosen.name, home)
-        // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
-        if (
-          (yield* recipeText(chosen.name, { home, ...(world.store === undefined ? {} : { store: world.store }) })) ===
-          null
-        ) {
-          return stop(`the recipe could not be read back from ${recipeFile}`)
-        }
-        held.length = 0
-        const end = yield* printSetupEndEffect(
-          world,
+      const githubSlug = flags['github']
+      if (githubSlug !== undefined && githubSlug !== '') {
+        // The project is named, so there is nothing to pick: the same function `lingtai add` runs, after the machine's questions.
+        const done = yield* githubProjectEffect(
+          githubSlug,
+          flags,
+          buildFlags,
           {
-            command: 'init',
-            project: chosen.name,
-            updated: chosen.updated,
-            ...(chosen.unchanged === true ? { unchanged: true } : {}),
-            home,
-            homeIsNew,
+            project: firstProjectWorld,
+            ...(world.githubProject?.deps === undefined ? {} : { githubDeps: world.githubProject.deps }),
+            ...(world.githubProject?.labels === undefined ? {} : { labels: world.githubProject.labels }),
+            error: (line) => {
+              flush()
+              refuse(world, line)
+            },
+            log: world.log,
+            doctor: world.doctor,
+            store: () => storeNow,
             userHome: world.env['HOME'] ?? '',
-            store: storeNow,
-            runtimes,
-            recipe: chosen.card,
-            trial: chosen.trial,
-            recipePath: recipeFile,
-            ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0
-              ? {}
-              : { leftBehind: [...storeLeft, ...(chosen.leftBehind ?? [])] }),
           },
-          chosen.hints,
+          { command: 'init', homeIsNew, leftBehind: storeLeft },
         )
-        fix = end.fix
+        if (done.exit !== 0) return done.exit
+        held.length = 0
+        fix = done.fix
+        githubClosing = done.closing
         cardDrawn = true
       } else {
-        github = true
-        let how = yield* reachRow(chosen.auth === 'gh')
-        if (chosen.auth === 'gh') {
-          // No App to start a board for: the saved `gh` login is the whole of
-          // the auth, and a repository is named to `lingtai add`, not picked.
-        } else if (chosen.app === 'already') {
-          // Nothing upstream asked for a URL on this path — `app.configured` was
-          // already true, so `boardUrl()` above was never called.
-          const started = yield* startBoard()
-          if ('refused' in started) return boardRefused(started.refused)
-          const wizard = `${started.url}/setup/repository`
-          world.log(
-            (yield* world.open(wizard))
-              ? paint.pass(`opened ${wizard}`)
-              : `no browser could be opened here — open ${wizard}`,
-          )
-        } else if ('made' in chosen.app) {
-          // Already started, successfully, to hand `waitForApp` its URL above —
-          // this reads the same memo rather than starting a second one.
-          const started = yield* startBoard()
-          const url = 'url' in started ? started.url : ''
-          githubSetupUrl = `${url}/setup/repository`
-          how = `the App ${chosen.app.made.slug}`
+        const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
+        if ('refused' in chosen) {
+          // `boardUrl()` above is the only caller of `startBoard` on this path —
+          // if it was ever asked for, a refusal it hit is the real reason, over
+          // the GitHub-add sentence `chosen.refused` carries for a null URL.
+          const soFar = boardSoFar()
+          if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
+          return stop(chosen.refused)
         }
-        // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
-        // own call to `waitForApp` (`appComeBackLine`).
-        //
-        // `init`'s GitHub branch never has a slug, so there is no recipe file
-        // to name here — it exists once a repository is picked.
-        fix = yield* machineCard(how)
-        cardDrawn = true
+
+        if (chosen.project === 'local') {
+          const recipeFile = recipePath(chosen.name, home)
+          // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
+          if (
+            (yield* recipeText(chosen.name, { home, ...(world.store === undefined ? {} : { store: world.store }) })) ===
+            null
+          ) {
+            return stop(`the recipe could not be read back from ${recipeFile}`)
+          }
+          held.length = 0
+          const end = yield* printSetupEndEffect(
+            world,
+            {
+              command: 'init',
+              project: chosen.name,
+              updated: chosen.updated,
+              ...(chosen.unchanged === true ? { unchanged: true } : {}),
+              home,
+              homeIsNew,
+              userHome: world.env['HOME'] ?? '',
+              store: storeNow,
+              runtimes,
+              recipe: chosen.card,
+              trial: chosen.trial,
+              recipePath: recipeFile,
+              ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0
+                ? {}
+                : { leftBehind: [...storeLeft, ...(chosen.leftBehind ?? [])] }),
+            },
+            chosen.hints,
+          )
+          fix = end.fix
+          cardDrawn = true
+        } else {
+          github = true
+          let how = yield* reachRow(chosen.auth === 'gh')
+          if (chosen.auth === 'gh') {
+            // No App to start a board for: the saved `gh` login is the whole of
+            // the auth, and a repository is named to `lingtai add`, not picked.
+          } else if (chosen.app === 'already') {
+            // Nothing upstream asked for a URL on this path — `app.configured` was
+            // already true, so `boardUrl()` above was never called.
+            const started = yield* startBoard()
+            if ('refused' in started) return boardRefused(started.refused)
+            const wizard = `${started.url}/setup/repository`
+            world.log(
+              (yield* world.open(wizard))
+                ? paint.pass(`opened ${wizard}`)
+                : `no browser could be opened here — open ${wizard}`,
+            )
+          } else if ('made' in chosen.app) {
+            // Already started, successfully, to hand `waitForApp` its URL above —
+            // this reads the same memo rather than starting a second one.
+            const started = yield* startBoard()
+            const url = 'url' in started ? started.url : ''
+            githubSetupUrl = `${url}/setup/repository`
+            how = `the App ${chosen.app.made.slug}`
+          }
+          // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
+          // own call to `waitForApp` (`appComeBackLine`).
+          //
+          // `init`'s GitHub branch never has a slug, so there is no recipe file
+          // to name here — it exists once a repository is picked.
+          fix = yield* machineCard(how)
+          cardDrawn = true
+        }
       }
     } else if (app.configured && !ghMachine) {
       github = true
@@ -839,7 +880,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       const closing =
         here !== null
           ? hereSteps(here)
-          : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
+          : githubClosing !== undefined
+            ? { steps: addSteps(githubClosing) }
+            : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
       if (closing.preface !== undefined) world.log(closing.preface)
       for (const line of renderNextBlock(closing.steps)) world.log(line)
     }

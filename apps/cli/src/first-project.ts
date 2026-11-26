@@ -1431,7 +1431,8 @@ function runGithubBranch(
 
     // `askRecipe`'s own flags (#431) are asked only once `lingtai add` already
     // has a recipe to write them into, same reason as `--tickets`/`--kinds`
-    // above — `init`'s GitHub branch never calls `askRecipe` at all. Refused
+    // above — `init --project github`, with no slug, never calls `askRecipe`; `init --github <owner>/<repo>` and
+    // `lingtai add` reach it through `githubProjectEffect` and never through here. Refused
     // by name instead of silently discarded (#431 fix round, finding 2).
     const recipeFlagNames = [
       'agent',
