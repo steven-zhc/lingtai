@@ -1015,3 +1015,44 @@ describe('a dispatch refusal written after #1158', () => {
     expect(line).not.toContain('undefined')
   })
 })
+
+describe('a step redone in place says why (#1480)', () => {
+  const redone = (data: Record<string, unknown>, type = 'StepRedone') =>
+    summarise(e(type, { runId: RUN, step: 'implement', rerun: 2, said: 'boom', waitMs: 300_000, ...data }))
+  const KINDS = [
+    ['transient', 'implement was cut off by an API error — "boom" — and runs again in place, after 5 min (rerun 2)'],
+    [
+      'crash',
+      'implement crashed on an error no rule recognises — "boom" — and runs again in place, after 5 min (rerun 2)',
+    ],
+    ['agent-did-not-finish', 'the implement agent did not finish and runs again in place, after 5 min (rerun 2)'],
+    ['registry-5xx', 'the registry answered with a 5xx — "boom" — and runs again in place, after 5 min (rerun 2)'],
+    ['answer-unreadable', 'the implement answer could not be read and runs again in place, after 5 min (rerun 2)'],
+  ] as const
+
+  it.each(KINDS)('words %s, and only transient says "API error"', (cause, expected) => {
+    const line = redone({ cause })
+    expect(line).toBe(expected)
+    expect(line.includes('API error')).toBe(cause === 'transient')
+  })
+
+  it('gives a row with no cause, and a retired StepRerunInPlace row, the neutral line', () => {
+    const neutral = 'implement stopped and runs again in place, after 5 min (rerun 2)'
+    expect(redone({})).toBe(neutral)
+    expect(redone({}, 'StepRerunInPlace')).toBe(neutral)
+  })
+
+  it('gives a cause it does not know the neutral line, never an error', () => {
+    expect(redone({ cause: 'something-new' })).toBe('implement stopped and runs again in place, after 5 min (rerun 2)')
+  })
+
+  it('does not quote said when unread is set', () => {
+    expect(redone({ cause: 'crash', unread: true })).not.toContain('boom')
+  })
+
+  it('leaves nothing dangling when a registry 5xx had no words', () => {
+    expect(redone({ cause: 'registry-5xx', said: '' })).toBe(
+      'the registry answered with a 5xx and runs again in place, after 5 min (rerun 2)',
+    )
+  })
+})

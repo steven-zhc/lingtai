@@ -124,6 +124,9 @@ import {
   type WaitId,
 } from '@lingtai/domain'
 import type { CeilingReached, RuntimeId, TriageQuestion } from '@lingtai/domain'
+
+/** Which kind of redo a `StepRedone` is (#1480): the same five values as the event's `cause`. */
+type StepRedoneCause = 'transient' | 'crash' | 'agent-did-not-finish' | 'registry-5xx' | 'answer-unreadable'
 import type { AttemptRef } from '@lingtai/domain/wait'
 import { kindOfAction, type Recipe, type StepAction } from '@lingtai/recipe'
 import { Cause, type Context, Duration, Effect, Exit } from 'effect'
@@ -1526,7 +1529,14 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       readonly startedAt?: string
     } | null = null
     /** The one place `StepRedone` is appended: a crash's rerun and a rule's both spend the count before the wait. */
-    const emitStepRedone = (step: Step, retry: number, said: string, wait: Duration.Input, unread = false) =>
+    const emitStepRedone = (
+      step: Step,
+      retry: number,
+      said: string,
+      wait: Duration.Input,
+      cause: StepRedoneCause,
+      unread = false,
+    ) =>
       options.emit({
         type: 'StepRedone',
         data: {
@@ -1536,6 +1546,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
           said,
           waitMs: Duration.toMillis(Duration.fromInputUnsafe(wait)),
           ...(unread ? { unread: true } : {}),
+          cause,
         },
       })
     const roundLimit =
@@ -1801,6 +1812,8 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
       /** The tail of a final message no outcome could be read from (#1398): the redo's brief quotes it. */
       readonly unread?: string
       readonly why: string
+      /** Which kind of redo this is (#1480); the board words it. */
+      readonly cause: StepRedoneCause
       readonly wait: Duration.Input
     }): Effect.Effect<boolean> =>
       Effect.gen(function* () {
@@ -1822,7 +1835,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
         // leave a head to continue from writes no `StepRedone`: a stop during the wait would release with no cause.
         const saved = redo.unread !== undefined && options.saveHead !== undefined ? yield* options.saveHead() : null
         if (saved !== null) return cannot(`its head could not be saved before the wait — ${saved.failed}`)
-        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.unread !== undefined)
+        yield* emitStepRedone(redo.step, redo.retry, redo.said, redo.wait, redo.cause, redo.unread !== undefined)
         if (Duration.toMillis(Duration.fromInputUnsafe(redo.wait)) > 0) yield* Effect.sleep(redo.wait)
         const reset =
           options.resetToHead === undefined
@@ -2265,6 +2278,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 next.step === 'prepared'
                   ? 'the registry answered with a 5xx'
                   : `the ${next.step} answer could not be read`,
+              cause: next.step === 'prepared' ? 'registry-5xx' : 'answer-unreadable',
               wait: rerunWait,
             })
           }
@@ -2777,6 +2791,7 @@ export function runAttemptEffect(options: AttemptPortOptions): Effect.Effect<Att
                 : again.expected
                   ? `a transient API error: ${reason.detail}`
                   : `a crash no rule recognises: ${reason.detail}`,
+              cause: failed ? 'agent-did-not-finish' : again.expected ? 'transient' : 'crash',
               wait: waitFor(retry),
             })
             if (redone) continue

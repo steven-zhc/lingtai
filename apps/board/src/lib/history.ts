@@ -853,9 +853,27 @@ const FACT_FORMAT: { [K in BoardFact['_tag']]: FactFormatter<K> } = {
  * #932). A route whose `StepEnded` is not in the slice says so rather than
  * showing an empty list.
  */
+/**
+ * What each recorded `cause` of a redo says (#1480), and whether `said` is the runtime's or the registry's
+ * own text and so may be quoted. Nothing is read from `said` to find the kind: three of the five cannot be told apart by it.
+ */
+const REDONE_CAUSES: Readonly<Record<string, { readonly what: (step: string) => string; readonly quotes: boolean }>> = {
+  transient: { what: (step) => `${step} was cut off by an API error`, quotes: true },
+  crash: { what: (step) => `${step} crashed on an error no rule recognises`, quotes: true },
+  'agent-did-not-finish': { what: (step) => `the ${step} agent did not finish`, quotes: false },
+  'registry-5xx': { what: () => 'the registry answered with a 5xx', quotes: true },
+  'answer-unreadable': { what: (step) => `the ${step} answer could not be read`, quotes: false },
+}
+
 /** `StepRedone`'s line, and the same for the `StepRerunInPlace` rows written under its retired name (#1241). */
 function stepRedoneLine(d: Payload): string {
-  return `${need(d, 'step')} was cut off by an API error and runs again in place, after ${Math.round(Number(need(d, 'waitMs')) / 60_000)} min (rerun ${need(d, 'rerun')})`
+  const step = String(need(d, 'step'))
+  const after = `after ${Math.round(Number(need(d, 'waitMs')) / 60_000)} min (rerun ${need(d, 'rerun')})`
+  const cause =
+    typeof d.cause === 'string' && Object.hasOwn(REDONE_CAUSES, d.cause) ? REDONE_CAUSES[d.cause] : undefined
+  if (cause === undefined) return `${step} stopped and runs again in place, ${after}`
+  const said = cause.quotes && d.unread !== true ? clip(d.said) : ''
+  return `${cause.what(step)}${said === '' ? '' : ` — "${said}" —`} and runs again in place, ${after}`
 }
 
 function routedLine(d: Payload, { branch, endedAt }: Reading): string {
