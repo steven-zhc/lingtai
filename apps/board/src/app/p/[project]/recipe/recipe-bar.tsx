@@ -33,14 +33,14 @@ export function RecipeBar({
   sandbox,
   pause,
   views,
-  here = project === undefined ? undefined : 'recipe',
+  here = 'recipe',
   tail,
 }: {
   /** `undefined` is *all projects*: its views are `Tickets` alone and the bar draws no project actions. */
   project: string | undefined
   pause?: ReactNode
-  /** Left undefined on a page that is none of the views (the backlog selects nothing). */
-  here?: 'recipe' | 'prs' | 'tickets' | undefined
+  /** Which view this page is; `null` on a page that is none of them (the backlog selects nothing). */
+  here?: 'recipe' | 'prs' | 'tickets' | null
   tail?: string
 } & RecipeBarFilter) {
   const barHere = here === 'recipe' ? ({ here: 'recipe' } as const) : {}
@@ -54,7 +54,7 @@ export function RecipeBar({
       <PlaceLine
         project={project}
         views={views ?? viewsFor(project)}
-        here={here}
+        here={here ?? undefined}
         tail={tail}
         menu={
           <Projects

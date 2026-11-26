@@ -94,7 +94,7 @@ export async function BacklogBody({ project }: { project: string | undefined }) 
       <main className="detail">
         <RecipeBar
           project={project}
-          here={undefined}
+          here={null}
           tail="Backlog"
           filters={bar.filters}
           registered={bar.registered}
@@ -111,7 +111,7 @@ export async function BacklogBody({ project }: { project: string | undefined }) 
           </p>
         )}
         <div className="detail-body">
-          <p className="pagefacts">{open.length} open · from review findings that passed a gate</p>
+          <p className="pagefacts">{open.length} open · from findings the reviews raised</p>
           <section>
             <h2 className="sec-h">Open</h2>
             {open.length === 0 ? (
