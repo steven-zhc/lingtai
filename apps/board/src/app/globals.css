@@ -3653,20 +3653,22 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .step-empty { font-size: var(--fs-sm); color: var(--muted); opacity: .75; }
 .chip-code { font: var(--fs-sm) var(--mono); background: var(--surface-2); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1px 7px; }
 .chip-kind { font-size: var(--fs-sm); color: var(--accent-ink); background: var(--accent-soft); border-radius: 999px; padding: 1px 10px; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--rule); }
 .stat { padding: 10px 0 8px; }
-.stat + .stat { border-left: 1px solid var(--rule); padding-left: 14px; }
+.stat:not(:first-child) { border-left: 1px solid var(--rule); padding-left: 14px; }
 .stat b { display: block; font: 500 var(--fs-xl)/1.15 var(--mono); color: var(--ink); }
 .stat span { font-size: var(--fs-xs); color: var(--muted); }
 .sv { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; min-width: 0; }
 .step-mono { font: var(--fs-md) var(--mono); }
 .step-q { color: var(--muted); }
+.say-more { padding: 0 0 6px; font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-2); }
+.say-more p { margin: 0 0 4px; }
 .say { margin: 0; padding: 8px 0 6px; border-top: 1px solid var(--rule); font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-2); }
 .also { display: grid; grid-template-columns: 118px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--rule); }
 .ak { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .src { font: var(--fs-xs) var(--mono); color: var(--muted); }
 svg.mode-graph text { font-size: var(--fs-xs); }
-@media (max-width: 900px) { .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .stats { grid-template-columns: repeat(3, 1fr); } .stat:nth-child(3n+1) { border-left: 0; padding-left: 0; } .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }
 .redit pre.fail { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The row under the bar for a paused project (#994). Held colours only:

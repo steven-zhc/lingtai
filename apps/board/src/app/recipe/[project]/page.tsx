@@ -8,6 +8,7 @@ import { notFound } from 'next/navigation'
 import { type ReactNode } from 'react'
 
 import { Bar, BarActions } from '@/app/bar.tsx'
+import { CeilingSay } from '@/app/ceiling-say.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { PlaceLine, viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { ModeGraph } from '@/components/mode-graph.tsx'
@@ -228,7 +229,7 @@ function LeftColumn({ view, sandbox }: { view: Extract<ProjectRecipe, { ok: true
             <span>turns</span>
           </div>
         </div>
-        <p className="say">{read.ceiling}</p>
+        <CeilingSay summary={read.ceiling.summary} sentences={read.ceiling.sentences} />
       </section>
 
       <section className="rcard">
