@@ -7,15 +7,20 @@ import { describe, expect, it } from 'vitest'
 const ROOT = new URL('../../../', import.meta.url).pathname
 const SKIP = new Set(['node_modules', '.next', 'dist', '.turbo'])
 const S = '/'
-const OLD: readonly { re: RegExp; write: string }[] = [
+/** Where a board address can begin: a quote, a template's `}` or a call's `)`, or a host (`:3200`, `http://b`). */
+const START = `(?:['"\`})]|:\\d+|https?:${S}${S}[^${S}\\s'"\`]+)`
+/** A project page is `/p/<project>/pr/…`, so a `/pr/` that follows `/p/<segment>` is the new shape. */
+const NOT_PROJECT_PAGE = `(?<!${S}p${S}[^${S}\\s'"\`]*)`
+const QUERY = `(?:[^\\s'"\`]*&)?project=`
+export const OLD: readonly { re: RegExp; write: string }[] = [
   {
     re: new RegExp(`${S}task${S}`),
     write: '`/p/<project>/ticket/<n>` (`ticketPath` in `apps/board/src/lib/paths.ts`)',
   },
-  { re: new RegExp(`(?<![\\w\\]}>.\\\\])${S}pr${S}`), write: '`/p/<project>/pr[/…]` (`prPath`)' },
-  { re: new RegExp(`(?<![\\w\\]}>.\\\\])${S}recipe${S}`), write: '`/p/<project>/recipe` (`recipePath`)' },
+  { re: new RegExp(`${START}${NOT_PROJECT_PAGE}${S}pr${S}`), write: '`/p/<project>/pr[/…]` (`prPath`)' },
+  { re: new RegExp(`${START}${NOT_PROJECT_PAGE}${S}recipe${S}`), write: '`/p/<project>/recipe` (`recipePath`)' },
   {
-    re: new RegExp(`(?:['"\`]${S}|${S}landed|${S}backlog)\\?project=`),
+    re: new RegExp(`${START}${S}\\?${QUERY}|${S}(?:landed|backlog)\\?${QUERY}`),
     write: '`homePath`, `landedHref` or `backlogPath` (`?project=` is not an address)',
   },
 ]
@@ -49,5 +54,34 @@ describe('no old board URL in source (#1501)', () => {
       }
     }
     expect(found).toEqual([])
+  })
+})
+
+describe('the guard matches the ways an old address is written (#1501)', () => {
+  const hit = (line: string) => OLD.some(({ re }) => re.test(line))
+  it.each([
+    '`${boardUrl()}/pr/${project}/1`',
+    '`${boardUrl()}/recipe/${project}`',
+    "'/pr/lingtai/1'",
+    'href="http://localhost:3200/?project=lingtai"',
+    'href="http://localhost:3200/?a=1&project=lingtai"',
+    "'/?a=1&project=x'",
+    '`${base}/landed?kind=bug&project=x`',
+    "'/backlog?project=x'",
+    "'/task/ticket-x-1'",
+  ])('flags %s', (line) => {
+    expect(hit(line)).toBe(true)
+  })
+  it.each([
+    '`/p/${project}/pr/1`',
+    '`${boardUrl()}/p/${project}/pr/1`',
+    "'/p/x/recipe/'",
+    'packages/recipe/src/index.ts',
+    "'@lingtai/recipe/settings'",
+    '`~/.lingtai/${project}/recipe.yml`',
+    "'/report?project=x'",
+    "'/setup/repository/added?project=x'",
+  ])('leaves %s alone', (line) => {
+    expect(hit(line)).toBe(false)
   })
 })

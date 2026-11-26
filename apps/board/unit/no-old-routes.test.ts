@@ -35,13 +35,28 @@ describe('an old board address is not a page (#1501)', () => {
     expect(resolves(['p', 'lingtai', 'ticket', '1'])).toBe(true)
     expect(resolves([])).toBe(true)
   })
-  it('is not in the proxy matcher: the proxy answers `/` alone', () => {
-    expect(config.matcher).toEqual(['/'])
+  it('is not in the proxy matcher: the proxy answers `/`, and refuses `/landed` and `/backlog` with a project', () => {
+    expect(config.matcher).toEqual(['/', '/landed', '/backlog'])
   })
-  it('is answered with no redirect, a project parameter on `/` included', () => {
-    for (const url of [...OLD, ...['', 'landed', 'backlog'].map((p) => `/${p}?project=lingtai`)]) {
+  it('is answered with no redirect', () => {
+    for (const url of OLD) {
       const res = proxy(new NextRequest(new URL(url, 'http://board.test')))
       expect(res.headers.get('location'), url).toBeNull()
+    }
+  })
+  it('is a 404 where the address is `/`, `/landed` or `/backlog` with a project parameter, a cookie or not', () => {
+    for (const path of ['', 'landed', 'backlog']) {
+      for (const cookie of [undefined, 'lingtai-project=other']) {
+        const url = new URL(`/${path}?project=lingtai`, 'http://board.test')
+        const res = proxy(new NextRequest(url, cookie ? { headers: { cookie } } : undefined))
+        expect(res.status, `${url} ${cookie ?? ''}`).toBe(404)
+        expect(res.headers.get('location')).toBeNull()
+      }
+    }
+  })
+  it('leaves a bare `/` and the global pages served', () => {
+    for (const path of ['/landed', '/backlog', '/']) {
+      expect(proxy(new NextRequest(new URL(path, 'http://board.test'))).status, path).toBe(200)
     }
   })
 })
