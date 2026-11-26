@@ -100,7 +100,7 @@ function remarkShellTabs() {
     }
   }
 }
-import { headingsOf, resolveHref } from '@/lib/docs'
+import { docImageSrc, headingsOf, resolveHref } from '@/lib/docs'
 
 /**
  * The page's subtitle: the paragraph straight after the `h1` that is one
@@ -231,13 +231,12 @@ export function Document({
     },
     img({ src, alt, ...rest }) {
       const written = typeof src === 'string' ? src : ''
-      // `doc/img/` is the one directory of images the build carries
-      // (served at `/img/docs/` by `src/app/img/docs/[name]/route.ts`), so a diagram
-      // in a document is the same file on GitHub and on the site. Any other image
-      // is pointed at the repository, where it is.
+      // A raster image is the local file when `doc/` has it and its R2 copy when not
+      // (#1470); an SVG diagram stays in git. A URL, or a path that climbs out of
+      // `doc/`, is `resolveHref`'s as before.
       const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written))
-      if (!/^[a-z]+:/i.test(written) && under.startsWith('img/')) {
-        return <img src={`/img/docs/${under.slice('img/'.length)}`} alt={alt ?? ''} {...rest} />
+      if (!/^[a-z]+:/i.test(written) && !under.startsWith('../')) {
+        return <img src={docImageSrc(under)} alt={alt ?? ''} {...rest} />
       }
       return <img src={resolveHref(source, written, isPublished)} alt={alt ?? ''} {...rest} />
     },

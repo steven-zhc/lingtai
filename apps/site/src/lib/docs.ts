@@ -2,6 +2,8 @@ import { existsSync } from 'node:fs'
 import { readdir, readFile } from 'node:fs/promises'
 import path from 'node:path'
 
+import { imageType } from './doc-images'
+
 /**
  * The docs are a projection of `doc/`, and never a copy.
  *
@@ -44,6 +46,9 @@ export const docRoot = path.join(repoRoot, 'doc')
 
 /** Where a file that is not projected is read instead. */
 export const GITHUB_BLOB = 'https://github.com/steven-zhc/lingtai/blob/main/'
+
+/** Where a raster image that is not in `doc/` is read: the R2 bucket, keyed by the path under `doc/`. */
+export const DOC_IMAGES_BASE = 'https://lingtai-img.hczhang.com/'
 
 /**
  * The repository docs stay private to the build until their information
@@ -505,6 +510,35 @@ export function resolveHref(from: string, href: string, isPublished: (file: stri
   if (rel.endsWith('.md') && isPublished(rel)) return `/docs/${slugOf(rel)}/${suffix}`
   if (DOCS_PUBLIC && HTML_DOCS.some((d) => d.file === rel)) return `/doc/${rel}${suffix}`
   return `${GITHUB_BLOB}doc/${rel}${suffix}`
+}
+
+/**
+ * The `src` of an image whose path under `doc/` is already worked out: the local
+ * file when there is one, and its R2 copy otherwise (#1470).
+ *
+ * Only a lower-case raster image is looked up. Anything else — an SVG, which stays
+ * in git — gets what it always did, present or not. A local file under `img/` is
+ * `/img/docs/…` only when that route serves it (`imageType`), otherwise the file on
+ * GitHub, so the page never points at a route that would 404. An `exists` that
+ * throws counts as absent.
+ */
+export function docImageSrc(
+  pathUnderDoc: string,
+  exists: (file: string) => boolean = (file) => existsSync(path.join(docRoot, file)),
+): string {
+  const local = () => {
+    const rest = pathUnderDoc.slice('img/'.length)
+    if (pathUnderDoc.startsWith('img/') && imageType(rest) !== null) return `/img/docs/${rest}`
+    return resolveHref('README.md', pathUnderDoc, () => false)
+  }
+  if (!/\.(png|jpe?g|gif|webp)$/.test(pathUnderDoc)) return local()
+  let present = false
+  try {
+    present = exists(pathUnderDoc)
+  } catch {
+    present = false
+  }
+  return present ? local() : DOC_IMAGES_BASE + pathUnderDoc
 }
 
 /**

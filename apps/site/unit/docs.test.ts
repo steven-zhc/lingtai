@@ -8,6 +8,8 @@ import {
   BOOK,
   DOCS_PUBLIC,
   decidedOn,
+  DOC_IMAGES_BASE,
+  docImageSrc,
   decisionsByNumber,
   docRoot,
   entriesOf,
@@ -335,6 +337,23 @@ describe('where a link inside a document goes', () => {
       '/docs/decisions-archive/0022-the-seams/',
     )
     expect(resolveHref('decisions-archive/0022-the-seams.md', '../tutorial.md', isPublished)).toBe('/docs/tutorial/')
+  })
+
+  it('chooses an image src: the local file when present, its R2 copy when not (#1470)', () => {
+    const yes = () => true
+    const no = () => false
+    expect(docImageSrc('img/tutorial-site.png', yes)).toBe('/img/docs/tutorial-site.png')
+    expect(docImageSrc('milestone/0.16.0/pr.png', yes)).toBe(`${GITHUB_BLOB}doc/milestone/0.16.0/pr.png`)
+    expect(docImageSrc('milestone/0.16.0/pr.png', no)).toBe(`${DOC_IMAGES_BASE}milestone/0.16.0/pr.png`)
+    expect(docImageSrc('img/tutorial-site.png', no)).toBe(`${DOC_IMAGES_BASE}img/tutorial-site.png`)
+    expect(docImageSrc('img/recipe.svg', yes)).toBe('/img/docs/recipe.svg')
+    expect(docImageSrc('img/recipe.svg', no)).toBe('/img/docs/recipe.svg')
+    const boom = () => {
+      throw new Error('EACCES')
+    }
+    expect(docImageSrc('img/tutorial-site.png', boom)).toBe(`${DOC_IMAGES_BASE}img/tutorial-site.png`)
+    // the route serves only a flat lower-case png/svg, so a present file it cannot serve is the GitHub link
+    expect(docImageSrc('img/016/x.png', yes)).toBe(`${GITHUB_BLOB}doc/img/016/x.png`)
   })
 
   it('sends a link to the events manifest to its page', () => {
