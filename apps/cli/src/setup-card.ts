@@ -236,7 +236,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
                 [
                   'findings',
                   recipe.findingsJudge.rounds === 0
-                    ? 'a finding stops for you'
+                    ? `no fix rounds — the ${recipe.findingsJudge.judge} judge can still restart the attempt or hand a finding to you`
                     : `go back to the writer up to ${recipe.findingsJudge.rounds} times — each is a ${recipe.findingsJudge.judge} judge call and another writer run`,
                 ] as const,
               ]),

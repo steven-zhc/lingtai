@@ -126,7 +126,8 @@ describe('renderSetupCard', () => {
     const none = { ...FACTS, recipe: { ...RECIPE, findingsJudge: null } }
     expect(rows(none).some((r) => r.startsWith('findings'))).toBe(false)
     const zero = { ...FACTS, recipe: { ...RECIPE, findingsJudge: { judge: 'codex', rounds: 0 } } }
-    expect(row(zero, 'findings')).toContain('stops for you')
+    expect(row(zero, 'findings')).toContain('no fix rounds')
+    expect(row(zero, 'findings')).not.toContain('stops for you')
   })
 
   it('puts updated in the heading on a re-registration, and new on home only for a new home', () => {
