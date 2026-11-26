@@ -1,6 +1,6 @@
 import Link from 'next/link'
 
-import { sandboxTabPath } from '@/lib/tabs'
+import { sandboxTabPath } from '@/lib/paths'
 import type { SandboxTabDetail } from '@/lib/task'
 
 import { SandboxPanel } from './sandbox-panel.tsx'

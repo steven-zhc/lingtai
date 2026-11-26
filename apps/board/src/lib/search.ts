@@ -9,6 +9,7 @@
  */
 import type { PrStatus } from '@lingtai/domain'
 import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
+import { homePath, prPath, recipePath, ticketPath } from './paths.ts'
 
 export type Group = 'Pages' | 'Projects' | 'Recipes' | 'Tickets' | 'PRs'
 
@@ -122,7 +123,7 @@ export function buildIndex({
     entries.push({
       group: 'Projects',
       label: p,
-      href: `/?project=${encodeURIComponent(p)}`,
+      href: homePath(p),
       project: p,
       keys: [p],
     })
@@ -131,7 +132,7 @@ export function buildIndex({
     entries.push({
       group: 'Recipes',
       label: `recipe · ${p}`,
-      href: `/recipe/${encodeURIComponent(p)}`,
+      href: recipePath(p),
       keys: [p, `recipe ${p}`],
     })
   }
@@ -150,7 +151,7 @@ export function buildIndex({
         group: 'Tickets',
         label: t.title.trim() === '' ? `#${t.issue}` : `#${t.issue} ${t.title}`,
         detail: `${t.project} · ${TICKET_WORD[t.state] ?? t.state}${inPr === undefined ? '' : ` · in ${inPr}`}`,
-        href: `/task/${encodeURIComponent(t.taskId)}`,
+        href: ticketPath({ project: t.project, issue: t.issue }),
         keys: [t.issue, t.title, t.taskId],
         number: { value: t.issue, hash: true },
       })
@@ -165,7 +166,7 @@ export function buildIndex({
         group: 'PRs',
         label: title === '' ? pr.name : `${pr.name} ${title}`,
         detail: `${project} · ${PR_WORD[pr.status] ?? pr.status} · ${k} ${k === 1 ? 'ticket' : 'tickets'}`,
-        href: `/pr/${encodeURIComponent(project)}/${pr.n}`,
+        href: prPath(project, pr.n),
         keys: [
           ...(pr.host === null ? [] : [String(pr.host)]),
           title,

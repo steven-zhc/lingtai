@@ -12,6 +12,7 @@ import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 import { ProjectLink } from './project-link'
+import { homePath, prPath, recipePath } from '@/lib/paths'
 
 export interface PlaceView {
   id: 'tickets' | 'prs' | 'recipe' | (string & {})
@@ -41,12 +42,12 @@ export function placeViews<T>(views: readonly T[]): { line: T[]; more: T[] } {
  */
 export const viewsFor = (project: string | undefined, prs?: { waiting: number | null }): PlaceView[] =>
   project === undefined
-    ? [{ id: 'tickets', label: 'Tickets', href: '/?project=', key: 'T', choose: { project: undefined } }]
+    ? [{ id: 'tickets', label: 'Tickets', href: homePath(undefined), key: 'T', choose: { project: undefined } }]
     : [
         {
           id: 'tickets',
           label: 'Tickets',
-          href: `/?project=${encodeURIComponent(project)}`,
+          href: homePath(project),
           key: 'T',
           choose: { project },
         },
@@ -56,7 +57,7 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
               {
                 id: 'prs',
                 label: 'PRs',
-                href: `/pr/${encodeURIComponent(project)}`,
+                href: prPath(project),
                 key: 'P',
                 ...(prs.waiting === null
                   ? { unread: 'could not read the PRs' }
@@ -70,7 +71,7 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
                       }),
               } satisfies PlaceView,
             ]),
-        { id: 'recipe', label: 'Recipe', href: `/recipe/${encodeURIComponent(project)}` },
+        { id: 'recipe', label: 'Recipe', href: recipePath(project) },
       ]
 
 function View({ v, here }: { v: PlaceView; here: string | undefined }) {

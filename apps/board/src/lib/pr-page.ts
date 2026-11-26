@@ -41,6 +41,7 @@ import {
   unfollowedRemote,
 } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
+import { prPath } from './paths.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
@@ -825,7 +826,7 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
             lead: `Nothing is waiting for the next PR. The ${plural(count, 'ticket', 'tickets')} before went into`,
             name: prName(named),
             state: (POSTER[named.status ?? ''] ?? String(named.status)).toLowerCase(),
-            href: named.n === null ? null : `/pr/${project}/${named.n}`,
+            href: named.n === null ? null : prPath(project, named.n),
           },
     strip: stripOf(null),
     drawing: drawingOf(null, [], input, main, personal),

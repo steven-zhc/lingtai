@@ -22,6 +22,7 @@ import { backlogChip, currentBacklog } from '@/lib/backlog'
 
 import { FooterFetched } from '../footer-fetched'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
+import { ticketPath } from '@/lib/paths'
 
 export const dynamic = 'force-dynamic'
 
@@ -37,7 +38,7 @@ function Entry({ entry }: { entry: BacklogEntry }) {
         {entry.pr ? (
           <>PR {entry.pr.n}</>
         ) : entry.taskId !== null ? (
-          <Link href={`/task/${encodeURIComponent(entry.taskId)}`}>#{entry.issue}</Link>
+          <Link href={ticketPath(entry.taskId)}>#{entry.issue}</Link>
         ) : (
           <>unknown subject</>
         )}{' '}
@@ -72,7 +73,14 @@ function Entry({ entry }: { entry: BacklogEntry }) {
 }
 
 export default async function BacklogPage() {
-  const { entries, currency } = await currentBacklog()
+  return BacklogBody({ project: undefined })
+}
+
+/** `/backlog`, and `/p/<project>/backlog`, which shows the entries of that project alone. */
+export async function BacklogBody({ project }: { project: string | undefined }) {
+  const read = await currentBacklog()
+  const { currency } = read
+  const entries = project === undefined ? read.entries : read.entries.filter((e) => e.project === project)
   const chip = backlogChip(currency)
   // An accepted entry whose issue is not recorded still owes something, so it
   // is listed with the open ones.
@@ -83,7 +91,7 @@ export default async function BacklogPage() {
   return (
     <>
       <main className="detail">
-        <Bar project={undefined}>
+        <Bar project={project}>
           <span className="sep" />
           <span>backlog</span>
           <span className="sep" />
@@ -93,7 +101,7 @@ export default async function BacklogPage() {
             {chip.label}
           </span>
         </Bar>
-        <LockBanner project={undefined} />
+        <LockBanner project={project} />
         <div className="detail-body">
           <section>
             <h2 className="sec-h">Open</h2>

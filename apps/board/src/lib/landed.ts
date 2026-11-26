@@ -63,20 +63,6 @@ export function landedQuery(params: LandedParams, kinds: readonly string[]): Lan
   }
 }
 
-/** The address for a query, `before` URL-encoded by `URLSearchParams`. */
-export function landedHref(q: { project?: string | null; kind?: string | null; before?: Cursor | null }): string {
-  const p = new URLSearchParams()
-  if (q.project) p.set('project', q.project)
-  if (q.kind) p.set('kind', q.kind)
-  if (q.before) p.set('before', cursorText(q.before))
-  const s = p.toString()
-  return s === '' ? '/landed' : `/landed?${s}`
-}
-
-/** The column heading's address on the home page, carrying `?project=` as the `/report` link does. */
-export const landedLink = (only: string | undefined): string =>
-  only === undefined ? '/landed' : `/landed?project=${encodeURIComponent(only)}`
-
 // --- money -----------------------------------------------------------------------
 
 export const noMoney = (): Money => ({ reportedCents: 0, estimatedCents: 0, unknown: 0 })

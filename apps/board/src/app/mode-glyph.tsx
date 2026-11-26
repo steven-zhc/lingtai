@@ -5,6 +5,7 @@
 import Link from 'next/link'
 
 import type { ModeMark } from '@/lib/mode-mark.ts'
+import { recipePath } from '@/lib/paths'
 
 export function ModeGlyph({ mode }: { mode: ModeMark['mode'] }) {
   return (
@@ -41,7 +42,7 @@ export function ModeLink({ mark, project }: { mark: ModeMark; project: string })
   return (
     <Link
       className="mode-mark"
-      href={`/recipe/${encodeURIComponent(project)}#mode`}
+      href={`${recipePath(project)}#mode`}
       aria-label={mark.sentence}
       title={mark.sentence}
     >

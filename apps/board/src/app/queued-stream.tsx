@@ -31,6 +31,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { whyLine } from '@/lib/why-line'
 
 import { Skeleton } from './skeleton'
+import { recipePath } from '@/lib/paths'
 
 /**
  * Draws one Queued card. `next` is true for the one *taken first*; `arrive`
@@ -44,7 +45,7 @@ function Problems({ problems, recipe }: { problems: readonly QueueProblem[]; rec
       {problems.map((p) => (
         <p key={p.project} className="empty broken">
           {recipe ? (
-            <Link href={`/recipe/${encodeURIComponent(p.project)}`}>
+            <Link href={recipePath(p.project)}>
               <strong>{p.project}</strong>
             </Link>
           ) : (

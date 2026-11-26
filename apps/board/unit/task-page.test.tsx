@@ -48,7 +48,7 @@ vi.mock('../src/app/deferred.tsx', async () => {
 })
 
 import { AttemptTab } from '../src/app/attempt-tab.tsx'
-import { TaskBody, UnpushedBanner } from '../src/app/task/[id]/layout.tsx'
+import { TaskBody, UnpushedBanner } from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'

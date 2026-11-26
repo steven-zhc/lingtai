@@ -37,7 +37,6 @@ import { footerLags } from '@/lib/footer'
 import { handledIfCurrent } from '@/lib/handled-today'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
-import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { modeMarks } from '@/lib/mode-mark.ts'
@@ -75,6 +74,7 @@ import { Rail, Segs } from './rail.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
 import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
+import { historyPath, landedLink, prPath, recipePath, ticketPath } from '@/lib/paths'
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the
@@ -236,7 +236,7 @@ export function Card({
           {showProject ? <span className="proj">{card.project}</span> : null}
           <IssueRef href={issue} issue={card.ref} />
         </span>
-        <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
+        <Link className="ti" href={ticketPath(card.taskId)}>
           {card.title}
         </Link>
         {card.progress ? (
@@ -255,7 +255,7 @@ export function Card({
         ) : card.triage ? (
           <p className="question waiting-fallback">
             {card.triage === 'RecipeUnreadable' ? (
-              <Link href={`/recipe/${encodeURIComponent(card.project)}`}>{TRIAGE_WORDS[card.triage]}</Link>
+              <Link href={recipePath(card.project)}>{TRIAGE_WORDS[card.triage]}</Link>
             ) : (
               TRIAGE_WORDS[card.triage]
             )}
@@ -312,7 +312,7 @@ export function Card({
 
       {/* The whole card title is the link. Anything smaller is a target you
           have to aim at, on the one control every card has. */}
-      <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
+      <Link className="ti" href={ticketPath(card.taskId)}>
         {card.title}
       </Link>
       {/* What the system did instead of asking (#1259): one line, the fact and its reason, in the grey the card's
@@ -321,7 +321,7 @@ export function Card({
           does not carry it. */}
       {card.system ? (
         <p className="system-line" data-testid="system-line">
-          <Link href={`/task/${encodeURIComponent(card.taskId)}/ticket?events=1`}>
+          <Link href={`${historyPath(card.taskId)}?events=1`}>
             {[
               card.system.because === null ? card.system.action : `${card.system.because}; ${card.system.action}`,
               card.system.bound,
@@ -591,7 +591,7 @@ export function LandedRow({
       <div className="lbody">
         <div className="lline">
           <IssueRef href={issue} issue={card.ref} />
-          <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
+          <Link className="lmeta" href={ticketPath(card.taskId)} title={card.title}>
             · {said.join(' · ')}
           </Link>
           {where === null ? null : where.tag === 'branch' ? (
@@ -599,13 +599,13 @@ export function LandedRow({
           ) : where.tag === 'merged' ? (
             <span className="ltag ltag-merged">merged</span>
           ) : (
-            <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
+            <Link className="ltag ltag-pr" href={prPath(card.project, where.n)}>
               in {where.name}
             </Link>
           )}
         </div>
         {/* The same page, out of the tab order so the row stays one stop. */}
-        <Link className="lspend" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title} tabIndex={-1}>
+        <Link className="lspend" href={ticketPath(card.taskId)} title={card.title} tabIndex={-1}>
           <ul className="lbill">
             {billHasAny(card.costUsd) ? <li className="lwork">{billText(card.costUsd)}</li> : null}
             <AnsweringPill bill={card.repairCostUsd} />
@@ -638,12 +638,12 @@ export function LandedFoot({
             {showProject ? <span className="proj">{project}</span> : null}
             {foot.kind === 'unread' ? 'where these are could not be read' : null}
             {foot.kind === 'line' && foot.draft !== null ? (
-              <Link href={`/pr/${encodeURIComponent(project)}/next`}>{foot.draft} in Draft PR</Link>
+              <Link href={prPath(project, 'next')}>{foot.draft} in Draft PR</Link>
             ) : null}
             {foot.kind === 'line' && foot.draft !== null && foot.open !== null ? ' · ' : null}
             {foot.kind === 'line' ? foot.open : null}
             {foot.kind === 'line' ? (
-              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
+              <Link className="lfoot-link" href={prPath(project)}>
                 PRs →
               </Link>
             ) : null}
@@ -1210,9 +1210,17 @@ async function CardsPart({
   )
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  // `/?project=` is *all projects*: `''` must never reach the reads as a project name (#1435).
-  const param = (await searchParams).project || undefined
+/** `/`: all projects. A project's own home is `/p/<project>/ticket`, the same body (#1498). */
+export default async function Page() {
+  return Home({ project: undefined })
+}
+
+/**
+ * The home page's body for one project, or for all of them (`undefined`). The
+ * path names the project and never the query, so `''` cannot reach the reads as a
+ * project name (#1435).
+ */
+export async function Home({ project: param }: { project: string | undefined }) {
   // Before any read of the log: a refused store makes `loadBoard` throw the
   // same sentence, and Next would show that as its default error page. The
   // screen below says it instead, and mounts no `Live` — there is no log to

@@ -15,12 +15,13 @@ import { loadPrDetail, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { FooterFetched } from '../../../footer-fetched'
-import { Follow } from '../../../live'
-import { LockBanner, pauseSlot } from '../../../lock-banner'
-import { PrDetail } from '../../../pr-detail'
-import { HostFallback, PrGeneratedStream, PrHostLine } from '../../../pr-host-stream'
-import { RecipeBar } from '../../../recipe/[project]/recipe-bar'
+import { FooterFetched } from '../../../../footer-fetched'
+import { Follow } from '../../../../live'
+import { LockBanner, pauseSlot } from '../../../../lock-banner'
+import { PrDetail } from '../../../../pr-detail'
+import { HostFallback, PrGeneratedStream, PrHostLine } from '../../../../pr-host-stream'
+import { RecipeBar } from '../../recipe/recipe-bar'
+import { recipePath } from '@/lib/paths'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,7 @@ async function Detail({
   if (read.kind === 'solo') {
     return withMeta(
       <p className="pr-note">
-        {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
+        {soloSentence(project, read.recipe)} — <Link href={recipePath(project)}>its recipe</Link>
       </p>,
     )
   }

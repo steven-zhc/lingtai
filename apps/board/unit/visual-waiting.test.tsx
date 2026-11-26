@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 
 import { Card } from '../src/app/page.tsx'
 import { TriageBand } from '../src/app/standing.tsx'
-import { TaskBody } from '../src/app/task/[id]/layout.tsx'
+import { TaskBody } from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { Attempt } from '../test/attempt-tab.tsx'
 import { CASE_NAMES, PREVIEW_NOW, preview } from '../test/visual-waiting.ts'
 

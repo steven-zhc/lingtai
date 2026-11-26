@@ -15,7 +15,8 @@ import Link from 'next/link'
 import { useSelectedLayoutSegments } from 'next/navigation'
 import { useEffect } from 'react'
 
-import { attemptOfSegment, sameTab, tabOfFragment, tabPath, taskPath, visibleAttempts, type TabKey } from '@/lib/tabs'
+import { attemptOfSegment, sameTab, tabOfFragment, visibleAttempts, type TabKey } from '@/lib/tabs'
+import { tabPath, ticketPath } from '@/lib/paths'
 
 export interface AttemptTabFact {
   attempt: number
@@ -99,7 +100,7 @@ export function LegacyFragment({ taskId }: { taskId: string }) {
     const translate = () => {
       const tab = tabOfFragment(window.location.hash)
       if (tab === null) return
-      window.location.replace(tab === 'default' ? taskPath(taskId) : tabPath(taskId, tab))
+      window.location.replace(tab === 'default' ? ticketPath(taskId) : tabPath(taskId, tab))
     }
     translate()
     // A hash-only navigation on an open page fires `hashchange` and no mount.

@@ -12,11 +12,12 @@ import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } 
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import type { Answered } from '../../deferred.tsx'
-import { FooterFetched } from '../../footer-fetched'
-import { Follow, Following } from '../../live.tsx'
-import { LegacyFragment, RecordTabRow } from '../../record-tab-row.tsx'
-import { DeferredCoords, DeferredStanding, detailClass } from '../../standing.tsx'
+import type { Answered } from '../../../../deferred.tsx'
+import { FooterFetched } from '../../../../footer-fetched'
+import { Follow, Following } from '../../../../live.tsx'
+import { LegacyFragment, RecordTabRow } from '../../../../record-tab-row.tsx'
+import { DeferredCoords, DeferredStanding, detailClass } from '../../../../standing.tsx'
+import { ticketIdOf, ticketPath } from '@/lib/paths'
 
 /**
  * The top of the task page, and the frame the record's tabs sit in.
@@ -97,7 +98,7 @@ export function UnpushedBanner({
 function WaitingNav({ waiting }: { waiting: TaskDetail['waiting'] }) {
   const link = (n: NonNullable<TaskDetail['waiting']['next']>, label: string, arrow: string) => (
     <Link
-      href={`/task/${encodeURIComponent(n.taskId)}`}
+      href={ticketPath(n.taskId)}
       title={`${label}: #${n.issue} ${n.title}`}
       aria-label={`${label}: #${n.issue} ${n.title}`}
       style={{
@@ -242,11 +243,12 @@ export default async function TaskLayout({
   params,
   children,
 }: {
-  params: Promise<{ id: string }>
+  params: Promise<{ project: string; n: string }>
   children: ReactNode
 }) {
-  const { id } = await params
-  const taskId = decodeURIComponent(id)
+  const { project: projectSegment, n } = await params
+  const taskId = ticketIdOf(projectSegment, n)
+  if (taskId === null) notFound()
   // **A 404 rests on what needs no GitHub** (0118 §2, #113): an id that is not
   // `ticket-<project>-<n>`, or a project Lingtai was never told about.
   // Each stage is a `measure`, since only a `page ` span is re-parented onto the request (#1361);

@@ -43,6 +43,7 @@ import {
 import { askedOf } from './asked-of.ts'
 import { MarkdownField } from './markdown-field.tsx'
 import { TriageChoices, useTriageDraft, type Sending } from './triage-picks.tsx'
+import { ticketPath } from '@/lib/paths'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.
@@ -1120,7 +1121,7 @@ export function TriageMove({
     return (
       <div className="decide">
         <div className="btnrow">
-          <Link className={small ? 'btn pri sm' : 'btn pri'} href={`/task/${encodeURIComponent(taskId)}#${anchor}`}>
+          <Link className={small ? 'btn pri sm' : 'btn pri'} href={`${ticketPath(taskId)}#${anchor}`}>
             {label}
           </Link>
         </div>

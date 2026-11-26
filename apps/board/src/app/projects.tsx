@@ -33,6 +33,7 @@ import { FilterMenu } from './filter-menu'
 import { ProjectModeMark } from './mode-glyph'
 import { ProjectLink } from './project-link'
 import { ProjectSandboxMark } from './sandbox-mark'
+import { homePath } from '@/lib/paths'
 
 /** Where `+` lands and why: step 0 before the App answers, the picker after. */
 const addTarget = (app: boolean) => ({
@@ -85,7 +86,7 @@ export function ProjectRows({
         <ProjectLink
           choice={undefined}
           className={`tab${only === undefined ? ' on' : ''}`}
-          href="/?project="
+          href={homePath(undefined)}
           {...(only === undefined ? current : {})}
         >
           all projects
@@ -96,7 +97,7 @@ export function ProjectRows({
           key={p}
           choice={p}
           className={`tab prj${only === p ? ' on' : ''}`}
-          href={`/?project=${encodeURIComponent(p)}`}
+          href={homePath(p)}
           {...(only === p ? current : {})}
         >
           {sandbox?.get(p) === undefined && mode?.get(p) === undefined ? (

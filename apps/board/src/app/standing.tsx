@@ -38,7 +38,7 @@ import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle, resolutionCopyFor } from '@/lib/resolution-copy'
 import { rerunStepFirstAmongSavedWork } from '@/lib/saved-fix-work'
 import { billHasAny, billText, emptyBill } from '@/lib/spend'
-import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
+import { attemptTabPath, historyPath, ticketPath } from '@/lib/paths'
 import { stateWord, type DiscussionView, type StandingView, type TaskAnswer, type Totals } from '@/lib/task'
 import { namedTimes } from '@/lib/took'
 
@@ -163,7 +163,7 @@ function QueuedBand({
                 : running.map((r, i) => (
                     <Fragment key={`${r.project}#${r.issue}`}>
                       {i > 0 ? ', ' : ''}
-                      <Link href={`/task/ticket-${r.project}-${r.issue}`}>
+                      <Link href={ticketPath(r)}>
                         {r.project === project ? `#${r.issue}` : `${r.project} #${r.issue}`}
                       </Link>
                     </Fragment>
@@ -762,7 +762,7 @@ function TicketContext({
             ))}
         </div>
       )}
-      <Link href={ticketTabPath(taskId)} scroll={false}>
+      <Link href={historyPath(taskId)} scroll={false}>
         The whole ticket ↓
       </Link>
     </div>

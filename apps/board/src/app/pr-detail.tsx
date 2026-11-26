@@ -13,10 +13,10 @@ import { PrButtons } from './pr-buttons.tsx'
 import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
 import { ScrollEnd } from './scroll-end.tsx'
+import { ticketPath } from '@/lib/paths'
 
 /** A ticket's task page: the task id is `ticket-<project>-<issue>`, as the home page and the standing list link it. */
-const taskHref = (project: string, ticket: string): string =>
-  `/task/${encodeURIComponent(`ticket-${project}-${ticket}`)}`
+const taskHref = (project: string, ticket: string): string => ticketPath({ project, issue: ticket })
 
 const Mark = () => (
   <svg className="pr-mark" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">

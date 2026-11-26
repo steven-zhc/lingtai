@@ -14,8 +14,8 @@ import { Suspense } from 'react'
 
 import { readSandboxFacts } from '../lib/sandbox-read.ts'
 import { lastSandboxRows, rememberSandboxRows, sandboxBannerRows, type SandboxBannerRow } from '../lib/sandbox-state.ts'
-import { withProject } from './bar.tsx'
 import { Skeleton } from './skeleton.tsx'
+import { homePath, recipePath } from '@/lib/paths'
 
 const WHAT: Record<SandboxBannerRow['kind'], { label: string; sentence: string; other: string }> = {
   stopped: {
@@ -40,14 +40,14 @@ export function SandboxRows({ rows, install }: { rows: readonly SandboxBannerRow
           <div className={`pbrow sbx-${row.kind}`} key={`sandbox:${row.project}`}>
             <b className="lab">{what.label}</b>
             <span className="what">
-              <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
+              <Link href={homePath(row.project)} title={`show only ${row.project}`}>
                 {row.project}
               </Link>{' '}
               · {what.sentence}
               <span className="sub"> · {row.reason}</span>
             </span>
             {install === undefined ? null : <code>{install}</code>}
-            <Link className="sub" href={`/recipe/${encodeURIComponent(row.project)}#sandbox`}>
+            <Link className="sub" href={`${recipePath(row.project)}#sandbox`}>
               {install === undefined ? what.other.replace(/^or /, '') : what.other}
             </Link>
           </div>

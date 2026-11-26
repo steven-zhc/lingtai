@@ -6,6 +6,7 @@
  * card — is a claim about markup, and `page.tsx` is the reads and nothing else.
  */
 import { ModeGraph } from '../../../mode-graph.tsx'
+import { recipePath } from '@/lib/paths'
 
 export type Added =
   | { state: 'none' }
@@ -130,7 +131,7 @@ export function AddedCard(props: Added) {
         <p className="note wiz-fail">The recipe could not be read: {read.problem}</p>
       )}
       <div className="wiz-foot">
-        <a href={`/recipe/${p}?edit=1`}>Edit the recipe</a>
+        <a href={`${recipePath(p)}?edit=1`}>Edit the recipe</a>
         {ticket !== null ? (
           <a className="btn pri" href={ticket}>
             Open the first ticket →

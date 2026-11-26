@@ -144,6 +144,7 @@ import {
 } from './spend.ts'
 import { timed, traced, tracedSync } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
+import { prPath } from './paths.ts'
 
 export interface Finding {
   file: string
@@ -1027,7 +1028,7 @@ export function whereOnBranch(input: {
   if (landing.base !== branch.personal && !prBranches.includes(landing.base)) return null
   const holder = holderOf(ticket, landing.base, branch.personal, read)
   const sha = landing.mergeCommit.slice(0, 7)
-  const pageOf = (n: number | 'next') => `/pr/${input.project}/${n}`
+  const pageOf = (n: number | 'next') => prPath(input.project, n)
   const nameOf = (pr: PrState) => prName(pr)
   const hostOf = (pr: PrState) => (pr.host === null ? null : pr.host.url)
   const notes: string[] = []

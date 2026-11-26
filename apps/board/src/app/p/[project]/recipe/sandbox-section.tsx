@@ -12,6 +12,7 @@ import {
   type Chip,
   type PathRoots,
 } from '@/lib/sandbox-view'
+import { recipePath } from '@/lib/paths'
 
 /** What the recipe says in its `sandbox:` block, as the resolved recipe holds it; undefined where it has none. */
 export interface OwnSandbox {
@@ -196,7 +197,7 @@ export function SandboxSection({
   const addedHosts = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.hosts))]
   const addedWrites = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.writes))]
   const addedWriteChips = chipsOf(addedWrites, roots)
-  const editHref = `/recipe/${encodeURIComponent(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
+  const editHref = `${recipePath(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
   const paths = builtIn.paths
   const unknown = `the built-in paths could not be read${builtIn.pathsWhy === null ? '' : ` (${builtIn.pathsWhy})`}`
   const writable = paths === null ? null : chipsOf(paths.writable, roots)

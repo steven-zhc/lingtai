@@ -28,7 +28,7 @@ vi.mock('../src/lib/task.ts', async (original) => ({
   loadTaskAnswer: vi.fn(async () => answer),
 }))
 
-const { default: TaskLayout, TaskBody } = await import('../src/app/task/[id]/layout.tsx')
+const { default: TaskLayout, TaskBody } = await import('../src/app/p/[project]/ticket/[n]/layout.tsx')
 const { Follow, Following, Live, warning } = await import('../src/app/live.tsx')
 
 describe('the task route', () => {

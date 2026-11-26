@@ -15,6 +15,9 @@ export function ProjectLink({
   return (
     <Link
       {...rest}
+      // `/` answers from the cookie the request carries: a prefetch made before the click rewrites it would be
+      // redirected to the project still remembered. A project's own link reads no cookie.
+      {...(choice === undefined ? { prefetch: false } : {})}
       onClick={(e) => {
         rememberProject(choice)
         onClick?.(e)

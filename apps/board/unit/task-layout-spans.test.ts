@@ -59,7 +59,7 @@ vi.mock('../src/lib/task.ts', async (orig) => ({
   loadTaskAnswer: h.loadTaskAnswer,
 }))
 
-import TaskLayout from '../src/app/task/[id]/layout.tsx'
+import TaskLayout from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { controlObserve } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
 import { ApiContext, traced, tracedEffect } from '../src/lib/timing.ts'

@@ -15,11 +15,12 @@ import { loadPrBoard, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { FooterFetched } from '../../footer-fetched'
-import { Follow } from '../../live'
-import { LockBanner, pauseSlot } from '../../lock-banner'
-import { PrBoardSkeleton, PrColumns } from '../../pr-columns'
-import { RecipeBar } from '../../recipe/[project]/recipe-bar'
+import { FooterFetched } from '../../../footer-fetched'
+import { Follow } from '../../../live'
+import { LockBanner, pauseSlot } from '../../../lock-banner'
+import { PrBoardSkeleton, PrColumns } from '../../../pr-columns'
+import { RecipeBar } from '../recipe/recipe-bar'
+import { recipePath } from '@/lib/paths'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,7 +49,7 @@ async function Board({ project, load }: { project: string; load: ReturnType<type
       <>
         {meta}
         <p className="pr-note">
-          {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
+          {soloSentence(project, read.recipe)} — <Link href={recipePath(project)}>its recipe</Link>
         </p>
       </>
     )

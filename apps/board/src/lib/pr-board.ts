@@ -7,6 +7,7 @@
  */
 import { type PayloadOf, type PrState, isOpen, openAmong, prStepRows, prWaitOf } from '@lingtai/domain'
 import { type Recipe, callForPr, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
+import { prPath } from './paths.ts'
 
 type WaitReason = PayloadOf<'PrWaiting'>['reason']
 
@@ -292,7 +293,7 @@ export interface PrBoardInput {
   readonly newFixFor?: (pr: PrState) => FixTicket | null
 }
 
-const href = (project: string, n: number | 'next'): string => `/pr/${encodeURIComponent(project)}/${n}`
+const href = prPath
 
 export function prBoard(input: PrBoardInput): PrBoardView {
   const { recipe, project } = input

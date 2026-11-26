@@ -24,7 +24,6 @@ import {
   groupDays,
   kindColourOf,
   kindPopOf,
-  landedHref,
   type LandedData,
   type LandedQuery,
   ticketRef,
@@ -39,6 +38,7 @@ import { moveTitle } from '@/lib/resolution-copy.ts'
 import { tookText } from '@/lib/took.ts'
 
 import { Earlier } from './earlier.tsx'
+import { landedHref } from '@/lib/paths'
 
 export interface LandedEnv {
   kinds: readonly string[]

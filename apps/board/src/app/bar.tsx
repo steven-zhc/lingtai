@@ -12,6 +12,7 @@ import type { ReactNode } from 'react'
 
 import type { SandboxMark } from '../lib/sandbox-state.ts'
 import { SandboxShield } from './sandbox-shield.tsx'
+import { homePath, recipePath } from '@/lib/paths'
 
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
@@ -44,7 +45,7 @@ export function Bar({
       {/* An empty span carrying a background, not an `<img>`: which file the
         mark is comes from `--mark`, so it follows the palette. `aria-hidden`
         because the word beside it already says what it says. */}
-      <Link className="brand" href={withProject('/', project)}>
+      <Link className="brand" href={homePath(project)}>
         <span className="mark" aria-hidden="true" />
         Lingtai
       </Link>
@@ -95,7 +96,7 @@ export function BarActions({
         {recipe ? (
           <Link
             className={here === 'recipe' ? 'navlink on' : 'navlink'}
-            href={`/recipe/${encodeURIComponent(project)}`}
+            href={recipePath(project)}
             aria-current={here === 'recipe' ? 'page' : undefined}
           >
             Recipe
@@ -108,7 +109,7 @@ export function BarActions({
   )
 }
 
-const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#sandbox`
+const sectionOf = (project: string) => `${recipePath(project)}#sandbox`
 
 /**
  * The sandbox's one icon (#1163): no text, its sentence as tooltip and accessible name. One project in the worst
