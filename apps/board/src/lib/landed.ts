@@ -5,8 +5,9 @@
  * from — the cursor, the days, the totals and the cost in words. **Nothing in
  * here renders, and nothing asks GitHub**: titles and shas are `ticket_state`'s.
  *
- * The address is the whole of the page's state, as `/report`'s is: `?project=`,
- * `?kind=` and `?before=<at>,<ticket>`. Anything in it that does not parse is
+ * The address is the whole of the page's state, as `/report`'s is: `?kind=` and
+ * `?before=<at>,<ticket>`. The project is the path's (`/p/<project>/ticket/landed`), passed to
+ * `landedQuery` beside the params; a `?project=` is not part of it. Anything in it that does not parse is
  * not used, and the first page is shown.
  */
 import { type Money, ticketMoney } from '@lingtai/conductor/report'
@@ -52,11 +53,11 @@ export function parseCursor(text: string | undefined): Cursor | null {
   return { at, ticket }
 }
 
-/** The address → the query. A `kind` the recipes do not name is not used. */
-export function landedQuery(params: LandedParams, kinds: readonly string[]): LandedQuery {
+/** The address → the query. The project is the path's, never a `?project=`. A `kind` the recipes do not name is not used. */
+export function landedQuery(params: LandedParams, kinds: readonly string[], project?: string): LandedQuery {
   const kind = first(params.kind)
   return {
-    project: first(params.project) || null,
+    project: project || null,
     kind: kind !== undefined && kinds.includes(kind) ? kind : null,
     before: parseCursor(first(params.before)),
   }

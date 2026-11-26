@@ -524,11 +524,11 @@ export const readSearchPrs = (
     return { prs, problems }
   })
 
-/** `/pr/<project>`'s load, inside `measure` so its trace has a `page` span and a `pr.board` under it (#1375). */
+/** `/p/<project>/pr`'s load, inside `measure` so its trace has a `page` span and a `pr.board` under it (#1375). */
 export const loadPrBoard = (project: string, read: (project: string) => Promise<PrsRead> = readPrPage) =>
   measure(() => timed('pr.board', () => read(project)), { label: '/pr' })
 
-/** `/pr/<project>/<n>`'s load, measured the same way. */
+/** `/p/<project>/pr/<n>`'s load, measured the same way. */
 export const loadPrDetail = (
   project: string,
   n: number | 'next',

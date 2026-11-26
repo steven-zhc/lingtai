@@ -1810,7 +1810,7 @@ deciding is what the board is for. Reject and Waive are gone (`#150`): neither
 moved the card, and approving over a gate that still refuses now waives it, with
 the reason Approve asks for.
 
-Everything else is one click away. The card's title opens `/task/<id>`, which
+Everything else is one click away. The card's title opens `/p/<project>/ticket/<n>`, which
 reduces that task's event stream on demand: each gate's verdict with its evidence,
 the reviewer's findings with their failure scenarios, the guard trips, and the
 raw history with every actor. The task's own part is not maintained in a table —

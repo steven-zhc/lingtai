@@ -132,7 +132,7 @@ export function PrColumns({ project, view }: { project: string; view: PrBoardVie
 }
 
 /**
- * What `/pr/<project>` draws while it loads (#1319, #1419): the board's own frame — the strip and the five columns
+ * What `/p/<project>/pr` draws while it loads (#1319, #1419): the board's own frame — the strip and the five columns
  * with their titles — and a card-shaped skeleton in each, so the real cards arrive in place. The titles come from
  * `PR_COLUMNS`, never written here; the counts and the strip are bars, and there are no other words (0111 §15).
  */

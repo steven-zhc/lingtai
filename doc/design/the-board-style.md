@@ -92,11 +92,11 @@ amber stays the recommendation's sentence the action answers.
 
 The place line (`Lingtai / <project ▾> / <views>`, [the-bar.md](the-bar.md))
 already says where a person is, so **a page that is a view of a project has no
-title**: `/`, `/backlog`, `/landed`, `/pr/<project>`, `/recipe/<project>`,
+title**: `/`, `/p/<project>/ticket`, `/p/<project>/backlog`, `/p/<project>/ticket/landed`, `/p/<project>/pr`, `/p/<project>/recipe`,
 `/report`. A page's own facts (the recipe's hash and branch) are its first line,
 10px mono `--muted`.
 
-**A page about one object has a title**: `/pr/<project>/<n>`, `/task/<id>` and
+**A page about one object has a title**: `/p/<project>/pr/<n>`, `/p/<project>/ticket/<n>` and
 its sub-pages, and each `/setup` step. A state tag first (11px mono 600,
 `--radius`, coloured by state), then the title (20px sans 700), then one 10px
 mono `--muted` line of facts.

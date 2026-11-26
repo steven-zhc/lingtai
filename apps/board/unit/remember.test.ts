@@ -14,9 +14,9 @@ describe('homeRedirect', () => {
     expect(homeRedirect(q(''), '')).toBeNull()
     expect(homeRedirect(q(''), undefined)).toBeNull()
   })
-  it('passes through any request that names a project, empty included', () => {
-    expect(homeRedirect(q('project=lingtai'), 'other')).toBeNull()
-    expect(homeRedirect(q('project='), 'lingtai')).toBeNull()
+  it('reads a project parameter as nothing: it is / all the same', () => {
+    expect(homeRedirect(q('project=lingtai'), 'other')).toBe('/p/other/ticket?project=lingtai')
+    expect(homeRedirect(q('project=lingtai'), undefined)).toBeNull()
   })
   it('keeps another parameter and encodes the name', () => {
     expect(homeRedirect(q('a=1'), 'a b')).toBe('/p/a%20b/ticket?a=1')

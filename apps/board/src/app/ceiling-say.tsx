@@ -1,5 +1,5 @@
 /**
- * The spend card's sentence and the counting behind it, drawn by `/recipe/<project>` and the setup page's preview.
+ * The spend card's sentence and the counting behind it, drawn by `/p/<project>/recipe` and the setup page's preview.
  *
  * **Its only import is React**, and the prop is a shape declared here: `setup-form.tsx` is `"use client"`, and
  * `@lingtai/conductor/ceiling` imports `@lingtai/domain`, which may not reach a client graph. The reading crosses as

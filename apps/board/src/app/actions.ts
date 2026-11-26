@@ -1143,7 +1143,7 @@ export async function loadDiff(input: { project: string; baseSha: string; headSh
 }
 
 /**
- * Save the recipe a person edited on `/recipe/<project>` (#973, 0125 §6).
+ * Save the recipe a person edited on `/p/<project>/recipe` (#973, 0125 §6).
  *
  * The board's one writer of a recipe: it resolves the typed text with the same
  * resolver a pass uses and writes only a recipe that resolves, as typed. The

@@ -89,7 +89,7 @@ export interface BlockedHost {
   readonly firstAt: string
   /** The invocations it came from, as `step · action · runtime`, numbered where several share one. */
   readonly from: readonly string[]
-  /** `/recipe/<project>?edit=1&allow=<host>#sandbox`, or null where the recipe would not accept the host. */
+  /** `/p/<project>/recipe?edit=1&allow=<host>#sandbox`, or null where the recipe would not accept the host. */
   readonly allowHref: string | null
 }
 

@@ -533,7 +533,7 @@ export function Discussion({
    * itself rather than waiting to be scrolled to (#132).
    *
    * **Which page is the fact that matters.** `/` re-renders on append because it
-   * mounts `Live`, and `/task/<id>` — the only page this pane is on — because
+   * mounts `Live`, and `/p/<project>/ticket/<n>` — the only page this pane is on — because
    * its route mounts `Follow`; both are in `live.tsx`. This comment used to say
    * *the board*, which was true of `/` and false here, and every reader after it
    * believed the task page was subscribed when it was not: a question, the
