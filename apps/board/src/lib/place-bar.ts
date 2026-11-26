@@ -42,7 +42,14 @@ export const readPlaceBar = (project: string | undefined): Promise<PlaceBar> =>
   ]).then(([listing, onBoardListing, locks, views]) => {
     const registered = listing.projects.map((p) => p.project).filter((p): p is string => p !== null)
     return {
-      filters: filterOptions(registered, onBoardListing.onBoard),
+      // The project the URL names stays in the menu whatever the listings say, so an empty or failed read never
+      // turns its crumb into a setup link.
+      filters: filterOptions(
+        registered,
+        project === undefined || onBoardListing.onBoard.includes(project)
+          ? onBoardListing.onBoard
+          : [...onBoardListing.onBoard, project],
+      ),
       registered,
       app: hasGitHubAuth(),
       locks: lockMap(locks),

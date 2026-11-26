@@ -8,7 +8,7 @@
  *
  * **Nothing is cached and nothing is client state.** The filters are the
  * address (`lib/report.ts`), both projections are read as they stand on render
- * (nothing reduces them), and the bar says how far behind either is. A read that fails is a
+ * (nothing reduces them), and the footer (`FooterFetched`, a separate read at mount) says how far behind either is. A read that fails is a
  * sentence in place of the panels, never a 500.
  */
 import { handledProblems, report as buildReport, type HandledProblem, type Report } from '@lingtai/conductor/report'

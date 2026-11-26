@@ -10,7 +10,7 @@ import type { BacklogEntry } from '@lingtai/projector'
  *
  * **Read as it stands, and said so.** The page reduces nothing: a daemon older
  * than this projection follows `task_view` alone, so each render reads the table
- * and its lag (`@/lib/backlog`), and the chip says how far behind it is. It
+ * and its lag (`@/lib/backlog`), and the footer (`FooterFetched`, a separate read at mount) says how far behind it is. It
  * catches up when something next appends with a projector, or on `lingtai
  * projection rebuild finding_backlog`. *Nothing open* is printed only at lag 0.
  */

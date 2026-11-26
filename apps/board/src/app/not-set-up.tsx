@@ -1,6 +1,6 @@
 /**
  * What `/` draws where the store is not chosen (#767): the bar with only its
- * brand, and one section. It reads no log and mounts no `Live`, `Health`,
+ * brand and `Lingtai / Setup`, and one section. It reads no log and mounts no `Live`, `Health`,
  * `Projects` or `Paused` — each of those needs the log this home has not got.
  *
  * Props only, as `bar.tsx` is: the page reads the environment and says
