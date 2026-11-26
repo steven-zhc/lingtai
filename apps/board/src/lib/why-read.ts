@@ -39,6 +39,26 @@ export interface Explain {
 
 const problemOf = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
+/** The reads `explainQueueEffect` makes, the same for a project asked and one whose setup failed. */
+const reads = (now: number, blocked: readonly BlockedSkip[] | null) => ({
+  beacon: readStatusEffect().pipe(
+    Effect.map((st): Beacon => (st === null ? { never: true } : { up: lastBeat(st, now).up })),
+    Effect.catch((err: unknown) => Effect.succeed<Beacon>({ unread: problemOf(err) })),
+  ),
+  conductorHeld: Effect.tryPromise(() => conductorLockHolder()).pipe(
+    Effect.map((holder) => holder !== null),
+    Effect.catch(() => Effect.succeed(true)),
+  ),
+  blockers: Effect.succeed(blocked),
+})
+
+/** The conductor's own refusal of a project, off the registry the request already read; unread is none. */
+const refusedOf = (project: string) =>
+  Effect.tryPromise(() => readRegistered()).pipe(
+    Effect.map((projects) => projects.find((p) => p.project === project)?.refused ?? null),
+    Effect.catch(() => Effect.succeed(null)),
+  )
+
 /** The real reader: the mirror as it stands (no fetch), the beacon, the conductor lock, the locks and the drain. */
 export const readWhy: Explain = {
   look: (filter) =>
@@ -60,11 +80,7 @@ export const readWhy: Explain = {
           ? { unread: read.controlProblem }
           : (read.held.find((h) => h.project === filter.project)?.locks ?? [])
       const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
-      // The conductor's own refusal of this project, off the registry the request already read; unread is none.
-      const refused = yield* Effect.tryPromise(() => readRegistered()).pipe(
-        Effect.map((projects) => projects.find((p) => p.project === filter.project)?.refused ?? null),
-        Effect.catch(() => Effect.succeed(null)),
-      )
+      const refused = yield* refusedOf(filter.project)
       // GitHub did not answer: the log's own queued rows are what is waiting.
       const logQueued = tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
       // A known red or unreadable base holds those rows as it would the listing's: the base needs no GitHub.
@@ -90,18 +106,50 @@ export const readWhy: Explain = {
           repository: filter.links?.repository ?? null,
           canListBlockers: filter.links !== null,
         },
-        {
-          beacon: readStatusEffect().pipe(
-            Effect.map((st): Beacon => (st === null ? { never: true } : { up: lastBeat(st, now).up })),
-            Effect.catch((err: unknown) => Effect.succeed<Beacon>({ unread: problemOf(err) })),
-          ),
-          conductorHeld: Effect.tryPromise(() => conductorLockHolder()).pipe(
-            Effect.map((holder) => holder !== null),
-            Effect.catch(() => Effect.succeed(true)),
-          ),
-          blockers: Effect.succeed(blocked),
-        },
+        reads(now, blocked),
       )
     }).pipe(Effect.catch(() => Effect.succeed(null)))
   },
+}
+
+/**
+ * Why nothing of a project runs when its setup failed — no GitHub credentials, a recipe that would not
+ * resolve — and the conductor has recorded a refusal of it. Neither failure makes the refusal less true, so
+ * the board says it where it has no filter to ask the queue with: the log's queued rows are what is waiting.
+ * Null where the project has no recorded refusal, so a project the setup already explains says nothing more.
+ */
+export const readRefusedWhy = (project: string): Promise<WhyNothingRuns | null> => {
+  const now = Date.now()
+  return Effect.runPromise(
+    Effect.gen(function* () {
+      const refused = yield* refusedOf(project)
+      if (refused === null) return null
+      const tasks = yield* readTasksEffect({ project })
+      const read = yield* Effect.tryPromise(() => readProjectLocks())
+      const locks = !read.ok
+        ? { unread: read.problem }
+        : read.controlProblem !== undefined
+          ? { unread: read.controlProblem }
+          : (read.held.find((h) => h.project === project)?.locks ?? [])
+      const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
+      const queued = tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
+      return yield* explainQueueEffect(
+        {
+          now: new Date(now),
+          beacon: { up: true },
+          draining: control._tag === 'Some' && control.value.shutdown !== null,
+          refused,
+          locks,
+          base: null,
+          offered: queued,
+          runnable: queued,
+          skipped: [],
+          rows: whyRows(tasks, 0, now),
+          repository: null,
+          canListBlockers: false,
+        },
+        reads(now, null),
+      )
+    }).pipe(Effect.catch(() => Effect.succeed(null))),
+  )
 }

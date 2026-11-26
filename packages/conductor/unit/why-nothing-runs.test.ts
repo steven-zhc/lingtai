@@ -57,6 +57,15 @@ describe('a recorded refusal (#1477)', () => {
     expect(r?.roots.some((x) => x.root === 'unknown')).toBe(false)
   })
 
+  it('carries the date of a refusal recorded on an earlier day, and only the time for today', () => {
+    const f = (at: Date) => facts({ offered: [1], runnable: [1], rows: [row({ ref: 1 })], refused: { detail, at } })
+    const today = whyNothingRuns(f(new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 5)), null)
+    const yesterday = whyNothingRuns(f(new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1, 9, 5)), null)
+    expect(today?.roots[0]?.sentence).toContain('since 00:05 ')
+    expect(yesterday?.roots[0]?.sentence).toMatch(/since \d{4}-\d{2}-\d{2} 09:05 /)
+    expect(yesterday?.roots[0]?.sentence).not.toBe(today?.roots[0]?.sentence)
+  })
+
   it('stands behind a lock', () => {
     const paused = { kind: 'paused' as const, by: 'sam', since: now }
     const r = whyNothingRuns(facts({ offered: [1], runnable: [1], locks: [paused], refused }), null)
