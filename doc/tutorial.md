@@ -67,8 +67,9 @@ Continue when Lingtai prints `created #N`.
 
 ## Step 3 — Start
 
-Starting pays for at least two runs, writer and reviewer, on the accounts above,
-more if a check buys a fix round.
+Starting pays for at least two runs, writer and reviewer, on the accounts above.
+Each finding sent back to the writer costs one judge run, one more writer run and
+one more reviewer run, since the fix is reviewed again.
 
 ```sh
 lingtai start
@@ -78,16 +79,11 @@ Leave it running; `Ctrl+C` stops after the attempt in flight. In a second
 terminal run `lingtai board` to watch it. The board has no login and listens on every network address; `board.host: 127.0.0.1`
 in `~/.lingtai/config.yml` keeps it on this machine.
 
-If review raises findings, the card stops in **Waiting on you**:
+If review raises findings, a judge sends them back to the writer, up to six
+times. The card stops in **Waiting on you** only when those rounds run out or
+the judge cannot settle it.
 
-![The card in Waiting on you after review, numbered 1 to 4.](img/tutorial-board-waiting.png)
-
-1. **Waiting on you**: nothing more is spent until you answer.
-2. **review** is red: built, then refused.
-3. The findings. Open the card to see what you can do next.
-4. **Landed** is empty until review passes or you approve.
-
-When the card is **Landed**:
+When review passes, the card is **Landed**:
 
 ![The card in Landed, on your branch, numbered 1 to 3.](img/tutorial-board.png)
 
