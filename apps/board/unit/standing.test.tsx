@@ -1210,9 +1210,9 @@ describe('the block, rendered', () => {
           since: '2026-11-05T00:00:00.000Z',
           turns: '0 turns in agent runs that have ended',
           ceiling: 'at most 150 turns a run',
+          usdCeiling: 'at most $5.00 a run',
           behind: null,
         },
-        cost: { text: 'nothing billed yet: no agent run has ended', ceiling: 'at most $5.00 a run', behind: null },
       },
     }
     const html = renderToStaticMarkup(
@@ -1237,7 +1237,6 @@ describe('the block, rendered', () => {
     expect(panel).toContain('this step')
     expect(panel).toContain('at most 150 turns a run')
     expect(panel).toContain('at most $5.00 a run')
-    expect(panel).toContain('nothing billed yet')
     expect(panel).not.toContain('$0.00')
     // The server's markup is `sinceText(iso, serverNow)` — no clock read.
     expect(panel).toContain(`>${sinceText('2026-11-05T00:00:00.000Z', NOW)}</span>`)

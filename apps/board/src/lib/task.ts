@@ -119,7 +119,7 @@ import { landingLineOf, type LandingLine } from './landing-line'
 import { controlObserve, readProjectLocks } from './locks.ts'
 import { prHolding, prName, type PrRead } from './pr-board.ts'
 import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
-import { describeHeld, elapsed, progressOf, spentOf, type AttemptProgress } from './progress.ts'
+import { describeHeld, progressOf, spentOf, type AttemptProgress } from './progress.ts'
 import { outgoingFor, refused as refusedOutgoing, type OutgoingView } from './prompt.ts'
 import { typicalAttemptMs, type StartEstimate } from './queued-estimate.ts'
 import { inFlightOf, queuedFor, refused as refusedQueued, type InFlight, type QueuedView } from './queued.ts'
@@ -130,13 +130,10 @@ import { savedFixWork, rerunWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
   addBill,
-  billHasAny,
   billOf,
-  billText,
   currentSpend,
   emptyBill,
   grantedOf,
-  PURPOSES,
   totalBill,
   unknownBill,
   type Bill,
@@ -401,8 +398,14 @@ export interface AttemptView {
  */
 export interface Totals {
   attempts: number
+  /** Σ `SpendRow.turns` over every purpose. */
   turns: number
+  /** Σ `SpendRow.durationMs` over every purpose: how long agents ran, not how long the ticket took. */
   durationMs: number
+  /** Distinct `pass:round` of `Action` rows with `round >= 1` — `ticket_report`'s rule. */
+  fixRounds: number
+  /** Attempts still running or claimed: nothing has ended, so nothing is billed yet. */
+  inFlight: number
   /** How many conversations have been held about this item. */
   discussions: number
   byPurpose: Record<Purpose, Bill>
@@ -1708,73 +1711,28 @@ export function totalsOf(
   rows: readonly SpendRow[] = [],
 ): Totals {
   const byPurpose = billOf(rows)
+  let inFlight = 0
   for (const run of runs) {
     if (rows.some((row) => row.pass === run.runId && row.purpose === 'Action')) continue
+    // Not ended is not unpriced: an attempt in flight has no receipt yet.
+    if (run.outcome.state === 'running' || run.outcome.state === 'claimed') {
+      inFlight += 1
+      continue
+    }
     byPurpose.Work = addBill(byPurpose.Work, unknownBill(1))
   }
+  const fixRounds = new Set(
+    rows.filter((r) => r.purpose === 'Action' && r.round !== null && r.round >= 1).map((r) => `${r.pass}:${r.round}`),
+  )
   return {
     attempts: runs.length,
-    turns: runs.reduce((n, r) => n + (r.turns ?? 0), 0),
-    durationMs: runs.reduce((n, r) => n + (r.durationMs ?? 0), 0),
+    turns: rows.reduce((n, r) => n + r.turns, 0),
+    durationMs: rows.reduce((n, r) => n + r.durationMs, 0),
+    fixRounds: fixRounds.size,
+    inFlight,
     discussions: discussions.length,
     byPurpose,
   }
-}
-
-const PURPOSE_LABEL: Record<Purpose, string> = {
-  Work: 'work',
-  Answering: 'answering',
-  Judge: 'judge',
-  Triage: 'triage',
-  Discussion: 'asking',
-  PR: 'pull request',
-}
-
-/**
- * The totals, as the Attempts label's one fact.
- *
- * **The total leads.** Five bills and no sum is arithmetic done by every
- * reader: the figure in front is the number somebody acts on — it is what
- * `#89` is remembered by, and what decides whether a fourth attempt is worth
- * buying — and the split is detail (#111). So the sum first, then what
- * bought it, then how it divides.
- *
- * It still divides, for the reason the board keeps it divided (#84, 0033 §4):
- * a repair is default-on and spends an agent without being asked again, and a
- * discussion has a meter instead of a limit. Those figures have to be
- * *stated* and not merely derivable — but they are the detail, not the
- * headline, and the per-attempt figure stays on each attempt's own row.
- *
- * **`billText`'s table, not `$0.00`.** A purpose with nothing reported and no
- * unknown run is dropped from the split entirely — `$7.81 · $7.81 work` is
- * one fact twice — and a purpose with an unknown run says so rather than
- * reading as free.
- *
- * `2 attempts + 3 discussions · …`, as the design's example reads it — and the
- * discussions are counted for the reason 0033's consequences give: they come
- * out of the same budget, so hiding one of the two figures would misstate the
- * other. The clause is dropped when there have been none, because a permanent
- * `0 discussions` is furniture.
- */
-export function totalsFact(totals: Totals): string | null {
-  if (totals.attempts === 0 && totals.discussions === 0) return null
-  const held = totals.discussions
-  const total = totalBill(totals.byPurpose)
-  const split = PURPOSES.map((p) => {
-    const bill = totals.byPurpose[p]
-    return billHasAny(bill) ? `${billText(bill)} ${PURPOSE_LABEL[p]}` : null
-  }).filter((s): s is string => s !== null)
-
-  return [
-    billHasAny(total) ? billText(total) : null,
-    `${totals.attempts} attempt${totals.attempts === 1 ? '' : 's'}` +
-      (held > 0 ? ` + ${held} discussion${held === 1 ? '' : 's'}` : ''),
-    totals.turns > 0 ? `${totals.turns} turns` : null,
-    totals.durationMs > 0 ? elapsed(totals.durationMs) : null,
-    ...(split.length > 1 ? split : []),
-  ]
-    .filter((s): s is string => s !== null)
-    .join(' · ')
 }
 
 /**

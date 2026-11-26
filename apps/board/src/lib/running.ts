@@ -2,7 +2,7 @@ import { inWords } from '@lingtai/conductor/queue'
 import { SEVERITIES, stepDurationsMs, type Envelope, type Finding, type Step } from '@lingtai/domain'
 import type { SpendRow } from '@lingtai/projector'
 
-import { billOf, billText, spendChip, totalBill, type SpendCurrency } from './spend.ts'
+import { spendChip, type SpendCurrency } from './spend.ts'
 import type { RunningWatch } from './stuck.ts'
 import type { AttemptView } from './task.ts'
 
@@ -22,8 +22,14 @@ export interface RunningMeters {
   runId: string
   /** The phase against its wall limit. Null between steps. */
   round: { since: string; budget: string | null } | null
-  attempt: { since: string; turns: string; ceiling: string | null; behind: string | null }
-  cost: { text: string; ceiling: string | null; behind: string | null }
+  attempt: {
+    since: string
+    turns: string
+    ceiling: string | null
+    /** The per-run dollar ceiling, beside the turns ceiling: both are limits on one agent run. */
+    usdCeiling: string | null
+    behind: string | null
+  }
 }
 
 /** A running ticket's panel, as the page draws it (0118 §2). Pure: events in, words out. */
@@ -81,12 +87,7 @@ function metersOf(run: AttemptView, ctx: RunningContext): RunningMeters | null {
       since: progress.since,
       turns: `${turns} turn${turns === 1 ? '' : 's'} in agent runs that have ended`,
       ceiling: limits?.turns === undefined ? null : `at most ${limits.turns} turns a run`,
-      behind,
-    },
-    cost: {
-      text:
-        ctx.rows.length === 0 ? 'nothing billed yet: no agent run has ended' : billText(totalBill(billOf(ctx.rows))),
-      ceiling: limits?.usd === undefined ? null : `at most $${limits.usd.toFixed(2)} a run`,
+      usdCeiling: limits?.usd === undefined ? null : `at most $${limits.usd.toFixed(2)} a run`,
       behind,
     },
   }

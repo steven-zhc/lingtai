@@ -110,6 +110,16 @@ describe('/landed page', () => {
     }
   })
 
+  it('says took from the first claim to the outcome, and nothing when either is missing', () => {
+    const claim = new Date(2026, 10, 5, 13, 0).toISOString()
+    const out = html(data([row({ passTimes: [claim], outcomeAt: new Date(2026, 10, 5, 14, 7) })]))
+    expect(out).toContain('took 1h 7m')
+    const noClaim = html(data([row({ passTimes: [] })]))
+    expect(noClaim).not.toContain('took')
+    const noEnd = html(data([row({ passTimes: [claim], outcomeAt: null })]))
+    expect(noEnd).not.toContain('took')
+  })
+
   it('says unpriced when nothing was priced, and omits the squares for a null diff', () => {
     const unknown = row({ cost: {}, unknownClaims: 1, diffFiles: null, diffInsertions: null, diffDeletions: null })
     const out = html(data([unknown]))
