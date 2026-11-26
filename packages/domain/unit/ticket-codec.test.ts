@@ -89,3 +89,35 @@ describe('a row written before #1268', () => {
     expect(() => decodeTicket(old, 'task_view')).toThrow(/lingtai projection rebuild task_view/)
   })
 })
+
+describe('a wait resolution keeps its at (#1495)', () => {
+  const env = (seq: bigint, type: string, data: unknown, at: string) =>
+    ({ seq, streamId: 'ticket-x-1', version: 1, type, schemaVer: 1, data, at: new Date(at) }) as unknown as Envelope
+  const waitId = 'wait-1'
+  const state = [
+    env(
+      1n,
+      'WaitStarted',
+      { waitId, reason: { _tag: 'OwnQuestion', question: 'q', by: 'steven' } },
+      '2026-11-25T05:09:00Z',
+    ),
+    env(
+      2n,
+      'WaitResolved',
+      { waitId, resolution: { _tag: 'Close' }, by: 'human:steven', note: 'done' },
+      '2026-11-25T05:11:00Z',
+    ),
+  ].reduce(reduceTicketEvent, emptyTicket)
+
+  it('reads the WaitResolved time back through encode and decode', () => {
+    expect(state.waits[0]?.resolution?.at).toEqual(new Date('2026-11-25T05:11:00Z'))
+    const back = decodeTicket(JSON.parse(encodeTicket(state)), 'ticket_report')
+    expect(back.waits[0]?.resolution?.at).toEqual(new Date('2026-11-25T05:11:00Z'))
+  })
+
+  it('refuses a version-15 row whose resolution has no at', () => {
+    const old = JSON.parse(encodeTicket(state))
+    delete old.waits[0].resolution.at
+    expect(() => decodeTicket(old, 'ticket_report')).toThrow(/rebuild/)
+  })
+})
