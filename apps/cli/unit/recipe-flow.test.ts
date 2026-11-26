@@ -818,6 +818,51 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.personal).toBe('me/chosen')
   })
 
+  it("a new solo project hands the trial the branch that was chosen, not GitHub's default (#1488)", async () => {
+    const seen: unknown[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return 'solo'
+        if (prompt.includes('governs and merges into')) return 'develop'
+        return ''
+      },
+      log: () => {},
+    }
+    const files = mapFiles()
+    const result = await askAndWrite(world, {
+      ...at(files, new Set(['develop'])),
+      tryBuild: (draft) => {
+        seen.push(draft.get(['branch', 'main']))
+        return null as never
+      },
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(seen).toEqual(['develop'])
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.main).toBe('develop')
+  })
+
+  it('team to solo may keep the personal branch as the solo working branch (#1488)', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return 'solo'
+        if (prompt.includes('governs and merges into')) return 'me/laptop'
+        if (prompt.includes('in the sandbox')) return 'on'
+        return ''
+      },
+      log: () => {},
+    }
+    const result = await askAndWrite(world, at(files, new Set(['me/laptop'])))
+    expect(result).toMatchObject({ ok: true })
+    const recipe = resolveSource(files.replaced.at(-1)!.text, path, path).recipe
+    expect(recipe.mode).toBe('solo')
+    expect(recipe.branch.main).toBe('me/laptop')
+    expect(recipe.branch.personal).toBeUndefined()
+  })
+
   it('--defaults asks nothing and takes team and the personal branch by their defaults (#1488)', async () => {
     const files = mapFiles()
     const world: QuestionWorld = {

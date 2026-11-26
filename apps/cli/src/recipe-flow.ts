@@ -361,8 +361,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
               ),
       })
       if ('refused' in landed) return landed
-      if (absent) collected.push({ path: ['branch', 'main'], value: landed.answer })
-      else if (landed.answer !== rawMain) {
+      // Where the mode is still changing, the answer is written with that change: checked on its own, the new
+      // `branch.main` would be compared with the `branch.personal` that is about to be removed.
+      if (absent || modeBefore === 'team') {
+        if (absent || landed.answer !== rawMain) collected.push({ path: ['branch', 'main'], value: landed.answer })
+      } else if (landed.answer !== rawMain) {
         const wroteMain = yield* writeOrRefuse(draft, [{ path: ['branch', 'main'], value: landed.answer }])
         if ('refused' in wroteMain) return wroteMain
       }
@@ -504,6 +507,18 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   })
   const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
 
+  // The trial reads the recipe from the draft, and on a new recipe the answers are still in `collected`: it sees
+  // them as they will be written, so it checks the branch the recipe will name and not GitHub's default (#1488).
+  const trialDraft: RecipeDraft = absent
+    ? {
+        ...draft,
+        get: (path) => {
+          const hit = [...at.seeds, ...collected].reverse().find((c) => c.path.join('.') === path.join('.'))
+          return hit === undefined ? draft.get(path) : (hit.value ?? null)
+        },
+      }
+    : draft
+
   const agents = yield* askAgents(askWorld, {
     project: at.project,
     runtimes: at.runtimes,
@@ -585,7 +600,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       // defaulted setup runs minutes of somebody's build (#436).
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
-    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(draft) : (at.tryBuild ?? null),
+    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(trialDraft) : (at.tryBuild ?? null),
     recipeExisted: !absent,
     onPath: toolOnPath,
     home: at.home,
