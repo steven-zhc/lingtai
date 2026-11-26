@@ -2200,6 +2200,56 @@ describe('chooseFirstProject — a rerun asks what the first run asks, and says 
     expect(branchOf(written)).toBe('next-work')
     expect(h.registered).toHaveLength(1)
     expect(h.registered[0]).toMatchObject({ base: 'next-work', fromSha: 'ccc333' })
+    // What is reported is what was registered: the other rerun's solo recipe, not this run's team preview.
+    expect(result).toMatchObject({ base: 'next-work' })
+    const card = (result as { card: { base: string; team?: unknown } }).card
+    expect(card.base).toBe('next-work')
+    expect(card.team).toBeUndefined()
+    const said = (result as { leftBehind?: { what: string }[] }).leftBehind?.map((l) => l.what).join('\n') ?? ''
+    // The lines say what the registered recipe left behind: its base is next-work, not the preview's me-work.
+    expect(said).toContain('next-work existed')
+    expect(said).not.toContain('team')
+  })
+
+  it('a rerun interrupted after a team-to-solo answer to a branch not yet made makes it and registers it, and leaves no recipe naming one that does not exist', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    let reached = () => {}
+    const atQuestion = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: {},
+      projects: [project('repo', null)],
+      files: { [path]: TEAM_FILE },
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo', main: 'new-solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atQuestion
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    const recipe = resolveSource(kept!, path, path).recipe
+    // The recipe names new-solo, so it exists (cut from the old working branch), and it is registered as the base.
+    expect(branchOf(recipe)).toBe('new-solo')
+    expect(repo.branches['new-solo']).toBe('bbb222')
+    expect(repo.calls).toContain('branch new-solo me-work')
+    expect(h.registered).toHaveLength(1)
+    expect(h.registered[0]).toMatchObject({ base: 'new-solo', fromSha: 'bbb222' })
   })
 
   it('team to solo with nothing pending writes mode: solo, registers again at the new base, and leaves the personal branch alone', async () => {
