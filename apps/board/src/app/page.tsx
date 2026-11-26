@@ -18,7 +18,7 @@ import {
   emptyNote,
   COLUMNS,
   askProject,
-  githubQueue,
+  askQueue,
   issueUrl,
   startBoard,
   queuedStanding,
@@ -1226,11 +1226,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.queueAsk
     .then((ask) =>
-      measure(
-        () =>
-          timed('board.queue', () => githubQueue(ask.askable, ask.known, (f) => askProject(f, { explain: readWhy }))),
-        { label: '/ queue' },
-      ).then((answered) => {
+      measure(() => timed('board.queue', () => askQueue(ask, (f) => askProject(f, { explain: readWhy }))), {
+        label: '/ queue',
+      }).then((answered) => {
         recordQueuedOffered(param, ask.askable, answered[0].problems)
         return answered
       }),

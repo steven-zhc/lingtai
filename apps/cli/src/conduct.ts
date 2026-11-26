@@ -87,6 +87,14 @@ export interface ConductOptions {
    * too old for a good one (#148).
    */
   codeSha?: string | null
+  /** Where a turn-wide refusal is recorded and the control stream read. Absent, the default log; injectable so a test needs no database. */
+  store?: EventStore
+  /** The registered projects. Absent, the log's own; injectable so a test names them. */
+  projects?: Effect.Effect<readonly ProjectState[]>
+  /** Whether a GitHub App is configured. Absent, the environment's answer; injectable so a test needs neither. */
+  githubApp?: boolean
+  /** What a project's look reads from the world. Absent, the live one. */
+  world?: ConductWorld
   /**
    * Whether the conductor is paused *now*, as a sentence, or null — asked
    * before each project and before each ticket, not once for the pass (#210).
@@ -672,6 +680,30 @@ export function projectsForTurn(
 }
 
 /**
+ * Record a turn-wide refusal on each project it skipped, through the same
+ * transition-only `record()` the per-project path uses: the first turn appends
+ * `ProjectRefused`, an identical one appends nothing, and the first turn that
+ * looks at the project again appends `ProjectRecovered` (`where.looked`). `ref`
+ * is null because no recipe was read.
+ */
+export function refuseProjects(
+  projects: readonly ProjectState[],
+  detail: string,
+  options: { store: EventStore; codeSha: string | null; log: (line: string) => void },
+): Effect.Effect<void> {
+  return Effect.forEach(
+    projects.filter((p) => p.project !== null),
+    (project) =>
+      record(
+        project,
+        { refused: true, detail, ref: null, codeSha: options.codeSha },
+        { store: options.store, log: options.log },
+      ),
+    { discard: true },
+  )
+}
+
+/**
  * A pass, with the world provided around each item it takes.
  *
  * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
@@ -685,6 +717,8 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     const log = options.log ?? (() => {})
     const outcome: TurnOutcome = { projects: 0, ran: 0, refused: [] }
 
+    const store = options.store ?? eventStore
+    const registeredProjects = options.projects ?? loadProjectsEffect()
     const hookBinary = options.hookBinary ?? resolve(root, 'packages/hook/bin/lingtai-hook')
     const hookThere = yield* Effect.promise(() =>
       readFile(hookBinary).then(
@@ -694,10 +728,18 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     )
     if (!hookThere) {
       // A run that records nothing must not start. Refusing the pass rather than
-      // the daemon: the projections stay current, which is what makes the reason
-      // visible on the board.
+      // the daemon: the projections stay current, and the refusal is recorded as
+      // `ProjectRefused` on every registered project (transition only, #148), so
+      // why-nothing-runs says it in `lingtai status` and on the board.
       const detail = `no lingtai-hook binary at ${hookBinary}`
       outcome.refused.push({ project: '*', detail })
+      const everyone = yield* registeredProjects.pipe(
+        recovering((err) => {
+          log(`could not record the refusal on the projects — ${err instanceof Error ? err.message : String(err)}`)
+          return Effect.succeed([] as readonly ProjectState[])
+        }),
+      )
+      yield* refuseProjects(everyone, detail, { store, codeSha: options.codeSha ?? null, log })
       ;(options.tell ?? log)(detail)
       return outcome
     }
@@ -709,12 +751,18 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     // by the next one — which the append itself triggers.
     // `orDie`: a read the store refused ends the turn, told as `turn failed` by the loop, as the rejection was.
     const control = yield* readControlEffect(
-      undefined,
+      options.store,
       options.controlWriter ? { writer: options.controlWriter } : {},
     ).pipe(Effect.orDie)
 
-    const registered = yield* loadProjectsEffect()
-    const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)
+    const registered = yield* registeredProjects
+    const projects = projectsForTurn(registered, options.githubApp ?? hasGitHubAuth(), outcome)
+    // The projects `projectsForTurn` dropped were refused as a whole: say so on each one's own stream.
+    yield* refuseProjects(
+      registered.filter((p) => !projects.includes(p)),
+      'no GitHub App configured',
+      { store, codeSha: options.codeSha ?? null, log },
+    )
 
     // Whether a look awaits its pass must not depend on which project is visited
     // first, so with a ceiling and several projects each recipe is asked once up front.
@@ -727,25 +775,30 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
       codeSha: options.codeSha ?? null,
       outcome,
       log,
+      ...(options.store ? { store: options.store } : {}),
       ...(options.tell ? { tell: options.tell } : {}),
       ...(options.paused ? { paused: options.paused } : {}),
       ...(options.locked ? { locked: options.locked } : {}),
-      work: conductWork({
-        hookBinary,
-        prompt,
-        control,
-        outcome,
-        max: options.max,
-        ...(options.merge === undefined ? {} : { merge: options.merge }),
-        ...(options.paused ? { paused: options.paused } : {}),
-        ...(options.locked ? { locked: options.locked } : {}),
-        ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
-        log,
-        ...(options.tell ? { tell: options.tell } : {}),
-        ...(options.many ? { many: true } : {}),
-        ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
-        ...(options.controlWriter ? { snapshotWriter: options.controlWriter } : {}),
-      }),
+      work: conductWork(
+        {
+          hookBinary,
+          prompt,
+          control,
+          outcome,
+          max: options.max,
+          ...(options.merge === undefined ? {} : { merge: options.merge }),
+          ...(options.paused ? { paused: options.paused } : {}),
+          ...(options.locked ? { locked: options.locked } : {}),
+          ...(options.slots ? { slots: { ...options.slots, ceilingSet, anyMany } } : {}),
+          log,
+          ...(options.tell ? { tell: options.tell } : {}),
+          ...(options.many ? { many: true } : {}),
+          ...(options.onRecipe ? { onRecipe: options.onRecipe } : {}),
+          ...(options.controlWriter ? { snapshotWriter: options.controlWriter } : {}),
+          ...(options.store ? { store: options.store } : {}),
+        },
+        options.world,
+      ),
     })
   })
 }

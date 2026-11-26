@@ -44,6 +44,7 @@ const TONES: Partial<Record<Root['root'], WhyTone>> = {
   'no-daemon': 'down',
   'beacon-unread': 'down',
   drain: 'down',
+  refused: 'down',
 }
 
 /** `a \`b\` c` as text, code, text. A ticket's `#N` is a link when the root says which it is. */
