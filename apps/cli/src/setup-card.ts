@@ -71,6 +71,12 @@ export interface SetupCardFacts {
    * its card is *this machine* alone and `recipePath` is absent with them.
    */
   recipe?: CardRecipe
+  /** The labels the queue reads, made at `add` (#1486); absent on `init`, whose card is unchanged. */
+  labels?: {
+    slug: string
+    created: readonly string[]
+    missing: readonly { name: string; why: 'denied' | 'unchecked' }[]
+  }
   trial?: TrialOutcome
   recipePath?: string
 }
@@ -268,6 +274,18 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         ],
       },
     )
+  }
+  const labels = facts.labels
+  if (labels !== undefined && recipe !== undefined && trial !== undefined) {
+    const rows: Row[] = []
+    if (labels.created.length > 0) rows.push(['labels', `made ${labels.created.join(', ')}`])
+    for (const m of labels.missing) {
+      rows.push([
+        'labels',
+        `${m.name} could not be ${m.why === 'denied' ? 'made' : 'checked'} — gh label create ${m.name} --repo ${labels.slug}`,
+      ])
+    }
+    if (rows.length > 0) groups[1]!.rows.push(...rows)
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
   const top =

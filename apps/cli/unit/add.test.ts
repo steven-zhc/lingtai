@@ -311,6 +311,68 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).not.toContain('tier guarded')
   })
 
+  /** A `labels` stub that records every name asked, answers `exists` for `bug`, and fails the names in `fail` with a status. */
+  function labelStub(world: AddTestWorld, fail: Record<string, number> = {}) {
+    const asked: string[] = []
+    world.labels = () =>
+      Effect.succeed({
+        createLabel: async (name: string) => {
+          asked.push(name)
+          const status = fail[name]
+          if (status !== undefined) throw Object.assign(new Error(`GitHub ${status}`), { status })
+          return name === 'bug' ? ('exists' as const) : ('created' as const)
+        },
+      })
+    return asked
+  }
+
+  it('makes the kinds and lingtai:hold, and the card lists the ones it created, never the one that existed (#1486)', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    const asked = labelStub(world)
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(asked).toContain('bug')
+    expect(asked).toContain('feature')
+    expect(asked.at(-1)).toBe('lingtai:hold')
+    const row = logged
+      .join('\n')
+      .split('\n')
+      .find((l) => /^\s+labels\s+made /.test(l))!
+    expect(row).toContain('feature')
+    expect(row).toContain('lingtai:hold')
+    expect(row).not.toMatch(/\bbug\b/)
+  })
+
+  it('does not ask for lingtai:pr-fix in solo mode (#1486)', async () => {
+    const { world, errors, argv } = githubHarness()
+    const asked = labelStub(world)
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(asked).toContain('lingtai:hold')
+    expect(asked).not.toContain('lingtai:pr-fix')
+  })
+
+  it('a label refused with 403 leaves the add at 0, names the label and its gh line, and makes the rest (#1486)', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    const asked = labelStub(world, { feature: 403 })
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    const text = logged.join('\n')
+    expect(text).toContain('feature could not be made — gh label create feature --repo acme/widgets')
+    expect(asked).toContain('lingtai:hold')
+    expect(text).toMatch(/labels\s+made .*lingtai:hold/)
+  })
+
+  it('a client that cannot be built leaves every label unchecked, and the add at 0 (#1486)', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    world.labels = () => Effect.fail(new Error('no App'))
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(logged.join('\n')).toContain(
+      'lingtai:hold could not be checked — gh label create lingtai:hold --repo acme/widgets',
+    )
+  })
+
   it('a bare add on a gh machine offers the login’s repositories and adds the one picked (#969)', async () => {
     const { world, logged, errors, asked } = githubHarness()
     const offered: string[] = []

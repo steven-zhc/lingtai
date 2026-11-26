@@ -432,8 +432,12 @@ export interface GitHub {
    */
   removeLabel(issue: number, name: string): E<void>
 
-  /** Creates a repository label; one that already exists is success (#1261). */
-  createLabel(name: string): E<void>
+  /**
+   * Creates a repository label; one that already exists is success (#1261). Answers
+   * `'created'` on 201 and `'exists'` on 422 — every 422, so an invalid name reads as
+   * `'exists'` too (#1486).
+   */
+  createLabel(name: string): E<'created' | 'exists'>
 
   /** Replaces one comment's whole body (#750). The response is read for its status only. */
   editComment(issue: number, commentId: number, body: string): E<void>
@@ -562,7 +566,7 @@ export interface GitHubClient {
   setLabels(issue: number, labels: readonly string[]): Promise<void>
   addLabels(issue: number, labels: readonly string[]): Promise<void>
   removeLabel(issue: number, name: string): Promise<void>
-  createLabel(name: string): Promise<void>
+  createLabel(name: string): Promise<'created' | 'exists'>
   editComment(issue: number, commentId: number, body: string): Promise<void>
   closeIssue(issue: number, reason?: 'completed' | 'not_planned'): Promise<void>
   updateBody(issue: number, body: string, opts?: { ifUnchanged?: string }): Promise<void>
@@ -918,10 +922,11 @@ export const makeGitHub = (
         }),
 
         createLabel: Effect.fn('github.createLabel')(function* (name: string) {
-          yield* send<unknown>('POST', `${repoPath}/labels`, { name, color: 'ededed' }).pipe(
+          return yield* send<unknown>('POST', `${repoPath}/labels`, { name, color: 'ededed' }).pipe(
+            Effect.map((): 'created' | 'exists' => 'created'),
             Effect.catchIf(
               (err) => err.status === 422,
-              () => Effect.void,
+              () => Effect.succeed<'created' | 'exists'>('exists'),
             ),
           )
         }),
