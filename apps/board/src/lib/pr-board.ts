@@ -218,14 +218,15 @@ export const UNFOLLOWED_WHY = 'the remote is not GitHub, so nothing follows the 
 
 /**
  * A PR opened on a remote that is not GitHub (`PrOpened { host: 'none' }`): the PR went to In review unfollowed (0131),
- * so `ci` and `ready` never ran and are the person's rather than stopped. Read from the fold alone, so the page and the
- * card cannot disagree: that event is the only one that records `open` and leaves `host` unset (`PrDraftOpened` sets
- * `host` in the same reduction, and a GitHub `PrOpened` records `ready`). `steps` is the current pass only.
- * A known gap: `PrInProgress` does not reset `host`, so a later pass that opens with `host: 'none'` after an earlier
- * GitHub pass falls back to the ordinary wording rather than drawing anything wrong.
+ * so `ci` and `ready` never ran and are the person's rather than stopped. Read from this pass's own record, never from
+ * `host`: `PrInProgress` does not reset `host`, so an earlier GitHub pass's draft would hide a later pass that opened
+ * with `host: 'none'`. `PrOpened` is the only event that moves a PR to In review; `host: 'none'` records `open` there
+ * and a GitHub one records `ready`, so In review with `open` and no `ready` in `steps` (the current pass only) is it.
  */
 export function unfollowedRemote(pr: PrState): boolean {
-  return pr.host === null && pr.steps.some((s) => s.step === 'open')
+  return (
+    pr.status === 'in-review' && pr.steps.some((s) => s.step === 'open') && !pr.steps.some((s) => s.step === 'ready')
+  )
 }
 
 function chipsOf(pr: PrState, stepNames: readonly string[]): Chip[] {

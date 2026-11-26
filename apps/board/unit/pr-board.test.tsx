@@ -24,6 +24,7 @@ import {
   prBoard,
   prName,
   soloSentence,
+  unfollowedRemote,
 } from '../src/lib/pr-board.ts'
 
 const recipe = {
@@ -319,19 +320,24 @@ describe('prBoard', () => {
     }
   })
 
-  it('draws neither ci nor ready as pending on a remote that is not GitHub (#1485)', () => {
-    const p = pr(3, {
-      // An in-review card carries no chips; the chips are drawn for any PR that has them, so this is the fold's shape.
-      status: 'in-progress',
-      host: null,
-      steps: ['sync', 'build', 'summary', 'push', 'open'].map((step) => ({ step, headSha: 'a' })),
+  it('reads a remote that is not GitHub from the current pass, not from host (#1485)', () => {
+    const steps = (names: string[]) => names.map((step) => ({ step, headSha: 'a' }))
+    // An earlier GitHub pass's draft stays on `host` after `PrInProgress`; the later pass opened with host 'none'.
+    const draft = { number: 9, nodeId: 'n', url: 'u' }
+    const none = pr(3, {
+      status: 'in-review',
+      host: draft,
+      steps: steps(['sync', 'build', 'push', 'open']),
       tickets: [tk(1)],
     })
-    const card = cards(prBoard(input([{ n: 3, pr: p }])), 'progress')[0]!
-    const texts = card.chips.map((c) => c.text)
-    expect(texts.some((t) => t.startsWith('ci ·') || t.startsWith('ready ·'))).toBe(false)
-    expect(card.chips.find((c) => c.step === 'ci')).toMatchObject({ text: 'no CI', status: 'done' })
-    expect(card.chips.find((c) => c.step === 'ready')).toMatchObject({ status: 'skipped' })
+    expect(unfollowedRemote(none)).toBe(true)
+    expect(unfollowedRemote({ ...none, host: null })).toBe(true)
+    // GitHub: In review records `ready`; a walking PR waiting at CI has `open` and no `ready` but is not In review.
+    expect(unfollowedRemote({ ...none, steps: steps(['push', 'open', 'ci', 'ready']) })).toBe(false)
+    expect(unfollowedRemote({ ...none, status: 'in-progress' })).toBe(false)
+    // An in-review card carries no chips, so neither is drawn as pending.
+    const card = cards(prBoard(input([{ n: 3, pr: none }])), 'draft')[0]!
+    expect(card.chips.some((c) => c.text.startsWith('ci ·') || c.text.startsWith('ready ·'))).toBe(false)
   })
 
   it('draws a PR in progress with its steps from the conductor’s list', () => {

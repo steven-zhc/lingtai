@@ -629,6 +629,13 @@ describe('a PR on a remote that is not GitHub (#1485)', () => {
     expect(`${ci?.text} ${ready?.text}`).not.toContain('not reached')
     expect(v.checks.head).toBe(ci?.text)
   })
+  it('reads the current pass, not a draft an earlier GitHub pass left on host', () => {
+    const draft: Spec = ['PrDraftOpened', { number: 9, nodeId: 'n', url: 'u' }]
+    const v = page([requested, started, done('sync'), done('build'), done('push'), draft, ...stream])
+    expect(v.steps.find((s) => s.step === 'ci')?.text).toMatch(/^no CI step — .*not GitHub/)
+    expect(v.steps.find((s) => s.step === 'ready')?.text).toContain('yours to do on this remote')
+    expect(v.checks.head).toMatch(/^no CI step — /)
+  })
   it('a later pass with no open reads as not reached again', () => {
     const v = page([...stream, requested, started])
     expect(v.steps.find((s) => s.step === 'ci')?.status).toBe('not-reached')
