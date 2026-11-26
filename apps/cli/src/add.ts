@@ -254,6 +254,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         command: 'add',
         project: result.name,
         updated: result.updated,
+        ...(result.unchanged === true ? { unchanged: true } : {}),
         home: world.project.home,
         // Only `init` writes `config.yml`.
         homeIsNew: false,

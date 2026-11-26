@@ -102,9 +102,7 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
 
 - `@lingtai/setup` does not exist; the pieces above are where they are today.
 - `/setup/repository` still renders `terminal.tsx`.
-- §6: `lingtai init` on a project already added asks nothing and writes nothing
-  (`apps/cli/src/first-project.ts:646-668`), and the mode, sandbox and personal
-  branch are asked of a new recipe only (`apps/cli/src/recipe-flow.ts:261`, `:364`).
+- §6: the mode, sandbox and personal branch are asked of a new recipe only (`apps/cli/src/recipe-flow.ts:261`, `:364`).
 
 ---
 

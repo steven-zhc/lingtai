@@ -259,7 +259,9 @@ function askInstall(
   return Effect.gen(function* () {
     const current = currentRunActions(input.draft, ['steps', 'prepared'])
     const again = previous !== undefined
-    const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? null)
+    // A file that lists `prepared: []` has answered "no install": that is its value, not a missing one (#1473).
+    const answeredNone = input.recipeExisted === true && Array.isArray(input.draft.get(['steps', 'prepared']))
+    const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? (answeredNone ? 'none' : null))
 
     const answer = yield* questionEffect(world, {
       name: 'the install command',
@@ -431,10 +433,14 @@ function askBuild(
       return { build }
     }
 
-    const defaultList = current.length > 0 ? current : detected.build.length > 0 ? detected.build : null
+    // A file that lists `build: []` (or no `run:` in it) has answered "no checks": detection does not refill it (#1473).
+    const answeredNone =
+      previous === undefined && input.recipeExisted === true && current.length === 0 && Array.isArray(originalBuild)
+    const defaultList =
+      current.length > 0 ? current : !answeredNone && detected.build.length > 0 ? detected.build : null
     // What detection found explains a default only when the default came from it, not from the file's own list.
     const why =
-      current.length > 0 || previous !== undefined
+      current.length > 0 || previous !== undefined || answeredNone
         ? []
         : [
             ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),

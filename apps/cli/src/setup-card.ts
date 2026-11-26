@@ -53,6 +53,8 @@ export interface SetupCardFacts {
   project?: string
   /** The project was already registered. */
   updated: boolean
+  /** A rerun that took every default: it wrote nothing and registered nothing (#1473). */
+  unchanged?: boolean
   home: string
   /** This run created `config.yml`. */
   homeIsNew: boolean
@@ -271,7 +273,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
   const top =
     recipe?.team !== undefined && facts.project !== undefined && !facts.updated
       ? `${symbol.pass()} ${facts.project} added — team`
-      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
+      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.unchanged === true ? `  ${paint.muted('unchanged')}` : facts.updated ? `  ${paint.muted('updated')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),
