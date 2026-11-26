@@ -588,7 +588,7 @@ describe('spendToday names the unknown runs', () => {
       ),
     )
     expect(r.status).toBe('ok')
-    expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
+    expect(r.detail).toContain('+ 2 unpriced (gpt-x ×1, no usage reported ×1)')
   })
 
   it('warns with the names and a ceiling', async () => {
@@ -599,7 +599,7 @@ describe('spendToday names the unknown runs', () => {
       ),
     )
     expect(r.status).toBe('warn')
-    expect(r.detail).toContain('+ 2 unknown (gpt-x ×1, no usage reported ×1)')
+    expect(r.detail).toContain('+ 2 unpriced (gpt-x ×1, no usage reported ×1)')
   })
 })
 

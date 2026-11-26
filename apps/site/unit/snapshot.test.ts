@@ -265,8 +265,8 @@ describe('how a figure reads', () => {
   })
 
   it('never says $0.00 for a bill with an unknown run in it', () => {
-    expect(money({ reportedCents: 1304, reportedRuns: 1, unknown: 2 })).toBe('$13.04 + 2 unknown')
-    expect(money({ reportedCents: 0, reportedRuns: 0, unknown: 2 })).toBe('unknown (2 runs)')
+    expect(money({ reportedCents: 1304, reportedRuns: 1, unknown: 2 })).toBe('$13.04 + 2 unpriced')
+    expect(money({ reportedCents: 0, reportedRuns: 0, unknown: 2 })).toBe('unpriced (2 runs)')
   })
 
   it('stamps a date in UTC, which is the only zone a static page can claim', () => {

@@ -137,7 +137,7 @@ export function moneyText(m: Money): string {
   if (m.reportedCents > 0 || (m.estimatedCents === 0 && m.unknown === 0))
     parts.push(`${dollars(m.reportedCents)} reported`)
   if (m.estimatedCents > 0) parts.push(`${dollars(m.estimatedCents)} estimated`)
-  if (m.unknown > 0) parts.push(`${m.unknown} unknown`)
+  if (m.unknown > 0) parts.push(`${m.unknown} unpriced`)
   return parts.join(' · ')
 }
 
@@ -160,7 +160,7 @@ function costText(c: LandedFigures['cost']): string {
     (c.meanEstimatedCents !== null && c.meanEstimatedCents > 0 ? ` + ${dollars(c.meanEstimatedCents)} estimated` : '') +
     ` · median ${c.medianCents === null ? DASH : dollars(c.medianCents)}` +
     (c.medianIncludesEstimate ? ' (includes estimates)' : '') +
-    (c.unknown > 0 ? ` · ${c.unknown} unknown` : '')
+    (c.unknown > 0 ? ` · ${c.unknown} unpriced` : '')
   )
 }
 

@@ -169,8 +169,8 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`
  * |---|---|---|
  * | 0 | 0 | `—` (no estimate either) |
  * | >0 | 0 | `$3.10` |
- * | >0 | >0 | `$3.10 + 2 unknown` |
- * | 0 | >0 | `unknown (2 runs)` |
+ * | >0 | >0 | `$3.10 + 2 unpriced` |
+ * | 0 | >0 | `unpriced (2 runs)` |
  *
  * An estimate (`#208`) follows as `~$x est.` and never reduces into the
  * reported figure — including on a bill with no reported figure and no
@@ -183,9 +183,9 @@ export function billText(bill: Bill, options: { fetchedNote?: boolean } = {}): s
   const parts: string[] = []
   if (bill.reportedRuns > 0) {
     parts.push(money(bill.reportedCents))
-    if (bill.unknown > 0) parts.push(`+ ${bill.unknown} unknown`)
+    if (bill.unknown > 0) parts.push(`+ ${bill.unknown} unpriced`)
   } else if (bill.unknown > 0) {
-    parts.push(`unknown (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`)
+    parts.push(`unpriced (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`)
   } else if (bill.estimates.length === 0) {
     return '—'
   }

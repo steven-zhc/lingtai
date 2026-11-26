@@ -172,13 +172,13 @@ about something else are the three whose spend is not recorded.
    that authorised the spend are on the recipe page.
 
    **A reader shows a reported dollar as fact, an estimate as an estimate, and
-   an unknown as unknown, never as $0.** Where `costUsd` was reported, that is
+   an unpriced run as unpriced, never as $0.** Where `costUsd` was reported, that is
    the figure. Where it was not, but the tokens were and the rate card has a
    row for the model and mode in force at `at`, the figure is priced from the
    tokens and marked as an estimate. Where neither holds, the run's cost is
-   unknown, and is shown as unknown. **A total keeps the three apart: the
+   unpriced, and is shown as unpriced. **A total keeps the three apart: the
    reported total, the estimates listed beside it and never added into it, and
-   a count of unknown runs.** The board, `lingtai status` and any report read
+   a count of unpriced runs.** The board, `lingtai status` and any report read
    the stored `cost_usd` and `estimated_usd` and sum them; none prices at
    display time.
 

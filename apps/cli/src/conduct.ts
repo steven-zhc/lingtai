@@ -808,11 +808,11 @@ export function takingLine(ref: string, title: string, project?: string): string
   return `${project === undefined ? '' : `${project}  `}taking #${ref}${title === '' ? '' : `  ${title}`}`
 }
 
-/** `$0.40`; `cost unknown` when nothing reported one; never `$0.00` for an unknown (0110 §7). */
+/** `$0.40`; `unpriced` when nothing reported one; never `$0.00` for an unpriced run (0110 §7). */
 export function costWords(cost: { usd: number; unknown: number }): string {
   if (cost.unknown === 0) return `$${cost.usd.toFixed(2)}`
-  if (cost.usd === 0) return 'cost unknown'
-  return `$${cost.usd.toFixed(2)} + ${cost.unknown} unknown`
+  if (cost.usd === 0) return 'unpriced'
+  return `$${cost.usd.toFixed(2)} + ${cost.unknown} unpriced`
 }
 
 /**

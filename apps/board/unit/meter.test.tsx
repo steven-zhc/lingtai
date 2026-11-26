@@ -210,7 +210,7 @@ describe("the ledger's total", () => {
   it('says unknown rather than nothing for an attempt that reported no cost at all', () => {
     const fact = totalsFact(totalsOf([run()]))
 
-    expect(fact).toBe('unknown (1 run) · 1 attempt · 73 turns · 11m40s')
+    expect(fact).toBe('unpriced (1 run) · 1 attempt · 73 turns · 11m40s')
     expect(fact).not.toContain('$0.00')
   })
 })

@@ -281,7 +281,7 @@ describe('the totals', () => {
    * `ticket-lingtai-89` ran twice before `spend` existed: `readSpend({ ticket })`
    * returns `[]`, so `billOf([])` used to reduce to five empty bills and the
    * Attempts label said nothing at all — "nothing spent" rather than
-   * "unknown" (0110 §7). Each run with not one matching row is now 1 unknown
+   * "unknown" (0110 §7). Each run with not one matching row is now 1 unpriced
    * run, credited to Work.
    */
   it('reads each run with not one row in spend as unknown, never as nothing', () => {

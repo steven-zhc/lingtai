@@ -364,7 +364,7 @@ function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string)
   ).length
 }
 
-/** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
+/** A run's cost in words: dollars to the cent, or `unpriced` — never `$0.00` for a cost nobody reported (0110 §7). */
 /**
  * **One base check per store** (#744, 0122) — its in-flight map is what makes two passes asking
  * about one commit and command one run, so it cannot be a local of a pass. Keyed by the store
@@ -377,7 +377,7 @@ function wallOf(detail: string): RuntimeId | null {
 }
 
 export function spentWords(costUsd: number | null): string {
-  return costUsd === null ? 'cost unknown' : `$${costUsd.toFixed(2)}`
+  return costUsd === null ? 'unpriced' : `$${costUsd.toFixed(2)}`
 }
 
 /**

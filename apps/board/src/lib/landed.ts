@@ -87,9 +87,9 @@ export const addMoney = (a: Money, b: Money): Money => ({
   unknown: a.unknown + b.unknown,
 })
 
-/** *cost unknown* when nothing was priced and something could not be, else `moneyText` (0110 §7: never `$0.00`). */
+/** *unpriced* when nothing was priced and something could not be, else `moneyText` (0110 §7: never `$0.00`). */
 export function costText(m: Money): string {
-  return m.reportedCents + m.estimatedCents === 0 && m.unknown > 0 ? 'cost unknown' : moneyText(m)
+  return m.reportedCents + m.estimatedCents === 0 && m.unknown > 0 ? 'unpriced' : moneyText(m)
 }
 
 // --- days --------------------------------------------------------------------------
