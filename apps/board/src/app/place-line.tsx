@@ -9,7 +9,7 @@
  * follows; the keys are announced only in each control's tooltip.
  */
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import { homePath, prPath, recipePath } from '@/lib/paths'
 
@@ -109,6 +109,7 @@ export function PlaceLine({
   views,
   here,
   tail,
+  pendingAfter,
 }: {
   /** The crumb continued: a page below a view says where (`/ PR #88`, #1320). */
   tail?: string | undefined
@@ -118,6 +119,8 @@ export function PlaceLine({
   views: readonly PlaceView[]
   /** Which view this page is. */
   here?: PlaceView['id']
+  /** A skeleton after this view, no words: a view whose existence is still being read (`PRs`, #1500). */
+  pendingAfter?: PlaceView['id']
 }) {
   const { line, more } = placeViews(views)
   return (
@@ -133,7 +136,14 @@ export function PlaceLine({
           </span>
           <span className="views">
             {line.map((v) => (
-              <View key={v.id} v={v} here={here} />
+              <Fragment key={v.id}>
+                <View v={v} here={here} />
+                {v.id === pendingAfter ? (
+                  <span className="view" aria-busy="true">
+                    <span className="sk-bar" aria-hidden="true" />
+                  </span>
+                ) : null}
+              </Fragment>
             ))}
             {more.length === 0 ? null : (
               <details className="more">

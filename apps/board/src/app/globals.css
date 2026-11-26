@@ -1242,22 +1242,9 @@ details[open] > summary::before { content: "▾"; }
 .topening { max-width: 62rem; font-size: var(--fs-md); color: var(--ink-2); }
 .topening > a { display: inline-block; margin-top: 0.5rem; }
 
-/* Rank 8: every identifier the page has, once, as one muted line in the bar
-   (#152). It was the block's own last line, and the attempt row printed the
-   same run id again as a full uuid. The bar's own size and grey; the dots are
-   drawn rather than typed so the markup holds the facts and nothing else. */
-.coords {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.55rem;
-  min-width: 0;
-}
-.coords > * + *::before { content: "·"; margin-right: 0.55rem; color: var(--rule-2); }
-/* The coordinate, and it is also the way down (#132). `.sptr` supplies the
-   colour and the arrow's affordance; this takes back its push to the right,
-   which is for a line of its own and not for a place in this one. */
-.coords .sfrom { font-family: var(--mono); margin-left: 0; }
+/* The attempt pointer is in the facts line now (#1500). `.sptr` pushes itself right, which is for a line of its own
+   and not for a place in this one. */
+.ot-meta .sfrom { font-family: var(--mono); margin-left: 0; }
 
 /* The one neutral divider the design allows, and the extent of the block's
    argument: above it the state, below it what is being asked. */
@@ -1291,7 +1278,7 @@ details[open] > summary::before { content: "▾"; }
    while the type got smaller, so the sentence that mattered least was set
    largest. `.diag` is the reason and takes the block's prose size; `.sowhat`,
    rank 3's one sentence, is a step down from it. The coordinates are not in
-   the block at all: they are `.coords`, in the bar, at the bar's size (#152).
+   the block at all: they are in the facts line under the title, and the bar ends in `#<n>` (#152, #1500).
 
    These override the card's own `.diag`/`.did`/`.rec`, which are sized
    in `px` for a 22rem column. The words are shared (`describeWaitLines`); the sizes
