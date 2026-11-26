@@ -15,6 +15,7 @@ const card = (ref: string, project = 'lingtai'): BoardCard =>
     kind: 'feature',
     turns: null,
     costUsd: { reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 0 },
+    repairCostUsd: { reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 0 },
     updatedAt: null,
     satisfied: false,
     closed: false,
