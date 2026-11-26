@@ -95,6 +95,11 @@ function theRun(store: ReturnType<typeof memoryStore>): Envelope[] | null {
 }
 
 /** Every run stream a store holds, oldest first — for a row that calls `once()` more than once. */
+/** The `cause` each `StepRedone` of the run recorded (#1480), in order. */
+function redoCauses(store: ReturnType<typeof memoryStore>): unknown[] {
+  return (theRun(store) ?? []).filter((x) => x.type === 'StepRedone').map((x) => (x.data as { cause?: unknown }).cause)
+}
+
 function theRuns(store: ReturnType<typeof memoryStore>): Envelope[][] {
   return [...streams(store)].filter(([id]) => id.startsWith('pass-')).map(([, events]) => events)
 }
@@ -770,6 +775,7 @@ runtime:
     // It said `Implemented` and moved nothing: `AgentFailed`, redone by rule until `stepRedos` is
     // spent (#1250), and then a person's — there is no router visit and no judge asked.
     expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(redoCauses(store)).toEqual(Array(BOUNDS.stepRedos).fill('agent-did-not-finish'))
     expect(typesOf(theRun(store))).not.toContain('ProposalRouted')
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
@@ -1678,6 +1684,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
     // A run cut off at its turns is `AgentFailed` (0108 §21, #1250): redone by rule until `stepRedos`
     // is spent, and then a person's — there is no router visit and no judge asked.
     expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(redoCauses(store)).toEqual(Array(BOUNDS.stepRedos).fill('agent-did-not-finish'))
     expect(typesOf(theRun(store))).not.toContain('ProposalRouted')
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
@@ -1740,6 +1747,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
+    expect(redoCauses(store)).toEqual(Array(BOUNDS.stepRedos).fill('CRASH'))
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     const all14b = await allEvents(store)
