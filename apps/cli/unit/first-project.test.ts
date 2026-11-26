@@ -20,6 +20,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-project.ts'
+import { askRecipeEffect, ENV_PLANT_AT } from '../src/recipe-flow.ts'
 import { flagsOf } from '../src/wizard-options.ts'
 import {
   type FirstProjectTestWorld,
@@ -2088,6 +2089,60 @@ describe('chooseFirstProject — a rerun asks what the first run asks, and says 
     expect(bare(wrote.prompts)).toEqual(bare(first.prompts))
     expect(bare(wrote.prompts).some((p) => p.includes('Does anyone else'))).toBe(true)
     expect(bare(wrote.prompts).some((p) => p.includes('sandbox'))).toBe(true)
+  })
+
+  it('init --local and add ask a project the same questions in the same order after the machine questions (#1488)', async () => {
+    const init = answerer('solo')
+    const r = await run(checkout({ main: 'aaa111', 'me-work': 'bbb222' }).git, null, {}, init.ask)
+    expect(r.result).toMatchObject({ ok: true })
+
+    const add: string[] = []
+    const files: RecipeFiles = { read: async () => null, replace: async () => {} }
+    const addAsk = answerer('solo')
+    const askAdd = await Effect.runPromise(
+      askRecipeEffect(
+        { ask: async (prompt) => (add.push(prompt), addAsk.ask(prompt)), log: () => {} },
+        {
+          runtimes: [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+          reader: EMPTY_SETUP_READER,
+          flags: { install: 'none' },
+          buildFlags: ['none'],
+          defaultBranch: async () => 'main',
+          history: async () => [],
+          home: HOME,
+          project: 'repo',
+          local: false,
+          seeds: [
+            { path: ['branch', 'main'], value: 'main' },
+            { path: ['repo', 'remote'], value: 'https://github.com/o/repo.git' },
+            { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+          ],
+          kept: 'kept',
+          again: 'lingtai add o/repo',
+          keptBeforeWrite: 'Nothing was written',
+          proposal: {
+            sandbox: { verdict: { can: true }, install: null, builtIns: ['api.example.com'] },
+            kinds: { known: false },
+            detected: { known: false },
+          } as never,
+          team: { knownLogin: 'me', hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+        },
+      ).pipe(Effect.provideService(ProjectFiles, files)),
+    )
+    expect(askAdd).toMatchObject({ ok: true })
+
+    // Where the two differ by design — init asks the directory, the database and the build; a GitHub project asks
+    // no directory — they are dropped from both sides; the project questions that remain are one list.
+    const project = (prompts: string[]) =>
+      bare(prompts)
+        .filter((q) => /Does anyone else|branch|use every default|agent|reviewer|check|kinds?|sandbox/i.test(q))
+        .map((q) => q.replace(/ \(.*$/, ''))
+    const head = (prompts: string[]) => project(prompts).slice(0, 3)
+    expect(head(init.prompts)[0]).toContain('Does anyone else')
+    expect(head(add)[0]).toContain('Does anyone else')
+    expect(head(init.prompts).at(-1)).toContain('use every default')
+    expect(head(add).at(-1)).toContain('use every default')
+    expect(project(add)).toEqual(project(init.prompts))
   })
 
   it('team to solo with a draft that holds a ticket is refused by name: nothing written, no event appended, the personal branch where it was (0130 §1)', async () => {
