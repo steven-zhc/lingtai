@@ -363,7 +363,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       try {
         codexText = (at.codexText ?? (() => codexTextConfig()))()
       } catch {
-        // An unreadable machine file is no codex_text; doctor's own row reports the read.
+        // An unreadable or invalid codex_text names no Codex agent here; doctor's discuss row validates it again and reports why.
         codexText = undefined
       }
       if (codexText) collected.push({ path: ['discuss', 'agent'], value: 'codex' })

@@ -3409,6 +3409,24 @@ export function defaultDiscussRow(row: CheckResult, declared: boolean): CheckRes
   }
 }
 
+/** A `codex_text` that is configured but wrong is a failure of its own, never the same as none configured. */
+export function invalidCodexText(
+  project: string,
+  configured: () => CodexTextConfig | undefined,
+): CheckResult | undefined {
+  try {
+    configured()
+    return undefined
+  } catch (err) {
+    return {
+      name: `discuss: ${project} codex_text`,
+      status: 'fail',
+      title: `codex_text configuration for ${project} is invalid`,
+      detail: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
 /** Whether the recipe's own text has a top-level `discuss:` key; a preset cannot supply one. */
 function declaresDiscuss(source: string): boolean {
   try {
@@ -3696,7 +3714,14 @@ export function declaredEnvironment(
               const row = yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [
                 `${role}.agent`,
               ])
-              results.push(role === 'discuss' ? defaultDiscussRow(row, declaresDiscuss(resolved.source)) : row)
+              const declared = role === 'discuss' && declaresDiscuss(resolved.source)
+              results.push(role === 'discuss' ? defaultDiscussRow(row, declared) : row)
+              // `init` treats an invalid codex_text as absent and so names no Codex discuss agent; this is where the
+              // configuration error is reported, since the Codex row above runs only for a recipe that selects Codex.
+              if (role === 'discuss' && !declared && row.status === 'fail') {
+                const invalid = invalidCodexText(project.project!, reach.codexText ?? (() => codexTextConfig(env)))
+                if (invalid) results.push(invalid)
+              }
             }
           }
         }),
