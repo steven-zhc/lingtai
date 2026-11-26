@@ -299,7 +299,8 @@ describe('the totals', () => {
    * run, credited to Work.
    */
   it('reads each run with not one row in spend as unknown, never as nothing', () => {
-    const totals = totalsOf([run({ runId: RUN_1 }), run({ runId: RUN_2 })], [], [])
+    const done = { state: 'failed', detail: null } as AttemptView['outcome']
+    const totals = totalsOf([run({ runId: RUN_1, outcome: done }), run({ runId: RUN_2, outcome: done })], [], [])
     expect(totals.byPurpose.Work).toEqual({ reportedCents: 0, reportedRuns: 0, estimates: [], unknown: 2 })
   })
 })

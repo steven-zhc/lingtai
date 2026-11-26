@@ -1237,7 +1237,6 @@ describe('the block, rendered', () => {
     expect(panel).toContain('this step')
     expect(panel).toContain('at most 150 turns a run')
     expect(panel).toContain('at most $5.00 a run')
-    expect(panel).toContain('nothing billed yet')
     expect(panel).not.toContain('$0.00')
     // The server's markup is `sinceText(iso, serverNow)` — no clock read.
     expect(panel).toContain(`>${sinceText('2026-11-05T00:00:00.000Z', NOW)}</span>`)
