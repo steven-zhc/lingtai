@@ -799,7 +799,7 @@ function TicketContext({
  * and `pass-5cb24ac5` in two of them. So the state is the readout, *why it
  * stopped* is second and quoted from whatever refused, *what that means for the
  * decision* is third, the moves are fourth and the pair is fifth. Every
- * identifier is in the bar (`Coords`), once.
+ * identifier is in the facts line, once; the bar ends in `#<n>`.
  *
  * **Rank 3 is one sentence, and `soWhat` is the only thing that fills it**
  * (#152). It was a paragraph assembled from four tickets — the round count,
@@ -1204,18 +1204,45 @@ export function Standing({
         )}
       </Gh>
     )
-  const facts = (inLine: string | null): ReactNode[] =>
-    standing.state === 'running' && standing.running
-      ? runningFacts(standing.running, now)
-      : [
-          ...namedTimes({
-            firstClaimAt,
-            state: standing.state,
-            since: standing.since,
-            landedBase: standing.landedOn?.base ?? null,
-          }).map((t) => <span key={t}>{t}</span>),
-          inLine !== null ? <span>{inLine}</span> : null,
+  const pointerLink =
+    standing.attempt !== null ? (
+      <Link
+        key="from"
+        className="sfrom sptr"
+        href={attemptTabPath(taskId, standing.attempt)}
+        scroll={false}
+        title={standing.runId ?? undefined}
+      >
+        {standing.state === 'queued' ? 'after' : 'from'} Attempt {standing.attempt} of {standing.attempts} ↓
+      </Link>
+    ) : null
+  /*
+   * The facts line, in one place so the pending and the answered draw cannot differ (#1500): the named times, `never
+   * run`, the queued place, *offered by GitHub* once GitHub has said so, and the pointer to the attempt last.
+   */
+  const facts = (inLine: string | null, queued: QueuedView | null): ReactNode[] => [
+    ...(standing.state === 'running' && standing.running
+      ? [
+          ...namedTimes({ firstClaimAt, state: 'running', since: null }).map((t) => <span key={t}>{t}</span>),
+          ...runningFacts(standing.running, now),
         ]
+      : namedTimes({
+          firstClaimAt,
+          state: standing.state,
+          since: standing.since,
+          landedBase: standing.landedOn?.base ?? null,
+        }).map((t) => <span key={t}>{t}</span>)),
+    // Said in as many words. An item with no attempts is not a stalled one.
+    standing.attempts === 0 ? <span key="never">never run</span> : null,
+    standing.state === 'running' && standing.running ? null : inLine !== null ? <span>{inLine}</span> : null,
+    // Whose fact the queue is: `queued` is the one state that is not in the log (0012).
+    queued !== null && queued.problem === null && queued.notOffered === null ? (
+      <span key="offered">offered by GitHub</span>
+    ) : null,
+    // The coordinate is the pointer: which attempt produced this state, and the way down to it. `of N` because the
+    // number alone reads as the whole story on an item that has had three (#102).
+    pointerLink,
+  ]
   const word = stateWord(standing.state)
   const strip = (
     <TotalsStrip
@@ -1240,13 +1267,16 @@ export function Standing({
     <Gh
       g={g}
       pending={pending}
-      fallback={titled(word, joinMeta([subject === null ? null : refOf(subject, subject.url), ...facts(null)]))}
+      fallback={titled(word, joinMeta([subject === null ? null : refOf(subject, subject.url), ...facts(null, null)]))}
     >
       {(a) => {
         const ref = subject === null ? null : refOf(subject, a.ticket.url ?? subject.url)
         return subject !== null && missingOf(a)
-          ? titled(undefined, joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>]))
-          : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued))]))
+          ? titled(
+              undefined,
+              joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>, pointerLink]),
+            )
+          : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued), a.queued)]))
       }}
     </Gh>
   )
@@ -1992,58 +2022,6 @@ function firstClause(text: string): string {
   return clause.length > CLAUSE_MAX ? `${clause.slice(0, CLAUSE_MAX - 1)}…` : clause
 }
 
-/**
- * Rank 8: every identifier the page has, each once, as one muted line in the
- * bar (#152).
- *
- * This was the block's own fourth rank, and the attempt row printed the same
- * run id again as a full uuid — `pass-52feebd1` twice on one page. So the bar
- * says which item and which attempt, and the run id is that link's title; the
- * attempt row is where the id, the shas and the branch are printed, once.
- */
-export function Coords({
-  standing,
-  taskId,
-  queued,
-}: {
-  standing: StandingView
-  taskId: string
-  /** Null until GitHub has answered, and for every state but `queued`: *offered by GitHub* is omitted then. */
-  queued: QueuedView | null
-}) {
-  return (
-    <span className="coords" data-rank="coords">
-      <span className="mono">{taskId}</span>
-      {/* Said in as many words. An item with no attempts is not a stalled one,
-          and the absence of a run is exactly what the page could not show
-          before it could be opened at all. */}
-      {standing.attempts === 0 ? <span>never run</span> : null}
-      {standing.since !== null ? (
-        <span>
-          since {standing.since.slice(0, 10)} {standing.since.slice(11, 16)} UTC
-        </span>
-      ) : null}
-      {/* Whose fact this is. `queued` is the one state that is not in the log,
-          so a page that stated it without saying where it came from would be
-          claiming a reducer it did not make (0012). */}
-      {queued !== null && queued.problem === null && queued.notOffered === null ? <span>offered by GitHub</span> : null}
-      {/* The coordinate is the pointer: which attempt produced this state, and
-          the way down to it. `of N` because the number alone reads as the whole
-          story on an item that has had three (#102). */}
-      {standing.attempt !== null ? (
-        <Link
-          className="sfrom sptr"
-          href={attemptTabPath(taskId, standing.attempt)}
-          scroll={false}
-          title={standing.runId ?? undefined}
-        >
-          {standing.state === 'queued' ? 'after' : 'from'} Attempt {standing.attempt} of {standing.attempts} ↓
-        </Link>
-      ) : null}
-    </span>
-  )
-}
-
 /** The card's weights, said once there and read here. See `page.tsx`'s `HELD_CLASS`. */
 const HELD_CLASS: Record<WaitLine['part'], string> = {
   what: 'diag',
@@ -2309,16 +2287,4 @@ export function DeferredStanding({
   // One tree whatever `untouched` says: the first event on a ticket changes a
   // prop, never the component's ancestry, so nothing typed into it is remounted.
   return <Standing {...props} github={answer} untouched={untouched} outgoing={null} queued={null} />
-}
-
-/** `Coords`, with *offered by GitHub* omitted until the answer is in (0118 §2). */
-export function DeferredCoords({
-  answer,
-  ...props
-}: { answer: Answered<TaskAnswer> } & Omit<Parameters<typeof Coords>[0], 'queued'>) {
-  return (
-    <Deferred value={answer} fallback={<Coords {...props} queued={null} />}>
-      {(a) => <Coords {...props} queued={a.queued} />}
-    </Deferred>
-  )
 }

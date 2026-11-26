@@ -1,23 +1,31 @@
 import type { AttemptRef } from '@lingtai/domain/wait'
+import { hasGitHubAuth } from '@lingtai/env'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import type { ReactNode } from 'react'
 
-import { Bar } from '@/app/bar.tsx'
+import { Bar, BarActions } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
-import { readRegistered } from '@/lib/locks.ts'
-import { ticketIdOf, ticketPath } from '@/lib/paths'
+import { filterOptions, onBoardProjects } from '@/lib/board'
+import { lockMap, type LockMap } from '@/lib/lock-marks.ts'
+import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { ticketIdOf, ticketPath, ticketRefOf } from '@/lib/paths'
+import { placeViewsOf } from '@/lib/prs.ts'
+import { sandboxStates, type SandboxState } from '@/lib/sandbox-state.ts'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
 import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } from '@/lib/task'
 import { measure } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import type { Answered } from '../../../../deferred.tsx'
+import { Deferred, type Answered } from '../../../../deferred.tsx'
+import { FilterMenu } from '../../../../filter-menu.tsx'
 import { FooterFetched } from '../../../../footer-fetched'
 import { Follow, Following } from '../../../../live.tsx'
+import { PlaceLine, viewsFor, type PlaceView } from '../../../../place-line.tsx'
+import { filterSummary, filterTitle, ProjectRows } from '../../../../projects.tsx'
 import { LegacyFragment, RecordTabRow } from '../../../../record-tab-row.tsx'
-import { DeferredCoords, DeferredStanding, detailClass } from '../../../../standing.tsx'
+import { DeferredStanding, detailClass } from '../../../../standing.tsx'
 
 /**
  * The top of the task page, and the frame the record's tabs sit in.
@@ -29,8 +37,8 @@ import { DeferredCoords, DeferredStanding, detailClass } from '../../../../stand
  *
  * **It opens with the answer, and the rest is a record** (#152). The page is
  * opened because something stopped, and it has one job: say *what* stopped,
- * *why*, and *what you can do*. That is `standing.tsx`. Every identifier is in
- * the bar, once (`Coords`).
+ * *why*, and *what you can do*. That is `standing.tsx`. The bar ends in `#<n>`
+ * and every identifier is in the facts line, once.
  *
  * **The record is a layout and its children** (#885, 0118 §2). This is the
  * layout: the bar, `Standing` and the tab row, and `loadTask` with all its
@@ -119,9 +127,52 @@ function WaitingNav({ waiting }: { waiting: TaskDetail['waiting'] }) {
   )
 }
 
+/** What the project menu is drawn from: read for the page by the layout, never by `TaskBody`. */
+export interface MenuInputs {
+  filters: string[]
+  registered: readonly string[]
+  locks: LockMap
+  sandbox: ReadonlyMap<string, SandboxState>
+  app: boolean
+  /** Why the project list could not be read, or null: the menu says so in place of its rows. */
+  error: string | null
+}
+
+/**
+ * The project menu: the summary (the project's name) is drawn at once, and its rows come through a `Deferred` of their
+ * own, as `/` streams them. No inputs draws no menu, and the crumb is the name as text.
+ */
+function menuOf(project: string | undefined, menu: Answered<MenuInputs | null> | undefined) {
+  if (project === undefined || menu === undefined || menu === null) return undefined
+  return (
+    <FilterMenu className="filter" summary={filterSummary(project)} title={filterTitle(project)}>
+      <Deferred value={menu} fallback={null}>
+        {(m) =>
+          m === null ? null : m.error !== null ? (
+            <p className="pr-refusal" role="alert">
+              The list of projects could not be read: {m.error}
+            </p>
+          ) : (
+            <ProjectRows
+              filters={m.filters}
+              only={project}
+              app={m.app}
+              registered={m.registered}
+              locks={m.locks}
+              sandbox={m.sandbox}
+            />
+          )
+        }
+      </Deferred>
+    </FilterMenu>
+  )
+}
+
 export function TaskBody({
   task,
   github,
+  views,
+  menu,
   now,
   registered = false,
   pause,
@@ -140,6 +191,10 @@ export function TaskBody({
    * arrives (0111 §15); a test passes the resolved value and sees what the page sees then.
    */
   github: Answered<TaskAnswer>
+  /** The place line's views: `PRs` only for a team project, and its count is a GitHub read, so it streams (#1500). */
+  views?: Answered<PlaceView[]>
+  /** What the project menu is built from; `null` (or absent) draws the project's name as text. */
+  menu?: Answered<MenuInputs | null>
   now?: number
   children?: ReactNode
 }) {
@@ -153,20 +208,38 @@ export function TaskBody({
   // did not, because `unpriced (1 run)` otherwise reads exactly like a ticket
   // that predates `RunSpent` (`#498`'s review).
   const spendCurrency = spendChip(task.spendCurrency)
+  const project = task.ticket?.project ?? undefined
+  // The tail is the ticket's number; never `#NaN` or the internal id.
+  const n = issueNumber ?? Number(ticketRefOf(task.taskId)?.issue)
+  const tail = Number.isSafeInteger(n) && n > 0 ? `#${n}` : undefined
 
   return (
     <>
       <main className={detailClass(task.standing.state, Boolean(task.standing.afterMove))}>
-        <Bar project={task.ticket?.project ?? undefined} registered={registered} pause={pause}>
-          <span className="sep" />
-          {/* Rank 8: one muted line, each identifier once. */}
-          <DeferredCoords standing={task.standing} taskId={task.taskId} answer={github} />
+        <Bar
+          project={project}
+          registered={registered}
+          pause={pause}
+          actions={
+            project !== undefined && registered ? <BarActions project={project} pause={pause} recipe={false} /> : null
+          }
+        >
+          <Deferred
+            value={views ?? viewsFor(project)}
+            fallback={
+              <PlaceLine
+                project={project}
+                views={viewsFor(project)}
+                here="tickets"
+                tail={tail}
+                menu={menuOf(project, menu)}
+                pendingAfter="tickets"
+              />
+            }
+          >
+            {(v) => <PlaceLine project={project} views={v} here="tickets" tail={tail} menu={menuOf(project, menu)} />}
+          </Deferred>
           <WaitingNav waiting={task.waiting} />
-          {spendCurrency.current ? null : (
-            <span className={`chip ${spendCurrency.tone}`} title={spendCurrency.title}>
-              {spendCurrency.label}
-            </span>
-          )}
           {/* Nothing while the page follows the log; the sentence when it stopped. */}
           <Following />
         </Bar>
@@ -260,16 +333,48 @@ export default async function TaskLayout({
   // issue's answer knows streams in after it. Started inside `loadTask` its reads
   // would be under `page /task`, which ends before they do. Never rejects.
   const github = measure(() => loadTaskAnswer(taskId), { label: '/task github' }).then(([answer]) => answer)
-  const [[task, timings], projects] = await Promise.all([
+  // The place line's reads start with the page's and are never awaited here: `PRs` asks GitHub on a team project, and
+  // the first byte must not wait for it. Neither promise rejects (`Deferred`).
+  const project0 = ticketRefOf(taskId)?.project
+  const views = placeViewsOf(project0).catch(() => viewsFor(project0, { waiting: null }))
+  const [[task, timings], listing] = await Promise.all([
     measure(() => loadTask(taskId), { label: '/task' }),
     measure(() => readRegistered(), { label: '/task projects' }).then(
-      ([registered]) => registered,
-      () => [],
+      ([registered]) => ({ projects: registered, error: null as string | null }),
+      (err: unknown) => ({
+        projects: [] as Awaited<ReturnType<typeof readRegistered>>,
+        error: err instanceof Error ? err.message : String(err),
+      }),
     ),
   ])
   if (!task) notFound()
+  const projects = listing.projects
   const project = task.ticket?.project ?? undefined
   const registered = project !== undefined && projects.some((p) => p.project === project)
+  // The locks are read here, under their own stage, and the menu below reuses that read (`readProjectLocks` is cached).
+  const [pause] = await measure(() => pauseSlot(project), { label: '/task locks' })
+  // The menu's other reads start here, after the registered listing this page already awaited (not read twice), and
+  // stream: a failure is said in the menu, in place of its rows, and never fails the page.
+  const menu: Promise<MenuInputs | null> = Promise.all([onBoardProjects(), readProjectLocks()])
+    .then(([onBoard, locks]) => {
+      const names = projects.map((p) => p.project).filter((p): p is string => p !== null)
+      return {
+        filters: filterOptions(names, onBoard),
+        registered: names,
+        locks: lockMap(locks),
+        sandbox: sandboxStates(projects),
+        app: hasGitHubAuth(),
+        error: listing.error,
+      }
+    })
+    .catch((err: unknown): MenuInputs => ({
+      filters: [],
+      registered: [],
+      locks: new Map(),
+      sandbox: new Map(),
+      app: false,
+      error: err instanceof Error ? err.message : String(err),
+    }))
   return (
     <>
       <TimingMeta timings={timings} />
@@ -284,8 +389,10 @@ export default async function TaskLayout({
         <TaskBody
           task={task}
           github={github}
+          views={views}
+          menu={menu}
           registered={registered}
-          pause={(await measure(() => pauseSlot(project), { label: '/task locks' }))[0]}
+          pause={pause}
           banner={<LockBanner project={project} />}
         >
           {children}
