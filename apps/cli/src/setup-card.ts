@@ -71,6 +71,12 @@ export interface SetupCardFacts {
    * its card is *this machine* alone and `recipePath` is absent with them.
    */
   recipe?: CardRecipe
+  /** The labels the queue reads, made at `add` (#1486); absent on `init`, whose card is unchanged. */
+  labels?: {
+    slug: string
+    created: readonly string[]
+    missing: readonly { name: string; why: 'denied' | 'unchecked' }[]
+  }
   trial?: TrialOutcome
   recipePath?: string
 }
@@ -190,6 +196,11 @@ function trialRow(trial: TrialOutcome): string {
 
 type Row = readonly [label: string, value: string]
 
+/** A word safe to paste into a shell: bare when it needs no quoting, else single-quoted. */
+function shellQuote(word: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`
+}
+
 /** The card: a heading, three groups a blank line apart, one fact a row. No closing line — that is `renderReadyLine`. */
 export function renderSetupCard(facts: SetupCardFacts): string {
   const { recipe, trial, userHome } = facts
@@ -268,6 +279,18 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         ],
       },
     )
+  }
+  const labels = facts.labels
+  if (labels !== undefined && recipe !== undefined && trial !== undefined) {
+    const rows: Row[] = []
+    if (labels.created.length > 0) rows.push(['labels', `made ${labels.created.join(', ')}`])
+    for (const m of labels.missing) {
+      rows.push([
+        'labels',
+        `${m.name} could not be ${m.why === 'denied' ? 'made' : 'checked'} — gh label create ${shellQuote(m.name)} --repo ${shellQuote(labels.slug)}`,
+      ])
+    }
+    if (rows.length > 0) groups[1]!.rows.push(...rows)
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
   const top =

@@ -3,7 +3,7 @@
 **Status** accepted · 2026-10-25 · amended 2026-11-13: says why nothing runs · amended 2026-11-18: a red base is a sha comparison in the queue, checked by the next attempt claimed, never by the look
 
 One conductor may run several attempts at once. How many is `runtime.concurrency`
-in a project's recipe, default 1. Tickets that cannot safely run together are
+in a project's recipe, default 2. Tickets that cannot safely run together are
 never started together, landings onto one base are taken one at a time, a drain
 waits for every attempt in flight, and a daily dollar ceiling stops the taking of
 new work without ever killing an attempt that is running.
@@ -29,7 +29,7 @@ and the dollar ceiling lands before any N > 1.
 ## Decision
 
 1. **Slots are per project, and the installation has no cap of its own.**
-   `runtime.concurrency` is an integer ≥ 1 in the recipe, default 1. The
+   `runtime.concurrency` is an integer ≥ 1 in the recipe, default 2. The
    installation runs the sum of its projects' slots; what bounds money is §5, not
    a count. A slot is (project, count in flight), so a stop that is per project
    (§7) stops one project's slots and leaves another's. The key must exist in the

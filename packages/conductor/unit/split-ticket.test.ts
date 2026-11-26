@@ -116,7 +116,11 @@ class FakeGitHub {
         const issue = this.issues.get(n)!
         issue.labels = issue.labels.filter((l) => l.name !== name)
       }),
-    createLabel: async (name) => this.hit(`createLabel ${name}`, () => void this.labels.add(name)),
+    createLabel: async (name) =>
+      this.hit(`createLabel ${name}`, () => {
+        this.labels.add(name)
+        return 'created' as const
+      }),
     addSubIssue: async (p, c) =>
       this.hit(`addSubIssue ${p} ${c}`, () => {
         if (this.subs.has(`${p}>${c}`)) throw new Error('422')

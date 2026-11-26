@@ -449,9 +449,7 @@ function fakeClient(issues: Issue[], project = 'esctest'): GitHubClient {
     removeLabel: async () => {
       throw new Error('no writes in this test')
     },
-    createLabel: async () => {
-      throw new Error('no writes in this test')
-    },
+    createLabel: async () => 'created',
     addLabels: async () => {
       throw new Error('no writes in this test')
     },

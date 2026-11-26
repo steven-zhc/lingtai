@@ -40,7 +40,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
-import { modeMark } from '@/lib/mode-mark.ts'
+import { modeMarks } from '@/lib/mode-mark.ts'
 import { elapsed } from '@/lib/progress'
 import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
@@ -827,7 +827,7 @@ const CountPending = () => (
 async function readMenu({ reads, locks, param }: Ctx) {
   const [board, registered, lockRead] = await Promise.all([reads.board, reads.registered, locks])
   const { only } = shape(board, param)
-  const mode = new Map(board.askable.map((f) => [f.project, modeMark(f.recipe)]))
+  const mode = modeMarks(registered)
   return { filters: board.projects, only, registered, mode, ...lockShape(lockRead, only, registered) }
 }
 
