@@ -349,7 +349,8 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         detected: mainBranch,
         kept: askKept,
         validate: (answer) =>
-          team === undefined
+          // The default is what GitHub or the recipe already named; only a different answer is looked up.
+          team === undefined || answer === mainBranch
             ? Effect.succeed(null)
             : Effect.map(team.branchExists(answer), (exists) =>
                 exists === 'unreadable'

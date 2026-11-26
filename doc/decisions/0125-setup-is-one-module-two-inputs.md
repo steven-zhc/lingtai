@@ -92,6 +92,13 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    offered on the board. It runs after the module has finished and is not a setup
    question, so it is the one difference between the inputs and not a copy.
 
+8. **`init` and `add` ask a project the same questions in the same order.** Where
+   the code is, solo or team, the working or personal branch, *use every
+   default?*, the recipe's questions, *register?*. `init` asks only this machine's
+   own questions before them. *Use every default?* answers only what comes after
+   it; the mode and the branch take their defaults only under `--defaults`, and the
+   card names them.
+
 ## Consequences
 
 - A change to what setup proposes is one edit, and both inputs show it.
