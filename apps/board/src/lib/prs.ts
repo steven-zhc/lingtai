@@ -160,7 +160,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }
-  if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
+  if (state === null || state === undefined) return { kind: 'unknown' }
   try {
     const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
@@ -184,7 +184,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
         const fixHref = (name: string | null): FixTicket | null =>
           prFixTicketLink({
             project,
-            owner: state.owner,
+            owner: state.owner ?? null,
             github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
           })
@@ -246,7 +246,7 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   } catch {
     return viewsFor(project, { waiting: null })
   }
-  if (state === null || state === undefined || !state.owner) return viewsFor(project)
+  if (state === null || state === undefined) return viewsFor(project)
   let recipe: Recipe
   try {
     recipe = (await recipeOf(project)).recipe
