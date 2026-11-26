@@ -703,6 +703,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             command: 'init',
             project: chosen.name,
             updated: chosen.updated,
+            ...(chosen.unchanged === true ? { unchanged: true } : {}),
             home,
             homeIsNew,
             userHome: world.env['HOME'] ?? '',

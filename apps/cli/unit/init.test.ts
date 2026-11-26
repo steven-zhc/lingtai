@@ -79,6 +79,8 @@ interface Harness {
   files: Map<string, string>
   machineFiles: Map<string, string>
   machineWrites: number
+  store: ReturnType<typeof createMemoryEventStore>
+  registrations: number
   calls: { boardAt: number; board: number }
 }
 
@@ -118,6 +120,9 @@ function harness(
   const files = new Map<string, string>()
   const machineFiles = new Map<string, string>()
   const writes = { count: 0 }
+  const registrations = { count: 0 }
+  const registered: string[] = []
+  const store = createMemoryEventStore()
   const calls = { boardAt: 0, board: 0 }
   const answers = [...(options.answers ?? [])]
   const world: PromiseInitWorld = {
@@ -163,7 +168,7 @@ function harness(
       if (found === undefined) throw new Error(`unplanned git call: ${dir}::${args.join(' ')}`)
       return found
     },
-    projects: async () => [],
+    projects: async () => registered.map((project) => ({ project, name: project, owner: null }) as never),
     locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     cwd: options.cwd ?? '/elsewhere',
     files: {
@@ -172,9 +177,13 @@ function harness(
         files.set(p, text)
       },
     } as RecipeFiles,
-    store: createMemoryEventStore(),
+    store,
     signedIn: async () => ['claude-code'] as never[],
-    registerLocal: async (payload) => ({ line: `added ${payload.project}`, updated: false }),
+    registerLocal: async (payload) => {
+      registrations.count++
+      registered.push(payload.project)
+      return { line: `added ${payload.project}`, updated: false }
+    },
     history: async () => [],
     doctor: async () => {
       const said: { text: string; failed: boolean; count?: number } = await (
@@ -195,6 +204,10 @@ function harness(
     asked,
     files,
     machineFiles,
+    store,
+    get registrations() {
+      return registrations.count
+    },
     get machineWrites() {
       return writes.count
     },
@@ -592,8 +605,13 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(configAfterFirst).toBeDefined()
     expect(recipeAfterFirst).toBeDefined()
     const writesAfterFirst = h.machineWrites
+    const registeredAfterFirst = h.registrations
+    const eventsAfterFirst = (await h.store.read('prj-repo')).length
 
     expect(await initCommand(flagsFromArgv(argv), h.world)).toBe(0)
+    // The rerun asked its questions (#1473) and took every default: no registration, no event on the project.
+    expect(h.registrations).toBe(registeredAfterFirst)
+    expect((await h.store.read('prj-repo')).length).toBe(eventsAfterFirst)
 
     // A settled store is reported, not rewritten (this file's header), and a
     // recipe re-asked with every answer unchanged renders no differently

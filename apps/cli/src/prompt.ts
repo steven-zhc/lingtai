@@ -64,6 +64,21 @@ export function stoppedAtQuestion(shape: Pick<AskShape, 'kept' | 'startOver' | '
 }
 
 /**
+ * Work a caller needs done before Ctrl+C at a question ends the process: `liveAsk` exits directly, which never
+ * interrupts an Effect fiber, so what a rerun answered is kept here (#1473). It resolves to the sentence saying what it
+ * wrote (null when there was nothing to write) and rejects with the sentence saying why it could not: the message
+ * under the question is printed after it, so it never says "nothing was written" over a write. Returns the way to
+ * take it back out.
+ */
+const beforeCancelExit = new Set<() => Promise<string | null>>()
+export function onCancelExit(keep: () => Promise<string | null>): () => void {
+  beforeCancelExit.add(keep)
+  return () => {
+    beforeCancelExit.delete(keep)
+  }
+}
+
+/**
  * `question()`'s live ask. Null with no terminal on both ends (0121 §9), which
  * `question()` turns into its by-name refusal; otherwise a select for a closed
  * list and a text prompt for anything else, each defaulting as the bracket says.
@@ -90,7 +105,13 @@ export async function liveAsk(
             defaultValue: shape.defaultValue,
           })
   if (clack.isCancel(typed)) {
-    console.log(`\n${stoppedAtQuestion(shape)}`)
+    const settled = await Promise.allSettled([...beforeCancelExit].map((keep) => keep()))
+    const said = settled.flatMap((r) => (r.status === 'fulfilled' && r.value !== null ? [r.value] : []))
+    const failed = settled.flatMap((r) =>
+      r.status === 'rejected' ? [r.reason instanceof Error ? r.reason.message : String(r.reason)] : [],
+    )
+    if (failed.length > 0) console.log(`\nstopped at the question — ${failed.join('; ')}`)
+    else console.log(`\n${stoppedAtQuestion(said.length > 0 ? { ...shape, kept: said.join('; ') } : shape)}`)
     process.exit(130)
   }
   return String(typed)
