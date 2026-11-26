@@ -15,7 +15,7 @@ import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GitResult, RegisterLocalPayload } from '../src/first-project.ts'
@@ -112,6 +112,8 @@ interface Harness {
 
 function harness(options: {
   answers?: (string | null)[]
+  /** Answers by prompt instead of by order: it may never resolve, which is how a test holds a run at one question. */
+  ask?: (prompt: string) => Promise<string | null>
   git?: GitPlan
   projects?: ProjectState[]
   files?: Record<string, string>
@@ -143,6 +145,7 @@ function harness(options: {
   const world: PromiseFirstProjectWorld = {
     ask: async (prompt) => {
       asked.push(prompt)
+      if (options.ask !== undefined) return options.ask(prompt)
       return answers.length > 0 ? answers.shift()! : null
     },
     log: (line) => logged.push(line),
@@ -1601,18 +1604,119 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.registered).toEqual([])
   })
 
-  it("a rerun of init over an added local project goes through the questions with the recipe's values as defaults", async () => {
+  // A pnpm project with a `test` script: what detection would offer for install and checks.
+  const PNPM_READER: SetupReader = {
+    has: (p) => Effect.succeed(p === 'pnpm-lock.yaml' || p === 'package.json'),
+    read: (p) => Effect.succeed(p === 'package.json' ? '{"scripts":{"test":"vitest run"}}' : null),
+  }
+
+  /** `init` once on a new project, so the file under test is one `init` wrote. */
+  async function firstRun(
+    flags: Record<string, string>,
+    signedIn = ['claude-code'],
+    buildFlags: string[] = [],
+  ): Promise<string> {
+    const h = harness({ git: git(), projects: [], setupReader: () => PNPM_READER, signedIn })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    expect(await chooseFirstProject(world, flags, buildFlags)).toMatchObject({ ok: true })
+    return h.files.replaced[path]!
+  }
+
+  it('a rerun that takes every default changes nothing: not the recipe, not the registration, and the card says unchanged', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '' })
     const h = harness({
       git: git(),
       projects: [project('repo', null)],
-      files: {
-        [path]:
-          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '' })
+    expect(result).toMatchObject({ ok: true, project: 'local', unchanged: true })
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  it('a recipe that answered "no install" and "no checks" keeps them under every default, though detection would offer both', async () => {
+    const text = await firstRun(
+      { local: '/repo', mode: 'solo', defaults: '', install: 'none' },
+      ['claude-code'],
+      ['none'],
+    )
+    expect(text).toContain('prepared: []')
+    expect(text).toContain('build: []')
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '' })
+    expect(result).toMatchObject({ ok: true, unchanged: true })
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  it("a rerun offers the recipe's own install, checks and writer as the defaults, not detection's", async () => {
+    const text = await firstRun(
+      { local: '/repo', mode: 'solo', defaults: '', install: 'none' },
+      ['claude-code'],
+      ['none'],
+    )
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      // Every question answered with its default, the way Enter does it, but not as `--defaults`.
+      ask: async (prompt) => (prompt.includes('use every default') ? 'no' : ''),
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
+    expect(result).toMatchObject({ ok: true, unchanged: true })
+    expect(h.asked.find((p) => p.includes('install command'))).toContain('[none]')
+    expect(h.asked.some((p) => p.includes('build steps'))).toBe(false)
+    expect(h.asked.find((p) => p.includes('which agent writes'))).toContain('[claude-code]')
+    expect(h.files.replaced).toEqual({})
+  })
+
+  it('a rerun interrupted at a later question keeps the answers given before it', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
       },
     })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
-    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '', install: 'none' })
-    expect(result).toMatchObject({ ok: true, project: 'local' })
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
   })
 
   it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
