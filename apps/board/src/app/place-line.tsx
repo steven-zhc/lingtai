@@ -140,7 +140,7 @@ export function PlaceLine({
                 <View v={v} here={here} />
                 {v.id === pendingAfter ? (
                   <span className="view" aria-busy="true">
-                    <span className="sk-bar" aria-hidden="true" />
+                    <span className="sk-bar sk-view" aria-hidden="true" />
                   </span>
                 ) : null}
               </Fragment>

@@ -3557,6 +3557,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   animation: sk-shimmer 1.6s ease-in-out infinite;
 }
 .sk-id { width: 30%; }
+/* A view still being read (`PRs`): the width of a word, so the bar holds its place. */
+.sk-view { width: 2.4em; }
 .sk-n { display: inline-block; width: 1.4em; vertical-align: middle; }
 .sk-strip { width: 55%; }
 .sk-title { width: 85%; height: 12px; }

@@ -134,6 +134,8 @@ export interface MenuInputs {
   locks: LockMap
   sandbox: ReadonlyMap<string, SandboxState>
   app: boolean
+  /** Why the project list could not be read, or null: the menu says so in place of its rows. */
+  error: string | null
 }
 
 /**
@@ -146,7 +148,11 @@ function menuOf(project: string | undefined, menu: Answered<MenuInputs | null> |
     <FilterMenu className="filter" summary={filterSummary(project)} title={filterTitle(project)}>
       <Deferred value={menu} fallback={null}>
         {(m) =>
-          m === null ? null : (
+          m === null ? null : m.error !== null ? (
+            <p className="pr-refusal" role="alert">
+              The list of projects could not be read: {m.error}
+            </p>
+          ) : (
             <ProjectRows
               filters={m.filters}
               only={project}
@@ -331,20 +337,24 @@ export default async function TaskLayout({
   // the first byte must not wait for it. Neither promise rejects (`Deferred`).
   const project0 = ticketRefOf(taskId)?.project
   const views = placeViewsOf(project0).catch(() => viewsFor(project0, { waiting: null }))
-  const [[task, timings], projects] = await Promise.all([
+  const [[task, timings], listing] = await Promise.all([
     measure(() => loadTask(taskId), { label: '/task' }),
     measure(() => readRegistered(), { label: '/task projects' }).then(
-      ([registered]) => registered,
-      () => [],
+      ([registered]) => ({ projects: registered, error: null as string | null }),
+      (err: unknown) => ({
+        projects: [] as Awaited<ReturnType<typeof readRegistered>>,
+        error: err instanceof Error ? err.message : String(err),
+      }),
     ),
   ])
   if (!task) notFound()
+  const projects = listing.projects
   const project = task.ticket?.project ?? undefined
   const registered = project !== undefined && projects.some((p) => p.project === project)
   // The locks are read here, under their own stage, and the menu below reuses that read (`readProjectLocks` is cached).
   const [pause] = await measure(() => pauseSlot(project), { label: '/task locks' })
   // The menu's other reads start here, after the registered listing this page already awaited (not read twice), and
-  // stream: a failure is no menu, never a failed page.
+  // stream: a failure is said in the menu, in place of its rows, and never fails the page.
   const menu: Promise<MenuInputs | null> = Promise.all([onBoardProjects(), readProjectLocks()])
     .then(([onBoard, locks]) => {
       const names = projects.map((p) => p.project).filter((p): p is string => p !== null)
@@ -354,9 +364,17 @@ export default async function TaskLayout({
         locks: lockMap(locks),
         sandbox: sandboxStates(projects),
         app: hasGitHubAuth(),
+        error: listing.error,
       }
     })
-    .catch(() => null)
+    .catch((err: unknown): MenuInputs => ({
+      filters: [],
+      registered: [],
+      locks: new Map(),
+      sandbox: new Map(),
+      app: false,
+      error: err instanceof Error ? err.message : String(err),
+    }))
   return (
     <>
       <TimingMeta timings={timings} />

@@ -49,6 +49,7 @@ vi.mock('../src/app/deferred.tsx', async () => {
 
 import { AttemptTab } from '../src/app/attempt-tab.tsx'
 import { TaskBody, UnpushedBanner } from '../src/app/p/[project]/ticket/[n]/layout.tsx'
+import type { PlaceView } from '../src/app/place-line.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
 import { attemptTabPath, historyPath, sandboxTabPath } from '../src/lib/paths.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
@@ -603,6 +604,27 @@ describe('a blocked task', () => {
     expect(bar).not.toContain('from Attempt')
     expect(bar.split('>Recipe<').length - 1).toBe(1)
     expect(html).toContain('from Attempt')
+  })
+
+  it('says so in the project menu when the project list could not be read (#1500)', () => {
+    const t = blocked()
+    const html = renderToStaticMarkup(
+      <TaskBody
+        task={t}
+        github={t.github}
+        menu={{ filters: [], registered: [], locks: new Map(), sandbox: new Map(), app: false, error: 'db down' }}
+      />,
+    )
+    expect(html).toContain('The list of projects could not be read: db down')
+    expect(html).toContain('role="alert"')
+  })
+
+  it("holds the PR view's width while it is read (#1500)", () => {
+    const t = blocked()
+    const html = renderToStaticMarkup(
+      <TaskBody task={t} github={t.github} views={new Promise<PlaceView[]>(() => {})} />,
+    )
+    expect(html).toContain('class="sk-bar sk-view"')
   })
 
   it('prints each identifier once', () => {
