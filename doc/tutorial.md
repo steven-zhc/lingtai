@@ -68,7 +68,8 @@ Continue when Lingtai prints `created #N`.
 ## Step 3 — Start
 
 Starting pays for at least two runs, writer and reviewer, on the accounts above.
-Each finding sent back to the writer costs one more writer run and one judge run.
+Each finding sent back to the writer costs one judge run, one more writer run and
+one more reviewer run, since the fix is reviewed again.
 
 ```sh
 lingtai start
