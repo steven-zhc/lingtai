@@ -391,19 +391,24 @@ describe('askRecipe — --defaults (#433)', () => {
     expect(resolved!.runtime.agent).toBe('claude-code')
   })
 
-  it('a typed yes at "use every default?" finishes the same way, asking nothing else (#727)', async () => {
+  it('a typed yes at "use every default?" still asks the branch first, and nothing after it (#1488)', async () => {
     const asked: string[] = []
     const world: QuestionWorld = {
       ask: async (prompt) => {
         asked.push(prompt)
-        if (asked.length === 1) return 'yes'
+        if (prompt.includes('use every default?')) return 'yes'
+        if (prompt.includes('anyone else')) return 'solo'
+        if (prompt.includes('governs and merges into')) return 'main'
         throw new Error(`a terminal was asked: ${prompt}`)
       },
       log: () => {},
     }
     const { result, resolved } = await runTwo(TWO_RUNTIMES, world, { land: 'main' })
     expect(result).toMatchObject({ ok: true })
-    expect(asked).toEqual(['use every default? [yes]: '])
+    // The harness's `BASE_AT` decides the mode; the branch is asked, and only then the defaults.
+    expect(asked, JSON.stringify(asked)).toHaveLength(2)
+    expect(asked[0]).toContain('governs and merges into')
+    expect(asked[1]).toContain('use every default?')
     expect(resolved!.runtime.agent).toBe('claude-code')
   })
 
@@ -438,6 +443,7 @@ describe('askRecipe — --defaults (#433)', () => {
   // it (#433 fix round, findings 1 and 2).
   const FULLY_FLAGGED = {
     mode: 'solo',
+    main: 'main',
     agent: 'claude-code',
     model: '',
     reviewer: 'none',
@@ -787,6 +793,108 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
       if (asked === 'GitHub login') continue // known on this machine, so asked of neither run
       expect(bare(second.prompts).some((p) => p.includes(asked))).toBe(true)
     }
+  })
+
+  it('a typed yes at "use every default?" is asked after the mode and the personal branch, and answers neither (#1488)', async () => {
+    const prompts: string[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        prompts.push(prompt)
+        if (prompt.includes('use every default')) return 'yes'
+        if (prompt.includes('Does anyone else')) return 'team'
+        if (prompt.includes('branch Lingtai works on')) return 'me/chosen'
+        throw new Error(`a terminal was asked after the defaults: ${prompt}`)
+      },
+      log: () => {},
+    }
+    const files = mapFiles()
+    const result = await askAndWrite(world, at(files, new Set(['me/chosen'])))
+    expect(result).toMatchObject({ ok: true })
+    const asked = bare(prompts)
+    expect(asked[0]).toContain('Does anyone else')
+    expect(asked[1]).toContain('branch Lingtai works on')
+    expect(asked[2]).toBe('use every default?')
+    expect(asked).toHaveLength(3)
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.personal).toBe('me/chosen')
+  })
+
+  it("a new solo project hands the trial the branch that was chosen, not GitHub's default (#1488)", async () => {
+    const seen: unknown[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return 'solo'
+        if (prompt.includes('governs and merges into')) return 'develop'
+        return ''
+      },
+      log: () => {},
+    }
+    const files = mapFiles()
+    const result = await askAndWrite(world, {
+      ...at(files, new Set(['develop'])),
+      tryBuild: (draft) => {
+        seen.push(draft.get(['branch', 'main']))
+        return null as never
+      },
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(seen).toEqual(['develop'])
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.main).toBe('develop')
+  })
+
+  it('a personal branch still to be made is read by the trial as the branch it is cut from (#1488)', async () => {
+    const seen: unknown[] = []
+    const next = answerer('team', (p) => (p.includes('use every default') ? 'no' : undefined))
+    const files = mapFiles()
+    const result = await askAndWrite(next.world, {
+      ...at(files, new Set(['main'])),
+      tryBuild: (draft) => {
+        seen.push(draft.get(['branch', 'personal']))
+        return null as never
+      },
+    })
+    expect(result).toMatchObject({ ok: true, make: { from: 'main' } })
+    expect(seen).toEqual(['main'])
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.personal).toBe('me/laptop')
+  })
+
+  it('team to solo may keep the personal branch as the solo working branch (#1488)', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return 'solo'
+        if (prompt.includes('governs and merges into')) return 'me/laptop'
+        if (prompt.includes('in the sandbox')) return 'on'
+        return ''
+      },
+      log: () => {},
+    }
+    const result = await askAndWrite(world, at(files, new Set(['me/laptop'])))
+    expect(result).toMatchObject({ ok: true })
+    const recipe = resolveSource(files.replaced.at(-1)!.text, path, path).recipe
+    expect(recipe.mode).toBe('solo')
+    expect(recipe.branch.main).toBe('me/laptop')
+    expect(recipe.branch.personal).toBeUndefined()
+  })
+
+  it('--defaults asks nothing and takes team and the personal branch by their defaults (#1488)', async () => {
+    const files = mapFiles()
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        throw new Error(`a terminal was asked: ${prompt}`)
+      },
+      log: () => {},
+    }
+    const result = await askAndWrite(world, {
+      ...at(files, new Set(['me/laptop'])),
+      flags: { install: 'none', defaults: '' },
+    })
+    expect(result).toMatchObject({ ok: true })
+    const recipe = resolveSource(files.replaced.at(-1)!.text, path, path).recipe
+    expect(recipe.branch.personal).toBe('me/laptop')
+    expect(recipe.mode).toBe('team')
   })
 
   it('team to solo writes mode: solo and drops the keys that are read only in team mode, and names the change', async () => {
