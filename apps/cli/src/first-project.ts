@@ -1013,14 +1013,16 @@ function runLocalBranch(
     // `applySetup`, as the first thing an interruption does. A rerun that changed nothing writes nothing.
     const keepAnswered = Effect.suspend(() => {
       const answered = answeredDraft?.changes() ?? []
-      if (answered.length === 0) return Effect.void
+      if (answered.length === 0) return Effect.succeed<string | null>(null)
       return applySetup(
         { home: world.home, by: world.by, store: world.store },
         { project: name, changes: answered },
         Effect.void,
       ).pipe(
-        Effect.asVoid,
-        Effect.catchCause(() => Effect.void),
+        Effect.map((): string | null => `What you answered was written to ${path}`),
+        Effect.catchCause((cause) =>
+          Effect.fail(new Error(`what you answered was NOT saved to ${path}: ${Cause.pretty(cause)}`)),
+        ),
       )
     })
     const askingRecipe = askRecipeEffect(world, {
@@ -1073,7 +1075,15 @@ function runLocalBranch(
       : found !== undefined && existingText !== null
         ? yield* Effect.acquireUseRelease(
             Effect.sync(() => onCancelExit(() => Effect.runPromiseWith(services)(keepAnswered))),
-            () => askingRecipe.pipe(Effect.onInterrupt(() => keepAnswered)),
+            () =>
+              askingRecipe.pipe(
+                Effect.onInterrupt(() =>
+                  keepAnswered.pipe(
+                    Effect.catch((error) => Effect.sync(() => world.log(error.message))),
+                    Effect.asVoid,
+                  ),
+                ),
+              ),
             (release) => Effect.sync(release),
           )
         : yield* askingRecipe
