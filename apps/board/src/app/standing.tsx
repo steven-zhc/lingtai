@@ -1226,14 +1226,12 @@ export function Standing({
           ...namedTimes({ firstClaimAt, state: 'running', since: null }).map((t) => <span key={t}>{t}</span>),
           ...runningFacts(standing.running, now),
         ]
-      : [
-          ...namedTimes({
-            firstClaimAt,
-            state: standing.state,
-            since: standing.since,
-            landedBase: standing.landedOn?.base ?? null,
-          }).map((t) => <span key={t}>{t}</span>),
-        ]),
+      : namedTimes({
+          firstClaimAt,
+          state: standing.state,
+          since: standing.since,
+          landedBase: standing.landedOn?.base ?? null,
+        }).map((t) => <span key={t}>{t}</span>)),
     // Said in as many words. An item with no attempts is not a stalled one.
     standing.attempts === 0 ? <span key="never">never run</span> : null,
     standing.state === 'running' && standing.running ? null : inLine !== null ? <span>{inLine}</span> : null,

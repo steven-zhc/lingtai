@@ -22,7 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { planStepLine } from '../src/app/rail.tsx'
-import { Coords, Standing, detailClass } from '../src/app/standing.tsx'
+import { Standing, detailClass } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   backoffOf,
@@ -356,12 +356,10 @@ const NEVER_RUN: StandingView = {
   approvedSha: null,
 }
 
-// The block and the bar's coordinates, which is where *never run* and *offered
-// by GitHub* went when every identifier moved up there (#152).
+// *never run* and *offered by GitHub* are in the facts line under the title (#1500).
 const render = (standing: StandingView, queued: QueuedView | null, unknown: string | null = null) =>
   renderToStaticMarkup(
     <>
-      <Coords standing={standing} taskId="ticket-lingtai-112" queued={queued} />
       <Standing
         subject={null}
         standing={standing}

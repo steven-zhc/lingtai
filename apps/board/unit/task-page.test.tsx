@@ -514,7 +514,7 @@ describe('a blocked task', () => {
   it('puts Discussion between the reason and the moves on a blocked page', () => {
     const html = page(blocked())
     const at = (rank: string) => html.indexOf(`data-rank="${rank}"`)
-    const order = ['coords', 'state', 'why', 'discussion', 'moves', 'pair', 'record'].map(at)
+    const order = ['state', 'why', 'discussion', 'moves', 'pair', 'record'].map(at)
     expect(order.every((i) => i > -1)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
@@ -595,10 +595,24 @@ describe('a blocked task', () => {
     expect(tab).toContain(CRASH)
   })
 
+  it('draws the place line ending in #<n>, with the pointer in the facts line (#1500)', () => {
+    const html = page(blocked())
+    const bar = html.slice(html.indexOf('<main'), html.indexOf('data-rank='))
+    expect(bar).toContain('aria-current="page"')
+    expect(bar).toContain('>#147<')
+    expect(bar).not.toContain('from Attempt')
+    expect(bar.split('>Recipe<').length - 1).toBe(1)
+    expect(html).toContain('from Attempt')
+  })
+
   it('prints each identifier once', () => {
     const read = page(blocked()).replace(/<[^>]*>/g, ' ')
     const count = (needle: string) => read.split(needle).length - 1
-    expect(count(ITEM)).toBe(1)
+    // The internal id is not printed at all: the bar ends in `#<n>` and the facts line carries `#n ↗` (#1500).
+    expect(count(ITEM)).toBe(0)
+    expect(count('since 2026')).toBe(0)
+    expect(count('04:27')).toBe(1)
+    expect(count('UTC')).toBe(0)
     // The run id is not visible text anywhere on the page: the attempt's tab
     // is `Attempt N`, and the id is only in a `title` (#885).
     expect(count('pass-52feebd1')).toBe(0)

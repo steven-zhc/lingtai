@@ -341,10 +341,12 @@ export default async function TaskLayout({
   if (!task) notFound()
   const project = task.ticket?.project ?? undefined
   const registered = project !== undefined && projects.some((p) => p.project === project)
+  // The locks are read here, under their own stage, and the menu below reuses that read (`readProjectLocks` is cached).
+  const [pause] = await measure(() => pauseSlot(project), { label: '/task locks' })
   // The menu's other reads start here, after the registered listing this page already awaited (not read twice), and
   // stream: a failure is no menu, never a failed page.
-  const menu: Promise<MenuInputs | null> = Promise.all([onBoardProjects(), readProjectLocks()]).then(
-    ([onBoard, locks]) => {
+  const menu: Promise<MenuInputs | null> = Promise.all([onBoardProjects(), readProjectLocks()])
+    .then(([onBoard, locks]) => {
       const names = projects.map((p) => p.project).filter((p): p is string => p !== null)
       return {
         filters: filterOptions(names, onBoard),
@@ -353,9 +355,8 @@ export default async function TaskLayout({
         sandbox: sandboxStates(projects),
         app: hasGitHubAuth(),
       }
-    },
-    () => null,
-  )
+    })
+    .catch(() => null)
   return (
     <>
       <TimingMeta timings={timings} />
@@ -373,7 +374,7 @@ export default async function TaskLayout({
           views={views}
           menu={menu}
           registered={registered}
-          pause={(await measure(() => pauseSlot(project), { label: '/task locks' }))[0]}
+          pause={pause}
           banner={<LockBanner project={project} />}
         >
           {children}

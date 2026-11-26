@@ -22,7 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
-import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
+import { Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import { sinceText } from '../src/lib/progress.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import type { RunningPanelView } from '../src/lib/running.ts'
@@ -726,10 +726,8 @@ describe('the block, rendered', () => {
     expect(html).toContain('waiting on you')
     expect(html).not.toMatch(/>blocked</)
     expect(html).toContain('onyou')
-    // The coordinate is the bar's now (#152), and still says which attempt.
-    expect(renderToStaticMarkup(<Coords standing={HELD} taskId="ticket-lingtai-112" queued={null} />)).toContain(
-      'from Attempt 2 of 2',
-    )
+    // The coordinate is in the facts line (#1500), and still says which attempt.
+    expect(html).toContain('from Attempt 2 of 2')
     expect(html).toContain('conflict: agent/112 does not merge into develop')
     // The move that is left when there is no diff to approve (#84).
     expect(html).toContain('Start a new attempt from base')

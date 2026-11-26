@@ -59,6 +59,10 @@ vi.mock('../src/lib/task.ts', async (orig) => ({
   loadTaskAnswer: h.loadTaskAnswer,
 }))
 
+// The place line's reads are the board's own and read the project list again; this file counts the layout's.
+vi.mock('../src/lib/prs.ts', async (orig) => ({ ...(await orig<object>()), placeViewsOf: vi.fn(async () => []) }))
+vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), onBoardProjects: vi.fn(async () => []) }))
+
 import TaskLayout from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { controlObserve } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
