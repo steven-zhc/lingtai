@@ -735,5 +735,8 @@ describe('bunRow (#1479)', () => {
     const odd = bunRow({ answered: 'what' })
     expect(odd.status).toBe('fail')
     expect(odd.detail).toContain('"what"')
+    for (const suffixed of ['1.3.6-canary', '1.3.6 unexpected-output']) {
+      expect(bunRow({ answered: suffixed }).status).toBe('fail')
+    }
   })
 })

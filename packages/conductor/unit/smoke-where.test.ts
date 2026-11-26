@@ -39,7 +39,7 @@ describe('smokeWhere', () => {
       worktree: '/w',
       mirror: '/m',
       project: 'p',
-      env: { A: 'b' },
+      env: { A: 'b', PATH: process.env['PATH'] },
       caller_additions: { read: ['/bin/lingtai-hook'] },
     })
   })

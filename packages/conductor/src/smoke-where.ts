@@ -1,4 +1,5 @@
 import type { SmokeWhere } from '@lingtai/agent'
+import { runnableEnv } from '@lingtai/agent-env'
 import { invocationDecision, type SandboxDecision } from '@lingtai/recipe'
 import type { SandboxApi } from '@lingtai/sandbox'
 import { Effect } from 'effect'
@@ -40,7 +41,9 @@ export function smokeWhere(
                   mirror: from.mirror,
                   worktree,
                   command: input.command,
-                  env: input.env,
+                  // The agent's own launch environment: PATH, HOME, … as `runnableEnv` gives it, since the wrap does
+                  // not restore PATH and the Linux wrapper finds `bwrap` by name.
+                  env: runnableEnv(input.env),
                   project_additions: decision.project_additions,
                   caller_additions: { read: [from.hookBinary] },
                 })

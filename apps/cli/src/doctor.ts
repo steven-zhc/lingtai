@@ -3823,7 +3823,7 @@ export function bunRow(answer: BunAnswer): CheckResult {
       detail: `bun --version could not be run: ${answer.failed}\nthe hook is built with bun ${BUN_FLOOR} or later`,
     }
   }
-  const found = /^(\d+)\.(\d+)\.(\d+)/.exec(answer.answered.trim())
+  const found = /^(\d+)\.(\d+)\.(\d+)$/.exec(answer.answered.trim())
   if (found === null) {
     return {
       name,
