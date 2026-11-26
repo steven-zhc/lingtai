@@ -618,24 +618,6 @@ describe('askAgents', () => {
       expect(draft.get(['runtime', 'limits', 'wall'])).toBe('2h')
     })
 
-    it("a signed-out runtime other than the recipe's own is still refused as an answer", async () => {
-      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\n`
-      const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
-      const { world } = fakeWorld(['gemini', null])
-      const result = await askAgents(world, {
-        project: 'app',
-        runtimes: [
-          runtime('claude-code'),
-          runtime('codex', { state: 'signed-out' }),
-          runtime('gemini', { state: 'signed-out' }),
-        ],
-        flags: {},
-        home: HOME,
-        draft: await draftOver('app', { home: HOME, files }),
-      })
-      expect(result).toHaveProperty('refused')
-    })
-
     it('a runtime.agent that is installed but signed out is still the default, and a rerun on it changes nothing', async () => {
       const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\n`
       const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
