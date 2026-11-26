@@ -6,8 +6,9 @@ Setting up a project — detect what a repository is, propose a recipe, write it
 register the project — is one module, `@lingtai/setup`. `lingtai add` and the
 board's wizard are two inputs to it: each gathers answers and hands them over,
 and neither carries a question, a detection or a recipe writer of its own.
-Changing a project that already exists is running `lingtai init` again: the
-same questions, with the recipe's own values as their defaults.
+Changing a project that already exists is running setup again, `lingtai add` or
+`lingtai init`: the same questions, with the recipe's own values as their
+defaults.
 
 ## Context
 
@@ -60,10 +61,15 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    - Detected values are defaults the person may override
      ([0103](0103-a-pass-is-ten-fixed-steps.md)).
 
-6. **Changing a project is running setup again.** `lingtai init` on a project
-   already added asks every question the first run asks, in the same order and in
-   the same way. Only the defaults differ: the first run offers the system's, a
-   later run offers what the recipe says.
+6. **Changing a project is running setup again.** `lingtai add` and `lingtai
+   init` share one path for a project. `add` runs it; `init` first asks the
+   machine's own questions (the database, how this machine reaches GitHub, the
+   sandbox token) and then runs the same path, for a local directory or an
+   `owner/repo`. The first run of that path on a project adds it; a later run, by
+   either command, asks every question the first run asks, in the same order and
+   in the same way. Only the defaults differ: the first run offers the system's, a
+   later run offers what the recipe says. `lingtai add` on a project already added
+   is therefore not refused: it is that later run (decided 2026-11-26).
    - An answer that differs is written, through `@lingtai/project`'s
      `changeRecipe`, which appends the change on `prj-{project}` and then writes
      the file ([0128](0128-the-project-aggregate-holds-every-project-fact.md) §6).
