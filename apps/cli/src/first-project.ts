@@ -1124,20 +1124,26 @@ function runLocalBranch(
     const keepAnswered = Effect.suspend(() => {
       const answered = answeredDraft?.changes() ?? []
       if (answered.length === 0) return Effect.succeed<string | null>(null)
-      return applySetup(
-        { home: world.home, by: world.by, store: world.store },
-        { project: name, changes: answered },
-        Effect.gen(function* () {
-          if (deferBranch || lateBranch) {
-            const refusal = yield* makeBranch('')
-            if (refusal !== null) return yield* Effect.fail(new KeptNotRegistered(refusal.refused))
-          }
-          const written = (yield* draftRecipe(name, { home: world.home })).text()
-          if (written === null) return yield* Effect.fail(new KeptNotRegistered(`${path} could not be read back`))
-          yield* registerWritten(written, null).pipe(
-            Effect.mapError((err) => new KeptNotRegistered(err instanceof Error ? err.message : String(err))),
-          )
-        }),
+      // Under the lock every other add and rerun takes: the recipe it reads back and the registration it makes are
+      // one critical section, so a rerun that finished meanwhile is not overwritten by this one's older read.
+      return exclusiveAdd(
+        name,
+        applySetup(
+          { home: world.home, by: world.by, store: world.store },
+          { project: name, changes: answered },
+          Effect.gen(function* () {
+            if (deferBranch || lateBranch) {
+              const refusal = yield* makeBranch('')
+              if (refusal !== null) return yield* Effect.fail(new KeptNotRegistered(refusal.refused))
+            }
+            const written = (yield* draftRecipe(name, { home: world.home })).text()
+            if (written === null) return yield* Effect.fail(new KeptNotRegistered(`${path} could not be read back`))
+            yield* registerWritten(written, null).pipe(
+              Effect.mapError((err) => new KeptNotRegistered(err instanceof Error ? err.message : String(err))),
+            )
+          }),
+        ),
+        world.locker,
       ).pipe(
         Effect.map((): string | null => `What you answered was written to ${path}`),
         // `applySetup` says what is on disk: "was not written" before the write, "was written but not recorded"
