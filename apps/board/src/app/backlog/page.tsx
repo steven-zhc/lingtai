@@ -19,10 +19,10 @@ import Link from 'next/link'
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner } from '@/app/lock-banner.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
+import { ticketPath } from '@/lib/paths'
 
 import { FooterFetched } from '../footer-fetched'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
-import { ticketPath } from '@/lib/paths'
 
 export const dynamic = 'force-dynamic'
 

@@ -24,7 +24,7 @@ describe('RecipeBar', () => {
   })
 
   it('draws the place line with Recipe as the current view, and not in .topnav', () => {
-    expect(out).toMatch(/<a class="view on" aria-current="page" href="\/recipe\/b">Recipe</)
+    expect(out).toMatch(/<a class="view on" aria-current="page" href="\/p\/b\/recipe">Recipe</)
     expect(out.indexOf('class="place"')).toBeLessThan(out.indexOf('class="filter"'))
     expect(out.indexOf('class="filter"')).toBeLessThan(out.indexOf('>Tickets<'))
     expect(out.indexOf('>Tickets<')).toBeLessThan(out.indexOf('>Recipe<'))

@@ -62,7 +62,7 @@ describe('Bar', () => {
 
   it('marks Recipe, and not Report, on the recipe page', () => {
     const html = bar('a', 'recipe', true)
-    expect(html).toMatch(/<a class="navlink on" aria-current="page" href="\/recipe\/a">Recipe</)
+    expect(html).toMatch(/<a class="navlink on" aria-current="page" href="\/p\/a\/recipe">Recipe</)
     expect(html).toMatch(/<a class="navlink" href="\/report\?project=a">Report</)
   })
 })

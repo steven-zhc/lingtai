@@ -3,6 +3,7 @@ import { WORKTREE_PLACEHOLDER } from '@lingtai/sandbox/policy'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { recipePath } from '@/lib/paths'
 import {
   agentsInSandbox,
   chipsOf,
@@ -12,7 +13,6 @@ import {
   type Chip,
   type PathRoots,
 } from '@/lib/sandbox-view'
-import { recipePath } from '@/lib/paths'
 
 /** What the recipe says in its `sandbox:` block, as the resolved recipe holds it; undefined where it has none. */
 export interface OwnSandbox {

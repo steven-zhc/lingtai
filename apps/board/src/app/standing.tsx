@@ -21,6 +21,7 @@ import Link from 'next/link'
 import { Fragment, Suspense, type ReactNode } from 'react'
 
 import { personName } from '@/lib/history'
+import { attemptTabPath, historyPath, ticketPath } from '@/lib/paths'
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import {
@@ -38,7 +39,6 @@ import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle, resolutionCopyFor } from '@/lib/resolution-copy'
 import { rerunStepFirstAmongSavedWork } from '@/lib/saved-fix-work'
 import { billHasAny, billText, emptyBill } from '@/lib/spend'
-import { attemptTabPath, historyPath, ticketPath } from '@/lib/paths'
 import { stateWord, type DiscussionView, type StandingView, type TaskAnswer, type Totals } from '@/lib/task'
 import { namedTimes } from '@/lib/took'
 

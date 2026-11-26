@@ -6,6 +6,7 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { ticketPath } from '@/lib/paths'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
 import { ObjectTitle, joinMeta } from './object-title.tsx'
@@ -13,7 +14,6 @@ import { PrButtons } from './pr-buttons.tsx'
 import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
 import { ScrollEnd } from './scroll-end.tsx'
-import { ticketPath } from '@/lib/paths'
 
 /** A ticket's task page: the task id is `ticket-<project>-<issue>`, as the home page and the standing list link it. */
 const taskHref = (project: string, ticket: string): string => ticketPath({ project, issue: ticket })

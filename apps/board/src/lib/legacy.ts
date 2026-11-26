@@ -4,7 +4,18 @@
  * hit is answered 308; `null` passes the request through. Targets are built by
  * `paths.ts` only.
  */
-import { backlogPath, historyPath, landedHref, prPath, recipePath, sandboxTabPath, ticketPath, attemptTabPath, homePath, ticketRefOf } from './paths.ts'
+import {
+  backlogPath,
+  historyPath,
+  landedHref,
+  prPath,
+  recipePath,
+  sandboxTabPath,
+  ticketPath,
+  attemptTabPath,
+  homePath,
+  ticketRefOf,
+} from './paths.ts'
 
 const WHOLE = /^[1-9]\d*$/
 
@@ -51,7 +62,8 @@ export function legacyRedirect(pathname: string, search: URLSearchParams): strin
   const [head, ...tail] = segments
   const project = search.get('project')
 
-  if (head === '' && tail.length === 0) return project === '' ? `/${rest(search)}` : project === null ? null : `${homePath(project)}${rest(search)}`
+  if (head === '' && tail.length === 0)
+    return project === '' ? `/${rest(search)}` : project === null ? null : `${homePath(project)}${rest(search)}`
   if (head === 'landed' && tail.length === 0) {
     if (project === null) return null
     const href = landedHref({ project: project === '' ? null : project })

@@ -1,3 +1,5 @@
+import { recipePath } from '@/lib/paths'
+
 /**
  * Step 3 of adding a repository, drawn from plain props (#972).
  *
@@ -6,7 +8,6 @@
  * card — is a claim about markup, and `page.tsx` is the reads and nothing else.
  */
 import { ModeGraph } from '../../../mode-graph.tsx'
-import { recipePath } from '@/lib/paths'
 
 export type Added =
   | { state: 'none' }

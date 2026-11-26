@@ -28,6 +28,7 @@ import { Effect } from 'effect'
 
 import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
+import { prPath } from './paths.ts'
 import {
   type Button,
   DRAFT_NAME,
@@ -41,7 +42,6 @@ import {
   unfollowedRemote,
 } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
-import { prPath } from './paths.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null

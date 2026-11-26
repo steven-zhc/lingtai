@@ -11,8 +11,9 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import { ProjectLink } from './project-link'
 import { homePath, prPath, recipePath } from '@/lib/paths'
+
+import { ProjectLink } from './project-link'
 
 export interface PlaceView {
   id: 'tickets' | 'prs' | 'recipe' | (string & {})

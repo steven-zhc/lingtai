@@ -28,10 +28,10 @@ import {
   groupQueue,
 } from '@/lib/board'
 import { kindDot } from '@/lib/kind-colour'
+import { recipePath } from '@/lib/paths'
 import { whyLine } from '@/lib/why-line'
 
 import { Skeleton } from './skeleton'
-import { recipePath } from '@/lib/paths'
 
 /**
  * Draws one Queued card. `next` is true for the one *taken first*; `arrive`

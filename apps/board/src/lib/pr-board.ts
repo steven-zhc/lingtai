@@ -7,6 +7,7 @@
  */
 import { type PayloadOf, type PrState, isOpen, openAmong, prStepRows, prWaitOf } from '@lingtai/domain'
 import { type Recipe, callForPr, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
+
 import { prPath } from './paths.ts'
 
 type WaitReason = PayloadOf<'PrWaiting'>['reason']

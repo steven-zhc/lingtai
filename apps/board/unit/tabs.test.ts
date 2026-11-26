@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  attemptOfSegment,
-  defaultTabOf,
-  tabOfFragment,
-  visibleAttempts,
-} from '../src/lib/tabs.ts'
 import { attemptTabPath, historyPath } from '../src/lib/paths.ts'
+import { attemptOfSegment, defaultTabOf, tabOfFragment, visibleAttempts } from '../src/lib/tabs.ts'
 import { relativeTo } from '../src/lib/task.ts'
 
 const runs = (n: number) => Array.from({ length: n }, (_, i) => ({ attempt: i + 1 }))

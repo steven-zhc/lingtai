@@ -40,12 +40,7 @@ export function ModeGlyph({ mode }: { mode: ModeMark['mode'] }) {
 /** In the home bar: a link to the recipe page's Mode card. */
 export function ModeLink({ mark, project }: { mark: ModeMark; project: string }) {
   return (
-    <Link
-      className="mode-mark"
-      href={`${recipePath(project)}#mode`}
-      aria-label={mark.sentence}
-      title={mark.sentence}
-    >
+    <Link className="mode-mark" href={`${recipePath(project)}#mode`} aria-label={mark.sentence} title={mark.sentence}>
       <ModeGlyph mode={mark.mode} />
     </Link>
   )

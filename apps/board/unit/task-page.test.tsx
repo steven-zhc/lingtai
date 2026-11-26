@@ -50,6 +50,7 @@ vi.mock('../src/app/deferred.tsx', async () => {
 import { AttemptTab } from '../src/app/attempt-tab.tsx'
 import { TaskBody, UnpushedBanner } from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
+import { attemptTabPath, historyPath, sandboxTabPath } from '../src/lib/paths.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
 import {
@@ -843,9 +844,9 @@ describe('the rail on the task page', () => {
 
     const generic = opening(page(blocked()))
     expect(generic).not.toContain('The ticket’s context is in the complete issue.')
-    expect(generic).toContain(`href="/task/${ITEM}/ticket"`)
+    expect(generic).toContain(`href="${historyPath(ITEM)}"`)
     expect(generic).not.toContain('class="tcontext"')
-    expect(generic.indexOf(`href="/task/${ITEM}/ticket"`)).toBeLessThan(generic.indexOf('class="seq"'))
+    expect(generic.indexOf(`href="${historyPath(ITEM)}"`)).toBeLessThan(generic.indexOf('class="seq"'))
   })
 
   /**
@@ -928,10 +929,10 @@ describe('the record', () => {
       </TaskBody>,
     )
     expect(tabsOf(html)).toEqual([
-      `/task/${ITEM}/ticket`,
-      `/task/${ITEM}/sandbox`,
-      `/task/${ITEM}/attempt/2`,
-      `/task/${ITEM}/attempt/1`,
+      historyPath(ITEM),
+      sandboxTabPath(ITEM),
+      attemptTabPath(ITEM, 2),
+      attemptTabPath(ITEM, 1),
     ])
     // Labelled by the board's word, `Attempt N`, with no run id as text.
     expect(html).toContain('Attempt 2')
@@ -956,7 +957,7 @@ describe('the record', () => {
         x
       </TaskBody>,
     )
-    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/sandbox`])
+    expect(tabsOf(html)).toEqual([historyPath(ITEM), sandboxTabPath(ITEM)])
   })
 })
 

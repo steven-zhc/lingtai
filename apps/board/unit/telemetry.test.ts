@@ -92,20 +92,24 @@ it('a page is one trace: the page span is a child of the request span, its reads
   const provider = await installTracing(on, none, exporter)
   await trace
     .getTracer('next.js')
-    .startActiveSpan('GET /p/[project]/ticket/[n]', { attributes: { ...REQUEST, 'next.route': '/p/[project]/ticket/[n]' } }, async (request) => {
-      // Next activates render spans of its own, which the exporter drops.
-      await trace.getTracer('next.js').startActiveSpan('AppRender.getBodyResult', async (render) => {
-        await measure(
-          async () => {
-            await timed('events.task', async () => 1)
-            await timed('events.run', async () => 2, { desc: '7' })
-          },
-          { label: '/task' },
-        )
-        render.end()
-      })
-      request.end()
-    })
+    .startActiveSpan(
+      'GET /p/[project]/ticket/[n]',
+      { attributes: { ...REQUEST, 'next.route': '/p/[project]/ticket/[n]' } },
+      async (request) => {
+        // Next activates render spans of its own, which the exporter drops.
+        await trace.getTracer('next.js').startActiveSpan('AppRender.getBodyResult', async (render) => {
+          await measure(
+            async () => {
+              await timed('events.task', async () => 1)
+              await timed('events.run', async () => 2, { desc: '7' })
+            },
+            { label: '/task' },
+          )
+          render.end()
+        })
+        request.end()
+      },
+    )
   await provider!.forceFlush()
   const spans = exporter.getFinishedSpans()
   const request = spans.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
@@ -165,15 +169,17 @@ it('never forwards a request span without a page span, one from another scope, o
   const exporter = new InMemorySpanExporter()
   const provider = await installTracing(on, none, exporter)
   await trace.getTracer('next.js').startActiveSpan('GET /static', { attributes: REQUEST }, async (r) => r.end())
-  await trace.getTracer('next.js').startActiveSpan('GET /p/[project]/ticket/[n]', { attributes: REQUEST }, async (request) => {
-    await measure(async () => 1, { label: '/task' })
-    await trace.getTracer('other').startActiveSpan('GET /other', { attributes: REQUEST }, async (s) => s.end())
-    await trace.getTracer('next.js').startActiveSpan('fetch GET https://api.github.com/x', async (s) => s.end())
-    await trace
-      .getTracer('next.js')
-      .startActiveSpan('x', { attributes: { 'next.span_type': 'AppRender.fetch' } }, async (s) => s.end())
-    request.end()
-  })
+  await trace
+    .getTracer('next.js')
+    .startActiveSpan('GET /p/[project]/ticket/[n]', { attributes: REQUEST }, async (request) => {
+      await measure(async () => 1, { label: '/task' })
+      await trace.getTracer('other').startActiveSpan('GET /other', { attributes: REQUEST }, async (s) => s.end())
+      await trace.getTracer('next.js').startActiveSpan('fetch GET https://api.github.com/x', async (s) => s.end())
+      await trace
+        .getTracer('next.js')
+        .startActiveSpan('x', { attributes: { 'next.span_type': 'AppRender.fetch' } }, async (s) => s.end())
+      request.end()
+    })
   await provider!.forceFlush()
   expect(
     exporter

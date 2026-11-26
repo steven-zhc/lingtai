@@ -10,7 +10,10 @@ describe('legacyRedirect (#1498)', () => {
     ['/?project=', '/'],
     ['/?project=a%20b&q=1', '/p/a%20b/ticket?q=1'],
     ['/landed?project=x', '/p/x/ticket/landed'],
-    ['/landed?project=x&kind=bug&before=2026-01-01T00%3A00%3A00Z%7C3', '/p/x/ticket/landed?kind=bug&before=2026-01-01T00%3A00%3A00Z%7C3'],
+    [
+      '/landed?project=x&kind=bug&before=2026-01-01T00%3A00%3A00Z%7C3',
+      '/p/x/ticket/landed?kind=bug&before=2026-01-01T00%3A00%3A00Z%7C3',
+    ],
     ['/landed?project=&kind=bug', '/landed?kind=bug'],
     ['/backlog?project=x', '/p/x/backlog'],
     ['/backlog?project=', '/backlog'],

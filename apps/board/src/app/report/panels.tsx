@@ -35,6 +35,7 @@ import {
   whenText,
   windowText,
 } from '@/lib/handled.ts'
+import { ticketPath } from '@/lib/paths'
 import {
   centsOf,
   dollars,
@@ -53,7 +54,6 @@ import {
 import { causeLabel } from '@/lib/triage-cause.ts'
 
 import { Empty } from './charts.tsx'
-import { ticketPath } from '@/lib/paths'
 
 function Tile({
   k,

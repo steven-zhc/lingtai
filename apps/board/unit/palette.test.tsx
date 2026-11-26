@@ -48,7 +48,7 @@ describe('search', () => {
     expect(i.entries.some((e) => e.group === 'Tickets')).toBe(false)
   })
   it('shows an empty title as the number alone', () => {
-    expect(index.entries.find((e) => e.href.endsWith('-900'))?.label).toBe('#900 empty')
+    expect(index.entries.find((e) => e.href.endsWith('/900'))?.label).toBe('#900 empty')
     const i = buildIndex({ tasks: [card('5', '')], projects: [] })
     expect(i.entries.find((e) => e.group === 'Tickets')?.label).toBe('#5')
   })

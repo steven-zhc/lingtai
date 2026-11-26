@@ -25,6 +25,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
+import { ticketPath } from '@/lib/paths'
 import { clippedApproveCopy, RESOLUTION_COPY } from '@/lib/resolution-copy'
 
 import {
@@ -43,7 +44,6 @@ import {
 import { askedOf } from './asked-of.ts'
 import { MarkdownField } from './markdown-field.tsx'
 import { TriageChoices, useTriageDraft, type Sending } from './triage-picks.tsx'
-import { ticketPath } from '@/lib/paths'
 
 /**
  * The recommended move, as the diagnosis's own recommendation named it.

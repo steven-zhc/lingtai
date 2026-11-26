@@ -12,6 +12,7 @@ import { sandboxFactsOf, type RuntimeSandboxFacts } from '@lingtai/agent/sandbox
 import { isUnsandboxableRuntime, type AttemptState, type SandboxInvocation } from '@lingtai/domain'
 import { isNetworkEntry } from '@lingtai/recipe'
 import { BUILT_IN_DOMAIN_VENDORS } from '@lingtai/sandbox/policy'
+
 import { recipePath } from './paths.ts'
 
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']

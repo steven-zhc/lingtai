@@ -24,11 +24,11 @@ import {
   type BannerRow,
   type ProjectLocks,
 } from '@/lib/locks.ts'
+import { homePath } from '@/lib/paths'
 
 import { ContinueToday } from './continue-today.tsx'
 import { LiftButton, PauseButton, ResumeButton } from './pause-button.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
-import { homePath } from '@/lib/paths'
 
 async function Locks({ project }: { project: string | undefined }) {
   const read = await readProjectLocks()

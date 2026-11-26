@@ -10,9 +10,10 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { homePath, recipePath } from '@/lib/paths'
+
 import type { SandboxMark } from '../lib/sandbox-state.ts'
 import { SandboxShield } from './sandbox-shield.tsx'
-import { homePath, recipePath } from '@/lib/paths'
 
 export const withProject = (path: string, project: string | undefined): string =>
   project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`

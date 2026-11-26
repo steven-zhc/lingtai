@@ -40,6 +40,7 @@ import { kindDot } from '@/lib/kind-colour'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
 import { modeMarks } from '@/lib/mode-mark.ts'
+import { historyPath, landedLink, prPath, recipePath, ticketPath } from '@/lib/paths'
 import { elapsed } from '@/lib/progress'
 import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
@@ -74,7 +75,6 @@ import { Rail, Segs } from './rail.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
 import { sandboxSlot } from './sandbox-slot.tsx'
 import { Skeleton } from './skeleton.tsx'
-import { historyPath, landedLink, prPath, recipePath, ticketPath } from '@/lib/paths'
 
 /**
  * The board is not a status page. It is where the backlog gets worked, and the

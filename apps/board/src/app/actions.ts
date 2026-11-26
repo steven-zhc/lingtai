@@ -88,8 +88,8 @@ import { readDayReading } from '@/lib/day-spend'
 // A "use server" module may only export async functions, so the shapes and the
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
-import { recipePath, ticketPath } from '@/lib/paths'
 import { askRefusal, continueTodayWith, liftAccountWith, setProjectPaused } from '@/lib/locks'
+import { recipePath, ticketPath } from '@/lib/paths'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'

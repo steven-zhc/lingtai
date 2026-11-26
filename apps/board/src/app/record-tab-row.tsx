@@ -15,8 +15,8 @@ import Link from 'next/link'
 import { useSelectedLayoutSegments } from 'next/navigation'
 import { useEffect } from 'react'
 
-import { attemptOfSegment, sameTab, tabOfFragment, visibleAttempts, type TabKey } from '@/lib/tabs'
 import { tabPath, ticketPath } from '@/lib/paths'
+import { attemptOfSegment, sameTab, tabOfFragment, visibleAttempts, type TabKey } from '@/lib/tabs'
 
 export interface AttemptTabFact {
   attempt: number

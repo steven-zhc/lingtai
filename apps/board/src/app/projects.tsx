@@ -27,13 +27,13 @@ import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
 import type { ModeMark } from '@/lib/mode-mark.ts'
+import { homePath } from '@/lib/paths'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
 import { ProjectModeMark } from './mode-glyph'
 import { ProjectLink } from './project-link'
 import { ProjectSandboxMark } from './sandbox-mark'
-import { homePath } from '@/lib/paths'
 
 /** Where `+` lands and why: step 0 before the App answers, the picker after. */
 const addTarget = (app: boolean) => ({

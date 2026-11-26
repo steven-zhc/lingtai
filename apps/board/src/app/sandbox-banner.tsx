@@ -12,10 +12,11 @@ import { installFor } from '@lingtai/recipe'
 import Link from 'next/link'
 import { Suspense } from 'react'
 
+import { homePath, recipePath } from '@/lib/paths'
+
 import { readSandboxFacts } from '../lib/sandbox-read.ts'
 import { lastSandboxRows, rememberSandboxRows, sandboxBannerRows, type SandboxBannerRow } from '../lib/sandbox-state.ts'
 import { Skeleton } from './skeleton.tsx'
-import { homePath, recipePath } from '@/lib/paths'
 
 const WHAT: Record<SandboxBannerRow['kind'], { label: string; sentence: string; other: string }> = {
   stopped: {

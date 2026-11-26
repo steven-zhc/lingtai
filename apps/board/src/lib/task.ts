@@ -119,6 +119,7 @@ import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
 import { controlObserve, readProjectLocks } from './locks.ts'
+import { prPath } from './paths.ts'
 import { prHolding, prName, type PrRead } from './pr-board.ts'
 import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
 import { describeHeld, progressOf, spentOf, type AttemptProgress } from './progress.ts'
@@ -144,7 +145,6 @@ import {
 } from './spend.ts'
 import { timed, traced, tracedSync } from './timing.ts'
 import { triageHeadLine } from './triage-head.ts'
-import { prPath } from './paths.ts'
 
 export interface Finding {
   file: string

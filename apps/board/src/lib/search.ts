@@ -9,6 +9,7 @@
  */
 import type { PrStatus } from '@lingtai/domain'
 import type { TaskCard, TaskState } from '@lingtai/projector/task-view'
+
 import { homePath, prPath, recipePath, ticketPath } from './paths.ts'
 
 export type Group = 'Pages' | 'Projects' | 'Recipes' | 'Tickets' | 'PRs'

@@ -20,6 +20,6 @@ describe('selectedProject (#993)', () => {
   it('makes Report and the Landed count carry the project on a one-project board', () => {
     const only = selectedProject(undefined, ['lingtai'])
     expect(withProject('/report', only)).toBe('/report?project=lingtai')
-    expect(renderToStaticMarkup(<LandedCount count={2} only={only} />)).toContain('project=lingtai')
+    expect(renderToStaticMarkup(<LandedCount count={2} only={only} />)).toContain('/p/lingtai/ticket/landed')
   })
 })

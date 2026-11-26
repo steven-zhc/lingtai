@@ -516,7 +516,7 @@ describe('the tickets on the rail open their task pages', () => {
   it('number and title link to the task page', () => {
     const html = renderToStaticMarkup(<PrDetail project="p" view={page([requested, started])} host={null} />)
     expect(html).toContain('href="/p/p/ticket/41"')
-    expect(html.match(/href="\/task\/ticket-p-41"/g)).toHaveLength(2)
+    expect(html.match(/href="\/p\/p\/ticket\/41"/g)).toHaveLength(2)
   })
 })
 

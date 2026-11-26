@@ -34,11 +34,11 @@ import {
   type LandedDay,
 } from '@/lib/landed.ts'
 import { leadOf } from '@/lib/markdown.ts'
+import { landedHref } from '@/lib/paths'
 import { moveTitle } from '@/lib/resolution-copy.ts'
 import { tookText } from '@/lib/took.ts'
 
 import { Earlier } from './earlier.tsx'
-import { landedHref } from '@/lib/paths'
 
 export interface LandedEnv {
   kinds: readonly string[]

@@ -16,7 +16,11 @@ export const dynamic = 'force-dynamic'
  * `/p/<project>/ticket/<n>/attempt/<k>`: one attempt's tab (#885). Its loader is its own and
  * **never `loadTask`** — a tab switch must not re-run the layout's reads.
  */
-export default async function AttemptTabPage({ params }: { params: Promise<{ project: string; n: string; k: string }> }) {
+export default async function AttemptTabPage({
+  params,
+}: {
+  params: Promise<{ project: string; n: string; k: string }>
+}) {
   const { project, n, k } = await params
   const taskId = ticketIdOf(project, n)
   if (taskId === null) notFound()

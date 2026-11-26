@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { SandboxMark, SandboxPanel } from '@/app/sandbox-panel'
+import { sandboxTabPath, tabPath } from '@/lib/paths'
 import {
   allowHrefOf,
   chipsOf,
@@ -23,7 +24,6 @@ import {
   type PolicyGroup,
   type RunRow,
 } from '@/lib/sandbox-view'
-import { sandboxTabPath, tabPath } from '@/lib/paths'
 import { attemptOfQuery, defaultTabOf, sameTab } from '@/lib/tabs'
 
 const RUN = 'pass-sbx-1'

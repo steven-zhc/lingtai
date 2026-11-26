@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { readRegistered } from '@/lib/locks.ts'
+import { ticketIdOf, ticketPath } from '@/lib/paths'
 import { billText, spendChip } from '@/lib/spend'
 import { defaultTabOf } from '@/lib/tabs'
 import { knowable, loadTask, loadTaskAnswer, type TaskAnswer, type TaskDetail } from '@/lib/task'
@@ -17,7 +18,6 @@ import { FooterFetched } from '../../../../footer-fetched'
 import { Follow, Following } from '../../../../live.tsx'
 import { LegacyFragment, RecordTabRow } from '../../../../record-tab-row.tsx'
 import { DeferredCoords, DeferredStanding, detailClass } from '../../../../standing.tsx'
-import { ticketIdOf, ticketPath } from '@/lib/paths'
 
 /**
  * The top of the task page, and the frame the record's tabs sit in.
