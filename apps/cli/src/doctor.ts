@@ -3396,6 +3396,29 @@ export function codexRoleRow(
   }
 }
 
+/**
+ * The discuss row of a recipe that never wrote `discuss:` (#1476): the agent is the schema's default, nobody chose
+ * it, so a default that cannot run is a warning — a pass needs no discussion. A declared one keeps its `fail`.
+ */
+export function defaultDiscussRow(row: CheckResult, declared: boolean): CheckResult {
+  if (declared || row.status !== 'fail') return row
+  return {
+    ...row,
+    status: 'warn',
+    title: 'discussions need claude-code signed in, or codex_text configured',
+  }
+}
+
+/** Whether the recipe's own text has a top-level `discuss:` key; a preset cannot supply one. */
+function declaresDiscuss(source: string): boolean {
+  try {
+    const doc: unknown = parseYaml(source)
+    return typeof doc === 'object' && doc !== null && !Array.isArray(doc) && 'discuss' in doc
+  } catch {
+    return true
+  }
+}
+
 /** `claudeOauthToken` as a boolean Effect that keeps the reader's own sentence, which `Effect.try` alone would replace. */
 export const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
   Effect.try({
@@ -3670,9 +3693,10 @@ export function declaredEnvironment(
                 codexRoleRow(project.project!, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
               )
             } else if (selected) {
-              results.push(
-                yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [`${role}.agent`]),
-              )
+              const row = yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [
+                `${role}.agent`,
+              ])
+              results.push(role === 'discuss' ? defaultDiscussRow(row, declaresDiscuss(resolved.source)) : row)
             }
           }
         }),

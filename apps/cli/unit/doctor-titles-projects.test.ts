@@ -252,6 +252,21 @@ describe('per-project rows through declaredEnvironment', () => {
     expect(signed[0]!.title).not.toBe(signed[1]!.title)
   })
 
+  it('discuss: a default agent that cannot run warns, a declared one fails (#1476)', async () => {
+    const statusOf = async (text: string) => {
+      const rows = await Effect.runPromise(
+        declaredEnvironment({}, () => Effect.succeed([state]), {
+          recipe: recipeOf(text),
+          agentEnv: agentEnv([]),
+          runtimes: (() => [signedOut('claude-code')]) as never,
+        }),
+      )
+      return rows.find((r) => r.name === 'discuss: alpha signed in')?.status
+    }
+    expect(await statusOf(RECIPE)).toBe('warn')
+    expect(await statusOf(`${RECIPE}\ndiscuss: { agent: claude-code }\n`)).toBe('fail')
+  })
+
   it('triage and discuss: signed out, limits and codex-ready rows are titled', async () => {
     const recipe = recipeOf(`${RECIPE}\ntriage: { agent: codex, tools: full }\ndiscuss: { agent: codex }\n`)
     const rows = await Effect.runPromise(
