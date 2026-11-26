@@ -12,7 +12,8 @@ You need Git, Claude Code or Codex signed in, and Node.js 26.13.0 with npm. See
 
 ## Step 1 — Set up this machine
 
-Install Lingtai, clone the site and register it. Press Enter at each question to take the default.
+Install Lingtai, clone the site and register it. `init` asks a few questions;
+press Enter to take the default at each, except the one below.
 
 ```sh
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
@@ -26,7 +27,8 @@ Skip it and the first ticket fails until `lingtai token claude`; see
 
 If `lingtai` is not found, add `~/.local/bin` to `PATH`.
 
-`init` picks from what is signed in:
+**The one choice: who writes, and who reviews.** `init` offers only the agents
+signed in on this machine, and proposes:
 
 | Signed in | Writes | Reviews |
 |---|---|---|
@@ -34,7 +36,16 @@ If `lingtai` is not found, add `~/.local/bin` to `PATH`.
 | Codex only | Codex | Codex |
 | Both | Claude Code | Codex |
 
-A reviewer from another vendor catches more of what the writer missed, but one agent is enough for this book.
+One is enough: it writes the change, then reads it again cold. A reviewer from
+another vendor catches more of what the writer missed. To choose instead,
+answer the two questions, or pass them:
+
+```sh
+lingtai init --local chapter-garden --agent codex --reviewer claude-code
+```
+
+`--reviewer none` skips review: cheaper, but nothing reads the change before
+it lands.
 
 Enter at the mode question makes a **team** project; [`solo`](solo.md) is the other.
 
