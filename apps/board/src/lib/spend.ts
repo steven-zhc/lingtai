@@ -165,34 +165,36 @@ const money = (cents: number) => `$${(cents / 100).toFixed(2)}`
 /**
  * What a bill says, in words — the one table every reader renders through.
  *
- * | reported | unknown | text |
- * |---|---|---|
- * | 0 | 0 | `—` (no estimate either) |
- * | >0 | 0 | `$3.10` |
- * | >0 | >0 | `$3.10 + 2 unpriced` |
- * | 0 | >0 | `unpriced (2 runs)` |
+ * Parts are reported, then `~$x est.`, then unpriced, joined with ` + `.
  *
- * An estimate (`#208`) follows as `~$x est.` and never reduces into the
- * reported figure — including on a bill with no reported figure and no
- * unknown run at all, which is the one arm with nothing else to lead it: a
- * row priced entirely by the rate card still has to print its estimate, and
- * not the `—` the first row of this table is for. **No row of this table is
- * `$0.00` for a bill that has an unknown run in it.**
+ * | reported | estimate | unknown | text |
+ * |---|---|---|---|
+ * | 0 | no | 0 | `—` |
+ * | >0 | no | 0 | `$3.10` |
+ * | >0 | no | >0 | `$3.10 + 2 unpriced` |
+ * | 0 | no | >0 | `unpriced (2 runs)` |
+ * | >0 | yes | 0 | `$3.10 + ~$0.50 est.` |
+ * | >0 | yes | >0 | `$3.10 + ~$0.50 est. + 2 unpriced` |
+ * | 0 | yes | 0 | `~$0.42 est.` |
+ * | 0 | yes | >0 | `~$0.42 est. + 2 unpriced` |
+ *
+ * An estimate (`#208`) never reduces into the reported figure. **No row of
+ * this table is `$0.00` for a bill that has an unknown run in it.**
  */
 export function billText(bill: Bill, options: { fetchedNote?: boolean } = {}): string {
-  const parts: string[] = []
-  if (bill.reportedRuns > 0) {
-    parts.push(money(bill.reportedCents))
-    if (bill.unknown > 0) parts.push(`+ ${bill.unknown} unpriced`)
-  } else if (bill.unknown > 0) {
-    parts.push(`unpriced (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`)
-  } else if (bill.estimates.length === 0) {
-    return '—'
+  const hasEstimate = bill.estimates.length > 0
+  if (bill.reportedRuns === 0 && bill.unknown === 0 && !hasEstimate) return '—'
+  if (bill.reportedRuns === 0 && !hasEstimate) {
+    return `unpriced (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`
   }
-  const est = bill.estimates.reduce((a, b) => a + b, 0)
-  if (bill.estimates.length > 0)
+  const parts: string[] = []
+  if (bill.reportedRuns > 0) parts.push(money(bill.reportedCents))
+  if (hasEstimate) {
+    const est = bill.estimates.reduce((a, b) => a + b, 0)
     parts.push(`~$${est.toFixed(2)} est.${options.fetchedNote ? fetchedNote({ fetchedRuns: bill.fetched ?? 0 }) : ''}`)
-  return parts.join(' ')
+  }
+  if (bill.unknown > 0) parts.push(`${bill.unknown} unpriced`)
+  return parts.join(' + ')
 }
 
 /** Whether a bill has anything at all to show — the question a pill's presence answers. */
@@ -303,3 +305,6 @@ export function grantedOf(rows: readonly SpendRow[]): Granted {
   }
   return [...byKey.values()].sort((a, b) => a.round - b.round)
 }
+
+/** Spent, while no agent run of the ticket has ended: not unpriced, just not billed yet. */
+export const NOTHING_BILLED = 'nothing billed yet: no agent run has ended'

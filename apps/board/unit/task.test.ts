@@ -249,16 +249,30 @@ describe('the totals', () => {
   }
 
   it('adds up every attempt, which is the figure that appeared nowhere', () => {
-    const totals = totalsOf(
-      [run({ turns: 92, durationMs: 1_000_000 }), run({ turns: 55, durationMs: 405_000 })],
-      [],
-      [spent(0, 8.4), spent(0, 4.64)],
-    )
+    const totals = totalsOf([run({}), run({})], [], [spent(0, 8.4), spent(0, 4.64)])
 
     expect(totals.attempts).toBe(2)
-    expect(totals.turns).toBe(147)
-    expect(totals.durationMs).toBe(1_405_000)
+    // Turns and agent time are the ticket's `spend` rows', not the receipts'.
+    expect(totals.turns).toBe(2)
+    expect(totals.durationMs).toBe(2000)
+    expect(totals.fixRounds).toBe(0)
     expect(totals.byPurpose.Work.reportedCents).toBe(1304)
+  })
+
+  it('counts distinct pass:round pairs of Action rows at round 1 or more as fix rounds', () => {
+    const rows = [spent(0, 1), spent(1, 1), spent(1, 1), spent(2, 1), spent(1, 1, RUN_2)]
+    expect(totalsOf([run({}), run({ runId: RUN_2 })], [], rows).fixRounds).toBe(3)
+  })
+
+  it('leaves an attempt in flight out of the unpriced count', () => {
+    for (const state of ['running', 'claimed'] as const) {
+      const totals = totalsOf([run({ outcome: { state, detail: null } as AttemptView['outcome'] })], [], [])
+      expect(totals.byPurpose.Work.unknown).toBe(0)
+      expect(totals.inFlight).toBe(1)
+    }
+    const ended = totalsOf([run({ outcome: { state: 'failed', detail: null } as AttemptView['outcome'] })], [], [])
+    expect(ended.byPurpose.Work.unknown).toBe(1)
+    expect(ended.inFlight).toBe(0)
   })
 
   it("keeps answering's spend beside the work's and never inside it", () => {

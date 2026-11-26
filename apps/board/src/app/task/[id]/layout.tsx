@@ -201,7 +201,9 @@ export function TaskBody({
             compareUrl={task.ticket?.compareUrl ?? null}
             taskId={task.taskId}
             discussions={task.discussions}
-            discussionBill={task.totals.byPurpose.Discussion}
+            totals={task.totals}
+            firstClaimAt={task.runs[0]?.at ?? null}
+            spend={spendCurrency}
             project={task.ticket?.project ?? null}
             // The controls act on a GitHub issue. An id that is not `ticket-<p>-<n>`
             // has none, and the block states the state without offering a move.

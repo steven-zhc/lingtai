@@ -1210,9 +1210,9 @@ describe('the block, rendered', () => {
           since: '2026-11-05T00:00:00.000Z',
           turns: '0 turns in agent runs that have ended',
           ceiling: 'at most 150 turns a run',
+          usdCeiling: 'at most $5.00 a run',
           behind: null,
         },
-        cost: { text: 'nothing billed yet: no agent run has ended', ceiling: 'at most $5.00 a run', behind: null },
       },
     }
     const html = renderToStaticMarkup(
