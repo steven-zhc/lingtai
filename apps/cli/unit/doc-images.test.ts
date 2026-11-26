@@ -135,7 +135,7 @@ describe('run', () => {
     expect(report.lines).toEqual([
       'both         a.png',
       'remote only  b.png',
-      '1 both, 0 differs, 0 local only, 1 remote only',
+      '1 both, 0 differs, 0 local only, 1 remote only, 0 unreadable',
     ])
   })
 
@@ -181,5 +181,42 @@ describe('run', () => {
     expect(fs.written).toEqual(['new/dir/n.png'])
     expect(report.failed).toBe(0)
     expect(report.lines.join('\n')).toContain('refused   ../evil.png')
+  })
+
+  it('an unreadable local file does not stop download, and is never fetched over', async () => {
+    const base = emptyFs({ 'locked.png': 'a' })
+    const fs = {
+      ...base,
+      read: (k: string) =>
+        k === 'locked.png'
+          ? Promise.reject(Object.assign(new Error('x'), { name: 'Error', code: 'EACCES' }))
+          : Promise.resolve(new Uint8Array()),
+    }
+    const pages = [
+      [
+        { key: 'locked.png', etag: '"x"' },
+        { key: 'missing.png', etag: '"y"' },
+      ],
+    ]
+    const report = await Effect.runPromise(run('download', { env: SECRETS, store: () => fakeStore(pages), fs }))
+    expect(base.written).toEqual(['missing.png'])
+    expect(report.failed).toBe(0)
+  })
+
+  it('an unreadable local file fails alone on upload and list', async () => {
+    const puts: string[] = []
+    const base = emptyFs({ 'locked.png': 'a', 'ok.png': 'a' })
+    const fs = {
+      ...base,
+      read: (k: string) =>
+        k === 'locked.png' ? Promise.reject(Object.assign(new Error('x'), { code: 'EACCES' })) : base.read(k),
+    }
+    const up = await Effect.runPromise(run('upload', { env: SECRETS, store: () => fakeStore([[]], puts), fs }))
+    expect(puts).toEqual(['ok.png image/png'])
+    expect(up.failed).toBe(1)
+    expect(up.lines.join('\n')).toContain('locked.png: Error EACCES')
+    const ls = await Effect.runPromise(run('list', { env: SECRETS, store: () => fakeStore([[]]), fs }))
+    expect(ls.failed).toBe(1)
+    expect(ls.lines).toContain('local (unreadable) locked.png')
   })
 })

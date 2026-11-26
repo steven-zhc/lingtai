@@ -333,15 +333,34 @@ export const run = (
     })
 
     const keys = (yield* io('walk', () => deps.fs.walk())).filter(validKey).sort()
-    const local = yield* Effect.forEach(keys, (key) =>
-      io(key, () => deps.fs.read(key)).pipe(Effect.map((data): LocalFile => ({ key, md5: md5Of(data) }))),
+    // A file that cannot be read is reported and set aside, never fatal: download
+    // only needs to know it exists, and upload carries on with the others.
+    const reads = yield* Effect.forEach(keys, (key) =>
+      io(key, () => deps.fs.read(key)).pipe(
+        Effect.match({
+          onFailure: (e) => ({ key, error: e.message }),
+          onSuccess: (data) => ({ key, md5: md5Of(data) }),
+        }),
+      ),
     )
+    const local: LocalFile[] = []
+    const unreadable: string[] = []
+    const unreadableLines: string[] = []
+    for (const r of reads) {
+      if ('error' in r) {
+        unreadable.push(r.key)
+        unreadableLines.push(`failed   ${r.key}  ${r.error}`)
+      } else local.push(r)
+    }
     const remote = yield* listAll(store)
-    const p = plan(local, remote)
+    const unreadableSet = new Set(unreadable)
+    const planned = plan(local, remote)
+    const p: Plan = { ...planned, download: planned.download.filter((k) => !unreadableSet.has(k)) }
     const lines: string[] = []
 
     if (command === 'list') {
       const status = new Map<string, string>()
+      for (const k of unreadable) status.set(k, 'local (unreadable)')
       for (const k of p.skip) status.set(k, 'both')
       for (const k of p.replace) status.set(k, 'differs')
       for (const k of p.upload) status.set(k, 'local only')
@@ -349,9 +368,9 @@ export const run = (
       for (const k of p.remoteOnlyRefused) status.set(k, 'remote only (refused: not a valid key)')
       for (const k of [...status.keys()].sort()) lines.push(`${(status.get(k) as string).padEnd(12)} ${k}`)
       lines.push(
-        `${p.skip.length} both, ${p.replace.length} differs, ${p.upload.length} local only, ${p.download.length + p.remoteOnlyRefused.length} remote only`,
+        `${p.skip.length} both, ${p.replace.length} differs, ${p.upload.length} local only, ${p.download.length + p.remoteOnlyRefused.length} remote only, ${unreadable.length} unreadable`,
       )
-      return { lines, failed: 0 }
+      return { lines, failed: unreadable.length }
     }
 
     let outcomes: readonly Outcome[]
@@ -371,9 +390,9 @@ export const run = (
         { concurrency: 4 },
       )
       outcomes = done
-      lines.push(...done.map((o) => o.line))
+      lines.push(...unreadableLines, ...done.map((o) => o.line))
       lines.push(
-        `${done.filter((o) => o.verb === 'uploaded').length} uploaded, ${done.filter((o) => o.verb === 'replaced').length} replaced, ${p.skip.length} skipped, ${done.filter((o) => o.failed).length} failed`,
+        `${done.filter((o) => o.verb === 'uploaded').length} uploaded, ${done.filter((o) => o.verb === 'replaced').length} replaced, ${p.skip.length} skipped, ${done.filter((o) => o.failed).length + unreadable.length} failed`,
       )
     } else {
       const done = yield* Effect.forEach(
@@ -396,5 +415,8 @@ export const run = (
         `${done.filter((o) => o.verb === 'downloaded').length} downloaded, ${p.skip.length + p.replace.length} already local, ${p.remoteOnlyRefused.length} refused, ${done.filter((o) => o.failed).length} failed`,
       )
     }
-    return { lines, failed: outcomes.filter((o) => o.failed).length }
+    return {
+      lines,
+      failed: outcomes.filter((o) => o.failed).length + (command === 'upload' ? unreadable.length : 0),
+    }
   })
