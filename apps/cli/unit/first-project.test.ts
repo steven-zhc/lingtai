@@ -2124,6 +2124,54 @@ describe('chooseFirstProject — a rerun asks what the first run asks, and says 
     expect(h.registered).toEqual([])
   })
 
+  it('team to solo whose draft is recorded after the early read still makes no branch: the branch is made after the write passes changeRecipe (0130 §1)', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: TEAM_FILE } })
+    h.world.git = liftPort(repo.git)
+    const store = h.world.store!
+    const realRead = store.read.bind(store)
+    const realAppend = store.append.bind(store)
+    let raced = false
+    // The first read is the early check's: a landing records its draft right after it, before the write's own read.
+    Object.assign(store, {
+      read: async (...args: Parameters<typeof realRead>) => {
+        const out = await realRead(...args)
+        if (!raced) {
+          raced = true
+          await realAppend(ticketStream('repo', '7'), 0, [
+            {
+              type: 'TicketDiscovered',
+              actor: 'conductor',
+              data: { project: 'repo', source: 'github-issue', externalRef: '7', title: 't', kind: 'bug', labels: [] },
+            },
+            { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'bbb222', base: 'me-work' } },
+          ])
+          await realAppend(prStream('repo', 1), 0, [
+            {
+              type: 'PrDraftTicketAdded',
+              actor: 'conductor',
+              data: { ticket: '7', mergeCommit: 'bbb222', from: null },
+            },
+          ])
+          const head = await store.head('prj-repo')
+          await realAppend('prj-repo', head, [{ type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } }])
+        }
+        return out
+      },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'new-solo', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ refused: expect.stringContaining('mode: team → solo is refused') })
+    expect(repo.branches['new-solo']).toBeUndefined()
+    expect(repo.calls.filter((c) => c.startsWith('branch '))).toEqual([])
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(h.registered).toEqual([])
+  })
+
   it('a rerun registers the recipe that is on disk under the lock, not the one it previewed before another rerun changed it', async () => {
     const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'next-work': 'ccc333' })
     const h = harness({

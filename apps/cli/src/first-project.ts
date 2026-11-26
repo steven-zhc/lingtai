@@ -909,13 +909,14 @@ function runLocalBranch(
     let madeFrom: string | null = null
     let madeName: string | null = null
     let madeSha = ''
-    const makeBranch = () =>
+    const makeBranch = (keptText: string = world.kept) =>
       Effect.gen(function* () {
         if (source === null) return null
         const made = yield* world.git(toplevel, ['branch', base, source])
         if (!made.ok) {
           return {
-            refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+            refused:
+              `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${keptText}`.trim(),
           }
         }
         const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
@@ -935,7 +936,11 @@ function runLocalBranch(
       })
     // Team to solo is refused by `changeRecipe` while a draft holds a ticket or a PR is open (0130 §1), and that
     // check runs at the write, after this branch is made: so it is read first, and a refusal makes nothing.
-    if (fileText !== null && ports === null && fileMode === 'team' && mode === 'solo') {
+    const switching = fileText !== null && ports === null && fileMode === 'team' && mode === 'solo'
+    // A branch a refused switch would have made is made after `changeRecipe`'s own check, inside the write, so a
+    // draft recorded after the read above leaves no branch behind (0130 §1).
+    const lateBranch = switching && source !== null
+    if (switching) {
       const store = world.store ?? (yield* defaultStore())
       const prs = yield* refusingOn(listPrs(name, store).pipe(Effect.map((listed) => ({ listed }))), (error) => ({
         refused: `could not read the PRs of ${name} — ${errorText(error)}. ${world.kept}`,
@@ -971,14 +976,14 @@ function runLocalBranch(
             `Make it yourself with: git branch ${base} ${source}, then run this again. ${world.kept}`,
         }
       }
-    } else {
+    } else if (!lateBranch) {
       const refusal = yield* makeBranch()
       if (refusal !== null) return refusal
     }
     // Until the branch is made, a deferred one is cut at the main it would be made from.
     // `source` is what `validate` decided: main on a first run, the old working branch on a rerun that has one.
     const deferredFrom = (source as string | null) ?? mainBranch
-    const trialBase = deferBranch && deferredFrom !== null ? deferredFrom : base
+    const trialBase = (deferBranch || lateBranch) && deferredFrom !== null ? deferredFrom : base
 
     const path = recipePath(name, world.home)
     const existingText = onDisk.text()
@@ -1196,6 +1201,13 @@ function runLocalBranch(
     }
 
     let finalFromSha = fromSha
+    // The branch of a team-to-solo switch, made once the write has passed `changeRecipe`'s check.
+    const makeLate = Effect.gen(function* () {
+      if (!lateBranch) return
+      const refusal = yield* makeBranch('')
+      if (refusal !== null) return yield* Effect.fail(new Error(refusal.refused))
+      if (final === base) finalFromSha = fromSha
+    })
     if (final !== base) {
       const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${final}^{commit}`])
       if (!check.ok) {
@@ -1227,6 +1239,7 @@ function runLocalBranch(
           // Registered from the file `applySetup` has just written, under the lock: the preview above was read
           // before it, and another rerun may have changed the recipe since (its base, its mode).
           Effect.gen(function* () {
+            yield* makeLate
             const written = (yield* draftRecipe(name, { home: world.home })).text()
             if (written === null || written === previewed) {
               return yield* world.register({
