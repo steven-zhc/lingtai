@@ -1,5 +1,5 @@
 /**
- * One PR's page as data (#1320, 0130 §5): `/pr/<project>/<n>`, and `/pr/<project>/next` for the draft.
+ * One PR's page as data (#1320, 0130 §5): `/p/<project>/pr/<n>`, and `/p/<project>/pr/next` for the draft.
  *
  * Pure, like `pr-board.ts`: it takes the PR's events and the state folded from them, and returns every word the page
  * draws, so a test reads them without rendering. **Nothing here asks the log or the code host** — `lib/prs.ts` reads, and

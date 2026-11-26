@@ -218,7 +218,9 @@ describe('/landed address and pieces', () => {
   })
 
   it('uses only a kind the recipe names, and a before that parses', () => {
-    expect(landedQuery({ kind: 'bug', project: 'p' }, env.kinds)).toEqual({ project: 'p', kind: 'bug', before: null })
+    expect(landedQuery({ kind: 'bug' }, env.kinds, 'p')).toEqual({ project: 'p', kind: 'bug', before: null })
+    // the global page is handed no project, so a stray ?project= filters nothing (#1501)
+    expect(landedQuery({ kind: 'bug', project: 'x' }, env.kinds)).toEqual({ project: null, kind: 'bug', before: null })
     expect(landedQuery({ kind: 'nope', before: 'x' }, env.kinds)).toEqual({ project: null, kind: null, before: null })
   })
 

@@ -15,8 +15,9 @@ import { homePath, recipePath } from '@/lib/paths'
 import type { SandboxMark } from '../lib/sandbox-state.ts'
 import { SandboxShield } from './sandbox-shield.tsx'
 
-export const withProject = (path: string, project: string | undefined): string =>
-  project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
+/** `/report` is the one page still named by a query parameter, not a path (#1498). */
+export const reportHref = (project: string | undefined): string =>
+  project === undefined ? '/report' : `/report?project=${encodeURIComponent(project)}`
 
 export function Bar({
   project,
@@ -68,7 +69,7 @@ export function Bar({
         ) : null}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
-          href={withProject('/report', project)}
+          href={reportHref(project)}
           aria-current={here === 'report' ? 'page' : undefined}
         >
           Report

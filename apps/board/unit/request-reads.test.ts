@@ -1,5 +1,5 @@
 /**
- * One request to `/pr/<project>` reads each stream once (#1420): `prj` and every PR stream, counted on a memory store
+ * One request to `/p/<project>/pr` reads each stream once (#1420): `prj` and every PR stream, counted on a memory store
  * through what the page itself calls — `readRegistered`, `readProjectLocks`, `placeViewsOf`, `pauseSlot`, `loadPrBoard`.
  *
  * vitest has no `react-server` condition, so `cache` is a passthrough there; it is mocked per run of an

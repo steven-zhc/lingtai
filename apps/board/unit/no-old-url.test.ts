@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs'
 import { join, relative } from 'node:path'
+
 import { describe, expect, it } from 'vitest'
 
 /** Source may not name, build or link an old board address (#1501). The patterns are built from fragments so this file does not match itself. */
@@ -7,9 +8,12 @@ const ROOT = new URL('../../../', import.meta.url).pathname
 const SKIP = new Set(['node_modules', '.next', 'dist', '.turbo'])
 const S = '/'
 const OLD: readonly { re: RegExp; write: string }[] = [
-  { re: new RegExp(`${S}task${S}`), write: '`/p/<project>/ticket/<n>` (`ticketPath` in `apps/board/src/lib/paths.ts`)' },
-  { re: new RegExp(`(?<![\\w\\]])${S}pr${S}`), write: '`/p/<project>/pr[/…]` (`prPath`)' },
-  { re: new RegExp(`(?<![\\w\\]])${S}recipe${S}`), write: '`/p/<project>/recipe` (`recipePath`)' },
+  {
+    re: new RegExp(`${S}task${S}`),
+    write: '`/p/<project>/ticket/<n>` (`ticketPath` in `apps/board/src/lib/paths.ts`)',
+  },
+  { re: new RegExp(`(?<![\\w\\]}>.\\\\])${S}pr${S}`), write: '`/p/<project>/pr[/…]` (`prPath`)' },
+  { re: new RegExp(`(?<![\\w\\]}>.\\\\])${S}recipe${S}`), write: '`/p/<project>/recipe` (`recipePath`)' },
   {
     re: new RegExp(`(?:['"\`]${S}|${S}landed|${S}backlog)\\?project=`),
     write: '`homePath`, `landedHref` or `backlogPath` (`?project=` is not an address)',
@@ -37,7 +41,9 @@ describe('no old board URL in source (#1501)', () => {
           readFileSync(f, 'utf8')
             .split('\n')
             .forEach((line, i) => {
-              for (const { re, write } of OLD) if (re.test(line)) found.push(`${relative(ROOT, f)}:${i + 1}  write ${write}`)
+              for (const { re, write } of OLD)
+                if (re.test(line))
+                  found.push(`${relative(ROOT, f)}:${i + 1}  ${line.trim().slice(0, 100)}  → write ${write}`)
             })
         }
       }

@@ -86,7 +86,7 @@ describe('what the operator reads', () => {
     const n = render(payload('RunAwaitingInput', { prompt: 'which base?' }))
 
     expect(n.title).toBe('#123 is asking')
-    expect(n.url).toBe('http://localhost:3200/task/ticket-lingtai-123')
+    expect(n.url).toBe('http://localhost:3200/p/lingtai/ticket/123')
   })
 
   it('says both halves of a refusal', () => {
@@ -106,7 +106,7 @@ describe('which channel, and what it does with the link', () => {
     expect(channel.name).toBe('terminal-notifier')
     const sent = calls.find((c) => c.bin === 'terminal-notifier')
     expect(sent?.args).toContain('-open')
-    expect(sent?.args).toContain('http://localhost:3200/task/ticket-lingtai-123')
+    expect(sent?.args).toContain('http://localhost:3200/p/lingtai/ticket/123')
   })
 
   /**
@@ -121,7 +121,7 @@ describe('which channel, and what it does with the link', () => {
 
     expect(channel.name).toBe('osascript')
     const script = calls.find((c) => c.bin === 'osascript')?.args[1] ?? ''
-    expect(script).toContain('http://localhost:3200/task/ticket-lingtai-123')
+    expect(script).toContain('http://localhost:3200/p/lingtai/ticket/123')
   })
 
   /** The body is a question written by an agent, and it goes into an AppleScript string. */

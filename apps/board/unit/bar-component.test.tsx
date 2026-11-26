@@ -47,7 +47,7 @@ describe('Bar', () => {
     const html = bar('a b', undefined, true)
     const nav = html.slice(html.indexOf('class="topnav"'))
     expect(nav).toContain('href="/p/a%20b/recipe"')
-    expect(nav.indexOf('/recipe/')).toBeLessThan(nav.indexOf('class="vsep"'))
+    expect(nav.indexOf('/recipe"')).toBeLessThan(nav.indexOf('class="vsep"'))
     expect(nav.indexOf('class="vsep"')).toBeLessThan(nav.indexOf('/report'))
   })
 
@@ -55,7 +55,7 @@ describe('Bar', () => {
     for (const html of [bar(undefined, undefined, true), bar('a'), bar('a', undefined, false)]) {
       const nav = html.slice(html.indexOf('class="topnav"'))
       expect(nav).toContain('/report')
-      expect(nav).not.toContain('/recipe/')
+      expect(nav).not.toContain('/recipe"')
       expect(nav).not.toContain('vsep')
     }
   })

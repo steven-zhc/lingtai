@@ -1,11 +1,12 @@
 import { readdirSync } from 'node:fs'
+
 import { NextRequest } from 'next/server'
 import { describe, expect, it } from 'vitest'
 
 import { config, proxy } from '../src/proxy.ts'
 
 /** The old board addresses (#1501): none of them is a page, and none is answered with a redirect. */
-const OLD = ['/task/ticket-lingtai-1', '/pr/lingtai/1', '/recipe/lingtai']
+const OLD = ['task/ticket-lingtai-1', 'pr/lingtai/1', 'recipe/lingtai'].map((p) => `/${p}`)
 const APP = new URL('../src/app/', import.meta.url)
 
 /** Does a URL path land on a `page.tsx` under `src/app`? `[param]` is a wildcard, `(group)` is transparent. */
@@ -38,7 +39,7 @@ describe('an old board address is not a page (#1501)', () => {
     expect(config.matcher).toEqual(['/'])
   })
   it('is answered with no redirect, a project parameter on `/` included', () => {
-    for (const url of [...OLD, '/?project=lingtai', '/landed?project=lingtai', '/backlog?project=lingtai']) {
+    for (const url of [...OLD, ...['', 'landed', 'backlog'].map((p) => `/${p}?project=lingtai`)]) {
       const res = proxy(new NextRequest(new URL(url, 'http://board.test')))
       expect(res.headers.get('location'), url).toBeNull()
     }

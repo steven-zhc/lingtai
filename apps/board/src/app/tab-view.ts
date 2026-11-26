@@ -20,7 +20,7 @@ export async function guarded<T>(load: () => Promise<T | null>): Promise<TabRead
 
 export type DefaultTab = { kind: 'attempt'; detail: AttemptTabDetail } | { kind: 'ticket'; detail: TicketTabDetail }
 
-/** What `/task/<id>` shows in place: the default tab's content, not a redirect. */
+/** What `/p/<project>/ticket/<n>` shows in place: the default tab's content, not a redirect. */
 export function loadDefaultTab(taskId: string): Promise<TabRead<DefaultTab>> {
   return guarded<DefaultTab>(async () => {
     const { standing, runs } = await readAttempts(taskId)
