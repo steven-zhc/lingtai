@@ -10,7 +10,7 @@
  */
 import type { StoreRefused } from '@lingtai/env'
 
-import { Bar } from './bar.tsx'
+import { SetupBar } from './global-bars.tsx'
 import { ObjectTitle } from './object-title.tsx'
 
 export function NotSetUp({
@@ -24,7 +24,7 @@ export function NotSetUp({
 }) {
   return (
     <main className="detail">
-      <Bar project={undefined} />
+      <SetupBar />
       <div className="detail-body">
         <section>
           <ObjectTitle tag="setup" tone="muted" title="Setup" />

@@ -11,16 +11,13 @@
  * `gh` is handed down for the same reason `Projects` is handed `app`: the page
  * reads the env, this stays a reducer over its props.
  */
-import { Bar } from '../bar.tsx'
+import { SetupBar } from '../global-bars.tsx'
 import { ObjectTitle } from '../object-title.tsx'
 
 export function TerminalScreen({ gh = false }: { gh?: boolean }) {
   return (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">repository</span>
-      </Bar>
+      <SetupBar step="Repository" />
 
       <div className="detail-body">
         <section>
