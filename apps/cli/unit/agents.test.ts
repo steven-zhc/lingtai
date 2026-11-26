@@ -257,7 +257,7 @@ describe('askAgents', () => {
       expect(asked).toEqual([])
     })
 
-    it('a reviewer this machine is signed out of is never offered as the default', async () => {
+    it("a reviewer this machine is signed out of is still the recipe's default, and the only signed-out one accepted", async () => {
       const WITH_SIGNED_OUT_REVIEWER = `${FIXTURE}steps:\n  review:\n    - name: review\n      agent: codex\n      prompt: ''\n`
       const files = mapFiles({ [PATH]: WITH_SIGNED_OUT_REVIEWER })
       const { world, asked } = fakeWorld(['', '', '', ''])
@@ -270,8 +270,8 @@ describe('askAgents', () => {
       })
       if ('refused' in result) throw new Error(result.refused)
       const reviewerPrompt = asked.find((p) => p.includes('cold reviewer'))!
-      expect(reviewerPrompt).toContain('[claude-code]')
-      expect(reviewerPrompt).not.toContain('[codex]')
+      expect(reviewerPrompt).toContain('[codex]')
+      expect(result.changes).toContainEqual({ path: ['steps', 'review', 0, 'agent'], value: 'codex' })
     })
   })
 
@@ -598,7 +598,45 @@ describe('askAgents', () => {
       expect((resolved.recipe.steps.implement[0] as { model?: string }).model).toBeUndefined()
     })
 
-    it('a runtime.agent that is installed but signed out is never offered as the default', async () => {
+    it('a rerun that changes the writer from codex to claude-code changes the agent keys alone, and a hand-edited key stays', async () => {
+      const CODEX = `${FIXTURE}runtime:\n  agent: codex\n  limits:\n    wall: 2h\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n`
+      const files = mapFiles({ [PATH]: CODEX })
+      const { world } = fakeWorld(['claude-code', '', 'none'])
+      const draft = await draftOver('app', { home: HOME, files })
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex')],
+        flags: {},
+        home: HOME,
+        draft,
+      })
+      if ('refused' in result) throw new Error(result.refused)
+      expect(result.changes.map((c) => c.path.join('.'))).toEqual(
+        expect.arrayContaining(['runtime.agent', 'steps.implement.0.agent']),
+      )
+      expect(result.changes.some((c) => c.path.join('.').startsWith('runtime.limits.wall'))).toBe(false)
+      expect(draft.get(['runtime', 'limits', 'wall'])).toBe('2h')
+    })
+
+    it("a signed-out runtime other than the recipe's own is still refused as an answer", async () => {
+      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\n`
+      const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
+      const { world } = fakeWorld(['gemini', null])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [
+          runtime('claude-code'),
+          runtime('codex', { state: 'signed-out' }),
+          runtime('gemini', { state: 'signed-out' }),
+        ],
+        flags: {},
+        home: HOME,
+        draft: await draftOver('app', { home: HOME, files }),
+      })
+      expect(result).toHaveProperty('refused')
+    })
+
+    it('a runtime.agent that is installed but signed out is still the default, and a rerun on it changes nothing', async () => {
       const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\n`
       const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
       const { world, asked } = fakeWorld(['', '', '', ''])
@@ -610,9 +648,11 @@ describe('askAgents', () => {
         draft: await draftOver('app', { home: HOME, files }),
       })
       if ('refused' in result) throw new Error(result.refused)
-      expect(asked[0]).not.toContain('[codex]')
-      expect(asked[0]).toContain('[claude-code]')
-      expect(result.changes).toContainEqual({ path: ['runtime', 'agent'], value: 'claude-code' })
+      expect(asked[0]).toContain('[codex]')
+      expect(result.changes).toContainEqual({ path: ['runtime', 'agent'], value: 'codex' })
+      expect(result.changes).not.toContainEqual(
+        expect.objectContaining({ path: ['runtime', 'limits', 'run', 'turns'] }),
+      )
     })
 
     it('runtime.agent absent and steps.implement already naming a signed-in writer still writes runtime.agent on enter', async () => {

@@ -1587,7 +1587,21 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced).toEqual({})
   })
 
-  it('a rerun of init over an added local project says so without asking the base, writing or registering', async () => {
+  it('a rerun over a recipe that does not resolve is refused by name, before any question, and writes nothing', async () => {
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: 'version: 2\nrepo:\n  remote: /repo\nbranch: [not, a, map]\n' },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '', install: 'none' })
+    expect(result).toEqual({ refused: expect.stringContaining(path) })
+    expect(h.asked).toEqual([])
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  it("a rerun of init over an added local project goes through the questions with the recipe's values as defaults", async () => {
     const h = harness({
       git: git(),
       projects: [project('repo', null)],
@@ -1597,10 +1611,8 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
       },
     })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
-    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '', install: 'none' })
     expect(result).toMatchObject({ ok: true, project: 'local' })
-    expect(h.asked).toEqual([])
-    expect(h.files.replaced).toEqual({})
   })
 
   it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
