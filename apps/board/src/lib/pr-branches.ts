@@ -320,13 +320,7 @@ export function prBranches(
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i]!
       if (n.lane !== 'main') continue
-      // One connector per dot: a second catch-up (a retry after a failure) cannot leave the same dot at 45° beside the first.
-      if (
-        n.kind === 'merged' &&
-        (n.sha === null || n.sha === mainSha) &&
-        !edges.some((e) => e.from === n.id && e.kind === 'catch-up')
-      )
-        return n
+      if (n.kind === 'merged' && (n.sha === null || n.sha === mainSha)) return n
       break
     }
     return add({ lane: 'main', kind: 'main', label: short(mainSha), sha: mainSha }, walkN)
@@ -645,52 +639,25 @@ const foldedKind = (a: BranchNode['kind'], b: BranchNode['kind']): BranchNode['k
  * place, and its lines are the members' in log order. It takes the kind, tone and title of the latest — a commit that was
  * built and then waits red at CI is one red dot — except that a merge into main stays green. Anchors (hidden), tickets and
  * nodes no event gave a sha are never folded. An edge that named an absorbed node names the survivor, and one that would
- * join a dot to itself, or repeat another, goes.
+ * join a dot to itself, or repeat another, goes. A dot may keep several connectors to one lane (a retry); the page draws each
+ * as a run along the lane and then 45°, so identity never gives way to the layout.
  */
 export function foldCommits(
   nodes: readonly RawNode[],
   edges: readonly BranchEdge[],
 ): { nodes: BranchNode[]; edges: BranchEdge[]; into: (n: { id: string }) => string } {
-  // Two connectors at 45° that leave one dot for two dots on one lane (or reach one dot from two on one lane) cannot both
-  // hold, since the layout keeps a lane's dots apart. Where folding would make that, the members stay separate dots.
-  const blocked = new Set<string>()
-  for (;;) {
-    const r = foldWith(nodes, edges, blocked)
-    const lane = new Map(r.nodes.map((n) => [n.id, n.lane]))
-    const ends = new Map<string, string>()
-    const bad = new Set<string>()
-    for (const e of r.edges)
-      for (const [dot, other, side] of [
-        [e.from, e.to, 'from'],
-        [e.to, e.from, 'to'],
-      ] as const) {
-        const key = `${side}/${dot}/${lane.get(other)}`
-        const seen = ends.get(key)
-        if (seen === undefined) ends.set(key, other)
-        else if (seen !== other) bad.add(dot)
-      }
-    let grew = false
-    for (const n of nodes) {
-      const dot = r.into(n)
-      if (bad.has(dot) && n.id !== dot && !blocked.has(n.id)) {
-        blocked.add(n.id)
-        grew = true
-      }
-    }
-    if (!grew) return r
-  }
+  return foldWith(nodes, edges)
 }
 
 function foldWith(
   nodes: readonly RawNode[],
   edges: readonly BranchEdge[],
-  blocked: ReadonlySet<string>,
 ): { nodes: BranchNode[]; edges: BranchEdge[]; into: (n: { id: string }) => string } {
   const out: BranchNode[] = []
   const at = new Map<string, number>()
   const survivor = new Map<string, string>()
   for (const n of nodes) {
-    const key = n.sha === null || n.hidden || n.kind === 'ticket' || blocked.has(n.id) ? null : `${n.lane}/${n.sha}`
+    const key = n.sha === null || n.hidden || n.kind === 'ticket' ? null : `${n.lane}/${n.sha}`
     const i = key === null ? undefined : at.get(key)
     if (i === undefined) {
       if (key !== null) at.set(key, out.length)
@@ -887,10 +854,13 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
       for (let i = 0; i < j; i++)
         for (const a of marks[i]!)
           for (const b of marks[j]!) if (a.y0 < b.y1 && b.y0 < a.y1) raise(j, xs[i]! + a.r + LABEL_GAP - b.l)
-    for (const [a, b] of links) {
+    for (const [k, [a, b]] of links.entries()) {
       const dy = dyOf(a, b)
       raise(b, xs[a]! + dy)
-      raise(a, xs[b]! - dy)
+      // A dot may keep several connectors (a retry, a repeated sync): only the first leaving it and the last reaching
+      // another pull it back, or two targets on one lane would push each other, and it, right without end.
+      if (links.findIndex(([f]) => f === a) === k && links.findLastIndex(([, t]) => t === b) === k)
+        raise(a, xs[b]! - dy)
     }
     if (!moved) break
   }

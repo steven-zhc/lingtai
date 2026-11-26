@@ -96,7 +96,7 @@ function Branches({ view }: { view: PrPageView }) {
           {d.edges.map((e) => (
             <path
               key={`${e.from}-${e.to}`}
-              d={`M${e.x1} ${e.y1} L${e.x2} ${e.y2}`}
+              d={`M${e.x1} ${e.y1} H${Math.max(e.x1, e.x2 - Math.abs(e.y2 - e.y1))} L${e.x2} ${e.y2}`}
               className={`prp-edge ${e.kind} ${e.state}`}
             />
           ))}

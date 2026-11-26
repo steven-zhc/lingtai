@@ -507,18 +507,36 @@ describe('PR 1 as F17 shows it', () => {
 })
 
 describe('PR 1 with a failed catch-up first, and walks that repeat themselves', () => {
-  it('draws the failure and the success without a contradictory layout', () => {
-    const d = layoutBranches(
-      model([
-        ...pr1.slice(0, 6),
-        ['PrCatchUpFailed', { mainSha: 'bae6df3eeee', why: 'conflict', detail: 'x' }],
+  it('draws the failure and its retry as one merge dot, and nothing overlaps', () => {
+    for (const sha of ['bae6df3eeee']) {
+      const k = [
+        ...pr1.slice(0, 5),
+        ['PrMerged', { how: 'host', headSha: 'x', mergeSha: sha }] as Spec,
+        ['PrCatchUpFailed', { mainSha: 'bae6df3eeee', why: 'conflict', detail: 'x' }] as Spec,
         pr1[6]!,
-      ]),
-      1000,
-    )
-    expect(d.width).toBeLessThan(2000)
-    expectNoCollisions(d)
-    for (const e of d.edges) expect(e.x2 - e.x1).toBeCloseTo(Math.abs(e.y2 - e.y1), 6)
+      ]
+      const m = model(k)
+      expect(on(m, 'main')).toEqual(['main:c7c0f78', 'merged:bae6df3 merged'])
+      const up = m.edges.filter((e) => e.kind === 'catch-up')
+      expect(up).toHaveLength(2)
+      expect(new Set(up.map((e) => e.from)).size).toBe(1)
+      const d = layoutBranches(m, 1000)
+      expect(d.width).toBeLessThan(2000)
+      expectNoCollisions(d)
+      // Never steeper than 45°: the page runs the rest along the lane.
+      for (const e of d.edges) expect(e.x2 - e.x1).toBeGreaterThanOrEqual(Math.abs(e.y2 - e.y1) - 1e-6)
+    }
+  })
+
+  it('draws a main commit synced again into a later head as one main dot', () => {
+    const m = model([
+      started(),
+      ...sync('clean', '856398cdddd', '0ab635bffff'),
+      pushed(),
+      ...sync('clean', '856398cdddd', '9999999aaaa'),
+    ])
+    expect(m.nodes.filter((n) => n.lane === 'main' && n.sha === '856398cdddd')).toHaveLength(1)
+    expectNoCollisions(layoutBranches(m, 1000))
   })
 
   it('keeps a folded commit while any walk that said its lines is kept', () => {
