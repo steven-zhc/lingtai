@@ -60,6 +60,16 @@ describe('a project page: all projects', () => {
   })
 })
 
+describe('a project page: all projects with nothing listed', () => {
+  const html = renderToStaticMarkup(
+    <RecipeBar project={undefined} here="tickets" tail="Landed" {...common} filters={[]} registered={[]} />,
+  )
+  it('still draws the all projects menu, so G S has something to open', () => {
+    expect(html).toContain('class="filter"')
+    expect(html).toContain('all projects')
+  })
+})
+
 describe('a project page: Backlog', () => {
   const html = renderToStaticMarkup(<RecipeBar project="a" here={null} tail="Backlog" {...common} />)
   it('selects no view', () => {

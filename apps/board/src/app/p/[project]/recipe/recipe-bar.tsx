@@ -60,6 +60,7 @@ export function RecipeBar({
           <Projects
             filters={filters}
             only={project}
+            keepMenu
             app={app}
             registered={registered}
             locks={locks}
