@@ -34,19 +34,18 @@ export default async function LandedPage({ searchParams }: { searchParams: Promi
   return LandedBody({ project: undefined, params: await searchParams })
 }
 
-/** One page for `/landed` and `/p/<project>/ticket/landed`: a path segment wins over a stray `?project=`. */
-export async function LandedBody({ project, params: given }: { project: string | undefined; params: LandedParams }) {
-  const params = project === undefined ? given : { ...given, project }
+/** One page for `/landed` and `/p/<project>/ticket/landed`: the project is the path's alone; a `?project=` is ignored. */
+export async function LandedBody({ project, params }: { project: string | undefined; params: LandedParams }) {
   let data: LandedData | null = null
   let failure: string | null = null
   let timings: readonly Timing[] = []
-  const named = first(params.project) || undefined
+  const named = project || undefined
   const [env, bar] = await Promise.all([
     landedContext().catch(() => ({ kinds: [], owners: new Map(), sources: new Map() })),
     // The menu's reads are caught to a value inside, so a failed listing is said below and never an empty menu.
     readPlaceBar(named),
   ])
-  const query = landedQuery(params, env.kinds)
+  const query = landedQuery(params, env.kinds, project)
   const only = query.project ?? undefined
   try {
     const [read, measured] = await measure(() => currentLanded(query), { label: '/landed' })

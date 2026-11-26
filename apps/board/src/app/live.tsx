@@ -63,7 +63,7 @@
  *
  * **A route re-renders on append only if it mounts one of the two below**, and
  * that is a fact about each route rather than about this file. `/` mounts `Live`,
- * inside `health.tsx`, because the board carries the dot; `/task/<id>` mounts
+ * inside `health.tsx`, because the board carries the dot; `/p/<project>/ticket/<n>` mounts
  * `Follow`, the subscription without the dot. The only mount used to be the
  * dot's, so the task page — where the discussion pane is, and nowhere else — sat
  * on whatever it rendered at load, while every comment about that pane said

@@ -156,7 +156,7 @@ function accent(card: BoardCard): string {
 /**
  * The reference, as the other destination.
  *
- * The title opens `/task/<id>` — what Lingtai did — and that is right. The
+ * The title opens `/p/<project>/ticket/<n>` — what Lingtai did — and that is right. The
  * number beside it went nowhere at all (#81), and the issue is the other thing
  * you want from a card: what was asked, and what people have said since. Two
  * destinations, both reachable, neither one guessing which you meant.

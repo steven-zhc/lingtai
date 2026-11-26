@@ -1,6 +1,6 @@
 import { hasGitHubAuth } from '@lingtai/env'
 /**
- * `/pr/<project>` — the PRs board (#1319, 0130 §5): five columns, one per PR state, each PR a card drawn as a branch.
+ * `/p/<project>/pr` — the PRs board (#1319, 0130 §5): five columns, one per PR state, each PR a card drawn as a branch.
  * Reads the log and nothing else (the code host is #1320's), and appends nothing: its buttons are server actions that
  * call `@lingtai/project`'s commands. A solo project has no PR page, and says so in one sentence.
  */

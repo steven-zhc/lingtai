@@ -35,8 +35,12 @@ async function rig(limit = 1000) {
       },
     }
   }
-  const phase = (type: string, parent: Span, name = 'render route (app) /task/123') =>
-    next.startSpan(name, { attributes: { 'next.span_type': type, 'next.route': '/task/123' } }, under(parent))
+  const phase = (type: string, parent: Span, name = 'render route (app) /p/[project]/ticket/[n]') =>
+    next.startSpan(
+      name,
+      { attributes: { 'next.span_type': type, 'next.route': '/p/[project]/ticket/[n]' } },
+      under(parent),
+    )
   const page = (parent: Span) => provider.getTracer(SCOPE).startSpan('page /task', {}, under(parent))
   const names = () => out.map((s) => s.name).toSorted()
   return { only, out, next, provider, under, request, phase, page, names }

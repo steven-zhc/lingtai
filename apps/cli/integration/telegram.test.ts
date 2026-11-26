@@ -200,7 +200,7 @@ describe('the telegram subscriber this repository declares', () => {
     // the link is the address `@lingtai/env` decides — 17820 unless
     // `~/.lingtai/config.yml` says otherwise (#187) — and the two have to be
     // the same one for a card link to open anything.
-    const card = `${boardUrl()}/task/${encodeURIComponent(run.wi)}`
+    const card = `${boardUrl()}/p/${PROJECT}/ticket/${run.issue}`
     expect(api.received.map((r) => r.text)).toEqual([
       `#${run.issue} run failed\ncrash: session limit\n${card}`,
       `#${run.issue} landed\nmerged into main at 5ace763\n${card}`,

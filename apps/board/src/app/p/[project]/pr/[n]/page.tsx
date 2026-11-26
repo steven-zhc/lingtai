@@ -1,5 +1,5 @@
 /**
- * `/pr/<project>/<n>` — one PR's page (#1320, 0130 §5); `n` is Lingtai's id, or `next` for the draft. Everything the log
+ * `/p/<project>/pr/<n>` — one PR's page (#1320, 0130 §5); `n` is Lingtai's id, or `next` for the draft. Everything the log
  * answers is sent at once; the code host's one word streams in after it (#884). Appends nothing: its buttons are server
  * actions that call `@lingtai/project`'s commands.
  */

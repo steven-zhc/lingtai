@@ -136,7 +136,7 @@ it('the request span leaves as a copy with four attributes, no events or links, 
     {
       attributes: {
         ...REQUEST,
-        'http.target': '/task/123',
+        'http.target': '/p/lingtai/ticket/123',
         'http.url': 'https://api.github.com/x?t=1',
         'http.method': 'GET',
         'next.route': '/p/[project]/ticket/[n]',
@@ -208,14 +208,14 @@ it('forwards a copy: the original request span keeps its URL, event, link and me
     .getTracer('next.js')
     .startSpan('GET /p/[project]/ticket/[n]', { root: true, attributes: REQUEST, links: [{ context: linked }] })
   provider.getTracer(SCOPE).startSpan('page /task', {}, trace.setSpan(ROOT_CONTEXT, request)).end()
-  request.setAttribute('http.target', '/task/123')
+  request.setAttribute('http.target', '/p/lingtai/ticket/123')
   request.recordException(new Error('https://x?token=y'))
   request.setStatus({ code: 2, message: 'https://x?token=y' })
   request.end()
   const copy = forwarded.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
   const original = originals.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
   expect(copy).not.toBe(original)
-  expect(original.attributes['http.target']).toBe('/task/123')
+  expect(original.attributes['http.target']).toBe('/p/lingtai/ticket/123')
   expect(original.events).toHaveLength(1)
   expect(original.links).toHaveLength(1)
   expect(original.status.message).toBe('https://x?token=y')

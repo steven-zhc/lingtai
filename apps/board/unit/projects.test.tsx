@@ -57,7 +57,7 @@ describe('a row per repository', () => {
     expect(out.match(/href=/g)).toHaveLength(2)
     expect(out).toContain('href="/p/lingtai/ticket"')
     expect(out).toContain('<span class="phint">recipe · pause</span>')
-    expect(out).not.toContain('/recipe/')
+    expect(out).not.toContain('/recipe"')
   })
 
   it('draws no hint on a project that is not registered', () => {
@@ -78,7 +78,7 @@ describe('a row per repository', () => {
   })
 
   it('adds nothing to the empty board', () => {
-    expect(html([], true)).not.toContain('/recipe/')
+    expect(html([], true)).not.toContain('/recipe"')
   })
 })
 

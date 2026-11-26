@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  *
  * **Not that the component exists — that this route has it** (#172). `Live` had
  * existed since #64 and was mounted in `health.tsx` alone, which only `/`
- * renders; `/task/<id>` — the one page with a discussion on it — never
+ * renders; `/p/<project>/ticket/<n>` — the one page with a discussion on it — never
  * re-rendered on an append, so a question, the trace's sentence and the answer
  * each waited for a reload. Every comment about that pane said *every append
  * re-renders the board*, and it was true of the board.
