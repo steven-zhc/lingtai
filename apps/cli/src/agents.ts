@@ -206,10 +206,13 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
 
   const choiceList = signedInIds.join(', ')
   const offeredRuntimes = RuntimeId.options.filter((id) => signedInIds.includes(id))
+  // The recipe's own runtime is accepted as an answer whether or not it is signed in: a rerun that takes
+  // every default keeps it (#1473), and any other signed-out runtime is still refused.
   const refuseUnlessOffered =
-    (extra = '') =>
+    (kept: string | null, extra = '') =>
     (answer: string): Effect.Effect<string | null> => {
       if (signedInIds.includes(answer)) return Effect.succeed(null)
+      if (kept !== null && answer === kept) return Effect.succeed(null)
       if (answer === '') return Effect.succeed(`no agent is chosen yet — choose one of ${choiceList}${extra}`)
       const found = at.runtimes.find((r) => r.id === answer)
       if (!found) return Effect.succeed(`${answer} is not a runtime — choose one of ${choiceList}${extra}`)
@@ -225,18 +228,22 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
       ? implementAction.action['agent']
       : at.draft.get(['runtime', 'agent']),
   )
-  const currentAgent = writingAgent !== null && signedInIds.includes(writingAgent) ? writingAgent : null
+  // The recipe's own value, signed in or not: the `whyMissing` line above says when it is not.
+  const currentAgent = writingAgent
 
   const agentAnswer = yield* questionEffect(world, {
     name: 'which agent writes the change',
     flag: `--agent <${choiceList}>`,
     given: at.flags.agent ?? null,
     prompt: `which agent writes the change (${choiceList})`,
-    offer: offeredRuntimes,
+    offer:
+      currentAgent !== null && !offeredRuntimes.includes(currentAgent)
+        ? [...offeredRuntimes, currentAgent]
+        : offeredRuntimes,
     current: currentAgent,
     // The enum's own order, not the list's (#313, doc/design/398.md:43).
     detected: defaultAgents(signedInIds).writer,
-    validate: refuseUnlessOffered(),
+    validate: refuseUnlessOffered(currentAgent),
     kept: at.kept,
   })
   if ('refused' in agentAnswer) return agentAnswer
@@ -269,27 +276,28 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
 
   const rawReviewer =
     reviewAction && typeof reviewAction.action['agent'] === 'string' ? (reviewAction.action['agent'] as string) : null
-  // A reviewer this machine is signed out of is never offered — same rule as
-  // the writer's `currentAgent` — so `defaultReviewer`'s detected value is
-  // reached instead of a bracket the answer will only be refused for.
+  // The recipe's own reviewer is the default whether or not it is signed in (#1473), as the writer's is.
   const currentReviewer =
-    rawReviewer !== null
-      ? signedInIds.includes(rawReviewer)
-        ? rawReviewer
-        : null
-      : Array.isArray(reviewList) && reviewList.length === 0
-        ? 'none'
-        : null
+    rawReviewer !== null ? asRuntime(rawReviewer) : Array.isArray(reviewList) && reviewList.length === 0 ? 'none' : null
 
   const reviewerAnswer = yield* questionEffect(world, {
     name: 'a cold reviewer',
     flag: `--reviewer <${choiceList}|none>`,
     given: at.flags.reviewer ?? null,
     prompt: `does a cold reviewer read it, and which agent (${choiceList}, or none)`,
-    offer: [...offeredRuntimes, 'none'],
+    offer: [
+      ...offeredRuntimes,
+      ...(currentReviewer !== null &&
+      currentReviewer !== 'none' &&
+      !offeredRuntimes.includes(currentReviewer as RuntimeName)
+        ? [currentReviewer]
+        : []),
+      'none',
+    ],
     current: currentReviewer,
     detected: defaultReviewer,
-    validate: (answer) => (answer === 'none' ? Effect.succeed(null) : refuseUnlessOffered(', or none')(answer)),
+    validate: (answer) =>
+      answer === 'none' ? Effect.succeed(null) : refuseUnlessOffered(currentReviewer, ', or none')(answer),
     kept: at.kept,
   })
   if ('refused' in reviewerAnswer) return reviewerAnswer
@@ -359,7 +367,9 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (
     writerCapabilities !== undefined &&
     !writerCapabilities.enforces.includes('turns') &&
-    at.draft.get(['runtime', 'limits', 'run', 'turns']) === null
+    at.draft.get(['runtime', 'limits', 'run', 'turns']) === null &&
+    // On an existing file only a writer that changed adds it: a rerun that takes every default writes nothing.
+    writer !== writingAgent
   ) {
     changes.push(unboundedTurnsChange())
   }

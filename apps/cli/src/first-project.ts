@@ -252,6 +252,8 @@ export type FirstProjectOutcome =
       card: CardRecipe
       /** The project was already registered. */
       updated: boolean
+      /** A rerun whose answers changed nothing: no write, no registration (#1473). */
+      unchanged?: boolean
       /** The runtimes this run already probed. */
       runtimes: readonly RuntimeFound[]
       /** Lines the card's closing prints, muted, after the groups. */
@@ -643,26 +645,18 @@ function runLocalBranch(
       return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
     }
 
-    // Already added and a rerun of `init` (no ports): it says so and goes on, writing and registering
-    // nothing — a machine whose first project is added must not fail. `lingtai add` was refused above.
-    const initRerun = found !== undefined && ports === null && !moving
-    if (initRerun) {
-      world.log(`${found.project} is already added — its recipe is ${recipePath(found.project!, world.home)}`)
-      const recipeAt = recipePath(name, world.home)
+    // Already added and a rerun of `init` (no ports): it takes the first run's path, with the recipe's values as
+    // the defaults (#1473). A recipe that does not resolve is refused by name before any question — falling back
+    // to the system's defaults would have a person's Enter rewrite a broken file. `lingtai add` was refused above.
+    if (found !== undefined && ports === null && !moving) {
+      const recipeAt = recipePath(found.project!, world.home)
+      world.log(`${found.project} is already added — its recipe is ${recipeAt}`)
       const existing = onDisk.text()
       if (existing !== null) {
-        const recipe = resolveSource(existing, recipeAt, recipeAt).recipe
-        return {
-          ok: true as const,
-          project: 'local' as const,
-          name,
-          remote,
-          base: branchOf(recipe),
-          trial: { trial: 'not-run' as const, because: 'no checks' },
-          card: cardRecipe(recipe, toplevel),
-          updated: true,
-          runtimes: yield* world.runtimes(),
-          hints: [],
+        try {
+          resolveSource(existing, recipeAt, recipeAt)
+        } catch (error) {
+          return { refused: `${recipeAt} does not resolve — ${errorText(error)}. ${world.kept}` }
         }
       }
     }
@@ -1060,6 +1054,25 @@ function runLocalBranch(
     if (deferBranch) {
       const refusal = yield* makeBranch()
       if (refusal !== null) return refusal
+    }
+
+    // A rerun whose answers changed nothing (the draft holds only sets that changed the text) writes nothing and
+    // registers nothing: no `ProjectConfigured`, no `ProjectRecipeChanged` (#1473).
+    if (found !== undefined && !repairOnly && existingText !== null && recipeResult.answers.changes.length === 0) {
+      const kept = resolveSource(existingText, path, path).recipe
+      return {
+        ok: true as const,
+        project: 'local' as const,
+        name,
+        remote,
+        base: branchOf(kept),
+        trial: recipeResult.trial,
+        card: cardRecipe(kept, toplevel),
+        updated: true,
+        unchanged: true,
+        runtimes,
+        hints: recipeResult.hints,
+      }
     }
 
     // `askLanding`, inside `askRecipe`, can move `branch.main` on a local

@@ -2,10 +2,9 @@
  * `askRecipe` (#431, #432): every recipe question `init`'s local branch and
  * `lingtai add`'s GitHub branch both ask.
  *
- * **Two files, two shapes.** An existing file is edited one answer at a
- * time — written once here instead of twice, in `first-project.ts`'s
- * `runLocalBranch` and `add-github.ts`'s `askBeforeGithubAdd` — so a Ctrl+C
- * keeps what was answered (#392 decision 1). An absent file is created once:
+ * **Two files, two shapes.** An existing file is edited through the draft:
+ * every answer lands in memory and `applySetup` (#968) is the one writer, so a
+ * Ctrl+C halfway leaves the recipe and the log as they were. An absent file is created once:
  * the first four sections' answers are collected rather than written as they
  * are given, reduced in with the caller's own `seeds`, and handed to
  * `setRecipe` in a single call, with a comment above every block (`SAID`,
