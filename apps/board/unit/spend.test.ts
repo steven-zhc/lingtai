@@ -177,7 +177,13 @@ describe('billText renders the one table every reader shows', () => {
 
   it('adds an estimate after the figure and never into it', () => {
     const bills = billOf([row({ costUsd: 3.1 }), row({ costUsd: null, estimatedUsd: 0.5, estimateFetched: false })])
-    expect(billText(bills.Work)).toBe('$3.10 ~$0.50 est.')
+    expect(billText(bills.Work)).toBe('$3.10 + ~$0.50 est.')
+  })
+
+  it('pins the estimate arms with unknown runs', () => {
+    const est = { reportedCents: 310, reportedRuns: 1, estimates: [0.5], unknown: 2 }
+    expect(billText(est)).toBe('$3.10 + ~$0.50 est. + 2 unpriced')
+    expect(billText({ ...est, reportedCents: 0, reportedRuns: 0, estimates: [0.42] })).toBe('~$0.42 est. + 2 unpriced')
   })
 
   it('says the fetched-prices note only when asked', () => {

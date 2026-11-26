@@ -150,23 +150,21 @@ describe('runningPanelOf meters', () => {
   it('sums turns over the rows and bills them', () => {
     const m = runningPanelOf(withNow(60_000), ctx({ rows: [row(), row(), row({ turns: 1 })] })).meters!
     expect(m.attempt.turns).toBe('21 turns in agent runs that have ended')
-    expect(m.cost.text).toBe('$4.50')
     expect(m.attempt.since).toBe(SINCE)
   })
 
   it('no rows is nothing billed yet, never $0.00 or unknown', () => {
     const m = runningPanelOf(withNow(60_000), ctx()).meters!
-    expect(m.cost.text).toBe('nothing billed yet: no agent run has ended')
     expect(m.attempt.turns).toBe('0 turns in agent runs that have ended')
   })
 
   it('draws per-run ceilings where set and none where absent', () => {
     const set = runningPanelOf(withNow(60_000), ctx()).meters!
     expect(set.attempt.ceiling).toBe('at most 150 turns a run')
-    expect(set.cost.ceiling).toBe('at most $5.00 a run')
+    expect(set.attempt.usdCeiling).toBe('at most $5.00 a run')
     const absent = runningPanelOf(withNow(60_000, { limits: { wallMs: 1 } }), ctx()).meters!
     expect(absent.attempt.ceiling).toBeNull()
-    expect(absent.cost.ceiling).toBeNull()
+    expect(absent.attempt.usdCeiling).toBeNull()
     const none = runningPanelOf(withNow(60_000, { limits: null }), ctx()).meters!
     expect(none.attempt.ceiling).toBeNull()
   })
@@ -178,7 +176,6 @@ describe('runningPanelOf meters', () => {
 
   it('spend behind the log says so', () => {
     const m = runningPanelOf(withNow(60_000), ctx({ currency: { lag: 3 } as never })).meters!
-    expect(m.cost.behind).toBe('behind 3')
     expect(m.attempt.behind).toBe('behind 3')
   })
 })

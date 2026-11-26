@@ -48,7 +48,10 @@ describe('whereLanded', () => {
 describe('footLine', () => {
   it('counts the draft and names the open PR', () => {
     const read = team([pr({ host: { number: 88 } })], ['#1', '#2'])
-    expect(footLine(read)).toEqual({ kind: 'line', text: '2 not in a PR yet · PR #88 in review' })
+    expect(footLine(read)).toEqual({ kind: 'line', draft: 2, open: 'PR #88 in review' })
+  })
+  it('counts one ticket with no open PR beside it', () => {
+    expect(footLine(team([], ['#1']))).toEqual({ kind: 'line', draft: 1, open: null })
   })
   it('says nothing when nothing is waiting, and says unread when it could not tell', () => {
     expect(footLine(team([], []))).toBeNull()

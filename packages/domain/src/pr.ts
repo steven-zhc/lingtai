@@ -599,6 +599,15 @@ const releaseCatchUp = (state: PrState, asked: boolean): PrState['catchUp'] =>
     ? { ...state.catchUp, released: true }
     : state.catchUp
 
+/**
+ * The commit the personal branch was frozen at: the **first** `PrInProgress`'s. `PrState.frozenSha` is the latest walk's, which
+ * is the PR branch's own head after a pr-fix, and the personal branch does not hold that until it is merged back.
+ */
+export function firstFrozenSha(events: readonly Envelope[]): string | null {
+  const first = events.find((e) => e.type === 'PrInProgress')
+  return first === undefined ? null : (first.data as PayloadOf<'PrInProgress'>).frozenSha
+}
+
 export function reducePr(events: readonly Envelope[]): PrState {
   return events.reduce(reducePrEvent, emptyPr)
 }

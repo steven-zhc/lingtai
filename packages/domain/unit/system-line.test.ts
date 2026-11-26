@@ -61,7 +61,7 @@ const wait = (over: Record<string, unknown>) =>
     waitId: 'w1',
     reason: { run: { runId: 'run-a' } },
     at: new Date(10),
-    resolution: { resolution: redo, by: 'triage', spent: { bound: 'stepRedos', n: 2 } },
+    resolution: { resolution: redo, by: 'triage', at: new Date(20), spent: { bound: 'stepRedos', n: 2 } },
     triage: { started: null, result: null, headSha: null },
     landed: null,
     closed: null,
