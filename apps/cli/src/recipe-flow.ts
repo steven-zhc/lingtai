@@ -410,8 +410,23 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       } else if (given !== null && !GITHUB_LOGIN.test(given)) {
         return { refused: `${given} is not a GitHub login (letters, digits and single -). ${askKept}` }
       }
-      if (mainBranch === null || mainBranch === '') {
+      // A team recipe asks no base question, so a typed `--main` that differs from the recipe's is the answer: checked
+      // against GitHub, then written with the rest, and the personal branch below is cut from it.
+      const typedMain = at.flags['main']
+      const teamMain: string | null =
+        !absent && !at.local && typedMain !== undefined && typedMain !== '' && typedMain !== rawMain
+          ? typedMain
+          : mainBranch
+      if (teamMain === null || teamMain === '') {
         return { refused: `no main branch to cut ${login}'s branch from — pass --main <branch>. ${askKept}` }
+      }
+      if (teamMain !== mainBranch) {
+        const there = yield* team.branchExists(teamMain)
+        if (there === 'unreadable') {
+          return { refused: `could not read whether ${teamMain} exists on GitHub. ${askKept}` }
+        }
+        if (!there) return { refused: `${teamMain} is not a branch on GitHub. ${askKept}` }
+        collected.push({ path: ['branch', 'main'], value: teamMain })
       }
       const rawPersonal = draft.get(['branch', 'personal'])
       const oldPersonal = !absent && typeof rawPersonal === 'string' && rawPersonal !== '' ? rawPersonal : null
@@ -419,7 +434,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         given: at.flags['personal'] ?? null,
         fallback: defaultPersonalBranch(login, team.hostname()),
         current: oldPersonal,
-        main: mainBranch,
+        main: teamMain,
         kept: askKept,
       })
       if ('refused' in personal) return personal
@@ -436,7 +451,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       } else {
         // A new working branch is cut from the old one where that exists: every ticket that landed on it and
         // has not reached main would otherwise be missing from the new one (#1474).
-        let from = mainBranch
+        let from = teamMain
         if (oldPersonal !== null && oldPersonal !== personal.personal) {
           const oldExists = yield* team.branchExists(oldPersonal)
           if (oldExists === 'unreadable') {

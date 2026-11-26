@@ -911,6 +911,25 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(recipe.branch.personal).toBeUndefined()
   })
 
+  it('a team recipe takes a changed --main as its base, and refuses one that is not a branch on GitHub (#1497)', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop', 'release'])))
+
+    const again = answerer('team')
+    const result = await askAndWrite(again.world, {
+      ...at(files, new Set(['me/laptop', 'release'])),
+      flags: { install: 'none', main: 'release' },
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.main).toBe('release')
+
+    const missing = await askAndWrite(answerer('team').world, {
+      ...at(files, new Set(['me/laptop'])),
+      flags: { install: 'none', main: 'nowhere' },
+    })
+    expect(missing).toMatchObject({ refused: expect.stringContaining('nowhere is not a branch on GitHub') })
+  })
+
   it('a new personal branch is cut from the old one, which holds what landed and has not reached main', async () => {
     const files = mapFiles()
     await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))

@@ -619,6 +619,39 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(asked).toEqual([])
   })
 
+  it('a rerun whose recipe base is not the registered base registers again rather than answering unchanged (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), base: 'release' }])
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+  })
+
+  it('a rerun that registers nothing exits non-zero (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), base: 'release' }])
+    h.world.project.github.add = liftPort(async () => ({ ok: false }) as never)
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(1)
+  })
+
+  it('another spelling of a registered repository is refused rather than given a recipe of its own (#1497)', async () => {
+    const h = await registeredHarness()
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/Widgets' }, h.world)).toBe(1)
+    expect(h.errors.join('\n')).toContain('registered as widgets')
+    expect(h.added).toEqual([])
+    expect(await h.world.project.files.read(recipePath('Widgets'))).toBeNull()
+  })
+
+  it('an unchanged rerun still holds a contradicting --github-auth to the machine (#1497)', async () => {
+    const h = await registeredHarness()
+    const code = await addFlow(
+      { ...flagsFromArgv([...h.argv, '--defaults', '--github-auth', 'app']), positional: 'acme/widgets' },
+      h.world,
+    )
+    expect(code).toBe(1)
+    expect(h.errors.join('\n')).toContain('--github-auth app')
+    expect(h.labelled).toEqual([])
+  })
+
   it('a rerun over a recipe that does not resolve is refused by name before any question (#1497)', async () => {
     const h = await registeredHarness()
     await h.world.project.files.replace(recipePath('widgets'), 'tier: [unclosed')

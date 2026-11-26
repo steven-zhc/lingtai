@@ -284,6 +284,8 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
   const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
   const rerun = found !== undefined && !ownerRepair
   let repaired: string | null = null
+  // Whether `ProjectConfigured` names the base the recipe on disk names: a rerun that left them apart registers again.
+  let registeredAsRecipe = false
   if (ownerRepair) repaired = repo
   if (rerun && repo !== null) {
     const { owner } = parseSlug(slug)
@@ -292,17 +294,30 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
       world.error(taken({ slug, repo, takenBy: found.owner }))
       return { exit: 1 }
     }
+    // The project is keyed by its registered spelling: another spelling would read and write a recipe of its own.
+    if (found.project !== repo) {
+      world.error(
+        `${repo} is registered as ${found.project} — run lingtai add ${owner}/${found.project} instead. Nothing was written`,
+      )
+      return { exit: 1 }
+    }
     // A recipe that does not resolve is refused by name before any question, never replaced by the defaults (0125 §6).
     const recipeAt = recipePath(repo)
     const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
     if (text !== null) {
       try {
-        resolveSource(text, recipeAt, recipeAt)
+        registeredAsRecipe =
+          found.base !== null && found.base === resolveSource(text, recipeAt, recipeAt).recipe.branch.main
       } catch (error) {
         world.error(`${recipeAt} does not resolve — ${asError(error).message}. ${ADD_KEPT}`)
         return { exit: 1 }
       }
     }
+  }
+  // This command registers a GitHub project; a flag that names another kind is refused where it is read, not after.
+  if (flags['project'] !== undefined && flags['project'] !== 'github') {
+    world.error(`${slug} is a GitHub project, and --project ${flags['project']} names another. Nothing was written`)
+    return { exit: 1 }
   }
 
   let asked: AskedBeforeAdd | null = null
@@ -313,8 +328,17 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
   }
 
   // Nothing changed: no event, nothing registered. The recipe is read back, the labels are put right, the card says so.
-  if (rerun && asked !== null && asked.answers.changes.length === 0) {
+  if (rerun && asked !== null && asked.answers.changes.length === 0 && registeredAsRecipe) {
     const { owner, repo: name } = parseSlug(slug)
+    // The same election `chooseFirstProject` would hold the flag to: the machine reaches GitHub one way.
+    const via = flags['github-auth']
+    if (via !== undefined && asked.reach !== undefined && via !== asked.reach.kind) {
+      world.error(
+        `--github-auth ${via}, but this machine reaches GitHub through ${asked.reach.kind === 'gh' ? 'gh' : 'the App'}. ` +
+          'Leave out --github-auth, or change it with lingtai init. Nothing was written',
+      )
+      return { exit: 1 }
+    }
     return yield* drawGithubCard(world, entry, {
       owner,
       repo: name,
@@ -358,6 +382,11 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
       reach: result.reach,
       warnings: result.warnings ?? [],
     })
+  }
+  if (asked !== null && (result.updated === undefined || result.reach === undefined)) {
+    // `add()` said why; nothing was registered, and a script must not read this as success.
+    world.error(`${slug} was not registered`)
+    return { exit: 1 }
   }
   if (repaired !== null && result.updated !== undefined) {
     world.log(`${repaired}'s recipe is ${recipePath(repaired)}, and it is edited there`)
