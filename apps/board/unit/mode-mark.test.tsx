@@ -1,12 +1,13 @@
 import { readFileSync } from 'node:fs'
 
+import type { ProjectState } from '@lingtai/domain'
 import { Recipe } from '@lingtai/recipe'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { ModeLink, ProjectModeMark } from '@/app/mode-glyph.tsx'
 import { ProjectRows } from '@/app/projects.tsx'
-import { modeMark } from '@/lib/mode-mark.ts'
+import { modeMark, modeMarks } from '@/lib/mode-mark.ts'
 
 const recipe = (extra: object) =>
   Recipe.parse({
@@ -124,5 +125,36 @@ describe('where it is wired, and what it does not read', () => {
   it('the skeleton has no text', () => {
     const slot = read('../src/app/mode-slot.tsx')
     expect(slot).toContain('<span className="mode-mark mode-skeleton" aria-hidden="true" />')
+  })
+})
+
+describe('modeMarks (#1489)', () => {
+  const src = (extra: string) =>
+    `version: 2\nbranch:\n  main: main\n  personal: me/work\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n${extra}`
+  const proj = (project: string, source: string | null) =>
+    ({ project, recipe: source === null ? null : { source } }) as unknown as ProjectState
+
+  it('gives every row its glyph with another project selected, and none for no or unparsable recipe', () => {
+    const marks = modeMarks([
+      proj('a', src('mode: team\n')),
+      proj('b', src('mode: team\n')),
+      proj('c', null),
+      proj('d', 'a: ['),
+    ])
+    const out = renderToStaticMarkup(
+      <ProjectRows
+        filters={['a', 'b', 'c', 'd']}
+        only="a"
+        app
+        registered={['a', 'b', 'c', 'd']}
+        locks={new Map()}
+        mode={marks}
+      />,
+    )
+    const row = (name: string) => out.slice(out.indexOf(`href="/?project=${name}"`)).split('</a>')[0]!
+    expect(row('b')).toContain('mode-mark mode-row')
+    expect(row('b')).toContain('team · lands on me/work')
+    expect(row('c')).not.toContain('mode-mark')
+    expect(row('d')).not.toContain('mode-mark')
   })
 })
