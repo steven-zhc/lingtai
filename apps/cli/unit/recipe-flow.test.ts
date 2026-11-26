@@ -152,7 +152,8 @@ describe('askRecipe — an absent file (#432)', () => {
     for (const [dotted, sentence] of Object.entries(SAID)) {
       const comment = commentAbove(text, dotted)
       // `sandbox` is asked only where the caller read the host (#1160), which this test does not.
-      if (comment === '') expect(['steps.end', 'steps.proposed', 'runtime.limits', 'sandbox'], dotted).toContain(dotted)
+      if (comment === '')
+        expect(['steps.end', 'steps.proposed', 'runtime.limits', 'sandbox', 'discuss'], dotted).toContain(dotted)
       else expect(comment, dotted).toBe(sentence)
     }
 
@@ -626,5 +627,56 @@ describe('askRecipe — a draft, never a write (#1182)', () => {
     } satisfies TestAt)
     expect(second).toMatchObject({ ok: true })
     expect(existing.replaced).toEqual([])
+  })
+})
+
+describe('askRecipe — the discuss agent of a new recipe (#1476)', () => {
+  const CODEX_ONLY: readonly RuntimeFound[] = [
+    { id: 'claude-code', state: 'signed-out', signedIn: false, detail: 'token expired' },
+    { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
+  ]
+  const written = async (runtimes: readonly RuntimeFound[], codexText: RecipeAt['codexText']) => {
+    const files = mapFiles()
+    const result = await askAndWrite(defaultsWorld(), {
+      ...BASE_AT,
+      runtimes,
+      codexText,
+      project: 'widget',
+      local: true,
+      flags: { ...BASE_AT.flags, defaults: '' },
+      seeds: [
+        { path: ['branch', 'main'], value: 'main' },
+        { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      ],
+      kept: 'kept',
+      again: 'lingtai add --local /repo',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies TestAt)
+    expect(result).toMatchObject({ ok: true })
+    return parseDocument(files.replaced.at(-1)!.text)
+  }
+
+  it('claude-code signed out with codex_text: discuss.agent is codex, and no model is written', async () => {
+    const doc = await written(CODEX_ONLY, () => ({ model: 'gpt-x' }) as never)
+    expect(doc.getIn(['discuss', 'agent'])).toBe('codex')
+    expect(doc.getIn(['discuss', 'model'])).toBeUndefined()
+  })
+
+  it('claude-code signed out without codex_text, or with an unreadable one: no discuss block', async () => {
+    expect((await written(CODEX_ONLY, () => undefined)).has('discuss')).toBe(false)
+    const unreadable = () => {
+      throw new Error('unreadable')
+    }
+    expect((await written(CODEX_ONLY, unreadable)).has('discuss')).toBe(false)
+  })
+
+  it('claude-code signed in: no discuss block, whatever codex_text says', async () => {
+    const both: readonly RuntimeFound[] = [
+      { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+      { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
+    ]
+    expect((await written(both, () => ({ model: 'gpt-x' }) as never)).has('discuss')).toBe(false)
   })
 })

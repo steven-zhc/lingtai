@@ -3396,6 +3396,47 @@ export function codexRoleRow(
   }
 }
 
+/**
+ * The discuss row of a recipe that never wrote `discuss:` (#1476): the agent is the schema's default, nobody chose
+ * it, so a default that cannot run is a warning — a pass needs no discussion. A declared one keeps its `fail`.
+ */
+export function defaultDiscussRow(row: CheckResult, declared: boolean): CheckResult {
+  if (declared || row.status !== 'fail') return row
+  return {
+    ...row,
+    status: 'warn',
+    title: 'discussions need claude-code signed in, or codex_text configured',
+  }
+}
+
+/** A `codex_text` that is configured but wrong is a failure of its own, never the same as none configured. */
+export function invalidCodexText(
+  project: string,
+  configured: () => CodexTextConfig | undefined,
+): CheckResult | undefined {
+  try {
+    configured()
+    return undefined
+  } catch (err) {
+    return {
+      name: `discuss: ${project} codex_text`,
+      status: 'fail',
+      title: `codex_text configuration for ${project} is invalid`,
+      detail: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/** Whether the recipe's own text has a top-level `discuss:` key; a preset cannot supply one. */
+function declaresDiscuss(source: string): boolean {
+  try {
+    const doc: unknown = parseYaml(source)
+    return typeof doc === 'object' && doc !== null && !Array.isArray(doc) && 'discuss' in doc
+  } catch {
+    return true
+  }
+}
+
 /** `claudeOauthToken` as a boolean Effect that keeps the reader's own sentence, which `Effect.try` alone would replace. */
 export const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
   Effect.try({
@@ -3670,9 +3711,17 @@ export function declaredEnvironment(
                 codexRoleRow(project.project!, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
               )
             } else if (selected) {
-              results.push(
-                yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [`${role}.agent`]),
-              )
+              const row = yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [
+                `${role}.agent`,
+              ])
+              const declared = role === 'discuss' && declaresDiscuss(resolved.source)
+              results.push(role === 'discuss' ? defaultDiscussRow(row, declared) : row)
+              // `init` treats an invalid codex_text as absent and so names no Codex discuss agent; this is where the
+              // configuration error is reported, since the Codex row above runs only for a recipe that selects Codex.
+              if (role === 'discuss' && !declared && row.status === 'fail') {
+                const invalid = invalidCodexText(project.project!, reach.codexText ?? (() => codexTextConfig(env)))
+                if (invalid) results.push(invalid)
+              }
             }
           }
         }),
