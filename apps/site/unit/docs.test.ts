@@ -352,6 +352,8 @@ describe('where a link inside a document goes', () => {
       throw new Error('EACCES')
     }
     expect(docImageSrc('img/tutorial-site.png', boom)).toBe(`${DOC_IMAGES_BASE}img/tutorial-site.png`)
+    expect(docImageSrc('img/tutorial-site.png#preview', yes)).toBe('/img/docs/tutorial-site.png#preview')
+    expect(docImageSrc('img/example.png?v=2', no)).toBe(`${DOC_IMAGES_BASE}img/example.png?v=2`)
     // the route serves only a flat lower-case png/svg, so a present file it cannot serve is the GitHub link
     expect(docImageSrc('img/016/x.png', yes)).toBe(`${GITHUB_BLOB}doc/img/016/x.png`)
   })

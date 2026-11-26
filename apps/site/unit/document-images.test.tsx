@@ -10,5 +10,9 @@ describe('a document image', () => {
     const html = renderToStaticMarkup(<Document slug="tutorial" source="tutorial.md" body={body} published={[]} />)
     expect(html).toContain(`src="${docImageSrc('img/tutorial-site.png')}"`)
     expect(html).toContain('src="/img/docs/recipe.svg"')
+    const ext = renderToStaticMarkup(
+      <Document slug="tutorial" source="tutorial.md" body="![e](//cdn.example.com/picture.png)" published={[]} />,
+    )
+    expect(ext).toContain('src="//cdn.example.com/picture.png"')
   })
 })

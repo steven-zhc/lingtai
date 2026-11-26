@@ -235,7 +235,7 @@ export function Document({
       // (#1470); an SVG diagram stays in git. A URL, or a path that climbs out of
       // `doc/`, is `resolveHref`'s as before.
       const under = path.posix.normalize(path.posix.join(path.posix.dirname(source), written))
-      if (!/^[a-z]+:/i.test(written) && !under.startsWith('../')) {
+      if (written !== '' && !/^[a-z]+:/i.test(written) && !/^[#/]/.test(written) && !under.startsWith('../')) {
         return <img src={docImageSrc(under)} alt={alt ?? ''} {...rest} />
       }
       return <img src={resolveHref(source, written, isPublished)} alt={alt ?? ''} {...rest} />

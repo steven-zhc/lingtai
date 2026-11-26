@@ -526,19 +526,24 @@ export function docImageSrc(
   pathUnderDoc: string,
   exists: (file: string) => boolean = (file) => existsSync(path.join(docRoot, file)),
 ): string {
+  // A query or a fragment is not part of the file's name: it is looked up without
+  // it and carried through to whatever `src` comes out.
+  const cut = pathUnderDoc.search(/[?#]/)
+  const file = cut === -1 ? pathUnderDoc : pathUnderDoc.slice(0, cut)
+  const suffix = cut === -1 ? '' : pathUnderDoc.slice(cut)
   const local = () => {
-    const rest = pathUnderDoc.slice('img/'.length)
-    if (pathUnderDoc.startsWith('img/') && imageType(rest) !== null) return `/img/docs/${rest}`
+    const rest = file.slice('img/'.length)
+    if (file.startsWith('img/') && imageType(rest) !== null) return `/img/docs/${rest}${suffix}`
     return resolveHref('README.md', pathUnderDoc, () => false)
   }
-  if (!/\.(png|jpe?g|gif|webp)$/.test(pathUnderDoc)) return local()
+  if (!/\.(png|jpe?g|gif|webp)$/.test(file)) return local()
   let present = false
   try {
-    present = exists(pathUnderDoc)
+    present = exists(file)
   } catch {
     present = false
   }
-  return present ? local() : DOC_IMAGES_BASE + pathUnderDoc
+  return present ? local() : DOC_IMAGES_BASE + file + suffix
 }
 
 /**
