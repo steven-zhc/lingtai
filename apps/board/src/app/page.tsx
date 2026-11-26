@@ -636,7 +636,12 @@ export function LandedFoot({
         return (
           <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
             {showProject ? <span className="proj">{project}</span> : null}
-            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
+            {foot.kind === 'unread' ? 'where these are could not be read' : null}
+            {foot.kind === 'line' && foot.draft !== null ? (
+              <Link href={`/pr/${encodeURIComponent(project)}/next`}>{foot.draft} in Draft PR</Link>
+            ) : null}
+            {foot.kind === 'line' && foot.draft !== null && foot.open !== null ? ' · ' : null}
+            {foot.kind === 'line' ? foot.open : null}
             {foot.kind === 'line' ? (
               <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
                 PRs →
