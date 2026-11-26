@@ -1747,7 +1747,7 @@ runtime: { agent: claude-code, limits: { run: { turns: 10, wall: 2m }, attempt: 
 
     expect(result).toMatchObject({ ok: 'held', step: 'implement' })
     expect(typesOf(theRun(store)).filter((t) => t === 'StepRedone')).toHaveLength(BOUNDS.stepRedos)
-    expect(redoCauses(store)).toEqual(Array(BOUNDS.stepRedos).fill('CRASH'))
+    expect(redoCauses(store)).toEqual(Array(BOUNDS.stepRedos).fill('agent-did-not-finish'))
     const hold = theHold(await theItem(store))
     expect(hold).toMatchObject({ _tag: 'AgentCrashed', step: 'implement' })
     const all14b = await allEvents(store)
