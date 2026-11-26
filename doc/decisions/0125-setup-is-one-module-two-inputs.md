@@ -72,8 +72,9 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    - A recipe that cannot be read is refused by name, never replaced by the
      system's defaults.
    - A change that leaves something behind is written, and then said with what
-     the person has to do. Team to solo leaves the personal branch's commits where
-     they are, and the card gives the git command that brings them into `main`.
+     the person has to do. Team to solo is refused by name while a ticket has landed on the
+     personal branch and not reached `main`, or a PR is open
+     ([0130](0130-a-project-is-solo-or-team.md) §1); once neither holds it is written.
      Solo to team leaves nothing. Another working branch that does not exist yet
      is cut from the old one, so nothing that has not reached `main` is lost; one
      that exists is left as it is, and the commits only the old one has are listed.
@@ -102,7 +103,6 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
 
 - `@lingtai/setup` does not exist; the pieces above are where they are today.
 - `/setup/repository` still renders `terminal.tsx`.
-- §6: the mode, sandbox and personal branch are asked of a new recipe only (`apps/cli/src/recipe-flow.ts:261`, `:364`).
 
 ---
 

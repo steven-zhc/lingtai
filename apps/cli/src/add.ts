@@ -322,6 +322,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
         trial: asked.trial,
         recipePath: path,
+        ...(asked.leftBehind === undefined ? {} : { leftBehind: asked.leftBehind }),
       },
       asked.hints,
     )

@@ -37,7 +37,7 @@ const TEAM_GRAPH: readonly string[] = [
 /** *Does anyone else work on this repository?* — Team first, and the default. */
 export const askMode = (
   world: QuestionWorld,
-  input: { given: string | null; kept: string },
+  input: { given: string | null; kept: string; current?: Mode | null },
 ): Effect.Effect<{ mode: Mode } | { refused: string }, unknown> =>
   questionEffect(world, {
     name: 'the mode',
@@ -47,6 +47,7 @@ export const askMode = (
     choices: ['team', 'solo'],
     offerLabels: MODE_LABELS,
     fallback: 'team',
+    ...(input.current == null ? {} : { current: input.current }),
     why: TEAM_GRAPH,
     kept: input.kept,
   }).pipe(Effect.map((a) => ('refused' in a ? a : { mode: a.answer as Mode })))
@@ -54,13 +55,14 @@ export const askMode = (
 /** *your GitHub login* — asked only where nothing on this machine knows it. */
 export const askLogin = (
   world: QuestionWorld,
-  input: { given: string | null; kept: string },
+  input: { given: string | null; kept: string; current?: string | null },
 ): Effect.Effect<{ login: string } | { refused: string }, unknown> =>
   questionEffect(world, {
     name: 'your GitHub login',
     flag: '--login <login>',
     given: input.given,
     prompt: 'your GitHub login — issues assigned to it are the ones taken',
+    ...(input.current == null ? {} : { current: input.current }),
     validate: (answer) =>
       Effect.succeed(
         GITHUB_LOGIN.test(answer) ? null : `${answer} is not a GitHub login (letters, digits and single -)`,
@@ -104,6 +106,8 @@ export const askPersonal = (
     fallback: string
     main: string
     kept: string
+    /** The recipe's own working branch, on a rerun: it is the default before `fallback` is. */
+    current?: string | null
     /** More to refuse on, for a caller that can read the repository — never creating anything. */
     validate?: (answer: string) => Effect.Effect<string | null, unknown>
   },
@@ -114,6 +118,7 @@ export const askPersonal = (
     given: input.given,
     prompt: 'the branch Lingtai works on, which is yours alone',
     fallback: input.fallback,
+    ...(input.current == null ? {} : { current: input.current }),
     validate: (answer) => {
       const refusal = personalRefusal(answer, input.main, input.fallback)
       if (refusal !== null) return Effect.succeed(refusal)
