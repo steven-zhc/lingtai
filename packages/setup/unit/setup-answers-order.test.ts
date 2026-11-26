@@ -103,3 +103,46 @@ describe('the team form (#1325)', () => {
     expect(personalFix('steven-zhc/foundry')).toBeNull()
   })
 })
+
+describe('the findings judge (#1448)', () => {
+  const form: SetupForm = {
+    project: 'repo',
+    target: { kind: 'github', owner: 'o', repo: 'r' } as SetupForm['target'],
+    base: 'main',
+    remote: null,
+    install: '',
+    checks: [],
+    writer: 'codex',
+    reviewer: 'none',
+    tickets: 'github',
+    kinds: ['bug'],
+    heldBy: '',
+    closeOnEnd: false,
+    personApprovesMerge: true,
+    limits: { turns: 300, wall: '1h', refusalFixes: 6, conflictResolutions: 3, newAttempts: 1 },
+    turnsUnbounded: false,
+    sandbox: null,
+    mode: 'solo',
+    personal: '',
+    login: null,
+  }
+  const proposedOf = (f: SetupForm, rewrite = false) =>
+    setupChanges(f, rewrite).find((c) => c.path.join('.') === 'steps.proposed')?.value
+
+  it('names the writer as the judge for findings, after the hold', () => {
+    expect(proposedOf(form)).toEqual([
+      expect.objectContaining({ human: expect.any(String) }),
+      { name: 'send findings back to the writer', judge: 'codex', when: 'findings' },
+    ])
+    expect(proposedOf({ ...form, personApprovesMerge: false })).toEqual([
+      { name: 'send findings back to the writer', judge: 'codex', when: 'findings' },
+    ])
+  })
+
+  it('writes the same list on a rewrite, and nothing where the writer cannot judge', () => {
+    expect(proposedOf({ ...form, personApprovesMerge: false }, true)).toEqual(
+      proposedOf({ ...form, personApprovesMerge: false }),
+    )
+    expect(proposedOf({ ...form, writer: 'copilot', personApprovesMerge: false })).toBeUndefined()
+  })
+})

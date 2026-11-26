@@ -1,6 +1,7 @@
 import {
   assigneeChanges,
   kindsChanges,
+  findingsJudgeChanges,
   landingChanges,
   landOnBranchChanges,
   LIMIT_DEFAULTS,
@@ -248,7 +249,12 @@ export function setupChanges(
   if (form.heldBy.trim() !== '') changes.push({ path: ['source', 'exclude'], value: [form.heldBy.trim()] })
   else if (rewrite) changes.push({ path: ['source', 'exclude'], value: [] })
 
-  if (form.personApprovesMerge) changes.push(...landingChanges({ land: 'hold' }, []))
+  // The hold first, then the writer's judge for `findings` (#1448), as one `steps.proposed` value on every path.
+  const holdChanges = form.personApprovesMerge ? landingChanges({ land: 'hold' }, []) : []
+  const proposedSoFar = (holdChanges[0]?.value as unknown[] | undefined) ?? []
+  const judgeChanges = findingsJudgeChanges(form.writer, proposedSoFar)
+  const proposedChanges = judgeChanges.length > 0 ? judgeChanges : holdChanges
+  if (proposedChanges.length > 0) changes.push(...proposedChanges)
   else if (rewrite) changes.push({ path: ['steps', 'proposed'], value: [] })
 
   const limits = form.limits

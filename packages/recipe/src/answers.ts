@@ -11,7 +11,7 @@ import { SETUP_HOLD_TEXT } from '@lingtai/domain'
 
 import { UNBOUNDED } from './duration.ts'
 import type { RecipeChange } from './emit.ts'
-import type { TicketSource } from './recipe.ts'
+import { isImplementOnlyAgent, type TicketSource } from './recipe.ts'
 
 function isHumanEntry(entry: unknown): boolean {
   return typeof entry === 'object' && entry !== null && 'human' in entry
@@ -65,6 +65,34 @@ export function landingChanges(answer: LandingAnswer, currentProposed: readonly 
     ]
   }
   return landOnBranchChanges(answer.land, proposed)
+}
+
+function isFindingsJudge(entry: unknown): boolean {
+  return (
+    typeof entry === 'object' && entry !== null && 'judge' in entry && (entry as { when?: unknown }).when === 'findings'
+  )
+}
+
+/**
+ * The `judge:` a new recipe declares for `findings` (#1448): the writing
+ * runtime reads the reviewer's findings and sends them back. Appended to
+ * `currentProposed`, after any hold. Empty where nobody is signed in, where the
+ * writer runs only at `implement` (a `judge:` naming it is refused when the
+ * recipe resolves), or where a `findings` judge is already there.
+ */
+export function findingsJudgeChanges(
+  writer: string | null,
+  currentProposed: readonly unknown[] | null,
+): RecipeChange[] {
+  const proposed = currentProposed ?? []
+  if (writer === null || writer.trim() === '' || isImplementOnlyAgent(writer)) return []
+  if (proposed.some(isFindingsJudge)) return []
+  return [
+    {
+      path: ['steps', 'proposed'],
+      value: [...proposed, { name: 'send findings back to the writer', judge: writer, when: 'findings' }],
+    },
+  ]
 }
 
 /**

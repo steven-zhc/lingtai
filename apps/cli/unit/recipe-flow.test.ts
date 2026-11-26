@@ -169,7 +169,10 @@ describe('askRecipe — an absent file (#432)', () => {
     expect(doc.getIn(['env', 'deny'])).toBeUndefined()
     expect(doc.getIn(['env', 'required'])).toBeUndefined()
     expect(doc.getIn(['env', 'refuseHosts'])).toBeUndefined()
-    expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
+    // A new recipe declares the writer as its judge for `findings` (#1448), and no hold.
+    expect((doc.getIn(['steps', 'proposed']) as { toJSON(): unknown }).toJSON()).toEqual([
+      { name: 'send findings back to the writer', judge: doc.getIn(['runtime', 'agent']), when: 'findings' },
+    ])
   })
 
   it('creates a GitHub project once, falling back to source.tickets: github when the question took its own default', async () => {

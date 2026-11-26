@@ -7,7 +7,17 @@ import { basename } from 'node:path'
 
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
-import { type Recipe, assigneeOf, branchOf, kindsOf, modeOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import {
+  type Recipe,
+  assigneeOf,
+  ceilingOf,
+  branchOf,
+  isBuiltInJudge,
+  kindsOf,
+  modeOf,
+  remoteOf,
+  ticketSourceOf,
+} from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
@@ -31,6 +41,8 @@ export interface CardRecipe {
   reviewer: CardAgent | null
   checks: readonly string[]
   approves: boolean
+  /** The `judge:` declared for `findings` and how many times findings go back to it, from the recipe as written; `null` where none is declared. */
+  findingsJudge: { judge: string; rounds: number } | null
   /** Set only for a team project, read from the recipe as written: who it takes issues for, and the branch it works on. */
   team?: { login: string | null; personal: string }
 }
@@ -76,6 +88,16 @@ function agentOf(actions: readonly Record<string, unknown>[] | undefined): CardA
   return { agent: String(action['agent']), model: typeof model === 'string' && model !== '' ? model : null }
 }
 
+function findingsJudgeOf(
+  proposed: readonly Record<string, unknown>[] | undefined,
+  rounds: number,
+): { judge: string; rounds: number } | null {
+  const entry = (proposed ?? []).find(
+    (a) => a['when'] === 'findings' && typeof a['judge'] === 'string' && !isBuiltInJudge(a['judge']),
+  )
+  return entry === undefined ? null : { judge: String(entry['judge']), rounds }
+}
+
 /** A recipe already resolved, read the way `summariseRecipe` reads it. */
 export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
   const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[] | undefined>
@@ -88,6 +110,7 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
     writer: agentOf(steps['implement']),
     reviewer: agentOf(steps['review']),
     checks: (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run'])),
+    findingsJudge: findingsJudgeOf(steps['proposed'], ceilingOf(recipe).attempt.refusalFixes),
     approves: (steps['proposed'] ?? []).some((a) => 'human' in a),
     ...(modeOf(recipe) === 'team'
       ? { team: { login: assigneeOf(recipe)?.login ?? null, personal: branchOf(recipe) } }
@@ -207,6 +230,16 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         rows: [
           ['writes', agentRow(recipe.writer)],
           ['reviews', agentRow(recipe.reviewer)],
+          ...(recipe.findingsJudge === null
+            ? []
+            : [
+                [
+                  'findings',
+                  recipe.findingsJudge.rounds === 0
+                    ? `no fix rounds — the ${recipe.findingsJudge.judge} judge can still restart the attempt or hand a finding to you`
+                    : `go back to the writer up to ${recipe.findingsJudge.rounds} times — each is a ${recipe.findingsJudge.judge} judge call and another writer run`,
+                ] as const,
+              ]),
           [
             'checks',
             recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
