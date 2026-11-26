@@ -23,6 +23,7 @@
  * GitHub one picked on the board, reach none of this yet.
  */
 import { hostname } from 'node:os'
+import { join } from 'node:path'
 
 import { checkGhAccessEffect, checkInstallationEffect, type GhAccess } from '@lingtai/conductor/onboard'
 import { makePersonalBranch as sharedMakePersonalBranch } from '@lingtai/conductor/personal-branch'
@@ -34,8 +35,10 @@ import {
   createGitHubClient,
   type GitHubClient,
   GitHubFailed,
+  ghStatusEffect,
   type Installation,
   installationForRepo,
+  liveGh,
   parseSlug,
 } from '@lingtai/github'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
@@ -48,6 +51,7 @@ import { Effect } from 'effect'
 import { askClaudeTokenForRecipe, liveClaudeTokenWorld } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import { livePickerEffect } from './first-project.ts'
+import { askGithubAuthEffect, type GithubAuthAnswer, writeGithubAuth } from './github-auth.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
@@ -76,18 +80,22 @@ export type Reach = { kind: 'app'; installation: Installation } | { kind: 'gh' }
  * check below has, and a second request would ask the same question again
  * for no reason (#402).
  */
-const defaultBranchOf = (owner: string, repo: string, reach?: Reach): Effect.Effect<string | null> =>
+const readDefaultBranch = (owner: string, repo: string, reach?: Reach): Effect.Effect<string, unknown> =>
   Effect.gen(function* () {
     if (reach?.kind === 'gh') {
       const client = yield* lift(() => createGitHubClient({ auth: { kind: 'gh' }, owner, repo }))
       return yield* lift(() => client.defaultBranch())
     }
-    // `githubApp()` throws where no App is configured — the ordinary case, a defect here and answered null below.
+    // `githubApp()` throws where no App is configured — the ordinary case, a defect the caller names.
     const auth = githubApp()
     const resolved = reach?.installation ?? (yield* lift(() => installationForRepo(auth, owner, repo)))
     const client = yield* lift(() => createGitHubClient({ auth, owner, repo, installation: resolved }))
     return yield* lift(() => client.defaultBranch())
-  }).pipe(recovering(() => Effect.succeed(null)))
+  })
+
+/** The read above with its failure answered null; the seed alone looks at the failure (#1487). */
+export const defaultBranchOf = (owner: string, repo: string, reach?: Reach): Effect.Effect<string | null> =>
+  readDefaultBranch(owner, repo, reach).pipe(recovering(() => Effect.succeed(null)))
 
 /**
  * `askRecipe`'s `reader`, over a GitHub ref — `has` through the raw contents
@@ -168,6 +176,13 @@ export interface AskBeforeGithubAddDeps {
   history: (project: string) => Effect.Effect<readonly string[], unknown>
   /** Asks for the sandboxed Claude Code token once the recipe is final (#1169); absent asks nothing, and it never refuses the add. */
   claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
+  /**
+   * How this machine reaches GitHub, asked where nothing has answered (0114 §1, #1487) — `askGithubAuthEffect`
+   * over the live world. Absent asks nothing, and `kind` stays null as before.
+   */
+  githubAuth?: (flags: Record<string, string>) => Effect.Effect<GithubAuthAnswer, unknown>
+  /** Reads the default branch where the seed needs it; absent reads it live. */
+  defaultBranch?: (owner: string, repo: string, reach: Reach) => Effect.Effect<string, unknown>
   /** The host check for the sandbox step (#1160), read only for a recipe that is new; absent asks no sandbox question. */
   sandboxHost?: () => NonNullable<ProposalReaders['host']>
 }
@@ -187,6 +202,27 @@ const liveDeps: AskBeforeGithubAddDeps = {
   runtimes: askRuntimesEffect,
   history: liveHistoryEffect,
   sandboxHost: () => sandboxHostHere(),
+  githubAuth: (flags) =>
+    askGithubAuthEffect(
+      {
+        ask: liveAsk,
+        spin: liveSpin,
+        log: (line) => console.log(line),
+        github: {
+          auth: () => githubAuthKind(),
+          ghStatus: () => ghStatusEffect(),
+          writeAuth: (kind) =>
+            Effect.try({
+              try: () => writeGithubAuth(liveMachineText(), join(stateDir(), 'config.yml'), kind),
+              catch: (e) => e,
+            }),
+          gh: liveGh,
+        },
+      },
+      flags,
+      false,
+      ADD_KEPT,
+    ),
   claudeToken: (recipe) =>
     askClaudeTokenForRecipe(
       liveClaudeTokenWorld({
@@ -207,6 +243,8 @@ export interface AskedBeforeAdd {
   runtimes: readonly RuntimeFound[]
   /** What the questions decided; nothing is on disk until `applySetup` writes it, just before the registration. */
   answers: Answers
+  /** `app` was answered here and writes nothing until the App exists: `chooseFirstProject` is told, so it does not ask again. */
+  githubAuth?: 'app'
 }
 
 /** An Effect settled to the value or what it threw: a failure and a defect alike, an interruption never. */
@@ -230,6 +268,8 @@ export const makePersonalBranch = (
     name,
     from,
   ).pipe(Effect.asVoid)
+
+const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 /** A number is an exit code: the add stops there. Otherwise the add goes on. */
 export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (
@@ -266,11 +306,13 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
 
   // Nothing configured at a terminal: there is nothing yet to check —
   // `checkInstallation`'s default lookup calls `githubApp()`, which throws
-  // rather than answering "not installed". The questions below still run and
-  // still write, exactly as this command did before #402: a recipe written for
-  // a project whose App was never created is what lets `chooseFirstProject`
-  // offer to create one next, in the same run. With no terminal and nothing
-  // configured it is refused above, and a refused `github.auth` likewise.
+  // rather than answering "not installed". With a terminal and nothing
+  // configured, how this machine reaches GitHub is asked first (#1487); on `app`
+  // the questions below still run with `--main`, as before #402: a recipe
+  // written for a project whose App was never created is what lets
+  // `chooseFirstProject` offer to create one next, in the same run. With no
+  // terminal and nothing configured it is refused above, naming the flag, and a
+  // refused `github.auth` likewise.
   //
   // Is the App installed here at all, and does it grant what Lingtai needs —
   // checked before a single question is asked or a single answer written
@@ -288,9 +330,29 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // checked below, before any recipe question, and `runGithubBranch` writes it.
   const authFlag = flags['github-auth']
   if (kind === null && authFlag === 'gh') kind = 'gh'
-  if (kind === null && authFlag === undefined && !deps.interactive()) {
-    console.error('no GitHub auth is configured here — run lingtai init. Nothing was written')
-    return 1
+  // `app` answered here, or by `--github-auth app`: it writes nothing until the App exists, and is told on to `chooseFirstProject`.
+  let appChosen = authFlag === 'app'
+  if (kind === null && authFlag === undefined) {
+    if (!deps.interactive()) {
+      console.error(
+        'no GitHub auth is configured here — pass --github-auth gh or --github-auth app, or run lingtai init. Nothing was written',
+      )
+      return 1
+    }
+    // Asked before the repository is read (#1487): `gh` is written here, so `chooseFirstProject` finds it set and asks nothing.
+    if (deps.githubAuth !== undefined) {
+      const answered = yield* attempt(deps.githubAuth(flags))
+      if ('threw' in answered) {
+        console.error(`${errorText(answered.threw)}. Nothing was written`)
+        return 1
+      }
+      if ('refused' in answered.ok) {
+        console.error(answered.ok.refused)
+        return 1
+      }
+      if (answered.ok.auth === 'gh') kind = 'gh'
+      else appChosen = true
+    }
   }
 
   // On a `gh` machine the saved login is the check: its scopes and its push
@@ -383,18 +445,33 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // Memoized, and shared with `askLanding`'s own `detected`, inside
   // `askRecipe` — asking GitHub for the default branch twice for one run is
   // one request nobody needed.
-  const cachedDefaultBranch = yield* Effect.cached(defaultBranchOf(owner, repo, reach))
+  // The read keeps its error, once: the seed names it, the other two callers take it as null (#1487).
+  const readOnce = yield* Effect.cached(
+    (reach === undefined
+      ? Effect.fail(new Error('no GitHub App is configured here yet'))
+      : (deps.defaultBranch ?? readDefaultBranch)(owner, repo, reach)
+    ).pipe(Effect.result),
+  )
+  const cachedDefaultBranch: Effect.Effect<string | null> = readOnce.pipe(
+    Effect.map((read) => (read._tag === 'Success' ? read.success : null)),
+  )
   const defaultBranch: Effect.Effect<string | null> =
     ghDefaultBranch !== null ? Effect.succeed(ghDefaultBranch) : cachedDefaultBranch
 
   let seeds: readonly RecipeChange[] = []
   if (existing === null) {
-    const seedBase = base ?? (yield* defaultBranch)
+    let seedBase: string | null = base ?? ghDefaultBranch
     if (seedBase === null) {
-      console.error(
-        `${path} does not exist and there is no base branch to write into it: pass --main <branch>. Nothing was written`,
-      )
-      return 1
+      const read = yield* readOnce
+      if (read._tag === 'Success') seedBase = read.success
+      else {
+        const why =
+          reach === undefined
+            ? `no GitHub App is configured here yet to read ${slug}'s default branch — pass --main <branch> (the App is created after these questions), or --github-auth gh`
+            : `could not read ${slug}'s default branch — ${errorText(read.failure)}. Pass --main <branch>, or fix that and run this again`
+        console.error(`${path} does not exist: ${why}. Nothing was written`)
+        return 1
+      }
     }
     seeds = [
       { path: ['branch', 'main'], value: seedBase },
@@ -554,5 +631,11 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     )
     if ('ok' in final) yield* deps.claudeToken(final.ok).pipe(Effect.catch(() => Effect.void))
   }
-  return { trial: recipeResult.trial, hints: recipeResult.hints, runtimes, answers: recipeResult.answers }
+  return {
+    trial: recipeResult.trial,
+    hints: recipeResult.hints,
+    runtimes,
+    answers: recipeResult.answers,
+    ...(appChosen && authFlag === undefined ? { githubAuth: 'app' as const } : {}),
+  }
 })

@@ -18,6 +18,7 @@ import type { GitResult } from '../src/first-project.ts'
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
+import { askGithubAuthEffect } from '../src/github-auth.ts'
 import { stripColour } from '../src/output.ts'
 import {
   type FirstProjectTestWorld,
@@ -236,6 +237,62 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     const argv = ['acme/widgets', '--mode', 'solo', '--main', 'main', '--install', 'none', '--build', 'none']
     return { ...h, argv }
   }
+
+  /** A machine whose `github.auth` is unset, shared by the early question and `chooseFirstProject`, with every ask counted. */
+  function unsetAuthHarness(answer: 'gh' | 'app') {
+    const h = githubHarness()
+    let auth: 'gh' | 'app' | null = null
+    const questions: string[] = []
+    const status = async () => ({ ok: true as const, login: 'me', scopes: ['repo', 'workflow'] })
+    const count = async (prompt: string) => {
+      if (prompt.includes('signed in as me')) questions.push(prompt)
+      return prompt.includes('signed in as me') ? answer : ''
+    }
+    h.world.project.ask = count
+    h.world.project.github.auth = () => auth
+    h.world.project.github.ghStatus = liftPort(status)
+    h.world.project.github.writeAuth = liftPort(async (kind) => {
+      auth = kind
+    })
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      auth: () => auth,
+      githubAuth: (flags) =>
+        askGithubAuthEffect(
+          {
+            ask: async (prompt, shape) => count(shape?.message ?? prompt),
+            log: () => {},
+            github: {
+              auth: () => auth,
+              ghStatus: () => fx(status),
+              writeAuth: (kind) =>
+                Effect.sync(() => {
+                  auth = kind
+                }),
+            },
+          },
+          flags,
+          false,
+          'Nothing was written',
+        ),
+    }
+    return { ...h, questions, authNow: () => auth }
+  }
+
+  it('asks how this machine reaches GitHub once, and chooseFirstProject does not ask it again (#1487)', async () => {
+    const { world, errors, questions, authNow, argv } = unsetAuthHarness('gh')
+    const without = argv.filter((a, i) => a !== '--main' && argv[i - 1] !== '--main')
+    expect(await addFlow({ ...flagsFromArgv(without), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(questions).toHaveLength(1)
+    expect(authNow()).toBe('gh')
+  })
+
+  it('an app answer with --main is asked once as well, and told on rather than asked again (#1487)', async () => {
+    const { world, questions, argv } = unsetAuthHarness('app')
+    await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)
+    expect(questions).toHaveLength(1)
+  })
 
   it('prints the three groups, the github row and the ready line, and none of what add logged', async () => {
     const { world, logged, errors, argv } = githubHarness()

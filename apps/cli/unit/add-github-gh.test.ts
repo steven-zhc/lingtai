@@ -12,6 +12,7 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { askGithubAuthEffect } from '../src/github-auth.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
@@ -80,7 +81,7 @@ function depsFor(over: Partial<TestDeps>) {
     history: () => Effect.succeed([]),
     ...over,
   }
-  return { deps, calls }
+  return { deps, calls, store }
 }
 
 describe('askBeforeGithubAdd on a gh machine (#708)', () => {
@@ -113,12 +114,12 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
     expect(String(error.mock.calls[0]?.[0])).toContain('--scopes workflow')
   })
 
-  it('refuses with run lingtai init when nothing is configured and there is no terminal', async () => {
+  it('refuses naming --github-auth gh when nothing is configured and there is no terminal', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { deps, calls } = depsFor({ auth: () => null, interactive: () => false })
     expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
     expect(calls.writes).toBe(0)
-    expect(String(error.mock.calls[0]?.[0])).toContain('lingtai init')
+    expect(String(error.mock.calls[0]?.[0])).toContain('--github-auth gh')
   })
 
   it('refuses a refused github.auth by name before anything is written', async () => {
@@ -131,5 +132,96 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
     expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
     expect(calls.writes).toBe(0)
     expect(String(error.mock.calls[0]?.[0])).toContain('github.auth')
+  })
+})
+
+/** `askGithubAuthEffect` over a world whose `gh` is signed in as `me`, answering the question with `answer`. */
+function authDep(answer: string, written: string[], asked: { message: string; defaultValue: string }[]) {
+  return (flags: Record<string, string>) =>
+    askGithubAuthEffect(
+      {
+        ask: async (_prompt, shape) => {
+          asked.push({ message: shape!.message, defaultValue: shape!.defaultValue })
+          return answer
+        },
+        log: () => {},
+        github: {
+          ghStatus: () => Effect.succeed({ ok: true, login: 'me', scopes: ['repo', 'workflow'] }),
+          writeAuth: (kind) => Effect.sync(() => void written.push(kind)),
+        },
+      },
+      flags,
+      false,
+      'Nothing was written',
+    )
+}
+
+describe('askBeforeGithubAdd asks how this machine reaches GitHub before it reads the repository (#1487)', () => {
+  it('asks with gh as the default naming the login, writes gh, checks access and seeds main from the default branch', async () => {
+    const written: string[] = []
+    const asked: { message: string; defaultValue: string }[] = []
+    const { deps, calls, store } = depsFor({
+      auth: () => null,
+      ghAccess: () => fx(async () => ({ login: 'me', defaultBranch: 'trunk' })),
+      githubAuth: authDep('gh', written, asked),
+    })
+    const code = await askBeforeGithubAdd(SLUG, { mode: 'solo', install: 'none' }, deps, ['none'])
+    expect(typeof code).toBe('object')
+    expect(asked).toHaveLength(1)
+    expect(asked[0]!.defaultValue).toBe('gh')
+    expect(asked[0]!.message).toContain('signed in as me')
+    expect(written).toEqual(['gh'])
+    expect(calls.reach).toEqual([{ kind: 'gh' }])
+    expect(Object.values(store).join('\n')).toMatch(/main: trunk/)
+  })
+
+  it('stops, writing nothing, when the question is refused', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const written: string[] = []
+    const { deps, calls } = depsFor({
+      auth: () => null,
+      githubAuth: () => Effect.succeed({ refused: 'cancelled. Nothing was written' }),
+    })
+    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    expect(written).toEqual([])
+    expect(calls.writes).toBe(0)
+    expect(String(error.mock.calls[0]?.[0])).toContain('Nothing was written')
+  })
+
+  it('refuses an app answer with no App and no --main, naming --main and --github-auth gh', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { deps, calls } = depsFor({ auth: () => null, githubAuth: authDep('app', [], []) })
+    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    expect(calls.writes).toBe(0)
+    const said = String(error.mock.calls[0]?.[0])
+    expect(said).toContain('no GitHub App is configured here yet')
+    expect(said).toContain('--main')
+    expect(said).toContain('--github-auth gh')
+  })
+
+  it('refuses --github-auth app the same way, without asking', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const asked: { message: string; defaultValue: string }[] = []
+    const { deps } = depsFor({ auth: () => null, githubAuth: authDep('gh', [], asked) })
+    expect(await askBeforeGithubAdd(SLUG, { 'github-auth': 'app' }, deps)).toBe(1)
+    expect(asked).toEqual([])
+    expect(String(error.mock.calls[0]?.[0])).toContain('no GitHub App is configured here yet')
+  })
+
+  it('carries the default branch read’s own message when an App machine cannot read it', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    process.env['LINGTAI_GITHUB_APP_ID'] = '1'
+    process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY'] = 'x'
+    const { deps, calls } = depsFor({
+      auth: () => 'app',
+      check: () => Effect.succeed({ id: 7 } as never),
+      defaultBranch: () => Effect.fail(new Error('GitHub did not answer: connect ETIMEDOUT')),
+    })
+    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    expect(calls.writes).toBe(0)
+    const said = String(error.mock.calls[0]?.[0])
+    expect(said).toContain('connect ETIMEDOUT')
+    expect(said).toContain('--main')
+    expect(said).toContain('Nothing was written')
   })
 })
