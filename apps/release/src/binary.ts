@@ -4,7 +4,7 @@
  *   dist/
  *     lingtai         this: a copy of the building Node with lingtai.cjs injected
  *     lingtai.cjs     what `pnpm build` wrote, and what goes in
- *     board/          unchanged — pure JavaScript, the same on every platform
+ *     board/          unchanged — pure JavaScript, the same on every platform; holds its own prompts/ticket.md
  *     packages/hook/  the compiled hook for this platform
  *     prompts/        the ticket template
  *
