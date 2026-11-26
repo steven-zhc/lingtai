@@ -83,6 +83,8 @@ function leftoverRefusal(
   world: QuestionWorld,
   editedInPlace: readonly { step: string; index: number }[],
   fullyReplaced: ReadonlySet<string>,
+  /** Signed-out runtimes the recipe already names as its writer or reviewer and this write keeps (#1473). */
+  keptRuntimes: ReadonlySet<string> = new Set(),
 ): string | null {
   const steps = at.draft.get(['steps'])
   if (steps === null || typeof steps !== 'object') return null
@@ -106,6 +108,13 @@ function leftoverRefusal(
         world.log(
           `steps.${step}'s "${actionName}" also names ${key} ${name} — only the first agent: entry is asked ` +
             'about here, so this one is left as written',
+        )
+        continue
+      }
+      if (keptRuntimes.has(name)) {
+        world.log(
+          `steps.${step}'s "${actionName}" also names ${key} ${name}, which is not signed in here — it is the ` +
+            "recipe's own, kept as written",
         )
         continue
       }
@@ -136,10 +145,14 @@ export interface AskAgentsAt {
  * reviewer reads it and which agent, and that reviewer's model — in that
  * order, each through #392's `question()`.
  *
- * A runtime this machine is not signed in to is never offered: every one
- * that is missing is logged, with why, before the first question, and
- * naming it anyway — by flag or by hand at a terminal — is refused with the
- * same reason. Nothing signed in at all is refused before any question.
+ * A runtime this machine is not signed in to is not offered as a new choice:
+ * every one that is missing is logged, with why, before the first question,
+ * and naming it anyway — by flag or by hand at a terminal — is refused with
+ * the same reason. The one exception is the recipe's own writer or reviewer
+ * (#1473): it stays the default, is accepted as the answer that keeps it, and
+ * an action left beside it that names the same runtime is not refused either,
+ * so a successful result does not mean every runtime it kept is signed in.
+ * Nothing signed in at all is refused before any question.
  */
 /**
  * The two control rows of a model select. Their values start with a NUL, which
@@ -325,7 +338,12 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
   else fullyReplaced.add('review')
 
-  const leftover = leftoverRefusal(at, signedInIds, world, editedInPlace, fullyReplaced)
+  const keptRuntimes = new Set<string>()
+  if (writingAgent !== null && writer === writingAgent) keptRuntimes.add(writingAgent)
+  if (currentReviewer !== null && currentReviewer !== 'none' && reviewer === currentReviewer) {
+    keptRuntimes.add(currentReviewer)
+  }
+  const leftover = leftoverRefusal(at, signedInIds, world, editedInPlace, fullyReplaced, keptRuntimes)
   if (leftover !== null) return { refused: leftover }
 
   let reviewerModel = ''
@@ -351,13 +369,15 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
 
   // `runtime.agent` is the pass's own runtime, resolved unconditionally
   // (`resolveAgent`, `packages/recipe/src/local.ts`) even where every step
-  // names its own `agent:` — so it is written to the writer every time,
-  // never only when the answer changed something. Suppressing it on an
-  // enter-press that kept a *step's* own agent (which `currentAgent` may
-  // have been read from, not `runtime.agent` itself) is exactly the recipe
-  // that leaves `runtime.agent` absent, or stale, with two runtimes signed
-  // in — the refusal the ticket's Watch out names.
-  const changes: RecipeChange[] = [{ path: ['runtime', 'agent'], value: writer }]
+  // names its own `agent:`, so it is written whenever the writer changes and
+  // whenever it is absent — the refusal the ticket's Watch out names. A rerun
+  // that kept the writer leaves a `runtime.agent` somebody set by hand alone.
+  // Only where the answer is not the recipe's own writer, or `runtime.agent` is absent: a hand-edited
+  // `runtime.agent` beside an unchanged `steps.implement` writer is a separate setting, kept (#1473).
+  const changes: RecipeChange[] = []
+  if (writer !== writingAgent || at.draft.get(['runtime', 'agent']) === null) {
+    changes.push({ path: ['runtime', 'agent'], value: writer })
+  }
   // A runtime that cannot hold a turn count (#547) is not asked to promise one:
   // the schema's default of 300 is nobody's choice, and doctor would fail it
   // for ever. Decided from `enforces` and not from the runtime's name, and only

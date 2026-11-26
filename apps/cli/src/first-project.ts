@@ -63,6 +63,7 @@ import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@li
 import {
   HOST_FOR_SAVING,
   draftRecipe,
+  type RecipeDraft,
   loadAllProjectsEffect,
   recipePath,
   resolveDraftRecipeEffect,
@@ -1006,50 +1007,71 @@ function runLocalBranch(
     }
     // `askRecipe`'s own `history` is still a promise port (`askTickets`'s), so it is carried the caller's services.
     const services = yield* Effect.context<never>()
+    let answeredDraft: RecipeDraft | null = null
+    // A rerun's Ctrl+C keeps what was answered (#392): the draft's changes are written once, through
+    // `applySetup`, as the first thing an interruption does. A rerun that changed nothing writes nothing.
+    const keepAnswered = Effect.suspend(() => {
+      const answered = answeredDraft?.changes() ?? []
+      if (answered.length === 0) return Effect.void
+      return applySetup(
+        { home: world.home, by: world.by, store: world.store },
+        { project: name, changes: answered },
+        Effect.void,
+      ).pipe(
+        Effect.asVoid,
+        Effect.catchCause(() => Effect.void),
+      )
+    })
+    const askingRecipe = askRecipeEffect(world, {
+      project: name,
+      onDraft: (draft) => {
+        answeredDraft = draft
+      },
+      local: true,
+      // Decided above, before the branch was made; `askRecipe` asks no mode of a local project.
+      mode,
+      proposal,
+      runtimes,
+      reader: world.setupReader(toplevel),
+      flags,
+      buildFlags,
+      defaultBranch: () => Promise.resolve(base),
+      // Over the draft the questions are answering, not the disk: a seed or an answer that moves the base
+      // is what the trial must build (#968).
+      tryBuild: (draft) =>
+        liveTrialBuild({
+          project: name,
+          owner: '',
+          repo: name,
+          base: trialBase,
+          remote,
+          home: world.home,
+          // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
+          // trial prefers to its fallback: the trial reads it as the main it would be cut from.
+          draft:
+            deferBranch && mainBranch !== null
+              ? {
+                  path: draft.path,
+                  set: (changes) => draft.set(changes),
+                  get: (key) => (key.join('.') === 'branch.personal' ? mainBranch : draft.get(key)),
+                  text: () => draft.text(),
+                  changes: () => draft.changes(),
+                }
+              : draft,
+        }),
+      history: (project) => Effect.runPromiseWith(services)(world.history(project)),
+      seeds,
+      again: `lingtai add --local ${toplevel}`,
+      keptBeforeWrite:
+        madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
+      kept: seededKept,
+      home: world.home,
+    })
     const recipeResult = repairOnly
       ? repairResult
-      : yield* askRecipeEffect(world, {
-          project: name,
-          local: true,
-          // Decided above, before the branch was made; `askRecipe` asks no mode of a local project.
-          mode,
-          proposal,
-          runtimes,
-          reader: world.setupReader(toplevel),
-          flags,
-          buildFlags,
-          defaultBranch: () => Promise.resolve(base),
-          // Over the draft the questions are answering, not the disk: a seed or an answer that moves the base
-          // is what the trial must build (#968).
-          tryBuild: (draft) =>
-            liveTrialBuild({
-              project: name,
-              owner: '',
-              repo: name,
-              base: trialBase,
-              remote,
-              home: world.home,
-              // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
-              // trial prefers to its fallback: the trial reads it as the main it would be cut from.
-              draft:
-                deferBranch && mainBranch !== null
-                  ? {
-                      path: draft.path,
-                      set: (changes) => draft.set(changes),
-                      get: (key) => (key.join('.') === 'branch.personal' ? mainBranch : draft.get(key)),
-                      text: () => draft.text(),
-                      changes: () => draft.changes(),
-                    }
-                  : draft,
-            }),
-          history: (project) => Effect.runPromiseWith(services)(world.history(project)),
-          seeds,
-          again: `lingtai add --local ${toplevel}`,
-          keptBeforeWrite:
-            madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
-          kept: seededKept,
-          home: world.home,
-        })
+      : found !== undefined && existingText !== null
+        ? yield* askingRecipe.pipe(Effect.onInterrupt(() => keepAnswered))
+        : yield* askingRecipe
     if ('refused' in recipeResult) return { refused: recipeResult.refused }
     if (deferBranch) {
       const refusal = yield* makeBranch()

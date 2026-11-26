@@ -3,8 +3,10 @@
  * `lingtai add`'s GitHub branch both ask.
  *
  * **Two files, two shapes.** An existing file is edited through the draft:
- * every answer lands in memory and `applySetup` (#968) is the one writer, so a
- * Ctrl+C halfway leaves the recipe and the log as they were. An absent file is created once:
+ * every answer lands in memory and `applySetup` (#968) is the one writer. A
+ * refusal leaves the disk as it was; a Ctrl+C keeps what was answered (#392
+ * decision 1), because the caller is handed the draft through `onDraft` and
+ * writes its changes when interrupted (`first-project.ts`). An absent file is created once:
  * the first four sections' answers are collected rather than written as they
  * are given, reduced in with the caller's own `seeds`, and handed to
  * `setRecipe` in a single call, with a comment above every block (`SAID`,
@@ -60,6 +62,8 @@ function toolOnPath(tool: string): Promise<boolean> {
 
 export interface RecipeAt {
   project: string
+  /** Handed the draft the answers land in, once it is read — so an interrupted run can write what was answered. */
+  onDraft?: (draft: RecipeDraft) => void
   /** A local project is never asked where its tickets come from (`askTickets`'s own rule). */
   local: boolean
   /** Already probed — this function never probes on its own. */
@@ -219,6 +223,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // Every answer lands in this draft and nowhere else: `applySetup` (#968) is the one
   // writer of the file, so a refusal anywhere below leaves the disk as it was.
   const draft = yield* draftRecipe(at.project, { home: at.home, said: SAID })
+  at.onDraft?.(draft)
 
   // Asked first, ahead of the existing-file seed write below — nothing is
   // written yet on either path, so a refusal here always says
