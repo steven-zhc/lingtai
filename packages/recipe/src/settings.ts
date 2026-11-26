@@ -179,10 +179,10 @@ export function ceilingOf(recipe: Recipe): Recipe['runtime']['limits'] {
 
 /**
  * How many passes of this project may run at once (0122 §1): the recipe's
- * `runtime.concurrency`, and 1 where it says nothing.
+ * `runtime.concurrency`, and 2 where it says nothing.
  */
 export function concurrencyOf(recipe: Recipe): number {
-  return recipe.runtime.concurrency ?? 1
+  return recipe.runtime.concurrency ?? 2
 }
 
 /** A step that dispatches, and what it may spend — `boundsBesides`' rows. */

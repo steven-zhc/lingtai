@@ -3388,7 +3388,7 @@ export const Recipe = z
        *
        * **Optional and never defaulted**, for the reason `limits.usd` is: `configHash` is
        * the hash of the resolved recipe, and a default would change it for every project
-       * whose file nobody edited. `concurrencyOf` in `settings.ts` supplies the 1.
+       * whose file nobody edited. `concurrencyOf` in `settings.ts` supplies the 2.
        */
       concurrency: z.number().int().min(1).optional(),
       /**

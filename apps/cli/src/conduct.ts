@@ -408,7 +408,7 @@ export function conductWork(
       const slots = options.slots
       // No ceiling, one pass in all: a limit above one holds only while a ceiling is set.
       const limit = slots && !slots.ceilingSet ? 1 : wanted
-      if (slots && wanted > 1 && !slots.ceilingSet) {
+      if (slots && resolved.recipe.runtime.concurrency !== undefined && wanted > 1 && !slots.ceilingSet) {
         say(`${name}: runtime.concurrency ${wanted} is ignored — no daily ceiling is set, so one attempt runs in all`)
       }
       // Passes already in flight, in any project, keep the look detached even when the
