@@ -6,6 +6,7 @@ import type {
   OpenRunLogOptions,
   RenderOptions,
   RunLog,
+  SmokeWhere,
 } from '@lingtai/agent'
 import type { AgentEnv } from '@lingtai/agent-env'
 import type {
@@ -90,17 +91,7 @@ export interface AgentHostPort {
    * failure the whole hook exists to prevent — so this runs before every
    * dispatch rather than once at startup.
    */
-  smokeTest(
-    hookBinary: string,
-    run: (
-      bin: string,
-      env: Record<string, string>,
-      stdin: string,
-    ) => Promise<{
-      code: number | null
-      stderr: string
-    }>,
-  ): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed>
+  smokeTest(hookBinary: string, where: SmokeWhere): Effect.Effect<{ ok: boolean; detail: string }, AgentHostFailed>
   /**
    * A listening server, for as long as the scope that asked for it.
    *
