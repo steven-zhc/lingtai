@@ -346,7 +346,7 @@ describe('lingtai status says the conductor\'s recorded refusal instead of "no r
   })
   const queued = [
     { taskId: 'p#1', issue: '1', kind: 'bug', title: 'one', state: 'queued', newAttempts: 0, updatedAt: null },
-  ] as unknown as Awaited<ReturnType<typeof readTasksEffect>>
+  ] as unknown as Effect.Success<ReturnType<typeof readTasksEffect>>
   const control: ControlState = {
     paused: false,
     by: null,

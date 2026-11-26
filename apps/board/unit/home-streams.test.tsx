@@ -79,7 +79,7 @@ const allPending = () => {
 /** Every read answers, and the board's answer is the project's own: it names `<project>-sibling`. */
 const allAnswer = () => {
   startBoard.mockReset().mockImplementation((project?: string) => ({
-    queueAsk: Promise.resolve({ askable: [], known: new Set<string>() }),
+    queueAsk: Promise.resolve({ askable: [], known: new Set<string>(), unreadable: [] }),
     board: Promise.resolve({
       columns: COLUMNS.map((c) => ({ id: c.id, label: c.label, cards: [] })),
       projects: [project ?? 'none', `${project ?? 'none'}-sibling`],
@@ -153,7 +153,7 @@ describe('the shell, with every read pending', () => {
   it('asks GitHub once per project from `queueAsk` while `board` never settles (#1430)', async () => {
     const filter = { project: 'lingtai', ok: true }
     startBoard.mockReset().mockImplementation(() => ({
-      queueAsk: Promise.resolve({ askable: [filter], known: new Set<string>() }),
+      queueAsk: Promise.resolve({ askable: [filter], known: new Set<string>(), unreadable: [] }),
       board: never(),
     }))
     askProject.mockReset().mockImplementation(async (f: unknown) => ({ state: 'unanswered', filter: f, problem: 'x' }))

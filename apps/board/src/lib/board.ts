@@ -112,7 +112,7 @@ import {
 } from './spend.ts'
 import { ApiContext, boardTracer, timed, traced, tracedEffect, tracedSync } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
-import { readRefusedWhy, readWhy, type Explain } from './why-read.ts'
+import { readRefusedWhy, type Explain } from './why-read.ts'
 
 /**
  * Four, not five. `verifying` reduces into `running` (ADR 0016 §8).
@@ -1803,8 +1803,11 @@ export type QueueAsk = {
  * The Queued column's GitHub half for what `queueAsk` settled: the projects asked, and the ones whose setup
  * failed, whose recorded refusal is still said (#1477).
  */
-export function askQueue(ask: QueueAsk, explain: Explain = readWhy): Promise<GithubQueue> {
-  return githubQueue(ask.askable, ask.known, (f) => askProject(f, { explain }), {
+export function askQueue(
+  ask: QueueAsk,
+  askOne: (filter: AskableFilter) => Promise<ProjectQueue>,
+): Promise<GithubQueue> {
+  return githubQueue(ask.askable, ask.known, askOne, {
     projects: ask.unreadable,
     why: readRefusedWhy,
   })

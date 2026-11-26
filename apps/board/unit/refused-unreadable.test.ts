@@ -63,6 +63,10 @@ vi.mock('../src/lib/spend.ts', async (orig) => ({
 
 import { askQueue, startBoard } from '../src/lib/board.ts'
 
+const asked = vi.fn(async () => {
+  throw new Error('nothing is askable here')
+})
+
 describe('askQueue', () => {
   it('says the recorded refusal of a project whose filter did not resolve, and nothing once it is gone', async () => {
     mocks.refused = true
@@ -70,13 +74,13 @@ describe('askQueue', () => {
     expect(ask.askable).toEqual([])
     expect(ask.unreadable).toEqual(['lingtai'])
 
-    const queue = await askQueue(ask)
+    const queue = await askQueue(ask, asked)
     expect(queue.why?.map((w) => w.project)).toEqual(['lingtai'])
     expect(queue.why?.[0]?.why.roots[0]?.root).toBe('refused')
     expect(queue.why?.[0]?.why.roots[0]?.sentence).toContain(detail)
 
     // Recovered: the reducer nulled `refused`, and a project the setup already explains says nothing more.
     mocks.refused = false
-    expect((await askQueue(ask)).why ?? []).toEqual([])
+    expect((await askQueue(ask, asked)).why ?? []).toEqual([])
   })
 })

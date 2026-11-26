@@ -17,6 +17,7 @@ import {
   emptyHeld,
   emptyNote,
   COLUMNS,
+  askProject,
   askQueue,
   issueUrl,
   startBoard,
@@ -49,6 +50,7 @@ import { billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
+import { readWhy } from '@/lib/why-read.ts'
 
 import { Bar, BarActions } from './bar.tsx'
 // Both halves of the sequence, in the file the task page reads them from too
@@ -1224,7 +1226,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.queueAsk
     .then((ask) =>
-      measure(() => timed('board.queue', () => askQueue(ask)), { label: '/ queue' }).then((answered) => {
+      measure(() => timed('board.queue', () => askQueue(ask, (f) => askProject(f, { explain: readWhy }))), {
+        label: '/ queue',
+      }).then((answered) => {
         recordQueuedOffered(param, ask.askable, answered[0].problems)
         return answered
       }),
