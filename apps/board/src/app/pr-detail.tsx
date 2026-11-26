@@ -6,13 +6,13 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
-import { shownLabel } from '@/lib/pr-branches.ts'
 import type { PrPageView } from '@/lib/pr-page.ts'
 
 import { ObjectTitle, joinMeta } from './object-title.tsx'
 import { PrButtons } from './pr-buttons.tsx'
 import { GeneratedBox } from './pr-generated-box.tsx'
 import { PrSummaryEditor } from './pr-summary-editor.tsx'
+import { ScrollEnd } from './scroll-end.tsx'
 
 /** A ticket's task page: the task id is `ticket-<project>-<issue>`, as the home page and the standing list link it. */
 const taskHref = (project: string, ticket: string): string =>
@@ -43,90 +43,95 @@ function Branches({ view }: { view: PrPageView }) {
   const legend = LEGEND.filter((l) => d.nodes.some((n) => !n.hidden && n.kind === l.cls))
   return (
     <>
-      <svg
-        className="prp-drawing"
-        viewBox={`0 0 ${d.width} ${d.height}`}
-        role="img"
-        aria-label="the PR branch between main and the personal branch"
-      >
-        <text x="8" y={y.main + 4} className="prp-lname">
-          {d.lanes.main}
-        </text>
-        <line x1={d.gutter} y1={y.main} x2={d.width - 15} y2={y.main} className="prp-line main" />
-        <text x="8" y={y.personal + 4} className="prp-lname">
-          {d.lanes.personal}
-        </text>
-        <line x1={d.gutter} y1={y.personal} x2={d.width - 15} y2={y.personal} className="prp-line personal" />
-        {d.prLane ? (
-          <text x="8" y={y.pr + 4} className={d.lanes.pr === null ? 'prp-lname idle' : 'prp-lname'}>
-            {d.lanes.pr ?? 'no PR yet'}
+      <ScrollEnd className="prp-drawing-scroll">
+        <svg
+          className="prp-drawing"
+          width={d.width}
+          height={d.height}
+          viewBox={`0 0 ${d.width} ${d.height}`}
+          role="img"
+          aria-label="the PR branch between main and the personal branch"
+        >
+          <text x="8" y={y.main + 4} className="prp-lname">
+            {d.lanes.main}
           </text>
-        ) : null}
-        {d.prSpan === null ? null : (
-          <line
-            x1={d.prSpan[0]}
-            y1={y.pr}
-            x2={d.prSpan[1]}
-            y2={y.pr}
-            className={d.lanes.gone ? 'prp-line pr gone' : 'prp-line pr'}
-          />
-        )}
-        {d.nowX === null ? null : (
-          <>
-            <line x1={d.nowX} y1="18" x2={d.nowX} y2={d.height - 30} className="prp-now" />
-            <text x={d.nowX + 4} y="22" className="prp-now-t">
-              now
+          <line x1={d.gutter} y1={y.main} x2={d.width - 15} y2={y.main} className="prp-line main" />
+          <text x="8" y={y.personal + 4} className="prp-lname">
+            {d.lanes.personal}
+          </text>
+          <line x1={d.gutter} y1={y.personal} x2={d.width - 15} y2={y.personal} className="prp-line personal" />
+          {d.prLane ? (
+            <text x="8" y={y.pr + 4} className={d.lanes.pr === null ? 'prp-lname idle' : 'prp-lname'}>
+              {d.lanes.pr ?? 'no PR yet'}
             </text>
-          </>
-        )}
-        {d.pointer === null ? null : (
-          <>
-            <path
-              d={`M${d.pointer.x1} ${d.pointer.y1} L${d.pointer.x2} ${d.pointer.y2}`}
-              className="prp-edge todo prp-pointer"
+          ) : null}
+          {d.prSpan === null ? null : (
+            <line
+              x1={d.prSpan[0]}
+              y1={y.pr}
+              x2={d.prSpan[1]}
+              y2={y.pr}
+              className={d.lanes.gone ? 'prp-line pr gone' : 'prp-line pr'}
             />
-            <text x={d.pointer.x2 + 6} y={d.pointer.y2 + 4} className="prp-svg-t">
-              {d.pointer.text}
-            </text>
-          </>
-        )}
-        {d.edges.map((e) => (
-          <path
-            key={`${e.from}-${e.to}`}
-            d={`M${e.x1} ${e.y1} L${e.x2} ${e.y2}`}
-            className={`prp-edge ${e.kind} ${e.state}`}
-          />
-        ))}
-        {d.brace === null ? null : (
-          <>
-            <path d={`M${d.brace.x1} ${y.personal + 40} v6 H${d.brace.x2} v-6`} className="prp-brace" />
-            <text x={d.brace.x1} y={y.personal + 62} className="prp-svg-t">
-              {d.brace.text}
-            </text>
-          </>
-        )}
-        {d.nodes.map((n) => (
-          <g key={n.id} className="prp-node-g">
-            {n.hidden ? null : (
-              <circle cx={n.x} cy={n.y} r={n.kind === 'ticket' ? 4.5 : 7} className={`prp-nd ${n.kind}`}>
-                <title>
-                  {[n.title ?? (n.label === '' ? n.lane : n.label), n.sha].filter((t) => t !== null).join(' · ')}
-                </title>
-              </circle>
-            )}
-            {shownLabel(n) === '' ? null : (
-              <text
-                x={n.x - 6}
-                y={n.above ? n.y - 13 : n.y + 21}
-                textAnchor={n.anchor}
-                className={`prp-svg-t ${n.tone ?? ''}`}
-              >
-                {shownLabel(n)}
+          )}
+          {d.nowX === null ? null : (
+            <>
+              <line x1={d.nowX} y1="18" x2={d.nowX} y2={d.height - 30} className="prp-now" />
+              <text x={d.nowX + 4} y="22" className="prp-now-t">
+                now
               </text>
-            )}
-          </g>
-        ))}
-      </svg>
+            </>
+          )}
+          {d.pointer === null ? null : (
+            <>
+              <path
+                d={`M${d.pointer.x1} ${d.pointer.y1} L${d.pointer.x2} ${d.pointer.y2}`}
+                className="prp-edge todo prp-pointer"
+              />
+              <text x={d.pointer.x2 + 6} y={d.pointer.y2 + 4} className="prp-svg-t">
+                {d.pointer.text}
+              </text>
+            </>
+          )}
+          {d.edges.map((e) => (
+            <path
+              key={`${e.from}-${e.to}`}
+              d={`M${e.x1} ${e.y1} L${e.x2} ${e.y2}`}
+              className={`prp-edge ${e.kind} ${e.state}`}
+            />
+          ))}
+          {d.brace === null ? null : (
+            <>
+              <path d={`M${d.brace.x1} ${y.personal + 40} v6 H${d.brace.x2} v-6`} className="prp-brace" />
+              <text x={d.brace.x1} y={y.personal + 62} className="prp-svg-t">
+                {d.brace.text}
+              </text>
+            </>
+          )}
+          {d.nodes.map((n) => (
+            <g key={n.id} className="prp-node-g">
+              {n.hidden ? null : (
+                <circle cx={n.x} cy={n.y} r={n.kind === 'ticket' ? 4.5 : 7} className={`prp-nd ${n.kind}`}>
+                  <title>
+                    {[n.title ?? (n.label === '' ? n.lane : n.label), n.sha].filter((t) => t !== null).join(' · ')}
+                  </title>
+                </circle>
+              )}
+              {n.lines.map((l, i) => (
+                <text
+                  key={i}
+                  x={n.box!.x}
+                  y={n.baselines[i]}
+                  textAnchor={n.anchor}
+                  className={`prp-svg-t ${l.tone ?? ''}`}
+                >
+                  {l.text}
+                </text>
+              ))}
+            </g>
+          ))}
+        </svg>
+      </ScrollEnd>
       {legend.length === 0 ? null : (
         <p className="prp-small prp-legend">
           {legend.map((l) => (
