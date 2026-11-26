@@ -911,6 +911,25 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(recipe.branch.personal).toBeUndefined()
   })
 
+  it('a team recipe takes a changed --main as its base, and refuses one that is not a branch on GitHub (#1497)', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop', 'release'])))
+
+    const again = answerer('team')
+    const result = await askAndWrite(again.world, {
+      ...at(files, new Set(['me/laptop', 'release'])),
+      flags: { install: 'none', main: 'release' },
+    })
+    expect(result).toMatchObject({ ok: true })
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.main).toBe('release')
+
+    const missing = await askAndWrite(answerer('team').world, {
+      ...at(files, new Set(['me/laptop'])),
+      flags: { install: 'none', main: 'nowhere' },
+    })
+    expect(missing).toMatchObject({ refused: expect.stringContaining('nowhere is not a branch on GitHub') })
+  })
+
   it('a new personal branch is cut from the old one, which holds what landed and has not reached main', async () => {
     const files = mapFiles()
     await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
@@ -1070,5 +1089,9 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(lines.map((l) => l.command).join('\n')).toContain('origin/me-next..origin/me/laptop')
     expect(changedLeftBehind({ branch: { from: 'a', to: 'b', made: true } })[0]!.what).toContain('may be deleted')
     expect(changedLeftBehind(undefined)).toEqual([])
+    // The compare URL, for the commits only the old branch has (#1497).
+    expect(
+      changedLeftBehind({ branch: { from: 'old', to: 'new', made: false, commits: [] } }, 'acme/widgets')[0]!.what,
+    ).toContain('https://github.com/acme/widgets/compare/new...old')
   })
 })

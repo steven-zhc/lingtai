@@ -871,3 +871,106 @@ describe('lingtai init asks the store again (#1474)', () => {
     expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['database', 'url'])).toBeUndefined()
   })
 })
+
+describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#1497)', () => {
+  const ARGS = [
+    '--github',
+    'acme/widgets',
+    '--store',
+    'sqlite',
+    '--mode',
+    'solo',
+    '--main',
+    'main',
+    '--install',
+    'none',
+    '--build',
+    'none',
+  ]
+  const registered = {
+    project: 'widgets',
+    owner: 'acme',
+    base: 'main',
+    configHash: 'h',
+    fromSha: null,
+    refused: null,
+    paused: null,
+    recipe: null,
+    sandboxObserved: null,
+    highestPr: null,
+    version: 1,
+    lastSeq: null,
+  }
+
+  function githubInit() {
+    const h = harness({ ghStatus: { ok: true, login: 'sam', scopes: ['repo', 'workflow'] } })
+    h.machineFiles.set(`${HOME}/config.yml`, 'github:\n  auth: gh\n')
+    const prompts: string[] = []
+    const added: unknown[] = []
+    const labelled: string[] = []
+    h.world.githubProject = {
+      deps: {
+        check: () => Effect.succeed(null),
+        auth: () => 'gh',
+        interactive: () => true,
+        ghAccess: () => Effect.succeed({ login: 'sam', defaultBranch: 'main' }),
+        picker: () => Effect.succeed({ installations: [], installUrl: null }),
+        reader: () =>
+          Effect.succeed({
+            has: (path: string) => Effect.succeed(path === 'pnpm-lock.yaml'),
+            read: () => Effect.succeed(null),
+          }),
+        ask: async (prompt) => {
+          prompts.push(prompt)
+          return ''
+        },
+        runtimes: () => Effect.succeed([signedIn('claude-code')]),
+        history: () => Effect.succeed([]),
+      },
+      labels: () =>
+        Effect.succeed({
+          createLabel: async (name: string) => {
+            labelled.push(name)
+            return 'created' as const
+          },
+        }),
+      add: () => {
+        added.push(1)
+        return Effect.succeed({ ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'sam' } } as const)
+      },
+    }
+    return { ...h, prompts, added, labelled }
+  }
+
+  it('a first run adds the project, draws init’s card and closes on the project’s steps', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+    expect(h.labelled).toContain('lingtai:hold')
+    const text = lines(h.logged).join('\n')
+    expect(text).toMatch(/^init {2}widgets/m)
+    expect(text).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a rerun asks the prompts the first run asked, and with nothing changed registers nothing', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    const first = [...h.prompts]
+    const events = await h.store.readAll(0n, 1000)
+    h.prompts.length = 0
+    h.added.length = 0
+    h.world.projects = liftPort(async () => [registered as never])
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    expect(h.prompts).toEqual(first)
+    expect(h.added).toEqual([])
+    expect(await h.store.readAll(0n, 1000)).toEqual(events)
+    expect(lines(h.logged).join('\n')).toMatch(/^init {2}widgets {2}unchanged$/m)
+  })
+
+  it('--github beside --local names two projects and writes nothing', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv([...ARGS, '--local', '/repo']), h.world)).toBe(1)
+    expect(lines(h.logged).join('\n')).toContain('name two different projects')
+    expect(h.added).toEqual([])
+  })
+})

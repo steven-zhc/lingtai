@@ -512,27 +512,171 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(errors.join('\n')).toContain('no repository was picked')
   })
 
-  it('refuses a GitHub project that is already added before asking anything, naming its recipe (#968)', async () => {
+  const REGISTERED = (owner: string | null) => ({
+    project: 'widgets',
+    owner,
+    base: 'main',
+    configHash: 'h',
+    fromSha: null,
+    refused: null,
+    paused: null,
+    recipe: null,
+    sandboxObserved: null,
+    highestPr: null,
+    version: 1,
+    lastSeq: null,
+  })
+
+  /** A first add, then the project registered and the harness's counters reset: what a rerun is run against. */
+  async function registeredHarness() {
+    const h = githubHarness()
+    const added: unknown[] = []
+    const first = h.world.project.github.add
+    h.world.project.github.add = ((options, log) => {
+      added.push(options)
+      return first(options, log)
+    }) as typeof first
+    const labelled = labelStub(h.world)
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(0)
+    h.world.project.projects = liftPort(async () => [REGISTERED('acme')])
+    const logBefore = await h.world.project.store!.readAll(0n, 1000)
+    const recipeBefore = await h.world.project.files.read(recipePath('widgets'))
+    added.length = 0
+    labelled.length = 0
+    h.asked.length = 0
+    h.errors.length = 0
+    h.logged.length = 0
+    return { ...h, added, labelled, logBefore, recipeBefore }
+  }
+
+  it('a rerun taking every answer as it is writes nothing, registers nothing, makes no branch and still makes the labels (#1497)', async () => {
+    const h = await registeredHarness()
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.errors).toEqual([])
+    expect(h.added).toEqual([])
+    expect(await h.world.project.store!.readAll(0n, 1000)).toEqual(h.logBefore)
+    expect(await h.world.project.files.read(recipePath('widgets'))).toBe(h.recipeBefore)
+    expect(h.labelled).toContain('lingtai:hold')
+    expect(stripColour(h.logged.join('\n'))).toMatch(/^add {2}widgets {2}unchanged$/m)
+  })
+
+  it('a rerun with --defaults is the same: nothing changes (#1497)', async () => {
+    const h = await registeredHarness()
+    expect(
+      await addFlow({ ...flagsFromArgv(['--defaults', '--mode', 'solo']), positional: 'acme/widgets' }, h.world),
+    ).toBe(0)
+    expect(h.errors).toEqual([])
+    expect(h.added).toEqual([])
+    expect(await h.world.project.store!.readAll(0n, 1000)).toEqual(h.logBefore)
+  })
+
+  it('a changed answer is written through the recipe once and registers again (#1497)', async () => {
+    const h = await registeredHarness()
+    const argv = h.argv.map((a) => (a === 'none' ? a : a))
+    const changed = [...argv.slice(0, argv.indexOf('--build')), '--build', 'pnpm test']
+    expect(await addFlow({ ...flagsFromArgv(changed), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.errors).toEqual([])
+    expect(h.added).toHaveLength(1)
+    const log = await h.world.project.store!.readAll(0n, 1000)
+    const fresh = log.slice(h.logBefore.length)
+    expect(fresh.filter((e) => e.type === 'ProjectRecipeChanged')).toHaveLength(1)
+    expect(await h.world.project.files.read(recipePath('widgets'))).toContain('pnpm test')
+    expect(stripColour(h.logged.join('\n'))).not.toMatch(/unchanged/)
+  })
+
+  it('a rerun asks the prompts a first add asks, in order (#1497)', async () => {
+    const first = githubHarness()
+    const seen: string[] = []
+    const record = (h: ReturnType<typeof githubHarness>, into: string[]) => {
+      const ask = h.world.githubDeps!.ask
+      h.world.githubDeps = {
+        ...h.world.githubDeps!,
+        ask: async (prompt, shape) => {
+          into.push(prompt)
+          return ask(prompt, shape)
+        },
+      }
+    }
+    const bare = first.argv
+    record(first, seen)
+    expect(await addFlow({ ...flagsFromArgv(bare), positional: 'acme/widgets' }, first.world)).toBe(0)
+    const again = githubHarness()
+    again.world.project.files = first.world.project.files
+    again.world.project.store = first.world.project.store
+    again.world.project.projects = liftPort(async () => [REGISTERED('acme')])
+    const second: string[] = []
+    record(again, second)
+    expect(await addFlow({ ...flagsFromArgv(bare), positional: 'acme/widgets' }, again.world)).toBe(0)
+    expect(second).toEqual(seen)
+  })
+
+  it('a repository of the same name under another owner is still refused, before any question (#1497)', async () => {
     const { world, errors, asked, argv } = githubHarness()
-    world.project.projects = liftPort(async () => [
-      {
-        project: 'widgets',
-        owner: 'acme',
-        base: 'main',
-        configHash: 'h',
-        fromSha: null,
-        refused: null,
-        paused: null,
-        recipe: null,
-        sandboxObserved: null,
-        highestPr: null,
-        version: 1,
-        lastSeq: null,
-      },
-    ])
-    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(1)
-    expect(errors).toEqual([expect.stringContaining(`its recipe is ${recipePath('widgets')}, and it is edited there`)])
+    world.project.projects = liftPort(async () => [REGISTERED('acme')])
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'other/widgets' }, world)).toBe(1)
+    expect(errors).toHaveLength(1)
+    expect(errors[0]).toContain('acme')
     expect(asked).toEqual([])
+  })
+
+  it('a rerun whose recipe base is not the registered base registers again rather than answering unchanged (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), base: 'release' }])
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+  })
+
+  it('a pending project (no ProjectConfigured yet) is registered by the rerun, not answered unchanged (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), configHash: null }])
+    expect(await addFlow({ ...flagsFromArgv([...h.argv, '--defaults']), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+  })
+
+  it('an unchanged rerun still refuses a --local beside the GitHub project (#1497)', async () => {
+    const h = await registeredHarness()
+    const code = await addFlow(
+      { ...flagsFromArgv([...h.argv, '--defaults', '--local', '/another']), positional: 'acme/widgets' },
+      h.world,
+    )
+    expect(code).toBe(1)
+    expect(h.errors.join('\n')).toContain('name two different projects')
+    expect(h.labelled).toEqual([])
+  })
+
+  it('a rerun that registers nothing exits non-zero (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), base: 'release' }])
+    h.world.project.github.add = liftPort(async () => ({ ok: false }) as never)
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(1)
+  })
+
+  it('another spelling of a registered repository is refused rather than given a recipe of its own (#1497)', async () => {
+    const h = await registeredHarness()
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/Widgets' }, h.world)).toBe(1)
+    expect(h.errors.join('\n')).toContain('registered as widgets')
+    expect(h.added).toEqual([])
+    expect(await h.world.project.files.read(recipePath('Widgets'))).toBeNull()
+  })
+
+  it('an unchanged rerun still holds a contradicting --github-auth to the machine (#1497)', async () => {
+    const h = await registeredHarness()
+    const code = await addFlow(
+      { ...flagsFromArgv([...h.argv, '--defaults', '--github-auth', 'app']), positional: 'acme/widgets' },
+      h.world,
+    )
+    expect(code).toBe(1)
+    expect(h.errors.join('\n')).toContain('--github-auth app')
+    expect(h.labelled).toEqual([])
+  })
+
+  it('a rerun over a recipe that does not resolve is refused by name before any question (#1497)', async () => {
+    const h = await registeredHarness()
+    await h.world.project.files.replace(recipePath('widgets'), 'tier: [unclosed')
+    expect(await addFlow({ ...flagsFromArgv(h.argv), positional: 'acme/widgets' }, h.world)).toBe(1)
+    expect(h.errors.join('\n')).toContain('does not resolve')
+    expect(h.added).toEqual([])
+    expect(h.asked).toEqual([])
   })
 
   it('an owner never recorded is still repaired by adding it again: no question, no recipe written (#968)', async () => {

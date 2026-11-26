@@ -873,6 +873,7 @@
         "--conflict-resolutions",
         "--database-url",
         "--defaults",
+        "--github",
         "--github-app",
         "--github-auth",
         "--install",
