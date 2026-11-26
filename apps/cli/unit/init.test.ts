@@ -819,6 +819,27 @@ describe('lingtai init asks the store again (#1474)', () => {
     expect(lines(h.logged).join('\n')).not.toMatch(/new, empty/)
   })
 
+  it('a configured Postgres that does not answer stays the default: Enter checks it again and writes nothing', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.database = () => Effect.succeed({ ok: false as const, why: 'connection refused' })
+    let answered = 0
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      // Enter once: the default is checked again and refused, so the question would come back — it is left there.
+      if (!/Postgres URL for the log/.test(prompt)) return null
+      if (answered++ > 0) throw new Error('asked again')
+      return ''
+    }
+    await initCommand(flagsFromArgv([]), h.world).catch(() => 1)
+    expect(h.asked.find((p) => /Postgres URL for the log/.test(p))).toContain('empty keeps')
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('postgres')
+    expect(doc.getIn(['database', 'url'])).toBe(URL)
+  })
+
   it('--defaults keeps a store that answers, and does not choose one on a machine that has none', async () => {
     const h = harness()
     h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)

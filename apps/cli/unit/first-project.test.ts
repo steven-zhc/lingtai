@@ -1719,6 +1719,52 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
   })
 
+  it('an interrupted rerun saves and registers under the add lock, and writes nothing while another holds it', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    const held: string[] = []
+    // Another rerun holds the lock: the interruption's save is refused before it writes or registers.
+    h.world.locker = {
+      tryLock: async (key: string) => {
+        held.push(key)
+        return { ok: false as const, holder: { pid: 1 } } as never
+      },
+    }
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(held.some((key) => key.startsWith('add:'))).toBe(true)
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(h.registered).toHaveLength(0)
+  })
+
   it('a rerun interrupted after the recipe was written but the event was not recorded says it was written, never "NOT saved"', async () => {
     const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
       'claude-code',

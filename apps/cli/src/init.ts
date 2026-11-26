@@ -1008,6 +1008,9 @@ function chooseStore(
           } else {
             flush()
             fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
+            // The configured URL stays the default: an outage is not an answer, so Enter checks it again rather
+            // than taking SQLite and removing it. It is not `answering`, since nothing confirmed it.
+            current = settled.url
           }
         }
       } else if (settled.because === 'unreadable') {
@@ -1046,6 +1049,8 @@ function chooseStore(
           }
           flush()
           world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+          // Likewise the inherited URL: Enter checks it again rather than replacing it with SQLite.
+          current = older
         }
       }
     }
