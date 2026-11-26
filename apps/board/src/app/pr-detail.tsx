@@ -40,6 +40,7 @@ function Branches({ view }: { view: PrPageView }) {
   const d = view.drawing
   if (d === null) return null
   const y = d.laneY
+  const legend = LEGEND.filter((l) => d.nodes.some((n) => !n.hidden && n.kind === l.cls))
   return (
     <>
       <svg
@@ -56,9 +57,11 @@ function Branches({ view }: { view: PrPageView }) {
           {d.lanes.personal}
         </text>
         <line x1={d.gutter} y1={y.personal} x2={d.width - 15} y2={y.personal} className="prp-line personal" />
-        <text x="8" y={y.pr + 4} className={d.lanes.pr === null ? 'prp-lname idle' : 'prp-lname'}>
-          {d.lanes.pr ?? 'no PR yet'}
-        </text>
+        {d.prLane ? (
+          <text x="8" y={y.pr + 4} className={d.lanes.pr === null ? 'prp-lname idle' : 'prp-lname'}>
+            {d.lanes.pr ?? 'no PR yet'}
+          </text>
+        ) : null}
         {d.prSpan === null ? null : (
           <line
             x1={d.prSpan[0]}
@@ -72,7 +75,18 @@ function Branches({ view }: { view: PrPageView }) {
           <>
             <line x1={d.nowX} y1="18" x2={d.nowX} y2={d.height - 30} className="prp-now" />
             <text x={d.nowX + 4} y="22" className="prp-now-t">
-              NOW
+              now
+            </text>
+          </>
+        )}
+        {d.pointer === null ? null : (
+          <>
+            <path
+              d={`M${d.pointer.x1} ${d.pointer.y1} L${d.pointer.x2} ${d.pointer.y2}`}
+              className="prp-edge todo prp-pointer"
+            />
+            <text x={d.pointer.x2 + 6} y={d.pointer.y2 + 4} className="prp-svg-t">
+              {d.pointer.text}
             </text>
           </>
         )}
@@ -113,16 +127,18 @@ function Branches({ view }: { view: PrPageView }) {
           </g>
         ))}
       </svg>
-      <p className="prp-small prp-legend">
-        {LEGEND.map((l) => (
-          <span key={l.cls}>
-            <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true">
-              <circle cx="7" cy="7" r="5" className={`prp-nd ${l.cls}`} />
-            </svg>{' '}
-            {l.text}{' '}
-          </span>
-        ))}
-      </p>
+      {legend.length === 0 ? null : (
+        <p className="prp-small prp-legend">
+          {legend.map((l) => (
+            <span key={l.cls}>
+              <svg viewBox="0 0 14 14" width="12" height="12" aria-hidden="true">
+                <circle cx="7" cy="7" r="5" className={`prp-nd ${l.cls}`} />
+              </svg>{' '}
+              {l.text}{' '}
+            </span>
+          ))}
+        </p>
+      )}
       {d.words.length === 0 ? null : <p className="prp-small prp-words">{d.words.join(' · ')}</p>}
     </>
   )
@@ -163,6 +179,18 @@ export function PrDetail({
         <div className="prp-main">
           <section className="prp-panel" aria-label="Where it is">
             <h2 className="sec-h">Where it is</h2>
+            {view.previous === null ? null : (
+              <p className="prp-prev">
+                {view.previous.lead}{' '}
+                {view.previous.href === null ? (
+                  `${view.previous.name} · ${view.previous.state}`
+                ) : (
+                  <a href={view.previous.href}>
+                    {view.previous.name} · {view.previous.state}
+                  </a>
+                )}
+              </p>
+            )}
             <p className="prp-poster">
               <b className={`prp-word ${view.poster.word.toLowerCase().replace(/ /g, '-')}`}>{view.poster.word}</b>{' '}
               <span className="prp-small">{view.poster.line}</span>

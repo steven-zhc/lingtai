@@ -642,3 +642,58 @@ describe('a PR on a remote that is not GitHub (#1485)', () => {
     expect(v.steps.find((s) => s.step === 'ready')?.text).toContain('not reached')
   })
 })
+
+describe('an empty Next PR', () => {
+  const added = (ticket: string): Spec => [
+    'PrDraftTicketAdded',
+    { ticket, mergeCommit: `c${ticket}`, title: `t${ticket}` },
+  ]
+  const empty = (previous?: PrState) =>
+    prPage({
+      project: 'p',
+      recipe,
+      owner: 'o',
+      pr: null,
+      events: [],
+      draft: [],
+      open: null,
+      ...(previous === undefined ? {} : { previous: { pr: previous, frozenSha: null, caughtUp: null } }),
+      spend: null,
+      stepNames: STEPS,
+      now: new Date(),
+    })
+  const SMALL = 'the next ticket that lands on foundry starts this draft · Submit appears once it has one'
+
+  it('says where the tickets went, links the PR and offers no Submit', () => {
+    const v = empty(reducePr(events([added('1'), added('2'), requested, started, draftOpened])))
+    expect(v.header.title).toBe('Next PR — nothing in it yet')
+    expect(v.buttons).toEqual([])
+    expect(v.previous?.lead).toBe('Nothing is waiting for the next PR. The 2 tickets before went into')
+    expect(v.previous?.name).toBe('PR #88')
+    expect(v.previous?.state).toBe('in progress')
+    expect(v.poster.line).toBe(SMALL)
+  })
+  it('counts a requested PR from its own draft list', () => {
+    const v = empty(reducePr(events([added('1'), added('2'), added('3'), requested])))
+    expect(v.previous?.lead).toContain('The 3 tickets before')
+    expect(v.previous?.state).toBe('submitted')
+  })
+  it('says only the small line with no PR, or a closed one', () => {
+    expect(empty().previous).toBeNull()
+    expect(empty().poster.line).toBe(SMALL)
+    const closed = reducePr(events([added('1'), requested, started, ['PrClosed', { by: 'human:steven', why: 'x' }]]))
+    expect(empty(closed).previous).toBeNull()
+  })
+  it('draws no legend where nothing is drawn, and a lowercase now', () => {
+    const html = renderToStaticMarkup(<PrDetail project="p" view={empty()} host={null} />)
+    expect(html).not.toContain('prp-legend')
+    expect(html).not.toContain('NOW')
+  })
+  it('lists only the kinds a drawing holds', () => {
+    const v = page([requested, started, done('sync')])
+    const html = renderToStaticMarkup(<PrDetail project="p" view={v} host={null} />)
+    expect(html).toContain('prp-legend')
+    expect(html).toContain('prp-nd ticket')
+    expect(html).not.toContain(' waiting on you ')
+  })
+})

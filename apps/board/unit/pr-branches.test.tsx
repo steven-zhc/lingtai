@@ -537,3 +537,45 @@ describe('the page draws it', () => {
     expect(out).toContain('nothing to merge back')
   })
 })
+
+describe('an empty Next PR drawing', () => {
+  const evs = (specs: readonly Spec[]) => events(specs)
+  const prev = (specs: readonly Spec[]) => reducePr(evs(specs))
+  const at = (
+    pr: ReturnType<typeof prev>,
+    frozenSha: string | null,
+    caughtUp: { sha: string; n: number | null } | null,
+  ) => prBranches(null, [], [], OPTS, { pr, frozenSha, caughtUp })!
+  const added: Spec = ['PrDraftTicketAdded', { ticket: '1364', mergeCommit: 'aa', title: 'a' }]
+  const submitted = prev([added, ['PrSubmitRequested', { by: 'h' }], started()])
+
+  it('has no submit node, no PR lane and no word', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    expect(m.nodes.map((n) => n.id)).not.toContain('submit')
+    expect(m.prLane).toBe(false)
+    expect(m.words).toEqual([])
+  })
+  it('marks the freeze commit, with a pointer from that dot', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    const dot = m.nodes[0]!
+    expect(dot.label).toBe('6266142 frozen for PR 2')
+    expect(m.pointer).toEqual({ from: dot.id, text: 'PR 2' })
+    expect(m.now).toBe(dot.id)
+  })
+  it('marks the caught-up commit instead when there is one', () => {
+    const m = at(submitted, '6266142aaaa', { sha: 'abcdef1234', n: 1 })
+    expect(m.nodes[0]!.label).toBe('abcdef1 caught up with main')
+    expect(m.pointer?.from).toBe(m.nodes[0]!.id)
+  })
+  it('has no pointer for a closed PR', () => {
+    const closed = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), ['PrClosed', { by: 'h', why: 'x' }]])
+    expect(at(closed, null, null).pointer).toBeNull()
+  })
+  it('reads the first freeze, not a later walk', () => {
+    // PrState.frozenSha is the latest walk's; the page passes the first PrInProgress's.
+    const twice = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), started('retry')])
+    const first = events([added, ['PrSubmitRequested', { by: 'h' }], started()]).find((e) => e.type === 'PrInProgress')!
+    const sha = (first.data as { frozenSha: string }).frozenSha
+    expect(at(twice, sha, null).nodes[0]!.label).toContain(sha.slice(0, 7))
+  })
+})

@@ -14,6 +14,7 @@
 import { type Envelope, type PayloadOf, type PrState, prStepRows } from '@lingtai/domain'
 
 import { type DraftTicket, WAIT_WORDS } from './pr-board.ts'
+import type { PreviousPr } from './pr-page.ts'
 
 export type BranchLane = 'main' | 'pr' | 'personal'
 
@@ -55,6 +56,10 @@ export interface BranchModel {
   readonly now: string | null
   /** Words where a line would lie, and what the gutter says. */
   readonly words: readonly string[]
+  /** False on an empty Next PR: two lanes, the PR lane's label and line are not drawn. */
+  readonly prLane: boolean
+  /** A dashed line from a node to a PR the drawing has no node for, named by its text. */
+  readonly pointer: { readonly from: string; readonly text: string } | null
 }
 
 export interface BranchOptions {
@@ -85,12 +90,57 @@ interface Walk {
   closed: boolean
 }
 
+/**
+ * An empty Next PR: main and the personal branch, one dot on the personal branch for where the tickets went — the newest
+ * caught-up point, else the freeze commit of the PR they went into — and a dashed pointer from it to that PR. A closed or
+ * refused newest PR gets no pointer: its tickets are not in it.
+ */
+function emptyDraft(lanes: BranchModel['lanes'], previous?: PreviousPr): BranchModel {
+  const pr = previous?.pr
+  const named = pr !== undefined && pr.status !== 'closed' && pr.status !== 'refused' ? pr : undefined
+  const k = named === undefined ? null : named.n === null ? '?' : String(named.n)
+  let node: BranchNode
+  if (previous?.caughtUp != null) {
+    node = {
+      id: 'mark',
+      lane: 'personal',
+      kind: 'done',
+      label: `${short(previous.caughtUp.sha)} caught up with main`,
+      sha: previous.caughtUp.sha,
+      walk: 0,
+    }
+  } else if (named !== undefined && previous?.frozenSha != null) {
+    node = {
+      id: 'mark',
+      lane: 'personal',
+      kind: 'done',
+      label: `${short(previous.frozenSha)} frozen for PR ${k}`,
+      sha: previous.frozenSha,
+      walk: 0,
+    }
+  } else {
+    node = { id: 'mark', lane: 'personal', kind: 'done', label: '', sha: null, hidden: true, walk: 0 }
+  }
+  const pointer = named === undefined || node.hidden ? null : { from: node.id, text: `PR ${k}` }
+  return {
+    lanes,
+    nodes: [node],
+    edges: [],
+    brace: null,
+    now: node.id,
+    words: [],
+    prLane: false,
+    pointer,
+  }
+}
+
 /** What is drawn for one PR, or for the draft when `pr` is null. `null` when the draft's tickets could not be read. */
 export function prBranches(
   pr: PrState | null,
   events: readonly Envelope[],
   draft: readonly DraftTicket[] | { readonly error: string },
   opts: BranchOptions,
+  previous?: PreviousPr,
 ): BranchModel | null {
   const lanes = {
     main: pr?.main ?? opts.main,
@@ -100,6 +150,7 @@ export function prBranches(
   }
   if (pr === null) {
     if ('error' in draft) return null
+    if (draft.length === 0) return emptyDraft(lanes, previous)
     const shown = draft.slice(0, TICKET_DOTS)
     const nodes: BranchNode[] = shown.map((t, i) => ({
       id: `t${i}`,
@@ -119,6 +170,8 @@ export function prBranches(
       brace: shown.length === 0 ? null : { text, from: 't0', to: `t${shown.length - 1}` },
       now: 'submit',
       words: ['no PR yet'],
+      prLane: true,
+      pointer: null,
     }
   }
 
@@ -132,7 +185,8 @@ export function prBranches(
     return node
   }
   const total = events.filter((e) => e.type === 'PrInProgress').length
-  if (total === 0) return { lanes, nodes, edges, brace: null, now: null, words: ['not started'] }
+  if (total === 0)
+    return { lanes, nodes, edges, brace: null, now: null, words: ['not started'], prLane: true, pointer: null }
 
   const walks: Walk[] = []
   let walk: Walk | null = null
@@ -534,6 +588,8 @@ export function prBranches(
     brace,
     now: nowId,
     words,
+    prLane: true,
+    pointer: null,
   }
 }
 
@@ -562,7 +618,15 @@ export interface LaidEdge extends BranchEdge {
   readonly y2: number
 }
 
-export interface Drawing extends Omit<BranchModel, 'nodes' | 'edges' | 'brace' | 'now'> {
+export interface Drawing extends Omit<BranchModel, 'nodes' | 'edges' | 'brace' | 'now' | 'pointer'> {
+  /** The dashed pointer, from a node's position to the PR it names. */
+  readonly pointer: {
+    readonly x1: number
+    readonly y1: number
+    readonly x2: number
+    readonly y2: number
+    readonly text: string
+  } | null
   readonly width: number
   readonly height: number
   readonly laneY: Record<BranchLane, number>
@@ -661,6 +725,14 @@ export function layoutBranches(model: BranchModel, width: number): Drawing {
   return {
     lanes: model.lanes,
     words: model.words,
+    prLane: model.prLane,
+    pointer:
+      model.pointer === null
+        ? null
+        : (() => {
+            const from = at.get(model.pointer.from)!
+            return { x1: from.x, y1: from.y, x2: from.x + 40, y2: from.y - 40, text: model.pointer.text }
+          })(),
     width: w,
     height: 330,
     laneY: LANE_Y,

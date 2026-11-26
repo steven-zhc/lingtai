@@ -3322,8 +3322,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-line.personal { stroke: var(--pr-navy); }
 .prp-line.pr { stroke: var(--pr-indigo); }
 .prp-line.gone { stroke-dasharray: 5 4; opacity: 0.6; }
-.prp-now { stroke: var(--pr-amber); stroke-width: 1; stroke-dasharray: 3 3; }
-.prp-now-t { font: 600 var(--fs-2xs) var(--mono); fill: var(--pr-amber); }
+.prp-now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.prp-now-t { font: 600 var(--fs-2xs) var(--mono); fill: var(--muted); }
 .prp-edge { fill: none; stroke-width: 2; stroke: var(--pr-edge); }
 .prp-edge.todo { stroke-dasharray: 4 3; }
 .prp-edge.red { stroke: var(--pr-red); }
