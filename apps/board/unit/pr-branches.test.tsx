@@ -94,7 +94,7 @@ describe('the mock frames, as events', () => {
     expect(m.edges).toEqual([])
     expect(m.lanes.pr).toBeNull()
     expect(m.words).toContain('no PR yet')
-    expect(m.brace?.text).toBe('2 tickets not in a PR yet')
+    expect(m.brace?.text).toBe('2 tickets in Draft PR')
   })
 
   it('01 draft whose tickets cannot be read draws nothing', () => {

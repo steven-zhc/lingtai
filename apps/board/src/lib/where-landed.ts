@@ -51,7 +51,9 @@ const STATE_WORD: Record<string, string> = {
 }
 
 /** The foot line's words, or null when there is nothing to say. */
-export type FootLine = { readonly kind: 'unread' } | { readonly kind: 'line'; readonly text: string }
+export type FootLine =
+  | { readonly kind: 'unread' }
+  | { readonly kind: 'line'; readonly draft: number | null; readonly open: string | null }
 
 export const footLine = (read: LandedWhereRead | undefined): FootLine | null => {
   if (read === undefined || read.kind === 'solo') return null
@@ -60,8 +62,6 @@ export const footLine = (read: LandedWhereRead | undefined): FootLine | null => 
   for (const r of read.prs)
     if ('pr' in r && r.pr.status !== null && OPEN.has(r.pr.status))
       open = `${prName(r.pr)} ${STATE_WORD[r.pr.status] ?? r.pr.status}`
-  const parts = [read.draft.length > 0 ? `${read.draft.length} not in a PR yet` : null, open].filter(
-    (s): s is string => s !== null,
-  )
-  return parts.length === 0 ? null : { kind: 'line', text: parts.join(' · ') }
+  const draft = read.draft.length > 0 ? read.draft.length : null
+  return draft === null && open === null ? null : { kind: 'line', draft, open }
 }

@@ -180,7 +180,7 @@ export function prBranches(
       walk: 0,
     }))
     nodes.push({ id: 'submit', lane: 'personal', kind: 'todo', label: 'Submit freezes here', sha: null, walk: 0 })
-    const text = `${draft.length} ${draft.length === 1 ? 'ticket' : 'tickets'} not in a PR yet${draft.length > shown.length ? ` · +${draft.length - shown.length} more` : ''}`
+    const text = `${draft.length} ${draft.length === 1 ? 'ticket' : 'tickets'} in Draft PR${draft.length > shown.length ? ` · +${draft.length - shown.length} more` : ''}`
     return {
       lanes,
       nodes: nodes.map(oneLine),

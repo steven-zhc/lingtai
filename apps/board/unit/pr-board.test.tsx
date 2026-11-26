@@ -227,7 +227,7 @@ describe('prBoard', () => {
     expect(draft.sub.join(' ')).toContain('landed on foundry, not yet on main')
     expect(draft.sub.join(' ')).toContain('≤ 20 turns, 5 min')
     expect(v.strip.branches).toBe('foundry → main')
-    expect(v.strip.notInPr).toBe('2 tickets not in a PR yet')
+    expect(v.strip.notInPr).toBe('2 tickets in Draft PR')
   })
 
   it('links the draft card to the page listing every draft ticket', () => {

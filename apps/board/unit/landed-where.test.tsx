@@ -43,7 +43,8 @@ describe('a team project’s Landed column', () => {
     const html = render(new Map([['lingtai', team]]))
     expect(html).toContain('on your branch')
     expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/7"[^>]*>in PR #88</)
-    expect(html).toContain('2 not in a PR yet · PR #88 in review')
+    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
+    expect(html).not.toMatch(/<a[^>]*>[^<]*PR #88 in review/)
     expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
   })
   it('a solo project draws no tag and no foot', () => {
@@ -61,7 +62,19 @@ describe('a team project’s Landed column', () => {
 describe('a team project with no retained Landed row', () => {
   it('still draws the foot line', () => {
     const html = renderToStaticMarkup(<LandedFoot reads={new Map([['lingtai', team]])} showProject={false} />)
-    expect(html).toContain('2 not in a PR yet · PR #88 in review')
+    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
+    expect(html).not.toMatch(/<a[^>]*>[^<]*PR #88 in review/)
+    expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
+  })
+})
+
+describe('the foot line with only a draft', () => {
+  it('links the draft, has no separator, and keeps PRs →', () => {
+    const html = renderToStaticMarkup(
+      <LandedFoot reads={new Map([['lingtai', { ...team, prs: [] }]])} showProject={false} />,
+    )
+    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a>/)
+    expect(html).not.toContain(' · ')
     expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
   })
 })

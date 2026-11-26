@@ -1105,7 +1105,7 @@ export function whereOnBranch(input: {
     case 'draft':
       return {
         small: 'ON YOUR BRANCH',
-        in: { text: 'not in a PR yet — the draft holds it', failed: false, host: null, page: pageOf('next') },
+        in: { text: 'Draft PR · not submitted yet', failed: false, host: null, page: pageOf('next') },
         mergeCommit: { sha, on: landing.base, inBranch: null },
         closedWhen: landing.closed
           ? 'closed by a person; its code goes into the PR without `Closes`'
