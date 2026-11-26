@@ -1070,5 +1070,9 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(lines.map((l) => l.command).join('\n')).toContain('origin/me-next..origin/me/laptop')
     expect(changedLeftBehind({ branch: { from: 'a', to: 'b', made: true } })[0]!.what).toContain('may be deleted')
     expect(changedLeftBehind(undefined)).toEqual([])
+    // The compare URL, for the commits only the old branch has (#1497).
+    expect(
+      changedLeftBehind({ branch: { from: 'old', to: 'new', made: false, commits: [] } }, 'acme/widgets')[0]!.what,
+    ).toContain('https://github.com/acme/widgets/compare/new...old')
   })
 })
