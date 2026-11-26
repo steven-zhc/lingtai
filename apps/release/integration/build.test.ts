@@ -86,6 +86,9 @@ describe('pnpm build', () => {
     expect(existsSync(hook)).toBe(true)
     expect(spawnSync(hook, [], { encoding: 'utf8' }).status).toBe(2)
     expect(existsSync(join(first, 'prompts', 'ticket.md'))).toBe(true)
+    expect(readFileSync(join(first, 'board', 'prompts', 'ticket.md'))).toEqual(
+      readFileSync(join(first, 'prompts', 'ticket.md')),
+    )
 
     const pkg = JSON.parse(readFileSync(join(first, 'package.json'), 'utf8'))
     expect(pkg.private).toBeUndefined()
@@ -235,6 +238,7 @@ describe(`install.sh over the binary${seaIncapable ? ` (skipped: ${seaSkipReason
         true,
       )
       expect(existsSync(join(user, '.lingtai', 'versions', version, 'prompts', 'ticket.md'))).toBe(true)
+      expect(existsSync(join(user, '.lingtai', 'versions', version, 'board', 'prompts', 'ticket.md'))).toBe(true)
       install(newer)
       expect(says()).toContain(`lingtai ${newer} `)
 
