@@ -213,6 +213,21 @@ export function failingRun(pr: PrState): string | null {
   return failing.find((c) => c.url !== '')?.url ?? null
 }
 
+/** Why nothing follows a PR whose remote is not GitHub: the one sentence the page's rows and the card's chip share. */
+export const UNFOLLOWED_WHY = 'the remote is not GitHub, so nothing follows the PR there'
+
+/**
+ * A PR opened on a remote that is not GitHub (`PrOpened { host: 'none' }`): the PR went to In review unfollowed (0131),
+ * so `ci` and `ready` never ran and are the person's rather than stopped. Read from the fold alone, so the page and the
+ * card cannot disagree: that event is the only one that records `open` and leaves `host` unset (`PrDraftOpened` sets
+ * `host` in the same reduction, and a GitHub `PrOpened` records `ready`). `steps` is the current pass only.
+ * A known gap: `PrInProgress` does not reset `host`, so a later pass that opens with `host: 'none'` after an earlier
+ * GitHub pass falls back to the ordinary wording rather than drawing anything wrong.
+ */
+export function unfollowedRemote(pr: PrState): boolean {
+  return pr.host === null && pr.steps.some((s) => s.step === 'open')
+}
+
 function chipsOf(pr: PrState, stepNames: readonly string[]): Chip[] {
   const chips: Chip[] = []
   const rows = prStepRows(stepNames, pr)
@@ -223,6 +238,14 @@ function chipsOf(pr: PrState, stepNames: readonly string[]): Chip[] {
     let status: Chip['status'] = row.status === 'done' ? 'done' : row.status === 'waiting' ? 'waiting' : 'pending'
     if (row.step === running) status = 'running'
     let text = `${row.step} ${status === 'done' ? '✓' : status === 'waiting' ? '✕' : status === 'running' ? '…' : '·'}`
+    if (unfollowedRemote(pr) && (row.step === 'ci' || row.step === 'ready') && row.status === 'pending') {
+      chips.push(
+        row.step === 'ci'
+          ? { step: row.step, text: 'no CI', status: 'done' }
+          : { step: row.step, text: 'ready — yours', status: 'skipped' },
+      )
+      continue
+    }
     if (row.step === 'ci') {
       if (pr.ciSkipped !== null && pr.checks === null) {
         text = 'no CI'

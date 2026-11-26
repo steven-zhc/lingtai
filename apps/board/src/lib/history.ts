@@ -329,7 +329,15 @@ const FORMAT: Partial<Record<EventType, Formatter>> = {
   RunStarted: (d, r) =>
     `${attemptAgent(r, r.streamId)} started on ${need(d, 'runtime')}${d['model'] ? ` (${String(d['model'])})` : ''} from base ${sha(d, 'baseSha')}`,
   // Its size; the version string is not a caption.
-  RunPrompted: (d, r) => `${attemptAgent(r, r.streamId)} was prompted (${need(d, 'bytes')} bytes)`,
+  RunPrompted: (d, r) => {
+    const tag = (d['for'] as { _tag?: string } | undefined)?._tag
+    // Only the tags `spentBy` names; anything else (no `for`, an `Action`, an unknown tag) keeps the attempt's sentence.
+    const who =
+      tag === 'Pr' || tag === 'Judge' || tag === 'Triage' || tag === 'Discussion'
+        ? upper(spentBy(d, r))
+        : attemptAgent(r, r.streamId)
+    return `${who} was prompted (${need(d, 'bytes')} bytes)`
+  },
   RunTouchedFile: (d, r) => {
     const verb = { edit: 'edited', write: 'wrote', delete: 'deleted' }[need(d, 'op')] ?? need(d, 'op')
     return `${attemptAgent(r, r.streamId)} ${verb} ${repoPath(need(d, 'path'))}`

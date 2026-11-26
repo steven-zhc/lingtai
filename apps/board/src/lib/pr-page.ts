@@ -26,7 +26,17 @@ import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recip
 
 import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
-import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
+import {
+  type Button,
+  DRAFT_NAME,
+  type DraftTicket,
+  WAIT_WORDS,
+  UNFOLLOWED_WHY,
+  failingRun,
+  prName,
+  slipsOf,
+  unfollowedRemote,
+} from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
@@ -356,6 +366,19 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     const ms = times.get(row.step)
     const duration = ms === undefined || ms <= 0 ? null : span(ms)
     const base = { step: row.step, label, duration, link: null as PageStep['link'] }
+    if (row.status === 'pending' && (row.step === 'ci' || row.step === 'ready') && unfollowedRemote(pr)) {
+      out.push({
+        ...base,
+        status: 'skipped',
+        mark: '—',
+        text:
+          row.step === 'ci'
+            ? `no CI step — ${UNFOLLOWED_WHY}`
+            : 'opening the PR and marking it ready is yours to do on this remote',
+        duration: null,
+      })
+      continue
+    }
     if (row.status === 'pending') {
       if (inFlight !== undefined && inFlight.step === row.step) {
         out.push({ ...base, status: 'running', mark: '…', text: 'running now', duration: null })
@@ -681,7 +704,9 @@ export function prPage(input: PrPageInput): PrPageView {
           ? `${rows.length} checks`
           : pr.ciSkipped !== null
             ? `no CI step — ${pr.ciSkipped.why}`
-            : 'no checks ran',
+            : unfollowedRemote(pr)
+              ? `no CI step — ${UNFOLLOWED_WHY}`
+              : 'no checks ran',
       rows,
     },
     history: events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })).reverse(),

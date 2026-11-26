@@ -614,3 +614,24 @@ describe('what the code host says', () => {
     )
   })
 })
+
+describe('a PR on a remote that is not GitHub (#1485)', () => {
+  const none: Spec = ['PrOpened', { host: 'none', number: null, url: null }]
+  const stream: Spec[] = [requested, started, done('sync'), done('build'), done('push'), none]
+  it('reads CI and Ready as not followed, and the Checks head says the CI row', () => {
+    const v = page(stream)
+    const ci = v.steps.find((s) => s.step === 'ci')
+    const ready = v.steps.find((s) => s.step === 'ready')
+    expect(ci?.status).toBe('skipped')
+    expect(ci?.text).toMatch(/^no CI step — .*not GitHub/)
+    expect(ready?.status).toBe('skipped')
+    expect(ready?.text).toContain('yours to do on this remote')
+    expect(`${ci?.text} ${ready?.text}`).not.toContain('not reached')
+    expect(v.checks.head).toBe(ci?.text)
+  })
+  it('a later pass with no open reads as not reached again', () => {
+    const v = page([...stream, requested, started])
+    expect(v.steps.find((s) => s.step === 'ci')?.status).toBe('not-reached')
+    expect(v.steps.find((s) => s.step === 'ready')?.text).toContain('not reached')
+  })
+})

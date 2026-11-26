@@ -319,6 +319,21 @@ describe('prBoard', () => {
     }
   })
 
+  it('draws neither ci nor ready as pending on a remote that is not GitHub (#1485)', () => {
+    const p = pr(3, {
+      // An in-review card carries no chips; the chips are drawn for any PR that has them, so this is the fold's shape.
+      status: 'in-progress',
+      host: null,
+      steps: ['sync', 'build', 'summary', 'push', 'open'].map((step) => ({ step, headSha: 'a' })),
+      tickets: [tk(1)],
+    })
+    const card = cards(prBoard(input([{ n: 3, pr: p }])), 'progress')[0]!
+    const texts = card.chips.map((c) => c.text)
+    expect(texts.some((t) => t.startsWith('ci ·') || t.startsWith('ready ·'))).toBe(false)
+    expect(card.chips.find((c) => c.step === 'ci')).toMatchObject({ text: 'no CI', status: 'done' })
+    expect(card.chips.find((c) => c.step === 'ready')).toMatchObject({ status: 'skipped' })
+  })
+
   it('draws a PR in progress with its steps from the conductor’s list', () => {
     const p = pr(2, {
       status: 'in-progress',

@@ -1055,4 +1055,15 @@ describe('a step redone in place says why (#1480)', () => {
       'the registry answered with a 5xx and runs again in place, after 5 min (rerun 2)',
     )
   })
+
+  it('names the agent a PR-stream RunPrompted was for, as RunSpent does (#1485)', () => {
+    const said = (f: unknown) =>
+      summarise(e('RunPrompted', { promptVersion: 'v', bytes: 12, prompt: '…', for: f }, 'agent:x', 'pr-p-1'), {
+        attempts: new Map(),
+      })
+    expect(said({ _tag: 'Pr', purpose: 'resolve' })).toBe('The conflict agent (resolve) was prompted (12 bytes)')
+    expect(said({ _tag: 'Pr', purpose: 'review' })).toBe('The conflict agent (review) was prompted (12 bytes)')
+    expect(said({ _tag: 'Pr', purpose: 'summary', at: 'x' })).toBe('The summary agent was prompted (12 bytes)')
+    expect(said({ _tag: 'Mystery' })).toBe('an agent of another ticket was prompted (12 bytes)')
+  })
 })
