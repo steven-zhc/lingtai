@@ -512,7 +512,9 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   }
 
   const runtimes = yield* deps.runtimes()
-  const ref = base ?? (yield* defaultBranch)
+  // A rerun reads the repository at the base the recipe names, never at GitHub's default (and so needs no lookup of it).
+  const savedMain = existing === null ? null : onDisk.get(['branch', 'main'])
+  const ref = base ?? (typeof savedMain === 'string' && savedMain !== '' ? savedMain : yield* defaultBranch)
   const reader = yield* deps.reader(owner, repo, reach, ref)
 
   const proposal = yield* proposeSetup(

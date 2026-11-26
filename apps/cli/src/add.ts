@@ -4,7 +4,7 @@ import { taken } from '@lingtai/conductor/pick-repository'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, recipeText } from '@lingtai/project'
-import { type Recipe, resolveSource } from '@lingtai/recipe'
+import { branchOf, type Recipe, resolveSource } from '@lingtai/recipe'
 import {
   alreadyAdded,
   alreadyAddedSentence,
@@ -38,6 +38,7 @@ import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddD
 import { ensureLabelsEffect, labelNames, liveLabelClient, type LabelClient } from './add-labels.ts'
 import {
   chooseFirstProjectEffect,
+  conflictingFlags,
   liveFirstProjectWorld,
   liveRepositoryListEffect,
   type FirstProjectWorld,
@@ -306,8 +307,12 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
     const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
     if (text !== null) {
       try {
+        // Registered means `ProjectConfigured` was appended (a pending project has no hash) naming the base the
+        // registration records: `branchOf`, the personal branch in team mode.
         registeredAsRecipe =
-          found.base !== null && found.base === resolveSource(text, recipeAt, recipeAt).recipe.branch.main
+          found.configHash !== null &&
+          found.base !== null &&
+          found.base === branchOf(resolveSource(text, recipeAt, recipeAt).recipe)
       } catch (error) {
         world.error(`${recipeAt} does not resolve — ${asError(error).message}. ${ADD_KEPT}`)
         return { exit: 1 }
@@ -330,6 +335,12 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
   // Nothing changed: no event, nothing registered. The recipe is read back, the labels are put right, the card says so.
   if (rerun && asked !== null && asked.answers.changes.length === 0 && registeredAsRecipe) {
     const { owner, repo: name } = parseSlug(slug)
+    // The conflicts `chooseFirstProject` would refuse, which this return would otherwise step over.
+    const conflict = conflictingFlags(flags, entry.command === 'add' ? ADD_KEPT : world.project.kept)
+    if (conflict !== null) {
+      world.error(conflict)
+      return { exit: 1 }
+    }
     // The same election `chooseFirstProject` would hold the flag to: the machine reaches GitHub one way.
     const via = flags['github-auth']
     if (via !== undefined && asked.reach !== undefined && via !== asked.reach.kind) {

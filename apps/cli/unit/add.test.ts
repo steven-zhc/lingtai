@@ -626,6 +626,24 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(h.added).toHaveLength(1)
   })
 
+  it('a pending project (no ProjectConfigured yet) is registered by the rerun, not answered unchanged (#1497)', async () => {
+    const h = await registeredHarness()
+    h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), configHash: null }])
+    expect(await addFlow({ ...flagsFromArgv([...h.argv, '--defaults']), positional: 'acme/widgets' }, h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+  })
+
+  it('an unchanged rerun still refuses a --local beside the GitHub project (#1497)', async () => {
+    const h = await registeredHarness()
+    const code = await addFlow(
+      { ...flagsFromArgv([...h.argv, '--defaults', '--local', '/another']), positional: 'acme/widgets' },
+      h.world,
+    )
+    expect(code).toBe(1)
+    expect(h.errors.join('\n')).toContain('name two different projects')
+    expect(h.labelled).toEqual([])
+  })
+
   it('a rerun that registers nothing exits non-zero (#1497)', async () => {
     const h = await registeredHarness()
     h.world.project.projects = liftPort(async () => [{ ...REGISTERED('acme'), base: 'release' }])

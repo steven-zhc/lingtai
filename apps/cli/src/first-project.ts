@@ -286,7 +286,7 @@ export type FirstProjectOutcome =
   | { refused: string }
 
 /** Why a combination of flags cannot both be obeyed, or null when they can. */
-function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
+export function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
   const local = flags['local']
   const github = flags['github']
   // A valueless flag parses as '' (`@effect/cli`'s empty option), and `git` run
