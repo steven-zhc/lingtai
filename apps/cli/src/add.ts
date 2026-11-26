@@ -191,7 +191,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
     }
   }
 
-  // With a slug, `askBeforeGithubAdd` above has written nothing: its answers are held in `asked`, and
+  // With a slug, `askBeforeGithubAdd` above has written nothing but `github.auth`, the machine's own: its answers are held in `asked`, and
   // `applySetup` writes them just before the registration they belong to.
   const base = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
   const pending = asked
@@ -211,7 +211,9 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
     flags['project'] !== 'local' &&
     flags['local'] === undefined &&
     world.repositories?.interactive() === true
-  const result = yield* chooseFirstProjectEffect(projectWorld, flags, buildFlags, holdsBack)
+  // An `app` answered above writes nothing yet, so it is told on rather than asked a second time (#1487).
+  const handed = asked?.githubAuth === undefined ? flags : { ...flags, 'github-auth': asked.githubAuth }
+  const result = yield* chooseFirstProjectEffect(projectWorld, handed, buildFlags, holdsBack)
   if ('refused' in result) {
     world.error(result.refused)
     return 1

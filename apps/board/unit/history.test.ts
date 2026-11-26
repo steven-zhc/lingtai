@@ -506,7 +506,7 @@ describe('a line of history', () => {
       const spent = line(e('RunSpent', { ...judge, costUsd: 0.729924 }))
       expect(spent.summary).toBe('Triage: 2 turns, 13.5 s · cost $0.73')
       expect(spent.summary).not.toContain('{"')
-      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).toContain('cost unknown')
+      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).toContain('unpriced')
       expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).not.toContain('$0.00')
       expect(spent.who).toBe('triage')
       expect(line(e('RunSpent', { ...judge, for: { _tag: 'Judge', when: 'findings' }, costUsd: 1 })).who).toBe(

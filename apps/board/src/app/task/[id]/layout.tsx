@@ -149,7 +149,7 @@ export function TaskBody({
   // Every attempt's `costUsd` and `totals` below are off `spend` — this page's
   // own reduce, not the board's. Silent while it reduced cleanly, the same `#498`
   // posture every other reading on this bar takes; the sentence only when it
-  // did not, because `unknown (1 run)` otherwise reads exactly like a ticket
+  // did not, because `unpriced (1 run)` otherwise reads exactly like a ticket
   // that predates `RunSpent` (`#498`'s review).
   const spendCurrency = spendChip(task.spendCurrency)
 

@@ -469,7 +469,7 @@ describe('human-granted rounds', () => {
     const granted = grantedOf([...automaticRows(), spent(3, null, 'wait-1')])
     const roundsSpent = spentOf(reduceAttempt(automatic()).roundsOpened, granted)
     expect(describeHeld({ spent: roundsSpent, granted, roundsOf: 2, newAttempts: 1, newAttemptsOf: 1 })).toBe(
-      '2 of 2 rounds · round 3 granted, cost unknown · 0 restarts left',
+      '2 of 2 rounds · round 3 granted, unpriced · 0 restarts left',
     )
   })
 

@@ -164,14 +164,14 @@ describe('billText renders the one table every reader shows', () => {
   it('says the figure plus the unknown count, never $0.00, when both are present', () => {
     const bills = billOf([row({ costUsd: 3.1 }), row({ costUsd: null })])
     const text = billText(bills.Work)
-    expect(text).toBe('$3.10 + 1 unknown')
+    expect(text).toBe('$3.10 + 1 unpriced')
     expect(text).not.toContain('$0.00')
   })
 
   it('says unknown rather than $0.00 when nothing at all was reported', () => {
     const bills = billOf([row({ costUsd: null }), row({ costUsd: null })])
     const text = billText(bills.Work)
-    expect(text).toBe('unknown (2 runs)')
+    expect(text).toBe('unpriced (2 runs)')
     expect(text).not.toContain('$0.00')
   })
 

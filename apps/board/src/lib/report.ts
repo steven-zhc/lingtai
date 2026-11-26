@@ -262,14 +262,14 @@ export const dollars = (cents: number): string => `$${(cents / 100).toFixed(2)}`
 
 /**
  * Three parts and a count, never one number (0110 §5): reported, `~$x est.` and
- * `n unknown`. A part that is zero is left out unless nothing else is there, and
+ * `n unpriced`. A part that is zero is left out unless nothing else is there, and
  * a bill with an unknown run in it never prints `$0.00` for the rest.
  */
 export function moneyText(m: Money): string {
   const parts: string[] = []
   if (m.reportedCents > 0) parts.push(dollars(m.reportedCents))
   if (m.estimatedCents > 0) parts.push(`~${dollars(m.estimatedCents)} est.`)
-  if (m.unknown > 0) parts.push(`${m.unknown} unknown`)
+  if (m.unknown > 0) parts.push(`${m.unknown} unpriced`)
   return parts.length === 0 ? '$0.00' : parts.join(' + ')
 }
 

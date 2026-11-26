@@ -110,10 +110,10 @@ describe('/landed page', () => {
     }
   })
 
-  it('says cost unknown when nothing was priced, and omits the squares for a null diff', () => {
+  it('says unpriced when nothing was priced, and omits the squares for a null diff', () => {
     const unknown = row({ cost: {}, unknownClaims: 1, diffFiles: null, diffInsertions: null, diffDeletions: null })
     const out = html(data([unknown]))
-    expect(out).toContain('cost unknown')
+    expect(out).toContain('unpriced')
     expect(out).not.toContain('$0.00')
     expect(out).not.toContain('ld-sq')
     expect(out).not.toContain(' file')
@@ -235,7 +235,7 @@ describe('/landed address and pieces', () => {
   })
 
   it('costs in words and squares in proportion', () => {
-    expect(costText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('cost unknown')
+    expect(costText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('unpriced')
     expect(costText({ reportedCents: 120, estimatedCents: 0, unknown: 0 })).toBe('$1.20')
     expect(diffSquares(0, 0)).toEqual(['none', 'none', 'none', 'none', 'none'])
     expect(diffSquares(10, 0)).toEqual(['add', 'add', 'add', 'add', 'add'])
