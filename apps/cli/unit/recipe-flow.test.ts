@@ -7,7 +7,7 @@ import { recipePath, ProjectFiles } from '@lingtai/project'
  * comments are not rewritten. No filesystem — the file seam is a `Map`, by
  * 0060 §1.
  */
-import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { type RecipeFiles, resolveSource, SETUP_HOLD_TEXT } from '@lingtai/recipe'
 import { applySetup, EMPTY_SETUP_READER } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -176,6 +176,38 @@ describe('askRecipe — an absent file (#432)', () => {
     ])
   })
 
+  it('--land hold on a new recipe writes the hold and then the findings judge, and the file resolves (#1490)', async () => {
+    const files = mapFiles()
+    const result = await askAndWrite(defaultsWorld(), {
+      ...BASE_AT,
+      project: 'widget',
+      local: true,
+      flags: { ...BASE_AT.flags, land: 'hold' },
+      seeds: [
+        { path: ['branch', 'main'], value: 'main' },
+        { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+      ],
+      kept: 'the seeded recipe is kept',
+      again: 'lingtai add --local /repo',
+      keptBeforeWrite: 'Nothing was written',
+      files,
+    } satisfies TestAt)
+    expect(result).toMatchObject({ ok: true })
+
+    const path = recipePath('widget', HOME)
+    const text = files.replaced.at(-1)!.text
+    const raw = parseDocument(text).getIn(['steps', 'proposed']) as { toJSON(): unknown }
+    expect(raw.toJSON()).toEqual([
+      { name: 'hold every attempt', human: SETUP_HOLD_TEXT },
+      { name: 'send findings back to the writer', judge: 'claude-code', when: 'findings' },
+    ])
+    expect(resolveSource(text, path, path).recipe.steps.proposed).toMatchObject([
+      { human: SETUP_HOLD_TEXT },
+      { judge: 'claude-code', when: 'findings' },
+    ])
+  })
+
   it('creates a GitHub project once, falling back to source.tickets: github when the question took its own default', async () => {
     const files = mapFiles()
     const world = defaultsWorld()
@@ -254,6 +286,9 @@ steps:
     expect(text).toContain('# a note somebody left here')
     const resolved = resolveSource(text, path, path).recipe
     expect(resolved.source.kinds).toEqual(['bug', 'feature'])
+
+    // A recipe already on disk gets no findings judge added (#1490).
+    expect(parseDocument(text).getIn(['steps', 'proposed'])).toBeUndefined()
 
     // No `SAID` sentence was inserted — this file already existed.
     for (const dotted of Object.keys(SAID)) {
@@ -375,11 +410,22 @@ describe('askRecipe — --defaults (#433)', () => {
   it('a recipe whose writer is codex keeps codex under --defaults (#727)', async () => {
     const first = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', mode: 'solo', agent: 'codex' })
     expect(first.resolved!.runtime.agent).toBe('codex')
+    // The judge follows the writer, never the reviewer (claude-code here) (#1490).
+    const proposedOf = (text: string) =>
+      (parseDocument(text).getIn(['steps', 'proposed']) as { toJSON(): unknown }).toJSON()
+    expect(proposedOf(first.text)).toEqual([
+      { name: 'send findings back to the writer', judge: 'codex', when: 'findings' },
+    ])
+    expect(first.resolved!.steps.proposed).toMatchObject([{ judge: 'codex', when: 'findings' }])
     const path = recipePath('widget', HOME)
     const files = mapFiles({ [path]: first.text })
     const again = await runTwo(TWO_RUNTIMES, NO_TERMINAL, { defaults: '', mode: 'solo' }, files)
     expect(again.result).toMatchObject({ ok: true })
     expect(again.resolved!.runtime.agent).toBe('codex')
+    // A rerun on the file the first run wrote still holds exactly one findings judge.
+    expect(proposedOf(again.text)).toEqual([
+      { name: 'send findings back to the writer', judge: 'codex', when: 'findings' },
+    ])
   })
 
   // A CI job with no TTY and no --defaults is not asked "use every default?"
