@@ -35,23 +35,32 @@ export function RecipeBar({
   views,
   here = 'recipe',
   tail,
-}: { project: string; pause?: ReactNode; here?: 'recipe' | 'prs'; tail?: string } & RecipeBarFilter) {
+}: {
+  /** `undefined` is *all projects*: its views are `Tickets` alone and the bar draws no project actions. */
+  project: string | undefined
+  pause?: ReactNode
+  /** Which view this page is; `null` on a page that is none of them (the backlog selects nothing). */
+  here?: 'recipe' | 'prs' | 'tickets' | null
+  tail?: string
+} & RecipeBarFilter) {
   const barHere = here === 'recipe' ? ({ here: 'recipe' } as const) : {}
+  // An unregistered project with no pause has nothing to act on: `null` draws no `pacts` span and no rule.
+  const actions =
+    project === undefined || (pause === undefined && !registered.includes(project)) ? null : (
+      <BarActions project={project} {...barHere} pause={pause} recipe={false} />
+    )
   return (
-    <Bar
-      project={project}
-      {...barHere}
-      actions={<BarActions project={project} {...barHere} pause={pause} recipe={false} />}
-    >
+    <Bar project={project} {...barHere} actions={actions}>
       <PlaceLine
         project={project}
         views={views ?? viewsFor(project)}
-        here={here}
+        here={here ?? undefined}
         tail={tail}
         menu={
           <Projects
             filters={filters}
             only={project}
+            keepMenu
             app={app}
             registered={registered}
             locks={locks}

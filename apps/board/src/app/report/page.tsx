@@ -8,25 +8,16 @@
  *
  * **Nothing is cached and nothing is client state.** The filters are the
  * address (`lib/report.ts`), both projections are read as they stand on render
- * (nothing reduces them), and the bar says how far behind either is. A read that fails is a
+ * (nothing reduces them), and the footer (`FooterFetched`, a separate read at mount) says how far behind either is. A read that fails is a
  * sentence in place of the panels, never a 500.
  */
 import { handledProblems, report as buildReport, type HandledProblem, type Report } from '@lingtai/conductor/report'
 
-import { Bar } from '@/app/bar.tsx'
+import { ReportBar } from '@/app/global-bars.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
 import { readDayReading } from '@/lib/day-spend'
 import { readControlOnce, readRegistered } from '@/lib/locks.ts'
-import {
-  currentReport,
-  kindsOf,
-  reportChip,
-  reportQuery,
-  sortKinds,
-  type ReportChip,
-  type ReportCurrency,
-  type ReportParams,
-} from '@/lib/report.ts'
+import { currentReport, kindsOf, reportQuery, sortKinds, type ReportParams } from '@/lib/report.ts'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
@@ -43,7 +34,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
   let report: Report | null = null
   let problems: HandledProblem[] | null = null
   let kinds = query.kinds ?? []
-  let chip: ReportChip
   let failure: string | null = null
   let timings: readonly Timing[] = []
   // Never throws, and outside the try: a failed report read leaves the day's figure, and the reverse.
@@ -60,7 +50,6 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
       { label: '/report' },
     )
     timings = measured
-    chip = reportChip(data.currency)
     kinds = sortKinds([...kindsOf(data.tickets, query.project), ...(query.kinds ?? [])])
     kinds = kinds.filter((k, i) => kinds.indexOf(k) === i)
     const input = {
@@ -76,27 +65,17 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
     problems = query.handled === null ? null : handledProblems(input)
   } catch (err) {
     failure = (err as Error).message
-    const none: ReportCurrency['spend'] = { lag: null, error: failure }
-    chip = reportChip({ ticketReport: none, spend: none })
   }
 
   return (
     <>
       <main className="detail">
         <TimingMeta timings={timings} />
-        <Bar
+        <ReportBar
           project={only}
           registered={only !== undefined && projects.some((p) => p.project === only)}
-          here="report"
           pause={await pauseSlot(only)}
-        >
-          <span className="sep" />
-          <span className="mono">report{only === undefined ? '' : ` · ${only}`}</span>
-          <span className="sep" />
-          <span className={`chip ${chip.tone}`} title={chip.title}>
-            {chip.label}
-          </span>
-        </Bar>
+        />
         <LockBanner project={only} />
 
         <div className="detail-body rp">

@@ -9,7 +9,7 @@
  * follows; the keys are announced only in each control's tooltip.
  */
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
 
 import { homePath, prPath, recipePath } from '@/lib/paths'
 
@@ -158,6 +158,25 @@ export function PlaceLine({
           <span className="crumb">{tail}</span>
         </>
       )}
+    </span>
+  )
+}
+
+/**
+ * A global page's place (`Lingtai / Setup / Repository`, `Lingtai / Report`): crumbs as plain text, with no project
+ * menu and no views, so the page draws no `data-go` and no `details.filter`. There is no `/setup` page to link to.
+ */
+export function PagePlace({ crumbs }: { crumbs: readonly string[] }) {
+  return (
+    <span className="place">
+      {crumbs.map((c) => (
+        <Fragment key={c}>
+          <span className="slash" aria-hidden="true">
+            /
+          </span>
+          <span className="crumb">{c}</span>
+        </Fragment>
+      ))}
     </span>
   )
 }

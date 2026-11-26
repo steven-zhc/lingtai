@@ -229,10 +229,28 @@ over a left rail of icons, a dock, a drawer, stacked boards and a project home
 Lingtai / chapter-garden ▾ / Tickets  PRs ❶  Recipe   ●     [Search ⌘K]  Pause  Report
 ```
 
+**Every page draws the place line, and no page carries `current` (decided 2026-11-26, #1499):**
+
+- **Project pages:** `Lingtai / <project ▾> / <view> [/ <object>]`. `/landed` is
+  `… / Tickets / Landed` with Tickets selected, and `/backlog` is `… / Backlog`
+  with **no view selected**: Backlog is hidden from the views until its logic is
+  decided. With *all projects* the only view is `Tickets`.
+- **Global pages:** `Lingtai / <page> [/ <step>]` — `Lingtai / Report`,
+  `Lingtai / Setup / Repository` — with no project menu and no views, so `G P`
+  and `G S` have nothing to open there. The crumbs are text: there is no `/setup`
+  page to link to.
+- **`Report` stays on the frame**, marked current on `/report`.
+- **There is no Setup button.** Setup is reached through the flow: the project
+  menu's *add a repository*, `lingtai init`'s link, the home's GitHub App
+  prompt, ⌘K.
+- **No bar carries `current`**: the `current` rule below now holds on every bar,
+  and the health dot says it. A page's currency is its footer's.
+- **No `Recipe` button on the right** of these pages: it is a view.
+
 ## What it looks like now
 
 ```
-◆ Lingtai │ [lingtai ▾]   ●                                     Report
+◆ Lingtai / lingtai ▾ / Tickets  PRs  Recipe   ●        Search ⌘K  Pause  Report
 Today ▮▮▯ $26.15 + ~$22.03 of $200 · 65 landed · projections current · home ~/.lingtai
 ```
 

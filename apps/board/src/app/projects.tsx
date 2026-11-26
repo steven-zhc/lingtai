@@ -146,10 +146,13 @@ export function Projects({
   registered,
   locks,
   sandbox,
+  keepMenu = false,
 }: {
   filters: string[]
   only: string | undefined
   app: boolean
+  /** Draw the menu even with nothing listed, so a place line keeps its crumb and `G S` (#1499). */
+  keepMenu?: boolean
   /** The registered projects: a row outside them has no recipe to give. */
   registered: readonly string[]
   /** What holds each project: a paused one is marked, never explained (0126 §8). */
@@ -158,7 +161,7 @@ export function Projects({
 }) {
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fourth one (#169).
-  if (filters.length === 0)
+  if (filters.length === 0 && !keepMenu)
     return (
       <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} sandbox={sandbox} />
     )

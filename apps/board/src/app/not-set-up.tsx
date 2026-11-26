@@ -1,6 +1,6 @@
 /**
  * What `/` draws where the store is not chosen (#767): the bar with only its
- * brand, and one section. It reads no log and mounts no `Live`, `Health`,
+ * brand and `Lingtai / Setup`, and one section. It reads no log and mounts no `Live`, `Health`,
  * `Projects` or `Paused` — each of those needs the log this home has not got.
  *
  * Props only, as `bar.tsx` is: the page reads the environment and says
@@ -10,7 +10,7 @@
  */
 import type { StoreRefused } from '@lingtai/env'
 
-import { Bar } from './bar.tsx'
+import { SetupBar } from './global-bars.tsx'
 import { ObjectTitle } from './object-title.tsx'
 
 export function NotSetUp({
@@ -24,7 +24,7 @@ export function NotSetUp({
 }) {
   return (
     <main className="detail">
-      <Bar project={undefined} />
+      <SetupBar />
       <div className="detail-body">
         <section>
           <ObjectTitle tag="setup" tone="muted" title="Setup" />
