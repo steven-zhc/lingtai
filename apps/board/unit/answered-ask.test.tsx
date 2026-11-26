@@ -25,7 +25,7 @@ const ask: Action = {
   result: { _tag: 'Completed', requested: { question: 'Merge agent/1 into lingtai-base anyway?' } },
 }
 
-function landed(reason: unknown) {
+function landed(reason: unknown, last: 'landed' | 'continued' = 'landed') {
   const run = presentAttemptEvents({ runId: RUN, at: new Date('2026-11-25T05:00:00Z'), ended: null }, 1, [
     e(RUN, 'StepStarted', { runId: RUN, step: 'proposed', round: 0 }, '2026-11-25T05:09:00Z'),
     e(
@@ -44,7 +44,9 @@ function landed(reason: unknown) {
       { waitId: 'w1', resolution: { _tag: 'Approve', onSha: SHA }, by: 'human:steven' },
       '2026-11-25T05:11:00Z',
     ),
-    e(ITEM, 'TicketLanded', { mergeCommit: 'd'.repeat(40), base: 'lingtai-base' }, '2026-11-25T05:12:00Z'),
+    last === 'landed'
+      ? e(ITEM, 'TicketLanded', { mergeCommit: 'd'.repeat(40), base: 'lingtai-base' }, '2026-11-25T05:12:00Z')
+      : e(ITEM, 'TicketContinued', { runId: RUN, worker: 'w' }, '2026-11-25T05:12:00Z'),
   ]
   return standingOf(own, [run])
 }
@@ -87,6 +89,16 @@ describe('an answered ask', () => {
     const out = html(standing)
     expect(out).toContain('class="past"')
     expect(out).toContain('→ answered')
+    expect(out).not.toContain('sevidence')
+  })
+
+  it('stays drawn as history while the attempt runs on after the answer', () => {
+    const standing = landed(SIGNOFF, 'continued')
+    expect(standing.state).toBe('running')
+    expect(standing.deciding?.answered).not.toBeUndefined()
+    const out = html(standing)
+    expect(out.match(/class="past"/g)).toHaveLength(1)
+    expect(out).toContain('steven answered <b>merge</b> at 05:11')
     expect(out).not.toContain('sevidence')
   })
 })

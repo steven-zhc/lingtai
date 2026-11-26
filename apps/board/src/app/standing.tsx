@@ -1550,7 +1550,17 @@ export function Standing({
           ) : null}
 
           {standing.state === 'running' && standing.running ? (
-            <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            <>
+              {/* An attempt continued after its ask was answered: the answer is history, the panel is live (#1495). */}
+              {standing.deciding?.answered !== undefined ? (
+                <AnsweredAsk
+                  deciding={standing.deciding}
+                  pointer={standing.deciding.attempt !== standing.attempt}
+                  taskId={taskId}
+                />
+              ) : null}
+              <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            </>
           ) : null}
 
           {standing.state === 'blocked' ? (
