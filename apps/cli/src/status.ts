@@ -672,6 +672,7 @@ export const readStatus = (
           beacon: { up: true },
           draining: controlState !== null && controlState.shutdown !== null,
           refused: project.refused,
+          queueUnseen: !answered,
           locks,
           base: lookedAt,
           offered: answered ? offered.map((o) => Number(o.ref)) : logQueued,

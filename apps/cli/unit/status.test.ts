@@ -387,6 +387,15 @@ describe('lingtai status says the conductor\'s recorded refusal instead of "no r
     expect(text).toContain(detail)
   })
 
+  it('prints it for a project whose setup failed and whose queue the log has no row for yet', async () => {
+    const { report, text } = await said(project({ owner: 'steven-zhc' }), {
+      clientFor: (() => Promise.reject(new Error('no GitHub App configured'))) as never,
+      tasks: () => Effect.succeed([] as never),
+    })
+    expect(report.projects[0]?.whyNothingRuns?.roots[0]?.root).toBe('refused')
+    expect(text).toContain(detail)
+  })
+
   it('says nothing more of a project the conductor has not refused', async () => {
     const { report } = await said(project({ refused: null, owner: 'steven-zhc' }), {
       clientFor: (() => Promise.reject(new Error('no GitHub App configured'))) as never,

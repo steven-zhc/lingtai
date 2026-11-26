@@ -36,6 +36,8 @@ export interface WhyFacts {
   conductorHeld?: boolean
   /** The conductor's recorded refusal of this project (`ProjectState.refused`), null when it has none. */
   refused?: { detail: string; at: Date } | null
+  /** The project's queue could not be listed, so a recorded refusal is said though no queued row shows: it holds whatever is waiting. */
+  queueUnseen?: boolean
   /** A drain stands (`control.shutdown !== null`). */
   draining: boolean
   locks: readonly Lock[] | { unread: string }
@@ -115,11 +117,12 @@ const freshlyFlying = (r: WhyRow, now: Date): boolean =>
   flying(r) && (r.updatedAt === null || now.getTime() - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS)
 
 /**
- * Whether the sentence can still show before the beacon is read: unheld work queued and no row touched
+ * Whether the sentence can still show before the beacon is read: unheld work queued (or a refusal over a queue that could not be listed) and no row touched
  * within five minutes that is `running` or `verifying`.
  */
 export function mayApply(facts: WhyFacts): boolean {
-  return unheldQueued(facts).length > 0 && !facts.rows.some((r) => freshlyFlying(r, facts.now))
+  const refusedUnseen = facts.queueUnseen === true && facts.refused != null
+  return (unheldQueued(facts).length > 0 || refusedUnseen) && !facts.rows.some((r) => freshlyFlying(r, facts.now))
 }
 
 /**

@@ -92,6 +92,7 @@ export const readWhy: Explain = {
           // A read that failed cannot say a drain stands, and never says it does not: the lock root answers first.
           draining: control._tag === 'Some' && control.value.shutdown !== null,
           refused,
+          queueUnseen: offered === null,
           locks,
           base: look,
           offered: offered === null ? logQueued : offered.runnable.map((o) => Number(o.ref)),
@@ -139,6 +140,7 @@ export const readRefusedWhy = (project: string): Promise<WhyNothingRuns | null> 
           beacon: { up: true },
           draining: control._tag === 'Some' && control.value.shutdown !== null,
           refused,
+          queueUnseen: true,
           locks,
           base: null,
           offered: queued,

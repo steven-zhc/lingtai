@@ -66,6 +66,13 @@ describe('a recorded refusal (#1477)', () => {
     expect(yesterday?.roots[0]?.sentence).not.toBe(today?.roots[0]?.sentence)
   })
 
+  it('is said over a queue that could not be listed, though no row is queued', () => {
+    const r = rootBeforeChains(facts({ queueUnseen: true, refused }))
+    expect(r?.roots[0]).toMatchObject({ root: 'refused', tickets: [] })
+    expect(r?.roots[0]?.sentence).toContain(detail)
+    expect(rootBeforeChains(facts({ refused }))).toBeNull()
+  })
+
   it('stands behind a lock', () => {
     const paused = { kind: 'paused' as const, by: 'sam', since: now }
     const r = whyNothingRuns(facts({ offered: [1], runnable: [1], locks: [paused], refused }), null)
