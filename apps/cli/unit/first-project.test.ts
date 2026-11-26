@@ -2131,18 +2131,15 @@ describe('chooseFirstProject — a rerun asks what the first run asks, and says 
     )
     expect(askAdd).toMatchObject({ ok: true })
 
-    // Where the two differ by design — init asks the directory, the database and the build; a GitHub project asks
-    // no directory — they are dropped from both sides; the project questions that remain are one list.
-    const project = (prompts: string[]) =>
-      bare(prompts)
-        .filter((q) => /Does anyone else|branch|use every default|agent|reviewer|check|kinds?|sandbox/i.test(q))
-        .map((q) => q.replace(/ \(.*$/, ''))
-    const head = (prompts: string[]) => project(prompts).slice(0, 3)
-    expect(head(init.prompts)[0]).toContain('Does anyone else')
-    expect(head(add)[0]).toContain('Does anyone else')
-    expect(head(init.prompts).at(-1)).toContain('use every default')
-    expect(head(add).at(-1)).toContain('use every default')
-    expect(project(add)).toEqual(project(init.prompts))
+    // Every prompt is compared, none filtered out: a question added to, dropped from or moved in either flow
+    // fails here. The one difference by design is where tickets come from — a local project has one legal answer
+    // (`db`) and is never asked — so that single question is dropped from `add`'s side and nothing else.
+    const asked = (prompts: string[]) => bare(prompts)
+    const addProject = asked(add).filter((q) => !q.startsWith("where this project's tickets come from"))
+    expect(asked(add)).toHaveLength(addProject.length + 1)
+    expect(addProject).toEqual(asked(init.prompts))
+    expect(addProject[0]).toContain('Does anyone else')
+    expect(addProject.findIndex((q) => q.includes('use every default'))).toBe(2)
   })
 
   it('team to solo with a draft that holds a ticket is refused by name: nothing written, no event appended, the personal branch where it was (0130 §1)', async () => {

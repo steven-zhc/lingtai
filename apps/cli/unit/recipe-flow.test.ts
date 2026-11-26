@@ -842,6 +842,22 @@ describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', ()
     expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.main).toBe('develop')
   })
 
+  it('a personal branch still to be made is read by the trial as the branch it is cut from (#1488)', async () => {
+    const seen: unknown[] = []
+    const next = answerer('team', (p) => (p.includes('use every default') ? 'no' : undefined))
+    const files = mapFiles()
+    const result = await askAndWrite(next.world, {
+      ...at(files, new Set(['main'])),
+      tryBuild: (draft) => {
+        seen.push(draft.get(['branch', 'personal']))
+        return null as never
+      },
+    })
+    expect(result).toMatchObject({ ok: true, make: { from: 'main' } })
+    expect(seen).toEqual(['main'])
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.branch.personal).toBe('me/laptop')
+  })
+
   it('team to solo may keep the personal branch as the solo working branch (#1488)', async () => {
     const files = mapFiles()
     await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))

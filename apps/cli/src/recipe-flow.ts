@@ -509,15 +509,21 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
 
   // The trial reads the recipe from the draft, and on a new recipe the answers are still in `collected`: it sees
   // them as they will be written, so it checks the branch the recipe will name and not GitHub's default (#1488).
-  const trialDraft: RecipeDraft = absent
-    ? {
-        ...draft,
-        get: (path) => {
-          const hit = [...at.seeds, ...collected].reverse().find((c) => c.path.join('.') === path.join('.'))
-          return hit === undefined ? draft.get(path) : (hit.value ?? null)
-        },
-      }
-    : draft
+  // A personal branch the caller has yet to make is not on GitHub: the trial reads it as the branch it is cut from.
+  const toMake = make
+  const trialDraft: RecipeDraft =
+    absent || toMake !== undefined
+      ? {
+          ...draft,
+          get: (path) => {
+            const joined = path.join('.')
+            if (toMake !== undefined && joined === 'branch.personal') return toMake.from
+            if (!absent) return draft.get(path)
+            const hit = [...at.seeds, ...collected].reverse().find((c) => c.path.join('.') === joined)
+            return hit === undefined ? draft.get(path) : (hit.value ?? null)
+          },
+        }
+      : draft
 
   const agents = yield* askAgents(askWorld, {
     project: at.project,
