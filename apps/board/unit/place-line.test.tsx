@@ -20,8 +20,8 @@ describe('PlaceLine', () => {
     expect(tickets.indexOf('>a<')).toBeLessThan(tickets.indexOf('>Tickets<'))
     expect(tickets.indexOf('>Tickets<')).toBeLessThan(tickets.indexOf('>Recipe<'))
     expect(tickets).toMatch(/<a class="view on" aria-current="page"[^>]*>Tickets</)
-    expect(tickets).toMatch(/<a class="view" href="\/recipe\/a">Recipe</)
-    expect(line('a', 'recipe')).toMatch(/<a class="view on" aria-current="page" href="\/recipe\/a">Recipe</)
+    expect(tickets).toMatch(/<a class="view" href="\/p\/a\/recipe">Recipe</)
+    expect(line('a', 'recipe')).toMatch(/<a class="view on" aria-current="page" href="\/p\/a\/recipe">Recipe</)
   })
 
   it('names its keys only in tooltips', () => {

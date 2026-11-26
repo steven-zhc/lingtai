@@ -102,7 +102,7 @@ function openMeter(open: DiscussionView): string {
  * it (0033 §4, #111).
  *
  * `total` is read off `spend`'s own Discussion rows, already formatted by
- * `billText` — `task/[id]/page.tsx`'s `task.totals.byPurpose.Discussion`, the
+ * `billText` — `p/[project]/ticket/[n]/page.tsx`'s `task.totals.byPurpose.Discussion`, the
  * same figure `totalsFact` sums in (`#498`). Not `DiscussionAnswered.costUsd`
  * summed here with `?? 0`: that read a Codex discussion, which 0110 §1 says
  * always records null, as free. Null when `billHasAny` says there is nothing

@@ -298,7 +298,7 @@ describe('the report page', () => {
       sentence: '60% building over 6 fix rounds · 3 passes',
     }
     const out = renderToStaticMarkup(<TopPanel top={[t]} query={query} />)
-    expect(out).toContain('href="/task/ticket-lingtai-612"')
+    expect(out).toContain('href="/p/lingtai/ticket/612"')
     expect(out).toContain('>#612<')
     expect(out).toContain('60% building over 6 fix rounds · 3 passes')
     expect(out).toContain('href="/report?sort=cost"')

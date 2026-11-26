@@ -31,7 +31,12 @@ export const dynamic = 'force-dynamic'
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
 export default async function LandedPage({ searchParams }: { searchParams: Promise<LandedParams> }) {
-  const params = await searchParams
+  return LandedBody({ project: undefined, params: await searchParams })
+}
+
+/** One page for `/landed` and `/p/<project>/ticket/landed`: a path segment wins over a stray `?project=`. */
+export async function LandedBody({ project, params: given }: { project: string | undefined; params: LandedParams }) {
+  const params = project === undefined ? given : { ...given, project }
   let data: LandedData | null = null
   let failure: string | null = null
   let chip: ReportChip = projectionChip('ticket_report', { lag: null, error: 'not read' })

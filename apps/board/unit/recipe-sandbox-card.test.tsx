@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { SandboxSection, sourceOfRow } from '@/app/recipe/[project]/sandbox-section'
+import { SandboxSection, sourceOfRow } from '@/app/p/[project]/recipe/sandbox-section'
 
 const roots = { home: '/home/me', lingtaiHome: '/home/me/.lingtai', project: 'my-app' }
 const builtIn = {

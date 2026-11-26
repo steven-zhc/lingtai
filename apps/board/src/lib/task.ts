@@ -119,6 +119,7 @@ import { shownOf, type PromptShown } from './expand-prompts.ts'
 import { type HistoryLine, type LineContext, summarise, toLine } from './history.ts'
 import { landingLineOf, type LandingLine } from './landing-line'
 import { controlObserve, readProjectLocks } from './locks.ts'
+import { prPath } from './paths.ts'
 import { prHolding, prName, type PrRead } from './pr-board.ts'
 import { prFixTicketLink, type PrFixLink } from './pr-page.ts'
 import { describeHeld, progressOf, spentOf, type AttemptProgress } from './progress.ts'
@@ -1027,7 +1028,7 @@ export function whereOnBranch(input: {
   if (landing.base !== branch.personal && !prBranches.includes(landing.base)) return null
   const holder = holderOf(ticket, landing.base, branch.personal, read)
   const sha = landing.mergeCommit.slice(0, 7)
-  const pageOf = (n: number | 'next') => `/pr/${input.project}/${n}`
+  const pageOf = (n: number | 'next') => prPath(input.project, n)
   const nameOf = (pr: PrState) => prName(pr)
   const hostOf = (pr: PrState) => (pr.host === null ? null : pr.host.url)
   const notes: string[] = []

@@ -35,6 +35,7 @@ import {
   whenText,
   windowText,
 } from '@/lib/handled.ts'
+import { ticketPath } from '@/lib/paths'
 import {
   centsOf,
   dollars,
@@ -413,7 +414,7 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
               {top.map((t) => (
                 <tr key={t.ticket}>
                   <td className="t">
-                    <Link href={`/task/${encodeURIComponent(t.ticket)}`}>#{issueOf(t.ticket)}</Link>
+                    <Link href={ticketPath(t.ticket)}>#{issueOf(t.ticket)}</Link>
                     <div className="why">{t.sentence}</div>
                     <MoreLines ticket={t} />
                   </td>
@@ -774,7 +775,7 @@ export function HandledPanel({
                       }
                     />
                     <span className="m">
-                      <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                      <Link href={ticketPath(p.ticket)}>#{issueOf(p.ticket)}</Link>
                       <span className="d">
                         {p.answeredBy === 'you' ? moveRow(moveOf(p), p.kind).verb : (verb ?? r.wrong)}
                       </span>
@@ -844,7 +845,7 @@ function HandledProblems({
               <tr key={`${p.ticket}/${p.at}/${p.kind}`}>
                 <td className="num">{whenText(p.at, withDate)}</td>
                 <td className="t">
-                  <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                  <Link href={ticketPath(p.ticket)}>#{issueOf(p.ticket)}</Link>
                 </td>
                 <td>
                   {r.wrong}

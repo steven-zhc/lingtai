@@ -42,10 +42,10 @@ describe('a team project’s Landed column', () => {
   it('tags each row and ends with the foot line', () => {
     const html = render(new Map([['lingtai', team]]))
     expect(html).toContain('on your branch')
-    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/7"[^>]*>in PR #88</)
-    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
+    expect(html).toMatch(/<a[^>]*href="\/p\/lingtai\/pr\/7"[^>]*>in PR #88</)
+    expect(html).toMatch(/<a[^>]*href="\/p\/lingtai\/pr\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
     expect(html).not.toMatch(/<a[^>]*>[^<]*PR #88 in review/)
-    expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
+    expect(html).toMatch(/href="\/p\/lingtai\/pr"[^>]*>PRs →/)
   })
   it('a solo project draws no tag and no foot', () => {
     const html = render(new Map())
@@ -62,9 +62,9 @@ describe('a team project’s Landed column', () => {
 describe('a team project with no retained Landed row', () => {
   it('still draws the foot line', () => {
     const html = renderToStaticMarkup(<LandedFoot reads={new Map([['lingtai', team]])} showProject={false} />)
-    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
+    expect(html).toMatch(/<a[^>]*href="\/p\/lingtai\/pr\/next"[^>]*>2 in Draft PR<\/a> · PR #88 in review/)
     expect(html).not.toMatch(/<a[^>]*>[^<]*PR #88 in review/)
-    expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
+    expect(html).toMatch(/href="\/p\/lingtai\/pr"[^>]*>PRs →/)
   })
 })
 
@@ -73,9 +73,9 @@ describe('the foot line with only a draft', () => {
     const html = renderToStaticMarkup(
       <LandedFoot reads={new Map([['lingtai', { ...team, prs: [] }]])} showProject={false} />,
     )
-    expect(html).toMatch(/<a[^>]*href="\/pr\/lingtai\/next"[^>]*>2 in Draft PR<\/a>/)
+    expect(html).toMatch(/<a[^>]*href="\/p\/lingtai\/pr\/next"[^>]*>2 in Draft PR<\/a>/)
     expect(html).not.toContain(' · ')
-    expect(html).toMatch(/href="\/pr\/lingtai"[^>]*>PRs →/)
+    expect(html).toMatch(/href="\/p\/lingtai\/pr"[^>]*>PRs →/)
   })
 })
 

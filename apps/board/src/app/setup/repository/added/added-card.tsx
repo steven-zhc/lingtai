@@ -1,3 +1,5 @@
+import { recipePath } from '@/lib/paths'
+
 /**
  * Step 3 of adding a repository, drawn from plain props (#972).
  *
@@ -130,7 +132,7 @@ export function AddedCard(props: Added) {
         <p className="note wiz-fail">The recipe could not be read: {read.problem}</p>
       )}
       <div className="wiz-foot">
-        <a href={`/recipe/${p}?edit=1`}>Edit the recipe</a>
+        <a href={`${recipePath(p)}?edit=1`}>Edit the recipe</a>
         {ticket !== null ? (
           <a className="btn pri" href={ticket}>
             Open the first ticket →

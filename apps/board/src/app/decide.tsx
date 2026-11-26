@@ -25,6 +25,7 @@ import Link from 'next/link'
 import { useState, useTransition } from 'react'
 
 import type { ActionResult } from '@/lib/diff'
+import { ticketPath } from '@/lib/paths'
 import { clippedApproveCopy, RESOLUTION_COPY } from '@/lib/resolution-copy'
 
 import {
@@ -1120,7 +1121,7 @@ export function TriageMove({
     return (
       <div className="decide">
         <div className="btnrow">
-          <Link className={small ? 'btn pri sm' : 'btn pri'} href={`/task/${encodeURIComponent(taskId)}#${anchor}`}>
+          <Link className={small ? 'btn pri sm' : 'btn pri'} href={`${ticketPath(taskId)}#${anchor}`}>
             {label}
           </Link>
         </div>

@@ -32,7 +32,7 @@ vi.mock('../src/app/lock-banner.tsx', async (orig) => ({
 }))
 vi.mock('@lingtai/env', async (orig) => ({ ...(await orig<object>()), hasGitHubAuth: () => false }))
 
-import Page from '../src/app/pr/[project]/[n]/page.tsx'
+import Page from '../src/app/p/[project]/pr/[n]/page.tsx'
 
 type El = { type: (props: unknown) => Promise<unknown>; props: Record<string, unknown> }
 

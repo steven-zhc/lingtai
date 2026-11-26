@@ -47,10 +47,10 @@ vi.mock('../src/app/live.tsx', () => ({ Live: () => <span className="live" /> })
 
 import { Health } from '../src/app/health.tsx'
 import { Live } from '../src/app/live.tsx'
-import Page from '../src/app/page.tsx'
+import { Home } from '../src/app/page.tsx'
 import { COLUMNS } from '../src/lib/board.ts'
 
-const render = async (project?: string) => (await Page({ searchParams: Promise.resolve({ project }) })) as ReactNode
+const render = async (project?: string) => (await Home({ project })) as ReactNode
 
 /** Every element in a tree, with the elements it sits under. */
 function walk(node: ReactNode, under: unknown[], visit: (el: ReturnType<typeof asElement>, under: unknown[]) => void) {

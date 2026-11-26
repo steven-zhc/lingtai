@@ -13,6 +13,8 @@ import { isUnsandboxableRuntime, type AttemptState, type SandboxInvocation } fro
 import { isNetworkEntry } from '@lingtai/recipe'
 import { BUILT_IN_DOMAIN_VENDORS } from '@lingtai/sandbox/policy'
 
+import { recipePath } from './paths.ts'
+
 type SandboxPolicy = Extract<NonNullable<SandboxInvocation['boundary']>, { kind: 'sandboxed' }>['policy']
 
 /** The slice of an attempt this view reads. */
@@ -126,7 +128,7 @@ export const METADATA_HOSTS: ReadonlySet<string> = new Set([
 export function allowHrefOf(project: string, host: string | null): string | null {
   if (host === null || project === '') return null
   if (METADATA_HOSTS.has(host.toLowerCase()) || !isNetworkEntry(host)) return null
-  return `/recipe/${encodeURIComponent(project)}?edit=1&allow=${encodeURIComponent(host)}#sandbox`
+  return `${recipePath(project)}?edit=1&allow=${encodeURIComponent(host)}#sandbox`
 }
 
 export function markOf(boundary: SandboxInvocation['boundary']): Mark {

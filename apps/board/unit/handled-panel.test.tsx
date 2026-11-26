@@ -110,7 +110,7 @@ describe('HandledPanel', () => {
     )
     expect(unknownOnly).not.toContain('of the week')
     expect(out).toContain('<span class="ok">landed</span>')
-    expect(out).toContain('/task/ticket-lingtai-1258')
+    expect(out).toContain('/p/lingtai/ticket/1258')
     // no amber
     expect(out).not.toContain('var(--signal)')
     expect(out).not.toContain('var(--warn)')

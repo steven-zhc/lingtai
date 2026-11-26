@@ -3,6 +3,7 @@ import { WORKTREE_PLACEHOLDER } from '@lingtai/sandbox/policy'
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { recipePath } from '@/lib/paths'
 import {
   agentsInSandbox,
   chipsOf,
@@ -196,7 +197,7 @@ export function SandboxSection({
   const addedHosts = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.hosts))]
   const addedWrites = [...new Set((agents?.inside ?? []).flatMap((a) => a.adds.writes))]
   const addedWriteChips = chipsOf(addedWrites, roots)
-  const editHref = `/recipe/${encodeURIComponent(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
+  const editHref = `${recipePath(project)}?edit=1${stamp === undefined ? '' : `&r=${stamp}`}#sandbox`
   const paths = builtIn.paths
   const unknown = `the built-in paths could not be read${builtIn.pathsWhy === null ? '' : ` (${builtIn.pathsWhy})`}`
   const writable = paths === null ? null : chipsOf(paths.writable, roots)

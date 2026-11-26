@@ -23,7 +23,7 @@ describe('what a channel that is read later says', () => {
 
     expect(n.title).toBe('#125 landed')
     expect(n.body).toBe('merged into main at 5ace763')
-    expect(n.url).toBe('http://localhost:3200/task/ticket-lingtai-125')
+    expect(n.url).toBe('http://localhost:3200/p/lingtai/ticket/125')
   })
 
   it('says both halves of a failed run, for the work item its run stream was resolved to', () => {
@@ -31,7 +31,7 @@ describe('what a channel that is read later says', () => {
 
     expect(n.title).toBe('#125 run failed')
     expect(n.body).toBe('crash: session limit')
-    expect(n.url).toBe('http://localhost:3200/task/ticket-lingtai-125')
+    expect(n.url).toBe('http://localhost:3200/p/lingtai/ticket/125')
   })
 
   it('reads the WaitReason a wait carries, since #502 — not the question the payload no longer has', () => {

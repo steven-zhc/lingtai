@@ -20,8 +20,8 @@ import { projectRecipe, provenanceRows, sourceOf, underHome, type ProjectRecipe 
 import { modeLines, modeSource, recipeLines, type RecipeLine, type StepActionLine } from '@/lib/recipe-lines'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 
-import { FooterFetched } from '../../footer-fetched'
-import { StepRow } from '../../step-row'
+import { FooterFetched } from '../../../footer-fetched'
+import { StepRow } from '../../../step-row'
 import { RecipeBar, type RecipeBarFilter } from './recipe-bar'
 import { RecipeText, type AllowRequest } from './recipe-text'
 import { SandboxSection } from './sandbox-section'

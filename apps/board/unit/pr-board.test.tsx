@@ -232,7 +232,7 @@ describe('prBoard', () => {
 
   it('links the draft card to the page listing every draft ticket', () => {
     const draft = cards(prBoard(input([], [tk(1), tk(2), tk(3), tk(4), tk(5)])), 'draft')[0]!
-    expect(draft.href).toBe('/pr/p/next')
+    expect(draft.href).toBe('/p/p/pr/next')
     expect(draft.more).toBe(2)
   })
 
@@ -263,7 +263,7 @@ describe('prBoard', () => {
     expect(col(v, 'draft').empty).toBe(
       'Nothing has landed since PR 3 was submitted. Tickets that land now join PR 3 until it starts, then the next PR.',
     )
-    expect(v.submitted).toEqual({ n: 3, at: '19:55', href: '/pr/p/3', daemon: 'running' })
+    expect(v.submitted).toEqual({ n: 3, at: '19:55', href: '/p/p/pr/3', daemon: 'running' })
     expect(v.strip.notInPr).toBe('PR 3 queued')
     expect(JSON.stringify(v)).not.toMatch(/pid|freezing/)
   })
@@ -583,7 +583,7 @@ describe('the place line', () => {
 
   it('has PRs with a fail-coloured count when one waits, and none at zero', () => {
     const one = viewsFor('p', { waiting: 1 }).find((v) => v.id === 'prs')!
-    expect(one).toMatchObject({ href: '/pr/p', key: 'P', badge: { n: 1, title: '1 PR waiting on you' } })
+    expect(one).toMatchObject({ href: '/p/p/pr', key: 'P', badge: { n: 1, title: '1 PR waiting on you' } })
     expect(viewsFor('p', { waiting: 2 }).find((v) => v.id === 'prs')!.badge!.title).toBe('2 PRs waiting on you')
     expect(viewsFor('p', { waiting: 0 }).find((v) => v.id === 'prs')!.badge).toBeUndefined()
   })

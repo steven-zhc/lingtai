@@ -76,9 +76,9 @@ describe('SandboxRows', () => {
     expect(html).toContain('sbx-degraded')
     expect(html).toContain('Sandbox degraded')
     expect(html).toContain('this project is running without a sandbox')
-    expect(html).toContain('href="/?project=p"')
+    expect(html).toContain('href="/p/p/ticket"')
     expect(html).toContain('<code>brew install ripgrep</code>')
-    expect(html).toContain('href="/recipe/p#sandbox"')
+    expect(html).toContain('href="/p/p/recipe#sandbox"')
   })
 
   it('stopped: red, the reason and the fix, and no Resume or Lift', () => {

@@ -38,7 +38,7 @@ describe('whereOnBranch', () => {
     expect(w?.small).toBe('ON YOUR BRANCH')
     expect(w?.in.text).toMatch(/Draft PR · not submitted yet/)
     expect(w?.sketch.box).toBe('draft')
-    expect(w?.in.page).toBe('/pr/p/next')
+    expect(w?.in.page).toBe('/p/p/pr/next')
   })
 
   it('reads an open PR with a host number, its branch, and that Lingtai closes it', () => {

@@ -92,23 +92,27 @@ it('a page is one trace: the page span is a child of the request span, its reads
   const provider = await installTracing(on, none, exporter)
   await trace
     .getTracer('next.js')
-    .startActiveSpan('GET /task/[id]', { attributes: { ...REQUEST, 'next.route': '/task/[id]' } }, async (request) => {
-      // Next activates render spans of its own, which the exporter drops.
-      await trace.getTracer('next.js').startActiveSpan('AppRender.getBodyResult', async (render) => {
-        await measure(
-          async () => {
-            await timed('events.task', async () => 1)
-            await timed('events.run', async () => 2, { desc: '7' })
-          },
-          { label: '/task' },
-        )
-        render.end()
-      })
-      request.end()
-    })
+    .startActiveSpan(
+      'GET /p/[project]/ticket/[n]',
+      { attributes: { ...REQUEST, 'next.route': '/p/[project]/ticket/[n]' } },
+      async (request) => {
+        // Next activates render spans of its own, which the exporter drops.
+        await trace.getTracer('next.js').startActiveSpan('AppRender.getBodyResult', async (render) => {
+          await measure(
+            async () => {
+              await timed('events.task', async () => 1)
+              await timed('events.run', async () => 2, { desc: '7' })
+            },
+            { label: '/task' },
+          )
+          render.end()
+        })
+        request.end()
+      },
+    )
   await provider!.forceFlush()
   const spans = exporter.getFinishedSpans()
-  const request = spans.find((s) => s.name === 'GET /task/[id]')!
+  const request = spans.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
   const page = spans.find((s) => s.name === 'page /task')!
   expect(page.parentSpanContext?.spanId).toBe(request.spanContext().spanId)
   expect(page.spanContext().traceId).toBe(request.spanContext().traceId)
@@ -128,14 +132,14 @@ it('the request span leaves as a copy with four attributes, no events or links, 
   const exporter = new InMemorySpanExporter()
   const provider = await installTracing(on, none, exporter)
   await trace.getTracer('next.js').startActiveSpan(
-    'GET /task/[id]',
+    'GET /p/[project]/ticket/[n]',
     {
       attributes: {
         ...REQUEST,
         'http.target': '/task/123',
         'http.url': 'https://api.github.com/x?t=1',
         'http.method': 'GET',
-        'next.route': '/task/[id]',
+        'next.route': '/p/[project]/ticket/[n]',
         'next.rsc': false,
       },
     },
@@ -148,9 +152,9 @@ it('the request span leaves as a copy with four attributes, no events or links, 
     },
   )
   await provider!.forceFlush()
-  const request = exporter.getFinishedSpans().find((s) => s.name === 'GET /task/[id]')!
+  const request = exporter.getFinishedSpans().find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
   expect(request.attributes).toEqual({
-    'next.route': '/task/[id]',
+    'next.route': '/p/[project]/ticket/[n]',
     'http.method': 'GET',
     'http.status_code': 500,
     'next.rsc': false,
@@ -165,22 +169,24 @@ it('never forwards a request span without a page span, one from another scope, o
   const exporter = new InMemorySpanExporter()
   const provider = await installTracing(on, none, exporter)
   await trace.getTracer('next.js').startActiveSpan('GET /static', { attributes: REQUEST }, async (r) => r.end())
-  await trace.getTracer('next.js').startActiveSpan('GET /task/[id]', { attributes: REQUEST }, async (request) => {
-    await measure(async () => 1, { label: '/task' })
-    await trace.getTracer('other').startActiveSpan('GET /other', { attributes: REQUEST }, async (s) => s.end())
-    await trace.getTracer('next.js').startActiveSpan('fetch GET https://api.github.com/x', async (s) => s.end())
-    await trace
-      .getTracer('next.js')
-      .startActiveSpan('x', { attributes: { 'next.span_type': 'AppRender.fetch' } }, async (s) => s.end())
-    request.end()
-  })
+  await trace
+    .getTracer('next.js')
+    .startActiveSpan('GET /p/[project]/ticket/[n]', { attributes: REQUEST }, async (request) => {
+      await measure(async () => 1, { label: '/task' })
+      await trace.getTracer('other').startActiveSpan('GET /other', { attributes: REQUEST }, async (s) => s.end())
+      await trace.getTracer('next.js').startActiveSpan('fetch GET https://api.github.com/x', async (s) => s.end())
+      await trace
+        .getTracer('next.js')
+        .startActiveSpan('x', { attributes: { 'next.span_type': 'AppRender.fetch' } }, async (s) => s.end())
+      request.end()
+    })
   await provider!.forceFlush()
   expect(
     exporter
       .getFinishedSpans()
       .map((s) => s.name)
       .toSorted(),
-  ).toEqual(['GET /task/[id]', 'page /task'])
+  ).toEqual(['GET /p/[project]/ticket/[n]', 'page /task'])
 })
 
 it('forwards a copy: the original request span keeps its URL, event, link and message, the copy has none', async () => {
@@ -200,14 +206,14 @@ it('forwards a copy: the original request span keeps its URL, event, link and me
   const linked = provider.getTracer('next.js').startSpan('x', { root: true }).spanContext()
   const request = provider
     .getTracer('next.js')
-    .startSpan('GET /task/[id]', { root: true, attributes: REQUEST, links: [{ context: linked }] })
+    .startSpan('GET /p/[project]/ticket/[n]', { root: true, attributes: REQUEST, links: [{ context: linked }] })
   provider.getTracer(SCOPE).startSpan('page /task', {}, trace.setSpan(ROOT_CONTEXT, request)).end()
   request.setAttribute('http.target', '/task/123')
   request.recordException(new Error('https://x?token=y'))
   request.setStatus({ code: 2, message: 'https://x?token=y' })
   request.end()
-  const copy = forwarded.find((s) => s.name === 'GET /task/[id]')!
-  const original = originals.find((s) => s.name === 'GET /task/[id]')!
+  const copy = forwarded.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
+  const original = originals.find((s) => s.name === 'GET /p/[project]/ticket/[n]')!
   expect(copy).not.toBe(original)
   expect(original.attributes['http.target']).toBe('/task/123')
   expect(original.events).toHaveLength(1)

@@ -2,7 +2,7 @@ import { Recipe as RecipeSchema } from '@lingtai/recipe'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { ModeCard, Recipe } from '@/app/recipe/[project]/page'
+import { ModeCard, Recipe } from '@/app/p/[project]/recipe/page'
 
 describe('the refused paragraph (#1326)', () => {
   it('says recipe refused with the refusal sentence, and could not be read for the rest', () => {

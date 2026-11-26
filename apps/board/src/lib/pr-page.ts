@@ -28,6 +28,7 @@ import { Effect } from 'effect'
 
 import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
+import { prPath } from './paths.ts'
 import {
   type Button,
   DRAFT_NAME,
@@ -825,7 +826,7 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
             lead: `Nothing is waiting for the next PR. The ${plural(count, 'ticket', 'tickets')} before went into`,
             name: prName(named),
             state: (POSTER[named.status ?? ''] ?? String(named.status)).toLowerCase(),
-            href: named.n === null ? null : `/pr/${project}/${named.n}`,
+            href: named.n === null ? null : prPath(project, named.n),
           },
     strip: stripOf(null),
     drawing: drawingOf(null, [], input, main, personal),

@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { SandboxMark, SandboxPanel } from '@/app/sandbox-panel'
+import { sandboxTabPath, tabPath } from '@/lib/paths'
 import {
   allowHrefOf,
   chipsOf,
@@ -23,7 +24,7 @@ import {
   type PolicyGroup,
   type RunRow,
 } from '@/lib/sandbox-view'
-import { attemptOfQuery, defaultTabOf, sameTab, sandboxTabPath, tabPath } from '@/lib/tabs'
+import { attemptOfQuery, defaultTabOf, sameTab } from '@/lib/tabs'
 
 const RUN = 'pass-sbx-1'
 const keys = (
@@ -404,7 +405,7 @@ describe('the sandbox view reads what the attempt recorded (#1161)', () => {
 describe('Allow on this project (#1161)', () => {
   it('links to the recipe editor with the host filled in', () => {
     expect(allowHrefOf('my proj', 'registry.example.com')).toBe(
-      '/recipe/my%20proj?edit=1&allow=registry.example.com#sandbox',
+      '/p/my%20proj/recipe?edit=1&allow=registry.example.com#sandbox',
     )
   })
 
@@ -444,7 +445,7 @@ describe('Allow on this project (#1161)', () => {
     ])
     const html = renderToStaticMarkup(<SandboxPanel view={sandboxViewOf(state, 'p')} />)
     expect(html.match(/Allow on this project/g)).toHaveLength(1)
-    expect(html).toContain('href="/recipe/p?edit=1&amp;allow=ok.example.com#sandbox"')
+    expect(html).toContain('href="/p/p/recipe?edit=1&amp;allow=ok.example.com#sandbox"')
   })
 })
 
@@ -464,8 +465,8 @@ describe('the mark on the attempt tab', () => {
 
 describe('the Sandbox tab key', () => {
   it('has its own path and compares only with itself', () => {
-    expect(tabPath('ticket-p-1', 'sandbox')).toBe('/task/ticket-p-1/sandbox')
-    expect(sandboxTabPath('ticket-p-1', 2)).toBe('/task/ticket-p-1/sandbox?attempt=2')
+    expect(tabPath('ticket-p-1', 'sandbox')).toBe('/p/p/ticket/1/sandbox')
+    expect(sandboxTabPath('ticket-p-1', 2)).toBe('/p/p/ticket/1/sandbox?attempt=2')
     expect(sameTab('sandbox', 'sandbox')).toBe(true)
     expect(sameTab('sandbox', 'ticket')).toBe(false)
     expect(sameTab('sandbox', { attempt: 1 })).toBe(false)

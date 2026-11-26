@@ -27,6 +27,7 @@ import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
 import type { ModeMark } from '@/lib/mode-mark.ts'
+import { homePath } from '@/lib/paths'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
@@ -85,7 +86,7 @@ export function ProjectRows({
         <ProjectLink
           choice={undefined}
           className={`tab${only === undefined ? ' on' : ''}`}
-          href="/?project="
+          href={homePath(undefined)}
           {...(only === undefined ? current : {})}
         >
           all projects
@@ -96,7 +97,7 @@ export function ProjectRows({
           key={p}
           choice={p}
           className={`tab prj${only === p ? ' on' : ''}`}
-          href={`/?project=${encodeURIComponent(p)}`}
+          href={homePath(p)}
           {...(only === p ? current : {})}
         >
           {sandbox?.get(p) === undefined && mode?.get(p) === undefined ? (

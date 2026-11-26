@@ -89,9 +89,19 @@ import { readDayReading } from '@/lib/day-spend'
 // limit live next door.
 import { DIFF_FILE_LIMIT, type ActionResult, type DiffFile, type DiffResult } from '@/lib/diff'
 import { askRefusal, continueTodayWith, liftAccountWith, setProjectPaused } from '@/lib/locks'
+import { recipePath, ticketPath } from '@/lib/paths'
 import type { SaveRecipeState } from '@/lib/recipe-edit'
 
 import { boardWriterOrNone } from '../lib/snapshot-writer.ts'
+
+/**
+ * The home page is two routes since #1498: all projects at `/`, and one project
+ * at `/p/<project>/ticket`. A bare `revalidatePath('/')` reaches the first only.
+ */
+function revalidateHome() {
+  revalidatePath('/')
+  revalidatePath('/p/[project]/ticket', 'page')
+}
 
 async function project(name: string) {
   const state = await readProject(name)
@@ -182,7 +192,7 @@ export async function approveCard(input: {
       waitId: input.waitId,
     })
 
-    revalidatePath('/')
+    revalidateHome()
     // Does not merge (#465) — the continuation is whichever process holds the
     // conductor lock's, not this server action's.
     return result.ok
@@ -231,8 +241,8 @@ export async function continueFixingCard(input: {
       client,
       github: client,
     })
-    revalidatePath(`/task/${result.ticketId}`)
-    revalidatePath('/')
+    revalidatePath(ticketPath(result.ticketId))
+    revalidateHome()
     return result.ok
       ? {
           ok: true,
@@ -274,8 +284,8 @@ export async function rerunStepCard(input: {
       client,
       github: client,
     })
-    revalidatePath(`/task/${result.ticketId}`)
-    revalidatePath('/')
+    revalidatePath(ticketPath(result.ticketId))
+    revalidateHome()
     return result.ok
       ? {
           ok: true,
@@ -326,8 +336,8 @@ export async function answerQuestionsCard(input: {
       client,
       github: client,
     })
-    revalidatePath(`/task/${result.ticketId}`)
-    revalidatePath('/')
+    revalidatePath(ticketPath(result.ticketId))
+    revalidateHome()
     return result.ok
       ? {
           ok: true,
@@ -375,7 +385,7 @@ export async function answerCard(input: {
       question: input.question,
       waitId: input.waitId,
     })
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -423,7 +433,7 @@ export async function requeueCard(input: {
       github: await answersChannel(input.project),
     })
 
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -453,7 +463,7 @@ export async function editBodyAndRequeueCard(input: {
       by: actor(),
       github: client,
     })
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -510,7 +520,7 @@ export async function closeCard(input: {
       waitId: input.waitId,
     })
 
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -541,7 +551,7 @@ export async function confirmSatisfiedCard(input: {
         recipe: async () => resolved,
       }),
     )
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -656,7 +666,7 @@ export async function recheckProject(input: { project: string }): Promise<Action
     }
 
     const result = await recheck({ owner: state.owner, project: state.project, base: state.base })
-    revalidatePath('/')
+    revalidateHome()
     return { ok: result.ok, detail: result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -667,7 +677,7 @@ export async function resumeWork(): Promise<ActionResult> {
   try {
     const by = actor()
     await resumeConductor(by)
-    revalidatePath('/')
+    revalidateHome()
     return { ok: true, detail: `resumed by ${by}` }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -860,7 +870,7 @@ export async function askDiscussion(input: {
       },
     ])
 
-    revalidatePath(`/task/${input.taskId}`)
+    revalidatePath(ticketPath(input.taskId))
     return { ok: true, detail: 'asked — the daemon answers', chatId }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -909,7 +919,7 @@ export async function concludeChat(input: {
       ...(ticket === undefined ? {} : { ticket }),
     })
 
-    revalidatePath(`/task/${input.taskId}`)
+    revalidatePath(ticketPath(input.taskId))
     return result
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -957,7 +967,7 @@ export async function editPrompt(input: {
     const by = actor()
     await Effect.runPromise(editPromptEffect(eventStore, input.taskId, { text, basedOn: input.basedOn || null, by }))
 
-    revalidatePath(`/task/${input.taskId}`)
+    revalidatePath(ticketPath(input.taskId))
     return {
       ok: true,
       detail: text.trim() === '' ? 'the edit is off the next attempt' : 'the next attempt carries it',
@@ -1050,8 +1060,8 @@ export async function sendAttempt(input: {
       onQuestion: 'refuse',
     })
 
-    revalidatePath(`/task/${input.taskId}`)
-    revalidatePath('/')
+    revalidatePath(ticketPath(input.taskId))
+    revalidateHome()
     return { ok: result.ok, detail: result.ok ? 'sent — the next attempt starts from base' : result.detail }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -1083,8 +1093,8 @@ export async function runNow(input: { project: string; issue: string }): Promise
     await requestRun(input.project, input.issue, by)
     // The id said once, by the function that owns its shape — a second copy of
     // `ticket-<project>-<n>` here is a revalidation that quietly stops matching.
-    revalidatePath(`/task/${ticketStream(input.project, input.issue)}`)
-    revalidatePath('/')
+    revalidatePath(ticketPath({ project: input.project, issue: input.issue }))
+    revalidateHome()
     return { ok: true, detail: `asked for by ${by} — the next attempt takes it` }
   } catch (err) {
     return { ok: false, detail: (err as Error).message }
@@ -1169,7 +1179,7 @@ export async function saveRecipe(_previous: SaveRecipeState, form: FormData): Pr
       ),
     )
     if (!result.ok) return { ok: false, loaded, text, message: result.message }
-    revalidatePath(`/recipe/${encodeURIComponent(name)}`)
+    revalidatePath(recipePath(name))
     return { ok: true, loaded: result.content, text, message: result.written ? 'saved' : 'nothing changed' }
   } catch (err) {
     return { ok: false, loaded, text, message: (err as Error).message }

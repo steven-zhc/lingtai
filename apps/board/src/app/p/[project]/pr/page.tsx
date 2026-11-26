@@ -10,16 +10,17 @@ import { Suspense } from 'react'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { recipePath } from '@/lib/paths'
 import { soloSentence } from '@/lib/pr-board.ts'
 import { loadPrBoard, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { FooterFetched } from '../../footer-fetched'
-import { Follow } from '../../live'
-import { LockBanner, pauseSlot } from '../../lock-banner'
-import { PrBoardSkeleton, PrColumns } from '../../pr-columns'
-import { RecipeBar } from '../../recipe/[project]/recipe-bar'
+import { FooterFetched } from '../../../footer-fetched'
+import { Follow } from '../../../live'
+import { LockBanner, pauseSlot } from '../../../lock-banner'
+import { PrBoardSkeleton, PrColumns } from '../../../pr-columns'
+import { RecipeBar } from '../recipe/recipe-bar'
 
 export const dynamic = 'force-dynamic'
 
@@ -48,7 +49,7 @@ async function Board({ project, load }: { project: string; load: ReturnType<type
       <>
         {meta}
         <p className="pr-note">
-          {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
+          {soloSentence(project, read.recipe)} — <Link href={recipePath(project)}>its recipe</Link>
         </p>
       </>
     )

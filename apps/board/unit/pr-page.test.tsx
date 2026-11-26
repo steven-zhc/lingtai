@@ -515,8 +515,8 @@ describe('where New pr-fix ticket goes follows the ticket source, not the remote
 describe('the tickets on the rail open their task pages', () => {
   it('number and title link to the task page', () => {
     const html = renderToStaticMarkup(<PrDetail project="p" view={page([requested, started])} host={null} />)
-    expect(html).toContain('href="/task/ticket-p-41"')
-    expect(html.match(/href="\/task\/ticket-p-41"/g)).toHaveLength(2)
+    expect(html).toContain('href="/p/p/ticket/41"')
+    expect(html.match(/href="\/p\/p\/ticket\/41"/g)).toHaveLength(2)
   })
 })
 
@@ -677,10 +677,10 @@ describe('an empty Next PR', () => {
   it('links the PR it names, to its page', () => {
     const pr = { ...reducePr(events([added('1'), requested, started, draftOpened])), n: 1 }
     const html = renderToStaticMarkup(<PrDetail project="p" view={empty(pr)} host={null} />)
-    expect(html).toContain('<a href="/pr/p/1">PR #88 · in progress</a>')
+    expect(html).toContain('<a href="/p/p/pr/1">PR #88 · in progress</a>')
     const unnumbered = renderToStaticMarkup(<PrDetail project="p" view={empty({ ...pr, n: null })} host={null} />)
     expect(unnumbered).toContain('PR #88 · in progress')
-    expect(unnumbered).not.toContain('href="/pr/p/')
+    expect(unnumbered).not.toContain('href="/p/p/pr/')
   })
   it('counts a requested PR from its own draft list', () => {
     const v = empty(reducePr(events([added('1'), added('2'), added('3'), requested])))

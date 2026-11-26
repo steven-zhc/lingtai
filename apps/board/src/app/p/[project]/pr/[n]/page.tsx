@@ -10,17 +10,18 @@ import { Suspense, type ReactNode } from 'react'
 import { filterOptions, onBoardProjects } from '@/lib/board'
 import { lockMap } from '@/lib/lock-marks.ts'
 import { readProjectLocks, readRegistered } from '@/lib/locks.ts'
+import { recipePath } from '@/lib/paths'
 import { soloSentence } from '@/lib/pr-board.ts'
 import { loadPrDetail, placeViewsOf } from '@/lib/prs.ts'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
 import { TimingMeta } from '@/lib/timing-meta'
 
-import { FooterFetched } from '../../../footer-fetched'
-import { Follow } from '../../../live'
-import { LockBanner, pauseSlot } from '../../../lock-banner'
-import { PrDetail } from '../../../pr-detail'
-import { HostFallback, PrGeneratedStream, PrHostLine } from '../../../pr-host-stream'
-import { RecipeBar } from '../../../recipe/[project]/recipe-bar'
+import { FooterFetched } from '../../../../footer-fetched'
+import { Follow } from '../../../../live'
+import { LockBanner, pauseSlot } from '../../../../lock-banner'
+import { PrDetail } from '../../../../pr-detail'
+import { HostFallback, PrGeneratedStream, PrHostLine } from '../../../../pr-host-stream'
+import { RecipeBar } from '../../recipe/recipe-bar'
 
 export const dynamic = 'force-dynamic'
 
@@ -59,7 +60,7 @@ async function Detail({
   if (read.kind === 'solo') {
     return withMeta(
       <p className="pr-note">
-        {soloSentence(project, read.recipe)} — <Link href={`/recipe/${encodeURIComponent(project)}`}>its recipe</Link>
+        {soloSentence(project, read.recipe)} — <Link href={recipePath(project)}>its recipe</Link>
       </p>,
     )
   }

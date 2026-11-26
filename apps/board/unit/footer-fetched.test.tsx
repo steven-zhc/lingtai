@@ -44,12 +44,12 @@ describe('FooterFetched', () => {
 
 describe('where the footer is mounted', () => {
   const mounted = [
-    'app/task/[id]/layout.tsx',
+    'app/p/[project]/ticket/[n]/layout.tsx',
     'app/report/page.tsx',
     'app/backlog/page.tsx',
-    'app/recipe/[project]/page.tsx',
-    'app/pr/[project]/page.tsx',
-    'app/pr/[project]/[n]/page.tsx',
+    'app/p/[project]/recipe/page.tsx',
+    'app/p/[project]/pr/page.tsx',
+    'app/p/[project]/pr/[n]/page.tsx',
   ]
   it.each(mounted)('%s mounts <FooterFetched /> after </main>, never inside it', (file) => {
     expect(read(file)).toMatch(/<\/main>\s*<FooterFetched \/>/)

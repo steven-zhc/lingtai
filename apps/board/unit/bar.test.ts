@@ -242,7 +242,7 @@ describe("the bar's amber", () => {
       read('lock-banner.tsx'),
       read('pause-button.tsx'),
       read('continue-today.tsx'),
-      read('recipe/[project]/recipe-bar.tsx'),
+      read('p/[project]/recipe/recipe-bar.tsx'),
     ]
     barSources.push(...sources)
     const names = new Set<string>()
