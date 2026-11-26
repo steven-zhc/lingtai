@@ -1020,9 +1020,16 @@ function runLocalBranch(
         Effect.void,
       ).pipe(
         Effect.map((): string | null => `What you answered was written to ${path}`),
-        Effect.catchCause((cause) =>
-          Effect.fail(new Error(`what you answered was NOT saved to ${path}: ${Cause.pretty(cause)}`)),
-        ),
+        // `applySetup` says what is on disk: "was not written" before the write, "was written but not recorded"
+        // after it. That sentence is kept as it came; only a failure it did not describe is reported as unknown.
+        Effect.catchCause((cause) => {
+          const failure = Cause.squash(cause)
+          return Effect.fail(
+            failure instanceof SetupWriteError
+              ? new Error(`what you answered: ${failure.message}`)
+              : new Error(`whether what you answered was saved to ${path} is not known: ${Cause.pretty(cause)}`),
+          )
+        }),
       )
     })
     const askingRecipe = askRecipeEffect(world, {

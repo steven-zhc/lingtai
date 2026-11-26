@@ -1719,6 +1719,49 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
   })
 
+  it('a rerun interrupted after the recipe was written but the event was not recorded says it was written, never "NOT saved"', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    // The read of the log and the replace of the file succeed; the append of `ProjectRecipeChanged` does not.
+    Object.assign(h.world.store!, { append: () => Promise.reject(new Error('log down')) })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
+    const said = h.logged.join('\n')
+    expect(said).toContain('was written but not recorded')
+    expect(said).not.toContain('NOT saved')
+  })
+
   it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
     const { h, result } = run(
       {
