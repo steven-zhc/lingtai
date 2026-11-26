@@ -5,12 +5,13 @@
  */
 import { type Envelope, reducePr } from '@lingtai/domain'
 import type { Recipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PrDetail } from '../src/app/pr-detail.tsx'
 import { type BranchModel, layoutBranches, prBranches, shownLabel } from '../src/lib/pr-branches.ts'
-import { prPage } from '../src/lib/pr-page.ts'
+import { previousOf, prPage } from '../src/lib/pr-page.ts'
 
 const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
 const OPTS = { main: 'main', personal: 'studio', stepNames: STEPS }
@@ -535,5 +536,52 @@ describe('the page draws it', () => {
       opened,
     ])
     expect(out).toContain('nothing to merge back')
+  })
+})
+
+describe('an empty Next PR drawing', () => {
+  const evs = (specs: readonly Spec[]) => events(specs)
+  const prev = (specs: readonly Spec[]) => reducePr(evs(specs))
+  const at = (
+    pr: ReturnType<typeof prev>,
+    frozenSha: string | null,
+    caughtUp: { sha: string; n: number | null } | null,
+  ) => prBranches(null, [], [], OPTS, { pr, frozenSha, caughtUp })!
+  const added: Spec = ['PrDraftTicketAdded', { ticket: '1364', mergeCommit: 'aa', title: 'a' }]
+  const submitted = prev([added, ['PrSubmitRequested', { by: 'h' }], started()])
+
+  it('has no submit node, no PR lane and no word', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    expect(m.nodes.map((n) => n.id)).not.toContain('submit')
+    expect(m.prLane).toBe(false)
+    expect(m.words).toEqual([])
+  })
+  it('marks the freeze commit, with a pointer from that dot', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    const dot = m.nodes[0]!
+    expect(dot.label).toBe('6266142 frozen for PR 2')
+    expect(m.pointer).toEqual({ from: dot.id, text: 'PR 2' })
+    expect(m.now).toBe(dot.id)
+  })
+  it('marks the caught-up commit instead when there is one', () => {
+    const m = at(submitted, '6266142aaaa', { sha: 'abcdef1234', n: 1 })
+    expect(m.nodes[0]!.label).toBe('abcdef1 caught up with main')
+    expect(m.pointer?.from).toBe(m.nodes[0]!.id)
+  })
+  it('has no pointer for a closed PR', () => {
+    const closed = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), ['PrClosed', { by: 'h', why: 'x' }]])
+    expect(at(closed, null, null).pointer).toBeNull()
+  })
+  it('marks the first freeze, not a later walk', async () => {
+    // PrState.frozenSha is the latest walk's: the drawing must get the first PrInProgress's, through the page's own read.
+    const later: Spec = ['PrInProgress', { ...(started().at(1) as object), frozenSha: 'bbbbbbbbbbb' }] as Spec
+    const evs = events([added, ['PrSubmitRequested', { by: 'h' }], started(), later])
+    const state = reducePr(evs)
+    expect(state.frozenSha).toBe('bbbbbbbbbbb')
+    const p = await Effect.runPromise(previousOf([], [{ n: 2, pr: state }], () => Effect.succeed(evs)))
+    const m = prBranches(null, [], [], OPTS, p!)!
+    expect(m.nodes[0]!.label).toBe(`${p!.frozenSha!.slice(0, 7)} frozen for PR 2`)
+    expect(m.nodes[0]!.sha).toBe(p!.frozenSha)
+    expect(m.nodes[0]!.sha).not.toBe('bbbbbbbbbbb')
   })
 })

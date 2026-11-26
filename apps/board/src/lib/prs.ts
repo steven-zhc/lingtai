@@ -34,6 +34,7 @@ import { type FixTicket, MERGED_SHOWN, type PrBoardView, type PrRead, prBoard, p
 import {
   type HostRead,
   type PrPageView,
+  previousOf,
   generatedBody,
   githubHosted,
   prFixTicketLink,
@@ -346,6 +347,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
           const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
           const draft = yield* readDraftOf(project)
           const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
+          const previous = yield* previousOf(draft, prs, (pn) => readPrEvents(project, pn, requestStore()))
           const view = prPage({
             project,
             recipe,
@@ -354,6 +356,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
             events: [],
             draft,
             open,
+            ...(previous === null ? {} : { previous }),
             spend: null,
             stepNames,
             now,
