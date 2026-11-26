@@ -11,6 +11,8 @@ import {
   checkDeclared,
   declaredSandbox,
   isSandboxRequiredRefusal,
+  modeOf,
+  parseDeclared,
   resolveSource,
   sourceHashOf,
   sourceOf,
@@ -112,5 +114,31 @@ describe('isSandboxRequiredRefusal (#1163)', () => {
   it('does not take another refusal, nor a path refusal under sandbox', () => {
     expect(isSandboxRequiredRefusal('sandbox.write[0]: collides with a protected path')).toBe(false)
     expect(isSandboxRequiredRefusal('(root): expected a mapping')).toBe(false)
+  })
+})
+
+describe('parseDeclared (#1489)', () => {
+  const TEAM = `${MINIMAL.replace('main: main', 'main: main\n  personal: me/work')}mode: team\n`
+  it('reads a team text', () => {
+    const r = parseDeclared(TEAM)
+    expect(r?.mode).toBe('team')
+    expect(r?.branch.personal).toBe('me/work')
+  })
+  it('reads no mode as solo', () => {
+    const r = parseDeclared(MINIMAL)
+    expect(r).not.toBeNull()
+    expect(modeOf(r!)).toBe('solo')
+  })
+  it('applies a known preset and keeps an unknown extends as written', () => {
+    expect(parseDeclared(`extends: ${Object.keys(PRESETS)[0]}\n${TEAM}`)?.mode).toBe('team')
+    expect(parseDeclared(`extends: no-such-preset\n${TEAM}`)?.mode).toBe('team')
+  })
+  it('does not run checkDeclared’s refusals', () => {
+    expect(parseDeclared(`${TEAM}nonsense: 1\n`)?.mode).toBe('team')
+  })
+  it('is null for bad YAML, a non-mapping root and a schema failure', () => {
+    expect(parseDeclared('a: [')).toBeNull()
+    expect(parseDeclared('- a\n')).toBeNull()
+    expect(parseDeclared(`${MINIMAL}mode: crew\n`)).toBeNull()
   })
 })
