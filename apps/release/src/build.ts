@@ -5,6 +5,7 @@
  *     package.json    not private: this is the package, and nothing else is
  *     lingtai.cjs     the CLI, one CommonJS file, because a SEA's main is one
  *     board/          Next's standalone output; server.js is apps/board/server.js
+ *       prompts/      the same ticket template again: the board's repoRoot() is board/ (#1481)
  *     prompts/        the ticket template read before a pass
  *     packages/hook/  the native hook required before a pass
  *     vendor/         srt's apply-seccomp (Linux) and proxy-agent jar, pinned by hash (#1154)
@@ -70,6 +71,9 @@ function buildAttemptAssets(root: string, out: string): void {
   }
   mkdirSync(join(out, 'prompts'), { recursive: true })
   cpSync(join(root, 'prompts', 'ticket.md'), join(out, 'prompts', 'ticket.md'))
+  // The board's `repoRoot()` is its own standalone root, so its preview reads the template there (#1481).
+  mkdirSync(join(out, 'board', 'prompts'), { recursive: true })
+  cpSync(join(root, 'prompts', 'ticket.md'), join(out, 'board', 'prompts', 'ticket.md'))
 }
 
 /**
