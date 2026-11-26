@@ -1,3 +1,4 @@
+import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -19,7 +20,7 @@ import { stateDir } from '@lingtai/env'
  * intersection (doc/decisions-archive/0007-dual-runtime.md); the extras are bonus signal
  * and the system works without them.
  */
-import { Data, Effect } from 'effect'
+import { Data, Effect, type Scope } from 'effect'
 
 /**
  * The four both runtimes have, then Claude Code's extras.
@@ -182,6 +183,50 @@ export const writeHookWiringEffect = Effect.fn('agent.wire')(function* (options:
   return wiring
 })
 
+/** Where the smoke test runs: the worktree, and the run's own sandbox when it has one. */
+export interface SmokeWhere {
+  readonly cwd: string
+  /** The run's own sandbox wrap, absent when the run is not sandboxed. A failure is a sentence. */
+  readonly wrap?:
+    | ((input: {
+        readonly command: readonly string[]
+        readonly env: Record<string, string>
+      }) => Effect.Effect<
+        { readonly argv: readonly string[]; readonly env: Readonly<Record<string, string>> },
+        { readonly message: string },
+        Scope.Scope
+      >)
+    | undefined
+}
+
+/** One spawn: the argv, its whole environment, where it runs and what it is given. */
+export type SmokeSpawn = (
+  argv: readonly string[],
+  env: Readonly<Record<string, string | undefined>>,
+  cwd: string,
+  stdin: string,
+) => Effect.Effect<{ code: number | null; stderr: string }, Error>
+
+export const liveSmokeSpawn: SmokeSpawn = (argv, env, cwd, stdin) =>
+  Effect.tryPromise({
+    try: () =>
+      new Promise<{ code: number | null; stderr: string }>((resolve) => {
+        const [bin = '', ...args] = argv
+        const child = spawn(bin, args, { env: { ...env } as NodeJS.ProcessEnv, cwd, stdio: ['pipe', 'pipe', 'pipe'] })
+        let stderr = ''
+        child.stderr.on('data', (c) => (stderr += c.toString()))
+        child.on('close', (code) => resolve({ code, stderr }))
+        child.on('error', (err) => resolve({ code: null, stderr: err.message }))
+        child.stdin.end(stdin)
+      }),
+    catch: (err) => err as Error,
+  })
+
+const clip = (text: string, n = 400): string => {
+  const one = text.replace(/\s+/g, ' ').trim()
+  return one.length > n ? `${one.slice(0, n - 1)}…` : one
+}
+
 /**
  * Proves the hook fails closed when the conductor is not there.
  *
@@ -195,26 +240,47 @@ export const writeHookWiringEffect = Effect.fn('agent.wire')(function* (options:
  *
  * The old loop refused to start when `test-guard.sh` failed, and that instinct
  * was right for the same reason it is right here. This runs the real binary
- * against a socket path that does not exist and requires exit 2. The conductor
+ * against a socket path that does not exist, **where the agent's hook will run**
+ * (`where`: the worktree as `cwd`, and the run's sandbox when it has one), and
+ * requires exit 2 **and** the path it was handed in stderr. Exit 2 alone is not
+ * enough: *"LINGTAI_HOOK_SOCKET … are not set"* is also exit 2, and a hook that
+ * read nothing passes that test while it blocks every run (#1479). The conductor
  * calls it before dispatching anything.
  */
 export const smokeTestFailClosedEffect = Effect.fn('agent.smokeTest')(function* (
   hookBinary: string,
-  run: (bin: string, env: Record<string, string>, stdin: string) => Promise<{ code: number | null; stderr: string }>,
+  where: SmokeWhere,
+  spawnIt: SmokeSpawn = liveSmokeSpawn,
 ) {
-  const nowhere = join(stateDir(), 'sockets', `smoke-${Date.now()}.sock`)
-  const { code, stderr } = yield* Effect.tryPromise({
-    try: () =>
-      run(
-        hookBinary,
-        { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: attemptStream('smoke') },
-        JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } }),
-      ),
-    catch: (err) => new AgentHostFailed({ operation: 'smokeTest', detail: (err as Error).message }),
-  })
+  const failed = (err: unknown) => new AgentHostFailed({ operation: 'smokeTest', detail: (err as Error).message })
+  // The directory a real socket lives in, so a sandbox that allows connects there is the one exercised.
+  const nowhere = yield* Effect.try({ try: () => socketPathFor(`smoke-${Date.now()}`), catch: failed })
+  const env = { LINGTAI_HOOK_SOCKET: nowhere, LINGTAI_HOOK_RUN_ID: attemptStream('smoke') }
+  const stdin = JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'ls' } })
 
-  if (code === 2) {
+  const { code, stderr } = yield* Effect.scoped(
+    Effect.gen(function* () {
+      if (where.wrap === undefined) {
+        return yield* spawnIt([hookBinary], { ...process.env, ...env }, where.cwd, stdin)
+      }
+      const wrapped = yield* where
+        .wrap({ command: [hookBinary], env })
+        .pipe(Effect.mapError((e) => new AgentHostFailed({ operation: 'smokeTest', detail: e.message })))
+      return yield* spawnIt(wrapped.argv, wrapped.env, where.cwd, stdin)
+    }),
+  ).pipe(Effect.mapError((e) => (e instanceof AgentHostFailed ? e : failed(e))))
+
+  if (code === 2 && stderr.includes(nowhere)) {
     return { ok: true, detail: `denied with exit 2 when the socket was absent: ${stderr.trim()}` }
+  }
+  if (code === 2) {
+    return {
+      ok: false,
+      detail:
+        'the hook failed closed but read nothing: it exited 2 without naming the socket it was handed, so ' +
+        'LINGTAI_HOOK_SOCKET and LINGTAI_HOOK_RUN_ID did not reach it. It said: ' +
+        clip(stderr),
+    }
   }
   return {
     ok: false,
@@ -222,7 +288,7 @@ export const smokeTestFailClosedEffect = Effect.fn('agent.smokeTest')(function* 
       `lingtai-hook exited ${code} with no conductor listening — it must exit 2. ` +
       'A recorder that fails open silently is worse than one that stops: the run ' +
       'continues and produces no events, and in a system whose whole claim is that ' +
-      'the log is the answer, that is the failure with no symptom.',
+      `the log is the answer, that is the failure with no symptom. It said: ${clip(stderr)}`,
   }
 })
 

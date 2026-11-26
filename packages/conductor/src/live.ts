@@ -67,7 +67,7 @@ export function livePorts(): RunPorts {
     },
     agent: {
       wire: writeHookWiringEffect,
-      smokeTest: smokeTestFailClosedEffect,
+      smokeTest: (bin, where) => smokeTestFailClosedEffect(bin, where),
       serve: serveHookServer,
       unhookedSettings: ({ runId, label, home, sandboxed }) =>
         writeUnhookedSettingsEffect(runId, label, home, sandboxed === true),

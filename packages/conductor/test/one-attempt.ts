@@ -938,9 +938,10 @@ export function fakePorts(
           if (tree.implementerCommits) tree.at = 'b'.repeat(40)
           return { settingsPath: '/tmp/fake/settings.json', socketPath: '/tmp/fake/sock', env: {} } as never
         }),
-      smokeTest: () =>
+      smokeTest: (_bin, where) =>
         Effect.sync(() => {
           did.push('smokeTest')
+          did.push(`smokeTest in ${where.cwd}${where.wrap === undefined ? '' : ' wrapped'}`)
           return { ok: true, detail: 'refuses when it cannot reach the socket' }
         }),
       // Acquired and released, because that is what the port now says it is.
