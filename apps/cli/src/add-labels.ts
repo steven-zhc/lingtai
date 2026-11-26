@@ -43,8 +43,12 @@ export function labelNames(recipe: Recipe): string[] {
   return names
 }
 
+/** Status 0 is the live client's "no answer" (a transport failure), not an HTTP response. */
 const hasStatus = (err: unknown): boolean =>
-  typeof err === 'object' && err !== null && typeof (err as { status?: unknown }).status === 'number'
+  typeof err === 'object' &&
+  err !== null &&
+  typeof (err as { status?: unknown }).status === 'number' &&
+  (err as { status: number }).status > 0
 
 /** The client `add` used to reach the repository, built again from `reach` (an App machine looks its installation up once more). */
 export const liveLabelClient = (owner: string, repo: string, reach: GithubReach): Effect.Effect<LabelClient, unknown> =>

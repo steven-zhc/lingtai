@@ -1,3 +1,4 @@
+import { GitHubFailed } from '@lingtai/github'
 import { resolveSource } from '@lingtai/recipe'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
@@ -56,5 +57,19 @@ describe('the labels add makes (#1486)', () => {
         { name: 'net', why: 'unchecked' },
       ],
     })
+  })
+
+  it('a request that got no answer (GitHubFailed status 0) is unchecked, not denied', async () => {
+    const out = await Effect.runPromise(
+      ensureLabelsEffect(
+        Effect.succeed({
+          createLabel: async () => {
+            throw new GitHubFailed(0, '/labels', 'fetch failed')
+          },
+        }),
+        ['bug'],
+      ),
+    )
+    expect(out.missing).toEqual([{ name: 'bug', why: 'unchecked' }])
   })
 })

@@ -196,6 +196,11 @@ function trialRow(trial: TrialOutcome): string {
 
 type Row = readonly [label: string, value: string]
 
+/** A word safe to paste into a shell: bare when it needs no quoting, else single-quoted. */
+function shellQuote(word: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`
+}
+
 /** The card: a heading, three groups a blank line apart, one fact a row. No closing line — that is `renderReadyLine`. */
 export function renderSetupCard(facts: SetupCardFacts): string {
   const { recipe, trial, userHome } = facts
@@ -282,7 +287,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
     for (const m of labels.missing) {
       rows.push([
         'labels',
-        `${m.name} could not be ${m.why === 'denied' ? 'made' : 'checked'} — gh label create ${m.name} --repo ${labels.slug}`,
+        `${m.name} could not be ${m.why === 'denied' ? 'made' : 'checked'} — gh label create ${shellQuote(m.name)} --repo ${shellQuote(labels.slug)}`,
       ])
     }
     if (rows.length > 0) groups[1]!.rows.push(...rows)

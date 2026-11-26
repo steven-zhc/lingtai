@@ -215,6 +215,8 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       log('  tier guarded')
       return { ok: true, updated: false, warnings: over.warnings ?? [], reach: { kind: 'gh', login: 'sam' } }
     })
+    // Never the live client: it would run `gh auth token` and POST to the repository.
+    h.world.labels = () => Effect.succeed({ createLabel: async () => 'created' as const })
     h.world.githubDeps = {
       check: () => Effect.succeed(null),
       auth: () => 'gh',
