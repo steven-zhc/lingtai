@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { legacyRedirect } from '../src/lib/legacy.ts'
 import {
   attemptTabPath,
   backlogPath,
@@ -15,8 +14,6 @@ import {
   ticketPath,
   ticketRefOf,
 } from '../src/lib/paths.ts'
-
-const q = (s = '') => new URLSearchParams(s)
 
 describe('the address of every project page (#1498)', () => {
   it('states each shape once', () => {
@@ -52,29 +49,5 @@ describe('the address of every project page (#1498)', () => {
     expect(ticketIdOf('lingtai', '0')).toBeNull()
     expect(ticketIdOf('%E0%A4%A', '1')).toBeNull()
     expect(ticketRefOf('ticket-x-abc')).toBeNull()
-  })
-
-  it('is what an old address redirects to, row by row', () => {
-    const ref = { project: 'x', issue: '1474' }
-    const old = (path: string, search = '') => legacyRedirect(path, q(search))
-    expect(old('/', 'project=x')).toBe(homePath('x'))
-    expect(old('/landed', 'project=x')).toBe(landedHref({ project: 'x' }))
-    expect(old('/task/ticket-x-1474')).toBe(ticketPath(ref))
-    expect(old('/task/ticket-x-1474/ticket')).toBe(historyPath(ref))
-    expect(old('/task/ticket-x-1474/attempt/2')).toBe(attemptTabPath(ref, 2))
-    expect(old('/task/ticket-x-1474/sandbox')).toBe(sandboxTabPath(ref))
-    expect(old('/task/ticket-x-1474/sandbox', 'attempt=3')).toBe(sandboxTabPath(ref, 3))
-    expect(old('/pr/x')).toBe(prPath('x'))
-    expect(old('/pr/x/next')).toBe(prPath('x', 'next'))
-    expect(old('/pr/x/7')).toBe(prPath('x', 7))
-    expect(old('/recipe/x')).toBe(recipePath('x'))
-    expect(old('/backlog', 'project=x')).toBe(backlogPath('x'))
-  })
-
-  it('round-trips a dashed project through the redirect and the route params', () => {
-    const to = legacyRedirect('/task/ticket-chapter-garden-1', q())!
-    expect(to).toBe('/p/chapter-garden/ticket/1')
-    const [, , project, , n] = to.split('/')
-    expect(ticketIdOf(project!, n!)).toBe('ticket-chapter-garden-1')
   })
 })

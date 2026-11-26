@@ -52,11 +52,11 @@ export function parseCursor(text: string | undefined): Cursor | null {
   return { at, ticket }
 }
 
-/** The address → the query. A `kind` the recipes do not name is not used. */
-export function landedQuery(params: LandedParams, kinds: readonly string[]): LandedQuery {
+/** The address → the query. The project is the path's, never a `?project=`. A `kind` the recipes do not name is not used. */
+export function landedQuery(params: LandedParams, kinds: readonly string[], project?: string): LandedQuery {
   const kind = first(params.kind)
   return {
-    project: first(params.project) || null,
+    project: project || null,
     kind: kind !== undefined && kinds.includes(kind) ? kind : null,
     before: parseCursor(first(params.before)),
   }

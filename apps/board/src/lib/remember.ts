@@ -16,12 +16,10 @@ const YEAR = 60 * 60 * 24 * 365
 /**
  * The proxy's decision for `/`: the target to redirect (307) to, or `null` to
  * pass through. `/` is all projects, so only a remembered, non-empty name sends
- * it anywhere: to that project's home, the rest of the query kept. A request
- * that names `project` is never redirected. `remembered` is the already-decoded
+ * it anywhere: to that project's home, the rest of the query kept. A `project` parameter means nothing here. `remembered` is the already-decoded
  * cookie value.
  */
 export function homeRedirect(search: URLSearchParams, remembered: string | undefined): string | null {
-  if (search.has('project')) return null
   if (typeof remembered !== 'string' || remembered === '') return null
   const q = search.toString().replace(/\+/g, '%20')
   return `${homePath(remembered)}${q === '' ? '' : `?${q}`}`
