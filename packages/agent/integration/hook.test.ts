@@ -107,7 +107,7 @@ describe('lingtai-hook fails closed', () => {
    * trusted.
    */
   it('denies when the socket is not there', async () => {
-    const result = await Effect.runPromise(smokeTestFailClosedEffect(binary, runHook))
+    const result = await Effect.runPromise(smokeTestFailClosedEffect(binary, { cwd: process.cwd() }))
     expect(result.ok, result.detail).toBe(true)
     expect(result.detail).toContain('exit 2')
   })

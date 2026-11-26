@@ -55,7 +55,12 @@ const runDoctor = (
   reach: Partial<DoctorReach> = {},
 ) =>
   Effect.runPromise(
-    runDoctorEffect(env, machine, store, queries, load, { sea: probeSeaBuild, ...fakeSandbox(), ...reach }),
+    runDoctorEffect(env, machine, store, queries, load, {
+      sea: probeSeaBuild,
+      bun: () => Effect.succeed({ answered: '1.3.6' }),
+      ...fakeSandbox(),
+      ...reach,
+    }),
   )
 
 const POOLED = 'postgresql://u:p@db.example.com:6543/postgres?pgbouncer=true'
@@ -969,7 +974,7 @@ steps:
         // recipe names (`runtime.agent`, which keeps resolution from detecting),
         // so the per-project row finds it as well as the machine's
         // `runtime: signed in`.
-        { sea: probeSeaBuild, runtimes: () => signedInRuntimes },
+        { sea: probeSeaBuild, bun: () => Effect.succeed({ answered: '1.3.6' }), runtimes: () => signedInRuntimes },
       )
 
     it('is green', async () => {

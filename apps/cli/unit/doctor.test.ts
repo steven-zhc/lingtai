@@ -31,6 +31,7 @@ import {
   areaOf,
   type DoctorReach,
   ghLogin,
+  bunRow,
   nodeRow,
   postgresOnlyRows,
   holdLabelRow,
@@ -108,6 +109,7 @@ const reach: DoctorReach = {
   // Never reached on this machine: `isSea()` is false under vitest, so this
   // stands in for the probe without spawning Node or writing a scratch SEA.
   sea: () => ({ can: true }),
+  bun: () => Effect.succeed({ answered: '1.3.6\n' }),
   ...fakeSandbox(),
   // Never reached on this machine: `load` below resolves to no projects, so
   // nothing in `declaredEnvironment` or
@@ -710,5 +712,28 @@ steps: {}
     )
     expect(find(report.results, 'recipe: esctest')).toBeDefined()
     expect(probed).toBe(1)
+  })
+})
+
+describe('bunRow (#1479)', () => {
+  it('fails a Bun below 1.3.6, naming the version', () => {
+    const row = bunRow({ answered: '1.2.22\n' })
+    expect(row.status).toBe('fail')
+    expect(row.name).toBe('bun: at or above 1.3.6')
+    expect(row.detail).toContain('1.2.22')
+  })
+
+  it('is ok at and above 1.3.6, and says it reads bun and not the binary', () => {
+    for (const v of ['1.3.6', '1.4.5\n', '2.0.0']) expect(bunRow({ answered: v }).status).toBe('ok')
+    expect(bunRow({ answered: '1.3.6' }).detail).toContain('not the binary')
+  })
+
+  it('fails when the version is unknown, with what bun said', () => {
+    const failed = bunRow({ failed: 'spawn bun ENOENT' })
+    expect(failed.status).toBe('fail')
+    expect(failed.detail).toContain('spawn bun ENOENT')
+    const odd = bunRow({ answered: 'what' })
+    expect(odd.status).toBe('fail')
+    expect(odd.detail).toContain('"what"')
   })
 })
