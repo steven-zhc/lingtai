@@ -658,6 +658,7 @@ export const readStatus = (
           // Read last: nothing here is asked unless unheld work is queued and nothing is in flight.
           beacon: { up: true },
           draining: controlState !== null && controlState.shutdown !== null,
+          refused: project.refused,
           locks,
           base: lookedAt,
           offered: offered.map((o) => Number(o.ref)),

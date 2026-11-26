@@ -34,6 +34,8 @@ export interface WhyFacts {
   beacon: Beacon
   /** Whether some conductor holds the lock — a daemon or a live `lingtai run`, which writes no beacon. Unknown counts as held. */
   conductorHeld?: boolean
+  /** The conductor's recorded refusal of this project (`ProjectState.refused`), null when it has none. */
+  refused?: { detail: string; at: Date } | null
   /** A drain stands (`control.shutdown !== null`). */
   draining: boolean
   locks: readonly Lock[] | { unread: string }
@@ -55,6 +57,7 @@ export type RootKind =
   | 'beacon-unread'
   | 'drain'
   | 'lock'
+  | 'refused'
   | 'locks-unread'
   | 'base-red'
   | 'base-unreadable'
@@ -135,7 +138,7 @@ export function applies(facts: WhyFacts): boolean {
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 const clock = (d: Date): string => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-/** Installation-wide stops, which hold everything: a daemon that is not up, a drain, a lock. Null when none holds. */
+/** Stops that hold everything this project has queued: a daemon that is not up, a drain, a lock, a refusal. Null when none holds. */
 export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
   if (!applies(facts)) return null
   const tickets = unheldQueued(facts)
@@ -166,6 +169,12 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
       lock,
     })
   }
+  if (facts.refused)
+    return only({
+      root: 'refused',
+      sentence: `the conductor refused this project since ${clock(facts.refused.at)} — ${facts.refused.detail}`,
+      tickets,
+    })
   return null
 }
 

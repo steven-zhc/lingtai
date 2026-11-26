@@ -44,6 +44,26 @@ const row = (over: Partial<WhyRow> & { ref: number }): WhyRow => ({
 })
 const says = (f: WhyFacts, b: BlockedSkip[] | null = null) => whyNothingRuns(f, b)?.roots.map((r) => r.sentence)
 
+describe('a recorded refusal (#1477)', () => {
+  const detail = 'no lingtai-hook binary at /x/lingtai-hook'
+  const refused = { detail, at: new Date(2026, 10, 18, 9, 5, 0) }
+
+  it('is one refused root carrying the detail, never unknown', () => {
+    const r = whyNothingRuns(facts({ offered: [1], runnable: [1], rows: [row({ ref: 1 })], refused }), null)
+    expect(r?.roots).toHaveLength(1)
+    expect(r?.roots[0]).toMatchObject({ root: 'refused' })
+    expect(r?.roots[0]?.sentence).toContain(detail)
+    expect(r?.roots[0]?.sentence).toContain('09:05')
+    expect(r?.roots.some((x) => x.root === 'unknown')).toBe(false)
+  })
+
+  it('stands behind a lock', () => {
+    const paused = { kind: 'paused' as const, by: 'sam', since: now }
+    const r = whyNothingRuns(facts({ offered: [1], runnable: [1], locks: [paused], refused }), null)
+    expect(r?.roots[0]?.root).toBe('lock')
+  })
+})
+
 describe('whyNothingRuns', () => {
   it('names a daemon that is not up, never ran, or could not be read', () => {
     const base = { offered: [1], runnable: [1] }

@@ -18,7 +18,7 @@ import { mirrorBranchShaEffect } from '@lingtai/repo'
 import { Effect } from 'effect'
 
 import type { AskableFilter } from './board.ts'
-import { readControlOnce, readProjectLocks } from './locks.ts'
+import { readControlOnce, readProjectLocks, readRegistered } from './locks.ts'
 
 type Offered = Parameters<typeof PassOver>[1]
 
@@ -60,6 +60,11 @@ export const readWhy: Explain = {
           ? { unread: read.controlProblem }
           : (read.held.find((h) => h.project === filter.project)?.locks ?? [])
       const control = yield* Effect.tryPromise(() => readControlOnce()).pipe(Effect.option)
+      // The conductor's own refusal of this project, off the registry the request already read; unread is none.
+      const refused = yield* Effect.tryPromise(() => readRegistered()).pipe(
+        Effect.map((projects) => projects.find((p) => p.project === filter.project)?.refused ?? null),
+        Effect.catch(() => Effect.succeed(null)),
+      )
       // GitHub did not answer: the log's own queued rows are what is waiting.
       const logQueued = tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
       // A known red or unreadable base holds those rows as it would the listing's: the base needs no GitHub.
@@ -70,6 +75,7 @@ export const readWhy: Explain = {
           beacon: { up: true },
           // A read that failed cannot say a drain stands, and never says it does not: the lock root answers first.
           draining: control._tag === 'Some' && control.value.shutdown !== null,
+          refused,
           locks,
           base: look,
           offered: offered === null ? logQueued : offered.runnable.map((o) => Number(o.ref)),

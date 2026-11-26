@@ -1,4 +1,5 @@
 import { blockersLanded } from '@lingtai/conductor'
+import { rootBeforeChains } from '@lingtai/conductor/why-nothing-runs'
 import {
   ceilingFacts,
   NO_ACCOUNTS,
@@ -320,6 +321,34 @@ describe('statusJson', () => {
         },
       ],
     })
+  })
+})
+
+describe('renderStatus says a recorded refusal instead of "no reason was found" (#1477)', () => {
+  it('prints the refused sentence with its detail', () => {
+    const detail = 'no lingtai-hook binary at /x/lingtai-hook'
+    const why = rootBeforeChains({
+      now: new Date(),
+      beacon: { up: true },
+      draining: false,
+      locks: [],
+      base: null,
+      offered: [1],
+      runnable: [1],
+      skipped: [],
+      rows: [{ ref: 1, state: 'queued', updatedAt: null, heldUntil: null, waiting: false }],
+      repository: null,
+      canListBlockers: false,
+      refused: { detail, at: new Date() },
+    })
+    expect(why?.roots[0]?.root).toBe('refused')
+    const report: StatusReport = {
+      ...fixture,
+      projects: [{ ...fixture.projects[0]!, whyNothingRuns: why }, ...fixture.projects.slice(1)],
+    }
+    const plain = renderStatus(report, { all: false }).join('\n')
+    expect(plain).toContain(detail)
+    expect(plain).not.toContain('no reason was found')
   })
 })
 

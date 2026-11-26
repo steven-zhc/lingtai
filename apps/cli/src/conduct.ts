@@ -672,6 +672,30 @@ export function projectsForTurn(
 }
 
 /**
+ * Record a turn-wide refusal on each project it skipped, through the same
+ * transition-only `record()` the per-project path uses: the first turn appends
+ * `ProjectRefused`, an identical one appends nothing, and the first turn that
+ * looks at the project again appends `ProjectRecovered` (`where.looked`). `ref`
+ * is null because no recipe was read.
+ */
+export function refuseProjects(
+  projects: readonly ProjectState[],
+  detail: string,
+  options: { store: EventStore; codeSha: string | null; log: (line: string) => void },
+): Effect.Effect<void> {
+  return Effect.forEach(
+    projects.filter((p) => p.project !== null),
+    (project) =>
+      record(
+        project,
+        { refused: true, detail, ref: null, codeSha: options.codeSha },
+        { store: options.store, log: options.log },
+      ),
+    { discard: true },
+  )
+}
+
+/**
  * A pass, with the world provided around each item it takes.
  *
  * `runOnce` and `runQueue` ask for `Repo` and `AgentHost`
@@ -694,10 +718,18 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
     )
     if (!hookThere) {
       // A run that records nothing must not start. Refusing the pass rather than
-      // the daemon: the projections stay current, which is what makes the reason
-      // visible on the board.
+      // the daemon: the projections stay current, and the refusal is recorded as
+      // `ProjectRefused` on every registered project (transition only, #148), so
+      // why-nothing-runs says it in `lingtai status` and on the board.
       const detail = `no lingtai-hook binary at ${hookBinary}`
       outcome.refused.push({ project: '*', detail })
+      const everyone = yield* loadProjectsEffect().pipe(
+        recovering((err) => {
+          log(`could not record the refusal on the projects — ${err instanceof Error ? err.message : String(err)}`)
+          return Effect.succeed([] as readonly ProjectState[])
+        }),
+      )
+      yield* refuseProjects(everyone, detail, { store: eventStore, codeSha: options.codeSha ?? null, log })
       ;(options.tell ?? log)(detail)
       return outcome
     }
@@ -715,6 +747,12 @@ export function conductorTurn(options: ConductOptions = {}): Effect.Effect<TurnO
 
     const registered = yield* loadProjectsEffect()
     const projects = projectsForTurn(registered, hasGitHubAuth(), outcome)
+    // The projects `projectsForTurn` dropped were refused as a whole: say so on each one's own stream.
+    yield* refuseProjects(
+      registered.filter((p) => !projects.includes(p)),
+      'no GitHub App configured',
+      { store: eventStore, codeSha: options.codeSha ?? null, log },
+    )
 
     // Whether a look awaits its pass must not depend on which project is visited
     // first, so with a ceiling and several projects each recipe is asked once up front.
