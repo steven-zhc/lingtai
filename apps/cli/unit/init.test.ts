@@ -613,7 +613,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(h.registrations).toBe(registeredAfterFirst)
     expect((await h.store.read('prj-repo')).length).toBe(eventsAfterFirst)
 
-    // A settled store is reported, not rewritten (this file's header), and a
+    // A settled store is asked about again and, answered the same, not rewritten (0125 §6), and a
     // recipe re-asked with every answer unchanged renders no differently
     // (`write.ts`'s `editRecipe`) — so the second run changes neither file.
     expect(h.machineFiles.get(configKey)).toBe(configAfterFirst)
@@ -782,5 +782,92 @@ describe('the database check answers { ok: false, why } for a defect too (#1114)
     expect(lines(logged).at(-1)).toContain(
       'postgres://me:***@db.example:5432/lingtai does not answer — connection dropped. Nothing was written',
     )
+  })
+})
+
+describe('lingtai init asks the store again (#1474)', () => {
+  const CONFIG = '/nonexistent/.lingtai/config.yml'
+  const URL = 'postgres://user:secret@db.example.com:5432/lingtai'
+
+  it('another database is written, and the output says the log is new and empty and nothing was copied', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), h.world)
+    // No project is named, so it stops at the project question — after the store is written and said.
+    expect(code).toBe(1)
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('sqlite')
+    expect(doc.getIn(['database', 'url'])).toBeUndefined()
+    const said = lines(h.logged).join('\n')
+    expect(said).toMatch(/new, empty/)
+    expect(said).toMatch(/nothing was copied/)
+    expect(said).not.toContain('secret')
+  })
+
+  it('a store that answers is asked about again with itself as the default, and the same answer writes nothing', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      return /Postgres URL for the log/.test(prompt) ? '' : null
+    }
+    await initCommand(flagsFromArgv([]), h.world)
+    expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(true)
+    expect(h.asked.find((p) => /Postgres URL for the log/.test(p))).not.toContain('secret')
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    expect(lines(h.logged).join('\n')).not.toMatch(/new, empty/)
+  })
+
+  it('a configured Postgres that does not answer stays the default: Enter checks it again and writes nothing', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.database = () => Effect.succeed({ ok: false as const, why: 'connection refused' })
+    let answered = 0
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      // Enter once: the default is checked again and refused, so the question would come back — it is left there.
+      if (!/Postgres URL for the log/.test(prompt)) return null
+      if (answered++ > 0) throw new Error('asked again')
+      return ''
+    }
+    await initCommand(flagsFromArgv([]), h.world).catch(() => 1)
+    expect(h.asked.find((p) => /Postgres URL for the log/.test(p))).toContain('empty keeps')
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('postgres')
+    expect(doc.getIn(['database', 'url'])).toBe(URL)
+  })
+
+  it('--defaults keeps a store that answers, and does not choose one on a machine that has none', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      return null
+    }
+    await initCommand(flagsFromArgv(['--defaults']), h.world)
+    expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(false)
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+  })
+
+  it('with postgres configured, the prompt names `sqlite` as the way to SQLite, and the password is in no default the front end draws', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const shapes: { message: string; defaultValue: string }[] = []
+    h.world.ask = async (prompt, shape) => {
+      h.asked.push(prompt)
+      if (/Postgres URL for the log/.test(prompt) && shape !== undefined) shapes.push(shape)
+      return /Postgres URL for the log/.test(prompt) ? 'sqlite' : null
+    }
+    await initCommand(flagsFromArgv([]), h.world)
+    expect(shapes).toHaveLength(1)
+    expect(JSON.stringify(shapes)).not.toContain('secret')
+    expect(shapes[0]!.defaultValue).toBe('')
+    expect(shapes[0]!.message).toContain('sqlite')
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['database', 'store'])).toBe('sqlite')
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['database', 'url'])).toBeUndefined()
   })
 })

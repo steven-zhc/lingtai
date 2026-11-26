@@ -982,36 +982,33 @@ describe('--store answers the store question without a terminal (#345)', () => {
       expect(seen.connected).toEqual([])
       expect(config(home)).toBeNull()
     })
+  })
 
-    it('over a machine that already wrote postgres', async () => {
+  describe('another store is a change: written, and said (#1474)', () => {
+    it('--store sqlite over a machine that already wrote postgres writes sqlite, drops the url, and says the log is new', async () => {
       const home = freshHome()
       expect(await initCommand(flagsFromArgv([]), world(home, { answers: [URL_] }).world)).toBe(0)
-      const before = written(home)
       const { world: w, seen } = world(home, {})
-      expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), w)).toBe(1)
-      expect(seen.lines.at(-1)).toContain('already says database.store: postgres')
-      expect(seen.lines.at(-1)).toContain('new, empty log')
-      expect(written(home)).toEqual(before)
-      expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'postgres', url: URL_ })
+      await initCommand(flagsFromArgv(['--store', 'sqlite']), w)
+      expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite' })
+      expect(config(home)).not.toContain('url:')
+      expect(seen.lines.join('\n')).toContain('new, empty')
+      expect(seen.lines.join('\n')).not.toContain('secret')
     })
 
-    it('over postgres written with no url, and over a url written before the store was (#186)', async () => {
-      for (const [text, quoted] of [
-        ['database:\n  store: postgres\n', 'already says database.store: postgres'],
-        [`database:\n  url: ${URL_}\n`, 'names database.url: postgresql://me:***@db.example:5432/lingtai'],
-        [`database:\n  store: postgress\n  url: ${URL_}\n`, 'no valid database.store beside it'],
-      ] as const) {
+    it('over postgres written with no url, and over a url written before the store was (#186), it is the same change', async () => {
+      for (const text of [
+        'database:\n  store: postgres\n',
+        `database:\n  url: ${URL_}\n`,
+        `database:\n  store: postgress\n  url: ${URL_}\n`,
+      ]) {
         const home = freshHome()
         mkdirSync(home, { recursive: true })
         writeFileSync(configPath({ LINGTAI_HOME: home }), text)
-        const before = written(home)
         const { world: w, seen } = world(home, {})
-        expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), w)).toBe(1)
-        expect(seen.lines.at(-1)).toContain(quoted)
-        expect(seen.lines.at(-1)).toContain('lingtai init --store sqlite again')
+        await initCommand(flagsFromArgv(['--store', 'sqlite']), w)
+        expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite' })
         expect(seen.lines.join('\n')).not.toContain('secret')
-        expect(seen.connected).toEqual([])
-        expect(written(home)).toEqual(before)
       }
     })
   })

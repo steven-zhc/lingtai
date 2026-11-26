@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipeEffect, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
+import { askRecipeEffect, changedLeftBehind, ENV_PLANT_AT, SAID, type RecipeAt } from '../src/recipe-flow.ts'
 
 /** A test hands its seeded port in beside the question's options; it is provided, never passed (0128 §7). */
 type TestAt = RecipeAt & { files: RecipeFiles }
@@ -724,5 +724,243 @@ describe('askRecipe — the discuss agent of a new recipe (#1476)', () => {
       { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
     ]
     expect((await written(both, () => ({ model: 'gpt-x' }) as never)).has('discuss')).toBe(false)
+  })
+})
+
+describe('askRecipe — a GitHub rerun asks what the first run asks (#1474)', () => {
+  const project = 'widget'
+  const path = recipePath(project, HOME)
+  const seeds = [
+    { path: ['branch', 'main'], value: 'main' },
+    { path: ['repo', 'remote'], value: 'https://github.com/acme/widget.git' },
+    { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+  ]
+
+  /** Answers "use every default?" no, so every question is asked; `mode` and the sandbox are answered, the rest default. */
+  function answerer(mode: 'team' | 'solo', over: (prompt: string) => string | undefined = () => undefined) {
+    const prompts: string[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        prompts.push(prompt)
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return mode
+        if (prompt.includes('in the sandbox')) return 'on'
+        return over(prompt) ?? ''
+      },
+      log: () => {},
+    }
+    return { world, prompts }
+  }
+  const bare = (prompts: string[]) => prompts.map((p) => p.replace(/ \[[^\]]*\]: $/, ''))
+  const sandbox = { verdict: { can: true }, install: null, builtIns: ['api.example.com'] } as never
+  const at = (files: RecipeFiles, existing: Set<string>) =>
+    ({
+      ...BASE_AT,
+      flags: { install: 'none' },
+      project,
+      local: false,
+      seeds,
+      kept: 'kept',
+      again: 'lingtai add acme/widget',
+      keptBeforeWrite: 'Nothing was written',
+      defaultBranch: async () => 'main',
+      proposal: { sandbox, kinds: { known: false }, detected: { known: false } } as never,
+      team: {
+        knownLogin: 'me',
+        hostname: () => 'laptop',
+        branchExists: (name: string) => Effect.succeed(existing.has(name)),
+      },
+      files,
+    }) satisfies TestAt
+
+  it('asks the same questions, in the same order, over an existing recipe as over an absent one', async () => {
+    const files = mapFiles()
+    const first = answerer('team')
+    const made = await askAndWrite(first.world, at(files, new Set(['me/laptop'])))
+    expect(made).toMatchObject({ ok: true })
+    const second = answerer('team')
+    const again = await askAndWrite(second.world, at(files, new Set(['me/laptop'])))
+    expect(again).toMatchObject({ ok: true })
+    expect(bare(second.prompts).length).toBeGreaterThan(8)
+    expect(bare(second.prompts)).toEqual(bare(first.prompts))
+    for (const asked of ['Does anyone else', 'GitHub login', 'branch Lingtai works on', 'in the sandbox']) {
+      if (asked === 'GitHub login') continue // known on this machine, so asked of neither run
+      expect(bare(second.prompts).some((p) => p.includes(asked))).toBe(true)
+    }
+  })
+
+  it('team to solo writes mode: solo and drops the keys that are read only in team mode, and names the change', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+    expect(files.replaced.at(-1)!.text).toMatch(/mode: team/)
+
+    const solo = answerer('solo')
+    const result = await askAndWrite(solo.world, at(files, new Set(['me/laptop'])))
+    expect(result).toMatchObject({ ok: true, changed: { mode: { from: 'team', to: 'solo' } } })
+    const text = files.replaced.at(-1)!.text
+    const recipe = resolveSource(text, path, path).recipe
+    expect(text).toMatch(/mode: solo/)
+    expect(recipe.branch.personal).toBeUndefined()
+  })
+
+  it('a new personal branch is cut from the old one, which holds what landed and has not reached main', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+
+    const next = answerer('team', (p) => (p.includes('branch Lingtai works on') ? 'me-next' : undefined))
+    const result = await askAndWrite(next.world, at(files, new Set(['me/laptop'])))
+    expect(result).toMatchObject({
+      ok: true,
+      make: { name: 'me-next', from: 'me/laptop' },
+      changed: { branch: { from: 'me/laptop', to: 'me-next', made: true } },
+    })
+    expect(next.prompts.some((p) => p.includes('does not exist. Make it from origin/me/laptop'))).toBe(true)
+  })
+
+  it('a new personal branch that exists is used as it is, and nothing is made', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+    const next = answerer('team', (p) => (p.includes('branch Lingtai works on') ? 'me-next' : undefined))
+    const result = await askAndWrite(next.world, at(files, new Set(['me/laptop', 'me-next'])))
+    expect(result).toMatchObject({ ok: true, changed: { branch: { from: 'me/laptop', to: 'me-next', made: false } } })
+    expect(result).not.toHaveProperty('make')
+  })
+
+  it("a discovered login that is not the recipe's is asked, with the recipe's as the default, and one that is absent is asked too", async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team', (p) => (p.includes('GitHub login') ? 'alice' : undefined)).world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: null, hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.source.assignee).toMatchObject({
+      login: 'alice',
+    })
+
+    // Authenticated as bob: every default is taken, and the recipe keeps alice.
+    const asked = answerer('team')
+    await askAndWrite(asked.world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: 'bob', hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    expect(asked.prompts.some((p) => p.includes('GitHub login') && p.includes('[alice]'))).toBe(true)
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.source.assignee).toMatchObject({
+      login: 'alice',
+    })
+
+    // No login discovered at all: the first run's question is asked on the rerun too.
+    const none = answerer('team')
+    await askAndWrite(none.world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: null, hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    expect(none.prompts.some((p) => p.includes('GitHub login'))).toBe(true)
+  })
+
+  it('a login the recipe keeps in its claim queue is the default, and is not written over by the discovered one', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team', (p) => (p.includes('GitHub login') ? 'alice' : undefined)).world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: null, hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    // The same recipe with its assignee where a queue at `claim` keeps it, and none at `source.assignee`.
+    const doc = parseDocument(files.replaced.at(-1)!.text)
+    doc.deleteIn(['source', 'assignee'])
+    doc.setIn(
+      ['steps', 'claim'],
+      [
+        {
+          name: 'queue',
+          queue: { kinds: ['bug'], exclude: [], backoff: '1h', assignee: { login: 'alice', take: 'mine' } },
+        },
+      ],
+    )
+    await files.replace(path, doc.toString())
+
+    const rerun = answerer('team')
+    const result = await askAndWrite(rerun.world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: 'me', hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    expect(result).not.toHaveProperty('refused')
+    // Asked, with the queue's login as the default, since the discovered `me` is not it.
+    expect(rerun.prompts.some((p) => p.includes('GitHub login') && p.includes('[alice]'))).toBe(true)
+    const kept = parseDocument(files.replaced.at(-1)!.text).toJS() as {
+      steps: { claim: { queue: { assignee: { login: string } } }[] }
+    }
+    expect(kept.steps.claim[0]!.queue.assignee.login).toBe('alice')
+  })
+
+  it("--defaults keeps the recipe's login when authentication discovers another, and asks nothing", async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team', (p) => (p.includes('GitHub login') ? 'alice' : undefined)).world, {
+      ...at(files, new Set(['me/laptop'])),
+      team: { knownLogin: null, hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    const prompts: string[] = []
+    const world: QuestionWorld = {
+      ask: async (prompt) => {
+        prompts.push(prompt)
+        return null
+      },
+      log: () => {},
+    }
+    const result = await askAndWrite(world, {
+      ...at(files, new Set(['me/laptop'])),
+      flags: { install: 'none', defaults: '' },
+      team: { knownLogin: 'bob', hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+    })
+    expect(result).not.toHaveProperty('refused')
+    expect(resolveSource(files.replaced.at(-1)!.text, path, path).recipe.source.assignee).toMatchObject({
+      login: 'alice',
+    })
+  })
+
+  it('reads the commits a change left behind, and says where a new branch was really made from', async () => {
+    const files = mapFiles()
+    await askAndWrite(answerer('team').world, at(files, new Set(['me/laptop'])))
+    const reads: string[] = []
+    const base = at(files, new Set(['me/laptop', 'me-next']))
+    const withCommits = {
+      ...base,
+      team: {
+        ...base.team,
+        commitsOnlyIn: (b: string, h: string) => {
+          reads.push(`${b}..${h}`)
+          return Effect.succeed(['abc123def land ticket 7'])
+        },
+      },
+    }
+    const existing = await askAndWrite(
+      answerer('team', (p) => (p.includes('branch Lingtai works on') ? 'me-next' : undefined)).world,
+      withCommits,
+    )
+    expect(reads).toEqual(['me-next..me/laptop'])
+    const said = changedLeftBehind((existing as { changed?: never }).changed)
+      .map((l) => l.what)
+      .join('\n')
+    expect(said).toContain('abc123def land ticket 7')
+
+    // The old branch is gone from GitHub: the new one is cut from main, and the card does not say otherwise.
+    const gone = await askAndWrite(
+      answerer('team', (p) => (p.includes('branch Lingtai works on') ? 'me-newer' : undefined)).world,
+      at(files, new Set(['main'])),
+    )
+    const lines = changedLeftBehind((gone as { changed?: never }).changed)
+      .map((l) => l.what)
+      .join('\n')
+    expect(gone).toMatchObject({ make: { from: 'main' } })
+    expect(lines).toContain('me-newer was made from origin/main')
+    expect(lines).not.toContain('may be deleted')
+  })
+
+  it('what a rerun changed reaches the card as lines: the personal branch left as it is, or the old branch', () => {
+    const lines = changedLeftBehind({
+      mode: { from: 'team', to: 'solo', personal: 'me/laptop', main: 'main' },
+      branch: { from: 'me/laptop', to: 'me-next', made: false },
+    })
+    expect(lines.map((l) => l.what).join('\n')).toContain('nothing on it is waiting to reach main')
+    expect(lines.map((l) => l.command).join('\n')).toContain('origin/me-next..origin/me/laptop')
+    expect(changedLeftBehind({ branch: { from: 'a', to: 'b', made: true } })[0]!.what).toContain('may be deleted')
+    expect(changedLeftBehind(undefined)).toEqual([])
   })
 })

@@ -54,8 +54,9 @@ import { livePickerEffect } from './first-project.ts'
 import { askGithubAuthEffect, type GithubAuthAnswer, writeGithubAuth } from './github-auth.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
-import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
+import { ADD_KEPT, askRecipeEffect, changedLeftBehind, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
+import type { LeftBehind } from './setup-card.ts'
 
 /**
  * How this machine reaches the repository: through the App's installation on
@@ -245,6 +246,8 @@ export interface AskedBeforeAdd {
   answers: Answers
   /** `app` was answered here and writes nothing until the App exists: `chooseFirstProject` is told, so it does not ask again. */
   githubAuth?: 'app'
+  /** What a change to the retained recipe left where it was, for the card (#1474). */
+  leftBehind?: readonly LeftBehind[]
 }
 
 /** An Effect settled to the value or what it threw: a failure and a defect alike, an interruption never. */
@@ -513,8 +516,8 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
       runtimes: () => Effect.succeed(runtimes),
       history: (project) => deps.history(project),
       origin: () => Effect.succeed(null),
-      // Only a recipe that is new is asked the sandbox step; an existing one never loads srt (#1160).
-      ...(existing === null && deps.sandboxHost !== undefined ? { host: deps.sandboxHost() } : {}),
+      // The sandbox step is asked wherever the host is read, on a rerun too (#1474).
+      ...(deps.sandboxHost !== undefined ? { host: deps.sandboxHost() } : {}),
     },
   )
 
@@ -543,6 +546,34 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
           Effect.flatMap((client) => lift(() => client.branchExists(name))),
           recovering(() => Effect.succeed('unreadable' as const)),
         ),
+      // `base...head` is what `head` has that `base` does not; a compare that fails is `null`, said on the card.
+      // The compare answers 30 commits a page by default and at most 250 in all, whatever `total_commits` says: this
+      // pages through what it will give, and a list shorter than the total ends in a line that says how many are
+      // not listed, so a partial list is never presented as the whole.
+      commitsOnlyIn: (base, head) =>
+        Effect.gen(function* () {
+          const client = yield* githubClient()
+          const lines: string[] = []
+          let total = 0
+          for (let page = 1; page <= 3; page++) {
+            const r = yield* lift(() =>
+              client.request<{ total_commits?: number; commits?: { sha: string; commit: { message: string } }[] }>(
+                'GET',
+                `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=100&page=${page}`,
+              ),
+            )
+            const commits = r.commits ?? []
+            total = r.total_commits ?? total
+            lines.push(...commits.map((c) => `${c.sha.slice(0, 9)} ${c.commit.message.split('\n')[0] ?? ''}`.trim()))
+            if (commits.length < 100 || lines.length >= total) break
+          }
+          if (total > lines.length) {
+            lines.push(
+              `… and ${total - lines.length} more not listed — git log --oneline origin/${base}..origin/${head} lists them all`,
+            )
+          }
+          return lines
+        }).pipe(recovering(() => Effect.succeed(null))),
     },
     proposal,
     runtimes,
@@ -636,6 +667,9 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     hints: recipeResult.hints,
     runtimes,
     answers: recipeResult.answers,
+    ...(changedLeftBehind(recipeResult.changed).length === 0
+      ? {}
+      : { leftBehind: changedLeftBehind(recipeResult.changed) }),
     ...(appChosen && authFlag === undefined ? { githubAuth: 'app' as const } : {}),
   }
 })

@@ -54,7 +54,7 @@ import { sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { repositoryList } from '@lingtai/conductor/repository-list'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
-import type { ProjectState } from '@lingtai/domain'
+import { isOpen, type ProjectState } from '@lingtai/domain'
 import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import type { Locker } from '@lingtai/env/lock'
@@ -62,7 +62,11 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, type GhStatus, type Installation, parseSlug } from '@lingtai/github'
 import {
   HOST_FOR_SAVING,
+  defaultStore,
+  draftIn,
   draftRecipe,
+  listPrs,
+  modeSwitchMessage,
   type RecipeDraft,
   loadAllProjectsEffect,
   recipePath,
@@ -102,7 +106,7 @@ import { onCancelExit } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
-import { cardRecipe, type CardRecipe } from './setup-card.ts'
+import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
 import { askMode, askPersonal, type Mode } from './team.ts'
 import { ROUNDS_RETIRED } from './wizard-options.ts'
 
@@ -242,6 +246,9 @@ export interface FirstProjectWorld extends QuestionWorld {
   }
 }
 
+/** What an interrupted rerun wrote but could not register: the recipe is on disk, and this says why it is not registered. */
+class KeptNotRegistered extends Error {}
+
 export type FirstProjectOutcome =
   | {
       ok: true
@@ -260,6 +267,8 @@ export type FirstProjectOutcome =
       runtimes: readonly RuntimeFound[]
       /** Lines the card's closing prints, muted, after the groups. */
       hints: string[]
+      /** What a change in this run left where it was, for the card (#1474). */
+      leftBehind?: readonly LeftBehind[]
     }
   | {
       ok: true
@@ -664,14 +673,28 @@ function runLocalBranch(
     }
 
     // Solo or team (0130 §1), asked here and not inside `askRecipe`, because the branch below is made before it
-    // runs — a file that already exists keeps the mode it names. `--defaults` takes team.
+    // runs. A rerun asks it as a first run does, with the file's mode as the default (#1474); `--defaults` takes
+    // that default, and team where there is no file. A repair of a registered project (#772) asks nothing.
     const fileText = onDisk.text()
     const lingtaiWorld = flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world
-    let mode: Mode = onDisk.get(['mode']) === 'team' ? 'team' : 'solo'
-    if (fileText === null) {
-      const asked = yield* askMode(lingtaiWorld, { given: flags['mode'] ?? null, kept: world.kept })
+    const fileMode: Mode = onDisk.get(['mode']) === 'team' ? 'team' : 'solo'
+    let mode: Mode = fileMode
+    if (!(found !== undefined && ports !== null)) {
+      const asked = yield* askMode(lingtaiWorld, {
+        given: flags['mode'] ?? null,
+        kept: world.kept,
+        current: fileText === null ? null : fileMode,
+      })
       if ('refused' in asked) return { refused: asked.refused }
       mode = asked.mode
+    }
+    // Where a rerun is, the branch the recipe works on now: a new one is cut from it when it is absent (#1474).
+    const rerunBase: string | null =
+      fileText !== null && ports === null && typeof currentBase === 'string' ? currentBase : null
+    const rerunBaseExists = function* () {
+      if (rerunBase === null) return false
+      const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${rerunBase}^{commit}`])
+      return check.ok
     }
     // A team project's `branch.main` is the branch checked out, or `--main` (0130 §2); never `lingtai-base`.
     let mainBranch: string | null = null
@@ -685,7 +708,8 @@ function runLocalBranch(
       const fileMain = onDisk.get(['branch', 'main'])
       const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
       const checkedOut = head.ok ? head.stdout.trim() : ''
-      mainBranch = flags['main'] ?? (typeof fileMain === 'string' ? fileMain : checkedOut)
+      // A solo file's `branch.main` is its working branch, which is not a team's main.
+      mainBranch = flags['main'] ?? (fileMode === 'team' && typeof fileMain === 'string' ? fileMain : checkedOut)
       if (mainBranch === '') {
         return {
           refused: `${toplevel} has no branch checked out, and a team project's main is the one that is. Check out a branch, or pass --main <branch>. ${world.kept}`,
@@ -705,6 +729,7 @@ function runLocalBranch(
         ? yield* askPersonal(lingtaiWorld, {
             given: flags['personal'] ?? null,
             fallback: typeof currentBase === 'string' && ports === null ? currentBase : LINGTAI_BASE,
+            ...(fileMode === 'team' && rerunBase !== null ? { current: rerunBase } : {}),
             main: mainBranch,
             kept: world.kept,
             validate: (answer) =>
@@ -715,8 +740,9 @@ function runLocalBranch(
                   fromSha = check.stdout.trim()
                   return null
                 }
-                // Decides only: `validate` can run again on a refusal, so nothing is created here.
-                source = mainBranch
+                // Decides only: `validate` can run again on a refusal, so nothing is created here. On a rerun the
+                // new branch is cut from the old one, which holds what landed and has not reached main (#1474).
+                source = (yield* Effect.suspend(() => Effect.gen(rerunBaseExists))) ? rerunBase : mainBranch
                 return null
               }),
           }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
@@ -737,6 +763,10 @@ function runLocalBranch(
                 const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
                 if (check.ok) {
                   fromSha = check.stdout.trim()
+                  return null
+                }
+                if (rerunBase !== null && (yield* Effect.suspend(() => Effect.gen(rerunBaseExists)))) {
+                  source = rerunBase
                   return null
                 }
                 if (answer !== LINGTAI_BASE) {
@@ -879,13 +909,17 @@ function runLocalBranch(
     // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
     // cuts from a mirror of this checkout at `base`.
     let madeKept: string | null = null
-    const makeBranch = () =>
+    let madeFrom: string | null = null
+    let madeName: string | null = null
+    let madeSha = ''
+    const makeBranch = (keptText: string = world.kept) =>
       Effect.gen(function* () {
         if (source === null) return null
         const made = yield* world.git(toplevel, ['branch', base, source])
         if (!made.ok) {
           return {
-            refused: `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+            refused:
+              `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${keptText}`.trim(),
           }
         }
         const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
@@ -898,8 +932,32 @@ function runLocalBranch(
         }
         fromSha = tip.stdout.trim()
         madeKept = `the branch ${base} made from ${source} in ${toplevel}`
+        madeFrom = source
+        madeName = base
+        madeSha = fromSha
         return null
       })
+    // Team to solo is refused by `changeRecipe` while a draft holds a ticket or a PR is open (0130 §1), and that
+    // check runs at the write, after this branch is made: so it is read first, and a refusal makes nothing.
+    const switching = fileText !== null && ports === null && fileMode === 'team' && mode === 'solo'
+    // A branch a refused switch would have made is made after `changeRecipe`'s own check, inside the write, so a
+    // draft recorded after the read above leaves no branch behind (0130 §1).
+    const lateBranch = switching && source !== null
+    if (switching) {
+      const store = world.store ?? (yield* defaultStore())
+      const prs = yield* refusingOn(listPrs(name, store).pipe(Effect.map((listed) => ({ listed }))), (error) => ({
+        refused: `could not read the PRs of ${name} — ${errorText(error)}. ${world.kept}`,
+      }))
+      if ('refused' in prs) return prs
+      const open = prs.listed.filter(isOpen)
+      const draft = draftIn(prs.listed)
+      if (open.length > 0 || draft.length > 0) {
+        const personal = onDisk.get(['branch', 'personal'])
+        return {
+          refused: `${modeSwitchMessage(typeof personal === 'string' ? personal : (rerunBase ?? 'main'), open, draft)}. ${world.kept}`,
+        }
+      }
+    }
     // A team project's personal branch is made only after every question is answered, and only once the person
     // said yes: the trial build below cuts at `branch.main`, which is where the branch would be cut from anyway.
     const deferBranch = mode === 'team' && source !== null
@@ -921,12 +979,14 @@ function runLocalBranch(
             `Make it yourself with: git branch ${base} ${source}, then run this again. ${world.kept}`,
         }
       }
-    } else {
+    } else if (!lateBranch) {
       const refusal = yield* makeBranch()
       if (refusal !== null) return refusal
     }
     // Until the branch is made, a deferred one is cut at the main it would be made from.
-    const trialBase = deferBranch && mainBranch !== null ? mainBranch : base
+    // `source` is what `validate` decided: main on a first run, the old working branch on a rerun that has one.
+    const deferredFrom = (source as string | null) ?? mainBranch
+    const trialBase = (deferBranch || lateBranch) && deferredFrom !== null ? deferredFrom : base
 
     const path = recipePath(name, world.home)
     const existingText = onDisk.text()
@@ -949,7 +1009,16 @@ function runLocalBranch(
             { path: ['mode'], value: 'team' },
             { path: ['branch', 'personal'], value: base },
           ]
-        : []),
+        : // Solo is the absent key, so a team file moving to solo is the one case that has to say it (#1474).
+          fileText !== null && fileMode === 'team'
+          ? [
+              { path: ['mode'], value: 'solo' },
+              // Both are read only in team mode, and a recipe that keeps either does not resolve. The branch itself,
+              // its commits and any open PR are the person's, and are not touched.
+              { path: ['branch', 'personal'], value: undefined },
+              ...(onDisk.get(['pr']) === null ? [] : [{ path: ['pr'], value: undefined }]),
+            ]
+          : []),
       { path: ['repo', 'remote'], value: remote },
       ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
     ]
@@ -970,8 +1039,8 @@ function runLocalBranch(
         defaultBranch: () => Effect.succeed(base),
         runtimes: () => Effect.succeed(runtimes),
         history: (project) => world.history(project),
-        // Only a recipe that is new is asked the sandbox step; an existing one never loads srt (#1160).
-        ...(existingText === null && !(found !== undefined && migrating) && world.sandboxHost !== undefined
+        // Asked on a rerun too (#1474); a repair of a registered project (#772) asks none of the questionnaire.
+        ...(!(found !== undefined && migrating) && world.sandboxHost !== undefined
           ? { host: world.sandboxHost() }
           : {}),
         // No `origin` is an answer (null); a git that failed is not.
@@ -1011,13 +1080,70 @@ function runLocalBranch(
     let answeredDraft: RecipeDraft | null = null
     // A rerun's Ctrl+C keeps what was answered (#392): the draft's changes are written once, through
     // `applySetup`, as the first thing an interruption does. A rerun that changed nothing writes nothing.
+    // The recipe the registration last read from disk: what the card and the lines after it describe, because
+    // another rerun may have written it since the preview (#1474).
+    let finalFromSha = fromSha
+    let settled: { recipe: ReturnType<typeof resolveSource>['recipe']; base: string } | null = null
+    // Registers the recipe as the write left it: its base must exist and is what the registration names, since
+    // each pass refuses a recipe that does not name the registered base.
+    const registerWritten = (written: string, known: { base: string; sha: string } | null) =>
+      Effect.gen(function* () {
+        const recipe = resolveSource(written, path, path).recipe
+        const writtenBase = branchOf(recipe)
+        let writtenSha = known?.sha ?? ''
+        if (known === null || writtenBase !== known.base) {
+          const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${writtenBase}^{commit}`])
+          if (!tip.ok) {
+            return yield* Effect.fail(
+              new Error(
+                `${writtenBase} is not a branch in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}; ${keptSentence(path)}`,
+              ),
+            )
+          }
+          writtenSha = tip.stdout.trim()
+        }
+        const writtenResolved = yield* resolveDraftRecipeEffect(name, written, {
+          home: world.home,
+          signedIn: world.signedIn,
+          ...HOST_FOR_SAVING,
+          base: writtenBase,
+        })
+        settled = { recipe, base: writtenBase }
+        return yield* world.register({
+          project: name,
+          owner: null,
+          base: writtenBase,
+          configHash: writtenResolved.configHash,
+          fromSha: writtenSha,
+          resolved: writtenResolved,
+        })
+      })
+    // An interruption writes what was answered, and registers it as a finished rerun does: a branch that was
+    // deferred is made first (it was confirmed above), so the recipe never names one that does not exist, and a
+    // moved base is registered again.
     const keepAnswered = Effect.suspend(() => {
       const answered = answeredDraft?.changes() ?? []
       if (answered.length === 0) return Effect.succeed<string | null>(null)
-      return applySetup(
-        { home: world.home, by: world.by, store: world.store },
-        { project: name, changes: answered },
-        Effect.void,
+      // Under the lock every other add and rerun takes: the recipe it reads back and the registration it makes are
+      // one critical section, so a rerun that finished meanwhile is not overwritten by this one's older read.
+      return exclusiveAdd(
+        name,
+        applySetup(
+          { home: world.home, by: world.by, store: world.store },
+          { project: name, changes: answered },
+          Effect.gen(function* () {
+            if (deferBranch || lateBranch) {
+              const refusal = yield* makeBranch('')
+              if (refusal !== null) return yield* Effect.fail(new KeptNotRegistered(refusal.refused))
+            }
+            const written = (yield* draftRecipe(name, { home: world.home })).text()
+            if (written === null) return yield* Effect.fail(new KeptNotRegistered(`${path} could not be read back`))
+            yield* registerWritten(written, null).pipe(
+              Effect.mapError((err) => new KeptNotRegistered(err instanceof Error ? err.message : String(err))),
+            )
+          }),
+        ),
+        world.locker,
       ).pipe(
         Effect.map((): string | null => `What you answered was written to ${path}`),
         // `applySetup` says what is on disk: "was not written" before the write, "was written but not recorded"
@@ -1025,9 +1151,11 @@ function runLocalBranch(
         Effect.catchCause((cause) => {
           const failure = Cause.squash(cause)
           return Effect.fail(
-            failure instanceof SetupWriteError
-              ? new Error(`what you answered: ${failure.message}`)
-              : new Error(`whether what you answered was saved to ${path} is not known: ${Cause.pretty(cause)}`),
+            failure instanceof KeptNotRegistered
+              ? new Error(`what you answered was written to ${path}, but it was not registered: ${failure.message}`)
+              : failure instanceof SetupWriteError
+                ? new Error(`what you answered: ${failure.message}`)
+                : new Error(`whether what you answered was saved to ${path} is not known: ${Cause.pretty(cause)}`),
           )
         }),
       )
@@ -1058,12 +1186,19 @@ function runLocalBranch(
           home: world.home,
           // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
           // trial prefers to its fallback: the trial reads it as the main it would be cut from.
+          // A team-to-solo switch to a branch not yet made names it at `branch.main`, which the trial prefers to
+          // its fallback in solo mode: that one is read as the old working branch, until the draft names another.
           draft:
-            deferBranch && mainBranch !== null
+            (deferBranch || lateBranch) && deferredFrom !== null
               ? {
                   path: draft.path,
                   set: (changes) => draft.set(changes),
-                  get: (key) => (key.join('.') === 'branch.personal' ? mainBranch : draft.get(key)),
+                  get: (key) => {
+                    const joined = key.join('.')
+                    if (deferBranch && joined === 'branch.personal') return deferredFrom
+                    if (lateBranch && joined === 'branch.main' && draft.get(key) === base) return deferredFrom
+                    return draft.get(key)
+                  },
                   text: () => draft.text(),
                   changes: () => draft.changes(),
                 }
@@ -1134,7 +1269,13 @@ function runLocalBranch(
       yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
     }
 
-    let finalFromSha = fromSha
+    // The branch of a team-to-solo switch, made once the write has passed `changeRecipe`'s check.
+    const makeLate = Effect.gen(function* () {
+      if (!lateBranch) return
+      const refusal = yield* makeBranch('')
+      if (refusal !== null) return yield* Effect.fail(new Error(refusal.refused))
+      if (final === base) finalFromSha = fromSha
+    })
     if (final !== base) {
       const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${final}^{commit}`])
       if (!check.ok) {
@@ -1163,16 +1304,24 @@ function runLocalBranch(
         const write = applySetup(
           { home: world.home, by: world.by, store: world.store },
           recipeResult.answers,
-          Effect.suspend(() =>
-            world.register({
-              project: name,
-              owner: null,
-              base: final,
-              configHash: resolved.configHash,
-              fromSha: finalFromSha,
-              resolved,
-            }),
-          ).pipe(Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err))))),
+          // Registered from the file `applySetup` has just written, under the lock: the preview above was read
+          // before it, and another rerun may have changed the recipe since (its base, its mode).
+          Effect.gen(function* () {
+            yield* makeLate
+            const written = (yield* draftRecipe(name, { home: world.home })).text()
+            if (written === null || written === previewed) {
+              settled = { recipe: finalRecipe, base: final }
+              return yield* world.register({
+                project: name,
+                owner: null,
+                base: final,
+                configHash: resolved.configHash,
+                fromSha: finalFromSha,
+                resolved,
+              })
+            }
+            return yield* registerWritten(written, { base: final, sha: finalFromSha })
+          }).pipe(Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err))))),
         )
         return exclusiveAdd(
           name,
@@ -1198,17 +1347,63 @@ function runLocalBranch(
     )
     if ('refused' in appliedOrRefused) return appliedOrRefused
     const registration = appliedOrRefused.applied.registered
+    // Everything said below is about the recipe the registration read, which another rerun may have rewritten
+    // since the preview: its base, its mode and its card are that recipe's, not the preview's.
+    const landed = settled ?? { recipe: finalRecipe, base: final }
+    const landedRecipe = landed.recipe
+    const landedBase = landed.base
+    const landedMode: Mode = landedRecipe.mode === 'team' ? 'team' : 'solo'
+
+    // What this rerun's changes left where they were (#1474). Read after the write, so a `git` that fails
+    // cannot refuse a change already made: the line says it could not read, and gives the command.
+    const leftBehind: LeftBehind[] = []
+    const commitsIn = (range: string) =>
+      Effect.gen(function* () {
+        const listed = yield* world.git(toplevel, ['rev-list', '--oneline', range])
+        return listed.ok ? listed.stdout.split('\n').filter((l) => l.trim() !== '') : null
+      })
+    const listing = (commits: string[] | null, range: string, none: string): string =>
+      commits === null
+        ? `the commits could not be read — git -C ${toplevel} rev-list --oneline ${range} lists them`
+        : commits.length === 0
+          ? none
+          : `${commits.length} commit${commits.length === 1 ? '' : 's'}: ${commits.join(' · ')}`
+    if (fileText !== null && ports === null) {
+      if (fileMode === 'team' && landedMode === 'solo') {
+        // Written only because nothing was pending (0130 §1): everything on the personal branch has reached `main`,
+        // so there is no git command to give. The branch is the person's and is left as it is.
+        const personal = rerunBase
+        if (personal !== null) {
+          leftBehind.push({ what: `${personal} was left as it is — nothing on it is waiting to reach main` })
+        }
+      }
+      // The branch made is the working branch the person answered, which is not always the one the recipe lands
+      // on (`askLanding` can pick another): each line names its own branch.
+      if (rerunBase !== null && madeName !== null && madeFrom === rerunBase) {
+        leftBehind.push({
+          what: `${madeName} was made from ${rerunBase} at ${madeSha.slice(0, 9)} — ${rerunBase} is kept and may be deleted`,
+        })
+      }
+      if (rerunBase !== null && landedBase !== rerunBase && landedBase !== madeName) {
+        const range = `${landedBase}..${rerunBase}`
+        leftBehind.push({
+          what: `${landedBase} existed and was left as it was — the commits only ${rerunBase} has: ${listing(yield* commitsIn(range), range, 'none')}`,
+          command: `git -C ${toplevel} rev-list --oneline ${range}`,
+        })
+      }
+    }
     return {
       ok: true as const,
       project: 'local' as const,
       name,
       remote,
-      base: final,
+      base: landedBase,
       trial: recipeResult.trial,
-      card: cardRecipe(finalRecipe, toplevel),
+      card: cardRecipe(landedRecipe, toplevel),
       updated: registration.updated,
       runtimes,
       hints: recipeResult.hints,
+      ...(leftBehind.length === 0 ? {} : { leftBehind }),
     }
   })
 }

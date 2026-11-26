@@ -60,16 +60,14 @@ import { existsSync, readdirSync } from 'node:fs'
  * exactly as a Postgres one does. What is said about such a machine is
  * `SQLITE_MACHINE`, in one place.
  *
- * **Changing a store that answers is an edit, not a re-run** — 0056 left that
- * open and this settles it, for a run with no `--database-url`. A store
- * already written and connecting is reported and not asked about again:
- * re-asking would make every run of a finished `init` a chance to answer the
- * wrong way. To switch, set `database.store` in
- * `~/.lingtai/config.yml` and run `lingtai init`, which finds the half-state
- * that edit leaves — `store: sqlite` beside the old `url` — refuses it by
- * name, and completes the switch by asking. 0055 §3 is still the thing to know
- * before doing it: the other store is a new log, not the same one somewhere
- * else.
+ * **A store that answers is asked about again** (0125 §6), as every recipe
+ * question is: the answer defaults to the store that is written, an answer
+ * equal to it writes nothing, and another is written and then said — the log
+ * it opens is a new, empty one, and nothing is copied from the old
+ * (0100 §9). `--defaults` keeps a store that is settled and answers; it does
+ * not choose one on a machine that has none. Two things are still refused,
+ * because the machine could not obey another answer: an exported
+ * `LINGTAI_DATABASE_URL`, and an empty `--database-url`.
  *
  * **`--database-url <url>` given on its own is the one re-run that is still a
  * write** (#392): given to a machine already settled on another database that
@@ -163,7 +161,8 @@ import { type RawStdin, waitForKeypress } from './keypress.ts'
 import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
-import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import type { LeftBehind } from './setup-card.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
@@ -332,8 +331,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     const { flags, repeated } = args
     // The heading, `Machine` and `Store` are printed only by a run that does not end on the card (#773).
     const held: string[] = []
+    // What a change of store leaves behind (#1474): on the card where there is one, and said here where there is not.
+    const storeLeft: LeftBehind[] = []
     const flush = (): void => {
       for (const line of held.splice(0)) world.log(line)
+      for (const l of storeLeft.splice(0)) world.log(`left behind: ${l.what}`)
     }
     const stop = (line: string, code = 1): number => {
       flush()
@@ -381,7 +383,18 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     if ('refused' in config) return stop(config.refused)
 
     // ---- the store ------------------------------------------------------------
-    const store = yield* chooseStore(world, config, path, flags['database-url'] ?? null, named, held, flush, stop)
+    const store = yield* chooseStore(
+      world,
+      config,
+      path,
+      flags['database-url'] ?? null,
+      named,
+      held,
+      flush,
+      stop,
+      flags['defaults'] !== undefined,
+      storeLeft,
+    )
     if (store !== null) return store
     const storeNow = storeChoice(world.env, machineFor(world, path))
     const homeIsNew = !hadConfig && world.machine.read(path) !== null
@@ -567,6 +580,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             store: storeNow,
             runtimes,
             github: how,
+            ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],
         )
@@ -712,6 +726,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             recipe: chosen.card,
             trial: chosen.trial,
             recipePath: recipeFile,
+            ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0
+              ? {}
+              : { leftBehind: [...storeLeft, ...(chosen.leftBehind ?? [])] }),
           },
           chosen.hints,
         )
@@ -896,12 +913,16 @@ function chooseStore(
   held: string[],
   flush: () => void,
   stop: (line: string, code?: number) => number,
+  /** `--defaults`: a store that is settled and answers is kept, as every recipe question's default is (#1474). */
+  defaults: boolean,
+  /** What a switch of store leaves behind, for the card. */
+  leftBehind: LeftBehind[],
 ): Effect.Effect<number | null, unknown> {
   return Effect.gen(function* () {
     // `--store sqlite` is refused, before anything else is looked at, wherever
     // the machine would not obey it — writing it there would be #215 again.
     if (named === 'sqlite') {
-      const refused = sqliteRefused(world, config, path)
+      const refused = sqliteRefused(world, path)
       if (refused !== null) return stop(refused)
     }
 
@@ -964,21 +985,34 @@ function chooseStore(
     // through to whatever the file already says. That holds whether or not
     // `--store postgres` named it too: a flag given without `--store` is still
     // a flag, not silently discarded because nothing named the store.
+    // What the machine says before this run writes anything: a store that answers is the question's default, and
+    // the one a switch is said against.
+    const before = storeChoice(world.env, machineFor(world, path))
+    let current: string | undefined
+    let answering: StoreChosen | null = null
     if (flag === null) {
-      // The settled-store check runs once: a machine already answering is
-      // reported and not asked about again (this file's header).
-      const settled = storeChoice(world.env, machineFor(world, path))
+      // The settled-store check runs once. A machine already answering is asked about again, with that store as
+      // the default (0125 §6).
+      const settled = before
       if (!('refused' in settled)) {
-        if (settled.store === 'sqlite') return sqliteChosen(held, settled)
-        const check = yield* spunEffect(world, 'connecting to the database', world.database(settled.url))
-        if (check.ok) {
-          heldFact(held, 'Store', [
-            ['store', paint.pass(`${describeStore(settled)} · ${describeSchema(check.schema)}`)],
-          ])
-          return null
+        // A store that answers is asked about again with itself as the default (0125 §6): an answer equal to it
+        // writes nothing, and another is written and said.
+        if (settled.store === 'sqlite') {
+          current = ''
+          answering = settled
+        } else {
+          const check = yield* spunEffect(world, 'connecting to the database', world.database(settled.url))
+          if (check.ok) {
+            current = settled.url
+            answering = settled
+          } else {
+            flush()
+            fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
+            // The configured URL stays the default: an outage is not an answer, so Enter checks it again rather
+            // than taking SQLite and removing it. It is not `answering`, since nothing confirmed it.
+            current = settled.url
+          }
         }
-        flush()
-        fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
       } else if (settled.because === 'unreadable') {
         // `readConfig` refused this already; it is here because the two readers
         // are separate and one of them must not be the only one that looks.
@@ -1001,7 +1035,8 @@ function chooseStore(
         // loop that never reaches the question, since what makes it
         // inheritable — a `url` with no `store` — is still true after it failed.
         const older = config.getIn(['database', 'url'])
-        if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+        // `--store sqlite` is the answer to that question, given: the inherited URL is not adopted over it.
+        if (named !== 'sqlite' && settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
           const check = yield* spunEffect(world, 'connecting to the database', world.database(older))
           if (check.ok) {
             config.setIn(['database', 'store'], 'postgres')
@@ -1014,6 +1049,8 @@ function chooseStore(
           }
           flush()
           world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+          // Likewise the inherited URL: Enter checks it again rather than replacing it with SQLite.
+          current = older
         }
       }
     }
@@ -1022,17 +1059,25 @@ function chooseStore(
     // question is asked — `--store sqlite` is the empty answer, given in
     // advance, with no terminal needed to give it (#345).
     let schema: SchemaOutcome | null = null
-    const result = yield* questionEffect(world, {
+    // `--defaults` keeps a store that is settled and answers; it does not choose one on a fresh machine.
+    const storeWorld = defaults && current !== undefined ? acceptingDefaults(world) : world
+    const result = yield* questionEffect(storeWorld, {
       name: 'the store',
       command: 'lingtai init',
       flag: '--store sqlite, or --store postgres --database-url <url>',
       given: named === 'sqlite' ? '' : flag,
-      prompt: 'a Postgres URL for the log — empty for SQLite',
+      // Where Postgres is what answers, an empty answer keeps it, so SQLite is a word of its own.
+      prompt:
+        current !== undefined && current !== ''
+          ? 'a Postgres URL for the log — empty keeps the one shown, sqlite for SQLite'
+          : 'a Postgres URL for the log — empty for SQLite',
+      ...(current === undefined ? {} : { current }),
       fallback: '',
       show: redactUrl,
+      secret: true,
       validate: (answer) =>
         Effect.gen(function* () {
-          if (answer === '') return null
+          if (answer === '' || answer === 'sqlite') return null
           if (!/^postgres(ql)?:\/\//.test(answer)) {
             return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
           }
@@ -1043,8 +1088,16 @@ function chooseStore(
         }),
     })
     if ('refused' in result) return stop(result.refused)
+    const answered = result.answer === 'sqlite' ? '' : result.answer
 
-    if (result.answer === '') {
+    // The same store as the one that answers: nothing is written, and the line says what is there.
+    if (answering !== null && current !== undefined && answered === current) {
+      if (answering.store === 'sqlite') return sqliteChosen(held, answering)
+      heldFact(held, 'Store', [['store', paint.pass(`${describeStore(answering)} · ${describeSchema(schema!)}`)]])
+      return null
+    }
+
+    if (answered === '') {
       // The SQLite choice, written — and `database.url` removed in the same
       // write. Left behind it would go on selecting Postgres under a screen
       // that had just said SQLite, which is the whole of #215.
@@ -1052,6 +1105,7 @@ function chooseStore(
       config.deleteIn(['database', 'url'])
       world.machine.write(path, config.toString())
       const read = confirm(world, stop, path, 'sqlite')
+      if (typeof read !== 'number') storeSwitched(leftBehind, before, read)
       return typeof read === 'number' ? read : sqliteChosen(held, read)
     }
 
@@ -1060,8 +1114,24 @@ function chooseStore(
     world.machine.write(path, config.toString())
     const read = confirm(world, stop, path, 'postgres')
     if (typeof read === 'number') return read
+    storeSwitched(leftBehind, before, read)
     heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(schema!)}`)]])
     return null
+  })
+}
+
+/**
+ * The card's line for another store (ADR 0100 §9): the log it opens is a new, empty one, and nothing was copied
+ * from the old. Said only where a store was settled before this run — a first choice leaves nothing behind.
+ */
+function storeSwitched(into: LeftBehind[], before: ReturnType<typeof storeChoice>, now: StoreChosen): void {
+  if ('refused' in before) return
+  if (before.store === now.store && (before.store === 'sqlite' || (now.store === 'postgres' && before.url === now.url)))
+    return
+  into.push({
+    what:
+      `the log is a new, empty one — nothing was copied from ${describeStore(before)}, ` +
+      'and every project is added again',
   })
 }
 
@@ -1069,34 +1139,17 @@ function chooseStore(
  * Why `--store sqlite` cannot be obeyed here, or null when it can (#345).
  *
  * **A choice the machine will not obey is refused by name, never written.**
- * Three ways it would not be:
- *
- * - an exported `LINGTAI_DATABASE_URL`, which `storeChoice()` reads before the
- *   file (0056 §3) — writing `sqlite` under it shows SQLite and runs Postgres,
- *   which is #215;
- * - a file that already says `postgres`, with its URL or without one — taking
- *   the other store is a new, empty log rather than this one moved (0055 §3),
- *   and changing a store is an edit, not a re-run (this file's header);
- * - a `database.url` with no store written beside it, which is a Postgres log
- *   set up before the store was a written value (#186): the question adopts
- *   that URL, and a flag must not silently drop it instead.
- *
- * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
- * documented switch leaves, and the empty answer completes it in the same way.
+ * One way it would not be: an exported `LINGTAI_DATABASE_URL`, which
+ * `storeChoice()` reads before the file (0056 §3) — writing `sqlite` under it
+ * shows SQLite and runs Postgres, which is #215. A file that already says
+ * `postgres` is not refused: another store is a change, written and then said
+ * (0125 §6), and the log it opens is a new, empty one (0100 §9).
  */
 /** `--database-url` (or `--store postgres --database-url`) named a URL other than the exported one. */
 export function exportedUrlRefusal(given: string, flag: string, from: string, exported: string): string {
   return (
     `${given} ${flag}, but ${from} names ${exported}, and ` +
     'an exported URL wins over the file. Unset it, or leave out --database-url. Nothing was written'
-  )
-}
-
-/** Why `--store sqlite` cannot flip a Postgres machine, and the edit that can. */
-export function sqliteEditSentence(path: string): string {
-  return (
-    'another store is a new, empty log rather than this one moved, so changing it is an edit and not a ' +
-    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`
   )
 }
 
@@ -1108,22 +1161,10 @@ export function sqliteExportedRefusal(from: string): string {
   )
 }
 
-function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, config: Document, path: string): string | null {
+function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, path: string): string | null {
   const read = storeChoice(world.env, machineFor(world, path))
-  // The way through, and it works with no terminal: the edit leaves the
-  // two-keys half-state, which `--store sqlite` completes.
-  const edit = sqliteEditSentence(path)
   if (!('refused' in read) && read.where === 'environment' && read.store === 'postgres') {
     return sqliteExportedRefusal(read.from)
-  }
-  if (('refused' in read && read.because === 'no url') || (!('refused' in read) && read.store === 'postgres')) {
-    return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`
-  }
-  // A `url` with no store this command can read beside it — none, or a value
-  // that is neither name — is what the question would adopt as Postgres (#186).
-  const older = config.getIn(['database', 'url'])
-  if ('refused' in read && read.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
-    return `--store sqlite, but ${path} names database.url: ${redactUrl(older)} and no valid database.store beside it — ${edit}`
   }
   return null
 }

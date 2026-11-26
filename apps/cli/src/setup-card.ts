@@ -79,6 +79,16 @@ export interface SetupCardFacts {
   }
   trial?: TrialOutcome
   recipePath?: string
+  /**
+   * What a change in this run left where it was, and what the person does about it (#1474): each is a sentence
+   * and, where there is one, the command. A change never touches the person's commits to make itself fit.
+   */
+  leftBehind?: readonly LeftBehind[]
+}
+
+export interface LeftBehind {
+  what: string
+  command?: string
 }
 
 /**
@@ -291,6 +301,13 @@ export function renderSetupCard(facts: SetupCardFacts): string {
       ])
     }
     if (rows.length > 0) groups[1]!.rows.push(...rows)
+  }
+  if (facts.leftBehind !== undefined && facts.leftBehind.length > 0) {
+    const rows: Row[] = facts.leftBehind.flatMap((l): Row[] => [
+      ['left', l.what],
+      ...(l.command === undefined ? [] : [['run', l.command] as const]),
+    ])
+    groups.splice(Math.min(2, groups.length), 0, { title: 'left behind', rows })
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
   const top =
