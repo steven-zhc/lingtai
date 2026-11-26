@@ -1,0 +1,154 @@
+{
+  "recorded_at_utc": "2026-11-25T23:18:44.383669+00:00",
+  "build_id": "b9f27c1157875e24168fc40d15007adcc991e720",
+  "sse_replay_probe": [
+    {
+      "case": "from_current_head",
+      "start_utc": "2026-11-25T23:17:08.240326+00:00",
+      "from_seq": "66281",
+      "http_status": 200,
+      "curl_exit": 28,
+      "intentional_limits": {
+        "seconds": 2,
+        "bytes": 524288
+      },
+      "received_bytes": 131,
+      "elapsed_s": 2.00465,
+      "append_frames": 0,
+      "first_event_id": null,
+      "last_event_id": null,
+      "head_at_start": "66281",
+      "event_type_counts": {},
+      "complete_append_messages": 0
+    },
+    {
+      "case": "fresh_from_zero",
+      "start_utc": "2026-11-25T23:17:10.258622+00:00",
+      "from_seq": "0",
+      "http_status": 200,
+      "curl_exit": 63,
+      "intentional_limits": {
+        "seconds": 2,
+        "bytes": 524288
+      },
+      "received_bytes": 524288,
+      "elapsed_s": 1.135617,
+      "append_frames": 4514,
+      "first_event_id": 1,
+      "last_event_id": 4514,
+      "head_at_start": "66281",
+      "event_type_counts": {
+        "ConductorPaused": 7,
+        "ProjectConfigured": 1,
+        "Reconciled": 17,
+        "ConductorStarted": 17,
+        "TicketClaimed": 100,
+        "IssueUpdated": 355,
+        "StepStarted": 857,
+        "StepEnded": 867,
+        "ConductorResumed": 3,
+        "RunSpent": 444,
+        "RunStarted": 84,
+        "StepsResolved": 84,
+        "RunPrompted": 84,
+        "RunTouchedFile": 638,
+        "RunFinished": 82,
+        "RunProducedDiff": 155,
+        "RunProposedCompletion": 80,
+        "IntegrationAttempted": 63,
+        "IntegrationSucceeded": 62,
+        "TicketLanded": 62,
+        "EndActionsResolved": 95,
+        "PluginFailed": 86,
+        "ConductorShutdownRequested": 9,
+        "ConductorShutdownWithdrawn": 9,
+        "RunRefsPublished": 69,
+        "WaitStarted": 24,
+        "TicketReleased": 13,
+        "RunFailed": 3,
+        "WaitResolved": 22,
+        "RunRequested": 10,
+        "PassRouted": 92,
+        "IntegrationRefused": 1,
+        "ContinueRequested": 5,
+        "TicketClosed": 4,
+        "RunKeptUncommitted": 1,
+        "TriageStarted": 4,
+        "WaitTriaged": 4
+      },
+      "complete_append_messages": 4513
+    }
+  ],
+  "endpoint_single_checks": [
+    {
+      "name": "report",
+      "start_utc": "2026-11-25T23:14:19.667974+00:00",
+      "status": 200,
+      "first_byte_s": 1.789595,
+      "total_s": 1.790309,
+      "bytes": 162766,
+      "lingtai_title": true,
+      "server_error_text": false
+    },
+    {
+      "name": "spend",
+      "start_utc": "2026-11-25T23:14:21.470322+00:00",
+      "status": 404,
+      "first_byte_s": 0.009105,
+      "total_s": 0.009336,
+      "bytes": 10421,
+      "lingtai_title": true,
+      "server_error_text": false
+    },
+    {
+      "name": "task_1439",
+      "start_utc": "2026-11-25T23:14:21.495142+00:00",
+      "status": 200,
+      "first_byte_s": 1.061574,
+      "total_s": 1.090664,
+      "bytes": 760385,
+      "lingtai_title": true,
+      "server_error_text": false
+    }
+  ],
+  "search_summary": {
+    "entry_count": 89,
+    "groups": {
+      "Pages": 5,
+      "Projects": 2,
+      "Recipes": 2,
+      "Tickets": 80
+    },
+    "pr_entries": 0,
+    "problem_count": 0
+  },
+  "task_1439_assertion": {
+    "known_pr": 7,
+    "contains_no_pr_or_draft_holds_it": true,
+    "source_response_bytes": 760385,
+    "source_visible_text_characters": 257838,
+    "browser_render_cost_measured": false
+  },
+  "home_tail_witness": {
+    "trace_id": "935b9850ecc4c4a5ef659a44a3bfea62",
+    "request_s": 3.355102792,
+    "after_last_measured_child_s": 1.594464042
+  },
+  "query_quality": {
+    "window_start_utc": "2026-11-25T22:50:00Z",
+    "window_end_utc": "2026-11-25T23:13:31Z",
+    "http_roots": 0,
+    "orphan_acquire_spans": 140,
+    "note": "No HTTP attribution; do not classify these as 140 page requests. Long-lived/background activity is possible, not established here."
+  },
+  "limits": [
+    "SSE probes were each limited to two seconds and 512 KiB; curl exits 28/63 are intentional timeout/size limits, not application failures.",
+    "The zero-cursor replay was stopped at 4514 of the historical event range; full catch-up duration and bytes were not measured.",
+    "Scheduling a refresh per append is a source fact; the number of resulting React renders was not counted in this probe.",
+    "Read-only endpoint checks are one observation each, not P95 evidence.",
+    "Queue dependency impact is a source-path inference; no currently runnable unheld dependency chain was exercised.",
+    "The retired /spend endpoint returned 404 and is not a current navigation defect.",
+    "No raw SSE event bodies, search entries, task text, database URL or credentials are archived.",
+    "The size cap cuts the last frame: 4514 append headers, 4513 complete parsed messages."
+  ]
+}
