@@ -20,8 +20,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Close } from '../src/app/decide.tsx'
-import { LandedRow } from '../src/app/page.tsx'
+import { AnsweringPill, LandedRow } from '../src/app/page.tsx'
 import { toCard } from '../src/lib/board.ts'
+import { billText, emptyBill } from '../src/lib/spend.ts'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -146,6 +147,37 @@ describe('a closed item in the archive', () => {
     // And the ordinary row is untouched: the word appears only where it is
     // true, so it carries information rather than decorating every row.
     expect(landed).not.toContain('closed')
+  })
+
+  it('is two lines: what it is above, what it cost below, with the answering pill drawn by the shared component', () => {
+    const base = toCard(task({ state: 'landed' }))
+    const work = { ...emptyBill(), reportedCents: 10, reportedRuns: 1 }
+    const fix = { ...emptyBill(), reportedCents: 6, reportedRuns: 1 }
+    const card = { ...base, costUsd: work, repairCostUsd: fix, turns: 9 }
+    const html = renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />)
+    const line1 = /<div class="lline">(.*?)<\/div>/s.exec(html)?.[1] ?? ''
+    const line2 = /<a class="lspend"[^>]*>(.*)<\/a>/s.exec(html)?.[1] ?? ''
+    const text2 = line2.replace(/<[^>]*>/g, '')
+
+    expect(line1).toContain(card.kind)
+    expect(text2.startsWith(billText(work))).toBe(true)
+    expect(text2).not.toContain(card.kind)
+    expect(text2).not.toContain('ago')
+    expect(line1).not.toContain('turns')
+    expect(text2.indexOf('answering')).toBeLessThan(text2.indexOf('9 turns'))
+    const pill = renderToStaticMarkup(
+      <ul>
+        <AnsweringPill bill={fix} />
+      </ul>,
+    ).replace(/<\/?ul>/g, '')
+    expect(html).toContain(pill)
+  })
+
+  it('draws no answering pill for an empty bill', () => {
+    const card = { ...toCard(task({ state: 'landed' })), repairCostUsd: emptyBill() }
+    const html = renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />)
+
+    expect(html).not.toContain('answering')
   })
 
   it('shares the column, so nothing falls off the board', () => {

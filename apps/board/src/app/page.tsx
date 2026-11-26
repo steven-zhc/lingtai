@@ -46,7 +46,7 @@ import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
-import { billHasAny, billText } from '@/lib/spend'
+import { type Bill, billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
@@ -399,21 +399,8 @@ export function Card({
             ) : null}
           </>
         ) : null}
-        {/* Apart from the work's cost, deliberately. Answering a refusal is
-            default-on and spends an agent without being asked again, so reducing
-            it into the number beside it would make it an invisible bill (#84).
-
-            It says *answering* rather than *repair* since 0039 §3: the column
-            holds every round a pass bought — a refused review, a red build, and
-            after `#142` a conflict — and only one of those was ever a repair.
-            The figure is `spend`'s `Action` rows at round 1 or above (0039 §3,
-            `#498`) — `BoardCard.repairCostUsd`'s own doc says the same — and
-            not the `repair_costs` projection column this used to read. */}
-        {billHasAny(card.repairCostUsd) ? (
-          <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
-            {billText(card.repairCostUsd)} answering
-          </li>
-        ) : null}
+        {/* Apart from the work's cost, deliberately: see `AnsweringPill` (#84). */}
+        <AnsweringPill bill={card.repairCostUsd} />
         {/* **Which round, as one object** (#170). A card that keeps failing
             should read as one rather than looking new every time it comes back
             round — and *which attempt* and *which arm* are 0040's two axes, not
@@ -516,10 +503,35 @@ export function LandedCount({ count, only }: { count: number; only: string | und
 }
 
 /**
- * One landed item, on one line.
+ * The answering bill as a pill, drawn once for the card and the landed row.
  *
- * `#150 · enhancement · 25 turns · $1.46 · 2d` — the same facts a card carried,
- * at the weight finished work deserves. Nothing here is a new claim: the
+ * Apart from the work's cost, deliberately. Answering a refusal is default-on
+ * and spends an agent without being asked again, so reducing it into the number
+ * beside it would make it an invisible bill (#84).
+ *
+ * It says *answering* rather than *repair* since 0039 §3: the column holds every
+ * round a pass bought, a refused review, a red build, and after `#142` a
+ * conflict, and only one of those was ever a repair. The figure is `spend`'s
+ * `Action` rows at round 1 or above (0039 §3, `#498`), as
+ * `BoardCard.repairCostUsd`'s own doc says. An empty bill draws nothing: never
+ * `$0.00 answering`. It is an `<li>`, so it goes in a list.
+ */
+export function AnsweringPill({ bill }: { bill: Bill }) {
+  return billHasAny(bill) ? (
+    <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
+      {billText(bill)} answering
+    </li>
+  ) : null
+}
+
+/**
+ * One landed item, on two lines.
+ *
+ * Line 1 is what it is and where: `#150 · enhancement · 2d` and the where-tag.
+ * Line 2 is what it cost: `$1.46 [$0.06 answering] · 25 turns`. The Work figure
+ * and the answering pill never clip; only the turns give way. On one clipped
+ * line the spend went first and the answering bill was never said at all. The
+ * same facts a card carried, at the weight finished work deserves. Nothing here is a new claim: the
  * numbers, their words and their absences are the card's (#78, #79), and only
  * the ink they take has changed.
  *
@@ -549,8 +561,6 @@ export function LandedRow({
     // a claim that is true where it was written and false where it is read.
     card.satisfied ? 'satisfied' : card.closed ? 'closed' : null,
     card.kind,
-    card.turns === null ? null : `${card.turns} turns`,
-    billHasAny(card.costUsd) ? billText(card.costUsd) : null,
     // The lane's own word is on the card; here the column heading is already
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
@@ -577,20 +587,32 @@ export function LandedRow({
           <Segs steps={card.progress.steps} at={null} labels={false} />
         </span>
       ) : null}
-      {showProject ? <span className="proj">{card.project}</span> : null}
-      <IssueRef href={issue} issue={card.ref} />
-      <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
-        · {said.join(' · ')}
-      </Link>
-      {where === null ? null : where.tag === 'branch' ? (
-        <span className="ltag ltag-branch">on your branch</span>
-      ) : where.tag === 'merged' ? (
-        <span className="ltag ltag-merged">merged</span>
-      ) : (
-        <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
-          in {where.name}
+      <div className="lbody">
+        <div className="lline">
+          {showProject ? <span className="proj">{card.project}</span> : null}
+          <IssueRef href={issue} issue={card.ref} />
+          <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
+            · {said.join(' · ')}
+          </Link>
+          {where === null ? null : where.tag === 'branch' ? (
+            <span className="ltag ltag-branch">on your branch</span>
+          ) : where.tag === 'merged' ? (
+            <span className="ltag ltag-merged">merged</span>
+          ) : (
+            <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
+              in {where.name}
+            </Link>
+          )}
+        </div>
+        {/* The same page, out of the tab order so the row stays one stop. */}
+        <Link className="lspend" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title} tabIndex={-1}>
+          <ul className="lbill">
+            {billHasAny(card.costUsd) ? <li className="lwork">{billText(card.costUsd)}</li> : null}
+            <AnsweringPill bill={card.repairCostUsd} />
+            {card.turns === null ? null : <li className="lturns">· {card.turns} turns</li>}
+          </ul>
         </Link>
-      )}
+      </div>
     </li>
   )
 }

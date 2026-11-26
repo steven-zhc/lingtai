@@ -908,15 +908,24 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
    this system exists to keep. */
 .landed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lrow {
-  display: flex; gap: 5px; align-items: baseline;
+  display: flex; gap: 5px; align-items: flex-start;
   font-family: var(--mono); font-size: var(--fs-xs);
   color: var(--muted);
   padding: 3.5px 2px;
   border-bottom: 1px solid var(--rule);
 }
 .lrow:last-child { border-bottom: 0; }
-/* The rest of the line is the task page. Clipped rather than wrapped: a row
-   that wraps is a card again, in two lines instead of one. */
+.lbody { flex: 1; min-width: 0; }
+/* Line 1: what it is and where. Line 2: what it cost. */
+.lline { display: flex; gap: 5px; align-items: baseline; }
+.lspend { color: inherit; display: block; }
+.lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* The Work figure and the answering pill never clip; only turns give way. */
+.lbill { display: flex; flex-wrap: nowrap; gap: 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
+.lwork, .lbill > .pill { flex: none; }
+.lturns { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The rest of line 1 is the task page. Clipped rather than wrapped: a row
+   that wraps is a card again. */
 .lmeta {
   color: inherit;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
