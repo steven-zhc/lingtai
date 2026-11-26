@@ -20,7 +20,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Close } from '../src/app/decide.tsx'
-import { AnsweringPill, LandedRow } from '../src/app/page.tsx'
+import { AnsweringPill, Card, LandedRow } from '../src/app/page.tsx'
 import { toCard } from '../src/lib/board.ts'
 import { billText, emptyBill } from '../src/lib/spend.ts'
 
@@ -89,7 +89,7 @@ describe('the row of moves', () => {
  * The archive column holds two different endings, and says which (#151).
  *
  * `COLUMN_OF` puts `closed` in Landed's column on purpose — both are over, and
- * Landed is already an archive of one-line rows rather than a lane of cards.
+ * Landed is already an archive of two-line rows rather than a lane of cards.
  * What that costs is a heading that speaks for its rows: three items closed by
  * hand rendered as `lingtai #156 · bug · 37 turns · $2.52 · 8m`, under a
  * heading reading **Landed**, having landed nothing. The row is the only place
@@ -171,6 +171,27 @@ describe('a closed item in the archive', () => {
       </ul>,
     ).replace(/<\/?ul>/g, '')
     expect(html).toContain(pill)
+  })
+
+  it('draws the same answering pill on the card and on the row, from the answering bill', () => {
+    const base = toCard(task({ state: 'landed' }))
+    const work = { ...emptyBill(), reportedCents: 10, reportedRuns: 1 }
+    const fix = { ...emptyBill(), reportedCents: 6, reportedRuns: 1 }
+    const card = { ...base, costUsd: work, repairCostUsd: fix }
+    const pillOf = (html: string) => /<li class="pill sig"[^>]*>.*?<\/li>/s.exec(html)?.[0] ?? null
+    const row = pillOf(renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />))
+    const full = pillOf(renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />))
+
+    expect(full).not.toBeNull()
+    expect(row).toBe(full)
+    expect(full).toContain(`${billText(fix)} answering`)
+    expect(full).not.toContain(billText(work))
+
+    const none = { ...card, repairCostUsd: emptyBill() }
+    expect(
+      pillOf(renderToStaticMarkup(<Card card={none} showProject={false} issue={null} paused={false} />)),
+    ).toBeNull()
+    expect(pillOf(renderToStaticMarkup(<LandedRow card={none} showProject={false} issue={null} />))).toBeNull()
   })
 
   it('draws no answering pill for an empty bill', () => {

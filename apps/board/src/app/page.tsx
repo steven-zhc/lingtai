@@ -95,7 +95,7 @@ import { Skeleton } from './skeleton.tsx'
  * **Weight follows attention, and it used not to.** Landed rendered a card each
  * and was the heaviest thing on the page while one waiting card took about a
  * twelfth of the ink; the bar led with `11 items`, a sum of four columns that
- * mean different things and that nobody acts on (#81). So history is one line
+ * mean different things and that nobody acts on (#81). So history is two short lines
  * per item and reduces away past the most recent few, the room that frees goes to
  * the lanes where something is happening, and the bar ends on the one number an
  * operator acts on in the next minute: how many need a person.
@@ -587,9 +587,9 @@ export function LandedRow({
           <Segs steps={card.progress.steps} at={null} labels={false} />
         </span>
       ) : null}
+      {showProject ? <span className="proj">{card.project}</span> : null}
       <div className="lbody">
         <div className="lline">
-          {showProject ? <span className="proj">{card.project}</span> : null}
           <IssueRef href={issue} issue={card.ref} />
           <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
             · {said.join(' · ')}
@@ -1387,7 +1387,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <div className="cols">
           {COLUMNS.map((col) => (
             // `quiet` is the width half of the same decision the rows below are
-            // the weight half of: Landed is a list of one-line rows and does not
+            // the weight half of: Landed is a list of two-line rows and does not
             // need a card's column, and what it gives back goes to the lanes
             // where something is happening (#81).
             <section

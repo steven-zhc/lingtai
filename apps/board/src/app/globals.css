@@ -490,7 +490,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not
-     equal: Landed is a list of one-line rows and does not need a card's width,
+     equal: Landed is a list of two-line rows and does not need a card's width,
      and the room it was taking belongs to the lanes where something is
      happening. Still sized from the lanes that exist and never from a number
      written here — `flex: 1` shares out whatever is left, so a lane added or
@@ -852,8 +852,8 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .shold { color: var(--muted); }
 
 /* The same rail on a landed row, at the width one line can give it and with no
-   labels — the row is one line by #81's decision, and what is scanned for here
-   is the hatch. */
+   labels — the row is two short lines (#81, then #1493), and what is scanned for
+   here is the hatch. */
 .lseq { flex: 0 0 auto; width: 34px; }
 .lseq .segs { gap: 2px; }
 .lseq .sbar { height: 4px; }
@@ -902,8 +902,8 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
    A card each made the column that needs the least attention the heaviest thing
    on the page: six full-height cards of finished work, filling the screen,
-   beside one waiting card taking about a twelfth of the ink (#81). One line per
-   item, newest first, and everything past the most recent few behind a
+   beside one waiting card taking about a twelfth of the ink (#81). Two short
+   lines per item, newest first, and everything past the most recent few behind a
    disclosure — collapsed rather than dropped, because what landed is the record
    this system exists to keep. */
 .landed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
@@ -920,8 +920,10 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .lline { display: flex; gap: 5px; align-items: baseline; }
 .lspend { color: inherit; display: block; }
 .lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-/* The Work figure and the answering pill never clip; only turns give way. */
-.lbill { display: flex; flex-wrap: nowrap; gap: 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
+/* The Work figure and the answering pill never clip; only turns give way. In a
+   column too narrow for both they wrap onto a further line rather than run past
+   the column's edge. */
+.lbill { display: flex; flex-wrap: wrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
 .lwork, .lbill > .pill { flex: none; }
 .lturns { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The rest of line 1 is the task page. Clipped rather than wrapped: a row
