@@ -378,7 +378,7 @@ describe('waits and the top eight', () => {
 
   it('uses singulars, leaves out no waits, and says when cost is unknown', () => {
     const t = ticket({ fixRounds: 1, passes: 1, unknownClaims: 2 })
-    expect(run([t]).top[0]!.sentence).toBe('cost unknown over 1 fix round · 1 attempt · 2 runs unknown')
+    expect(run([t]).top[0]!.sentence).toBe('unpriced over 1 fix round · 1 attempt · 2 runs unpriced')
     const once = ticket({ waits: [wait('X', null)] })
     expect(run([once]).top[0]!.sentence).toBe('no cost over 0 fix rounds · 1 attempt · waited once (for X)')
   })

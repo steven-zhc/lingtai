@@ -474,7 +474,7 @@ function sentenceOf(t: {
   const head = lead
     ? `${Math.round(lead.share * 100)}% ${PURPOSE_WORDS[lead.purpose] ?? lead.purpose}`
     : t.cost.unknown > 0
-      ? 'cost unknown'
+      ? 'unpriced'
       : 'no cost'
   const parts = [`${head} over ${plural(t.fixRounds, 'fix round')}`, plural(t.passes, 'attempt')]
   if (t.waits.length > 0) {
@@ -486,7 +486,7 @@ function sentenceOf(t: {
     const times = t.waits.length === 1 ? 'once' : t.waits.length === 2 ? 'twice' : `${t.waits.length} times`
     parts.push(`waited ${times} (${reasons.join(', ')})`)
   }
-  if (t.cost.unknown > 0) parts.push(`${plural(t.cost.unknown, 'run')} unknown`)
+  if (t.cost.unknown > 0) parts.push(`${plural(t.cost.unknown, 'run')} unpriced`)
   return parts.join(' · ')
 }
 

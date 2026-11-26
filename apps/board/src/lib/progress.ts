@@ -538,10 +538,10 @@ export function describeHeld({
 
 /**
  * Cents rounded once, and a run that did not say what it cost reads
- * `cost unknown` rather than `$0.00` (0110 §4/§7) — `billText`'s rule, spelled
+ * `unpriced` rather than `$0.00` (0110 §4/§7) — `billText`'s rule, spelled
  * here because `lib/spend.ts` reaches the projector's runner and this file is
  * in `rail.tsx`'s client graph.
  */
 function grantedBill(costUsd: number | null): string {
-  return costUsd === null ? 'cost unknown' : `$${(Math.round(costUsd * 100) / 100).toFixed(2)}`
+  return costUsd === null ? 'unpriced' : `$${(Math.round(costUsd * 100) / 100).toFixed(2)}`
 }

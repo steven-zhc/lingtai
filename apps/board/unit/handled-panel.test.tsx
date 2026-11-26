@@ -98,7 +98,7 @@ describe('HandledPanel', () => {
     expect(out).toContain('the agent asked you a question')
     expect(out).toContain('href="/report?handled=review-fixed&amp;by=system#handled"')
     expect(out).toContain('$50.00 reported · ~$2.50 est.')
-    expect(out).toContain('+ 1 unknown')
+    expect(out).toContain('+ 1 unpriced')
     expect(out).toContain('of the week&#x27;s spend')
     const unknownOnly = renderToStaticMarkup(
       <HandledPanel

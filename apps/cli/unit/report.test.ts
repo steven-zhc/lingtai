@@ -245,9 +245,9 @@ describe('lingtai report’s text', () => {
     expect(r.out).toContain('landed tickets (1)')
     expect(r.out).toContain('by kind')
     expect(r.out).toContain('mean $1.50 reported + $0.25 estimated')
-    expect(r.out).toContain('1 unknown')
+    expect(r.out).toContain('1 unpriced')
     expect(r.out).toContain('ticket-lingtai-1  bug  landed')
-    expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unknown')
+    expect(r.out).toContain('over 3 fix rounds · 2 attempts · 1 run unpriced')
   })
 
   it('names a ticket whose state could not be read, in text and in json (#1349)', async () => {
@@ -398,10 +398,10 @@ describe('lingtai report with a projection behind', () => {
 describe('moneyText', () => {
   it('keeps reported, estimated and unknown apart, reported first, and never sums them', () => {
     expect(moneyText({ reportedCents: 150, estimatedCents: 25, unknown: 1 })).toBe(
-      '$1.50 reported · $0.25 estimated · 1 unknown',
+      '$1.50 reported · $0.25 estimated · 1 unpriced',
     )
     expect(moneyText({ reportedCents: 0, estimatedCents: 25, unknown: 0 })).toBe('$0.25 estimated')
-    expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('2 unknown')
+    expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('2 unpriced')
     expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 0 })).toBe('$0.00 reported')
   })
 })

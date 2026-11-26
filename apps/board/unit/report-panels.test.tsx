@@ -154,7 +154,7 @@ describe('the report page', () => {
     expect(out).toContain('building: $3.00')
     expect(out).toContain('triage: ~$0.50 est.')
     expect(out).toContain('day: $3.00 + ~$0.50 est.')
-    expect(out).toContain('2 unknown')
+    expect(out).toContain('2 unpriced')
     expect(out).toContain('>triage<')
     expect(out).not.toContain('Work: ')
     expect(out).not.toContain('Triage: ')
@@ -229,7 +229,7 @@ describe('the report page', () => {
     expect(out).toContain('25%')
     expect(out).toContain('1h 05m')
     expect(out).toContain('$5.40')
-    expect(out).toContain('2 unknown')
+    expect(out).toContain('2 unpriced')
     const none = renderToStaticMarkup(
       <Tiles
         report={{
@@ -256,7 +256,7 @@ describe('the report page', () => {
     const out = renderToStaticMarkup(<KindsPanel kinds={[row('bug'), row(null)]} />)
     expect(out).toContain('unclassified')
     expect(out).not.toContain('spent in the window')
-    expect(out).toContain('$1.20 + ~$0.30 est. + 1 unknown')
+    expect(out).toContain('$1.20 + ~$0.30 est. + 1 unpriced')
   })
 
   it('folds the purpose and wait lines under the summary line, and none when there are none', () => {
@@ -363,7 +363,7 @@ describe('the report page', () => {
       />,
     )
     expect(out).toContain('29%')
-    expect(out).toContain('median ~$1.00 per landed ticket + 1 unknown')
+    expect(out).toContain('median ~$1.00 per landed ticket + 1 unpriced')
     const zero = renderToStaticMarkup(
       <Tiles
         report={{
@@ -378,7 +378,7 @@ describe('the report page', () => {
       />,
     )
     expect(zero).toContain('<span class="v">—</span>')
-    expect(zero).toContain('nothing known spent in the window + 2 unknown')
+    expect(zero).toContain('nothing known spent in the window + 2 unpriced')
     expect(zero).not.toContain('>0%<')
   })
 
@@ -398,7 +398,7 @@ describe('the report page', () => {
     expect(tile).toContain('<span class="v">—</span>')
     expect(tile).not.toContain('$0.00 of')
     const panel = renderToStaticMarkup(<WhereItWentPanel byPurpose={unknownOnly} />)
-    expect(panel).toContain('2 unknown')
+    expect(panel).toContain('2 unpriced')
     expect(panel).not.toContain('>$0.00<')
     expect(panel).not.toContain('>0%<')
   })
@@ -419,13 +419,13 @@ describe('the report page', () => {
     const out = renderToStaticMarkup(<WhereItWentPanel byPurpose={byPurpose} />)
     expect(out).toContain('>triage<')
     expect(out).toContain('$1.00')
-    expect(out).toContain('+ 1 unknown')
+    expect(out).toContain('+ 1 unpriced')
     const none = renderToStaticMarkup(
       <WhereItWentPanel
         byPurpose={[{ purpose: 'Work', money: { reportedCents: 0, estimatedCents: 0, unknown: 2 } }]}
       />,
     )
-    expect(none).toContain('2 unknown')
+    expect(none).toContain('2 unpriced')
     expect(none).toContain('no known cost')
     expect(none).not.toContain('$0.00')
     expect(renderToStaticMarkup(<WhereItWentPanel byPurpose={[]} />)).toContain('nothing spent in the window')

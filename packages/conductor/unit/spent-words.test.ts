@@ -9,7 +9,7 @@ describe('spentWords', () => {
   it('keeps a reported zero as $0.00', () => {
     expect(spentWords(0)).toBe('$0.00')
   })
-  it('keeps an unknown cost unknown (0110 §7)', () => {
-    expect(spentWords(null)).toBe('cost unknown')
+  it('keeps an unknown unpriced (0110 §7)', () => {
+    expect(spentWords(null)).toBe('unpriced')
   })
 })
