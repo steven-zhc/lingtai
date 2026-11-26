@@ -26,6 +26,7 @@ import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
+import { codexTextConfig, type CodexTextConfig } from '@lingtai/env'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
 import { assigneeChanges, branchOf, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
@@ -65,6 +66,8 @@ export interface RecipeAt {
   local: boolean
   /** Already probed — this function never probes on its own. */
   runtimes: readonly RuntimeFound[]
+  /** The `codex_text` route (#1476): whether a new recipe may name Codex as its discuss agent. Absent, this machine's own file is read. */
+  codexText?: () => CodexTextConfig | undefined
   reader: SetupReader
   flags: Readonly<Record<string, string>>
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
@@ -352,6 +355,19 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   if ('refused' in agents) return agents
   if (absent) {
     collected.push(...agents.changes, ...agents.modelChanges)
+    // The schema's discuss agent is claude-code. Where that cannot run and the model-only Codex route is
+    // configured, name Codex instead; never `discuss.model` (doctor fails one that differs from codex_text).
+    const claudeSignedIn = at.runtimes.find((r) => r.id === 'claude-code')?.signedIn === true
+    if (!claudeSignedIn) {
+      let codexText: CodexTextConfig | undefined
+      try {
+        codexText = (at.codexText ?? (() => codexTextConfig()))()
+      } catch {
+        // An unreadable or invalid codex_text names no Codex agent here; doctor's discuss row validates it again and reports why.
+        codexText = undefined
+      }
+      if (codexText) collected.push({ path: ['discuss', 'agent'], value: 'codex' })
+    }
   } else {
     const wroteAgentChanges = yield* writeOrRefuse(draft, agents.changes)
     if ('refused' in wroteAgentChanges) return wroteAgentChanges

@@ -59,6 +59,7 @@ export const SAID: Said = {
   'steps.proposed': 'what happens once an attempt is ready to land',
   'runtime.limits': 'what one attempt may spend before it comes back to you',
   env: "what the agent's environment is filtered to",
+  discuss: 'who answers when a ticket is discussed',
 }
 
 /** `steps.end` of a new GitHub project: close the ticket when landed, and when a person ended it. */

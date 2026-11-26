@@ -371,7 +371,7 @@ describe('askBeforeGithubAdd (#402)', () => {
       const pair = parent.items.find((p) => isScalar(p.key) && p.key.value === keyPath[keyPath.length - 1])
       if (!pair) {
         // `sandbox` is asked only where the caller read the host (#1160), which this test does not.
-        expect(['steps.proposed', 'runtime.limits', 'sandbox', 'repo'], dotted).toContain(dotted)
+        expect(['steps.proposed', 'runtime.limits', 'sandbox', 'repo', 'discuss'], dotted).toContain(dotted)
         continue
       }
       const comment = (pair.key as Node).commentBefore ?? (parent.items[0] === pair ? parent.commentBefore : '') ?? ''
