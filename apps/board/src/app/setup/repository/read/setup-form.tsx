@@ -11,6 +11,7 @@ import type { SetupForm as Answers } from '@lingtai/setup'
 import { type ReactNode, useEffect, useRef, useState } from 'react'
 
 import { STEP_SAYS } from '../../../../lib/step-says.ts'
+import { CeilingSay } from '../../../ceiling-say.tsx'
 import { ModeGraph } from '../../../mode-graph.tsx'
 import { FileView } from '../../../recipe/[project]/file-view.tsx'
 import { StepRow } from '../../../step-row.tsx'
@@ -644,7 +645,11 @@ export function SetupForm({ view }: { view: ReadView }) {
               )}
             </label>
           </div>
-          <p className="note">{preview !== null && 'ceiling' in preview ? preview.ceiling : '…'}</p>
+          {preview !== null && 'ceiling' in preview ? (
+            <CeilingSay summary={preview.ceiling.summary} sentences={preview.ceiling.sentences} />
+          ) : (
+            <p className="say">…</p>
+          )}
         </section>
 
         {say !== null ? <p className="note wiz-fail">{say}</p> : null}

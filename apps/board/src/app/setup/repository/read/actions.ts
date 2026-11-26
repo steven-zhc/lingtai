@@ -9,7 +9,7 @@ import {
   readLocalTarget,
   type PersonalCheck,
 } from '@lingtai/conductor/add-from-page'
-import { attemptCeiling } from '@lingtai/conductor/ceiling'
+import { ceilingReading, ceilingSentences } from '@lingtai/conductor/ceiling'
 import { recipePath } from '@lingtai/project'
 import { resolveSource } from '@lingtai/recipe'
 import { parseDuration } from '@lingtai/recipe/duration'
@@ -75,14 +75,14 @@ export async function previewAdd(form: SetupForm): Promise<Preview> {
     const path = recipePath(checked.project)
     const { recipe } = resolveSource(previewed.text, path, path)
     const limits = ceilingOf(recipe)
-    const ceiling = attemptCeiling({
+    const reading = ceilingReading({
       ...limits.attempt,
       ...limits.ticket,
       ...limits.run,
       wallMs: parseDuration(limits.run.wall),
       steps: boundsBesides(recipe, 'implement'),
     })
-    return { text: previewed.text, ceiling }
+    return { text: previewed.text, ceiling: { summary: reading.summary, sentences: ceilingSentences(reading) } }
   } catch (err) {
     return { refused: (err as Error).message }
   }

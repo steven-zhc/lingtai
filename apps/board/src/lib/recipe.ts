@@ -15,7 +15,7 @@ import { homedir } from 'node:os'
 
 import { runnableEnv } from '@lingtai/agent-env'
 import { codexAuth } from '@lingtai/agent/auth'
-import { attemptCeiling } from '@lingtai/conductor/ceiling'
+import { attemptCeiling, type CeilingLimits } from '@lingtai/conductor/ceiling'
 import { MAX_READ_ROUNDS } from '@lingtai/conductor/discuss'
 import { describeAssignee } from '@lingtai/conductor/filter'
 import { currentRecipe } from '@lingtai/conductor/projects'
@@ -894,6 +894,19 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
   })
 }
 
+/** The arguments `attemptCeiling` and `ceilingReading` take for a recipe's `implement` — one list for the row and the card. */
+export function ceilingLimitsOf(recipe: Recipe): CeilingLimits {
+  const limits = limitsFor(recipe, 'implement')
+  const ceiling = ceilingOf(recipe)
+  return {
+    ...ceiling.attempt,
+    ...ceiling.ticket,
+    ...limits,
+    wallMs: parseDuration(limits.wall),
+    steps: boundsBesides(recipe, 'implement'),
+  }
+}
+
 /**
  * The recipe an attempt was given, as a person reads it (#217).
  *
@@ -913,8 +926,6 @@ export function provenanceRows(provenance: Readonly<Record<string, string>>): Pr
  * configured and silently did not run (0016 §4, 0061 §5).
  */
 export function readRecipe(recipe: Recipe): Reading[] {
-  const limits = limitsFor(recipe, 'implement')
-  const ceiling = ceilingOf(recipe)
   const budget = recipe.runtime.budget
   return [
     {
@@ -939,13 +950,7 @@ export function readRecipe(recipe: Recipe): Reading[] {
     },
     {
       name: 'an attempt',
-      says: attemptCeiling({
-        ...ceiling.attempt,
-        ...ceiling.ticket,
-        ...limits,
-        wallMs: parseDuration(limits.wall),
-        steps: boundsBesides(recipe, 'implement'),
-      }),
+      says: attemptCeiling(ceilingLimitsOf(recipe)),
       keys: LIMIT_KEYS.map((key) => `runtime.limits.${key}`),
     },
     // **Beside the limits, because it is the other half of the same answer.**
