@@ -8,7 +8,7 @@
  */
 import { inProgressStepNames } from '@lingtai/conductor'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, firstFrozenSha, isOpen, openAmong, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
@@ -34,7 +34,7 @@ import { type FixTicket, MERGED_SHOWN, type PrBoardView, type PrRead, prBoard, p
 import {
   type HostRead,
   type PrPageView,
-  type PreviousPr,
+  previousOf,
   generatedBody,
   githubHosted,
   prFixTicketLink,
@@ -115,38 +115,6 @@ export const prsOf = cache((project: string) => {
     ),
   )
 })
-
-/**
- * What an empty Next PR page says about where the tickets went: the newest PR that is not a draft (`openAmong`'s walk without
- * its open-only cut), the commit its first `PrInProgress` froze the personal branch at, and the newest caught-up point.
- * The freeze commit is read from that PR's own events, because `PrState.frozenSha` is the latest walk's. It is read only
- * when the drawing needs it; a read that fails fails the page, as the PRs read does.
- */
-const previousOf = (project: string, prs: readonly PrState[]): Effect.Effect<PreviousPr | null, Error> =>
-  Effect.gen(function* () {
-    let pr: PrState | null = null
-    for (let i = prs.length - 1; i >= 0; i--) {
-      if (prs[i]!.status !== 'draft') {
-        pr = prs[i]!
-        break
-      }
-    }
-    if (pr === null) return null
-    let caughtUp: PreviousPr['caughtUp'] = null
-    for (let i = prs.length - 1; i >= 0; i--) {
-      const c = prs[i]!.catchUp
-      if (c?.outcome === 'caught-up') {
-        caughtUp = { sha: c.mergeCommit ?? c.mainSha, n: prs[i]!.n }
-        break
-      }
-    }
-    let frozenSha: string | null = null
-    if (caughtUp === null && pr.n !== null && pr.status !== 'closed' && pr.status !== 'refused') {
-      const events = yield* readPrEvents(project, pr.n, requestStore())
-      frozenSha = firstFrozenSha(events)
-    }
-    return { pr, frozenSha, caughtUp }
-  })
 
 /** The count of PRs waiting on the person: the open PR is the only one that can wait. */
 export const waitingPrs = (project: string, store: EventStore): Effect.Effect<number, Error> =>
@@ -378,9 +346,8 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         if (n === 'next') {
           const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
           const draft = yield* readDraftOf(project)
-          const states = prs.flatMap((r) => ('pr' in r ? [r.pr] : []))
-          const open = openAmong(states)
-          const previous = yield* previousOf(project, states)
+          const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
+          const previous = yield* previousOf(draft, prs, (pn) => readPrEvents(project, pn, requestStore()))
           const view = prPage({
             project,
             recipe,

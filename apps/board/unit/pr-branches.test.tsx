@@ -5,12 +5,13 @@
  */
 import { type Envelope, reducePr } from '@lingtai/domain'
 import type { Recipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PrDetail } from '../src/app/pr-detail.tsx'
 import { type BranchModel, layoutBranches, prBranches, shownLabel } from '../src/lib/pr-branches.ts'
-import { prPage } from '../src/lib/pr-page.ts'
+import { previousOf, prPage } from '../src/lib/pr-page.ts'
 
 const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
 const OPTS = { main: 'main', personal: 'studio', stepNames: STEPS }
@@ -571,11 +572,16 @@ describe('an empty Next PR drawing', () => {
     const closed = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), ['PrClosed', { by: 'h', why: 'x' }]])
     expect(at(closed, null, null).pointer).toBeNull()
   })
-  it('reads the first freeze, not a later walk', () => {
-    // PrState.frozenSha is the latest walk's; the page passes the first PrInProgress's.
-    const twice = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), started('retry')])
-    const first = events([added, ['PrSubmitRequested', { by: 'h' }], started()]).find((e) => e.type === 'PrInProgress')!
-    const sha = (first.data as { frozenSha: string }).frozenSha
-    expect(at(twice, sha, null).nodes[0]!.label).toContain(sha.slice(0, 7))
+  it('marks the first freeze, not a later walk', async () => {
+    // PrState.frozenSha is the latest walk's: the drawing must get the first PrInProgress's, through the page's own read.
+    const later: Spec = ['PrInProgress', { ...(started().at(1) as object), frozenSha: 'bbbbbbbbbbb' }] as Spec
+    const evs = events([added, ['PrSubmitRequested', { by: 'h' }], started(), later])
+    const state = reducePr(evs)
+    expect(state.frozenSha).toBe('bbbbbbbbbbb')
+    const p = await Effect.runPromise(previousOf([], [{ n: 2, pr: state }], () => Effect.succeed(evs)))
+    const m = prBranches(null, [], [], OPTS, p!)!
+    expect(m.nodes[0]!.label).toBe(`${p!.frozenSha!.slice(0, 7)} frozen for PR 2`)
+    expect(m.nodes[0]!.sha).toBe(p!.frozenSha)
+    expect(m.nodes[0]!.sha).not.toBe('bbbbbbbbbbb')
   })
 })

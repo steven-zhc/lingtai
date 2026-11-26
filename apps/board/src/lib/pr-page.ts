@@ -15,6 +15,7 @@ import {
   type PayloadOf,
   type PrState,
   GENERATED_SECTIONS,
+  firstFrozenSha,
   isOpen,
   prDescription,
   prStepRows,
@@ -23,6 +24,7 @@ import {
   summaryEditTransition,
 } from '@lingtai/domain'
 import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
@@ -30,6 +32,7 @@ import {
   type Button,
   DRAFT_NAME,
   type DraftTicket,
+  type PrRead,
   WAIT_WORDS,
   UNFOLLOWED_WHY,
   failingRun,
@@ -200,6 +203,49 @@ export interface PreviousPr {
   /** The newest caught-up point of any PR. */
   readonly caughtUp: { readonly sha: string; readonly n: number | null } | null
 }
+
+/**
+ * What an empty Next PR page says about where the tickets went: the newest PR that is not a draft (`openAmong`'s walk without
+ * its open-only cut), the commit its first `PrInProgress` froze the personal branch at, and the newest caught-up point.
+ * The freeze commit is read from that PR's own events, because `PrState.frozenSha` is the latest walk's, and only when the
+ * drawing needs it. **A PR that could not be read fails this** rather than being skipped: it may be the newest, and the page
+ * would then name an older PR as where the tickets went. A freeze read that fails fails it too.
+ */
+export const previousOf = (
+  draft: PrPageInput['draft'],
+  reads: readonly PrRead[],
+  readEvents: (n: number) => Effect.Effect<readonly Envelope[], Error>,
+): Effect.Effect<PreviousPr | null, Error> =>
+  Effect.gen(function* () {
+    // Only an empty draft names a previous PR; a draft with tickets, or one that could not be read, reads nothing more.
+    if ('error' in draft || draft.length > 0) return null
+    const prs: PrState[] = []
+    for (const r of reads) {
+      if ('error' in r) return yield* Effect.fail(new Error(`PR ${r.n} could not be read: ${r.error}`))
+      prs.push(r.pr)
+    }
+    let pr: PrState | null = null
+    for (let i = prs.length - 1; i >= 0; i--) {
+      if (prs[i]!.status !== 'draft') {
+        pr = prs[i]!
+        break
+      }
+    }
+    if (pr === null) return null
+    let caughtUp: PreviousPr['caughtUp'] = null
+    for (let i = prs.length - 1; i >= 0; i--) {
+      const c = prs[i]!.catchUp
+      if (c?.outcome === 'caught-up') {
+        caughtUp = { sha: c.mergeCommit ?? c.mainSha, n: prs[i]!.n }
+        break
+      }
+    }
+    let frozenSha: string | null = null
+    if (caughtUp === null && pr.n !== null && pr.status !== 'closed' && pr.status !== 'refused') {
+      frozenSha = firstFrozenSha(yield* readEvents(pr.n))
+    }
+    return { pr, frozenSha, caughtUp }
+  })
 
 export interface PrPageInput {
   readonly project: string
