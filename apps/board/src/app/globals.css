@@ -3331,7 +3331,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-life li.current { background: var(--pr-navy); color: var(--pr-on-fill); border-color: var(--pr-navy); }
 .prp-life li.waiting.current { background: var(--fail); border-color: var(--fail); }
 .prp-life li.draft.current { background: transparent; color: var(--pr-navy); border-style: dashed; }
-.prp-drawing { width: 100%; height: auto; }
+.prp-drawing-scroll { overflow-x: auto; }
+.prp-drawing { display: block; min-width: 100%; height: auto; }
 .prp-lname { font-family: var(--mono); font-size: var(--fs-xs); fill: var(--pr-navy); }
 .prp-lname.idle { fill: var(--pr-idle); }
 .prp-line.personal { stroke: var(--pr-navy); }
@@ -3345,7 +3346,7 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-edge.merge.done { stroke: var(--pr-green); }
 .prp-brace { fill: none; stroke: var(--pr-brace); stroke-width: 1.2; }
 .prp-nd { fill: var(--pr-navy); stroke: var(--pr-navy); stroke-width: 1.5; }
-.prp-nd.todo, .prp-nd.main { fill: var(--surface); }
+.prp-nd.todo { fill: var(--surface); }
 .prp-nd.running { fill: var(--surface); stroke: var(--pr-amber); }
 .prp-nd.waiting { fill: var(--pr-red); stroke: var(--pr-red); }
 .prp-nd.ticket { fill: var(--pr-edge); stroke: var(--pr-edge); }
