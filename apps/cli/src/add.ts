@@ -3,7 +3,7 @@ import type { GithubReach } from '@lingtai/conductor/onboard'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, recipeText } from '@lingtai/project'
-import { resolveSource } from '@lingtai/recipe'
+import { type Recipe, resolveSource } from '@lingtai/recipe'
 import {
   alreadyAdded,
   alreadyAddedSentence,
@@ -15,6 +15,7 @@ import {
 } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
+import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
  * positional, which asks the same GitHub-or-directory question `lingtai init`
@@ -33,7 +34,7 @@ import { Cause, Effect } from 'effect'
  * person typed it here, is refused rather than silently adopted when the
  * recipe disagrees (#75).
  */
-import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
+import { ensureLabelsEffect, labelNames, liveLabelClient, type LabelClient } from './add-labels.ts'
 import {
   chooseFirstProjectEffect,
   liveFirstProjectWorld,
@@ -52,6 +53,8 @@ export interface AddWorld {
   project: FirstProjectWorld
   /** `askBeforeGithubAdd`'s own deps — its live ones unless a test says otherwise. */
   githubDeps?: AskBeforeGithubAddDeps
+  /** The client that makes the project's labels (#1486) — the live one (built from `reach`) unless a test says otherwise. */
+  labels?: (owner: string, repo: string, reach: GithubReach) => Effect.Effect<Pick<LabelClient, 'createLabel'>, unknown>
   error: (line: string) => void
   /** Where the card goes — the same `log` the questions were asked through. */
   log: (line: string) => void
@@ -286,7 +289,8 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
       Effect.gen(function* () {
         const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
         if (text === null) return yield* Effect.fail(new Error(`${path} is not there to read`))
-        return cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
+        const recipe: Recipe = resolveSource(text, path, path).recipe
+        return { card: cardRecipe(recipe, `${owner}/${repo}`), recipe }
       }),
     )
     if ('threw' in read) {
@@ -295,7 +299,12 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
       )
       return 1
     }
-    const card: CardRecipe = read.ok
+    const card: CardRecipe = read.ok.card
+    // Never fails the add: a label that could not be made is on the card with the line that makes it (#1486).
+    const labels = yield* ensureLabelsEffect(
+      Effect.suspend(() => (world.labels ?? liveLabelClient)(owner, repo, result.reach!)),
+      labelNames(read.ok.recipe),
+    )
     const end = yield* printSetupEndEffect(
       world,
       {
@@ -310,6 +319,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         where: 'github',
         github: githubRow(result.reach),
         recipe: card,
+        labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
         trial: asked.trial,
         recipePath: path,
       },

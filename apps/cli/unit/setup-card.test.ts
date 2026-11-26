@@ -55,6 +55,22 @@ const row = (facts: SetupCardFacts, label: string): string =>
     ?.trim() ?? ''
 
 describe('renderSetupCard', () => {
+  it('quotes a label name the shell would split in the gh line it prints (#1486)', () => {
+    const labels = {
+      slug: 'owner/repo',
+      created: [],
+      missing: [
+        { name: 'type: bug', why: 'denied' as const },
+        { name: "it's", why: 'denied' as const },
+        { name: 'feature', why: 'denied' as const },
+      ],
+    }
+    const text = stripColour(renderSetupCard({ ...FACTS, labels }))
+    expect(text).toContain("gh label create 'type: bug' --repo owner/repo")
+    expect(text).toContain("gh label create 'it'\\''s' --repo owner/repo")
+    expect(text).toContain('gh label create feature --repo owner/repo')
+  })
+
   it('draws a heading and three groups a blank line apart', () => {
     const lines = rows(FACTS)
     expect(lines[0]).toBe('init  chapter-garden-a')
