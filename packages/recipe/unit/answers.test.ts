@@ -9,6 +9,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   budgetChange,
+  findingsJudgeChanges,
   kindsChanges,
   landingChanges,
   conflictResolutionsChange,
@@ -122,5 +123,19 @@ describe('kindsChanges', () => {
     expect(kindsChanges(['documentation', 'bug', 'feature'], null)).toEqual([
       { path: ['source', 'kinds'], value: ['documentation', 'bug', 'feature'] },
     ])
+  })
+})
+
+describe('findingsJudgeChanges (#1448)', () => {
+  const judge = { name: 'send findings back to the writer', judge: 'codex', when: 'findings' }
+  it('appends the writer as the findings judge, after a hold', () => {
+    const hold = { name: 'hold every attempt', human: 'x' }
+    expect(findingsJudgeChanges('codex', [hold])).toEqual([{ path: ['steps', 'proposed'], value: [hold, judge] }])
+    expect(findingsJudgeChanges('codex', null)).toEqual([{ path: ['steps', 'proposed'], value: [judge] }])
+  })
+  it('writes nothing for no writer, an implement-only writer, or a judge already there', () => {
+    expect(findingsJudgeChanges(null, [])).toEqual([])
+    expect(findingsJudgeChanges('copilot', [])).toEqual([])
+    expect(findingsJudgeChanges('codex', [judge])).toEqual([])
   })
 })

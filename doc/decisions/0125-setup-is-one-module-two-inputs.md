@@ -54,7 +54,7 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    - The default kinds are `bug`, `feature`, `tech-debt`, `documentation`.
    - Kinds are a filter: nothing creates labels, and a missing label is not a
      warning.
-   - `proposed:` is `[]` by default.
+   - `proposed:` holds one `judge:` for `findings` naming the writer (#1448), and no hold unless a person asks for one; it is empty when the writer cannot judge (`copilot`, `antigravity`) or nobody is signed in. An existing recipe is never rewritten.
    - *Already added* is `registered`, `pending` or `unrecorded`, as
      `alreadyOnboarded` answers.
    - Detected values are defaults the person may override

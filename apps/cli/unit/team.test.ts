@@ -208,6 +208,7 @@ describe('the team card (#1324)', () => {
     reviewer: null,
     checks: ['pnpm test'],
     approves: false,
+    findingsJudge: null,
     team: { login: 'steven-zhc', personal: 'steven-zhc/studio' },
   }
   const facts: SetupCardFacts = {

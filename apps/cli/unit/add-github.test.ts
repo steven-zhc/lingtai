@@ -388,7 +388,10 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(doc.getIn(['source', 'backoff'])).toBeUndefined()
     expect(doc.getIn(['repo', 'submodules'])).toBeUndefined()
     expect(doc.getIn(['env', 'deny'])).toBeUndefined()
-    expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
+    // A new recipe declares the writer as its judge for `findings` (#1448), and no hold.
+    expect((doc.getIn(['steps', 'proposed']) as { toJSON(): unknown }).toJSON()).toEqual([
+      { name: 'send findings back to the writer', judge: doc.getIn(['runtime', 'agent']), when: 'findings' },
+    ])
   })
 
   it('asks the sandbox step of a new recipe only: the first add reads the host and writes the block, a re-run reads nothing and changes nothing (#1160)', async () => {

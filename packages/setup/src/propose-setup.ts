@@ -63,7 +63,7 @@ export interface Proposal {
    */
   sandbox: SandboxProposal | null
   limits: Line<{ refusalFixes: number; conflictResolutions: number; wall: string; turns: number | 'unbounded' }>
-  /** Always false: `proposed: []` (#964 decision 5). A person approving the merge is something chosen. */
+  /** Always false (#964 decision 5): a person approving the merge is something chosen. The `findings` judge is not a hold. */
   personApprovesMerge: boolean
 }
 

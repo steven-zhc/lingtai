@@ -28,7 +28,7 @@ import { delimiter, join } from 'node:path'
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { assigneeChanges, branchOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { assigneeChanges, branchOf, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import { defaultPersonalBranch, type Proposal, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -466,6 +466,18 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       kept: at.kept,
     })
     if ('refused' in landed) return landed
+  }
+
+  // A new recipe sends review findings back to the writer through a judge (#1448). After the landing, so the hold
+  // is first in the list as the board writes it; a recipe that already existed is left as it is.
+  if (absent) {
+    const writer = agents.changes.find((c) => c.path.join('.') === 'runtime.agent')?.value
+    const proposedNow = draft.get(['steps', 'proposed'])
+    const judged = yield* writeOrRefuse(
+      draft,
+      findingsJudgeChanges(typeof writer === 'string' ? writer : null, Array.isArray(proposedNow) ? proposedNow : null),
+    )
+    if ('refused' in judged) return judged
   }
 
   const limited = yield* askLimits(

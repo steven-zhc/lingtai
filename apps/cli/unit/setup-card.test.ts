@@ -28,6 +28,7 @@ const RECIPE: CardRecipe = {
   reviewer: { agent: 'claude-code', model: 'opus' },
   checks: ['npm run check', 'npm run build'],
   approves: true,
+  findingsJudge: { judge: 'claude-code', rounds: 6 },
 }
 
 const FACTS: SetupCardFacts = {
@@ -118,6 +119,14 @@ describe('renderSetupCard', () => {
     expect(row(bare, 'approve')).toContain('an attempt lands with no one asking')
     expect(row(FACTS, 'approve')).toContain('you approve every attempt before it lands')
     expect(row(FACTS, 'reviews')).toContain('claude-code, opus')
+  })
+
+  it('says findings go back to the writer up to refusalFixes times, only where a judge is declared', () => {
+    expect(row(FACTS, 'findings')).toContain('up to 6 times')
+    const none = { ...FACTS, recipe: { ...RECIPE, findingsJudge: null } }
+    expect(rows(none).some((r) => r.startsWith('findings'))).toBe(false)
+    const zero = { ...FACTS, recipe: { ...RECIPE, findingsJudge: { judge: 'codex', rounds: 0 } } }
+    expect(row(zero, 'findings')).toContain('stops for you')
   })
 
   it('puts updated in the heading on a re-registration, and new on home only for a new home', () => {
