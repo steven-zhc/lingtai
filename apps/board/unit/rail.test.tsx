@@ -689,7 +689,7 @@ describe('all ten steps, in every lane', () => {
     const html = renderToStaticMarkup(<LandedRow card={landed} showProject={false} issue={null} />)
 
     expect(segments(html)).toHaveLength(10)
-    // No names on a row that is one line by #81's decision; the marks are what
+    // No names on the rail, though the row is two lines (#1493); the marks are what
     // is scanned, and each segment's title says the rest.
     expect(labels(html)).toEqual([])
   })
@@ -1261,6 +1261,12 @@ describe('the motion', () => {
     'lrow',
     'lseq',
     'lmeta',
+    'lbody',
+    'lline',
+    'lspend',
+    'lbill',
+    'lwork',
+    'lturns',
   ]
 
   /** Selector → declarations, for every rule that sets an animation. */

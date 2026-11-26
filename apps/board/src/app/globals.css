@@ -490,7 +490,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not
-     equal: Landed is a list of one-line rows and does not need a card's width,
+     equal: Landed is a list of two-line rows and does not need a card's width,
      and the room it was taking belongs to the lanes where something is
      happening. Still sized from the lanes that exist and never from a number
      written here — `flex: 1` shares out whatever is left, so a lane added or
@@ -852,8 +852,8 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .shold { color: var(--muted); }
 
 /* The same rail on a landed row, at the width one line can give it and with no
-   labels — the row is one line by #81's decision, and what is scanned for here
-   is the hatch. */
+   labels — the row is two short lines (#81, then #1493), and what is scanned for
+   here is the hatch. */
 .lseq { flex: 0 0 auto; width: 34px; }
 .lseq .segs { gap: 2px; }
 .lseq .sbar { height: 4px; }
@@ -902,21 +902,36 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
    A card each made the column that needs the least attention the heaviest thing
    on the page: six full-height cards of finished work, filling the screen,
-   beside one waiting card taking about a twelfth of the ink (#81). One line per
-   item, newest first, and everything past the most recent few behind a
+   beside one waiting card taking about a twelfth of the ink (#81). Two short
+   lines per item, newest first, and everything past the most recent few behind a
    disclosure — collapsed rather than dropped, because what landed is the record
    this system exists to keep. */
 .landed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lrow {
-  display: flex; gap: 5px; align-items: baseline;
+  display: flex; gap: 5px; align-items: flex-start;
   font-family: var(--mono); font-size: var(--fs-xs);
   color: var(--muted);
   padding: 3.5px 2px;
   border-bottom: 1px solid var(--rule);
 }
 .lrow:last-child { border-bottom: 0; }
-/* The rest of the line is the task page. Clipped rather than wrapped: a row
-   that wraps is a card again, in two lines instead of one. */
+.lbody { flex: 1; min-width: 0; }
+/* Line 1: what it is and where. Line 2: what it cost. */
+.lline { display: flex; gap: 5px; align-items: baseline; }
+.lspend { color: inherit; display: block; }
+.lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* One flex line, never wrapped between items: turns appear only if there is
+   room, and give way first. Turns shrink a thousand times faster than the Work
+   figure and the answering pill, and can shrink to nothing, so those two are
+   not touched until turns are gone. When even they do not fit — a project name
+   taking its share of a ~240px column — each wraps its own text inside its own
+   box (`white-space: normal`, `min-width: 0`) rather than extend past the
+   column's edge. Nothing on this line is clipped or dropped except turns. */
+.lbill { display: flex; flex-wrap: nowrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
+.lwork, .lbill > .pill { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.lturns { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The rest of line 1 is the task page. Clipped rather than wrapped: a row
+   that wraps is a card again. */
 .lmeta {
   color: inherit;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
