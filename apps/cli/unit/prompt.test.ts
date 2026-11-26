@@ -1,7 +1,7 @@
 import { PassThrough, Writable } from 'node:stream'
 
 /** The live ask (#620): nobody to ask means null, which `question()` turns into the refusal that names the flag. */
-import { SELECT_INSTRUCTIONS } from '@clack/prompts'
+import { S_BAR, SELECT_INSTRUCTIONS } from '@clack/prompts'
 import { describe, expect, it, vi } from 'vitest'
 
 import { liveAsk, liveSpin, onCancelExit, refusal } from '../src/prompt.ts'
@@ -116,6 +116,35 @@ describe('liveAsk at a select', () => {
       expect(said).toContain('NOT saved to /r: db down')
       expect(said).not.toContain('Nothing was written')
     })
+  })
+})
+
+describe('liveAsk why lines', () => {
+  it('prints every why line on the gutter, an empty one as the bar alone', async () => {
+    const tty = { stdinIsTTY: true, stdoutIsTTY: true, json: false }
+    const input = Object.assign(new PassThrough(), { isTTY: true, setRawMode: () => input })
+    let out = ''
+    const output = Object.assign(
+      new Writable({
+        write(chunk, _enc, done) {
+          out += String(chunk)
+          done()
+        },
+      }),
+      { isTTY: true, columns: 80, rows: 24 },
+    )
+    const asked = liveAsk(
+      'which: ',
+      { message: 'which', defaultValue: 'a', choices: ['a', 'b'], why: ['first', '', 'last'] },
+      tty,
+      { input, output },
+    )
+    await new Promise((r) => setTimeout(r, 20))
+    input.emit('keypress', ' ', { name: 'space' })
+    await asked
+    // eslint-disable-next-line no-control-regex
+    const plain = out.replace(/\u001b\[[0-9;]*m/g, '')
+    expect(plain.split('\n').slice(0, 3)).toEqual([`${S_BAR}  first`, S_BAR, `${S_BAR}  last`])
   })
 })
 

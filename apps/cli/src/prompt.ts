@@ -6,6 +6,7 @@
  * when there is nobody to ask: off a TTY, or under `--json` (0121 §9).
  */
 import type { Readable, Writable } from 'node:stream'
+import { styleText } from 'node:util'
 
 import * as clack from '@clack/prompts'
 import { paint } from '@lingtai/env/colour'
@@ -90,7 +91,9 @@ export async function liveAsk(
 ): Promise<string | null> {
   if (refusal('', how) !== null) return null
   if (shape === undefined) return null
-  for (const line of shape.why ?? []) console.log(line)
+  const out = io.output ?? process.stdout
+  const bar = styleText('gray', clack.S_BAR)
+  for (const line of shape.why ?? []) out.write(line === '' ? `${bar}\n` : `${bar}  ${line}\n`)
   const typed =
     shape.secret === true
       ? await clack.password({ message: shape.message })

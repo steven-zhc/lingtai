@@ -506,13 +506,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // Only the defaults can reach here without anyone having looked: a person who
   // typed an answer, or named `--build none` or `--land <branch>`, chose it.
   const unseenEmptyBuild = summary.checks.length === 0 && at.buildFlags.length === 0
-  const unseenUnattended = summary.landsUnattended && at.flags['land'] === undefined
+  // Team lands on the person's own branch and `main` moves only through their PR (0130): nothing to confirm.
+  const unseenUnattended = mode === 'solo' && summary.landsUnattended && at.flags['land'] === undefined
   if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
     // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
-    const lands =
-      mode === 'team'
-        ? `an attempt lands on ${summary.base}; nothing reaches main until you submit a PR`
-        : `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
+    const lands = `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
     const asks =
       unseenEmptyBuild && unseenUnattended
         ? `nothing checks a diff before review, and ${lands}`
