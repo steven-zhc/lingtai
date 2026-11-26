@@ -10,16 +10,17 @@ import type { BacklogEntry } from '@lingtai/projector'
  *
  * **Read as it stands, and said so.** The page reduces nothing: a daemon older
  * than this projection follows `task_view` alone, so each render reads the table
- * and its lag (`@/lib/backlog`), and the chip says how far behind it is. It
+ * and its lag (`@/lib/backlog`), and the footer (`FooterFetched`, a separate read at mount) says how far behind it is. It
  * catches up when something next appends with a projector, or on `lingtai
  * projection rebuild finding_backlog`. *Nothing open* is printed only at lag 0.
  */
 import Link from 'next/link'
 
-import { Bar } from '@/app/bar.tsx'
-import { LockBanner } from '@/app/lock-banner.tsx'
+import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { RecipeBar } from '@/app/p/[project]/recipe/recipe-bar.tsx'
 import { backlogChip, currentBacklog } from '@/lib/backlog'
 import { ticketPath } from '@/lib/paths'
+import { readPlaceBar } from '@/lib/place-bar.ts'
 
 import { FooterFetched } from '../footer-fetched'
 import { DecideFinding, OpenAccepted } from './decide-finding.tsx'
@@ -78,7 +79,7 @@ export default async function BacklogPage() {
 
 /** `/backlog`, and `/p/<project>/backlog`, which shows the entries of that project alone. */
 export async function BacklogBody({ project }: { project: string | undefined }) {
-  const read = await currentBacklog()
+  const [read, bar] = await Promise.all([currentBacklog(), readPlaceBar(project)])
   const { currency } = read
   const entries = project === undefined ? read.entries : read.entries.filter((e) => e.project === project)
   const chip = backlogChip(currency)
@@ -91,18 +92,26 @@ export async function BacklogBody({ project }: { project: string | undefined }) 
   return (
     <>
       <main className="detail">
-        <Bar project={project}>
-          <span className="sep" />
-          <span>backlog</span>
-          <span className="sep" />
-          <span className="chip idle">{open.length} open</span>
-          <span className="sep" />
-          <span className={`chip ${chip.tone}`} title={chip.title}>
-            {chip.label}
-          </span>
-        </Bar>
+        <RecipeBar
+          project={project}
+          here={null}
+          tail="Backlog"
+          filters={bar.filters}
+          registered={bar.registered}
+          app={bar.app}
+          locks={bar.locks}
+          sandbox={bar.sandbox}
+          views={bar.views}
+          pause={bar.isRegistered ? await pauseSlot(project) : undefined}
+        />
         <LockBanner project={project} />
+        {bar.listingError === null ? null : (
+          <p className="pr-refusal" role="alert">
+            The list of projects could not be read: {bar.listingError}
+          </p>
+        )}
         <div className="detail-body">
+          <p className="pagefacts">{open.length} open · from findings the reviews raised</p>
           <section>
             <h2 className="sec-h">Open</h2>
             {open.length === 0 ? (
