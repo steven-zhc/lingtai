@@ -15,8 +15,6 @@ import {
   groupDays,
   kindColourOf,
   kindPopOf,
-  landedHref,
-  landedLink,
   landedQuery,
   parseCursor,
   parseSum,
@@ -24,6 +22,7 @@ import {
   totalsOf,
   type LandedData,
 } from '../src/lib/landed.ts'
+import { landedHref, landedLink } from '../src/lib/paths.ts'
 import { projectionChip } from '../src/lib/report.ts'
 
 const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
@@ -261,7 +260,7 @@ describe('the home page Landed heading and count', () => {
 
   it('the Landed count is a pill linking to /landed, carrying the project filter', () => {
     const html = renderToStaticMarkup(<LandedCount count={73} only="my repo" />)
-    expect(html).toContain('href="/landed?project=my%20repo"')
+    expect(html).toContain('href="/p/my%20repo/ticket/landed"')
     expect(html).toContain('class="btn sm"')
     expect(html).toContain('73')
     expect(html).toContain('all')

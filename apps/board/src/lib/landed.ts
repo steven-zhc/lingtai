@@ -16,6 +16,7 @@ import { type BacklogEntry, readBacklog, readLag, readLanded, type TicketReportR
 import type { TicketSource } from '@lingtai/recipe/settings'
 
 import { queueFilters } from './board.ts'
+import { cursorText } from './paths.ts'
 import { dateText, kindSeries, moneyText, OTHER, type ReportChip, projectionChip, type Series } from './report.ts'
 import { rereadTicket } from './snapshot-writer.ts'
 
@@ -37,10 +38,8 @@ export interface LandedQuery {
 
 const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)
 
-/** `<ISO outcome_at>,<ticket>`. The date has no comma, so the first one splits. */
-export function cursorText(c: Cursor): string {
-  return `${c.at.toISOString()},${c.ticket}`
-}
+// `cursorText` lives in `paths.ts`, which a client file may import and this module may not.
+export { cursorText }
 
 /** Null when the text is not a real date, a comma and a ticket. */
 export function parseCursor(text: string | undefined): Cursor | null {

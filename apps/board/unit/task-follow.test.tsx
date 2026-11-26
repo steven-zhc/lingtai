@@ -34,7 +34,7 @@ const { Follow, Following, Live, warning } = await import('../src/app/live.tsx')
 describe('the task route', () => {
   it('mounts the subscription around the page it re-renders', async () => {
     const page = (await TaskLayout({
-      params: Promise.resolve({ id: 'ticket-lingtai-172' }),
+      params: Promise.resolve({ project: 'lingtai', n: '172' }),
       children: 'tab',
     })) as ReactElement<{
       children: ReactNode

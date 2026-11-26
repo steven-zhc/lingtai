@@ -39,28 +39,28 @@ describe('search by number', () => {
   it.each(['88', '#88', 'pr 88', 'PR88', 'pr #88'])('%s lists both tickets and the PR', (q) => {
     const r = search(index, q)
     expect(r.filter((e) => e.group === 'Tickets').length).toBe(q.toLowerCase().startsWith('pr') ? 0 : 2)
-    expect(r.some((e) => e.href === '/pr/lingtai/3')).toBe(true)
+    expect(r.some((e) => e.href === '/p/lingtai/pr/3')).toBe(true)
   })
   it('pr 88 puts the PR first', () => {
-    expect(search(index, 'pr 88')[0]?.href).toBe('/pr/lingtai/3')
+    expect(search(index, 'pr 88')[0]?.href).toBe('/p/lingtai/pr/3')
   })
   it('#7 does not find a PR known only as 7; pr 7 does', () => {
     expect(search(index, '#7').some((e) => e.group === 'PRs')).toBe(false)
-    expect(search(index, 'pr 7')[0]?.href).toBe('/pr/lingtai/7')
+    expect(search(index, 'pr 7')[0]?.href).toBe('/p/lingtai/pr/7')
   })
   it('finds the PR by branch, title and a held ticket, below the ticket itself', () => {
     expect(search(index, 'lingtai/pr-3').map((e) => e.group)).toContain('PRs')
     expect(search(index, 'board gets').some((e) => e.group === 'PRs')).toBe(true)
     const r = search(index, '#43')
     expect(r[0]?.group).toBe('Tickets')
-    expect(r[1]?.href).toBe('/pr/lingtai/3')
+    expect(r[1]?.href).toBe('/p/lingtai/pr/3')
   })
   it('says which PR holds a ticket', () => {
-    expect(index.entries.find((e) => e.href === '/task/ticket-lingtai-43')?.detail).toContain('in PR #88')
+    expect(index.entries.find((e) => e.href === '/p/lingtai/ticket/43')?.detail).toContain('in PR #88')
   })
   it('Enter on a single PR match goes to it', () => {
     const r = search(index, 'pr 7')
-    expect(paletteKey({ selected: 0 }, r, { key: 'Enter' }).effect).toEqual({ go: '/pr/lingtai/7', newTab: false })
+    expect(paletteKey({ selected: 0 }, r, { key: 'Enter' }).effect).toEqual({ go: '/p/lingtai/pr/7', newTab: false })
   })
 })
 
@@ -71,7 +71,7 @@ describe('fuzzy', () => {
       projects: [],
     })
     const r = search(i, 'shlf srt')
-    expect(r.map((e) => e.href)).toEqual(['/task/ticket-lingtai-2', '/task/ticket-lingtai-1'])
+    expect(r.map((e) => e.href)).toEqual(['/p/lingtai/ticket/2', '/p/lingtai/ticket/1'])
   })
   it('reads the label only and needs three letters', () => {
     const i = buildIndex({ tasks: [card('1', 'something')], projects: [] })
@@ -103,7 +103,7 @@ describe('ranking regressions', () => {
       projects: [],
       prs: new Map([['lingtai', [p88]]]),
     })
-    expect(search(i, 'pr 88')[0]?.href).toBe('/pr/lingtai/3')
+    expect(search(i, 'pr 88')[0]?.href).toBe('/p/lingtai/pr/3')
   })
   it('a bare number ranks the holding PR above an unrelated one', () => {
     const i = buildIndex({
@@ -111,14 +111,14 @@ describe('ranking regressions', () => {
       projects: [],
       prs: new Map([['lingtai', [pr({ n: 1, host: 143, name: 'PR #143' }), p88]]]),
     })
-    expect(search(i, '43').map((e) => e.href)).toEqual(['/task/ticket-lingtai-43', '/pr/lingtai/3', '/pr/lingtai/1'])
+    expect(search(i, '43').map((e) => e.href)).toEqual(['/p/lingtai/ticket/43', '/p/lingtai/pr/3', '/p/lingtai/pr/1'])
   })
   it('fuzzy finds the tightest window, not the first start', () => {
     const i = buildIndex({
       tasks: [card('1', 'start'), card('2', 'search results: sort')],
       projects: [],
     })
-    expect(search(i, 'srt').map((e) => e.href)).toEqual(['/task/ticket-lingtai-2', '/task/ticket-lingtai-1'])
+    expect(search(i, 'srt').map((e) => e.href)).toEqual(['/p/lingtai/ticket/2', '/p/lingtai/ticket/1'])
   })
 })
 

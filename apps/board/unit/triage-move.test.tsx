@@ -146,7 +146,7 @@ describe('the button', () => {
     ['Split', 'triage'],
   ] as const)('%s opens the task page and is not a button', (resolution, anchor) => {
     const html = renderToStaticMarkup(<TriageMove {...props} move={{ resolution, onSha: null, note: null }} />)
-    expect(html).toContain(`href="/task/ticket-lingtai-647#${anchor}"`)
+    expect(html).toContain(`href="/p/lingtai/ticket/647#${anchor}"`)
     expect(html).not.toContain('<button')
   })
 

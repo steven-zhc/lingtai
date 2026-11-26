@@ -44,7 +44,7 @@ async function rig(limit = 1000) {
 
 it('exports both phases as fixed-name copies under the request, with source timestamps and no sensitive fields', async () => {
   const r = await rig()
-  const request = r.request('/task/[id]')
+  const request = r.request('/p/[project]/ticket/[n]')
   const pageSpan = r.page(request.span)
   const body = r.phase(BODY, request.span)
   body.setAttribute('http.url', 'https://api.github.com/x?token=y')
@@ -55,7 +55,7 @@ it('exports both phases as fixed-name copies under the request, with source time
   body.setStatus({ code: 2, message: 'https://x?token=y' })
   body.end()
   request.end()
-  expect(r.names()).toEqual(['GET /task/[id]', 'next.render-body', 'next.start-response', 'page /task'])
+  expect(r.names()).toEqual(['GET /p/[project]/ticket/[n]', 'next.render-body', 'next.start-response', 'page /task'])
   const copy = (n: string) => r.out.find((s) => s.name === n)!
   const rid = request.span.spanContext().spanId
   expect(copy('next.render-body').parentSpanContext?.spanId).toBe(rid)
@@ -89,7 +89,7 @@ it('exports a start-response under a render-body that ends later, and as a reque
 it('never exports other Next spans, look-alikes, another scope, other routes or a request without a page', async () => {
   const r = await rig()
   const other = r.provider.getTracer('other')
-  const a = r.request('/pr/[project]')
+  const a = r.request('/p/[project]/pr')
   r.page(a.span).end()
   r.phase(BODY, a.span).end()
   a.end()
@@ -97,10 +97,10 @@ it('never exports other Next spans, look-alikes, another scope, other routes or 
   r.page(b.span).end()
   r.phase(BODY, b.span).end()
   b.end()
-  const c = r.request('/task/[id]')
+  const c = r.request('/p/[project]/ticket/[n]')
   r.phase(BODY, c.span).end()
   c.end() // no page span: no request copy, no phases
-  const d = r.request('/task/[id]')
+  const d = r.request('/p/[project]/ticket/[n]')
   r.page(d.span).end()
   r.phase('BaseServer.renderToResponseWithComponents', d.span).end()
   r.phase('AppRender.renderToReadableStream', d.span).end()
@@ -108,8 +108,8 @@ it('never exports other Next spans, look-alikes, another scope, other routes or 
   other.startSpan('x', { attributes: { 'next.span_type': BODY } }, r.under(d.span)).end()
   d.end()
   expect(r.names()).toEqual([
-    'GET /pr/[project]',
-    'GET /task/[id]',
+    'GET /p/[project]/pr',
+    'GET /p/[project]/ticket/[n]',
     'GET undefined',
     'page /task',
     'page /task',
@@ -123,7 +123,7 @@ it('does not attribute a phase to an overlapping request that shares its trace',
   const r = await rig()
   const a = r.request('/backlog')
   // B joins A's trace through a propagated context but is a different request span.
-  const b = r.request('/task/[id]', a.span)
+  const b = r.request('/p/[project]/ticket/[n]', a.span)
   r.page(b.span).end()
   const aBody = r.phase(BODY, a.span)
   const bBody = r.phase(BODY, b.span)
@@ -140,7 +140,7 @@ it('does not attribute a phase to an overlapping request that shares its trace',
 
 it('keeps interleaved traces apart', async () => {
   const r = await rig()
-  const a = r.request('/task/[id]')
+  const a = r.request('/p/[project]/ticket/[n]')
   const b = r.request('/')
   r.page(a.span).end()
   r.page(b.span).end()
@@ -159,7 +159,7 @@ it('keeps interleaved traces apart', async () => {
 
 it('handles a phase before the first page, several pages, and a phase ending after its request', async () => {
   const r = await rig()
-  const request = r.request('/task/[id]')
+  const request = r.request('/p/[project]/ticket/[n]')
   r.phase(BODY, request.span).end() // ends before any page span
   r.page(request.span).end()
   r.page(request.span).end()
@@ -173,16 +173,16 @@ it('handles a phase before the first page, several pages, and a phase ending aft
 it('does not export a phase whose request was never found or whose phase never ended', async () => {
   const r = await rig()
   r.phase(BODY, r.next.startSpan('orphan', { root: true })).end()
-  const request = r.request('/task/[id]')
+  const request = r.request('/p/[project]/ticket/[n]')
   r.page(request.span).end()
   r.phase(BODY, request.span) // never ended
   request.end()
-  expect(r.names()).toEqual(['GET /task/[id]', 'page /task'])
+  expect(r.names()).toEqual(['GET /p/[project]/ticket/[n]', 'page /task'])
 })
 
 it('bounds live requests, copies per request and tracked spans, and cleans up on eviction', async () => {
   const r = await rig(2)
-  const made = [0, 1, 2].map(() => r.request('/task/[id]'))
+  const made = [0, 1, 2].map(() => r.request('/p/[project]/ticket/[n]'))
   const first = made[0]!
   const body = r.phase(BODY, first.span) // owner evicted when the third started
   body.end()

@@ -37,7 +37,7 @@ describe('LockRows', () => {
       <LockRows locks={{ ok: true, held: [row('lingtai')], ceiling: undefined }} now={now} />,
     )
     expect(html).toContain('Paused')
-    expect(html).toContain('href="/?project=lingtai"')
+    expect(html).toContain('href="/p/lingtai/ticket"')
     expect(html).toContain('title="show only lingtai"')
     expect(html).toContain('by human:steven')
     expect(html).toContain('since 14:20')

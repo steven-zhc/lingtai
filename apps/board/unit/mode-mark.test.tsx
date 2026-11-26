@@ -47,7 +47,7 @@ describe('the bar mark', () => {
     expect(count(out, 'circle')).toBe(3)
     expect(out).toContain(`aria-label="${TEAM}"`)
     expect(out).toContain(`title="${TEAM}"`)
-    expect(out).toContain('href="/recipe/my%20proj#mode"')
+    expect(out).toContain('href="/p/my%20proj/recipe#mode"')
     expect(out.replace(/<svg.*<\/svg>/, '').replace(/<[^>]*>/g, '')).toBe('')
   })
   it('draws the solo glyph: one path, two dots', () => {
@@ -70,7 +70,7 @@ describe('the menu rows', () => {
       mode={new Map([['a', { mode: 'team' as const, sentence: TEAM }]])}
     />,
   )
-  const row = (name: string) => out.slice(out.indexOf(`href="/?project=${name}"`)).split('</a>')[0]!
+  const row = (name: string) => out.slice(out.indexOf(`href="/p/${name}/ticket"`)).split('</a>')[0]!
 
   it('draws a span role=img inside the row link, and none for a project without an entry', () => {
     expect(row('a')).toContain('<span class="mode-mark mode-row" role="img"')
@@ -151,7 +151,7 @@ describe('modeMarks (#1489)', () => {
         mode={marks}
       />,
     )
-    const row = (name: string) => out.slice(out.indexOf(`href="/?project=${name}"`)).split('</a>')[0]!
+    const row = (name: string) => out.slice(out.indexOf(`href="/p/${name}/ticket"`)).split('</a>')[0]!
     expect(row('b')).toContain('mode-mark mode-row')
     expect(row('b')).toContain('team · lands on me/work')
     expect(row('c')).not.toContain('mode-mark')

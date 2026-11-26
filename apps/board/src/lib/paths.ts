@@ -10,7 +10,6 @@
  */
 import { parseTicketStream, ticketStream } from '@lingtai/domain'
 
-import { cursorText, type Cursor } from './landed.ts'
 import type { TabKey } from './tabs.ts'
 
 /** A ticket, by the two halves its address is made of. `issue` is an integer, as text. */
@@ -20,6 +19,14 @@ export type TicketRef = { project: string; issue: string | number }
 export type TicketTarget = TicketRef | string
 
 const enc = encodeURIComponent
+
+/** Where a page of `/landed` starts: the last row of the one before. */
+export type Cursor = { at: Date; ticket: string }
+
+/** `<ISO outcome_at>,<ticket>`. The date has no comma, so the first one splits. */
+export function cursorText(c: Cursor): string {
+  return `${c.at.toISOString()},${c.ticket}`
+}
 
 /** The ref a stream id names, or null when it is not `ticket-<project>-<integer>`. */
 export function ticketRefOf(id: string): { project: string; issue: string } | null {

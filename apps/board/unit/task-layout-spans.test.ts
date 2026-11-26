@@ -81,7 +81,7 @@ const render = <T>(fn: () => Promise<T>): Promise<T> => h.renders.run(new Map(),
 
 const project = { project: 'p', owner: 'o' }
 const detail = { ticket: { project: 'p' } }
-const layout = (id = 'ticket-p-7') => TaskLayout({ params: Promise.resolve({ id }), children: null })
+const layout = (n = '7') => TaskLayout({ params: Promise.resolve({ project: 'p', n }), children: null })
 const paused = (element: Awaited<ReturnType<typeof layout>>) =>
   (element as unknown as { props: { children: { props: { children: { props: { pause: unknown } } } }[] } }).props
     .children[1]!.props.children.props.pause

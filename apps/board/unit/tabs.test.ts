@@ -2,12 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import {
   attemptOfSegment,
-  attemptTabPath,
   defaultTabOf,
   tabOfFragment,
-  ticketTabPath,
   visibleAttempts,
 } from '../src/lib/tabs.ts'
+import { attemptTabPath, historyPath } from '../src/lib/paths.ts'
 import { relativeTo } from '../src/lib/task.ts'
 
 const runs = (n: number) => Array.from({ length: n }, (_, i) => ({ attempt: i + 1 }))
@@ -59,8 +58,8 @@ describe('which attempts get a tab of their own', () => {
 
 describe('paths and old fragments', () => {
   it('builds absolute paths, so an attempt tab does not link to attempt/attempt/N', () => {
-    expect(attemptTabPath('ticket-lingtai-885', 3)).toBe('/task/ticket-lingtai-885/attempt/3')
-    expect(ticketTabPath('ticket-lingtai-885')).toBe('/task/ticket-lingtai-885/ticket')
+    expect(attemptTabPath('ticket-lingtai-885', 3)).toBe('/p/lingtai/ticket/885/attempt/3')
+    expect(historyPath('ticket-lingtai-885')).toBe('/p/lingtai/ticket/885/history')
   })
 
   it('sends an old fragment to the tab it meant', () => {

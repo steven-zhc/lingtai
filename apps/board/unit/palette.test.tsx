@@ -17,7 +17,7 @@ const index: Index = buildIndex({
 
 describe('search', () => {
   it.each(['#874', '874'])('ranks the ticket for %s first', (q) => {
-    expect(search(index, q)[0]?.href).toBe('/task/ticket-lingtai-874')
+    expect(search(index, q)[0]?.href).toBe('/p/lingtai/ticket/874')
   })
   it('finds a ticket by a title word', () => {
     expect(search(index, 'shape').map((e) => e.group)).toEqual(['Tickets'])

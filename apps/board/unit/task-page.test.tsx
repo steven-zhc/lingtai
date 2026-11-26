@@ -1010,7 +1010,7 @@ describe('the waiting links in the header (#584)', () => {
     const both = withWaiting({ previous: nb('1'), next: nb('3') })
     expect(both).toContain('previous waiting')
     expect(both).toContain('next waiting')
-    expect(both).toContain('/task/ticket-lingtai-3')
+    expect(both).toContain('/p/lingtai/ticket/3')
     const onlyNext = withWaiting({ previous: null, next: nb('3') })
     expect(onlyNext).not.toContain('previous waiting')
     expect(onlyNext).toContain('next waiting')
@@ -1251,7 +1251,7 @@ describe('what a pending page cannot lose or hide', () => {
     // Only what GitHub knows waits.
     expect(html).toContain('class="skeleton"')
     expect(out.replace(/<footer[\s\S]*<\/footer>/, '')).not.toContain('class="skeleton"')
-    expect(out).toContain('/task/ticket-lingtai-147/ticket')
+    expect(out).toContain('/p/lingtai/ticket/147/history')
   })
 
   it('draws Discussion outside every boundary for an untouched ticket too, so a draft is not lost', () => {

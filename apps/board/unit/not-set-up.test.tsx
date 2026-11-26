@@ -51,7 +51,7 @@ describe('/ with the store refused', () => {
 
   it('draws the setup screen, reads no log and opens no event stream', async () => {
     choice.now = { because: 'nothing chosen', refused: 'nothing on this machine says which store it runs' }
-    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+    const html = renderToStaticMarkup(await Page())
     expect(html).toContain('Nothing is set up in ~/lingtai-trial/a.')
     expect(html).toContain('lingtai init')
     expect(startBoard).not.toHaveBeenCalled()
@@ -60,7 +60,7 @@ describe('/ with the store refused', () => {
 
   it('says a two-keys refusal in the same screen', async () => {
     choice.now = { because: 'two keys', refused: 'config.yml names two stores' }
-    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+    const html = renderToStaticMarkup(await Page())
     expect(html).toContain('config.yml names two stores')
     expect(html).not.toContain('Nothing is set up')
     expect(startBoard).not.toHaveBeenCalled()
