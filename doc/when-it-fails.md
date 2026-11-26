@@ -42,7 +42,7 @@ A failure not listed here is answered the same way; the full list is in the [ref
 
 To find out why one ticket failed, read from the narrowest view outward:
 
-1. The attempt's row on `/task/<id>`. Read the outcome word first; `never-started` is Lingtai's own failure, not the ticket's.
+1. The attempt's row on `/p/<project>/ticket/<n>`. Read the outcome word first; `never-started` is Lingtai's own failure, not the ticket's.
 2. The evidence of the refusing check, through the pointer on that row.
 3. The run log, with [`lingtai attach <runId>`](cli.md#lingtai-attach). A run that landed has no log.
 4. Triage's summary, which is the cause it named. What was done with it is Lingtai's choice.

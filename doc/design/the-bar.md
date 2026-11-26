@@ -9,8 +9,8 @@ The bar answers two questions, *is anything waiting on me?* and *is the system
 doing what the code says?*, and carries only what a person acts on. It is a
 **frame** that is the same on every page and a **row** that is the page's own.
 
-- **The frame** is `Lingtai` at the left, which is the way home (it carries
-  `?project=`), and `Report` at the right (`apps/board/src/app/bar.tsx`), marked
+- **The frame** is `Lingtai` at the left, which is the way home (it goes to the
+  project's page), and `Report` at the right (`apps/board/src/app/bar.tsx`), marked
   current on `/report`. The frame does not grow either: a second destination
   beside `Report` has to be argued here the way a fourth object is.
 - **The row** is two objects: **the filter and health.** The rule
@@ -121,7 +121,7 @@ while working on something else. Two questions, and no third:
 | `daemon N behind` + `current` | **merge into one health** | one dot, and a sentence only when it is red — two chips for two independent facts is two things to learn to read |
 | `10 queued · 1 running · 45 landed` | **stays, unboxed** | a box says *this is a thing*; this is a reading. Kept as parts — `#81` stands |
 | `$488.52` · `$81.83 answering` | **to a page** | neither changes what you do in the next minute, and a running total you cannot act on is a number you learn to stop seeing — after which it is not there when you do want it |
-| `<project>: rounds ×N` | **to the recipe view** (`/recipe/<project>`, built by `#218`) | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
+| `<project>: rounds ×N` | **to the recipe view** (`/p/<project>/recipe`, built by `#218`) | 0025 §2 wants it visible and is right; **visible is not permanently on screen**. It is a setting that changes about once a quarter, it is already in `lingtai status`, and it is a chip per project on a rail meant to be read in a glance |
 
 
 ## The rule to keep
@@ -262,7 +262,7 @@ Where the facts that left the bar went:
 | | |
 |---|---|
 | `$488.52` · `$81.83 answering` | `/report`, off the bar: the window's spend by purpose, which a chip could never have carried. Today's figure stays in the footer |
-| `<project>: rounds ×N` | `/recipe/<project>`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
+| `<project>: rounds ×N` | `/p/<project>/recipe`, the view the row above named (`#218`): the whole recipe as `lingtai status` reads it, every value beside the file it came from, reached from the filter |
 | `current` + `daemon N behind` | one dot (`health.tsx`, reduced by `lib/bearing.ts`). Green and silent when both are true; the sentence and the action when the board is not current, and stale code turns the dot with its sentence in the title only (2026-11-21); and whichever fact is not the headline stays in the title |
 
 `paused` (the setup's pause only) and `draining` are still chips and still

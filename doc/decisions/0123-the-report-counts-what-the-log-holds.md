@@ -269,7 +269,7 @@ The operator's decisions in epic #648 are the inputs here.
    - Every fact comes from the log through `ticket_report`; nothing is asked of
      GitHub. Kind colours are §7's series, and amber is not used.
    - It is reached from the board's Landed column, whose count is a pill
-     button linking to it (carrying `?project=`), and so adds nothing to the bar's row (the-bar.md).
+     button linking to the project's landed page (`/p/<project>/ticket/landed`), and so adds nothing to the bar's row (the-bar.md).
 
 ## Consequences
 
