@@ -987,8 +987,10 @@ export interface OnBranchSketch {
 }
 
 export interface WhereOnBranch {
-  /** The poster's small line beside the state word: `ON YOUR BRANCH`, `MERGED`, `IN PR #88`, or `NOT ON YOUR BRANCH`. */
+  /** The state word, lower case, drawn as a tag beside the heading. */
   readonly small: string
+  /** The tag's colour, by kind of case and not by its words. */
+  readonly tone: 'branch' | 'merged' | 'off'
   readonly in: {
     readonly text: string
     readonly failed: boolean
@@ -1083,7 +1085,8 @@ export function whereOnBranch(input: {
   switch (holder.kind) {
     case 'unread':
       return {
-        small: 'ON YOUR BRANCH',
+        small: 'on your branch',
+        tone: 'branch',
         in: { text: 'which PR holds it could not be read', failed: true, host: null, page: null },
         mergeCommit: { sha, on: landing.base, inBranch: null },
         closedWhen: `its PR is merged into ${branch.main}`,
@@ -1094,7 +1097,8 @@ export function whereOnBranch(input: {
       }
     case 'none':
       return {
-        small: 'ON YOUR BRANCH',
+        small: 'on your branch',
+        tone: 'branch',
         in: { text: 'no PR or draft holds it', failed: false, host: null, page: null },
         mergeCommit: { sha, on: landing.base, inBranch: null },
         closedWhen: `its PR is merged into ${branch.main}`,
@@ -1105,7 +1109,8 @@ export function whereOnBranch(input: {
       }
     case 'draft':
       return {
-        small: 'ON YOUR BRANCH',
+        small: 'on your branch',
+        tone: 'branch',
         in: { text: 'Draft PR · not submitted yet', failed: false, host: null, page: pageOf('next') },
         mergeCommit: { sha, on: landing.base, inBranch: null },
         closedWhen: landing.closed
@@ -1122,7 +1127,8 @@ export function whereOnBranch(input: {
       const onFixBranch = landing.base === pr.prBranch
       const fixNote = landing.isFix && onFixBranch ? ['cut from its branch for a change the review asked for'] : []
       return {
-        small: landing.isFix && onFixBranch ? `IN ${name}` : 'ON YOUR BRANCH',
+        small: landing.isFix && onFixBranch ? `in ${name}` : 'on your branch',
+        tone: 'branch',
         in: {
           text: `${name} · ${stateOf(pr)}`,
           failed: false,
@@ -1146,7 +1152,8 @@ export function whereOnBranch(input: {
       const merged = holder.kind === 'merged'
       const when = pr.ended === null ? '' : ` ${pr.ended.at.toISOString().slice(0, 10)}`
       return {
-        small: merged ? 'MERGED' : 'ON YOUR BRANCH',
+        small: merged ? 'merged' : 'on your branch',
+        tone: merged ? 'merged' : 'branch',
         in: {
           text: merged
             ? `${name} · merged${when}`
@@ -1169,7 +1176,8 @@ export function whereOnBranch(input: {
       const pr = holder.pr
       const name = nameOf(pr)
       return {
-        small: 'NOT ON YOUR BRANCH',
+        small: 'not on your branch',
+        tone: 'off',
         in: {
           text: `landed on ${pr.prBranch ?? landing.base} after ${name} was ${pr.status === 'merged' ? 'merged' : 'closed'} — not on your branch; open a new ticket to carry it`,
           failed: false,
