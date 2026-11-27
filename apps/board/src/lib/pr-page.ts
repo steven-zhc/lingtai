@@ -114,9 +114,11 @@ function prFixDraft(
   checks: readonly { name: string; state: string; url: string }[]
   prUrl: string | null
 } {
-  // A pr-fix landing or an adopted head moves `lastPushed` and `target` and leaves `wait`, `checks` and `following` on
-  // the head before it: until In progress starts again they are about a head that is no longer the PR's.
-  const moved = pr !== null && (pr.fixOwed || pr.adopted !== null)
+  // A pr-fix landing or an adopted head moves `lastPushed` and leaves `wait`, `checks` and `following` on the head before
+  // it: until In progress starts again they are about a head that is no longer the PR's. `adopted` stays set until a build
+  // of it is recorded, so it is stale only against a wait that names another head: a wait recorded on the adopted head is
+  // the build's own, and is written.
+  const moved = pr !== null && (pr.fixOwed || (pr.adopted !== null && pr.wait?.headSha !== pr.adopted))
   const wait = pr !== null && !moved && pr.status === 'waiting' && pr.wait !== null ? pr.wait : null
   // The head the state last knew: the wait's; else, when nothing has moved it since, the last checked or followed; else
   // what Lingtai means to push (a sync or an outside merge moves `target` past `lastPushed`).
@@ -126,7 +128,7 @@ function prFixDraft(
       : pr === null
         ? null
         : moved
-          ? (pr.target ?? pr.lastPushed)
+          ? (pr.lastPushed ?? pr.target)
           : (pr.checks?.headSha ?? pr.following ?? pr.target ?? pr.lastPushed)
   const sha = head === null ? null : head.slice(0, 7)
   const headWords = sha === null ? '' : ` (head \`${sha}\`)`

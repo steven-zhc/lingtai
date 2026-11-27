@@ -719,6 +719,44 @@ describe('prFixTicketLink', () => {
     expect(decoded(link).body).toContain('| **Problem** |')
   })
 
+  it('an adopted head: the head is the adopted one, not the frozen commit the walk started again from', () => {
+    const adopted: Spec = ['PrHeadAdopted', { head: 'bbbbbbb2222222', by: 'human:steven' }]
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrWaiting', { step: 'sync', reason: 'sync-conflict', detail: 'src/a.ts', headSha: 'f0f0f0f0' }],
+        adopted,
+        started,
+      ]),
+    )
+    expect(pr.adopted).toBe('bbbbbbb2222222')
+    expect(pr.target).toBe('f0f0f0f0')
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain('f0f0f0f')
+  })
+
+  it('a failure recorded on the adopted head is written, though the adopted flag is still set', () => {
+    const adopted: Spec = ['PrHeadAdopted', { head: 'bbbbbbb2222222', by: 'human:steven' }]
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        adopted,
+        started,
+        ['BranchSynced', { mainCommit: 'm1', head: 'bbbbbbb2222222', how: 'already' }],
+        ['PrWaiting', { step: 'sync', reason: 'sync-red', detail: 'build failed', headSha: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(pr.adopted).toBe('bbbbbbb2222222')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).not.toBe('pr-fix for PR #8: ')
+    expect(body).toContain('(head `bbbbbbb`): build failed.')
+  })
+
   it('a wait left over after the PR moved on is not written', () => {
     const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
     const pr = { ...waiting, status: 'in-progress' as const }
