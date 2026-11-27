@@ -1473,9 +1473,10 @@ function runGithubBranch(
       world.github.decided ??
       (elected !== null
         ? { auth: elected, pending: false }
-        : flags['github-auth'] === 'app'
-          ? { auth: 'app', pending: true }
-          : { auth: 'none', pending: false })
+        : flags['github-auth'] === 'none'
+          ? { auth: 'none', pending: false }
+          : // Nothing elected and nothing decided for it: `app` is the one way left, and is written once the App exists.
+            { auth: 'app', pending: true })
     if (decided.auth === 'none') {
       return {
         refused:

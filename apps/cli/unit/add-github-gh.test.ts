@@ -1,3 +1,4 @@
+import { parseDocument } from 'yaml'
 /**
  * `askBeforeGithubAdd` on a `gh` machine (#708): the saved login's access is
  * checked where the App check is on an App machine, before a recipe answer is
@@ -12,7 +13,7 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
-import { askGithubAuthEffect } from '../src/github-auth.ts'
+import { githubEntryFor } from '../src/machine-askers.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
@@ -135,23 +136,29 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
   })
 })
 
-/** `askGithubAuthEffect` over a world whose `gh` is signed in as `me`, answering the question with `answer`. */
+/** The machine list's GitHub entry over a world whose `gh` is signed in as `me`, answering the question with `answer`. */
 function authDep(answer: string, written: string[], asked: { message: string; defaultValue: string }[]) {
   return (flags: Record<string, string>) =>
-    askGithubAuthEffect(
+    githubEntryFor(
       {
         ask: async (_prompt, shape) => {
           asked.push({ message: shape!.message, defaultValue: shape!.defaultValue })
           return answer
         },
         log: () => {},
-        github: {
-          ghStatus: () => Effect.succeed({ ok: true, login: 'me', scopes: ['repo', 'workflow'] }),
-          writeAuth: (kind) => Effect.sync(() => void written.push(kind)),
+        env: {},
+        machine: {
+          read: () => null,
+          write: (_path, text) => void written.push(String(parseDocument(text).getIn(['github', 'auth']))),
         },
+        path: '/h/.lingtai/config.yml',
+        interactive: true,
+        app: () => Effect.succeed({ configured: false }),
+        ghStatus: () => Effect.succeed({ ok: true, login: 'me', scopes: ['repo', 'workflow'] }),
+        recipes: () => Effect.succeed([]),
+        run: () => Promise.resolve({ code: 0 }),
       },
       flags,
-      false,
       'Nothing was written',
     )
 }

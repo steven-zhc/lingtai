@@ -1,3 +1,4 @@
+import { parseDocument } from 'yaml'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
@@ -18,7 +19,7 @@ import type { GitResult } from '../src/first-project.ts'
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
-import { askGithubAuthEffect } from '../src/github-auth.ts'
+import { githubEntryFor } from '../src/machine-askers.ts'
 import { stripColour } from '../src/output.ts'
 import {
   type FirstProjectTestWorld,
@@ -261,21 +262,25 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ...h.world.githubDeps!,
       auth: () => auth,
       githubAuth: (flags) =>
-        askGithubAuthEffect(
+        githubEntryFor(
           {
             ask: async (prompt, shape) => count(shape?.message ?? prompt),
             log: () => {},
-            github: {
-              auth: () => auth,
-              ghStatus: () => fx(status),
-              writeAuth: (kind) =>
-                Effect.sync(() => {
-                  auth = kind
-                }),
+            env: {},
+            machine: {
+              read: () => null,
+              write: (_path, text) => {
+                auth = parseDocument(text).getIn(['github', 'auth']) as 'gh' | 'app'
+              },
             },
+            path: '/h/.lingtai/config.yml',
+            interactive: true,
+            app: () => Effect.succeed({ configured: false }),
+            ghStatus: () => fx(status),
+            recipes: () => Effect.succeed([]),
+            run: () => Promise.resolve({ code: 0 }),
           },
           flags,
-          false,
           'Nothing was written',
         ),
     }

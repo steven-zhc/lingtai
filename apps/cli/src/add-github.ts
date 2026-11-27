@@ -50,11 +50,11 @@ import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { type Recipe, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveMachineText, liveTrialBuild, previewSetup, runSetupList } from '@lingtai/setup'
+import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { checkAppEffect } from './app-check.ts'
-import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
+import { askTokenFor, githubEntryFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { lift, recovering } from './exit.ts'
 import { livePickerEffect } from './first-project.ts'
 import { type GithubAuthAnswer } from './github-auth.ts'
@@ -209,26 +209,15 @@ const liveDeps: AskBeforeGithubAddDeps = {
   runtimes: askRuntimesEffect,
   history: liveHistoryEffect,
   sandboxHost: () => sandboxHostHere(),
-  githubAuth: (flags) => {
-    const setup = machineSetup(
+  githubAuth: (flags) =>
+    githubEntryFor(
       liveMachineWorld(
         { ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) },
         { app: checkAppEffect, ghStatus: () => ghStatusEffect(), gh: liveGh },
       ),
-      { githubRequired: true, command: 'lingtai add' },
-    )
-    return runSetupList(
-      setup.list.filter((q) => q.id === 'github'),
-      setup.input({ flags, defaults: flags['defaults'] !== undefined }),
-    ).pipe(
-      Effect.map((result): GithubAuthAnswer => {
-        if (result.refused !== undefined) return { refused: `${result.refused}. ${ADD_KEPT}` }
-        const entry = result.entries[0]!
-        // Where the environment decided there is no answer to read back, and nothing here was asked.
-        return { auth: (entry.after ?? 'none') as 'gh' | 'app' | 'none', pending: entry.pending }
-      }),
-    )
-  },
+      flags,
+      ADD_KEPT,
+    ),
   claudeToken: (recipe, flags) => {
     const setup = machineSetup(
       liveMachineWorld(

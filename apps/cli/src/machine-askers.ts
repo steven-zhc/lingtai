@@ -35,7 +35,7 @@ import { Effect } from 'effect'
 
 import type { AppCheck } from './app-check.ts'
 import { claudeTokenAsker, liveSetupTokenRun, obtainClaudeToken, type ClaudeTokenWorld } from './claude-token.ts'
-import { githubAuthAsker } from './github-auth.ts'
+import { githubAuthAsker, type GithubAuthAnswer } from './github-auth.ts'
 import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 
 /** The slice of a world the machine list reads: `init`'s `InitWorld` has all of it, and `add` builds it live. */
@@ -267,3 +267,25 @@ export const askTokenFor = (
       if (result.refused !== undefined) world.log(result.refused)
     }),
   )
+
+/**
+ * `lingtai add`'s GitHub question (#1487): the list's own GitHub entry, with `none` refused as an answer, run alone.
+ * Where the environment decided there is nothing to read back, and `none` is what it reports.
+ */
+export const githubEntryFor = (
+  world: MachineWorld,
+  flags: Readonly<Record<string, string>>,
+  kept: string,
+): Effect.Effect<GithubAuthAnswer, unknown> => {
+  const setup = machineSetup(world, { githubRequired: true, command: 'lingtai add' })
+  return runSetupList(
+    setup.list.filter((q) => q.id === 'github'),
+    setup.input({ flags, defaults: flags['defaults'] !== undefined }),
+  ).pipe(
+    Effect.map((result): GithubAuthAnswer => {
+      if (result.refused !== undefined) return { refused: `${result.refused}. ${kept}` }
+      const entry = result.entries[0]!
+      return { auth: (entry.after ?? 'none') as 'gh' | 'app' | 'none', pending: entry.pending }
+    }),
+  )
+}
