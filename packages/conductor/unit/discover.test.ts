@@ -938,4 +938,132 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
     expect(found.skipped.map((s) => [s.ref, s.reason])).toEqual([[1397, 'blocked-by']])
     expect(clear.asked).toEqual([])
   })
+
+  /** A store that counts every call made on it, so the drafted read shows as a number. */
+  const counted = (store: EventStore) => {
+    const state = { calls: 0 }
+    const proxy = new Proxy(store, {
+      get(target, key, receiver) {
+        const value = Reflect.get(target, key, receiver)
+        return typeof value === 'function'
+          ? (...args: unknown[]) => {
+              state.calls++
+              return (value as (...a: unknown[]) => unknown).apply(target, args)
+            }
+          : value
+      },
+    })
+    return { state, store: proxy as EventStore }
+  }
+
+  /** `listBlockedBy` answers per number; each answer is a function so a test may hold it open. */
+  const scripted = (answer: (n: number) => Promise<readonly BlockerRead[]>) => {
+    const asked: number[] = []
+    let inFlight = 0
+    let max = 0
+    return {
+      asked,
+      max: () => max,
+      links: {
+        repository: REPO,
+        listBlockedBy: async (n: number) => {
+          asked.push(n)
+          inFlight++
+          max = Math.max(max, inFlight)
+          try {
+            return await answer(n)
+          } finally {
+            inFlight--
+          }
+        },
+      },
+    }
+  }
+
+  it('reads the blockers of held tickets eight at a time, never more, and all of them', async () => {
+    let release!: () => void
+    const latch = new Promise<void>((resolve) => (release = resolve))
+    const read = scripted(async () => {
+      await latch
+      return [blocker({ state: 'closed' })]
+    })
+    const held = Array.from({ length: 20 }, (_, i) => dependent({ number: 1500 + i }))
+    const pending = ask(createMemoryEventStore(), read as never, held)
+    // Let every slot fill; the ninth read must not have started while the first eight are held open.
+    for (let i = 0; i < 50 && read.asked.length < 8; i++) await new Promise((r) => setTimeout(r, 1))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(read.asked).toHaveLength(8)
+    release()
+    const found = await pending
+    expect(read.max()).toBe(8)
+    expect([...read.asked].sort()).toEqual(held.map((h) => h.number).sort())
+    expect(found.runnable.map((r) => r.ref)).toEqual(held.map((h) => String(h.number)))
+  })
+
+  it('concurrent reads give what the serial loop gave: same fields, same order', async () => {
+    const store = createMemoryEventStore()
+    await prWith(store, '1395', 'draft')
+    const answers: Record<number, readonly BlockerRead[] | Error> = {
+      1601: new Error('rate limited'),
+      1602: Array.from({ length: 100 }, (_, i) => blocker({ number: 2000 + i, state: 'closed' })),
+      1603: [],
+      1604: [blocker()],
+    }
+    const read = scripted(async (n) => {
+      // Later tickets answer first, so completion order is the reverse of listing order.
+      await new Promise((r) => setTimeout(r, (1605 - n) * 3))
+      const a = answers[n]!
+      if (a instanceof Error) throw a
+      return a
+    })
+    const issues = [
+      dependent({ number: 1601 }),
+      dependent({ number: 1602 }),
+      dependent({ number: 1603 }),
+      dependent({ number: 1604 }),
+      dependent({ number: 1605, assignees: ['somebody-else'] }),
+    ]
+    const found = await ask(store, read as never, issues)
+    expect(read.asked.slice().sort()).toEqual([1601, 1602, 1603, 1604])
+    expect(found.runnable.map((r) => [r.ref, r.landedBlockers])).toEqual([['1604', [1395]]])
+    expect(found.skipped.map((s) => [s.ref, s.held, s.blockersRead])).toEqual([
+      [1601, blockersUnread('rate limited'), { ok: false, problem: 'rate limited' }],
+      [
+        1602,
+        blockersUnread('it has 100 blockers or more, which is more than one page reads'),
+        { ok: false, problem: 'it has 100 blockers or more, which is more than one page reads' },
+      ],
+      [
+        1603,
+        blockersUnread('GitHub listed none, though it counts some open'),
+        { ok: false, problem: 'GitHub listed none, though it counts some open' },
+      ],
+      [1605, undefined, undefined],
+    ])
+    expect(found.kindColors).toEqual({})
+    expect(found.dependenciesUnread).toBeNull()
+  })
+
+  it('reads the drafted tickets never when no read needs them, and once when several do', async () => {
+    const none = counted(createMemoryEventStore())
+    await ask(
+      none.store,
+      links([blocker({ state: 'closed' }), ...Array.from({ length: 99 }, (_, i) => blocker({ number: 3000 + i }))]),
+      [dependent({ number: 1701 }), dependent({ number: 1702 })],
+    )
+    // A full page and a failure both hold without the drafted read.
+    expect(none.state.calls).toBe(0)
+
+    const one = counted(createMemoryEventStore())
+    await ask(one.store, links([blocker()]), [dependent({ number: 1701 })])
+    expect(one.state.calls).toBeGreaterThan(0)
+
+    const several = counted(createMemoryEventStore())
+    await ask(several.store, links([blocker()]), [
+      dependent({ number: 1701 }),
+      dependent({ number: 1702 }),
+      dependent({ number: 1703 }),
+    ])
+    expect(several.state.calls).toBe(one.state.calls)
+  })
 })

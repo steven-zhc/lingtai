@@ -596,6 +596,9 @@ export function runnableNow(options: RunnableNowOptions): Promise<Offered> {
   return Effect.runPromise(runnableNowEffect(options))
 }
 
+/** How many held tickets' blocker lists are asked for at once. */
+const BLOCKER_READS_IN_FLIGHT = 8
+
 /** `runnableNow` as an Effect: a failed listing is the failure, with the client's own error, never an empty queue. */
 export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Offered, unknown> {
   return Effect.gen(function* () {
@@ -610,10 +613,11 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
     const result: Offered = { runnable: [], skipped: [], kindColors: {}, dependenciesUnread: null }
 
     const unread: number[] = []
-    // Read once, and only when an issue reached the blocker read; a failure is the reason each of them keeps.
-    let drafted: { ok: true; tickets: ReadonlySet<string> } | { ok: false; why: string } | null = null
 
-    for (const issue of issues) {
+    const landed = options.landed
+
+    // Step 1, serial and in listing order: decide each issue, and note the ones that need a blocker read.
+    const decided = issues.map((issue) => {
       if (issue.dependencies === null) unread.push(issue.number)
 
       const matched = kindLabelOf(issue, kinds)
@@ -625,27 +629,60 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
       }
 
       const { skip, label } = considerIssue(issue, queue, selection)
-      let landedBlockers: readonly number[] | undefined
-      let held: string | undefined
-      let blockersRead: BlockersRead | undefined
-      let released = false
-      const landed = options.landed
       // Only a ticket that GitHub's summary holds, and that nothing after `blocked-by` would pass over either: one
       // request for it, and none for a ticket `assigned-elsewhere` would refuse anyway.
-      if (
+      const needsRead =
         landed !== undefined &&
         skip === 'blocked-by' &&
         (issue.dependencies?.blockedBy ?? 0) > 0 &&
         considerIssue({ ...issue, dependencies: { ...issue.dependencies!, blockedBy: 0 } }, queue, selection).skip ===
           null
-      ) {
-        const read = yield* Effect.tryPromise({
-          try: () => landed.links.listBlockedBy(issue.number, issue.dependencies!.blockedBy),
-          catch: (error) => error,
-        }).pipe(
-          Effect.map((blockers) => ({ ok: true as const, blockers })),
-          Effect.catch((error: unknown) => Effect.succeed({ ok: false as const, why: whyOf(error) })),
-        )
+      return { issue, matched, skip, label, needsRead }
+    })
+
+    // Step 2: at most eight reads in flight. Every failure is a value before `forEach` sees it, so none interrupts
+    // another.
+    type BlockerList = { ok: true; blockers: readonly BlockerRead[] } | { ok: false; why: string }
+    const reads = new Map<number, BlockerList>()
+    if (landed !== undefined) {
+      const pending = decided.filter((d) => d.needsRead)
+      const results = yield* Effect.forEach(
+        pending,
+        ({ issue }) =>
+          Effect.tryPromise({
+            try: () => landed.links.listBlockedBy(issue.number, issue.dependencies!.blockedBy),
+            catch: (error) => error,
+          }).pipe(
+            Effect.map((blockers): BlockerList => ({ ok: true, blockers })),
+            Effect.catch((error: unknown) => Effect.succeed<BlockerList>({ ok: false, why: whyOf(error) })),
+          ),
+        { concurrency: BLOCKER_READS_IN_FLIGHT },
+      )
+      pending.forEach((d, i) => reads.set(d.issue.number, results[i]!))
+    }
+
+    // Step 3: the drafted tickets, read once and only when some read came back with a usable list.
+    let drafted: { ok: true; tickets: ReadonlySet<string> } | { ok: false; why: string } | null = null
+    if (
+      landed !== undefined &&
+      [...reads.values()].some((r) => r.ok && r.blockers.length > 0 && r.blockers.length < BLOCKERS_PAGE)
+    ) {
+      drafted = yield* readDraftedTickets(landed.project, landed.store).pipe(
+        Effect.map((tickets) => ({ ok: true as const, tickets })),
+        Effect.catch((error: unknown) =>
+          Effect.succeed({ ok: false as const, why: `could not read the project's PRs: ${whyOf(error)}` }),
+        ),
+      )
+    }
+
+    // Step 4, serial and in listing order: assemble.
+    for (const { issue, matched, skip, label } of decided) {
+      let landedBlockers: readonly number[] | undefined
+      let held: string | undefined
+      let blockersRead: BlockersRead | undefined
+      let released = false
+      const read = reads.get(issue.number)
+      if (landed !== undefined && read !== undefined) {
         if (!read.ok) {
           held = blockersUnread(read.why)
           blockersRead = { ok: false, problem: read.why }
@@ -661,14 +698,9 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           blockersRead = { ok: false, problem: why }
         } else {
           blockersRead = { ok: true, issues: read.blockers }
-          drafted ??= yield* readDraftedTickets(landed.project, landed.store).pipe(
-            Effect.map((tickets) => ({ ok: true as const, tickets })),
-            Effect.catch((error: unknown) =>
-              Effect.succeed({ ok: false as const, why: `could not read the project's PRs: ${whyOf(error)}` }),
-            ),
-          )
-          if (!drafted.ok) held = blockersUnread(drafted.why)
-          else {
+          if (drafted === null || !drafted.ok) {
+            if (drafted !== null) held = blockersUnread(drafted.why)
+          } else {
             const repository = landed.links.repository.toLowerCase()
             const drafts = drafted.tickets
             // A blocker holds unless it is closed, or it is this repository's and joined a draft. **A blocker that
