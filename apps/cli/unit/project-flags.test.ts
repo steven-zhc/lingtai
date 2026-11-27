@@ -1,7 +1,7 @@
 import { PROJECT_FLAGS } from '@lingtai/setup'
 import { describe, expect, it } from 'vitest'
 
-import { HANDED_OFF_FLAGS, recipeOptions } from '../src/wizard-options.ts'
+import { recipeOptions, withoutProjectFlags } from '../src/wizard-options.ts'
 
 describe('the project flags', () => {
   it('are the list’s own, equal to every recipe option but base, yes and no-color', () => {
@@ -36,8 +36,13 @@ describe('the project flags', () => {
       'login',
       'personal',
     ]
-    expect(new Set(HANDED_OFF_FLAGS)).toEqual(new Set(today))
-    expect(HANDED_OFF_FLAGS).not.toContain('defaults')
+    const given = Object.fromEntries([...PROJECT_FLAGS, 'github-auth', 'github'].map((n) => [n, 'x']))
+    const kept = withoutProjectFlags(given)
+    expect(new Set(PROJECT_FLAGS.filter((n) => !(n in kept)))).toEqual(new Set(today))
+    expect(kept['defaults']).toBe('x')
+    expect(kept['github-auth']).toBe('x')
+    // a copy: the caller's object keeps every flag
+    expect(Object.keys(given)).toContain('agent')
     expect(PROJECT_FLAGS).toContain('defaults')
   })
 })

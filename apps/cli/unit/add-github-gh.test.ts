@@ -12,7 +12,7 @@ import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { parseDocument } from 'yaml'
 
-import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { githubProjectAnswersEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 import { githubEntryFor } from '../src/machine-askers.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
@@ -27,7 +27,7 @@ async function askBeforeGithubAdd(
   buildFlags?: readonly string[],
 ) {
   const result = await Effect.runPromise(
-    askBeforeGithubAddEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
+    githubProjectAnswersEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
   )
   if (typeof result === 'object') {
     await Effect.runPromise(

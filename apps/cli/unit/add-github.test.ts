@@ -22,7 +22,7 @@ import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
-import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { githubProjectAnswersEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
@@ -36,7 +36,7 @@ async function askBeforeGithubAdd(
   buildFlags?: readonly string[],
 ) {
   const result = await Effect.runPromise(
-    askBeforeGithubAddEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
+    githubProjectAnswersEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
   )
   if (typeof result === 'object') {
     await Effect.runPromise(
