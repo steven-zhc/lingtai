@@ -443,14 +443,100 @@ describe('branch, make-branch and move-landing', () => {
     expect(none.result.refused).toContain('Pass --main <branch>')
   })
 
-  it('looks a solo --main up on GitHub, and never locally', async () => {
+  it('looks a solo --main up, on GitHub and in the checkout, and makes only lingtai-base afterwards', async () => {
     const gone = await walk(ports(), { flags: { ...DEFAULTS, mode: 'solo', main: 'nope' }, seeds: [] })
     expect(gone.result.refused).toBe('nope is not a branch on GitHub')
-    const local = await walk(ports({ local: true, knownLogin: null, branchExists: () => Effect.succeed(false) }), {
-      flags: { ...DEFAULTS, mode: 'solo', main: 'fresh', tickets: 'db' },
+    const unreadable = await walk(ports({ branchExists: () => Effect.succeed('unreadable') }), {
+      flags: { ...DEFAULTS, mode: 'solo', main: 'nope' },
       seeds: [],
     })
-    expect(local.result.refused).toBeUndefined()
+    expect(unreadable.result.refused).toBe('could not read whether nope exists on GitHub')
+
+    const flags = { ...DEFAULTS, mode: 'solo', tickets: 'db' }
+    const local = (exists: (n: string) => boolean) =>
+      ports({ local: true, knownLogin: null, branchExists: (n) => Effect.succeed(exists(n)) })
+    const missing = await walk(
+      local(() => false),
+      { flags: { ...flags, main: 'fresh' }, seeds: [] },
+    )
+    expect(missing.result.refused).toBe('fresh is not a branch in this checkout')
+    const there = await walk(
+      local((n) => n === 'fresh'),
+      { flags: { ...flags, main: 'fresh' }, seeds: [] },
+    )
+    expect(there.result.refused).toBeUndefined()
+    expect(there.ctx.answers.branch).toMatchObject({ name: 'fresh', exists: true })
+    const base = await walk(
+      local(() => false),
+      { flags: { ...flags, main: LINGTAI_BASE }, seeds: [] },
+    )
+    expect(base.result.refused).toBeUndefined()
+    expect(base.ctx.answers.branch).toMatchObject({ name: LINGTAI_BASE, exists: false })
+  })
+
+  it('writes the existence the port said, and refuses a read that failed', async () => {
+    const { ctx } = await walk(ports(), { flags: { ...DEFAULTS, mode: 'solo' }, seeds: [] })
+    expect(ctx.answers.branch).toMatchObject({ name: 'main', exists: true })
+    const lost = await walk(ports({ branchExists: () => Effect.succeed('unreadable') }), {
+      flags: { ...DEFAULTS, mode: 'solo' },
+      seeds: [],
+    })
+    expect(lost.result.refused).toBe('could not read whether main exists on GitHub')
+    const absent = await walk(ports({ branchExists: () => Effect.succeed(false) }), {
+      flags: { ...DEFAULTS, mode: 'solo' },
+      seeds: [],
+    })
+    expect(absent.result.refused).toBe('main is not a branch on GitHub')
+  })
+
+  it('lands a local solo project on lingtai-base, not on the checked-out branch', async () => {
+    const { result, ctx, entry } = await walk(
+      ports({
+        local: true,
+        knownLogin: null,
+        defaultBranch: Effect.succeed('main'),
+        branchExists: () => Effect.succeed(false),
+      }),
+      { flags: { ...DEFAULTS, mode: 'solo', tickets: 'db' }, seeds: FIRST_RUN_SEEDS.slice(1) },
+    )
+    expect(result.refused).toBeUndefined()
+    expect(entry('branch')).toMatchObject({ after: LINGTAI_BASE })
+    expect(ctx.view.get(['branch', 'main'])).toBe(LINGTAI_BASE)
+  })
+
+  it('writes a team main the port detected, so the recipe resolves with no seed for it', async () => {
+    const { result, ctx } = await walk(
+      ports({ defaultBranch: Effect.succeed('develop'), branchExists: (n) => Effect.succeed(n === 'develop') }),
+      { flags: DEFAULTS, seeds: FIRST_RUN_SEEDS.slice(1) },
+    )
+    expect(result.refused).toBeUndefined()
+    expect(ctx.pending.map((c) => c.path.join('.'))).toContain('branch.main')
+    expect(ctx.view.get(['branch', 'main'])).toBe('develop')
+    expect(ctx.view.resolved()).not.toBeNull()
+  })
+
+  it('compares the personal branch with the main that is written, a typed --main included', async () => {
+    const start = await firstRunText()
+    const both = ports({ branchExists: (n) => Effect.succeed(n === 'main' || n === 'develop') })
+    const kept = await walk(both, { start, flags: { ...DEFAULTS, main: 'develop', personal: 'main' } })
+    expect(kept.result.refused).toBeUndefined()
+    expect(kept.ctx.view.get(['branch', 'main'])).toBe('develop')
+    const same = await walk(both, { start, flags: { ...DEFAULTS, main: 'develop', personal: 'develop' } })
+    expect(same.result.refused).toContain('develop is the same branch as develop')
+    const first = await walk(both, { flags: { ...DEFAULTS, main: 'develop', personal: 'develop' }, seeds: [] })
+    expect(first.result.refused).toContain('is the same branch as develop')
+  })
+
+  it('refuses with the port’s words when the default branch cannot be read, and not as a missing main', async () => {
+    const down = ports({ defaultBranch: Effect.fail(new Error('GitHub rate limit')) })
+    const team = await walk(down, { flags: DEFAULTS, seeds: FIRST_RUN_SEEDS.slice(1) })
+    expect(team.result.refused).toContain('GitHub rate limit')
+    expect(team.result.refused).not.toContain('no main branch')
+    const typed = await walk(down, {
+      flags: { ...DEFAULTS, main: 'main', personal: 'alice/laptop' },
+      seeds: FIRST_RUN_SEEDS.slice(1),
+    })
+    expect(typed.result.refused).toBeUndefined()
   })
 
   it('applies move-landing to a local rerun from another checkout, and refuses it with no terminal', async () => {
@@ -1086,5 +1172,46 @@ describe('no terminal, no flag', () => {
     expect(noLogin.result.refused).toBe('your GitHub login needs an answer: pass --login <login>. Nothing was written')
     const noBranch = await walk(ports(), { flags: { mode: 'team' } })
     expect(noBranch.result.refused).toContain('making the personal branch needs an answer: pass --defaults')
+  })
+})
+
+describe('a port that fails refuses with its own words', () => {
+  const down = (what: string) => Effect.fail(new Error(what))
+
+  it('says the runtimes probe failed, whatever step reads it', async () => {
+    const walked = await walk(ports({ runtimes: down('no probe') }), { flags: DEFAULTS })
+    expect(walked.result.refused).toContain('no probe')
+    const flagged = await walk(ports({ runtimes: down('no probe') }), {
+      flags: { ...DEFAULTS, agent: 'claude-code', reviewer: 'codex' },
+    })
+    expect(flagged.result.refused).toContain('no probe')
+    // Past the writer's own read, every later read of the port refuses by name too.
+    let reads = 0
+    const later = ports({
+      runtimes: Effect.suspend(() =>
+        ++reads > 1 ? down('probe died later') : Effect.succeed([found('claude-code'), found('codex')]),
+      ),
+    })
+    const second = await walk(later, { flags: { ...DEFAULTS, agent: 'claude-code', reviewer: 'codex' } })
+    expect(second.result.refused).toContain('probe died later')
+  })
+
+  it('says the detection read failed', async () => {
+    const reader = { has: () => Effect.succeed(true), read: () => Effect.fail(new Error('disk gone')) }
+    const walked = await walk(ports({ proposal: undefined, reader }), { flags: DEFAULTS })
+    expect(walked.result.refused).toContain('disk gone')
+  })
+
+  it('says the trial failed to run', async () => {
+    const trial: ProjectPorts['trial'] = () => Effect.fail(new Error('worktree gone'))
+    const walked = await walk(ports({ trial }), {
+      interactive: false,
+      flags: { ...DEFAULTS, 'check-build': 'yes' },
+    })
+    expect(walked.result.refused).toBe('the trial build failed to run — worktree gone. Nothing was written')
+    const died = await walk(ports({ trial: () => Effect.die(new Error('worktree died')) }), {
+      flags: { ...DEFAULTS, 'check-build': 'yes' },
+    })
+    expect(died.result.refused).toContain('worktree died')
   })
 })

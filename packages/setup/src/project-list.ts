@@ -365,20 +365,52 @@ function runActionsIn(value: unknown): NamedRun[] {
 // ---------------------------------------------------------------------------------------------------------------
 // The branch question's reads
 
-/** The main branch the answers name: a seed or the recipe's, else the repository's default; null where none. */
-const mainOrNull = (ctx: ProjectContext): Effect.Effect<string | null> => {
-  const named = text(ctx.view.get(['branch', 'main']))
-  if (named !== null) return Effect.succeed(named)
-  return portCause(() => ctx.ports.defaultBranch).pipe(Effect.catch(() => Effect.succeed(null)))
-}
-
-/** The default branch port, a failure turned into the refusal that names `--main`. */
-const readDefaultBranch = (ctx: ProjectContext): Effect.Effect<{ branch: string | null } | { refused: string }> =>
+/** The default branch port, a failure turned into the refusal that carries its words and names the flag to pass. */
+const readDefaultBranch = (
+  ctx: ProjectContext,
+  pass = '--main <branch>',
+): Effect.Effect<{ branch: string | null } | { refused: string }> =>
   portCause(() => ctx.ports.defaultBranch).pipe(
     Effect.match({
       onSuccess: (branch) => ({ branch }),
       onFailure: (error) => ({
-        refused: `could not read the repository's default branch — ${errorText(error)}. Pass --main <branch>`,
+        refused: `could not read the repository's default branch — ${errorText(error)}. Pass ${pass}`,
+      }),
+    }),
+  )
+
+/** The main branch the answers name: a seed or the recipe's, else the repository's default; a failed read refuses. */
+const mainRead = (ctx: ProjectContext): Effect.Effect<{ branch: string | null } | { refused: string }> => {
+  const named = text(ctx.view.get(['branch', 'main']))
+  return named !== null ? Effect.succeed({ branch: named }) : readDefaultBranch(ctx)
+}
+
+/** The main a team's branch is cut from: a typed `--main` first, since that is what is written, then `mainRead`. */
+const teamMainRead = (ctx: ProjectContext): Effect.Effect<{ branch: string | null } | { refused: string }> => {
+  const typed = ctx.flags['main']
+  return typed !== undefined && typed !== '' ? Effect.succeed({ branch: typed }) : mainRead(ctx)
+}
+
+/** The probed runtimes, a failure turned into the refusal that carries the port's words. */
+const readRuntimes = (
+  ctx: ProjectContext,
+): Effect.Effect<{ runtimes: readonly RuntimeFound[] } | { refused: string }> =>
+  portCause(() => ctx.ports.runtimes).pipe(
+    Effect.match({
+      onSuccess: (runtimes) => ({ runtimes }),
+      onFailure: (error) => ({
+        refused: `could not read which agents are signed in — ${errorText(error)}. ${ctx.kept}`,
+      }),
+    }),
+  )
+
+/** What detection read of the project, a failure turned into the refusal that carries the reader's words. */
+const readDetected = (ctx: ProjectContext): Effect.Effect<{ detected: DetectedSetup } | { refused: string }> =>
+  portCause(() => detectedOf(ctx)).pipe(
+    Effect.match({
+      onSuccess: (detected) => ({ detected }),
+      onFailure: (error) => ({
+        refused: `could not read what this project builds with — ${errorText(error)}. ${ctx.kept}`,
       }),
     }),
   )
@@ -572,48 +604,71 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         // A seed, or what the recipe names: the question then only confirms it.
         const named = text(ctx.view.get(['branch', 'main']))
         if (named !== null) return named
+        // A directory's solo project lands on its own branch, never on the checked-out one.
+        if (ctx.ports.local) return LINGTAI_BASE
         const read = yield* readDefaultBranch(ctx)
         if ('refused' in read) return read
-        if (read.branch !== null) return read.branch
-        return ctx.ports.local
-          ? LINGTAI_BASE
-          : { refused: 'the repository has no default branch to take as its base. Pass --main <branch>' }
+        return (
+          read.branch ?? { refused: 'the repository has no default branch to take as its base. Pass --main <branch>' }
+        )
       }),
     validate: (answer, ctx) =>
       Effect.gen(function* () {
         if (ctx.answers.mode === 'team') {
-          const main = (yield* mainOrNull(ctx)) ?? ''
-          return personalBranchRefusal(answer, main, personalFallback(ctx))
+          // The main the write will use, so a typed `--main` is what the personal branch is compared with.
+          const read = yield* teamMainRead(ctx)
+          if ('refused' in read) return read.refused
+          return personalBranchRefusal(answer, read.branch ?? '', personalFallback(ctx))
         }
-        // Locally the base is made after the list, so there is nothing to look up.
-        if (ctx.ports.local) return null
-        return yield* branchOnGithubRefusal(answer, yield* mainOrNull(ctx), ctx.ports.branchExists)
+        // Locally the base Lingtai makes is made after the list; any other name has to be there already.
+        if (ctx.ports.local) {
+          if (answer === LINGTAI_BASE) return null
+          const found = yield* ctx.ports.branchExists(answer)
+          return found === 'unreadable'
+            ? `could not read whether ${answer} exists in this checkout`
+            : found
+              ? null
+              : `${answer} is not a branch in this checkout`
+        }
+        return yield* branchOnGithubRefusal(answer, null, ctx.ports.branchExists)
       }),
     write: (answer, inForce, ctx) =>
       Effect.gen(function* () {
         if (ctx.answers.mode !== 'team') {
-          ctx.answers.branch = { name: answer, exists: true, from: null, onlyIn: null, main: answer }
+          const where = ctx.ports.local ? 'in this checkout' : 'on GitHub'
+          const found = yield* ctx.ports.branchExists(answer)
+          if (found === 'unreadable')
+            return { refused: `could not read whether ${answer} exists ${where}. ${ctx.kept}` }
+          // The base a directory's project lands on is made after the list; no other name is.
+          if (!found && !(ctx.ports.local && answer === LINGTAI_BASE)) {
+            return { refused: `${answer} is not a branch ${where}. ${ctx.kept}` }
+          }
+          ctx.answers.branch = { name: answer, exists: found, from: null, onlyIn: null, main: answer }
           return append(ctx, valueOf(inForce) === answer ? [] : [{ path: ['branch', 'main'], value: answer }])
         }
         const kept = ctx.kept
         const typedMain = ctx.flags['main']
-        const detected = yield* mainOrNull(ctx)
-        // A team recipe asks no base question, so a typed `--main` that differs is the answer, checked here.
-        const main = typedMain !== undefined && typedMain !== '' ? typedMain : detected
+        const read = yield* teamMainRead(ctx)
+        if ('refused' in read) return { refused: `${read.refused}. ${kept}` }
+        // A team recipe asks no base question, so a typed `--main` is the answer, checked here.
+        const main = read.branch
         if (main === null || main === '') {
           return {
             refused: `no main branch to cut ${ctx.answers.login ?? 'your'}'s branch from — pass --main <branch>. ${kept}`,
           }
         }
         const changes: RecipeChange[] = []
-        if (main !== detected || ctx.ports.local) {
+        // A main the port read from GitHub's own default is not looked up again; every other one is.
+        const named = text(ctx.view.get(['branch', 'main']))
+        if ((typedMain !== undefined && typedMain !== '') || named !== null || ctx.ports.local) {
           const found = yield* ctx.ports.branchExists(main)
           if (found === 'unreadable') return { refused: `could not read whether ${main} exists. ${kept}` }
           if (!found) {
             return { refused: `${main} is not a branch ${ctx.ports.local ? 'in this checkout' : 'on GitHub'}. ${kept}` }
           }
         }
-        if (main !== detected) changes.push({ path: ['branch', 'main'], value: main })
+        // What the recipe names is what stands, so a detected main is written too, not only a typed one.
+        if (named !== main) changes.push({ path: ['branch', 'main'], value: main })
 
         const exists = yield* ctx.ports.branchExists(answer)
         if (exists === 'unreadable') {
@@ -700,7 +755,10 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     fromFlags: (flags) => flags['agent'] ?? null,
     inForce: (ctx) =>
       Effect.gen(function* () {
-        const runtimes = yield* portCause(() => ctx.ports.runtimes)
+        const read = yield* readRuntimes(ctx)
+        // A probe that failed cannot be asked past: refused with the port's words.
+        if ('refused' in read) return { fault: read.refused, from: 'file', fatal: true } satisfies InForce
+        const runtimes = read.runtimes
         // Every runtime that is missing is said, with why, before the first agent question, flag or not.
         for (const r of runtimes) if (!r.signedIn) ctx.log.push(whyMissing(r))
         if (offeredRuntimes(runtimes).length === 0) {
@@ -710,12 +768,15 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       }),
     systemDefault: (ctx) =>
       Effect.gen(function* () {
-        const runtimes = yield* portCause(() => ctx.ports.runtimes)
-        return defaultAgents(offeredRuntimes(runtimes)).writer
+        const read = yield* readRuntimes(ctx)
+        if ('refused' in read) return read
+        return defaultAgents(offeredRuntimes(read.runtimes)).writer
       }),
     validate: (answer, ctx) =>
       Effect.gen(function* () {
-        const runtimes = yield* portCause(() => ctx.ports.runtimes)
+        const read = yield* readRuntimes(ctx)
+        if ('refused' in read) return read.refused
+        const runtimes = read.runtimes
         // The recipe's own writer is accepted signed in or not: a rerun that takes every default keeps it (#1473).
         return runtimeRefusal(answer, { signedIn: offeredRuntimes(runtimes), runtimes, kept: writerAtStart(ctx) })
       }),
@@ -754,8 +815,9 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         // The schema's discuss agent is claude-code. Where that cannot run and the model-only Codex route is
         // configured, a new recipe names Codex instead; never `discuss.model`.
         if (!rerun(ctx)) {
-          const runtimes = yield* portCause(() => ctx.ports.runtimes)
-          if (runtimes.find((r) => r.id === 'claude-code')?.signedIn !== true) {
+          const read = yield* readRuntimes(ctx)
+          if ('refused' in read) return read
+          if (read.runtimes.find((r) => r.id === 'claude-code')?.signedIn !== true) {
             const codex = yield* portCause(() => ctx.ports.codexText).pipe(Effect.catch(() => Effect.succeed(false)))
             if (codex) changes.push({ path: ['discuss', 'agent'], value: 'codex' })
           }
@@ -789,12 +851,16 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     // A different model means a different runtime: the other one signed in, else the writer's own.
     systemDefault: (ctx) =>
       Effect.gen(function* () {
-        const offered = offeredRuntimes(yield* portCause(() => ctx.ports.runtimes))
+        const read = yield* readRuntimes(ctx)
+        if ('refused' in read) return read
+        const offered = offeredRuntimes(read.runtimes)
         return offered.find((id) => id !== ctx.answers.writer) ?? ctx.answers.writer ?? null
       }),
     validate: (answer, ctx) =>
       Effect.gen(function* () {
-        const runtimes = yield* portCause(() => ctx.ports.runtimes)
+        const read = yield* readRuntimes(ctx)
+        if ('refused' in read) return read.refused
+        const runtimes = read.runtimes
         return runtimeRefusal(answer, {
           signedIn: offeredRuntimes(runtimes),
           runtimes,
@@ -804,7 +870,9 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       }),
     write: (answer, _inForce, ctx) =>
       Effect.gen(function* () {
-        const runtimes = yield* portCause(() => ctx.ports.runtimes)
+        const read = yield* readRuntimes(ctx)
+        if ('refused' in read) return read
+        const runtimes = read.runtimes
         const signedIn: string[] = offeredRuntimes(runtimes)
         const writerNow = ctx.answers.writer ?? null
         const writerBefore = writerAtStart(ctx)
@@ -957,7 +1025,9 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     inForce: (ctx) =>
       Effect.gen(function* () {
         // Said before the install question, with a terminal or without one. A probe that throws says nothing.
-        const detected = yield* detectedOf(ctx)
+        const read = yield* readDetected(ctx)
+        if ('refused' in read) return { fault: read.refused, from: 'file', fatal: true } satisfies InForce
+        const detected = read.detected
         const commands = [
           detected.install === null ? undefined : { tool: detected.install.tool, run: detected.install.run },
           ...detected.build,
@@ -972,7 +1042,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         const current = runActionsIn(prepared)[0]?.run ?? (rerun(ctx) && Array.isArray(prepared) ? 'none' : null)
         return current === null ? null : ({ value: current, from: 'file' } satisfies InForce)
       }),
-    systemDefault: (ctx) => detectedOf(ctx).pipe(Effect.map((d) => d.install?.run ?? 'none')),
+    systemDefault: (ctx) =>
+      readDetected(ctx).pipe(Effect.map((r) => ('refused' in r ? r : (r.detected.install?.run ?? 'none')))),
     validate: (answer) => Effect.succeed(installRefusal(answer)),
     write: (answer, _inForce, ctx) =>
       Effect.sync(() => {
@@ -1001,7 +1072,10 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       // A file that lists `build: []` has answered *no checks*: detection does not refill it (#1473).
       return inForceOf(runs.length > 0 || (rerun(ctx) && Array.isArray(build)) ? JSON.stringify(runs) : null)
     },
-    systemDefault: (ctx) => detectedOf(ctx).pipe(Effect.map((d) => JSON.stringify(d.build.map((b) => b.run)))),
+    systemDefault: (ctx) =>
+      readDetected(ctx).pipe(
+        Effect.map((r) => ('refused' in r ? r : JSON.stringify(r.detected.build.map((b) => b.run)))),
+      ),
     validate: (answer) =>
       Effect.succeed(typeof parseChecks(answer) === 'string' ? (parseChecks(answer) as string) : null),
     write: (answer, inForce, ctx) =>
@@ -1044,7 +1118,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         if (port === undefined) return { wrote: false }
         const original = ctx.view.get(['steps', 'build'])
         const flag = ctx.flags['check-build']
-        const outcome = yield* portCause(() =>
+        const ran = yield* portCause(() =>
           port({
             view: ctx.view,
             install: ctx.answers.install ?? null,
@@ -1056,8 +1130,14 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
             },
             kept: ctx.kept,
           }),
+        ).pipe(
+          Effect.match({
+            onSuccess: (done) => done,
+            onFailure: (error) => ({ refused: `the trial build failed to run — ${errorText(error)}. ${ctx.kept}` }),
+          }),
         )
-        if ('refused' in outcome) return outcome
+        if ('refused' in ran) return ran
+        const outcome = ran
         ctx.answers.install = outcome.install
         ctx.answers.checks = outcome.checks.map((c) => c.run)
         ctx.answers.trial = outcome.trial
@@ -1199,9 +1279,11 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
             // Landing on the base the recipe resolves must not pin it: only the hold's removal is kept.
             changes = holdRemovalChanges(proposed)
           } else {
-            const read = yield* portCause(() => ctx.ports.defaultBranch).pipe(Effect.catch(() => Effect.succeed(null)))
-            if (read === null) return { refused: `no base branch to land on — pass --land <branch>. ${ctx.kept}` }
-            changes = landOnBranchChanges(read, proposed)
+            const read = yield* readDefaultBranch(ctx, '--land <branch>')
+            if ('refused' in read) return { refused: `${read.refused}. ${ctx.kept}` }
+            if (read.branch === null)
+              return { refused: `no base branch to land on — pass --land <branch>. ${ctx.kept}` }
+            changes = landOnBranchChanges(read.branch, proposed)
           }
         } else {
           // A flag answers as it is: `hold`, or a branch, even one called `wait…`.
