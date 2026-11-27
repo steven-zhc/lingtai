@@ -9,7 +9,7 @@ import { prStream, ticketStream, type ProjectState } from '@lingtai/domain'
  * so this is `unit/` by 0060 §1.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
-import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
+import { type AppReader, GitHubFailed, type GhRun } from '@lingtai/github'
 import { resolveLocalRecipeEffect, recipePath, ProjectFiles } from '@lingtai/project'
 import { branchOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'

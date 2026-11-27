@@ -99,6 +99,8 @@ describe('electGithubAuth reads none (#1522)', () => {
       kind: null,
       none: 'LINGTAI_GITHUB_AUTH',
     })
-    expect(electGithubAuth(env({}), machine({ auth: 'nope' }))).toMatchObject({ refused: expect.stringContaining('none') })
+    expect(electGithubAuth(env({}), machine({ auth: 'nope' }))).toMatchObject({
+      refused: expect.stringContaining('none'),
+    })
   })
 })

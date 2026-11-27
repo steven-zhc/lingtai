@@ -287,9 +287,6 @@ const USAGE =
   '[--build <cmd>] [--tickets github|db] [--kinds <a,b,c>] [--land <branch>] [--refusal-fixes <n>] [--conflict-resolutions <n>] ' +
   '[--wall <duration>] [--budget <amount>] [--defaults|--yes]'
 
-/** What `--store` names: the store question answered from the command line, as the person at a terminal would. */
-type StoreFlag = 'postgres' | 'sqlite'
-
 // ---------------------------------------------------------- config.yml --
 
 export function configPath(env: NodeJS.ProcessEnv): string {
@@ -329,17 +326,7 @@ function refuse(world: Pick<InitWorld, 'log'>, line: string, code = 1): number {
   return code
 }
 
-/** One block of facts under its heading, printed as soon as the facts are known (0121 §1). */
-function fact(
-  world: Pick<InitWorld, 'log'>,
-  title: string,
-  pairs: readonly (readonly [string, string])[],
-  note?: string,
-) {
-  world.log(section(title, [...keyValues(pairs), ...(note === undefined ? [] : [note])]))
-}
-
-/** `fact`, held back instead of printed: whether the run ends on the card is not known yet. */
+/** One block of facts under its heading, held back instead of printed: whether the run ends on the card is not known yet. */
 function heldFact(held: string[], title: string, pairs: readonly (readonly [string, string])[], note?: string) {
   held.push(section(title, [...keyValues(pairs), ...(note === undefined ? [] : [note])]))
 }

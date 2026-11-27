@@ -7,7 +7,9 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
 
-import { githubEntryFor } from '../src/machine-askers.ts'
+import { githubEntryFor, type MachineWorld } from '../src/machine-askers.ts'
+
+const asWorld = (w: MachineWorld): MachineWorld => w
 
 const READY: GhStatus = { ok: true, login: 'steven', scopes: ['repo', 'workflow', 'read:org'] }
 const SIGNED_OUT: GhStatus = {
@@ -34,7 +36,7 @@ function setup(o: {
   const run = (flags: Record<string, string> = {}) =>
     Effect.runPromise(
       githubEntryFor(
-        {
+        asWorld({
           ask: async (prompt, shape) => {
             asked.push(shape?.message ?? prompt)
             return answers.length > 0 ? answers.shift()! : null
@@ -55,7 +57,7 @@ function setup(o: {
           ...(o.gh === undefined ? {} : { gh: o.gh }),
           recipes: () => Effect.succeed([]),
           run: () => Promise.resolve({ code: 0 }),
-        } as never,
+        }),
         flags,
         'Nothing was written',
         o.required ?? false,

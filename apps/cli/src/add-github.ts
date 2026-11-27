@@ -23,7 +23,6 @@
  * GitHub one picked on the board, reach none of this yet.
  */
 import { hostname } from 'node:os'
-import { join } from 'node:path'
 
 import {
   checkGhAccessEffect,
@@ -50,7 +49,7 @@ import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { type Recipe, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
+import { liveTrialBuild, previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { checkAppEffect } from './app-check.ts'
