@@ -168,6 +168,10 @@ describe('followWriterJudgeChanges (#1523)', () => {
     expect(followWriterJudgeChanges('codex', 'claude-code', [judge('claude-code')])).toEqual([])
   })
 
+  it('does not restore a judge an operator removed while the writer is unchanged', () => {
+    expect(followWriterJudgeChanges('codex', 'codex', [])).toEqual([])
+  })
+
   it('writes no judge for a writer that cannot judge', () => {
     expect(followWriterJudgeChanges('codex', 'copilot', [])).toEqual([])
   })

@@ -114,7 +114,7 @@ export function followedJudgeIndex(currentProposed: readonly unknown[] | null, w
  * - the first `findings` judge names the old writer: it names the new one, or is removed where the new writer
  *   runs only at `implement` (`isImplementOnlyAgent`: a `judge:` naming it would not resolve);
  * - the judge names anything else: nothing, it is as a person wrote it.
- * Empty where the writer is unchanged and a judge is there.
+ * Empty where the writer is unchanged, whether or not a judge is there.
  */
 export function followWriterJudgeChanges(
   oldWriter: string | null,
@@ -130,6 +130,8 @@ export function followWriterJudgeChanges(
     }
     return [{ path: ['steps', 'proposed', index, 'judge'], value: newWriter }]
   }
+  // An unchanged writer adds nothing: an absent judge is one an operator may have removed on purpose.
+  if (oldWriter === newWriter) return []
   return findingsJudgeChanges(newWriter, proposed)
 }
 
