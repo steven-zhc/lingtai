@@ -24,7 +24,6 @@ import {
   groupDays,
   kindColourOf,
   kindPopOf,
-  landedHref,
   type LandedData,
   type LandedQuery,
   ticketRef,
@@ -35,7 +34,9 @@ import {
   type LandedDay,
 } from '@/lib/landed.ts'
 import { leadOf } from '@/lib/markdown.ts'
+import { landedHref } from '@/lib/paths'
 import { moveTitle } from '@/lib/resolution-copy.ts'
+import { tookText } from '@/lib/took.ts'
 
 import { Earlier } from './earlier.tsx'
 
@@ -61,7 +62,12 @@ function Squares({ insertions, deletions }: { insertions: number; deletions: num
   )
 }
 
+/** First claim → the outcome, through the one helper the task page uses too. */
+export const tookOf = (row: TicketReportRow): string | null =>
+  tookText(row.passTimes[0] ?? null, row.outcomeAt === null ? null : row.outcomeAt.toISOString())
+
 function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; money: Money }) {
+  const took = tookOf(row)
   const ref = ticketRef(row)
   const diff = diffOf(row)
   const owner = ref === null ? null : (env.owners.get(ref.project) ?? null)
@@ -88,6 +94,7 @@ function Facts({ row, env, money }: { row: TicketReportRow; env: LandedEnv; mone
         </span>
       )}
       <span>{costText(money)}</span>
+      {took === null ? null : <span>took {took}</span>}
       {row.outcome === 'satisfied' ? (
         <span className="ld-satisfied">
           satisfied{row.satisfiedAt === null ? '' : ` at ${row.satisfiedAt.slice(0, 7)}`} · nothing changed
@@ -197,6 +204,7 @@ function Line({ row }: { row: TicketReportRow }) {
       <span className="ld-title">{row.title ?? row.ticket}</span>
       {diff === null ? null : <Squares insertions={diff.insertions} deletions={diff.deletions} />}
       <span className="mono">{costText(moneyOf(row))}</span>
+      {tookOf(row) === null ? null : <span className="mono">took {tookOf(row)}</span>}
     </p>
   )
 }

@@ -1,4 +1,3 @@
-import { inWords } from '@lingtai/conductor/queue'
 import { MERGE_HUNKS_ONE_BY_ONE, STEPS, type CauseHunk } from '@lingtai/domain'
 // The same subpath `actions.ts`'s `sendAttempt` already reads `allowedResolutions`
 // off (#483) — so the page and the server action can never disagree about
@@ -21,6 +20,8 @@ import { describeWaitLines, type WaitLine } from '@lingtai/projector/task-view'
 import Link from 'next/link'
 import { Fragment, Suspense, type ReactNode } from 'react'
 
+import { personName } from '@/lib/history'
+import { attemptTabPath, historyPath, ticketPath } from '@/lib/paths'
 import type { AttemptProgress } from '@/lib/progress'
 import type { OutgoingView } from '@/lib/prompt'
 import {
@@ -37,9 +38,9 @@ import {
 import { estimateLine, type StartEstimate } from '@/lib/queued-estimate'
 import { NO_RESTART_EFFECT, RESOLUTION_COPY, moveTitle, resolutionCopyFor } from '@/lib/resolution-copy'
 import { rerunStepFirstAmongSavedWork } from '@/lib/saved-fix-work'
-import { billHasAny, billText, emptyBill, type Bill } from '@/lib/spend'
-import { attemptTabPath, ticketTabPath } from '@/lib/tabs'
-import { stateWord, type DiscussionView, type StandingView, type TaskAnswer } from '@/lib/task'
+import { billHasAny, billText, emptyBill } from '@/lib/spend'
+import { stateWord, type DiscussionView, type StandingView, type TaskAnswer, type Totals } from '@/lib/task'
+import { namedTimes } from '@/lib/took'
 
 /**
  * One place that reads GitHub's answer (0118 §2). Until it arrives — or always,
@@ -162,7 +163,7 @@ function QueuedBand({
                 : running.map((r, i) => (
                     <Fragment key={`${r.project}#${r.issue}`}>
                       {i > 0 ? ', ' : ''}
-                      <Link href={`/task/ticket-${r.project}-${r.issue}`}>
+                      <Link href={ticketPath(r)}>
                         {r.project === project ? `#${r.issue}` : `${r.project} #${r.issue}`}
                       </Link>
                     </Fragment>
@@ -227,24 +228,14 @@ function QueuedBand({
 }
 
 /** A ceiling and a freshness warning are independent facts: say each that there is. */
-const both = (a: string | null, b: string | null): string | null => {
-  const t = [a, b].filter((x): x is string => x !== null && x !== '')
+const both = (...parts: (string | null)[]): string | null => {
+  const t = parts.filter((x): x is string => x !== null && x !== '')
   return t.length === 0 ? null : t.join(' · ')
 }
 
-function Cell({ name, children, sub }: { name: string; children: ReactNode; sub?: string | null }) {
-  return (
-    <div className="meter" data-meter={name}>
-      <dt>{name}</dt>
-      <dd>{children}</dd>
-      {sub == null || sub === '' ? null : <dd className="sub">{sub}</dd>}
-    </div>
-  )
-}
-
-/** One row of facts: this step · this attempt · cost so far · fix rounds · limits (none set, once). */
+/** One row of facts: this step · this attempt · fix rounds · limits (none set, once). */
 function Meters({ m, held, serverNow }: { m: RunningPanelView['meters']; held: string | null; serverNow: number }) {
-  const unlimited = m !== null && m.round?.budget == null && m.attempt.ceiling === null && m.cost.ceiling === null
+  const unlimited = m !== null && m.round?.budget == null && m.attempt.ceiling === null && m.attempt.usdCeiling === null
   return (
     <dl className="meters facts">
       {m === null ? null : (
@@ -254,12 +245,9 @@ function Meters({ m, held, serverNow }: { m: RunningPanelView['meters']; held: s
               <Since key={`${m.runId}:${m.round.since}`} iso={m.round.since} serverNow={serverNow} />
             </Cell>
           )}
-          <Cell name="this attempt" sub={both(m.attempt.ceiling, m.attempt.behind)}>
+          <Cell name="this attempt" sub={both(m.attempt.ceiling, m.attempt.usdCeiling, m.attempt.behind)}>
             <Since key={`${m.runId}:${m.attempt.since}`} iso={m.attempt.since} serverNow={serverNow} />
             {` · ${m.attempt.turns}`}
-          </Cell>
-          <Cell name="cost so far" sub={both(m.cost.ceiling, m.cost.behind)}>
-            {m.cost.text}
           </Cell>
         </>
       )}
@@ -422,6 +410,7 @@ import type { RunningPanelView } from '@/lib/running'
 import { presentCause } from '@/lib/triage-cause'
 
 import { askedOf } from './asked-of.ts'
+import { Cell } from './cell.tsx'
 import { codeSpans } from './code-spans.tsx'
 import {
   Close,
@@ -449,9 +438,28 @@ import { SatisfiedItems } from './satisfied-items.tsx'
 import { Since } from './since'
 import { Skeleton } from './skeleton.tsx'
 import { SplitPlan, type SplitControls } from './split-plan.tsx'
+import { TotalsStrip } from './totals-strip.tsx'
 import { ResolutionCard, TriageChoices, TriagePicks } from './triage-picks.tsx'
 
 const MAX_TICKET_CELL = 600
+
+const CURRENT_SPEND = { current: true, label: '' }
+const EMPTY_TOTALS: Totals = {
+  attempts: 0,
+  turns: 0,
+  durationMs: 0,
+  fixRounds: 0,
+  inFlight: 0,
+  discussions: 0,
+  byPurpose: {
+    Work: emptyBill(),
+    Answering: emptyBill(),
+    Judge: emptyBill(),
+    Triage: emptyBill(),
+    Discussion: emptyBill(),
+    PR: emptyBill(),
+  },
+}
 
 /**
  * The line under the summary. A `TriageAnswered` recommends what its cause calls for where the decision offers it;
@@ -754,7 +762,7 @@ function TicketContext({
             ))}
         </div>
       )}
-      <Link href={ticketTabPath(taskId)} scroll={false}>
+      <Link href={historyPath(taskId)} scroll={false}>
         The whole ticket ↓
       </Link>
     </div>
@@ -791,7 +799,7 @@ function TicketContext({
  * and `pass-5cb24ac5` in two of them. So the state is the readout, *why it
  * stopped* is second and quoted from whatever refused, *what that means for the
  * decision* is third, the moves are fourth and the pair is fifth. Every
- * identifier is in the bar (`Coords`), once.
+ * identifier is in the facts line, once; the bar ends in `#<n>`.
  *
  * **Rank 3 is one sentence, and `soWhat` is the only thing that fills it**
  * (#152). It was a paragraph assembled from four tickets — the round count,
@@ -898,7 +906,9 @@ export function Standing({
   issue,
   taskId,
   discussions,
-  discussionBill = emptyBill(),
+  totals = EMPTY_TOTALS,
+  firstClaimAt = null,
+  spend = CURRENT_SPEND,
   outgoing,
   queued,
   inFlight = null,
@@ -953,7 +963,12 @@ export function Standing({
    * the Attempts label's split rather than summing a figure per
    * conversation itself (`#498`).
    */
-  discussionBill?: Bill
+  /** The whole ticket's totals: the strip's source, and the discussions' bill. */
+  totals?: Totals
+  /** The first attempt's claim instant: where *took* starts. */
+  firstClaimAt?: string | null
+  /** `spendChip`'s answer, so the strip and the bar word a lagging `spend` once. */
+  spend?: { current: boolean; label: string }
   /** What the next attempt will be handed. Null when there will not be one. */
   outgoing: OutgoingView | null
   /** Where it is in line and what taking it runs. Null in every other state. */
@@ -1189,16 +1204,56 @@ export function Standing({
         )}
       </Gh>
     )
-  const facts = (inLine: string | null): ReactNode[] =>
-    standing.state === 'running' && standing.running
-      ? runningFacts(standing.running, now)
-      : [
-          standing.since !== null ? (
-            <span title={standing.since}>{inWords(now - Date.parse(standing.since))}</span>
-          ) : null,
-          inLine !== null ? <span>{inLine}</span> : null,
+  const pointerLink =
+    standing.attempt !== null ? (
+      <Link
+        key="from"
+        className="sfrom sptr"
+        href={attemptTabPath(taskId, standing.attempt)}
+        scroll={false}
+        title={standing.runId ?? undefined}
+      >
+        {standing.state === 'queued' ? 'after' : 'from'} Attempt {standing.attempt} of {standing.attempts} ↓
+      </Link>
+    ) : null
+  /*
+   * The facts line, in one place so the pending and the answered draw cannot differ (#1500): the named times, `never
+   * run`, the queued place, *offered by GitHub* once GitHub has said so, and the pointer to the attempt last.
+   */
+  const facts = (inLine: string | null, queued: QueuedView | null): ReactNode[] => [
+    ...(standing.state === 'running' && standing.running
+      ? [
+          ...namedTimes({ firstClaimAt, state: 'running', since: null }).map((t) => <span key={t}>{t}</span>),
+          ...runningFacts(standing.running, now),
         ]
+      : namedTimes({
+          firstClaimAt,
+          state: standing.state,
+          since: standing.since,
+          landedBase: standing.landedOn?.base ?? null,
+        }).map((t) => <span key={t}>{t}</span>)),
+    // Said in as many words. An item with no attempts is not a stalled one.
+    standing.attempts === 0 ? <span key="never">never run</span> : null,
+    standing.state === 'running' && standing.running ? null : inLine !== null ? <span>{inLine}</span> : null,
+    // Whose fact the queue is: `queued` is the one state that is not in the log (0012).
+    queued !== null && queued.problem === null && queued.notOffered === null ? (
+      <span key="offered">offered by GitHub</span>
+    ) : null,
+    // The coordinate is the pointer: which attempt produced this state, and the way down to it. `of N` because the
+    // number alone reads as the whole story on an item that has had three (#102).
+    pointerLink,
+  ]
   const word = stateWord(standing.state)
+  const strip = (
+    <TotalsStrip
+      totals={totals}
+      firstClaimAt={firstClaimAt}
+      state={standing.state}
+      since={standing.since}
+      spend={spend}
+      now={now}
+    />
+  )
   const tone = taskTone(standing.state)
   const titled = (lead: string | undefined, meta: ReactNode) => (
     <ObjectTitle tone={tone} lead={lead} title={subjectTitle} meta={meta} />
@@ -1212,13 +1267,16 @@ export function Standing({
     <Gh
       g={g}
       pending={pending}
-      fallback={titled(word, joinMeta([subject === null ? null : refOf(subject, subject.url), ...facts(null)]))}
+      fallback={titled(word, joinMeta([subject === null ? null : refOf(subject, subject.url), ...facts(null, null)]))}
     >
       {(a) => {
         const ref = subject === null ? null : refOf(subject, a.ticket.url ?? subject.url)
         return subject !== null && missingOf(a)
-          ? titled(undefined, joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>]))
-          : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued))]))
+          ? titled(
+              undefined,
+              joinMeta([ref, <span className="refusal">GitHub has no issue #{subject.ref}</span>, pointerLink]),
+            )
+          : titled(word, joinMeta([ref, ...facts(a.queued === null ? null : place(a.queued), a.queued)]))
       }}
     </Gh>
   )
@@ -1254,7 +1312,7 @@ export function Standing({
       reason={standing.reason}
       triageStatus={standing.triageStatus}
       discussions={discussions}
-      discussionTotal={billHasAny(discussionBill) ? billText(discussionBill) : null}
+      discussionTotal={billHasAny(totals.byPurpose.Discussion) ? billText(totals.byPurpose.Discussion) : null}
       quiet={standing.state === 'running' || standing.state === 'queued'}
     />
   )
@@ -1294,6 +1352,7 @@ export function Standing({
           {isFramed ? (
             <header className="swaiting-head">
               {objectTitle}
+              {strip}
               {subject !== null ? (
                 <div className="sticket">
                   {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
@@ -1329,6 +1388,7 @@ export function Standing({
           ) : (
             <>
               {objectTitle}
+              {strip}
               {subject !== null ? (
                 <div className="sticket">
                   {want !== null ? <p className="swant">Triage’s reading: {want}</p> : null}
@@ -1520,7 +1580,17 @@ export function Standing({
           ) : null}
 
           {standing.state === 'running' && standing.running ? (
-            <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            <>
+              {/* An attempt continued after its ask was answered: the answer is history, the panel is live (#1495). */}
+              {standing.deciding?.answered !== undefined ? (
+                <AnsweredAsk
+                  deciding={standing.deciding}
+                  pointer={standing.deciding.attempt !== standing.attempt}
+                  taskId={taskId}
+                />
+              ) : null}
+              <RunningPanel view={standing.running} held={budget} discussion={discussion} serverNow={now} />
+            </>
           ) : null}
 
           {standing.state === 'blocked' ? (
@@ -1952,58 +2022,6 @@ function firstClause(text: string): string {
   return clause.length > CLAUSE_MAX ? `${clause.slice(0, CLAUSE_MAX - 1)}…` : clause
 }
 
-/**
- * Rank 8: every identifier the page has, each once, as one muted line in the
- * bar (#152).
- *
- * This was the block's own fourth rank, and the attempt row printed the same
- * run id again as a full uuid — `pass-52feebd1` twice on one page. So the bar
- * says which item and which attempt, and the run id is that link's title; the
- * attempt row is where the id, the shas and the branch are printed, once.
- */
-export function Coords({
-  standing,
-  taskId,
-  queued,
-}: {
-  standing: StandingView
-  taskId: string
-  /** Null until GitHub has answered, and for every state but `queued`: *offered by GitHub* is omitted then. */
-  queued: QueuedView | null
-}) {
-  return (
-    <span className="coords" data-rank="coords">
-      <span className="mono">{taskId}</span>
-      {/* Said in as many words. An item with no attempts is not a stalled one,
-          and the absence of a run is exactly what the page could not show
-          before it could be opened at all. */}
-      {standing.attempts === 0 ? <span>never run</span> : null}
-      {standing.since !== null ? (
-        <span>
-          since {standing.since.slice(0, 10)} {standing.since.slice(11, 16)} UTC
-        </span>
-      ) : null}
-      {/* Whose fact this is. `queued` is the one state that is not in the log,
-          so a page that stated it without saying where it came from would be
-          claiming a reducer it did not make (0012). */}
-      {queued !== null && queued.problem === null && queued.notOffered === null ? <span>offered by GitHub</span> : null}
-      {/* The coordinate is the pointer: which attempt produced this state, and
-          the way down to it. `of N` because the number alone reads as the whole
-          story on an item that has had three (#102). */}
-      {standing.attempt !== null ? (
-        <Link
-          className="sfrom sptr"
-          href={attemptTabPath(taskId, standing.attempt)}
-          scroll={false}
-          title={standing.runId ?? undefined}
-        >
-          {standing.state === 'queued' ? 'after' : 'from'} Attempt {standing.attempt} of {standing.attempts} ↓
-        </Link>
-      ) : null}
-    </span>
-  )
-}
-
 /** The card's weights, said once there and read here. See `page.tsx`'s `HELD_CLASS`. */
 const HELD_CLASS: Record<WaitLine['part'], string> = {
   what: 'diag',
@@ -2077,6 +2095,8 @@ function Reason({
     // The block as it was before #83, and the one deciding line is all it has
     // ever had here. Attributed, because it may be an earlier attempt's.
     if (deciding === null) return null
+    if (deciding.answered !== undefined)
+      return <AnsweredAsk deciding={deciding} pointer={deciding.attempt !== attempt} taskId={taskId} />
     return (
       <p className="sevidence">
         <span className="sstep">{deciding.source}</span>
@@ -2136,6 +2156,7 @@ function LastAttempt({
   taskId: string
 }) {
   if (deciding === null) return null
+  if (deciding.answered !== undefined) return <AnsweredAsk deciding={deciding} pointer taskId={taskId} />
   const lead =
     deciding.attempt === attempts ? `the last attempt, attempt ${deciding.attempt}` : `attempt ${deciding.attempt}`
   const label = `${lead} · ${deciding.fromStep ? 'stopped at ' : ''}${deciding.source}`
@@ -2155,6 +2176,64 @@ function LastAttempt({
       <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
         ↓
       </Link>
+    </p>
+  )
+}
+
+/** What each resolution reads as in an answered-ask line; a `Record`, so a new tag fails typecheck until it has a word. */
+const ANSWER_WORD: Record<Resolution['_tag'], string> = {
+  Approve: 'continue',
+  FixRefusal: 'fix',
+  RedoStep: 'redo',
+  AnswerQuestions: 'answer',
+  StartNewAttempt: 'new attempt',
+  EditBodyAndStartNewAttempt: 'edit and new attempt',
+  AnswerQuestion: 'answer',
+  ConfirmSatisfied: 'satisfied',
+  Split: 'split',
+  Close: 'close',
+}
+
+const clock = (iso: string) => iso.slice(11, 16)
+
+/** An asked step whose wait was answered: one muted history line (#1495), never the waiting style. */
+function AnsweredAsk({
+  deciding,
+  pointer,
+  taskId,
+}: {
+  deciding: NonNullable<StandingView['deciding']>
+  pointer: boolean
+  taskId: string
+}) {
+  const a = deciding.answered
+  if (a === undefined) return null
+  const question = deciding.evidence?.replace(/\s+/g, ' ').trim() || 'no question was recorded'
+  const source = deciding.source.replace(' / ', ' · ')
+  const word =
+    a === 'unmatched'
+      ? null
+      : a.resolution === 'Approve' && deciding.source.startsWith('proposed')
+        ? 'merge'
+        : ANSWER_WORD[a.resolution]
+  return (
+    <p className="past">
+      <b>{source}</b> asked{a === 'unmatched' ? '' : ` at ${clock(a.asked)}`} “{question}” →{' '}
+      {a === 'unmatched' ? (
+        'answered'
+      ) : (
+        <>
+          {personName(a.by)} answered <b>{word}</b> at {clock(a.at)}
+        </>
+      )}
+      {pointer ? (
+        <>
+          {' '}
+          <Link className="sptr" href={attemptTabPath(taskId, deciding.attempt)} scroll={false}>
+            in Attempt {deciding.attempt} ↓
+          </Link>
+        </>
+      ) : null}
     </p>
   )
 }
@@ -2208,16 +2287,4 @@ export function DeferredStanding({
   // One tree whatever `untouched` says: the first event on a ticket changes a
   // prop, never the component's ancestry, so nothing typed into it is remounted.
   return <Standing {...props} github={answer} untouched={untouched} outgoing={null} queued={null} />
-}
-
-/** `Coords`, with *offered by GitHub* omitted until the answer is in (0118 §2). */
-export function DeferredCoords({
-  answer,
-  ...props
-}: { answer: Answered<TaskAnswer> } & Omit<Parameters<typeof Coords>[0], 'queued'>) {
-  return (
-    <Deferred value={answer} fallback={<Coords {...props} queued={null} />}>
-      {(a) => <Coords {...props} queued={a.queued} />}
-    </Deferred>
-  )
 }

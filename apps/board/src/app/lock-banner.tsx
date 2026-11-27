@@ -24,8 +24,8 @@ import {
   type BannerRow,
   type ProjectLocks,
 } from '@/lib/locks.ts'
+import { homePath } from '@/lib/paths'
 
-import { withProject } from './bar.tsx'
 import { ContinueToday } from './continue-today.tsx'
 import { LiftButton, PauseButton, ResumeButton } from './pause-button.tsx'
 import { sandboxBanner } from './sandbox-banner.tsx'
@@ -192,7 +192,7 @@ export function LockRows({ locks, scope, now }: { locks: ProjectLocks; scope?: s
               <div className="pbrow" key={`paused:${row.project}`}>
                 <b className="lab">Paused</b>
                 <span className="what">
-                  <Link href={withProject('/', row.project)} title={`show only ${row.project}`}>
+                  <Link href={homePath(row.project)} title={`show only ${row.project}`}>
                     {row.project}
                   </Link>{' '}
                   · <span className="person">by {row.by}</span> since {sinceLabel(row.since, now)}

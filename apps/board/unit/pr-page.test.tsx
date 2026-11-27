@@ -7,11 +7,12 @@ import { join } from 'node:path'
 
 import { type Envelope, type PrState, reducePr } from '@lingtai/domain'
 import type { Recipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PrDetail } from '../src/app/pr-detail.tsx'
-import { type PrPageView, hostLine, prFixTicketLink, prPage } from '../src/lib/pr-page.ts'
+import { type PrPageView, hostLine, prFixTicketLink, prPage, previousOf } from '../src/lib/pr-page.ts'
 
 const recipe = {
   mode: 'team',
@@ -514,8 +515,8 @@ describe('where New pr-fix ticket goes follows the ticket source, not the remote
 describe('the tickets on the rail open their task pages', () => {
   it('number and title link to the task page', () => {
     const html = renderToStaticMarkup(<PrDetail project="p" view={page([requested, started])} host={null} />)
-    expect(html).toContain('href="/task/ticket-p-41"')
-    expect(html.match(/href="\/task\/ticket-p-41"/g)).toHaveLength(2)
+    expect(html).toContain('href="/p/p/ticket/41"')
+    expect(html.match(/href="\/p\/p\/ticket\/41"/g)).toHaveLength(2)
   })
 })
 
@@ -612,5 +613,169 @@ describe('what the code host says', () => {
     expect(hostLine({ status: 'in-progress' }, { kind: 'ok', state: 'open', merged: false, draft: true }).text).toBe(
       'a draft on GitHub',
     )
+  })
+})
+
+describe('a PR on a remote that is not GitHub (#1485)', () => {
+  const none: Spec = ['PrOpened', { host: 'none', number: null, url: null }]
+  const stream: Spec[] = [requested, started, done('sync'), done('build'), done('push'), none]
+  it('reads CI and Ready as not followed, and the Checks head says the CI row', () => {
+    const v = page(stream)
+    const ci = v.steps.find((s) => s.step === 'ci')
+    const ready = v.steps.find((s) => s.step === 'ready')
+    expect(ci?.status).toBe('skipped')
+    expect(ci?.text).toMatch(/^no CI step — .*not GitHub/)
+    expect(ready?.status).toBe('skipped')
+    expect(ready?.text).toContain('yours to do on this remote')
+    expect(`${ci?.text} ${ready?.text}`).not.toContain('not reached')
+    expect(v.checks.head).toBe(ci?.text)
+  })
+  it('reads the current pass, not a draft an earlier GitHub pass left on host', () => {
+    const draft: Spec = ['PrDraftOpened', { number: 9, nodeId: 'n', url: 'u' }]
+    const v = page([requested, started, done('sync'), done('build'), done('push'), draft, ...stream])
+    expect(v.steps.find((s) => s.step === 'ci')?.text).toMatch(/^no CI step — .*not GitHub/)
+    expect(v.steps.find((s) => s.step === 'ready')?.text).toContain('yours to do on this remote')
+    expect(v.checks.head).toMatch(/^no CI step — /)
+  })
+  it('a later pass with no open reads as not reached again', () => {
+    const v = page([...stream, requested, started])
+    expect(v.steps.find((s) => s.step === 'ci')?.status).toBe('not-reached')
+    expect(v.steps.find((s) => s.step === 'ready')?.text).toContain('not reached')
+  })
+})
+
+describe('an empty Next PR', () => {
+  const added = (ticket: string): Spec => [
+    'PrDraftTicketAdded',
+    { ticket, mergeCommit: `c${ticket}`, title: `t${ticket}` },
+  ]
+  const empty = (previous?: PrState) =>
+    prPage({
+      project: 'p',
+      recipe,
+      owner: 'o',
+      pr: null,
+      events: [],
+      draft: [],
+      open: null,
+      ...(previous === undefined ? {} : { previous: { pr: previous, frozenSha: null, caughtUp: null } }),
+      spend: null,
+      stepNames: STEPS,
+      now: new Date(),
+    })
+  const SMALL = 'the next ticket that lands on foundry starts this draft · Submit appears once it has one'
+
+  it('says where the tickets went, links the PR and offers no Submit', () => {
+    const v = empty(reducePr(events([added('1'), added('2'), requested, started, draftOpened])))
+    expect(v.header.title).toBe('Next PR — nothing in it yet')
+    expect(v.buttons).toEqual([])
+    expect(v.previous?.lead).toBe('Nothing is waiting for the next PR. The 2 tickets before went into')
+    expect(v.previous?.name).toBe('PR #88')
+    expect(v.previous?.state).toBe('in progress')
+    expect(v.poster.line).toBe(SMALL)
+  })
+  it('links the PR it names, to its page', () => {
+    const pr = { ...reducePr(events([added('1'), requested, started, draftOpened])), n: 1 }
+    const html = renderToStaticMarkup(<PrDetail project="p" view={empty(pr)} host={null} />)
+    expect(html).toContain('<a href="/p/p/pr/1">PR #88 · in progress</a>')
+    const unnumbered = renderToStaticMarkup(<PrDetail project="p" view={empty({ ...pr, n: null })} host={null} />)
+    expect(unnumbered).toContain('PR #88 · in progress')
+    expect(unnumbered).not.toContain('href="/p/p/pr/')
+  })
+  it('counts a requested PR from its own draft list', () => {
+    const v = empty(reducePr(events([added('1'), added('2'), added('3'), requested])))
+    expect(v.previous?.lead).toContain('The 3 tickets before')
+    expect(v.previous?.state).toBe('submitted')
+  })
+  it('says only the small line with no PR, or a closed one', () => {
+    expect(empty().previous).toBeNull()
+    expect(empty().poster.line).toBe(SMALL)
+    const closed = reducePr(events([added('1'), requested, started, ['PrClosed', { by: 'human:steven', why: 'x' }]]))
+    expect(empty(closed).previous).toBeNull()
+  })
+  it('draws no legend where nothing is drawn', () => {
+    const html = renderToStaticMarkup(<PrDetail project="p" view={empty()} host={null} />)
+    expect(html).not.toContain('prp-legend')
+  })
+  it('labels now in lowercase, on the drawing that has one', () => {
+    const html = renderToStaticMarkup(
+      <PrDetail project="p" view={page([requested, started, done('sync')])} host={null} />,
+    )
+    expect(html).toMatch(/<text[^>]*class="prp-now-t"[^>]*>now<\/text>/)
+    expect(html).not.toContain('NOW')
+  })
+  it('lists only the kinds a drawing holds', () => {
+    const v = page([requested, started, done('sync')])
+    const html = renderToStaticMarkup(<PrDetail project="p" view={v} host={null} />)
+    expect(html).toContain('prp-legend')
+    expect(html).toContain('prp-nd ticket')
+    expect(html).not.toContain(' waiting on you ')
+  })
+})
+
+describe('which PR an empty Next PR names (previousOf)', () => {
+  const added = (ticket: string): Spec => [
+    'PrDraftTicketAdded',
+    { ticket, mergeCommit: `c${ticket}`, title: `t${ticket}` },
+  ]
+  const pr = (...specs: Spec[]) => reducePr(events(specs))
+  const merged = { ...pr(added('1'), requested, started, draftOpened), n: 1, status: 'merged' as const }
+  const inReview = { ...pr(added('2'), requested, started, draftOpened), n: 2, status: 'in-review' as const }
+  const noEvents = () => Effect.succeed([] as Envelope[])
+  const run = <A,>(e: Effect.Effect<A, Error>) => Effect.runPromise(Effect.result(e))
+
+  it('fails when the newest PR could not be read, and never falls back to an older one', async () => {
+    const r = await run(
+      previousOf(
+        [],
+        [
+          { n: 1, pr: merged },
+          { n: 2, error: 'disk' },
+        ],
+        noEvents,
+      ),
+    )
+    expect(r._tag).toBe('Failure')
+    expect(String((r as { failure: Error }).failure.message)).toContain('PR 2 could not be read: disk')
+  })
+  it('reads nothing for a draft with tickets, or one that could not be read', async () => {
+    let reads = 0
+    const spy = () => {
+      reads++
+      return noEvents()
+    }
+    const failing = [
+      { n: 1, pr: inReview },
+      { n: 2, error: 'disk' },
+    ]
+    const withTickets = [{ ticket: '9', mergeCommit: 'c9', title: 't9' }]
+    expect(await Effect.runPromise(previousOf(withTickets, [{ n: 2, pr: inReview }], spy))).toBeNull()
+    expect(await Effect.runPromise(previousOf(withTickets, failing, spy))).toBeNull()
+    expect(await Effect.runPromise(previousOf({ error: 'x' }, failing, spy))).toBeNull()
+    expect(reads).toBe(0)
+  })
+  it("reads the newest PR's freeze only while nothing has caught up", async () => {
+    const asked: number[] = []
+    const evs = events([added('2'), requested, started])
+    const read = (n: number) => {
+      asked.push(n)
+      return Effect.succeed(evs as readonly Envelope[])
+    }
+    const r = await Effect.runPromise(previousOf([], [{ n: 2, pr: inReview }], read))
+    expect(asked).toEqual([2])
+    expect(r?.frozenSha).toBe('f0f0f0f0')
+  })
+  it("takes the first freeze, not a later walk's", async () => {
+    const later: Spec = [
+      'PrInProgress',
+      { because: 'pr-fix', branch: 'foundry', main: 'main', frozenSha: 'bbbbbbbb', prBranch: 'foundry-pr-7', tickets },
+    ]
+    const evs = events([added('2'), requested, started, later])
+    const r = await Effect.runPromise(previousOf([], [{ n: 2, pr: inReview }], () => Effect.succeed(evs)))
+    expect(r?.frozenSha).toBe('f0f0f0f0')
+  })
+  it('fails when the freeze read fails', async () => {
+    const r = await run(previousOf([], [{ n: 2, pr: inReview }], () => Effect.fail(new Error('gone'))))
+    expect(r._tag).toBe('Failure')
   })
 })

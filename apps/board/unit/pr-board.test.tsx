@@ -24,6 +24,7 @@ import {
   prBoard,
   prName,
   soloSentence,
+  unfollowedRemote,
 } from '../src/lib/pr-board.ts'
 
 const recipe = {
@@ -226,12 +227,12 @@ describe('prBoard', () => {
     expect(draft.sub.join(' ')).toContain('landed on foundry, not yet on main')
     expect(draft.sub.join(' ')).toContain('≤ 20 turns, 5 min')
     expect(v.strip.branches).toBe('foundry → main')
-    expect(v.strip.notInPr).toBe('2 tickets not in a PR yet')
+    expect(v.strip.notInPr).toBe('2 tickets in Draft PR')
   })
 
   it('links the draft card to the page listing every draft ticket', () => {
     const draft = cards(prBoard(input([], [tk(1), tk(2), tk(3), tk(4), tk(5)])), 'draft')[0]!
-    expect(draft.href).toBe('/pr/p/next')
+    expect(draft.href).toBe('/p/p/pr/next')
     expect(draft.more).toBe(2)
   })
 
@@ -262,7 +263,7 @@ describe('prBoard', () => {
     expect(col(v, 'draft').empty).toBe(
       'Nothing has landed since PR 3 was submitted. Tickets that land now join PR 3 until it starts, then the next PR.',
     )
-    expect(v.submitted).toEqual({ n: 3, at: '19:55', href: '/pr/p/3', daemon: 'running' })
+    expect(v.submitted).toEqual({ n: 3, at: '19:55', href: '/p/p/pr/3', daemon: 'running' })
     expect(v.strip.notInPr).toBe('PR 3 queued')
     expect(JSON.stringify(v)).not.toMatch(/pid|freezing/)
   })
@@ -317,6 +318,26 @@ describe('prBoard', () => {
       const v = prBoard(input([{ n: 3, pr: pr(3, { status, tickets: [tk(1)] }) }], []))
       expect(v.strip.notInPr).toBe(words)
     }
+  })
+
+  it('reads a remote that is not GitHub from the current pass, not from host (#1485)', () => {
+    const steps = (names: string[]) => names.map((step) => ({ step, headSha: 'a' }))
+    // An earlier GitHub pass's draft stays on `host` after `PrInProgress`; the later pass opened with host 'none'.
+    const draft = { number: 9, nodeId: 'n', url: 'u' }
+    const none = pr(3, {
+      status: 'in-review',
+      host: draft,
+      steps: steps(['sync', 'build', 'push', 'open']),
+      tickets: [tk(1)],
+    })
+    expect(unfollowedRemote(none)).toBe(true)
+    expect(unfollowedRemote({ ...none, host: null })).toBe(true)
+    // GitHub: In review records `ready`; a walking PR waiting at CI has `open` and no `ready` but is not In review.
+    expect(unfollowedRemote({ ...none, steps: steps(['push', 'open', 'ci', 'ready']) })).toBe(false)
+    expect(unfollowedRemote({ ...none, status: 'in-progress' })).toBe(false)
+    // An in-review card carries no chips, so neither is drawn as pending.
+    const card = cards(prBoard(input([{ n: 3, pr: none }])), 'draft')[0]!
+    expect(card.chips.some((c) => c.text.startsWith('ci ·') || c.text.startsWith('ready ·'))).toBe(false)
   })
 
   it('draws a PR in progress with its steps from the conductor’s list', () => {
@@ -562,7 +583,7 @@ describe('the place line', () => {
 
   it('has PRs with a fail-coloured count when one waits, and none at zero', () => {
     const one = viewsFor('p', { waiting: 1 }).find((v) => v.id === 'prs')!
-    expect(one).toMatchObject({ href: '/pr/p', key: 'P', badge: { n: 1, title: '1 PR waiting on you' } })
+    expect(one).toMatchObject({ href: '/p/p/pr', key: 'P', badge: { n: 1, title: '1 PR waiting on you' } })
     expect(viewsFor('p', { waiting: 2 }).find((v) => v.id === 'prs')!.badge!.title).toBe('2 PRs waiting on you')
     expect(viewsFor('p', { waiting: 0 }).find((v) => v.id === 'prs')!.badge).toBeUndefined()
   })

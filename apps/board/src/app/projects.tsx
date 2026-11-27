@@ -27,6 +27,7 @@ import type { ReactNode } from 'react'
 
 import { isPaused, type LockMap } from '@/lib/lock-marks.ts'
 import type { ModeMark } from '@/lib/mode-mark.ts'
+import { homePath } from '@/lib/paths'
 import type { SandboxState } from '@/lib/sandbox-state.ts'
 
 import { FilterMenu } from './filter-menu'
@@ -85,7 +86,7 @@ export function ProjectRows({
         <ProjectLink
           choice={undefined}
           className={`tab${only === undefined ? ' on' : ''}`}
-          href="/?project="
+          href={homePath(undefined)}
           {...(only === undefined ? current : {})}
         >
           all projects
@@ -96,7 +97,7 @@ export function ProjectRows({
           key={p}
           choice={p}
           className={`tab prj${only === p ? ' on' : ''}`}
-          href={`/?project=${encodeURIComponent(p)}`}
+          href={homePath(p)}
           {...(only === p ? current : {})}
         >
           {sandbox?.get(p) === undefined && mode?.get(p) === undefined ? (
@@ -145,10 +146,13 @@ export function Projects({
   registered,
   locks,
   sandbox,
+  keepMenu = false,
 }: {
   filters: string[]
   only: string | undefined
   app: boolean
+  /** Draw the menu even with nothing listed, so a place line keeps its crumb and `G S` (#1499). */
+  keepMenu?: boolean
   /** The registered projects: a row outside them has no recipe to give. */
   registered: readonly string[]
   /** What holds each project: a paused one is marked, never explained (0126 §8). */
@@ -157,7 +161,7 @@ export function Projects({
 }) {
   // Nothing configured is the one board with somewhere to go, and it is the
   // same object rather than a fourth one (#169).
-  if (filters.length === 0)
+  if (filters.length === 0 && !keepMenu)
     return (
       <ProjectRows filters={filters} only={only} app={app} registered={registered} locks={locks} sandbox={sandbox} />
     )

@@ -41,6 +41,7 @@ const Wait = z.strictObject({
     .strictObject({
       resolution: Resolution,
       by: z.string(),
+      at: IsoDate,
       note: z.string().optional(),
       spent: z
         .strictObject({ bound: z.enum(['refusalFixes', 'conflictResolutions', 'stepRedos']), n: z.number().int() })
@@ -195,7 +196,8 @@ export const ticketReducer: Reducer<TicketState> = {
   // 13: `landed` keeps where a ticket landed after a `TicketClosed` (#1309); a version-12 snapshot does not know.
   // 14: `cutFrom` keeps the branch a team pr-fix claim was cut from (#1341); a version-13 snapshot does not know.
   // 15: a `TicketLanded` after a `TicketClosed` sets `landed` and leaves the lifecycle closed (#1397); a version-14 snapshot kept it null.
-  version: 15,
+  // 16: a wait's resolution carries its at (#1495); a version-15 snapshot lost it.
+  version: 16,
   initial: emptyTicket,
   reduceEvent: reduceTicketEvent,
   encode: encodeTicket,

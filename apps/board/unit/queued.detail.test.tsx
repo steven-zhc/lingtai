@@ -22,7 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { planStepLine } from '../src/app/rail.tsx'
-import { Coords, Standing, detailClass } from '../src/app/standing.tsx'
+import { Standing, detailClass } from '../src/app/standing.tsx'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import {
   backoffOf,
@@ -356,12 +356,10 @@ const NEVER_RUN: StandingView = {
   approvedSha: null,
 }
 
-// The block and the bar's coordinates, which is where *never run* and *offered
-// by GitHub* went when every identifier moved up there (#152).
+// *never run* and *offered by GitHub* are in the facts line under the title (#1500).
 const render = (standing: StandingView, queued: QueuedView | null, unknown: string | null = null) =>
   renderToStaticMarkup(
     <>
-      <Coords standing={standing} taskId="ticket-lingtai-112" queued={queued} />
       <Standing
         subject={null}
         standing={standing}
@@ -492,7 +490,7 @@ describe('the queued panel', () => {
     expect(at('Nothing is needed from you')).toBeGreaterThan(at('3 ahead of it'))
     expect(html.match(/class="fact"/g)).toHaveLength(3)
     expect(html).toContain('why here')
-    expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
+    expect(html).toContain('<a href="/p/lingtai/ticket/899">#899</a>')
     expect(html).toContain('it starts when any of them ends')
     expect(html).toContain('#120 · feature')
     expect(html).not.toContain('Where it is')
@@ -536,7 +534,7 @@ describe('the queued panel', () => {
     const band = html.slice(html.indexOf('triage-band'), html.indexOf('</section>', html.indexOf('triage-band')))
     expect(band.match(/class="skeleton"/g)).toHaveLength(4)
     expect(html).toContain('running now')
-    expect(html).toContain('<a href="/task/ticket-lingtai-899">#899</a>')
+    expect(html).toContain('<a href="/p/lingtai/ticket/899">#899</a>')
     expect(html).not.toContain('Nothing is needed from you')
     expect(html).not.toContain('why here')
   })

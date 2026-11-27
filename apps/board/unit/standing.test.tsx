@@ -22,7 +22,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Close, EditBodyAndRequeue } from '../src/app/decide.tsx'
-import { Coords, Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
+import { Standing, soWhat, ticketOpening } from '../src/app/standing.tsx'
 import { sinceText } from '../src/lib/progress.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import type { RunningPanelView } from '../src/lib/running.ts'
@@ -726,10 +726,8 @@ describe('the block, rendered', () => {
     expect(html).toContain('waiting on you')
     expect(html).not.toMatch(/>blocked</)
     expect(html).toContain('onyou')
-    // The coordinate is the bar's now (#152), and still says which attempt.
-    expect(renderToStaticMarkup(<Coords standing={HELD} taskId="ticket-lingtai-112" queued={null} />)).toContain(
-      'from Attempt 2 of 2',
-    )
+    // The coordinate is in the facts line (#1500), and still says which attempt.
+    expect(html).toContain('from Attempt 2 of 2')
     expect(html).toContain('conflict: agent/112 does not merge into develop')
     // The move that is left when there is no diff to approve (#84).
     expect(html).toContain('Start a new attempt from base')
@@ -1150,7 +1148,7 @@ describe('the block, rendered', () => {
         queued={null}
       />,
     )
-    expect(html).toContain('href="/task/ticket-lingtai-112/attempt/1"')
+    expect(html).toContain('href="/p/lingtai/ticket/112/attempt/1"')
     expect(html).toContain('in Attempt 1')
   })
 
@@ -1210,9 +1208,9 @@ describe('the block, rendered', () => {
           since: '2026-11-05T00:00:00.000Z',
           turns: '0 turns in agent runs that have ended',
           ceiling: 'at most 150 turns a run',
+          usdCeiling: 'at most $5.00 a run',
           behind: null,
         },
-        cost: { text: 'nothing billed yet: no agent run has ended', ceiling: 'at most $5.00 a run', behind: null },
       },
     }
     const html = renderToStaticMarkup(
@@ -1237,7 +1235,6 @@ describe('the block, rendered', () => {
     expect(panel).toContain('this step')
     expect(panel).toContain('at most 150 turns a run')
     expect(panel).toContain('at most $5.00 a run')
-    expect(panel).toContain('nothing billed yet')
     expect(panel).not.toContain('$0.00')
     // The server's markup is `sinceText(iso, serverNow)` — no clock read.
     expect(panel).toContain(`>${sinceText('2026-11-05T00:00:00.000Z', NOW)}</span>`)
@@ -2135,7 +2132,7 @@ describe('the subject, at the top', () => {
     expect(html).toContain('**bold** &lt;b&gt;literal&lt;/b&gt;')
     // No table to promote: the link alone, not a sentence saying so.
     expect(html).not.toContain('The ticket’s context is in the complete issue.')
-    expect(html).toContain('href="/task/ticket-lingtai-159/ticket"')
+    expect(html).toContain('href="/p/lingtai/ticket/159/history"')
     expect(html).not.toContain('alert(1)')
     expect(ticketOpening('one\ntwo')).toBeNull()
   })
@@ -2175,7 +2172,7 @@ describe('the subject, at the top', () => {
     expect(html.indexOf('>Problem</h2>')).toBeLessThan(html.indexOf('>Want</h2>'))
     expect(html.indexOf('>Want</h2>')).toBeLessThan(html.indexOf('>Watch out</h2>'))
     expect(html.indexOf('>Watch out</h2>')).toBeLessThan(html.indexOf('data-rank="where"'))
-    expect(html).toContain('href="/task/ticket-lingtai-159/ticket"')
+    expect(html).toContain('href="/p/lingtai/ticket/159/history"')
     const withoutWatch = renderToStaticMarkup(
       <Standing
         subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
@@ -2217,7 +2214,7 @@ describe('the subject, at the top', () => {
         queued={null}
       />,
     )
-    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="/task/ticket-lingtai-159/ticket"'))
+    const context = html.slice(html.indexOf('class="tcontext"'), html.indexOf('href="/p/lingtai/ticket/159/history"'))
     expect(context).toContain('>Problem</h2>')
     expect(context).toContain('>Want</h2>')
     expect(context).toContain('>Watch out</h2>')

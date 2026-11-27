@@ -103,7 +103,7 @@ function reasonText(reason: unknown): string {
 export function describe(payload: NotifyPayload): Notification {
   const { event, ticket } = payload
   const d = (event.data ?? {}) as Record<string, unknown>
-  const url = `${payload.board}/task/${encodeURIComponent(ticket.id)}`
+  const url = `${payload.board}/p/${encodeURIComponent(ticket.project)}/ticket/${ticket.issue}`
   const ref = `#${ticket.issue}`
 
   switch (event.type) {

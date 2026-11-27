@@ -119,6 +119,6 @@ export function nearCeiling(day: DaySpend | null, ceilingUsd: number | undefined
   if (day === null || ceilingUsd === undefined) return null
   const ceilingCents = Math.round(ceilingUsd * 100)
   if ((day.reportedCents + day.estimatedCents) * 5 < ceilingCents * 4) return null
-  const unknown = day.unknown > 0 ? ` + ${day.unknown} unknown` : ''
+  const unknown = day.unknown > 0 ? ` + ${day.unknown} unpriced` : ''
   return `today ${dayFigure(day)} + ~${dollars(day.estimatedCents)} of ${dollars(ceilingCents)}${unknown}`
 }

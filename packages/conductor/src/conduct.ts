@@ -1,4 +1,3 @@
-import { spawn } from 'node:child_process'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, posix } from 'node:path'
@@ -39,6 +38,7 @@ import {
   runtimeVersionOfEffect,
   taggedTrace,
   type RunSandbox,
+  type SmokeWhere,
 } from '@lingtai/agent'
 import { extensionEnv, productionPatterns, runnableEnv } from '@lingtai/agent-env'
 import {
@@ -333,6 +333,7 @@ import {
   sandboxOutcomeOf,
   type InvocationAppends,
 } from './sandbox-record.ts'
+import { smokeWhere as smokeWhereOf } from './smoke-where.ts'
 import { stepsResolved } from './steps-resolved.ts'
 import { type RefChannel, tellGitHubAboutEffect, tellGitHubEffect } from './tell.ts'
 import { githubTicketStore, type Tickets } from './ticket-store.ts'
@@ -364,7 +365,7 @@ function personRerunsOf(waits: ReturnType<typeof waitsFromState>, runId: string)
   ).length
 }
 
-/** A run's cost in words: dollars to the cent, or `cost unknown` — never `$0.00` for a cost nobody reported (0110 §7). */
+/** A run's cost in words: dollars to the cent, or `unpriced` — never `$0.00` for a cost nobody reported (0110 §7). */
 /**
  * **One base check per store** (#744, 0122) — its in-flight map is what makes two passes asking
  * about one commit and command one run, so it cannot be a local of a pass. Keyed by the store
@@ -377,7 +378,7 @@ function wallOf(detail: string): RuntimeId | null {
 }
 
 export function spentWords(costUsd: number | null): string {
-  return costUsd === null ? 'cost unknown' : `$${costUsd.toFixed(2)}`
+  return costUsd === null ? 'unpriced' : `$${costUsd.toFixed(2)}`
 }
 
 /**
@@ -703,22 +704,6 @@ function said(detail: string, n = 300): string {
   const one = detail.replace(/\s+/g, ' ').trim()
   if (one === '') return 'no detail was recorded'
   return one.length > n ? `${one.slice(0, n - 1)}…` : one
-}
-
-/** How a runtime is spawned for the fail-closed smoke test. */
-function runBinary(
-  bin: string,
-  env: Record<string, string>,
-  stdin: string,
-): Promise<{ code: number | null; stderr: string }> {
-  return new Promise((resolve) => {
-    const child = spawn(bin, { env: { ...process.env, ...env }, stdio: ['pipe', 'pipe', 'pipe'] })
-    let stderr = ''
-    child.stderr.on('data', (c) => (stderr += c.toString()))
-    child.on('close', (code) => resolve({ code, stderr }))
-    child.on('error', (err) => resolve({ code: null, stderr: err.message }))
-    child.stdin.end(stdin)
-  })
 }
 
 /**
@@ -1105,6 +1090,13 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
         },
       })
     }
+    const smokeWhere = (passDecision: SandboxDecision, runtime: string, worktree: string): SmokeWhere =>
+      smokeWhereOf(passDecision, runtime, worktree, {
+        project,
+        mirror: mirrorPathFor(project, home),
+        hookBinary: options.hookBinary,
+        service: options.sandbox,
+      })
     // The agent the recipe resolved to is the agent that runs, or nothing runs
     // (0046 §3). Before the claim, for the same reason as the refusals around it.
     /**
@@ -5102,11 +5094,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           if (Result.isFailure(wired)) return { stopped: `the hook was not wired: ${wired.failure.detail}` }
           const wiring = wired.success
 
-          const smoke = yield* Effect.result(host.smokeTest(options.hookBinary, runBinary))
+          const smoke = yield* Effect.result(
+            host.smokeTest(
+              options.hookBinary,
+              smokeWhere(implementDecision, spec.agent ?? options.runtime.capabilities.id, tree.path),
+            ),
+          )
           if (Result.isFailure(smoke)) {
             return { stopped: `the hook's smoke test did not run: ${smoke.failure.detail}` }
           }
-          if (!smoke.success.ok) return { stopped: `the hook did not fail closed: ${smoke.success.detail}` }
+          if (!smoke.success.ok) return { stopped: `the hook's smoke test failed: ${smoke.success.detail}` }
 
           // The action's own bound where it declared one (`#314`). A fix round is
           // this same `implement` entry again, so a narrowed `implement` bounds the
@@ -5561,11 +5558,16 @@ export function runOnce(options: RunOnceOptions): Effect.Effect<RunOnceResult, n
           )
           if (Result.isFailure(fixWired)) return { stopped: `the hook was not wired: ${fixWired.failure.detail}` }
           const wiring = fixWired.success
-          const fixSmoke = yield* Effect.result(host.smokeTest(options.hookBinary, runBinary))
+          const fixSmoke = yield* Effect.result(
+            host.smokeTest(
+              options.hookBinary,
+              smokeWhere(fixDecision, spec.agent ?? options.runtime.capabilities.id, tree.path),
+            ),
+          )
           if (Result.isFailure(fixSmoke)) {
             return { stopped: `the hook's smoke test did not run: ${fixSmoke.failure.detail}` }
           }
-          if (!fixSmoke.success.ok) return { stopped: `the hook did not fail closed: ${fixSmoke.success.detail}` }
+          if (!fixSmoke.success.ok) return { stopped: `the hook's smoke test failed: ${fixSmoke.success.detail}` }
 
           // The merge-base with the base, so a base merge anybody made is not the
           // ticket's change (#937). The fallback is never `tree.baseSha` alone once

@@ -117,7 +117,7 @@ describe('endingLine', () => {
 describe('costWords', () => {
   it('never prints an unknown as zero', () => {
     expect(costWords({ usd: 0.4, unknown: 0 })).toBe('$0.40')
-    expect(costWords({ usd: 0, unknown: 2 })).toBe('cost unknown')
-    expect(costWords({ usd: 0.4, unknown: 1 })).toBe('$0.40 + 1 unknown')
+    expect(costWords({ usd: 0, unknown: 2 })).toBe('unpriced')
+    expect(costWords({ usd: 0.4, unknown: 1 })).toBe('$0.40 + 1 unpriced')
   })
 })

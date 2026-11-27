@@ -86,6 +86,8 @@ export interface Question {
   fallback?: string
   /** How the default is printed in the bracket. Never applied to the returned answer. */
   show?: (value: string) => string
+  /** The default is a secret: a front end that draws its own prompt is handed the redacted text and no default (the empty answer still means it). */
+  secret?: boolean
   /** When given, an answer outside this list is refused and asked again. */
   choices?: readonly string[]
   /** Drawn as a select at a terminal, and never checked: a flag or a typed answer outside it still reaches `validate`. */
@@ -165,8 +167,11 @@ export function questionEffect(world: QuestionWorld, q: Question): Effect.Effect
     for (;;) {
       const typed = yield* lift(() =>
         world.ask(prompt, {
-          message: q.prompt,
-          defaultValue,
+          // A secret default is handed to a front end that draws its own prompt as redacted text in the message and
+          // no default at all: an empty answer is `defaultValue` below, so the raw one never reaches a placeholder.
+          // A `show` that only labels (a model, a ceiling) leaves the default as it is, or a selector loses it.
+          message: q.secret === true && defaultValue !== '' ? `${q.prompt} [${show(defaultValue)}]` : q.prompt,
+          defaultValue: q.secret === true ? '' : defaultValue,
           choices: q.choices ?? q.offer,
           labels: q.offerLabels,
           kept: q.kept ?? 'Nothing was written',

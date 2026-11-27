@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 
 import { ownerlessRefusal } from '@lingtai/conductor'
-import type { ProjectState } from '@lingtai/domain'
+import { prStream, ticketStream, type ProjectState } from '@lingtai/domain'
 /**
  * `chooseFirstProject` (#394): the local branch against a Map-backed `files`
  * seam and a programmable `git`, and the GitHub branch against the real
@@ -11,15 +11,16 @@ import type { ProjectState } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { type AppReader, GitHubFailed, type GhRun, type GhStatus } from '@lingtai/github'
 import { resolveLocalRecipeEffect, recipePath, ProjectFiles } from '@lingtai/project'
-import { type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { branchOf, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { skipSandboxHost } from '@lingtai/recipe/test/sandbox-host'
 import { listRepositories as list, type Picker, type SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
-import { Effect } from 'effect'
+import { Effect, Fiber } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { GitResult, RegisterLocalPayload } from '../src/first-project.ts'
 import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-project.ts'
+import { askRecipeEffect, ENV_PLANT_AT } from '../src/recipe-flow.ts'
 import { flagsOf } from '../src/wizard-options.ts'
 import {
   type FirstProjectTestWorld,
@@ -112,6 +113,8 @@ interface Harness {
 
 function harness(options: {
   answers?: (string | null)[]
+  /** Answers by prompt instead of by order: it may never resolve, which is how a test holds a run at one question. */
+  ask?: (prompt: string) => Promise<string | null>
   git?: GitPlan
   projects?: ProjectState[]
   files?: Record<string, string>
@@ -143,6 +146,7 @@ function harness(options: {
   const world: PromiseFirstProjectWorld = {
     ask: async (prompt) => {
       asked.push(prompt)
+      if (options.ask !== undefined) return options.ask(prompt)
       return answers.length > 0 ? answers.shift()! : null
     },
     log: (line) => logged.push(line),
@@ -1587,20 +1591,222 @@ describe('chooseFirstProject — re-running add --local over an old recipe (#772
     expect(h.files.replaced).toEqual({})
   })
 
-  it('a rerun of init over an added local project says so without asking the base, writing or registering', async () => {
+  it('a rerun over a recipe that does not resolve is refused by name, before any question, and writes nothing', async () => {
     const h = harness({
       git: git(),
       projects: [project('repo', null)],
-      files: {
-        [path]:
-          'version: 2\nbranch:\n  main: lingtai-base\nrepo:\n  remote: /repo\nsource:\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
-      },
+      files: { [path]: 'version: 2\nrepo:\n  remote: /repo\nbranch: [not, a, map]\n' },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '', install: 'none' })
+    expect(result).toEqual({ refused: expect.stringContaining(path) })
+    expect(h.asked).toEqual([])
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  // A pnpm project with a `test` script: what detection would offer for install and checks.
+  const PNPM_READER: SetupReader = {
+    has: (p) => Effect.succeed(p === 'pnpm-lock.yaml' || p === 'package.json'),
+    read: (p) => Effect.succeed(p === 'package.json' ? '{"scripts":{"test":"vitest run"}}' : null),
+  }
+
+  /** `init` once on a new project, so the file under test is one `init` wrote. */
+  async function firstRun(
+    flags: Record<string, string>,
+    signedIn = ['claude-code'],
+    buildFlags: string[] = [],
+  ): Promise<string> {
+    const h = harness({ git: git(), projects: [], setupReader: () => PNPM_READER, signedIn })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    expect(await chooseFirstProject(world, flags, buildFlags)).toMatchObject({ ok: true })
+    return h.files.replaced[path]!
+  }
+
+  it('a rerun that takes every default changes nothing: not the recipe, not the registration, and the card says unchanged', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '' })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '' })
+    expect(result).toMatchObject({ ok: true, project: 'local', unchanged: true })
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  it('a recipe that answered "no install" and "no checks" keeps them under every default, though detection would offer both', async () => {
+    const text = await firstRun(
+      { local: '/repo', mode: 'solo', defaults: '', install: 'none' },
+      ['claude-code'],
+      ['none'],
+    )
+    expect(text).toContain('prepared: []')
+    expect(text).toContain('build: []')
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', defaults: '' })
+    expect(result).toMatchObject({ ok: true, unchanged: true })
+    expect(h.files.replaced).toEqual({})
+    expect(h.registered).toEqual([])
+  })
+
+  it("a rerun offers the recipe's own install, checks and writer as the defaults, not detection's", async () => {
+    const text = await firstRun(
+      { local: '/repo', mode: 'solo', defaults: '', install: 'none' },
+      ['claude-code'],
+      ['none'],
+    )
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      // Every question answered with its default, the way Enter does it, but not as `--defaults`.
+      ask: async (prompt) => (prompt.includes('use every default') ? 'no' : ''),
     })
     const { inFlight: _a, removeMirror: _b, ...world } = h.world
     const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo' })
-    expect(result).toMatchObject({ ok: true, project: 'local' })
-    expect(h.asked).toEqual([])
+    expect(result).toMatchObject({ ok: true, unchanged: true })
+    expect(h.asked.find((p) => p.includes('install command'))).toContain('[none]')
+    expect(h.asked.some((p) => p.includes('build steps'))).toBe(false)
+    expect(h.asked.find((p) => p.includes('which agent writes'))).toContain('[claude-code]')
     expect(h.files.replaced).toEqual({})
+  })
+
+  it('a rerun interrupted at a later question keeps the answers given before it', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
+  })
+
+  it('an interrupted rerun saves and registers under the add lock, and writes nothing while another holds it', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    const held: string[] = []
+    // Another rerun holds the lock: the interruption's save is refused before it writes or registers.
+    h.world.locker = {
+      tryLock: async (key: string) => {
+        held.push(key)
+        return { ok: false as const, holder: { pid: 1 } } as never
+      },
+    }
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    expect(held.some((key) => key.startsWith('add:'))).toBe(true)
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(h.registered).toHaveLength(0)
+  })
+
+  it('a rerun interrupted after the recipe was written but the event was not recorded says it was written, never "NOT saved"', async () => {
+    const text = await firstRun({ local: '/repo', mode: 'solo', defaults: '', agent: 'claude-code' }, [
+      'claude-code',
+      'codex',
+    ])
+    let reached = () => {}
+    const atInstall = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: git(),
+      projects: [project('repo', null)],
+      files: { [path]: text },
+      setupReader: () => PNPM_READER,
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    // The read of the log and the replace of the file succeed; the append of `ProjectRecipeChanged` does not.
+    Object.assign(h.world.store!, { append: () => Promise.reject(new Error('log down')) })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atInstall
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    expect(resolveSource(kept!, path, path).recipe.steps.implement[0]).toMatchObject({ agent: 'codex' })
+    const said = h.logged.join('\n')
+    expect(said).toContain('was written but not recorded')
+    expect(said).not.toContain('NOT saved')
   })
 
   it('a repair with --land <branch> takes the human hold off steps.proposed', async () => {
@@ -1797,5 +2003,482 @@ describe('chooseFirstProject — the origin hint for a local directory (#1413)',
       async () => ['db-1'] as never,
     )
     expect(hints(logged)).toEqual([])
+  })
+})
+
+describe('chooseFirstProject — a rerun asks what the first run asks, and says what a change left behind (#1474)', () => {
+  const path = `${HOME}/repo/recipe.yml`
+  const BODY = 'repo:\n  remote: /repo\nsource:\n  tickets: db\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n'
+  const TEAM_FILE = `version: 2\nmode: team\nbranch:\n  main: main\n  personal: me-work\n${BODY}`
+  const SOLO_FILE = `version: 2\nbranch:\n  main: me-work\n${BODY}`
+
+  /**
+   * A checkout on `main`: `branches` is name → tip, `ranges` is what `rev-list --oneline <range>` answers, and `calls`
+   * is every git call in order, so a test can say what was never run.
+   */
+  function checkout(branches: Record<string, string>, ranges: Record<string, string[]> = {}) {
+    const calls: string[] = []
+    const git: PromiseFirstProjectWorld['git'] = async (_dir, args) => {
+      const key = args.join(' ')
+      calls.push(key)
+      if (key === 'rev-parse --show-toplevel') return ok('/repo\n')
+      if (key === 'symbolic-ref --short -q HEAD') return ok('main\n')
+      if (key === 'remote') return ok('')
+      const verify = /^rev-parse --verify refs\/heads\/(.+)\^\{commit\}$/.exec(key)
+      if (verify !== null)
+        return branches[verify[1]!] === undefined ? fail('unknown revision') : ok(`${branches[verify[1]!]}\n`)
+      const made = /^branch (\S+) (\S+)$/.exec(key)
+      if (made !== null) {
+        branches[made[1]!] = branches[made[2]!]!
+        return ok('')
+      }
+      const listed = /^rev-list --oneline (.+)$/.exec(key)
+      if (listed !== null) {
+        const lines = ranges[listed[1]!]
+        return lines === undefined ? fail('bad range') : ok(lines.join('\n'))
+      }
+      throw new Error(`unplanned git call: ${key}`)
+    }
+    return { branches, calls, git }
+  }
+
+  /** Every prompt recorded, "use every default?" answered no so each question is really asked, mode answered `mode`. */
+  function answerer(mode: 'solo' | 'team', also: (prompt: string) => string | undefined = () => undefined) {
+    const prompts: string[] = []
+    return {
+      prompts,
+      ask: async (prompt: string) => {
+        prompts.push(prompt)
+        if (prompt.includes('use every default')) return 'no'
+        if (prompt.includes('Does anyone else')) return mode
+        if (prompt.includes('in the sandbox')) return 'on'
+        return also(prompt) ?? ''
+      },
+    }
+  }
+  const bare = (prompts: string[]) => prompts.map((p) => p.replace(/ \[[^\]]*\]: $/, ''))
+  const sandboxHost = () => ({ answer: Effect.void, install: null, builtIns: ['api.example.com'] })
+
+  async function run(
+    git: PromiseFirstProjectWorld['git'],
+    file: string | null,
+    flags: Record<string, string>,
+    ask: (prompt: string) => Promise<string | null>,
+  ) {
+    const h = harness({
+      git: {},
+      ask,
+      projects: file === null ? [] : [project('repo', null)],
+      files: file === null ? {} : { [path]: file },
+    })
+    h.world.git = liftPort(git)
+    ;(h.world as { sandboxHost?: unknown }).sandboxHost = sandboxHost
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', install: 'none', ...flags }, ['none'])
+    return { h, result }
+  }
+
+  it('asks the same questions, in the same order, on a rerun as on a first run — the mode, the branch and the sandbox among them', async () => {
+    const first = answerer('solo')
+    await run(checkout({ main: 'aaa111', 'me-work': 'bbb222' }).git, null, {}, first.ask)
+    // A first run takes the file it wrote, as a rerun then reads it.
+    const wrote = answerer('solo')
+    const r = await run(checkout({ main: 'aaa111', 'me-work': 'bbb222' }).git, SOLO_FILE, {}, wrote.ask)
+    expect(r.result).toMatchObject({ ok: true })
+    expect(bare(wrote.prompts).length).toBeGreaterThan(5)
+    expect(bare(wrote.prompts)).toEqual(bare(first.prompts))
+    expect(bare(wrote.prompts).some((p) => p.includes('Does anyone else'))).toBe(true)
+    expect(bare(wrote.prompts).some((p) => p.includes('sandbox'))).toBe(true)
+  })
+
+  it('init --local and add ask a project the same questions in the same order after the machine questions (#1488)', async () => {
+    const init = answerer('solo')
+    const r = await run(checkout({ main: 'aaa111', 'me-work': 'bbb222' }).git, null, {}, init.ask)
+    expect(r.result).toMatchObject({ ok: true })
+
+    const add: string[] = []
+    const files: RecipeFiles = { read: async () => null, replace: async () => {} }
+    const addAsk = answerer('solo')
+    const askAdd = await Effect.runPromise(
+      askRecipeEffect(
+        { ask: async (prompt) => (add.push(prompt), addAsk.ask(prompt)), log: () => {} },
+        {
+          runtimes: [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
+          reader: EMPTY_SETUP_READER,
+          flags: { install: 'none' },
+          buildFlags: ['none'],
+          defaultBranch: async () => 'main',
+          history: async () => [],
+          home: HOME,
+          project: 'repo',
+          local: false,
+          seeds: [
+            { path: ['branch', 'main'], value: 'main' },
+            { path: ['repo', 'remote'], value: 'https://github.com/o/repo.git' },
+            { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+          ],
+          kept: 'kept',
+          again: 'lingtai add o/repo',
+          keptBeforeWrite: 'Nothing was written',
+          proposal: {
+            sandbox: { verdict: { can: true }, install: null, builtIns: ['api.example.com'] },
+            kinds: { known: false },
+            detected: { known: false },
+          } as never,
+          team: { knownLogin: 'me', hostname: () => 'laptop', branchExists: () => Effect.succeed(true) },
+        },
+      ).pipe(Effect.provideService(ProjectFiles, files)),
+    )
+    expect(askAdd).toMatchObject({ ok: true })
+
+    // Every prompt is compared, none filtered out: a question added to, dropped from or moved in either flow
+    // fails here. The one difference by design is where tickets come from — a local project has one legal answer
+    // (`db`) and is never asked — so that single question is dropped from `add`'s side and nothing else.
+    const asked = (prompts: string[]) => bare(prompts)
+    const addProject = asked(add).filter((q) => !q.startsWith("where this project's tickets come from"))
+    expect(asked(add)).toHaveLength(addProject.length + 1)
+    expect(addProject).toEqual(asked(init.prompts))
+    expect(addProject[0]).toContain('Does anyone else')
+    expect(addProject.findIndex((q) => q.includes('use every default'))).toBe(2)
+  })
+
+  it('team to solo with a draft that holds a ticket is refused by name: nothing written, no event appended, the personal branch where it was (0130 §1)', async () => {
+    const repo = checkout(
+      { main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' },
+      { 'main..me-work': ['bbb222 land ticket 7', 'ccc333 land ticket 8'] },
+    )
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: TEAM_FILE } })
+    h.world.git = liftPort(repo.git)
+    // A landed ticket and a draft that holds it, in the log the way production reads it: the project records PR 1 as its
+    // highest (`ProjectPrNumbered`), and that PR's stream holds the ticket.
+    await h.world.store!.append(ticketStream('repo', '7'), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'conductor',
+        data: { project: 'repo', source: 'github-issue', externalRef: '7', title: 't', kind: 'bug', labels: [] },
+      },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'bbb222', base: 'me-work' } },
+    ])
+    await h.world.store!.append(prStream('repo', 1), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '7', mergeCommit: 'bbb222', from: null } },
+    ])
+    const head = await h.world.store!.head('prj-repo')
+    await h.world.store!.append('prj-repo', head, [{ type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } }])
+    const logBefore = await h.world.store!.readAll(0n, 1000)
+    const appended: unknown[][] = []
+    const realAppend = h.world.store!.append.bind(h.world.store)
+    Object.assign(h.world.store!, {
+      append: (...args: Parameters<typeof realAppend>) => {
+        appended.push(args)
+        return realAppend(...args)
+      },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'me-work', defaults: '' },
+      ['none'],
+    )
+    // Refused by name, with 0130 §1's sentence.
+    expect(result).toMatchObject({ refused: expect.stringContaining('mode: team → solo is refused') })
+    expect(JSON.stringify(result)).toContain('#7')
+    // Nothing written: no recipe, no event of any kind, no registration.
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(appended).toEqual([])
+    expect(await h.world.store!.readAll(0n, 1000)).toEqual(logBefore)
+    expect(h.registered).toEqual([])
+    // The personal branch is where it was, and no git write was made for the person.
+    expect(repo.branches['me-work']).toBe('bbb222')
+    expect(repo.calls.filter((c) => /^(branch|merge|checkout|switch|reset|push|update-ref)/.test(c))).toEqual([])
+  })
+
+  it('team to solo with a pending draft and a working branch that does not exist makes no branch before it refuses (0130 §1)', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: TEAM_FILE } })
+    h.world.git = liftPort(repo.git)
+    await h.world.store!.append(ticketStream('repo', '7'), 0, [
+      {
+        type: 'TicketDiscovered',
+        actor: 'conductor',
+        data: { project: 'repo', source: 'github-issue', externalRef: '7', title: 't', kind: 'bug', labels: [] },
+      },
+      { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'bbb222', base: 'me-work' } },
+    ])
+    await h.world.store!.append(prStream('repo', 1), 0, [
+      { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '7', mergeCommit: 'bbb222', from: null } },
+    ])
+    const head = await h.world.store!.head('prj-repo')
+    await h.world.store!.append('prj-repo', head, [{ type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } }])
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'new-solo', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ refused: expect.stringContaining('mode: team → solo is refused') })
+    expect(repo.branches['new-solo']).toBeUndefined()
+    expect(repo.calls.filter((c) => c.startsWith('branch '))).toEqual([])
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(h.registered).toEqual([])
+  })
+
+  it('team to solo whose draft is recorded after the early read still makes no branch: the branch is made after the write passes changeRecipe (0130 §1)', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: TEAM_FILE } })
+    h.world.git = liftPort(repo.git)
+    const store = h.world.store!
+    const realRead = store.read.bind(store)
+    const realAppend = store.append.bind(store)
+    let raced = false
+    // The first read is the early check's: a landing records its draft right after it, before the write's own read.
+    Object.assign(store, {
+      read: async (...args: Parameters<typeof realRead>) => {
+        const out = await realRead(...args)
+        if (!raced) {
+          raced = true
+          await realAppend(ticketStream('repo', '7'), 0, [
+            {
+              type: 'TicketDiscovered',
+              actor: 'conductor',
+              data: { project: 'repo', source: 'github-issue', externalRef: '7', title: 't', kind: 'bug', labels: [] },
+            },
+            { type: 'TicketLanded', actor: 'conductor', data: { mergeCommit: 'bbb222', base: 'me-work' } },
+          ])
+          await realAppend(prStream('repo', 1), 0, [
+            {
+              type: 'PrDraftTicketAdded',
+              actor: 'conductor',
+              data: { ticket: '7', mergeCommit: 'bbb222', from: null },
+            },
+          ])
+          const head = await store.head('prj-repo')
+          await realAppend('prj-repo', head, [{ type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } }])
+        }
+        return out
+      },
+    })
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'new-solo', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ refused: expect.stringContaining('mode: team → solo is refused') })
+    expect(repo.branches['new-solo']).toBeUndefined()
+    expect(repo.calls.filter((c) => c.startsWith('branch '))).toEqual([])
+    expect(h.files.replaced[path]).toBeUndefined()
+    expect(h.registered).toEqual([])
+  })
+
+  it('a rerun registers the recipe that is on disk under the lock, not the one it previewed before another rerun changed it', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'next-work': 'ccc333' })
+    const h = harness({
+      git: {},
+      ask: answerer('team').ask,
+      projects: [project('repo', null)],
+      files: { [path]: TEAM_FILE },
+    })
+    h.world.git = liftPort(repo.git)
+    ;(h.world as { sandboxHost?: unknown }).sandboxHost = sandboxHost
+    // Rerun A switched to solo on next-work and finished while this one waited for the lock.
+    h.world.locker = {
+      tryLock: async () => {
+        await h.files.replace(path, `version: 2\nbranch:\n  main: next-work\n${BODY}`)
+        return { ok: true as const, lock: { release: async () => {} } }
+      },
+    }
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'team', personal: 'me-work', main: 'main' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ ok: true })
+    const written = resolveSource(await h.files.read(path).then((t) => t!), path, path).recipe
+    expect(branchOf(written)).toBe('next-work')
+    expect(h.registered).toHaveLength(1)
+    expect(h.registered[0]).toMatchObject({ base: 'next-work', fromSha: 'ccc333' })
+    // What is reported is what was registered: the other rerun's solo recipe, not this run's team preview.
+    expect(result).toMatchObject({ base: 'next-work' })
+    const card = (result as { card: { base: string; team?: unknown } }).card
+    expect(card.base).toBe('next-work')
+    expect(card.team).toBeUndefined()
+    const said = (result as { leftBehind?: { what: string }[] }).leftBehind?.map((l) => l.what).join('\n') ?? ''
+    // The lines say what the registered recipe left behind: its base is next-work, not the preview's me-work.
+    expect(said).toContain('next-work existed')
+    expect(said).not.toContain('team')
+  })
+
+  it('a rerun interrupted after a team-to-solo answer to a branch not yet made makes it and registers it, and leaves no recipe naming one that does not exist', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    let reached = () => {}
+    const atQuestion = new Promise<void>((resolve) => {
+      reached = resolve
+    })
+    const h = harness({
+      git: {},
+      projects: [project('repo', null)],
+      files: { [path]: TEAM_FILE },
+      signedIn: ['claude-code', 'codex'],
+      ask: (prompt) => {
+        if (prompt.includes('use every default')) return Promise.resolve('no')
+        if (prompt.includes('which agent writes')) return Promise.resolve('codex')
+        if (prompt.includes('install command')) {
+          reached()
+          return new Promise<string | null>(() => {})
+        }
+        return Promise.resolve('')
+      },
+    })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const fiber = Effect.runFork(
+      chooseFirstProjectEffect(world, { local: '/repo', mode: 'solo', main: 'new-solo' }).pipe(
+        Effect.provideService(ProjectFiles, world.files),
+      ),
+    )
+    await atQuestion
+    await Effect.runPromise(Fiber.interrupt(fiber))
+    const kept = h.files.replaced[path]
+    expect(kept).toBeDefined()
+    const recipe = resolveSource(kept!, path, path).recipe
+    // The recipe names new-solo, so it exists (cut from the old working branch), and it is registered as the base.
+    expect(branchOf(recipe)).toBe('new-solo')
+    expect(repo.branches['new-solo']).toBe('bbb222')
+    expect(repo.calls).toContain('branch new-solo me-work')
+    expect(h.registered).toHaveLength(1)
+    expect(h.registered[0]).toMatchObject({ base: 'new-solo', fromSha: 'bbb222' })
+  })
+
+  it('team to solo with nothing pending writes mode: solo, registers again at the new base, and leaves the personal branch alone', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'lingtai-base': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: TEAM_FILE } })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'me-work', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ ok: true, base: 'me-work' })
+    expect(h.files.replaced[path]).toMatch(/mode: solo/)
+    // Registered again, at the base the recipe now names (each pass refuses a recipe that does not).
+    expect(h.registered).toHaveLength(1)
+    expect(h.registered[0]).toMatchObject({ project: 'repo', base: 'me-work' })
+    expect(repo.branches['me-work']).toBe('bbb222')
+    expect(repo.calls.filter((c) => /^(branch|merge|checkout|switch|reset|push|update-ref)/.test(c))).toEqual([])
+  })
+
+  it('a team file read back as solo keeps its main only when it was a team: solo to team takes the checked-out branch as main', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: SOLO_FILE } })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', install: 'none', mode: 'team', defaults: '' }, [
+      'none',
+    ])
+    expect(result).toMatchObject({ ok: true, base: 'me-work' })
+    expect(h.files.replaced[path]).toMatch(/mode: team/)
+    expect(h.files.replaced[path]).toMatch(/main: main/)
+    expect(h.files.replaced[path]).toMatch(/personal: me-work/)
+  })
+
+  it('a working branch that does not exist is made from the old working branch, not from main, and the card says so', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: SOLO_FILE } })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'next-work', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ ok: true, base: 'next-work' })
+    expect(repo.calls).toContain('branch next-work me-work')
+    expect(repo.branches['next-work']).toBe('bbb222')
+    expect(h.registered[0]).toMatchObject({ base: 'next-work' })
+    const said = (result as { leftBehind?: { what: string }[] }).leftBehind?.map((l) => l.what).join('\n')
+    expect(said).toContain('next-work was made from me-work')
+    expect(said).toContain('may be deleted')
+  })
+
+  it('a working branch that exists is not moved, and the card lists the commits only the old branch has', async () => {
+    const repo = checkout(
+      { main: 'aaa111', 'me-work': 'bbb222', 'next-work': 'ddd444' },
+      { 'next-work..me-work': ['bbb222 only on the old branch'] },
+    )
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: SOLO_FILE } })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'next-work', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ ok: true, base: 'next-work' })
+    expect(repo.branches['next-work']).toBe('ddd444')
+    expect(repo.calls.filter((c) => c.startsWith('branch '))).toEqual([])
+    const lines = (result as { leftBehind?: { what: string; command?: string }[] }).leftBehind ?? []
+    expect(lines.map((l) => l.what).join('\n')).toContain('bbb222 only on the old branch')
+    expect(lines.map((l) => l.command).join('\n')).toContain('rev-list --oneline next-work..me-work')
+  })
+
+  it('a git that cannot list the commits does not refuse a change already written: the line says so and gives the command', async () => {
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222', 'next-work': 'ddd444' })
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: SOLO_FILE } })
+    h.world.git = liftPort(repo.git)
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(
+      world,
+      { local: '/repo', install: 'none', mode: 'solo', main: 'next-work', defaults: '' },
+      ['none'],
+    )
+    expect(result).toMatchObject({ ok: true })
+    const said = (result as { leftBehind?: { what: string }[] }).leftBehind?.map((l) => l.what).join('\n')
+    expect(said).toContain('could not be read')
+    expect(said).toContain('rev-list --oneline next-work..me-work')
+  })
+
+  it('a working branch made from the old one is named as the one made, and a different landing branch is judged on its own commits', async () => {
+    const repo = checkout(
+      { main: 'aaa111', 'me-work': 'bbb222' },
+      { 'main..me-work': ['bbb222 only on the old branch'] },
+    )
+    const h = harness({ git: {}, projects: [project('repo', null)], files: { [path]: SOLO_FILE } })
+    h.world.git = liftPort(repo.git)
+    // Every question takes its default, except the working branch: it is answered next-work, which is absent,
+    // while `--land main` has the recipe land on main — the branch made is not the one landed on.
+    h.world.ask = async (prompt: string) => {
+      if (prompt.includes('use every default')) return 'no'
+      if (prompt.includes('in the sandbox')) return 'on'
+      if (prompt.includes('recipe governs')) return 'next-work'
+      return ''
+    }
+    const { inFlight: _a, removeMirror: _b, ...world } = h.world
+    const result = await chooseFirstProject(world, { local: '/repo', install: 'none', mode: 'solo', land: 'main' }, [
+      'none',
+    ])
+    expect((result as { refused?: string }).refused).toBeUndefined()
+    // The branch was really made, from the old working branch, so the reporting path below ran.
+    expect(repo.calls).toContain('branch next-work me-work')
+    const lines = ((result as { leftBehind?: { what: string }[] }).leftBehind ?? []).map((l) => l.what)
+    expect(lines.some((l) => l.startsWith('next-work was made from me-work'))).toBe(true)
+    expect(lines.some((l) => l.startsWith('main was made from'))).toBe(false)
+    expect(lines.some((l) => l.startsWith('main existed') && l.includes('bbb222 only on the old branch'))).toBe(true)
+  })
+
+  it('a rerun that takes every default still changes nothing, with the new questions in it', async () => {
+    const flags = { mode: 'solo', main: 'me-work', defaults: '' }
+    const first = await run(checkout({ main: 'aaa111', 'me-work': 'bbb222' }).git, null, flags, async () => null)
+    const text = first.h.files.replaced[path]!
+    // The first run asked the sandbox and wrote its answer: on, with no hosts.
+    expect(text).toMatch(/sandbox:/)
+
+    const repo = checkout({ main: 'aaa111', 'me-work': 'bbb222' })
+    const second = await run(repo.git, text, flags, async () => null)
+    expect(second.result).toMatchObject({ ok: true, unchanged: true })
+    expect(second.h.files.replaced).toEqual({})
+    expect(second.h.registered).toEqual([])
+    expect(repo.calls.filter((c) => c.startsWith('branch '))).toEqual([])
   })
 })

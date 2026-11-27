@@ -32,7 +32,7 @@ import { formatDuration, formatTurns, type TurnLimit } from '@lingtai/recipe/dur
  * **`usd` follows `wallMs`, not `turns`** (`#370`): dollars add up across runs
  * the way time does. Absent unless the recipe declared one.
  */
-export function attemptCeiling(limits: {
+export interface CeilingLimits {
   refusalFixes: number
   conflictResolutions: number
   newAttempts: number
@@ -44,7 +44,23 @@ export function attemptCeiling(limits: {
   steps?: readonly { step: string; turns: TurnLimit; wall: string }[]
   /** `triage.limits` where the recipe declares a triage; its bound is its own, never `run`'s. */
   triage?: { turns: number; wall: string; usd: number }
-}): string {
+}
+
+/** What `ceilingReading` answers: the figures, the one-sentence summary and the counting's clauses. */
+export interface CeilingReading {
+  attempts: number
+  perAttempt: number
+  runs: number
+  /** `A ticket gets at most N implement runs, 75m and 350 turns each — 3975m at most.` */
+  summary: string
+  /** The clauses `attemptCeiling` joins, lower case and with no full stop. */
+  parts: { figure: string; zero: string[]; others: string }
+}
+
+const plural = (n: number, one: string, many: string): string => (n === 1 ? one : many)
+
+/** The arithmetic once: `attemptCeiling` prints it and the board draws it, and neither repeats the formula. */
+export function ceilingReading(limits: CeilingLimits): CeilingReading {
   const elsewhere =
     limits.steps === undefined || limits.steps.length === 0
       ? ''
@@ -59,10 +75,10 @@ export function attemptCeiling(limits: {
   const runs = attempts * perAttempt + BOUNDS.personAsks
   const reruns = `up to ${BOUNDS.stepRedos} reruns of a run an API error cut off`
   const perAttemptSaid =
-    `an attempt is the work, ${limits.refusalFixes} refusal fix(es) back to the agent carrying what refused it, ` +
-    `${limits.conflictResolutions} conflict resolution(s), and ${reruns}`
+    `an attempt is the work, ${limits.refusalFixes} ${plural(limits.refusalFixes, 'refusal fix', 'refusal fixes')} back to the agent carrying what refused it, ` +
+    `${limits.conflictResolutions} ${plural(limits.conflictResolutions, 'conflict resolution', 'conflict resolutions')}, and ${reruns}`
   const figure =
-    `up to ${runs} implement runs a ticket — ${attempts} attempt(s) of ${perAttempt} runs (${perAttemptSaid}) ` +
+    `up to ${runs} implement runs a ticket — ${attempts} ${plural(attempts, 'attempt', 'attempts')} of ${perAttempt} runs (${perAttemptSaid}) ` +
     `and up to ${BOUNDS.personAsks} answers to a person — ` +
     `${wallAndTurns} each${at}${elsewhere}, so at most ${formatDuration(limits.wallMs * runs)}` +
     (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`)
@@ -93,9 +109,25 @@ export function attemptCeiling(limits: {
     zero.push('an attempt that is spent goes to you (runtime.limits.ticket.newAttempts: 0)')
   } else {
     zero.push(
-      `a spent attempt starts the ticket over from the base up to ${limits.newAttempts} time(s) before it is yours`,
+      `a spent attempt starts the ticket over from the base ${limits.newAttempts === 1 ? 'once' : `up to ${limits.newAttempts} times`} before it is yours`,
     )
   }
+  const total = formatDuration(limits.wallMs * runs)
+  const summary =
+    `A ticket gets at most ${runs} implement runs, ${limits.wall} and ${formatTurns(limits.turns)} each — ${total}` +
+    (limits.usd === undefined ? '' : ` and $${dollarsAt(limits.usd, runs)}`) +
+    ' at most.'
+  return { attempts, perAttempt, runs, summary, parts: { figure, zero, others } }
+}
+
+/** The counting as full sentences, one each, starting with a capital. */
+export function ceilingSentences(reading: CeilingReading): string[] {
+  const { figure, zero, others } = reading.parts
+  return [figure, ...zero, others].map((clause) => `${clause.charAt(0).toUpperCase()}${clause.slice(1)}.`)
+}
+
+export function attemptCeiling(limits: CeilingLimits): string {
+  const { figure, zero, others } = ceilingReading(limits).parts
   return `${figure}. ${zero.join('; ')}. ${others}`
 }
 

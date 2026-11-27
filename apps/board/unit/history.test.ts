@@ -506,7 +506,7 @@ describe('a line of history', () => {
       const spent = line(e('RunSpent', { ...judge, costUsd: 0.729924 }))
       expect(spent.summary).toBe('Triage: 2 turns, 13.5 s · cost $0.73')
       expect(spent.summary).not.toContain('{"')
-      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).toContain('cost unknown')
+      expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).toContain('unpriced')
       expect(line(e('RunSpent', { ...judge, costUsd: null })).summary).not.toContain('$0.00')
       expect(spent.who).toBe('triage')
       expect(line(e('RunSpent', { ...judge, for: { _tag: 'Judge', when: 'findings' }, costUsd: 1 })).who).toBe(
@@ -1013,5 +1013,57 @@ describe('a dispatch refusal written after #1158', () => {
     const line = summarise(e('DispatchRefused', { runtime: 'codex', missing: ['pre-tool-use-interception'] }))
     expect(line).toBe('codex cannot fail closed — missing pre-tool-use-interception')
     expect(line).not.toContain('undefined')
+  })
+})
+
+describe('a step redone in place says why (#1480)', () => {
+  const redone = (data: Record<string, unknown>, type = 'StepRedone') =>
+    summarise(e(type, { runId: RUN, step: 'implement', rerun: 2, said: 'boom', waitMs: 300_000, ...data }))
+  const KINDS = [
+    ['transient', 'implement was cut off by an API error — "boom" — and runs again in place, after 5 min (rerun 2)'],
+    [
+      'crash',
+      'implement crashed on an error no rule recognises — "boom" — and runs again in place, after 5 min (rerun 2)',
+    ],
+    ['agent-did-not-finish', 'the implement agent did not finish and runs again in place, after 5 min (rerun 2)'],
+    ['registry-5xx', 'the registry answered with a 5xx — "boom" — and runs again in place, after 5 min (rerun 2)'],
+    ['answer-unreadable', 'the implement answer could not be read and runs again in place, after 5 min (rerun 2)'],
+  ] as const
+
+  it.each(KINDS)('words %s, and only transient says "API error"', (cause, expected) => {
+    const line = redone({ cause })
+    expect(line).toBe(expected)
+    expect(line.includes('API error')).toBe(cause === 'transient')
+  })
+
+  it('gives a row with no cause, and a retired StepRerunInPlace row, the neutral line', () => {
+    const neutral = 'implement stopped and runs again in place, after 5 min (rerun 2)'
+    expect(redone({})).toBe(neutral)
+    expect(redone({}, 'StepRerunInPlace')).toBe(neutral)
+  })
+
+  it('gives a cause it does not know the neutral line, never an error', () => {
+    expect(redone({ cause: 'something-new' })).toBe('implement stopped and runs again in place, after 5 min (rerun 2)')
+  })
+
+  it('does not quote said when unread is set', () => {
+    expect(redone({ cause: 'crash', unread: true })).not.toContain('boom')
+  })
+
+  it('leaves nothing dangling when a registry 5xx had no words', () => {
+    expect(redone({ cause: 'registry-5xx', said: '' })).toBe(
+      'the registry answered with a 5xx and runs again in place, after 5 min (rerun 2)',
+    )
+  })
+
+  it('names the agent a PR-stream RunPrompted was for, as RunSpent does (#1485)', () => {
+    const said = (f: unknown) =>
+      summarise(e('RunPrompted', { promptVersion: 'v', bytes: 12, prompt: '…', for: f }, 'agent:x', 'pr-p-1'), {
+        attempts: new Map(),
+      })
+    expect(said({ _tag: 'Pr', purpose: 'resolve' })).toBe('The conflict agent (resolve) was prompted (12 bytes)')
+    expect(said({ _tag: 'Pr', purpose: 'review' })).toBe('The conflict agent (review) was prompted (12 bytes)')
+    expect(said({ _tag: 'Pr', purpose: 'summary', at: 'x' })).toBe('The summary agent was prompted (12 bytes)')
+    expect(said({ _tag: 'Mystery' })).toBe('an agent of another ticket was prompted (12 bytes)')
   })
 })

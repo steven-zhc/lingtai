@@ -99,9 +99,9 @@ export function daySpendText(
   options: { fetchedNote?: boolean } = {},
 ): string {
   const figure = dayFigure(day)
-  const unknown = ` + ~${dollars(day.estimatedCents)} est.${options.fetchedNote ? fetchedNote(day) : ''} + ${day.unknown} unknown${unknownWhyText(day)}`
+  const unknown = ` + ~${dollars(day.estimatedCents)} est.${options.fetchedNote ? fetchedNote(day) : ''} + ${day.unknown} unpriced${unknownWhyText(day)}`
   if (ceilingUsd === undefined) return `today ${figure}${unknown} — no daily ceiling (limits.day_usd)`
-  return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — reported and estimated count, unknown costs are not`
+  return `today ${figure}${unknown} of a ${dollars(Math.round(ceilingUsd * 100))} ceiling — reported and estimated count, unpriced costs are not`
 }
 
 const WHY_SHOWN = 3

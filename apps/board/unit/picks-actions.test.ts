@@ -51,7 +51,12 @@ it('sends rerunStepCard’s shown head as a RedoStep, and never an empty one', a
 })
 
 it('shows the server’s stale refusal as the card’s detail', async () => {
-  conductor.resolveWait.mockResolvedValueOnce({ ok: false, reason: 'stale', detail: 'stale: moved' } as never)
+  conductor.resolveWait.mockResolvedValueOnce({
+    ok: false,
+    reason: 'stale',
+    detail: 'stale: moved',
+    ticketId: 'ticket-p-1',
+  } as never)
   expect(await rerunStepCard({ project: 'p', issue: 1, waitId: aWaitId(), onSha: 'abc' })).toEqual({
     ok: false,
     detail: 'stale: moved',

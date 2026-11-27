@@ -9,8 +9,8 @@
  * without the landing columns says the rebuild it needs.
  */
 
-import { Bar } from '@/app/bar.tsx'
 import { LockBanner, pauseSlot } from '@/app/lock-banner.tsx'
+import { RecipeBar } from '@/app/p/[project]/recipe/recipe-bar.tsx'
 import {
   currentLanded,
   landedContext,
@@ -19,11 +19,11 @@ import {
   type LandedData,
   type LandedParams,
 } from '@/lib/landed.ts'
-import { readRegistered } from '@/lib/locks.ts'
-import { projectionChip, type ReportChip } from '@/lib/report.ts'
+import { readPlaceBar } from '@/lib/place-bar.ts'
 import { measure, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 
+import { FooterFetched } from '../footer-fetched'
 import { LandedView } from './view.tsx'
 
 export const dynamic = 'force-dynamic'
@@ -31,51 +31,62 @@ export const dynamic = 'force-dynamic'
 const first = (v: string | string[] | undefined) => (Array.isArray(v) ? v[0] : v)
 
 export default async function LandedPage({ searchParams }: { searchParams: Promise<LandedParams> }) {
-  const params = await searchParams
+  return LandedBody({ project: undefined, params: await searchParams })
+}
+
+/** One page for `/landed` and `/p/<project>/ticket/landed`: the project is the path's alone; a `?project=` is ignored. */
+export async function LandedBody({ project, params }: { project: string | undefined; params: LandedParams }) {
   let data: LandedData | null = null
   let failure: string | null = null
-  let chip: ReportChip = projectionChip('ticket_report', { lag: null, error: 'not read' })
   let timings: readonly Timing[] = []
-  const [env, projects] = await Promise.all([
+  const named = project || undefined
+  const [env, bar] = await Promise.all([
     landedContext().catch(() => ({ kinds: [], owners: new Map(), sources: new Map() })),
-    readRegistered().catch(() => []),
+    // The menu's reads are caught to a value inside, so a failed listing is said below and never an empty menu.
+    readPlaceBar(named),
   ])
-  const query = landedQuery(params, env.kinds)
+  const query = landedQuery(params, env.kinds, project)
   const only = query.project ?? undefined
   try {
     const [read, measured] = await measure(() => currentLanded(query), { label: '/landed' })
     data = read
-    chip = read.chip
     timings = measured
   } catch (err) {
     failure = (err as Error).message
-    chip = projectionChip('ticket_report', { lag: null, error: failure })
   }
 
   return (
-    <main className="detail">
-      <TimingMeta timings={timings} />
-      <Bar
-        project={only}
-        registered={only !== undefined && projects.some((p) => p.project === only)}
-        pause={await pauseSlot(only)}
-      >
-        <span className="sep" />
-        <span className="mono">landed{only === undefined ? '' : ` · ${only}`}</span>
-        <span className="sep" />
-        <span className={`chip ${chip.tone}`} title={chip.title}>
-          {chip.label}
-        </span>
-      </Bar>
-      <LockBanner project={only} />
-
-      <div className="detail-body ld">
-        {data === null ? (
-          <p className="rp-empty">landed could not be read: {failure}</p>
-        ) : (
-          <LandedView data={data} query={query} env={env} carry={parseSum(first(params.carry))} />
+    <>
+      <main className="detail">
+        <TimingMeta timings={timings} />
+        <RecipeBar
+          project={only}
+          here="tickets"
+          tail="Landed"
+          filters={bar.filters}
+          registered={bar.registered}
+          app={bar.app}
+          locks={bar.locks}
+          sandbox={bar.sandbox}
+          views={bar.views}
+          pause={bar.isRegistered ? await pauseSlot(only) : undefined}
+        />
+        <LockBanner project={only} />
+        {bar.listingError === null ? null : (
+          <p className="rp-empty" role="alert">
+            The list of projects could not be read: {bar.listingError}
+          </p>
         )}
-      </div>
-    </main>
+
+        <div className="detail-body ld">
+          {data === null ? (
+            <p className="rp-empty">landed could not be read: {failure}</p>
+          ) : (
+            <LandedView data={data} query={query} env={env} carry={parseSum(first(params.carry))} />
+          )}
+        </div>
+      </main>
+      <FooterFetched />
+    </>
   )
 }

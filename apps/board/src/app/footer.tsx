@@ -90,7 +90,7 @@ export function Footer({
             </span>
           </>
         ) : null}
-        {d.unknown > 0 ? ` + ${d.unknown} unknown` : null}
+        {d.unknown > 0 ? ` + ${d.unknown} unpriced` : null}
         {atCeiling ? ' · reached the ceiling' : null}
         {raised === null ? null : (
           <>

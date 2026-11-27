@@ -118,8 +118,8 @@ describe('reportChip', () => {
 describe('the numbers', () => {
   it('words money as three parts and never prints zero over an unknown run', () => {
     expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 0 })).toBe('$0.00')
-    expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 3 })).toBe('3 unknown')
-    expect(moneyText({ reportedCents: 310, estimatedCents: 25, unknown: 2 })).toBe('$3.10 + ~$0.25 est. + 2 unknown')
+    expect(moneyText({ reportedCents: 0, estimatedCents: 0, unknown: 3 })).toBe('3 unpriced')
+    expect(moneyText({ reportedCents: 310, estimatedCents: 25, unknown: 2 })).toBe('$3.10 + ~$0.25 est. + 2 unpriced')
   })
 
   it('gives kinds four colours and the rest one grey, unclassified among them', () => {

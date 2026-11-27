@@ -80,11 +80,14 @@ export {
   renderSettings,
   settingsPathFor,
   smokeTestFailClosedEffect,
+  liveSmokeSpawn,
   socketPathFor,
   writeUnhookedSettingsEffect,
   writeHookWiringEffect,
   type HookWiring,
   type RenderOptions,
+  type SmokeSpawn,
+  type SmokeWhere,
 } from './hook-config.ts'
 export {
   observedCall,

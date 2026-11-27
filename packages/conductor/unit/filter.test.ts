@@ -504,10 +504,10 @@ describe('what a ticket may spend', () => {
     expect(one).toContain('at most 11h')
     expect(fixes).toContain('at most 14h')
     expect(conflicts).toContain('at most 14h')
-    expect(fixes).toContain('4 refusal fix(es)')
-    expect(fixes).toContain('1 conflict resolution(s)')
-    expect(conflicts).toContain('1 refusal fix(es)')
-    expect(conflicts).toContain('4 conflict resolution(s)')
+    expect(fixes).toContain('4 refusal fixes')
+    expect(fixes).toContain('1 conflict resolution')
+    expect(conflicts).toContain('1 refusal fix')
+    expect(conflicts).toContain('4 conflict resolutions')
   })
 
   it("reads the wall back in the recipe's own words", () => {
@@ -538,8 +538,8 @@ describe('what a ticket may spend', () => {
     const once = attemptCeiling(limits(2, '1h', 3_600_000, 1))
 
     expect(once).toContain('up to 21 implement runs a ticket')
-    expect(once).toContain('2 attempt(s) of 8 runs')
-    expect(once).toContain('up to 1 time(s) before it is yours')
+    expect(once).toContain('2 attempts of 8 runs')
+    expect(once).toContain('once before it is yours')
     expect(once).toContain('at most 21h')
   })
 

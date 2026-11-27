@@ -106,8 +106,8 @@ async function alreadyLandedTicket(store: ReturnType<typeof createMemoryEventSto
   ])
 }
 
-async function worldFor() {
-  const resolved = await resolveRecipe(async () => RECIPE_YAML, 'main')
+async function worldFor(yaml: string = RECIPE_YAML) {
+  const resolved = await resolveRecipe(async () => yaml, 'main')
   const tickets = memoryTickets()
   return { resolved, tickets }
 }
@@ -329,6 +329,38 @@ describe('conductWork: a detached pass', () => {
     expect(finished).toBe(true)
     expect(interrupted).toBe(false)
     expect(outcome.ran).toBe(1)
+  })
+})
+
+describe('conductWork: the "is ignored" line, with no daily ceiling', () => {
+  const lines = async (yaml: string) => {
+    const { resolved, tickets } = await worldFor(yaml)
+    const told: string[] = []
+    const work = conductWork(
+      {
+        hookBinary: '/dev/null',
+        prompt: 'go',
+        control: controlWith([]),
+        outcome: { projects: 0, ran: 0, refused: [] },
+        log: () => {},
+        tell: (line: string) => told.push(line),
+        store: createMemoryEventStore(),
+        slots: { set: createSlots(), started: () => {}, ceilingSet: false, anyMany: false },
+      },
+      worldRunning(resolved, tickets, () => Effect.succeed(HELD)),
+    )
+    await Effect.runPromise(work(PROJECT, HERE))
+    return told
+  }
+
+  it('is not said for a recipe that writes no concurrency', async () => {
+    expect((await lines(RECIPE_YAML)).filter((l) => l.includes('is ignored'))).toEqual([])
+  })
+
+  it('is said for a recipe that writes concurrency: 3', async () => {
+    const yaml = RECIPE_YAML.replace('  agent: claude-code\nsteps:', '  agent: claude-code\n  concurrency: 3\nsteps:')
+    expect(yaml).toContain('concurrency: 3')
+    expect((await lines(yaml)).filter((l) => l.includes('is ignored'))).toHaveLength(1)
   })
 })
 

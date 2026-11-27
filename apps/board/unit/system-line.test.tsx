@@ -67,7 +67,7 @@ describe('the card', () => {
   it('carries the line under the title, in a card in any non-waiting column', () => {
     const out = html(LINE)
     expect(out).toContain('Triage read only unfinished; the step is being redone — 2 of 3 redos used')
-    expect(out).toContain('/task/ticket-lingtai-1259/ticket?events=1')
+    expect(out).toContain('/p/lingtai/ticket/1259/history?events=1')
     expect(out.indexOf('A wait the system resolved')).toBeLessThan(out.indexOf('Triage read only unfinished'))
   })
   it('carries nothing without one', () => {

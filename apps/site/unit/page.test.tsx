@@ -8,9 +8,9 @@ import { Bar, DOCS_MENU } from '@/app/chrome'
 import { HomePage } from '@/app/page'
 import { Receipt } from '@/app/receipt'
 import { dollars, receiptAt, STEPS } from '@/app/replay-receipt'
-import { SHOTS } from '@/app/shots'
+import { SHOTS } from '@/app/shots-list'
 import { parseBooks } from '@/lib/books'
-import { DOCS_PUBLIC, PUBLIC_SLUGS } from '@/lib/docs'
+import { DOCS_PUBLIC, docImageSrc, PUBLIC_SLUGS } from '@/lib/docs'
 
 import { BOOKS_FILE_FIXTURE } from './books-fixture'
 
@@ -425,6 +425,13 @@ describe('the replay receipt', () => {
     expect(html.replace(watch, '')).not.toContain('youtube')
   })
 
+  it('keeps the screenshots client component off the filesystem', async () => {
+    const source = await readFile(path.join(process.cwd(), 'apps/site/src/app/shots.tsx'), 'utf8').catch(() =>
+      readFile(path.join(process.cwd(), 'src/app/shots.tsx'), 'utf8'),
+    )
+    expect(source).not.toMatch(/@\/lib\/docs|node:/)
+  })
+
   it('shows the four screenshots with their captions, each linking to its full page', () => {
     const html = renderToStaticMarkup(<HomePage books={null} />)
     expect(SHOTS.map((s) => s.caption)).toEqual([
@@ -437,8 +444,8 @@ describe('the replay receipt', () => {
       const caption = s.caption.replace(/'/g, '&#x27;')
       expect(html).toContain(`alt="${caption}"`)
       expect(html).toContain(`>${caption}<`)
-      expect(html).toContain(`href="/img/docs/shot-${s.name}-full.png"`)
-      expect(html).toContain(`src="/img/docs/shot-${s.name}.png"`)
+      expect(html).toContain(`href="${docImageSrc(`img/shot-${s.name}-full.png`)}"`)
+      expect(html).toContain(`src="${docImageSrc(`img/shot-${s.name}.png`)}"`)
     }
     expect(html).toContain('width="1440" height="600"')
   })

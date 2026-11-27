@@ -35,6 +35,7 @@ import {
   whenText,
   windowText,
 } from '@/lib/handled.ts'
+import { ticketPath } from '@/lib/paths'
 import {
   centsOf,
   dollars,
@@ -99,7 +100,7 @@ export function purposeRows(
   return rows.filter((r) => r.money.reportedCents + r.money.estimatedCents + r.money.unknown > 0)
 }
 
-const unknownText = (n: number): string => (n > 0 ? ` + ${n} unknown` : '')
+const unknownText = (n: number): string => (n > 0 ? ` + ${n} unpriced` : '')
 
 export function Tiles({
   report,
@@ -150,7 +151,7 @@ export function Tiles({
       <Tile
         k="spent in the window"
         v={dollars(denominator)}
-        s={`${spend.total.reportedCents > 0 ? `${dollars(spend.total.reportedCents)} reported` : 'nothing reported'} · ~${dollars(spend.total.estimatedCents)} est. · ${spend.total.unknown} unknown${perTicket}`}
+        s={`${spend.total.reportedCents > 0 ? `${dollars(spend.total.reportedCents)} reported` : 'nothing reported'} · ~${dollars(spend.total.estimatedCents)} est. · ${spend.total.unknown} unpriced${perTicket}`}
         title="every run in the window, whatever became of its ticket"
       />
       <Tile
@@ -220,7 +221,7 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
           {total === 0 ? '—' : dollars(total)}
         </text>
         <text x="90" y="106" textAnchor="middle" style={{ font: 'var(--fs-xs) var(--mono)', fill: 'var(--muted)' }}>
-          {unknown > 0 ? `+ ${unknown} unknown` : 'in the window'}
+          {unknown > 0 ? `+ ${unknown} unpriced` : 'in the window'}
         </text>
       </svg>
       <ul className="sw-rows">
@@ -230,7 +231,7 @@ export function WhereItWentPanel({ byPurpose }: { byPurpose: Report['spend']['by
             <span className="n">{r.series.name}</span>
             {centsOf(r.money) === 0 ? (
               <>
-                <span className="v">{r.money.unknown} unknown</span>
+                <span className="v">{r.money.unknown} unpriced</span>
                 <span className="p">—</span>
                 <span className="d">no known cost</span>
               </>
@@ -335,7 +336,7 @@ export function KindsPanel({ kinds }: { kinds: KindRow[] }) {
             const mean =
               k.landed === 0 || k.cost.meanReportedCents === null
                 ? '—'
-                : `${dollars(k.cost.meanReportedCents)}${(k.cost.meanEstimatedCents ?? 0) > 0 ? ` + ~${dollars(k.cost.meanEstimatedCents ?? 0)} est.` : ''}${k.cost.unknown > 0 ? ` + ${k.cost.unknown} unknown` : ''}`
+                : `${dollars(k.cost.meanReportedCents)}${(k.cost.meanEstimatedCents ?? 0) > 0 ? ` + ~${dollars(k.cost.meanEstimatedCents ?? 0)} est.` : ''}${k.cost.unknown > 0 ? ` + ${k.cost.unknown} unpriced` : ''}`
             return (
               <tr key={k.kind ?? 'unclassified'}>
                 <td>
@@ -413,7 +414,7 @@ export function TopPanel({ top, query }: { top: TopTicket[]; query: ReportQuery 
               {top.map((t) => (
                 <tr key={t.ticket}>
                   <td className="t">
-                    <Link href={`/task/${encodeURIComponent(t.ticket)}`}>#{issueOf(t.ticket)}</Link>
+                    <Link href={ticketPath(t.ticket)}>#{issueOf(t.ticket)}</Link>
                     <div className="why">{t.sentence}</div>
                     <MoreLines ticket={t} />
                   </td>
@@ -710,7 +711,7 @@ export function HandledPanel({
             <b>
               {dollars(cost.reportedCents)} reported · ~{dollars(cost.estimatedCents)} est.
             </b>
-            {cost.unknown > 0 ? ` + ${cost.unknown} unknown` : ''} in agent runs
+            {cost.unknown > 0 ? ` + ${cost.unknown} unpriced` : ''} in agent runs
             {cents === 0 || (centsOf(cost) === 0 && cost.unknown > 0) ? (
               ''
             ) : (
@@ -774,7 +775,7 @@ export function HandledPanel({
                       }
                     />
                     <span className="m">
-                      <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                      <Link href={ticketPath(p.ticket)}>#{issueOf(p.ticket)}</Link>
                       <span className="d">
                         {p.answeredBy === 'you' ? moveRow(moveOf(p), p.kind).verb : (verb ?? r.wrong)}
                       </span>
@@ -844,7 +845,7 @@ function HandledProblems({
               <tr key={`${p.ticket}/${p.at}/${p.kind}`}>
                 <td className="num">{whenText(p.at, withDate)}</td>
                 <td className="t">
-                  <Link href={`/task/${p.ticket}`}>#{issueOf(p.ticket)}</Link>
+                  <Link href={ticketPath(p.ticket)}>#{issueOf(p.ticket)}</Link>
                 </td>
                 <td>
                   {r.wrong}

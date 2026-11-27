@@ -5,8 +5,9 @@
  * from — the cursor, the days, the totals and the cost in words. **Nothing in
  * here renders, and nothing asks GitHub**: titles and shas are `ticket_state`'s.
  *
- * The address is the whole of the page's state, as `/report`'s is: `?project=`,
- * `?kind=` and `?before=<at>,<ticket>`. Anything in it that does not parse is
+ * The address is the whole of the page's state, as `/report`'s is: `?kind=` and
+ * `?before=<at>,<ticket>`. The project is the path's (`/p/<project>/ticket/landed`), passed to
+ * `landedQuery` beside the params; a `?project=` is not part of it. Anything in it that does not parse is
  * not used, and the first page is shown.
  */
 import { type Money, ticketMoney } from '@lingtai/conductor/report'
@@ -16,6 +17,7 @@ import { type BacklogEntry, readBacklog, readLag, readLanded, type TicketReportR
 import type { TicketSource } from '@lingtai/recipe/settings'
 
 import { queueFilters } from './board.ts'
+import { cursorText } from './paths.ts'
 import { dateText, kindSeries, moneyText, OTHER, type ReportChip, projectionChip, type Series } from './report.ts'
 import { rereadTicket } from './snapshot-writer.ts'
 
@@ -37,10 +39,8 @@ export interface LandedQuery {
 
 const first = (v: string | string[] | undefined): string | undefined => (Array.isArray(v) ? v[0] : v)
 
-/** `<ISO outcome_at>,<ticket>`. The date has no comma, so the first one splits. */
-export function cursorText(c: Cursor): string {
-  return `${c.at.toISOString()},${c.ticket}`
-}
+// `cursorText` lives in `paths.ts`, which a client file may import and this module may not.
+export { cursorText }
 
 /** Null when the text is not a real date, a comma and a ticket. */
 export function parseCursor(text: string | undefined): Cursor | null {
@@ -53,29 +53,15 @@ export function parseCursor(text: string | undefined): Cursor | null {
   return { at, ticket }
 }
 
-/** The address → the query. A `kind` the recipes do not name is not used. */
-export function landedQuery(params: LandedParams, kinds: readonly string[]): LandedQuery {
+/** The address → the query. The project is the path's, never a `?project=`. A `kind` the recipes do not name is not used. */
+export function landedQuery(params: LandedParams, kinds: readonly string[], project?: string): LandedQuery {
   const kind = first(params.kind)
   return {
-    project: first(params.project) || null,
+    project: project || null,
     kind: kind !== undefined && kinds.includes(kind) ? kind : null,
     before: parseCursor(first(params.before)),
   }
 }
-
-/** The address for a query, `before` URL-encoded by `URLSearchParams`. */
-export function landedHref(q: { project?: string | null; kind?: string | null; before?: Cursor | null }): string {
-  const p = new URLSearchParams()
-  if (q.project) p.set('project', q.project)
-  if (q.kind) p.set('kind', q.kind)
-  if (q.before) p.set('before', cursorText(q.before))
-  const s = p.toString()
-  return s === '' ? '/landed' : `/landed?${s}`
-}
-
-/** The column heading's address on the home page, carrying `?project=` as the `/report` link does. */
-export const landedLink = (only: string | undefined): string =>
-  only === undefined ? '/landed' : `/landed?project=${encodeURIComponent(only)}`
 
 // --- money -----------------------------------------------------------------------
 
@@ -87,9 +73,9 @@ export const addMoney = (a: Money, b: Money): Money => ({
   unknown: a.unknown + b.unknown,
 })
 
-/** *cost unknown* when nothing was priced and something could not be, else `moneyText` (0110 §7: never `$0.00`). */
+/** *unpriced* when nothing was priced and something could not be, else `moneyText` (0110 §7: never `$0.00`). */
 export function costText(m: Money): string {
-  return m.reportedCents + m.estimatedCents === 0 && m.unknown > 0 ? 'cost unknown' : moneyText(m)
+  return m.reportedCents + m.estimatedCents === 0 && m.unknown > 0 ? 'unpriced' : moneyText(m)
 }
 
 // --- days --------------------------------------------------------------------------

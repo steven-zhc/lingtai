@@ -75,7 +75,7 @@ export interface ReadView {
   team: TeamView
 }
 
-export type Preview = { text: string; ceiling: string } | { refused: string }
+export type Preview = { text: string; ceiling: { summary: string; sentences: string[] } } | { refused: string }
 export type AddResult = { ok: true; project: string } | { ok: false; say: string }
 
 export const KIND_DEFAULTS_NOTE =

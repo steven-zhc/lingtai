@@ -34,6 +34,7 @@ import { type FixTicket, MERGED_SHOWN, type PrBoardView, type PrRead, prBoard, p
 import {
   type HostRead,
   type PrPageView,
+  previousOf,
   generatedBody,
   githubHosted,
   prFixTicketLink,
@@ -160,7 +161,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
   } catch (err) {
     return { kind: 'failed', error: (err as Error).message }
   }
-  if (state === null || state === undefined || !state.owner) return { kind: 'unknown' }
+  if (state === null || state === undefined) return { kind: 'unknown' }
   try {
     const { recipe } = await traced('recipe.resolve', () => recipeOf(project))
     if (modeOf(recipe) !== 'team') return { kind: 'solo', recipe }
@@ -184,7 +185,7 @@ export async function readPrPage(project: string): Promise<PrsRead> {
         const fixHref = (name: string | null): FixTicket | null =>
           prFixTicketLink({
             project,
-            owner: state.owner,
+            owner: state.owner ?? null,
             github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
           })
@@ -246,7 +247,7 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   } catch {
     return viewsFor(project, { waiting: null })
   }
-  if (state === null || state === undefined || !state.owner) return viewsFor(project)
+  if (state === null || state === undefined) return viewsFor(project)
   let recipe: Recipe
   try {
     recipe = (await recipeOf(project)).recipe
@@ -346,6 +347,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
           const prs = yield* Effect.tryPromise({ try: () => prsOf(project), catch: failed })
           const draft = yield* readDraftOf(project)
           const open = openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : [])))
+          const previous = yield* previousOf(draft, prs, (pn) => readPrEvents(project, pn, requestStore()))
           const view = prPage({
             project,
             recipe,
@@ -354,6 +356,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
             events: [],
             draft,
             open,
+            ...(previous === null ? {} : { previous }),
             spend: null,
             stepNames,
             now,
@@ -521,11 +524,11 @@ export const readSearchPrs = (
     return { prs, problems }
   })
 
-/** `/pr/<project>`'s load, inside `measure` so its trace has a `page` span and a `pr.board` under it (#1375). */
+/** `/p/<project>/pr`'s load, inside `measure` so its trace has a `page` span and a `pr.board` under it (#1375). */
 export const loadPrBoard = (project: string, read: (project: string) => Promise<PrsRead> = readPrPage) =>
   measure(() => timed('pr.board', () => read(project)), { label: '/pr' })
 
-/** `/pr/<project>/<n>`'s load, measured the same way. */
+/** `/p/<project>/pr/<n>`'s load, measured the same way. */
 export const loadPrDetail = (
   project: string,
   n: number | 'next',

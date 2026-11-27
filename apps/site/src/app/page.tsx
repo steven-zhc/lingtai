@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 
 import { readBooks, type Books } from '@/lib/books'
+import { docImageSrc } from '@/lib/docs'
 
 import { BooksSection } from './books-section'
 import { Bar, Foot, INSTALL_URL } from './chrome'
@@ -11,6 +12,7 @@ import { ReplayReceipt } from './replay-receipt'
 import { RouteArrow } from './route-arrow'
 import { SandboxShield } from './sandbox-shield'
 import { Shots } from './shots'
+import { SHOTS } from './shots-list'
 
 type LedgerRow = {
   key: string
@@ -91,7 +93,13 @@ export function HomePage({ books }: { books: Books | null }) {
                 </div>
               </div>
             </section>
-            <Shots />
+            <Shots
+              shots={SHOTS.map((s) => ({
+                ...s,
+                src: docImageSrc(`img/shot-${s.name}.png`),
+                full: docImageSrc(`img/shot-${s.name}-full.png`),
+              }))}
+            />
           </div>
 
           <section className="film" id="film" aria-labelledby="film-title">

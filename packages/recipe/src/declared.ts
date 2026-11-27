@@ -29,6 +29,47 @@ export const sourceOf = (text: string): string => text.replace(/\r\n?/g, '\n')
 export const sourceHashOf = (text: string): string => createHash('sha256').update(sourceOf(text), 'utf8').digest('hex')
 
 /**
+ * The preset first, as the resolve does: it may satisfy a field the file omits (`steps:` empty, `repo:` absent). An
+ * unknown preset name is the resolve's to refuse, so the file is read as written. Then the runtime probe: only an
+ * absent or null `runtime:` is the schema's to default; any other non-mapping stays as written to be refused.
+ */
+function presetAndProbe(mapping: Record<string, unknown>): {
+  applied: Record<string, unknown>
+  runtime: Record<string, unknown> | null
+  probe: unknown
+} {
+  let applied: Record<string, unknown> = mapping
+  try {
+    applied = asRecord(applyPreset(mapping).recipe) ?? mapping
+  } catch {
+    // unknown `extends:` — left to the resolve
+  }
+  const declaredRuntime = applied['runtime']
+  const runtime = declaredRuntime == null ? {} : asRecord(declaredRuntime)
+  const probe =
+    runtime === null ? declaredRuntime : 'agent' in runtime ? runtime : { ...runtime, agent: SCHEMA_PROBE_AGENT }
+  return { applied, runtime, probe }
+}
+
+/**
+ * The recipe a source declares, from the text alone (#1489): YAML, preset, probe, schema — and none of
+ * `checkDeclared`'s refusals, which are the resolve's. `null` when the text does not parse to a `Recipe`.
+ */
+export function parseDeclared(source: string): Recipe | null {
+  let raw: unknown
+  try {
+    raw = parseYaml(source)
+  } catch {
+    return null
+  }
+  const mapping = asRecord(raw)
+  if (mapping === null) return null
+  const { applied, probe } = presetAndProbe(mapping)
+  const parsed = Recipe.safeParse({ ...applied, runtime: probe })
+  return parsed.success ? parsed.data : null
+}
+
+/**
  * Throws `RecipeInvalidError` when the text is not a declaration worth recording. **The text's alone**: no host probe,
  * no signed-in runtime, no machine file and no preset (an unknown `extends:` name is the resolve's to refuse, not
  * this). Whether the recipe then resolves on this host is the attempt's question.
@@ -44,14 +85,7 @@ export function checkDeclared(text: string, where: string): void {
   const mapping = asRecord(raw)
   if (mapping === null) throw new RecipeInvalidError(ref, ['(root): expected a mapping'], where)
 
-  // The preset first, as the resolve does: it may satisfy a field the file omits (`steps:` empty, `repo:` absent).
-  // An unknown preset name is the resolve's to refuse, so the file is checked as written.
-  let applied: Record<string, unknown> = mapping
-  try {
-    applied = asRecord(applyPreset(mapping).recipe) ?? mapping
-  } catch {
-    // unknown `extends:` — left to the resolve
-  }
+  const { applied, runtime, probe } = presetAndProbe(mapping)
 
   const old = oldSpellingsIn(applied)
   if (old.length > 0) throw new OldSpellingRefusedError(ref, old, where)
@@ -61,11 +95,6 @@ export function checkDeclared(text: string, where: string): void {
   const retired = [...retiredTier(applied), ...retiredLimits(applied)]
   if (retired.length > 0) throw new RecipeInvalidError(ref, retired, where)
 
-  // Only an absent or null `runtime:` is the schema's to default; any other non-mapping stays as written to be refused.
-  const declaredRuntime = applied['runtime']
-  const runtime = declaredRuntime == null ? {} : asRecord(declaredRuntime)
-  const probe =
-    runtime === null ? declaredRuntime : 'agent' in runtime ? runtime : { ...runtime, agent: SCHEMA_PROBE_AGENT }
   const parsed = Recipe.safeParse({ ...applied, runtime: probe })
   if (!parsed.success) {
     throw new RecipeInvalidError(

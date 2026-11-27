@@ -9,7 +9,9 @@
  * follows; the keys are announced only in each control's tooltip.
  */
 import Link from 'next/link'
-import type { ReactNode } from 'react'
+import { Fragment, type ReactNode } from 'react'
+
+import { homePath, prPath, recipePath } from '@/lib/paths'
 
 import { ProjectLink } from './project-link'
 
@@ -41,12 +43,12 @@ export function placeViews<T>(views: readonly T[]): { line: T[]; more: T[] } {
  */
 export const viewsFor = (project: string | undefined, prs?: { waiting: number | null }): PlaceView[] =>
   project === undefined
-    ? [{ id: 'tickets', label: 'Tickets', href: '/?project=', key: 'T', choose: { project: undefined } }]
+    ? [{ id: 'tickets', label: 'Tickets', href: homePath(undefined), key: 'T', choose: { project: undefined } }]
     : [
         {
           id: 'tickets',
           label: 'Tickets',
-          href: `/?project=${encodeURIComponent(project)}`,
+          href: homePath(project),
           key: 'T',
           choose: { project },
         },
@@ -56,7 +58,7 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
               {
                 id: 'prs',
                 label: 'PRs',
-                href: `/pr/${encodeURIComponent(project)}`,
+                href: prPath(project),
                 key: 'P',
                 ...(prs.waiting === null
                   ? { unread: 'could not read the PRs' }
@@ -70,7 +72,7 @@ export const viewsFor = (project: string | undefined, prs?: { waiting: number | 
                       }),
               } satisfies PlaceView,
             ]),
-        { id: 'recipe', label: 'Recipe', href: `/recipe/${encodeURIComponent(project)}` },
+        { id: 'recipe', label: 'Recipe', href: recipePath(project) },
       ]
 
 function View({ v, here }: { v: PlaceView; here: string | undefined }) {
@@ -107,6 +109,7 @@ export function PlaceLine({
   views,
   here,
   tail,
+  pendingAfter,
 }: {
   /** The crumb continued: a page below a view says where (`/ PR #88`, #1320). */
   tail?: string | undefined
@@ -116,6 +119,8 @@ export function PlaceLine({
   views: readonly PlaceView[]
   /** Which view this page is. */
   here?: PlaceView['id']
+  /** A skeleton after this view, no words: a view whose existence is still being read (`PRs`, #1500). */
+  pendingAfter?: PlaceView['id']
 }) {
   const { line, more } = placeViews(views)
   return (
@@ -131,7 +136,14 @@ export function PlaceLine({
           </span>
           <span className="views">
             {line.map((v) => (
-              <View key={v.id} v={v} here={here} />
+              <Fragment key={v.id}>
+                <View v={v} here={here} />
+                {v.id === pendingAfter ? (
+                  <span className="view" aria-busy="true">
+                    <span className="sk-bar sk-view" aria-hidden="true" />
+                  </span>
+                ) : null}
+              </Fragment>
             ))}
             {more.length === 0 ? null : (
               <details className="more">
@@ -156,6 +168,25 @@ export function PlaceLine({
           <span className="crumb">{tail}</span>
         </>
       )}
+    </span>
+  )
+}
+
+/**
+ * A global page's place (`Lingtai / Setup / Repository`, `Lingtai / Report`): crumbs as plain text, with no project
+ * menu and no views, so the page draws no `data-go` and no `details.filter`. There is no `/setup` page to link to.
+ */
+export function PagePlace({ crumbs }: { crumbs: readonly string[] }) {
+  return (
+    <span className="place">
+      {crumbs.map((c) => (
+        <Fragment key={c}>
+          <span className="slash" aria-hidden="true">
+            /
+          </span>
+          <span className="crumb">{c}</span>
+        </Fragment>
+      ))}
     </span>
   )
 }

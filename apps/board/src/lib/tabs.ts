@@ -1,7 +1,6 @@
 /**
  * The task page's record is one tab per subject — the Ticket, then one tab per
- * attempt, newest first (0118 §2, #885). This is the pure half of it: the
- * paths, which tab opens by default, and which attempts get a tab of their own.
+ * attempt, newest first (0118 §2, #885). This is the pure half of it: which tab opens by default, and which attempts get a tab of their own.
  * No React and no reads, so the layout, the pages and the tab row share one
  * implementation of each rule.
  */
@@ -9,41 +8,13 @@
 /** A tab: one attempt, the ticket, or the sandbox (#1161). The sandbox is never the default. */
 export type TabKey = { attempt: number } | 'ticket' | 'sandbox'
 
-/**
- * Absolute, because a relative `attempt/N` resolves to `…/attempt/attempt/N`
- * from inside an attempt's tab.
- */
-export function attemptTabPath(taskId: string, attempt: number): string {
-  return `/task/${encodeURIComponent(taskId)}/attempt/${attempt}`
-}
-
-export function ticketTabPath(taskId: string): string {
-  return `/task/${encodeURIComponent(taskId)}/ticket`
-}
-
-export function taskPath(taskId: string): string {
-  return `/task/${encodeURIComponent(taskId)}`
-}
-
-/** `/task/<id>/sandbox`, with `?attempt=<n>` to name the attempt: a link per attempt, so a reload keeps the choice. */
-export function sandboxTabPath(taskId: string, attempt?: number): string {
-  const base = `/task/${encodeURIComponent(taskId)}/sandbox`
-  return attempt === undefined ? base : `${base}?attempt=${attempt}`
-}
-
-export function tabPath(taskId: string, key: TabKey): string {
-  if (key === 'ticket') return ticketTabPath(taskId)
-  if (key === 'sandbox') return sandboxTabPath(taskId)
-  return attemptTabPath(taskId, key.attempt)
-}
-
 export function sameTab(a: TabKey, b: TabKey): boolean {
   if (typeof a === 'string' || typeof b === 'string') return a === b
   return a.attempt === b.attempt
 }
 
 /**
- * The tab `/task/<id>` opens on: the attempt the page is deciding on **while
+ * The tab a ticket opens on: the attempt the page is deciding on **while
  * the ticket is blocked**, else the newest attempt, else the Ticket.
  *
  * `standing.deciding` is a search that walks back through earlier attempts to
@@ -100,7 +71,7 @@ export function tabOfFragment(hash: string): TabKey | 'default' | null {
   return null
 }
 
-/** The attempt an `attempt/[n]` segment names, or null for anything that is not a whole number from 1. */
+/** The attempt an `attempt/[k]` segment names, or null for anything that is not a whole number from 1. */
 export function attemptOfSegment(n: string): number | null {
   return /^[1-9]\d*$/.test(n) && Number.isSafeInteger(Number(n)) ? Number(n) : null
 }

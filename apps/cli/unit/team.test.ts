@@ -12,6 +12,7 @@ import { describe, expect, it } from 'vitest'
 import { makePersonalBranch } from '../src/add-github.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import { askRecipeEffect, ENV_PLANT_AT, type RecipeAt } from '../src/recipe-flow.ts'
+import { askSandbox } from '../src/sandbox-step.ts'
 import { renderSetupCard, type CardRecipe, type SetupCardFacts } from '../src/setup-card.ts'
 import { askPersonal } from '../src/team.ts'
 
@@ -208,6 +209,7 @@ describe('the team card (#1324)', () => {
     reviewer: null,
     checks: ['pnpm test'],
     approves: false,
+    findingsJudge: null,
     team: { login: 'steven-zhc', personal: 'steven-zhc/studio' },
   }
   const facts: SetupCardFacts = {
@@ -240,5 +242,39 @@ describe('the team card (#1324)', () => {
     expect(text).toContain('every ticket — local tickets are yours')
     expect(text).toContain('open a ticket with lingtai ticket new, then lingtai start')
     expect(text).not.toContain('assign yourself an issue')
+  })
+})
+
+describe('askSandbox over a recipe that already says (#1474)', () => {
+  const proposal = { verdict: { can: true }, install: null, builtIns: ['api.example.com'] } as never
+  const world = (answers: string[]): QuestionWorld => ({ ask: async () => answers.shift() ?? '', log: () => {} })
+  const ask = (answers: string[], current: { enabled: boolean; allow: readonly string[]; required?: boolean }) =>
+    Effect.runPromise(askSandbox(world(answers), { proposal, flags: {}, kept: 'kept', current }))
+
+  it('an answer equal to the recipe writes nothing, so an absent block stays absent and a hand-set required stays', async () => {
+    expect(await ask(['off'], { enabled: false, allow: [] })).toEqual({ changes: [] })
+    expect(await ask(['on', 'none'], { enabled: true, allow: [] })).toEqual({ changes: [] })
+    expect(await ask(['', ''], { enabled: true, allow: ['a.example'] })).toEqual({ changes: [] })
+  })
+
+  it('off over a required sandbox drops the requirement with it, or the recipe does not resolve', async () => {
+    expect(await ask(['off'], { enabled: true, allow: [], required: true })).toEqual({
+      changes: [
+        { path: ['sandbox', 'enabled'], value: false },
+        { path: ['sandbox', 'required'], value: false },
+      ],
+    })
+  })
+
+  it('a changed answer sets only what changed, never the whole block', async () => {
+    expect(await ask(['off'], { enabled: true, allow: ['a.example'] })).toEqual({
+      changes: [{ path: ['sandbox', 'enabled'], value: false }],
+    })
+    expect(await ask(['on', 'b.example'], { enabled: true, allow: ['a.example'] })).toEqual({
+      changes: [{ path: ['sandbox', 'network', 'allow'], value: ['b.example'] }],
+    })
+    expect(await ask(['on', 'none'], { enabled: false, allow: [] })).toEqual({
+      changes: [{ path: ['sandbox', 'enabled'], value: true }],
+    })
   })
 })

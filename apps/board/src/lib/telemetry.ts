@@ -63,10 +63,11 @@ const PHASES: Readonly<Record<string, string>> = {
 /** Resolved `next.route` patterns whose phases may leave: exact, so a new tab is never admitted by accident. */
 const MEASURED_ROUTES: ReadonlySet<string> = new Set([
   '/',
-  '/task/[id]',
-  '/task/[id]/ticket',
-  '/task/[id]/sandbox',
-  '/task/[id]/attempt/[n]',
+  '/p/[project]/ticket',
+  '/p/[project]/ticket/[n]',
+  '/p/[project]/ticket/[n]/history',
+  '/p/[project]/ticket/[n]/sandbox',
+  '/p/[project]/ticket/[n]/attempt/[k]',
 ])
 const PHASES_PER_REQUEST = 4
 const OWNERS_PER_REQUEST = 8

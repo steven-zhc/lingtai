@@ -50,6 +50,7 @@ export const initOptions = {
   port: text('port'),
   project: text('project'),
   local: text('local'),
+  github: text('github'),
   'github-app': text('github-app'),
   'github-auth': text('github-auth'),
   ...recipeOptions,

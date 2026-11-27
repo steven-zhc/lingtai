@@ -2,10 +2,11 @@
  * `askRecipe` (#431, #432): every recipe question `init`'s local branch and
  * `lingtai add`'s GitHub branch both ask.
  *
- * **Two files, two shapes.** An existing file is edited one answer at a
- * time — written once here instead of twice, in `first-project.ts`'s
- * `runLocalBranch` and `add-github.ts`'s `askBeforeGithubAdd` — so a Ctrl+C
- * keeps what was answered (#392 decision 1). An absent file is created once:
+ * **Two files, two shapes.** An existing file is edited through the draft:
+ * every answer lands in memory and `applySetup` (#968) is the one writer. A
+ * refusal leaves the disk as it was; a Ctrl+C keeps what was answered (#392
+ * decision 1), because the caller is handed the draft through `onDraft` and
+ * writes its changes when interrupted (`first-project.ts`). An absent file is created once:
  * the first four sections' answers are collected rather than written as they
  * are given, reduced in with the caller's own `seeds`, and handed to
  * `setRecipe` in a single call, with a comment above every block (`SAID`,
@@ -26,9 +27,10 @@ import { existsSync } from 'node:fs'
 import { delimiter, join } from 'node:path'
 
 import { type RateRow, shipped } from '@lingtai/domain/rate-card'
+import { codexTextConfig, type CodexTextConfig } from '@lingtai/env'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { assigneeChanges, branchOf, type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { assigneeChanges, branchOf, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
 import { defaultPersonalBranch, type Proposal, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -39,6 +41,7 @@ import { askLanding, askLimits } from './landing.ts'
 import { acceptingDefaults, questionEffect, type QuestionWorld } from './question.ts'
 import { askSandbox } from './sandbox-step.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuildEffect } from './setup-build.ts'
+import type { LeftBehind } from './setup-card.ts'
 import { askKinds, askTickets } from './source.ts'
 import { askLogin, askMode, askPersonal, GITHUB_LOGIN, type Mode } from './team.ts'
 
@@ -61,10 +64,14 @@ function toolOnPath(tool: string): Promise<boolean> {
 
 export interface RecipeAt {
   project: string
+  /** Handed the draft the answers land in, once it is read — so an interrupted run can write what was answered. */
+  onDraft?: (draft: RecipeDraft) => void
   /** A local project is never asked where its tickets come from (`askTickets`'s own rule). */
   local: boolean
   /** Already probed — this function never probes on its own. */
   runtimes: readonly RuntimeFound[]
+  /** The `codex_text` route (#1476): whether a new recipe may name Codex as its discuss agent. Absent, this machine's own file is read. */
+  codexText?: () => CodexTextConfig | undefined
   reader: SetupReader
   flags: Readonly<Record<string, string>>
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
@@ -105,7 +112,7 @@ export interface RecipeAt {
   rates?: () => readonly unknown[] | null
   /**
    * The mode, where the caller already decided it (`runLocalBranch` asks before it makes the branch, 0130 §2).
-   * Absent, this asks — unless the recipe on disk already names one.
+   * Absent, this asks, with the recipe on disk's own mode as the default (#1474).
    */
   mode?: Mode
   /** What team mode needs from the machine; only a GitHub caller (`local: false`) is asked these questions here. */
@@ -115,6 +122,8 @@ export interface RecipeAt {
     hostname: () => string
     /** Whether the exact ref exists; `'unreadable'` is GitHub not answering, never *absent*. */
     branchExists: (name: string) => Effect.Effect<boolean | 'unreadable'>
+    /** The commits (`<sha> <subject>`) `head` has that `base` does not; `null` when GitHub could not be read. */
+    commitsOnlyIn?: (base: string, head: string) => Effect.Effect<string[] | null>
   }
 }
 
@@ -209,8 +218,67 @@ function writeOrRefuse(
   )
 }
 
+/** The mode and working branch a rerun moved, as facts. The caller turns them into the card's lines. */
+export interface RecipeChanged {
+  mode?: { from: Mode; to: Mode; personal?: string; main?: string }
+  /**
+   * `from` is the recipe's old working branch; `made` is whether the new one was made, and `madeFrom` the branch it
+   * was cut from (the old one, or main where the old one is no longer on GitHub). `commits` are the ones only
+   * `from` has, where the new one existed; `null` is unreadable.
+   */
+  branch?: { from: string; to: string; made: boolean; madeFrom?: string; commits?: string[] | null }
+}
+
+/**
+ * The card's lines for what a GitHub rerun changed (#1474). The commits come from the caller's `commitsOnlyIn`
+ * port (a GitHub compare); where that port is absent or could not read, the line gives the command that prints them.
+ */
+export function changedLeftBehind(changed: RecipeChanged | undefined, slug?: string): LeftBehind[] {
+  const out: LeftBehind[] = []
+  const listing = (commits: string[] | null | undefined, command: string): string =>
+    commits === undefined || commits === null
+      ? `the commits could not be read — ${command} lists them`
+      : commits.length === 0
+        ? 'none'
+        : `${commits.length} commit${commits.length === 1 ? '' : 's'}: ${commits.join(' · ')}`
+  const m = changed?.mode
+  if (m !== undefined && m.from === 'team' && m.to === 'solo' && m.personal !== undefined) {
+    // Written only because no draft held a ticket and no PR was open (0130 §1), so nothing is waiting to reach main.
+    out.push({ what: `${m.personal} was left as it is — nothing on it is waiting to reach ${m.main ?? 'main'}` })
+  }
+  const b = changed?.branch
+  if (b !== undefined) {
+    if (b.made) {
+      const from = b.madeFrom ?? b.from
+      out.push({
+        what:
+          from === b.from
+            ? `${b.to} was made from origin/${b.from} — ${b.from} is kept and may be deleted`
+            : `${b.to} was made from origin/${from} — ${b.from} is not on GitHub, so it could not be the source, and was left as it is`,
+      })
+    } else {
+      const command = `git log --oneline origin/${b.to}..origin/${b.from}`
+      out.push({
+        what:
+          `${b.to} existed and was left as it was — the commits only ${b.from} has: ${listing(b.commits, command)}` +
+          (slug === undefined ? '' : ` — https://github.com/${slug}/compare/${b.to}...${b.from}`),
+        command,
+      })
+    }
+  }
+  return out
+}
+
 type Recipe =
-  | { ok: true; trial: TrialOutcome; hints: string[]; answers: Answers; make?: PersonalBranchToMake }
+  | {
+      ok: true
+      trial: TrialOutcome
+      hints: string[]
+      answers: Answers
+      make?: PersonalBranchToMake
+      /** What a rerun changed that leaves something behind (#1474): structured, and said by whoever can read git. */
+      changed?: RecipeChanged
+    }
   | { refused: string }
 
 export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
@@ -220,27 +288,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // Every answer lands in this draft and nowhere else: `applySetup` (#968) is the one
   // writer of the file, so a refusal anywhere below leaves the disk as it was.
   const draft = yield* draftRecipe(at.project, { home: at.home, said: SAID })
-
-  // Asked first, ahead of the existing-file seed write below — nothing is
-  // written yet on either path, so a refusal here always says
-  // `at.keptBeforeWrite` (#433).
-  const defaults = yield* questionEffect(world, {
-    name: 'every default',
-    flag: '--defaults',
-    given: at.flags['defaults'] !== undefined ? 'yes' : null,
-    prompt: 'use every default?',
-    choices: ['yes', 'no'],
-    fallback: 'yes',
-    kept: at.keptBeforeWrite,
-  })
-  // A refusal here can only mean the question went unanswered — `given` is
-  // either 'yes' or null (`at.flags['defaults']`), and 'yes' always accepts,
-  // so the only way to land in `{refused}` is no `--defaults` flag and no
-  // terminal to ask at. That is not a reason to stop the run: a headless run
-  // whose every later question is already answered by a flag must still
-  // succeed, and one whose own flag is missing must be refused by that
-  // question's own name, not this one's (#433 fix round, findings 1 and 2).
-  const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
+  at.onDraft?.(draft)
 
   const absent = draft.text() === null
 
@@ -254,41 +302,139 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // `at.kept` (#432's split).
   const askKept = absent ? at.keptBeforeWrite : at.kept
   const collected: RecipeChange[] = []
+  // Only the flag answers the mode, the login and the branch; a typed *yes* to *use every default?* never does (#1488).
+  const landWorld = at.flags['defaults'] !== undefined ? acceptingDefaults(world) : world
 
   const rawMode = draft.get(['mode'])
   let mode: Mode = at.mode ?? (rawMode === 'team' ? 'team' : 'solo')
   let make: PersonalBranchToMake | undefined
-  if (at.mode === undefined && rawMode === null && !at.local) {
-    const asked = yield* askMode(askWorld, { given: at.flags['mode'] ?? null, kept: askKept })
+  const changed: RecipeChanged = {}
+  const modeBefore: Mode = rawMode === 'team' ? 'team' : 'solo'
+  if (at.mode === undefined && !at.local) {
+    const asked = yield* askMode(landWorld, {
+      given: at.flags['mode'] ?? null,
+      kept: askKept,
+      current: absent ? null : modeBefore,
+    })
     if ('refused' in asked) return asked
     mode = asked.mode
+    if (!absent && mode !== modeBefore) {
+      const p = draft.get(['branch', 'personal'])
+      const m = draft.get(['branch', 'main'])
+      const mainName = typeof m === 'string' && m !== '' ? m : null
+      const personalName = typeof p === 'string' && p !== '' ? p : null
+      changed.mode = {
+        from: modeBefore,
+        to: mode,
+        ...(personalName === null ? {} : { personal: personalName }),
+        ...(mainName === null ? {} : { main: mainName }),
+      }
+    }
+    const rawMain = draft.get(['branch', 'main'])
+    const seededMain = at.seeds.find((c) => c.path.join('.') === 'branch.main')?.value
+    const mainBranch =
+      typeof seededMain === 'string'
+        ? seededMain
+        : typeof rawMain === 'string'
+          ? rawMain
+          : yield* Effect.promise(() => at.defaultBranch())
+    if (mode === 'solo') {
+      // The branch the recipe governs and merges into, asked as `init --local` asks it (#1488). `--main` already
+      // seeded the default, so it answers this and nothing new is asked.
+      const team = at.team
+      const landed = yield* questionEffect(landWorld, {
+        name: 'the base branch',
+        flag: '--main <branch>',
+        given: at.flags['main'] ?? null,
+        prompt: "the branch this project's recipe governs and merges into",
+        current: typeof rawMain === 'string' && rawMain !== '' && !absent ? rawMain : null,
+        detected: mainBranch,
+        kept: askKept,
+        validate: (answer) =>
+          // The default is what GitHub or the recipe already named; only a different answer is looked up.
+          team === undefined || answer === mainBranch
+            ? Effect.succeed(null)
+            : Effect.map(team.branchExists(answer), (exists) =>
+                exists === 'unreadable'
+                  ? `could not read whether ${answer} exists on GitHub`
+                  : exists
+                    ? null
+                    : `${answer} is not a branch on GitHub`,
+              ),
+      })
+      if ('refused' in landed) return landed
+      // Where the mode is still changing, the answer is written with that change: checked on its own, the new
+      // `branch.main` would be compared with the `branch.personal` that is about to be removed.
+      if (absent || modeBefore === 'team') {
+        if (absent || landed.answer !== rawMain) collected.push({ path: ['branch', 'main'], value: landed.answer })
+      } else if (landed.answer !== rawMain) {
+        const wroteMain = yield* writeOrRefuse(draft, [{ path: ['branch', 'main'], value: landed.answer }])
+        if ('refused' in wroteMain) return wroteMain
+      }
+    }
+    if (mode === 'solo' && !absent && modeBefore === 'team') {
+      // `branch.personal` and `pr:` are read only in team mode: a recipe that keeps either does not resolve. The
+      // branch, its commits, the draft and any open PR are the person's, and are not touched.
+      collected.push(
+        { path: ['mode'], value: 'solo' },
+        { path: ['branch', 'personal'], value: undefined },
+        ...(draft.get(['pr']) === null ? [] : [{ path: ['pr'], value: undefined }]),
+      )
+    }
     if (mode === 'team') {
       const team = at.team
       if (team === undefined) return { refused: `team mode needs the machine's login and host. ${askKept}` }
       const given = at.flags['login'] ?? null
-      let login = given ?? team.knownLogin
+      // The assignee the queue takes by is where `assigneeChanges` writes it: the `claim` entry's own `queue:` when
+      // there is one, else `source.assignee` (`assigneeOf`'s own order), so the default is the login about to be replaced.
+      const claimNow = draft.get(['steps', 'claim'])
+      const queued = (Array.isArray(claimNow) ? claimNow : []).find(
+        (entry): entry is { queue: { assignee?: unknown } } =>
+          typeof entry === 'object' &&
+          entry !== null &&
+          typeof (entry as { queue?: unknown }).queue === 'object' &&
+          (entry as { queue?: unknown }).queue !== null,
+      )?.queue.assignee
+      const queuedLogin = typeof queued === 'object' && queued !== null ? (queued as { login?: unknown }).login : queued
+      const rawAssignee = queuedLogin ?? draft.get(['source', 'assignee', 'login']) ?? draft.get(['source', 'assignee'])
+      const currentLogin = typeof rawAssignee === 'string' && rawAssignee !== '' ? rawAssignee : null
+      // A discovered login stands in for the question only where it is the recipe's own or the recipe has none:
+      // a different one is asked, with the recipe's as the default, never written over it unanswered. With none
+      // discovered the question is asked as a first run asks it (#1474).
+      const known = team.knownLogin !== null && team.knownLogin !== '' ? team.knownLogin : null
+      let login = given ?? (known !== null && (currentLogin === null || known === currentLogin) ? known : null)
       if (login === null || login === '') {
-        const typed = yield* askLogin(world, { given: null, kept: askKept })
+        const typed = yield* askLogin(landWorld, { given: null, kept: askKept, current: currentLogin })
         if ('refused' in typed) return typed
         login = typed.login
       } else if (given !== null && !GITHUB_LOGIN.test(given)) {
         return { refused: `${given} is not a GitHub login (letters, digits and single -). ${askKept}` }
       }
-      const rawMain = draft.get(['branch', 'main'])
-      const seededMain = at.seeds.find((c) => c.path.join('.') === 'branch.main')?.value
-      const mainBranch =
-        typeof seededMain === 'string'
-          ? seededMain
-          : typeof rawMain === 'string'
-            ? rawMain
-            : yield* Effect.promise(() => at.defaultBranch())
-      if (mainBranch === null || mainBranch === '') {
+      // A team recipe asks no base question, so a typed `--main` that differs from the recipe's is the answer: checked
+      // against GitHub, then written with the rest, and the personal branch below is cut from it.
+      const typedMain = at.flags['main']
+      const teamMain: string | null =
+        !absent && !at.local && typedMain !== undefined && typedMain !== '' && typedMain !== rawMain
+          ? typedMain
+          : mainBranch
+      if (teamMain === null || teamMain === '') {
         return { refused: `no main branch to cut ${login}'s branch from — pass --main <branch>. ${askKept}` }
       }
-      const personal = yield* askPersonal(askWorld, {
+      if (teamMain !== mainBranch) {
+        const there = yield* team.branchExists(teamMain)
+        if (there === 'unreadable') {
+          return { refused: `could not read whether ${teamMain} exists on GitHub. ${askKept}` }
+        }
+        if (!there) return { refused: `${teamMain} is not a branch on GitHub. ${askKept}` }
+        collected.push({ path: ['branch', 'main'], value: teamMain })
+      }
+      const rawPersonal = draft.get(['branch', 'personal'])
+      const oldPersonal = !absent && typeof rawPersonal === 'string' && rawPersonal !== '' ? rawPersonal : null
+      const personal = yield* askPersonal(landWorld, {
         given: at.flags['personal'] ?? null,
         fallback: defaultPersonalBranch(login, team.hostname()),
-        main: mainBranch,
+        current: oldPersonal,
+        main: teamMain,
         kept: askKept,
       })
       if ('refused' in personal) return personal
@@ -299,15 +445,27 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         }
       }
       if (exists) {
-        askWorld.log(
+        landWorld.log(
           `${personal.personal} exists already — Lingtai will use it as it is; main is brought into it at your first submit`,
         )
       } else {
+        // A new working branch is cut from the old one where that exists: every ticket that landed on it and
+        // has not reached main would otherwise be missing from the new one (#1474).
+        let from = teamMain
+        if (oldPersonal !== null && oldPersonal !== personal.personal) {
+          const oldExists = yield* team.branchExists(oldPersonal)
+          if (oldExists === 'unreadable') {
+            return {
+              refused: `could not read whether ${oldPersonal} exists on GitHub — nothing was made. ${askKept}`,
+            }
+          }
+          if (oldExists) from = oldPersonal
+        }
         const confirmed = yield* questionEffect(world, {
           name: 'making the personal branch',
-          flag: `--defaults, or make it yourself: git push origin origin/${mainBranch}:refs/heads/${personal.personal}`,
+          flag: `--defaults, or make it yourself: git push origin origin/${from}:refs/heads/${personal.personal}`,
           given: at.flags['defaults'] !== undefined ? 'yes' : null,
-          prompt: `${personal.personal} does not exist. Make it from origin/${mainBranch} and push it?`,
+          prompt: `${personal.personal} does not exist. Make it from origin/${from} and push it?`,
           choices: ['yes', 'no'],
           fallback: 'yes',
           kept: askKept,
@@ -317,10 +475,23 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
           return {
             refused:
               `${personal.personal} was not made — nothing was written and nothing was registered. ` +
-              `Make it yourself with: git push origin origin/${mainBranch}:refs/heads/${personal.personal}, then run this again`,
+              `Make it yourself with: git push origin origin/${from}:refs/heads/${personal.personal}, then run this again`,
           }
         }
-        make = { name: personal.personal, from: mainBranch }
+        make = { name: personal.personal, from }
+      }
+      if (oldPersonal !== null && oldPersonal !== personal.personal) {
+        const commits =
+          make === undefined && team.commitsOnlyIn !== undefined
+            ? yield* team.commitsOnlyIn(personal.personal, oldPersonal)
+            : undefined
+        changed.branch = {
+          from: oldPersonal,
+          to: personal.personal,
+          made: make !== undefined,
+          ...(make === undefined ? {} : { madeFrom: make.from }),
+          ...(commits === undefined ? {} : { commits }),
+        }
       }
       const rawClaim = draft.get(['steps', 'claim'])
       const teamChanges: RecipeChange[] = [
@@ -335,6 +506,41 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       if ('refused' in wroteMode) return wroteMode
     }
   }
+
+  // Asked after the mode and the branch, and answering only what comes after it (#1488): where the code lands is
+  // never answered by a typed *yes* to a question that did not show it. A refusal here can only mean the question
+  // went unanswered — `given` is either 'yes' or null and 'yes' always accepts, so the only way to land in
+  // `{refused}` is no `--defaults` flag and no terminal to ask at. That is not a reason to stop the run: a headless
+  // run whose every later question is already answered by a flag must still succeed, and one whose own flag is
+  // missing must be refused by that question's own name, not this one's (#433).
+  const defaults = yield* questionEffect(world, {
+    name: 'every default',
+    flag: '--defaults',
+    given: at.flags['defaults'] !== undefined ? 'yes' : null,
+    prompt: 'use every default?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: askKept,
+  })
+  const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
+
+  // The trial reads the recipe from the draft, and on a new recipe the answers are still in `collected`: it sees
+  // them as they will be written, so it checks the branch the recipe will name and not GitHub's default (#1488).
+  // A personal branch the caller has yet to make is not on GitHub: the trial reads it as the branch it is cut from.
+  const toMake = make
+  const trialDraft: RecipeDraft =
+    absent || toMake !== undefined
+      ? {
+          ...draft,
+          get: (path) => {
+            const joined = path.join('.')
+            if (toMake !== undefined && joined === 'branch.personal') return toMake.from
+            if (!absent) return draft.get(path)
+            const hit = [...at.seeds, ...collected].reverse().find((c) => c.path.join('.') === joined)
+            return hit === undefined ? draft.get(path) : (hit.value ?? null)
+          },
+        }
+      : draft
 
   const agents = yield* askAgents(askWorld, {
     project: at.project,
@@ -352,6 +558,19 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   if ('refused' in agents) return agents
   if (absent) {
     collected.push(...agents.changes, ...agents.modelChanges)
+    // The schema's discuss agent is claude-code. Where that cannot run and the model-only Codex route is
+    // configured, name Codex instead; never `discuss.model` (doctor fails one that differs from codex_text).
+    const claudeSignedIn = at.runtimes.find((r) => r.id === 'claude-code')?.signedIn === true
+    if (!claudeSignedIn) {
+      let codexText: CodexTextConfig | undefined
+      try {
+        codexText = (at.codexText ?? (() => codexTextConfig()))()
+      } catch {
+        // An unreadable or invalid codex_text names no Codex agent here; doctor's discuss row validates it again and reports why.
+        codexText = undefined
+      }
+      if (codexText) collected.push({ path: ['discuss', 'agent'], value: 'codex' })
+    }
   } else {
     const wroteAgentChanges = yield* writeOrRefuse(draft, agents.changes)
     if ('refused' in wroteAgentChanges) return wroteAgentChanges
@@ -359,12 +578,37 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
     if ('refused' in wroteModelChanges) return wroteModelChanges
   }
 
-  // Asked of a new recipe only, and only where the caller read the host (#1160): an existing project is never
-  // given the block, and `proposal.sandbox` is `null` for one.
-  if (absent && at.proposal?.sandbox != null) {
-    const sandbox = yield* askSandbox(askWorld, { proposal: at.proposal.sandbox, flags: at.flags, kept: askKept })
+  // Asked wherever the caller read the host (#1160), on a rerun too (#1474), with the recipe's own answer as the
+  // default: absent is off. An answer equal to it writes nothing.
+  if (at.proposal?.sandbox != null) {
+    let current: { enabled: boolean; allow: readonly string[]; required?: boolean } | undefined
+    if (!absent) {
+      const text = draft.text()
+      try {
+        const block =
+          text === null ? undefined : resolveSource(text, recipePath(at.project, at.home), at.project).recipe.sandbox
+        current = {
+          enabled: block?.enabled ?? false,
+          allow: block?.network.allow ?? [],
+          required: block?.required ?? false,
+        }
+      } catch {
+        current = { enabled: false, allow: [] }
+      }
+    }
+    const sandbox = yield* askSandbox(askWorld, {
+      proposal: at.proposal.sandbox,
+      flags: at.flags,
+      kept: askKept,
+      ...(current === undefined ? {} : { current }),
+    })
     if ('refused' in sandbox) return sandbox
-    collected.push(...sandbox.changes)
+    if (absent) {
+      collected.push(...sandbox.changes)
+    } else {
+      const wroteSandbox = yield* writeOrRefuse(draft, sandbox.changes)
+      if ('refused' in wroteSandbox) return wroteSandbox
+    }
   }
 
   const setup = yield* askInstallAndBuildEffect(askWorld, {
@@ -379,7 +623,7 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       // defaulted setup runs minutes of somebody's build (#436).
       check: (at.flags['check-build'] as 'yes' | 'no' | undefined) ?? (askWorld !== world ? 'no' : null),
     },
-    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(draft) : (at.tryBuild ?? null),
+    tryBuild: typeof at.tryBuild === 'function' ? at.tryBuild(trialDraft) : (at.tryBuild ?? null),
     recipeExisted: !absent,
     onPath: toolOnPath,
     home: at.home,
@@ -468,6 +712,18 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
     if ('refused' in landed) return landed
   }
 
+  // A new recipe sends review findings back to the writer through a judge (#1448). After the landing, so the hold
+  // is first in the list as the board writes it; a recipe that already existed is left as it is.
+  if (absent) {
+    const writer = agents.changes.find((c) => c.path.join('.') === 'runtime.agent')?.value
+    const proposedNow = draft.get(['steps', 'proposed'])
+    const judged = yield* writeOrRefuse(
+      draft,
+      findingsJudgeChanges(typeof writer === 'string' ? writer : null, Array.isArray(proposedNow) ? proposedNow : null),
+    )
+    if ('refused' in judged) return judged
+  }
+
   const limited = yield* askLimits(
     askWorld,
     at.project,
@@ -490,13 +746,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // Only the defaults can reach here without anyone having looked: a person who
   // typed an answer, or named `--build none` or `--land <branch>`, chose it.
   const unseenEmptyBuild = summary.checks.length === 0 && at.buildFlags.length === 0
-  const unseenUnattended = summary.landsUnattended && at.flags['land'] === undefined
+  // Team lands on the person's own branch and `main` moves only through their PR (0130): nothing to confirm.
+  const unseenUnattended = mode === 'solo' && summary.landsUnattended && at.flags['land'] === undefined
   if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
     // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
-    const lands =
-      mode === 'team'
-        ? `an attempt lands on ${summary.base}; nothing reaches main until you submit a PR`
-        : `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
+    const lands = `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
     const asks =
       unseenEmptyBuild && unseenUnattended
         ? `nothing checks a diff before review, and ${lands}`
@@ -526,5 +780,6 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
     hints,
     answers: { project: at.project, changes: draft.changes(), said: SAID },
     ...(make === undefined ? {} : { make }),
+    ...(changed.mode === undefined && changed.branch === undefined ? {} : { changed }),
   }
 })

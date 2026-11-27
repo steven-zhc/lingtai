@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<title>0.16.0 验收：看板四处的设计（F11 · F12 · F15 · F17）</title>
+<style>
+:root{
+  --fs-2xs:10px;--fs-xs:11px;--fs-sm:12px;--fs-md:13.5px;--fs-lg:16px;--fs-xl:20px;
+  --radius:3px;--ground:#f1f4f4;--surface:#fff;--surface-2:#e9eeee;--ink:#0f181c;--ink-2:#3a4a50;
+  --muted:#5e6e74;--rule:#d8e0e1;--rule-2:#c3cfd1;--accent:#0b6a70;--accent-soft:#dcedED;--accent-ink:#075056;
+  --signal:#9c5a08;--signal-soft:#f7ead6;--pass:#2c7a4c;--pass-soft:#dfeee4;--held:#63549e;--held-soft:#e8e4f4;
+  --pr-navy:#44507a;--pr-edge:#8a93b5;--pr-rail:#c4cce4;--pr-green:#2e8b57;--pr-amber:#c58a14;--pr-tint:#f2f4fa;
+  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);font:var(--fs-md)/1.55 var(--sans)}
+main{max-width:1180px;margin:0 auto;padding:24px 16px 80px}
+h1{font-size:var(--fs-xl);margin:0 0 6px}
+.lede{color:var(--ink-2);max-width:820px}
+section.f{margin-top:40px;border-top:1px solid var(--rule-2);padding-top:20px}
+section.f>h2{font-size:var(--fs-lg);margin:0 0 4px}
+.why{color:var(--ink-2);max-width:900px;margin:0 0 14px}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.pair.stack{grid-template-columns:1fr}
+.lab{font:600 var(--fs-xs)/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:0 0 8px}
+.lab.new{color:var(--accent)}
+.shot{width:100%;border:1px solid var(--rule);border-radius:var(--radius);background:var(--surface)}
+.notes{margin:12px 0 0;padding-left:20px;color:var(--ink-2)}
+.notes li{margin:3px 0}
+.q{margin-top:12px;background:var(--signal-soft);border-left:3px solid var(--signal);padding:8px 12px;border-radius:var(--radius);max-width:900px}
+.q b{color:var(--signal)}
+/* board pieces */
+.board{background:var(--surface);border:1px solid var(--rule);border-radius:var(--radius);padding:16px}
+.col{background:var(--surface-2);padding:10px;border-radius:var(--radius);width:300px}
+.colh{display:flex;justify-content:space-between;font:600 var(--fs-xs)/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.lrow{display:grid;grid-template-columns:30px 1fr;gap:6px;padding:6px 0;border-bottom:1px solid var(--rule)}
+.rail{font:var(--fs-2xs)/1 var(--mono);color:var(--pass);letter-spacing:-1px;padding-top:3px}
+.l1{font:var(--fs-2xs)/1.6 var(--mono);color:var(--muted);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.l1 .n{color:var(--ink-2)}
+.l2{font:var(--fs-2xs)/1.6 var(--mono);color:var(--ink-2);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.pill{display:inline-block;font:var(--fs-2xs)/1 var(--mono);padding:3px 6px;border-radius:999px}
+.pill.ok{background:var(--accent-soft);color:var(--accent-ink)}
+.pill.sig{background:var(--signal-soft);color:var(--signal)}
+.mono{font-family:var(--mono)}
+.muted{color:var(--muted)}
+.small{font-size:var(--fs-2xs)}
+.title{font:700 var(--fs-xl)/1.3 var(--sans);margin:0}
+.title .st{color:var(--pass)}
+.facts{font:var(--fs-2xs)/1.8 var(--mono);color:var(--muted)}
+.totals{display:flex;gap:28px;margin:14px 0 4px;padding:12px 14px;border:1px solid var(--rule);border-radius:var(--radius);background:var(--surface)}
+.totals .k{font:600 var(--fs-xs)/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.totals .v{font:600 var(--fs-lg)/1.2 var(--mono)}
+.totals .s{font:var(--fs-2xs)/1.5 var(--mono);color:var(--muted)}
+.past{border-left:2px solid var(--rule-2);padding:4px 10px;font:var(--fs-sm)/1.6 var(--mono);color:var(--muted);margin:12px 0}
+.past b{color:var(--ink-2);font-weight:500}
+.sec{font:600 var(--fs-xs)/1 var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin:16px 0 8px}
+.tag{display:inline-block;font:600 var(--fs-xs)/1 var(--mono);padding:4px 7px;border-radius:var(--radius);border:1px dashed var(--pr-navy);color:var(--pr-navy);vertical-align:middle;margin-right:8px}
+.empty{border:1px solid var(--rule);border-radius:var(--radius);padding:14px 16px;background:var(--pr-tint)}
+.empty p{margin:0 0 4px}
+a{color:var(--accent);text-decoration:underline;text-underline-offset:2px}
+svg text{font-family:var(--mono);font-size:10px;fill:var(--ink-2)}
+svg .lane{font-size:11px;fill:var(--muted)}
+.legend{display:flex;gap:16px;font:var(--fs-sm)/1 var(--sans);color:var(--ink-2);margin-top:8px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:5px;vertical-align:-1px}
+</style>
+</head>
+<body>
+<main>
+<h1>0.16.0 验收：看板四处的设计</h1>
+<p class="lede">F11、F12、F15、F17，每处写明 2026-11-25 验收时看到的问题和定下来的样子（2026-11-26 operator 批准）。界面文字是英文，和看板一致；说明是中文。现状截图不进 git，见验收文档的发现表。</p>
+
+<!-- F11 -->
+<section class="f" id="f11">
+<h2>F11 · Landed 行的花费只算了 Work</h2>
+<p class="why">完整卡片会把修发现那一轮的花费单独标成 <span class="pill sig">$0.06 answering</span>，Landed 行没有这个小标，只显示 Work（$0.10），看起来就像整张票的花费。而且这一栏只有约 240px 宽，一行装不下，花费被截掉了（“6 t…”）。</p>
+<div class="pair stack">
+  <div><p class="lab new">改成</p>
+    <div class="col">
+      <div class="colh"><span>Landed</span><span class="mono" style="font-weight:400">1</span></div>
+      <div class="lrow">
+        <div class="rail">ıııııııı</div>
+        <div>
+          <div class="l1"><span class="n">#1</span>·<span>feature</span>·<span>9m ago</span><span class="pill ok">on your branch</span></div>
+          <div class="l2"><span>$0.10</span><span class="muted">+ 1 unpriced</span><span class="pill sig">$0.06 answering</span></div>
+        </div>
+      </div>
+      <div class="lrow">
+        <div class="rail">ıııııııı</div>
+        <div>
+          <div class="l1"><span class="n">#4</span>·<span>feature</span>·<span>2h ago</span></div>
+          <div class="l2"><span>$0.21</span><span class="muted">· 9 turns</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<ul class="notes">
+  <li>一行拆成两行：第一行是编号、kind、多久之前和分支小标；第二行只放花费。窄栏里不会再截断。</li>
+  <li>花费照完整卡片的规则：Work 的金额，加上没有报价的 run 数（#1482 以后叫 <span class="mono">unpriced</span>），再加琥珀色的 answering 小标，和完整卡片是同一个组件。</li>
+  <li>没有 answering 花费的行就不画这个小标（第二张票）。turns 挪到第二行，空间够才显示。</li>
+</ul>
+<div class="q"><b>已定：</b>第二行开头放 Work 的金额，和完整卡片一致；answering 用同一个琥珀色小标。</div>
+</section>
+
+<!-- F12 -->
+<section class="f" id="f12">
+<h2>F12 · 票详情页：落地后没有整张票的花费和耗时</h2>
+<p class="why">跑的时候页面上有 cost so far，落地后就没了，只剩每个 attempt 的一行：<span class="mono">$0.16 ~$0.41 est. · 6 turns · 33s</span>。33s 是 agent 实际运行的时间，标题下的 <span class="mono">9m</span> 是从认领到落地的时间，两者都没说明是什么。另外，落地以后顶部仍挂着 <span class="mono">proposed / conductor:judge asked — Merge … anyway?</span>，看起来像还在等人。</p>
+<div class="pair stack">
+  <div><p class="lab new">改成</p>
+    <div class="board" style="max-width:900px">
+      <p class="title"><span class="st">landed</span> Add the next chapter to The Sun's Ninth Minute</p>
+      <div class="facts">#1 · feature · claimed 05:03 · landed 05:12 on lingtai-base</div>
+      <div class="totals">
+        <div><div class="k">Spent</div><div class="v">$0.16 <span class="muted" style="font-weight:400">+ ~$0.41 est.</span></div><div class="s">2 unpriced runs, estimated from tokens</div></div>
+        <div><div class="k">Of which answering</div><div class="v" style="color:var(--signal)">$0.06</div><div class="s">the fix round after review's finding</div></div>
+        <div><div class="k">Took</div><div class="v">9m</div><div class="s">claim → landed · agents ran 33s</div></div>
+        <div><div class="k">Attempts</div><div class="v">1</div><div class="s">6 turns · 1 fix round</div></div>
+      </div>
+      <div class="past"><b>proposed · conductor:judge</b> asked at 05:09 “Merge agent/1 into lingtai-base anyway?” → you answered <b>merge</b> at 05:11</div>
+      <div class="sec">Where it is</div>
+      <div class="muted small">（分支图和下面的 Discussion、Attempt 标签页不变）</div>
+    </div>
+  </div>
+</div>
+<ul class="notes">
+  <li>标题下面加一条 <b>整张票的合计</b>：花了多少（实报 + 估算，规则和页脚的 Today 一样，两个数字分开写，从不加成一个数）、其中 answering 多少、从认领到落地用了多久、agent 实际跑了多久、几个 attempt。跑的时候这一条就是现在的 <span class="mono">cost so far</span>，落地后不消失。</li>
+  <li>facts 行把 <span class="mono">9m</span> 换成几个带名字的时间点（claimed / landed）。</li>
+  <li>已经回答过的等待改成一行灰色的历史：<i>谁问了什么、谁在什么时候怎么答的</i>。只有还在等的时候才用现在这个醒目的样式。</li>
+  <li><span class="mono">/landed</span> 的行在花费旁边补上同一个耗时（claim → landed）。</li>
+</ul>
+<div class="q"><b>已定：</b>有估算的地方都写 <span class="mono">$0.16 + ~$0.41 est.</span>（和页脚一样，两个数字不相加）；只有连估算都没有时，才写 <span class="mono">+ 2 unpriced</span>。</div>
+</section>
+
+<!-- F15 -->
+<section class="f" id="f15">
+<h2>F15 · Submit 之后的 Next PR 页</h2>
+<p class="why">Submit 以后三张票都进了 PR 1，Next PR 页显示 <span class="mono">0 tickets</span>，这是对的；但页面不说这些票去了哪里，也没有链接到 PR 1。NOW 竖线和 <i>running now</i> 是同一种琥珀色，读起来像“正在跑”。图例列出了五种状态，这一页一种都用不到。</p>
+<div class="pair stack">
+  <div><p class="lab new">改成</p>
+    <div class="board" style="max-width:900px">
+      <p class="title" style="font-size:20px"><span class="tag">draft</span>Next PR — nothing in it yet</p>
+      <div class="facts">lingtai-base → main · 0 tickets</div>
+      <div class="sec">Where it is</div>
+      <div class="empty">
+        <p><b>Nothing is waiting for the next PR.</b> The 3 tickets before went into <a href="#">PR 1 · in review</a>.</p>
+        <p class="muted small mono">the next ticket that lands on lingtai-base starts this draft · Submit appears once it has one</p>
+      </div>
+      <svg width="860" height="150" viewBox="0 0 860 150" style="margin-top:12px">
+        <text class="lane" x="0" y="34">main</text>
+        <text class="lane" x="0" y="114">lingtai-base</text>
+        <line x1="120" y1="30" x2="850" y2="30" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <line x1="120" y1="110" x2="850" y2="110" stroke="var(--pr-navy)" stroke-width="2"/>
+        <circle cx="180" cy="110" r="6" fill="var(--pr-navy)"/>
+        <text x="168" y="132">34ffb95 · caught up with main</text>
+        <line x1="186" y1="104" x2="300" y2="40" stroke="var(--pr-edge)" stroke-width="1.5" stroke-dasharray="3 3"/>
+        <text x="306" y="44" style="fill:var(--muted)">PR 1 → in review</text>
+        <line x1="560" y1="16" x2="560" y2="140" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+        <text x="566" y="14" style="fill:var(--muted)">now</text>
+      </svg>
+    </div>
+  </div>
+</div>
+<ul class="notes">
+  <li>草稿是空的时候，标题直接说 <i>nothing in it yet</i>，不再写 <i>no title yet — the agent writes one at submit</i>。</li>
+  <li>WHERE IT IS 的第一句交代上一批票去了哪里，链到那个 PR，并写上它现在的状态。没有任何 PR 的时候，只写第二行小字。</li>
+  <li>空草稿不显示 Submit PR 按钮（现在显示，点了也没东西可交）。</li>
+  <li><b>NOW 线改成灰色虚线</b>，文字是小写的 <span class="mono">now</span>，不再用琥珀色。琥珀色在这块板上的意思是“在等人或正在跑”。这条规则对所有 PR 页面都适用（F17 也受影响）。</li>
+  <li><b>图例只列图上用到的状态</b>；一个都没用到时，整条图例不画。</li>
+</ul>
+<div class="q"><b>已定：</b>空草稿也画一张简化的分支图：只画 main 和个人分支，标出上一次追上 main 的点，用虚线指向上一个 PR。</div>
+</section>
+
+<!-- F17 -->
+<section class="f" id="f17">
+<h2>F17 · PR 1 的分支图：点和字叠在一起</h2>
+<p class="why">图的逻辑是对的，但有几处画得不对：</p>
+<ul class="notes">
+  <li><span class="mono">fea9eb1 sync</span> 和 <span class="mono">build</span> 是同一个提交，却画成两个叠在一起的点。</li>
+  <li>#4 的点被 <span class="mono">b3b0964 frozen</span> 盖住了。</li>
+  <li><span class="mono">pushed · fea9eb1</span> 和 <span class="mono">build ✓ · fea9eb1</span> 两个标签挤在一起。</li>
+  <li>NOW 线压在 <i>caught up with main</i> 上。</li>
+  <li>main 上的 <i>merged</i>（绿点）和 <span class="mono">bae6df3</span> 是同一次合并，画成了两个点。</li>
+  <li><span class="mono">c7c0f78</span> 和 <span class="mono">bae6df3</span> 已经发生了，却画成空心圈（图例里空心表示 still to come）。</li>
+</ul>
+<div class="pair stack">
+  <div><p class="lab new">改成</p>
+    <div class="board" style="max-width:980px">
+      <svg width="940" height="250" viewBox="0 0 940 250" style="max-width:100%">
+        <text class="lane" x="0" y="44">main</text>
+        <text class="lane" x="0" y="124">lingtai-base-pr-1</text>
+        <text class="lane" x="0" y="204">lingtai-base</text>
+        <!-- rails -->
+        <line x1="130" y1="40" x2="930" y2="40" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <line x1="130" y1="200" x2="930" y2="200" stroke="var(--pr-navy)" stroke-width="2"/>
+        <line x1="380" y1="120" x2="560" y2="120" stroke="var(--pr-navy)" stroke-width="2"/>
+        <!-- tickets on base -->
+        <circle cx="160" cy="200" r="5" fill="var(--pr-edge)"/><text x="152" y="188">#1</text>
+        <circle cx="196" cy="200" r="5" fill="var(--pr-edge)"/><text x="188" y="188">#5</text>
+        <circle cx="232" cy="200" r="5" fill="var(--pr-edge)"/><text x="224" y="188">#4</text>
+        <path d="M156 222 v4 h80 v-4" fill="none" stroke="var(--pr-edge)"/>
+        <text x="156" y="240" style="fill:var(--muted)">closed: #1 #5 #4</text>
+        <!-- conflict commit on main -->
+        <circle cx="250" cy="40" r="6" fill="var(--pr-navy)"/><text x="232" y="26">c7c0f78</text>
+        <!-- frozen -->
+        <circle cx="300" cy="200" r="6" fill="var(--pr-navy)"/><text x="286" y="222">b3b0964 frozen</text>
+        <line x1="304" y1="195" x2="376" y2="124" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <!-- main brought in -->
+        <line x1="254" y1="45" x2="376" y2="116" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <!-- one dot for fea9eb1 -->
+        <circle cx="380" cy="120" r="7" fill="var(--pr-navy)"/>
+        <text x="392" y="86">fea9eb1</text>
+        <text x="392" y="98" style="fill:var(--muted)">main in · 1 conflict</text>
+        <text x="392" y="110" style="fill:var(--muted)">built ✓ · pushed</text>
+        <!-- merged back into base -->
+        <line x1="384" y1="125" x2="476" y2="196" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <circle cx="480" cy="200" r="6" fill="var(--pr-navy)"/><text x="462" y="222">43b7af4 merged back</text>
+        <!-- merged into main: one green dot -->
+        <line x1="560" y1="120" x2="616" y2="45" stroke="var(--pr-green)" stroke-width="2"/>
+        <circle cx="620" cy="40" r="7" fill="var(--pr-green)"/><text x="602" y="26" style="fill:var(--pr-green)">merged</text>
+        <!-- caught up -->
+        <line x1="624" y1="45" x2="716" y2="196" stroke="var(--pr-edge)" stroke-width="1.5"/>
+        <circle cx="720" cy="200" r="6" fill="var(--pr-navy)"/><text x="700" y="222">34ffb95 caught up with main</text>
+        <!-- now: grey, after the last event, never over a label -->
+        <line x1="926" y1="14" x2="926" y2="236" stroke="var(--muted)" stroke-width="1" stroke-dasharray="2 3"/>
+        <text x="904" y="12" style="fill:var(--muted)">now</text>
+      </svg>
+      <div class="legend"><span><i style="background:var(--pr-navy)"></i>happened</span><span><i style="background:var(--pr-edge)"></i>a ticket landed</span><span><i style="background:var(--pr-green)"></i>merged</span></div>
+    </div>
+  </div>
+</div>
+<ul class="notes">
+  <li><b>一个提交只画一个点。</b>同一个提交上发生的几件事（同步、构建、推送）作为几行标签挂在这个点旁边，不再各画一个点。</li>
+  <li><b>横轴按事件的先后排列，不按时间比例。</b>相邻两个点之间至少隔 36px；票的点和 frozen 的点也遵守这个间距，不会再互相盖住。</li>
+  <li><b>同一次合并只画一个点</b>，绿色。知道合并提交时标签写 <i>&lt;sha&gt; merged</i>；这次的合并是从 git 读出来的、没有记下 sha，所以只写 <i>merged</i>，不借用追上 main 时的 sha（main 可能已经又动过）。</li>
+  <li><b>已经发生的提交一律画实心。</b>空心只表示还没发生的步骤，已合并的 PR 上不会再出现空心圈。</li>
+  <li><b>now 线一直画，包括已合并、已关闭的 PR</b>，用 F15 的灰色虚线。它总在最后一个事件的右边，和最后一个标签之间留出空隙，不压在任何点或标签上；最后一个标签太宽时，now 线往右挪，不往标签上压。</li>
+  <li>标签放在点的上方或下方，不会和别的标签重叠。放不下时，后一个标签往右挪，不往别的标签上压。</li>
+</ul>
+<div class="q"><b>已定：</b>横轴按事件的先后排列，不按时间比例；具体时间放在历史面板和鼠标悬停里。now 线一直画，包括已合并的 PR。</div>
+</section>
+
+</main>
+</body>
+</html>

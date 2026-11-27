@@ -8,18 +8,18 @@ const q = (s: string) => new URLSearchParams(s)
 
 describe('homeRedirect', () => {
   it('sends a bare / to the remembered project', () => {
-    expect(homeRedirect(q(''), 'lingtai')).toBe('/?project=lingtai')
+    expect(homeRedirect(q(''), 'lingtai')).toBe('/p/lingtai/ticket')
   })
-  it('sends all projects when the cookie is empty or absent', () => {
-    expect(homeRedirect(q(''), '')).toBe('/?project=')
-    expect(homeRedirect(q(''), undefined)).toBe('/?project=')
+  it('leaves / as all projects when the cookie is empty or absent', () => {
+    expect(homeRedirect(q(''), '')).toBeNull()
+    expect(homeRedirect(q(''), undefined)).toBeNull()
   })
-  it('passes through any request that names a project, empty included', () => {
-    expect(homeRedirect(q('project=lingtai'), 'other')).toBeNull()
-    expect(homeRedirect(q('project='), 'lingtai')).toBeNull()
+  it('reads a project parameter as nothing: it is / all the same', () => {
+    expect(homeRedirect(q('project=lingtai'), 'other')).toBe('/p/other/ticket?project=lingtai')
+    expect(homeRedirect(q('project=lingtai'), undefined)).toBeNull()
   })
   it('keeps another parameter and encodes the name', () => {
-    expect(homeRedirect(q('a=1'), 'a b')).toBe('/?project=a%20b&a=1')
+    expect(homeRedirect(q('a=1'), 'a b')).toBe('/p/a%20b/ticket?a=1')
   })
 })
 
@@ -46,7 +46,7 @@ describe('rememberedProject', () => {
   })
   it('reads a pair with no = as absent, so the redirect is all projects', () => {
     expect(rememberedProject('lingtai-project')).toBeUndefined()
-    expect(homeRedirect(q(''), rememberedProject('lingtai-project'))).toBe('/?project=')
+    expect(homeRedirect(q(''), rememberedProject('lingtai-project'))).toBeNull()
   })
   it('reads an undecodable value as absent', () => {
     expect(rememberedProject('lingtai-project=%E0%A4%A')).toBeUndefined()

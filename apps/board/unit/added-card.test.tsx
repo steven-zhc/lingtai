@@ -48,7 +48,7 @@ describe('step 3', () => {
     expect(out).toContain('registered')
     expect(out).toContain('>bug<')
     expect(out).toContain('agent:hold')
-    expect(out).toContain('href="/recipe/chapter-garden?edit=1"')
+    expect(out).toContain('href="/p/chapter-garden/recipe?edit=1"')
     expect(out).toContain('href="https://github.com/me/chapter-garden/issues/new"')
   })
 

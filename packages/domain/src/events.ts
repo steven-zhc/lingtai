@@ -1757,7 +1757,7 @@ export const ProposalRouted = z
   })
 
 /**
- * **A run an API error cut off is run again in place** (0108 §12, #1201): the same role, the same
+ * **A run that stopped is run again in place** (0108 §12, #1201): the same role, the same
  * brief, the same worktree, after `waitMs`. #1224 uses it for two rule routes as well — a `prepared`
  * an install's registry refused, and an agent whose answer could not be read. On the attempt's stream, appended before the wait so a
  * daemon that dies during it has already spent the count.
@@ -1765,7 +1765,7 @@ export const ProposalRouted = z
  * `rerun` is this one's number among the attempt's — the reducer takes the larger, so a replay
  * cannot count it twice. Not a `ProposalRouted`: a crash has no `proposed` visit to route.
  *
- * @summary A run a transient API error cut off is run again in place, after a wait that grows.
+ * @summary A step that stopped is run again in place, after a wait that grows; `cause` says which kind of stop it was.
  */
 export const StepRedone = z.object({
   runId: z.string(),
@@ -1778,6 +1778,8 @@ export const StepRedone = z.object({
   askedAgain: z.boolean().optional(),
   /** Set where `said` is the tail of a message no outcome could be read from (#1398): only such a redo quotes it again after a stop. */
   unread: z.boolean().optional(),
+  /** Why the step was redone (#1480). Rows written before #1480 have no `cause`, and say nothing about it. */
+  cause: z.enum(['transient', 'crash', 'agent-did-not-finish', 'registry-5xx', 'answer-unreadable']).optional(),
 })
 
 /**

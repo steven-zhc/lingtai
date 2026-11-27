@@ -27,7 +27,7 @@ import { type Offer, offerCreation } from '@lingtai/conductor/create-app'
  * claim that it fixes both: #167's defect, one surface along.
  */
 
-import { Bar } from '@/app/bar.tsx'
+import { SetupBar } from '@/app/global-bars.tsx'
 
 import { ObjectTitle } from '../../object-title.tsx'
 
@@ -50,10 +50,7 @@ export function GitHubAppScreen({ offer }: { offer: Offer }) {
 
   return (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">github app</span>
-      </Bar>
+      <SetupBar step="GitHub App" />
 
       <div className="detail-body">
         <section>

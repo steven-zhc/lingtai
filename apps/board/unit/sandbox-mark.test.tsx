@@ -48,10 +48,10 @@ describe('the filter menu', () => {
 
   it('puts the mark beside the pause tag on a paused row, and none in the summary or all-projects tab', () => {
     const out = render(new Map([['b', st('off')]]))
-    const row = out.slice(out.indexOf('href="/?project=b"'))
+    const row = out.slice(out.indexOf('href="/p/b/ticket"'))
     expect(row).toContain('sbx-off')
     expect(row).toContain('pause-tag')
-    const head = out.slice(0, out.indexOf('href="/?project=a"'))
+    const head = out.slice(0, out.indexOf('href="/p/a/ticket"'))
     expect(head).not.toContain('sbx')
   })
 

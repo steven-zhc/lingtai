@@ -18,7 +18,7 @@ import {
   emptyNote,
   COLUMNS,
   askProject,
-  githubQueue,
+  askQueue,
   issueUrl,
   startBoard,
   queuedStanding,
@@ -37,16 +37,16 @@ import { footerLags } from '@/lib/footer'
 import { handledIfCurrent } from '@/lib/handled-today'
 import { homeNotSetUp, theHome } from '@/lib/home'
 import { kindDot } from '@/lib/kind-colour'
-import { landedLink } from '@/lib/landed'
 import { everyPaused, type LockMap, lockMap } from '@/lib/lock-marks.ts'
 import { readControlOnce, readProjectLocks, readRegistered } from '@/lib/locks.ts'
-import { modeMark } from '@/lib/mode-mark.ts'
+import { modeMarks } from '@/lib/mode-mark.ts'
+import { historyPath, landedLink, prPath, recipePath, ticketPath } from '@/lib/paths'
 import { elapsed } from '@/lib/progress'
 import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
-import { billHasAny, billText } from '@/lib/spend'
+import { type Bill, billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
@@ -95,7 +95,7 @@ import { Skeleton } from './skeleton.tsx'
  * **Weight follows attention, and it used not to.** Landed rendered a card each
  * and was the heaviest thing on the page while one waiting card took about a
  * twelfth of the ink; the bar led with `11 items`, a sum of four columns that
- * mean different things and that nobody acts on (#81). So history is one line
+ * mean different things and that nobody acts on (#81). So history is two short lines
  * per item and reduces away past the most recent few, the room that frees goes to
  * the lanes where something is happening, and the bar ends on the one number an
  * operator acts on in the next minute: how many need a person.
@@ -156,7 +156,7 @@ function accent(card: BoardCard): string {
 /**
  * The reference, as the other destination.
  *
- * The title opens `/task/<id>` — what Lingtai did — and that is right. The
+ * The title opens `/p/<project>/ticket/<n>` — what Lingtai did — and that is right. The
  * number beside it went nowhere at all (#81), and the issue is the other thing
  * you want from a card: what was asked, and what people have said since. Two
  * destinations, both reachable, neither one guessing which you meant.
@@ -236,7 +236,7 @@ export function Card({
           {showProject ? <span className="proj">{card.project}</span> : null}
           <IssueRef href={issue} issue={card.ref} />
         </span>
-        <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
+        <Link className="ti" href={ticketPath(card.taskId)}>
           {card.title}
         </Link>
         {card.progress ? (
@@ -255,7 +255,7 @@ export function Card({
         ) : card.triage ? (
           <p className="question waiting-fallback">
             {card.triage === 'RecipeUnreadable' ? (
-              <Link href={`/recipe/${encodeURIComponent(card.project)}`}>{TRIAGE_WORDS[card.triage]}</Link>
+              <Link href={recipePath(card.project)}>{TRIAGE_WORDS[card.triage]}</Link>
             ) : (
               TRIAGE_WORDS[card.triage]
             )}
@@ -312,7 +312,7 @@ export function Card({
 
       {/* The whole card title is the link. Anything smaller is a target you
           have to aim at, on the one control every card has. */}
-      <Link className="ti" href={`/task/${encodeURIComponent(card.taskId)}`}>
+      <Link className="ti" href={ticketPath(card.taskId)}>
         {card.title}
       </Link>
       {/* What the system did instead of asking (#1259): one line, the fact and its reason, in the grey the card's
@@ -321,7 +321,7 @@ export function Card({
           does not carry it. */}
       {card.system ? (
         <p className="system-line" data-testid="system-line">
-          <Link href={`/task/${encodeURIComponent(card.taskId)}/ticket?events=1`}>
+          <Link href={`${historyPath(card.taskId)}?events=1`}>
             {[
               card.system.because === null ? card.system.action : `${card.system.because}; ${card.system.action}`,
               card.system.bound,
@@ -399,21 +399,8 @@ export function Card({
             ) : null}
           </>
         ) : null}
-        {/* Apart from the work's cost, deliberately. Answering a refusal is
-            default-on and spends an agent without being asked again, so reducing
-            it into the number beside it would make it an invisible bill (#84).
-
-            It says *answering* rather than *repair* since 0039 §3: the column
-            holds every round a pass bought — a refused review, a red build, and
-            after `#142` a conflict — and only one of those was ever a repair.
-            The figure is `spend`'s `Action` rows at round 1 or above (0039 §3,
-            `#498`) — `BoardCard.repairCostUsd`'s own doc says the same — and
-            not the `repair_costs` projection column this used to read. */}
-        {billHasAny(card.repairCostUsd) ? (
-          <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
-            {billText(card.repairCostUsd)} answering
-          </li>
-        ) : null}
+        {/* Apart from the work's cost, deliberately: see `AnsweringPill` (#84). */}
+        <AnsweringPill bill={card.repairCostUsd} />
         {/* **Which round, as one object** (#170). A card that keeps failing
             should read as one rather than looking new every time it comes back
             round — and *which attempt* and *which arm* are 0040's two axes, not
@@ -516,10 +503,35 @@ export function LandedCount({ count, only }: { count: number; only: string | und
 }
 
 /**
- * One landed item, on one line.
+ * The answering bill as a pill, drawn once for the card and the landed row.
  *
- * `#150 · enhancement · 25 turns · $1.46 · 2d` — the same facts a card carried,
- * at the weight finished work deserves. Nothing here is a new claim: the
+ * Apart from the work's cost, deliberately. Answering a refusal is default-on
+ * and spends an agent without being asked again, so reducing it into the number
+ * beside it would make it an invisible bill (#84).
+ *
+ * It says *answering* rather than *repair* since 0039 §3: the column holds every
+ * round a pass bought, a refused review, a red build, and after `#142` a
+ * conflict, and only one of those was ever a repair. The figure is `spend`'s
+ * `Action` rows at round 1 or above (0039 §3, `#498`), as
+ * `BoardCard.repairCostUsd`'s own doc says. An empty bill draws nothing: never
+ * `$0.00 answering`. It is an `<li>`, so it goes in a list.
+ */
+export function AnsweringPill({ bill }: { bill: Bill }) {
+  return billHasAny(bill) ? (
+    <li className="pill sig" title="what answering refusals on this has cost, apart from the work">
+      {billText(bill)} answering
+    </li>
+  ) : null
+}
+
+/**
+ * One landed item, on two lines.
+ *
+ * Line 1 is what it is and where: `#150 · enhancement · 2d` and the where-tag.
+ * Line 2 is what it cost: `$1.46 [$0.06 answering] · 25 turns`. The Work figure
+ * and the answering pill never clip; only the turns give way. On one clipped
+ * line the spend went first and the answering bill was never said at all. The
+ * same facts a card carried, at the weight finished work deserves. Nothing here is a new claim: the
  * numbers, their words and their absences are the card's (#78, #79), and only
  * the ink they take has changed.
  *
@@ -549,8 +561,6 @@ export function LandedRow({
     // a claim that is true where it was written and false where it is read.
     card.satisfied ? 'satisfied' : card.closed ? 'closed' : null,
     card.kind,
-    card.turns === null ? null : `${card.turns} turns`,
-    billHasAny(card.costUsd) ? billText(card.costUsd) : null,
     // The lane's own word is on the card; here the column heading is already
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
@@ -578,19 +588,31 @@ export function LandedRow({
         </span>
       ) : null}
       {showProject ? <span className="proj">{card.project}</span> : null}
-      <IssueRef href={issue} issue={card.ref} />
-      <Link className="lmeta" href={`/task/${encodeURIComponent(card.taskId)}`} title={card.title}>
-        · {said.join(' · ')}
-      </Link>
-      {where === null ? null : where.tag === 'branch' ? (
-        <span className="ltag ltag-branch">on your branch</span>
-      ) : where.tag === 'merged' ? (
-        <span className="ltag ltag-merged">merged</span>
-      ) : (
-        <Link className="ltag ltag-pr" href={`/pr/${encodeURIComponent(card.project)}/${where.n}`}>
-          in {where.name}
+      <div className="lbody">
+        <div className="lline">
+          <IssueRef href={issue} issue={card.ref} />
+          <Link className="lmeta" href={ticketPath(card.taskId)} title={card.title}>
+            · {said.join(' · ')}
+          </Link>
+          {where === null ? null : where.tag === 'branch' ? (
+            <span className="ltag ltag-branch">on your branch</span>
+          ) : where.tag === 'merged' ? (
+            <span className="ltag ltag-merged">merged</span>
+          ) : (
+            <Link className="ltag ltag-pr" href={prPath(card.project, where.n)}>
+              in {where.name}
+            </Link>
+          )}
+        </div>
+        {/* The same page, out of the tab order so the row stays one stop. */}
+        <Link className="lspend" href={ticketPath(card.taskId)} title={card.title} tabIndex={-1}>
+          <ul className="lbill">
+            {billHasAny(card.costUsd) ? <li className="lwork">{billText(card.costUsd)}</li> : null}
+            <AnsweringPill bill={card.repairCostUsd} />
+            {card.turns === null ? null : <li className="lturns">· {card.turns} turns</li>}
+          </ul>
         </Link>
-      )}
+      </div>
     </li>
   )
 }
@@ -614,9 +636,14 @@ export function LandedFoot({
         return (
           <div key={`foot:${project}`} className={`lfoot${foot.kind === 'unread' ? ' unread' : ''}`}>
             {showProject ? <span className="proj">{project}</span> : null}
-            {foot.kind === 'unread' ? 'where these are could not be read' : foot.text}
+            {foot.kind === 'unread' ? 'where these are could not be read' : null}
+            {foot.kind === 'line' && foot.draft !== null ? (
+              <Link href={prPath(project, 'next')}>{foot.draft} in Draft PR</Link>
+            ) : null}
+            {foot.kind === 'line' && foot.draft !== null && foot.open !== null ? ' · ' : null}
+            {foot.kind === 'line' ? foot.open : null}
             {foot.kind === 'line' ? (
-              <Link className="lfoot-link" href={`/pr/${encodeURIComponent(project)}`}>
+              <Link className="lfoot-link" href={prPath(project)}>
                 PRs →
               </Link>
             ) : null}
@@ -827,7 +854,7 @@ const CountPending = () => (
 async function readMenu({ reads, locks, param }: Ctx) {
   const [board, registered, lockRead] = await Promise.all([reads.board, reads.registered, locks])
   const { only } = shape(board, param)
-  const mode = new Map(board.askable.map((f) => [f.project, modeMark(f.recipe)]))
+  const mode = modeMarks(registered)
   return { filters: board.projects, only, registered, mode, ...lockShape(lockRead, only, registered) }
 }
 
@@ -1183,9 +1210,17 @@ async function CardsPart({
   )
 }
 
-export default async function Page({ searchParams }: { searchParams: Promise<{ project?: string }> }) {
-  // `/?project=` is *all projects*: `''` must never reach the reads as a project name (#1435).
-  const param = (await searchParams).project || undefined
+/** `/`: all projects. A project's own home is `/p/<project>/ticket`, the same body (#1498). */
+export default async function Page() {
+  return Home({ project: undefined })
+}
+
+/**
+ * The home page's body for one project, or for all of them (`undefined`). The
+ * path names the project and never the query, so `''` cannot reach the reads as a
+ * project name (#1435).
+ */
+export async function Home({ project: param }: { project: string | undefined }) {
   // Before any read of the log: a refused store makes `loadBoard` throw the
   // same sentence, and Next would show that as its default error page. The
   // screen below says it instead, and mounts no `Live` — there is no log to
@@ -1226,11 +1261,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   // awaited from both boundaries; two calls would be two fan-outs to GitHub.
   const queue: Promise<GithubQueue> = ctx.reads.queueAsk
     .then((ask) =>
-      measure(
-        () =>
-          timed('board.queue', () => githubQueue(ask.askable, ask.known, (f) => askProject(f, { explain: readWhy }))),
-        { label: '/ queue' },
-      ).then((answered) => {
+      measure(() => timed('board.queue', () => askQueue(ask, (f) => askProject(f, { explain: readWhy }))), {
+        label: '/ queue',
+      }).then((answered) => {
         recordQueuedOffered(param, ask.askable, answered[0].problems)
         return answered
       }),
@@ -1367,7 +1400,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
         <div className="cols">
           {COLUMNS.map((col) => (
             // `quiet` is the width half of the same decision the rows below are
-            // the weight half of: Landed is a list of one-line rows and does not
+            // the weight half of: Landed is a list of two-line rows and does not
             // need a card's column, and what it gives back goes to the lanes
             // where something is happening (#81).
             <section

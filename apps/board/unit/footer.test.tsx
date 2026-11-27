@@ -32,7 +32,7 @@ describe('Footer', () => {
     const html = render(r)
     expect(html).toContain('width:13.075%')
     expect(html).toContain('width:11.015%')
-    expect(text(html)).toContain('$26.15 + ~$22.03 of $200 + 2 unknown')
+    expect(text(html)).toContain('$26.15 + ~$22.03 of $200 + 2 unpriced')
     expect(html).toContain('role="meter"')
     expect(html).toContain('aria-valuemin="0"')
     expect(html).toContain('aria-valuemax="200"')
@@ -44,7 +44,7 @@ describe('Footer', () => {
     const html = render(dayReading({ ...run, reportedCents: 0, estimatedCents: 0, unknown: 4 }, 200))
     expect(html).toContain('no reported cost')
     expect(html).not.toContain('$0.00 +')
-    expect(html).toContain('4 unknown')
+    expect(html).toContain('4 unpriced')
   })
 
   it('draws no meter without a ceiling', () => {
@@ -122,7 +122,7 @@ describe('Footer currency line', () => {
 
   it('draws the amounts and the count in <b>, the count as text, and no links', () => {
     const html = render(r)
-    expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> <span class="of">of $200</span> + 2 unknown')
+    expect(html).toContain('<b>$26.15</b> + ~<b>$22.03</b> <span class="of">of $200</span> + 2 unpriced')
     expect(html).toContain('<b>3</b> landed</span>')
   })
 })

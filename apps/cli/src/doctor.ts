@@ -177,6 +177,7 @@ import { Cause, Effect, Redacted } from 'effect'
 import pg from 'pg'
 import { parse as parseYaml } from 'yaml'
 
+import { probeBunVersion, type BunAnswer } from './bun-version.ts'
 import { ceilingUnreadLine, raisedLine, reachedLine } from './ceiling-words.ts'
 import { type CleanListing, cleanListingEffect } from './clean.ts'
 import { readDaySpend } from './day-ceiling.ts'
@@ -1305,6 +1306,11 @@ export interface DoctorReach {
    * real (#212).
    */
   sea: () => SeaProbe
+  /**
+   * `bun --version`'s answer, required for the same reason `sea` is: a caller that omits it would spawn `bun`
+   * for real (#1479).
+   */
+  bun: () => Effect.Effect<BunAnswer>
   /** As `currentRecipeEffect` resolves it — `declaredEnvironment` and `projectFiltersOnce` all read one injected source (#357). */
   recipe: RecipeForEffect
   /** As `resolveAgentEnv` reads it, for `declaredEnvironment`. */
@@ -3396,6 +3402,47 @@ export function codexRoleRow(
   }
 }
 
+/**
+ * The discuss row of a recipe that never wrote `discuss:` (#1476): the agent is the schema's default, nobody chose
+ * it, so a default that cannot run is a warning — a pass needs no discussion. A declared one keeps its `fail`.
+ */
+export function defaultDiscussRow(row: CheckResult, declared: boolean): CheckResult {
+  if (declared || row.status !== 'fail') return row
+  return {
+    ...row,
+    status: 'warn',
+    title: 'discussions need claude-code signed in, or codex_text configured',
+  }
+}
+
+/** A `codex_text` that is configured but wrong is a failure of its own, never the same as none configured. */
+export function invalidCodexText(
+  project: string,
+  configured: () => CodexTextConfig | undefined,
+): CheckResult | undefined {
+  try {
+    configured()
+    return undefined
+  } catch (err) {
+    return {
+      name: `discuss: ${project} codex_text`,
+      status: 'fail',
+      title: `codex_text configuration for ${project} is invalid`,
+      detail: err instanceof Error ? err.message : String(err),
+    }
+  }
+}
+
+/** Whether the recipe's own text has a top-level `discuss:` key; a preset cannot supply one. */
+function declaresDiscuss(source: string): boolean {
+  try {
+    const doc: unknown = parseYaml(source)
+    return typeof doc === 'object' && doc !== null && !Array.isArray(doc) && 'discuss' in doc
+  } catch {
+    return true
+  }
+}
+
 /** `claudeOauthToken` as a boolean Effect that keeps the reader's own sentence, which `Effect.try` alone would replace. */
 export const readClaudeToken = (env?: NodeJS.ProcessEnv): Effect.Effect<boolean, Error> =>
   Effect.try({
@@ -3670,9 +3717,17 @@ export function declaredEnvironment(
                 codexRoleRow(project.project!, role, selected.model, reach.codexText ?? (() => codexTextConfig(env))),
               )
             } else if (selected) {
-              results.push(
-                yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [`${role}.agent`]),
-              )
+              const row = yield* dispatchedAuthRow(project.project!, selected.agent, asked, runtimes, role, [
+                `${role}.agent`,
+              ])
+              const declared = role === 'discuss' && declaresDiscuss(resolved.source)
+              results.push(role === 'discuss' ? defaultDiscussRow(row, declared) : row)
+              // `init` treats an invalid codex_text as absent and so names no Codex discuss agent; this is where the
+              // configuration error is reported, since the Codex row above runs only for a recipe that selects Codex.
+              if (role === 'discuss' && !declared && row.status === 'fail') {
+                const invalid = invalidCodexText(project.project!, reach.codexText ?? (() => codexTextConfig(env)))
+                if (invalid) results.push(invalid)
+              }
             }
           }
         }),
@@ -3741,6 +3796,62 @@ export function nodeRow(running: string, declared: string | undefined): CheckRes
     }
   }
   return { name, status: 'ok', detail: `running node ${running}, at or above .node-version's ${declared}` }
+}
+
+/** The lowest Bun whose `--compile` reads its variables where a sandbox refuses to list a parent directory. */
+export const BUN_FLOOR = '1.3.6'
+
+/**
+ * Is the `bun` a source checkout would build the hook with at or above 1.3.6 (#1479).
+ *
+ * A hook compiled by a Bun older than that looks for `.env` from its working directory upward, and where a sandbox
+ * refuses to list one of those directories — the worktree is under the read-denied `~/.lingtai` — it starts with
+ * an empty `process.env`, and every sandboxed run is blocked at `UserPromptSubmit` (`f2f91dbe8`;
+ * `--no-compile-autoload-dotenv` does not fix 1.2.22).
+ *
+ * `answer` is what `bun --version` said, read outside this function so this stays a unit test. **It reads `bun`,
+ * never the binary on disk**: a hook built before an upgrade is caught by the smoke test before every dispatch.
+ * An unknown version is a `fail`, never a pass.
+ */
+export function bunRow(answer: BunAnswer): CheckResult {
+  const name = `bun: at or above ${BUN_FLOOR}`
+  if ('failed' in answer) {
+    return {
+      name,
+      status: 'fail',
+      title: 'the Bun version is unknown',
+      detail: `bun --version could not be run: ${answer.failed}\nthe hook is built with bun ${BUN_FLOOR} or later`,
+    }
+  }
+  const found = /^(\d+)\.(\d+)\.(\d+)$/.exec(answer.answered.trim())
+  if (found === null) {
+    return {
+      name,
+      status: 'fail',
+      title: 'the Bun version is unknown',
+      detail: `bun --version said ${JSON.stringify(answer.answered.trim())}, which is not major.minor.patch`,
+    }
+  }
+  const have = [Number(found[1]), Number(found[2]), Number(found[3])] as const
+  const floor = BUN_FLOOR.split('.').map(Number) as [number, number, number]
+  const below =
+    have[0] !== floor[0] ? have[0] < floor[0] : have[1] !== floor[1] ? have[1] < floor[1] : have[2] < floor[2]
+  const version = `${found[1]}.${found[2]}.${found[3]}`
+  if (below) {
+    return {
+      name,
+      status: 'fail',
+      title: 'this Bun is older than the hook needs',
+      detail:
+        `bun ${version} is below ${BUN_FLOOR}: a hook it compiles reads an empty environment inside the sandbox\n` +
+        `upgrade bun, rebuild the hook, and rerun`,
+    }
+  }
+  return {
+    name,
+    status: 'ok',
+    detail: `bun ${version}, at or above ${BUN_FLOOR} — this reads \`bun --version\`, not the binary; the smoke test checks the binary before every dispatch`,
+  }
 }
 
 /**
@@ -3952,7 +4063,7 @@ export function runDoctor(
   store: () => StoreChoice = () => storeChoice(),
   queries: LogQueries = log.queries,
   load: typeof loadProjects = loadProjects,
-  reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea' | 'sandboxHost' | 'sandboxCanary'>,
+  reach: Partial<DoctorReach> & Pick<DoctorReach, 'sea' | 'bun' | 'sandboxHost' | 'sandboxCanary'>,
 ): Effect.Effect<DoctorReport> {
   return Effect.gen(function* () {
     const results: CheckResult[] = []
@@ -3996,6 +4107,12 @@ export function runDoctor(
             detail:
               "this is a binary, not a checkout — building a binary is a checkout's job, not something a binary does to itself",
           })
+          results.push({
+            name: `bun: at or above ${BUN_FLOOR}`,
+            status: 'skip',
+            detail:
+              'this is a binary, not a checkout — its hook was compiled by release.yml, and there is no bun to ask',
+          })
         }),
       )
     } else {
@@ -4011,6 +4128,7 @@ export function runDoctor(
           )
           results.push(nodeRow(process.versions.node, declaredNode))
           results.push(seaRow(process.execPath, process.versions.node, reach.sea()))
+          results.push(bunRow(yield* reach.bun()))
         }),
       )
     }
@@ -4320,7 +4438,13 @@ export function doctorReportEffect(
     () => storeChoice(env),
     undefined,
     undefined,
-    { sea: probeSeaBuild, sandboxHost: hostHere, sandboxCanary: liveCanary, onProgress: opts.onProgress },
+    {
+      sea: probeSeaBuild,
+      bun: probeBunVersion,
+      sandboxHost: hostHere,
+      sandboxCanary: liveCanary,
+      onProgress: opts.onProgress,
+    },
   )
 }
 
@@ -4378,7 +4502,7 @@ const OTHER = 'Other'
  * here is the order the sections are drawn in, within a tier (see `renderDoctor`).
  */
 const AREA_OF: readonly (readonly [string, readonly string[]])[] = [
-  ['Machine', ['node', 'packages load under Node', 'release', 'disk']],
+  ['Machine', ['node', 'bun', 'packages load under Node', 'release', 'disk']],
   ['Store and log', ['store', 'environment', 'postgres', 'schema', 'log', 'projections', 'snapshots']],
   ['Daemon', ['daemon', 'conductor', 'worktrees', 'subscribers', 'spend', 'rates', 'account']],
   ['Projects', ['recipe', 'env', 'base', 'discuss', 'triage', 'steps']],

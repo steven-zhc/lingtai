@@ -128,10 +128,10 @@ describe('the tab row', () => {
       />,
     )
 
-  it('marks the default tab selected at /task/<id>, where the router names none', () => {
+  it('marks the default tab selected at /p/<project>/ticket/<n>, where the router names none', () => {
     const html = row(3, null, 3)
     expect(html).toMatch(
-      /href="\/task\/ticket-lingtai-885\/attempt\/3"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/task\/ticket-lingtai-885\/attempt\/3"/,
+      /href="\/p\/lingtai\/ticket\/885\/attempt\/3"[^>]*aria-current="page"|aria-current="page"[^>]*href="\/p\/lingtai\/ticket\/885\/attempt\/3"/,
     )
     expect(html.match(/aria-current="page"/g)).toHaveLength(1)
   })

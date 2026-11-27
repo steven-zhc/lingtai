@@ -15,8 +15,6 @@ import {
   groupDays,
   kindColourOf,
   kindPopOf,
-  landedHref,
-  landedLink,
   landedQuery,
   parseCursor,
   parseSum,
@@ -24,6 +22,7 @@ import {
   totalsOf,
   type LandedData,
 } from '../src/lib/landed.ts'
+import { landedHref, landedLink } from '../src/lib/paths.ts'
 import { projectionChip } from '../src/lib/report.ts'
 
 const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
@@ -110,10 +109,20 @@ describe('/landed page', () => {
     }
   })
 
-  it('says cost unknown when nothing was priced, and omits the squares for a null diff', () => {
+  it('says took from the first claim to the outcome, and nothing when either is missing', () => {
+    const claim = new Date(2026, 10, 5, 13, 0).toISOString()
+    const out = html(data([row({ passTimes: [claim], outcomeAt: new Date(2026, 10, 5, 14, 7) })]))
+    expect(out).toContain('took 1h 7m')
+    const noClaim = html(data([row({ passTimes: [] })]))
+    expect(noClaim).not.toContain('took')
+    const noEnd = html(data([row({ passTimes: [claim], outcomeAt: null })]))
+    expect(noEnd).not.toContain('took')
+  })
+
+  it('says unpriced when nothing was priced, and omits the squares for a null diff', () => {
     const unknown = row({ cost: {}, unknownClaims: 1, diffFiles: null, diffInsertions: null, diffDeletions: null })
     const out = html(data([unknown]))
-    expect(out).toContain('cost unknown')
+    expect(out).toContain('unpriced')
     expect(out).not.toContain('$0.00')
     expect(out).not.toContain('ld-sq')
     expect(out).not.toContain(' file')
@@ -209,7 +218,9 @@ describe('/landed address and pieces', () => {
   })
 
   it('uses only a kind the recipe names, and a before that parses', () => {
-    expect(landedQuery({ kind: 'bug', project: 'p' }, env.kinds)).toEqual({ project: 'p', kind: 'bug', before: null })
+    expect(landedQuery({ kind: 'bug' }, env.kinds, 'p')).toEqual({ project: 'p', kind: 'bug', before: null })
+    // the global page is handed no project, so a stray ?project= filters nothing (#1501)
+    expect(landedQuery({ kind: 'bug', project: 'x' }, env.kinds)).toEqual({ project: null, kind: 'bug', before: null })
     expect(landedQuery({ kind: 'nope', before: 'x' }, env.kinds)).toEqual({ project: null, kind: null, before: null })
   })
 
@@ -235,7 +246,7 @@ describe('/landed address and pieces', () => {
   })
 
   it('costs in words and squares in proportion', () => {
-    expect(costText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('cost unknown')
+    expect(costText({ reportedCents: 0, estimatedCents: 0, unknown: 2 })).toBe('unpriced')
     expect(costText({ reportedCents: 120, estimatedCents: 0, unknown: 0 })).toBe('$1.20')
     expect(diffSquares(0, 0)).toEqual(['none', 'none', 'none', 'none', 'none'])
     expect(diffSquares(10, 0)).toEqual(['add', 'add', 'add', 'add', 'add'])
@@ -251,7 +262,7 @@ describe('the home page Landed heading and count', () => {
 
   it('the Landed count is a pill linking to /landed, carrying the project filter', () => {
     const html = renderToStaticMarkup(<LandedCount count={73} only="my repo" />)
-    expect(html).toContain('href="/landed?project=my%20repo"')
+    expect(html).toContain('href="/p/my%20repo/ticket/landed"')
     expect(html).toContain('class="btn sm"')
     expect(html).toContain('73')
     expect(html).toContain('all')
