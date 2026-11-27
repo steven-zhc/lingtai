@@ -196,3 +196,16 @@ list is not a performance success. New phases expose 61 spend reads in a
 project-wide spend query. The report preserves five serial probes per
 target/mode, browser observations and 121 test-window HTTP roots separately
 from the morning cohort.
+
+## November 26 observed click and refresh traffic
+
+The [November 26 report](021/observed-2026-11-26-clicks/report.md) preserves
+239 captured request roots from 16:30–18:36:30 CST, with three roots containing
+late-running work excluded from primary latency statistics. The homepage's
+7.846-second tail is mostly sequential GitHub dependency reads and PR fact
+reads within queue listing; local selection is 43 ms in that witness. A
+6.026-second PR-list request spends 4.758 seconds reading project-wide spend,
+and a 36-ticket detail issues 73 spend reads and 37 GitHub requests. The
+lingtai project's number record has since initialized to 8 and PR 7 now has a
+merge event; the earlier missing-history observation is historical for this
+project. No synthetic page probes or service changes were made in this pass.
