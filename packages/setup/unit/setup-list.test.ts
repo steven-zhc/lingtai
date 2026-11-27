@@ -142,9 +142,17 @@ describe('runSetupList', () => {
   })
 
   describe('a systemDefault that refuses', () => {
-    const refusing = q('a', { systemDefault: () => Effect.succeed({ refused: 'could not read the default' }) })
+    let reads = 0
+    const refusing = q('a', {
+      systemDefault: () => {
+        reads += 1
+        return Effect.succeed({ refused: 'could not read the default' })
+      },
+    })
     it('is not read where a flag answered', async () => {
+      reads = 0
       const { out } = await run([refusing], input({ flags: { a: 'given' } }))
+      expect(reads).toBe(0)
       expect(out.refused).toBeUndefined()
       expect(out.entries[0]).toMatchObject({ after: 'given', wrote: true })
     })
@@ -173,6 +181,24 @@ describe('runSetupList', () => {
     it('is the refusal under --defaults too', async () => {
       const { out } = await run([refusing], input({ defaults: true }))
       expect(out.refused).toBe('could not read the default')
+    })
+    it('is the refusal at a terminal under --defaults, with no asker called', async () => {
+      let asked = false
+      const { out } = await run(
+        [refusing],
+        input({
+          interactive: true,
+          defaults: true,
+          askers: {
+            a: () => {
+              asked = true
+              return Effect.succeed({ answer: 'typed' })
+            },
+          },
+        }),
+      )
+      expect(out.refused).toBe('could not read the default')
+      expect(asked).toBe(false)
     })
   })
 

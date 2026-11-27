@@ -142,6 +142,7 @@ export function askWriter(
     given: string | null
     offered: readonly RuntimeName[]
     current: RuntimeName | null
+    fallback?: string | undefined
     detected: string | null
     validate: Validate
     kept?: string | undefined
@@ -156,6 +157,7 @@ export function askWriter(
     prompt: `which agent writes the change (${choiceList})`,
     offer: at.current !== null && !offer.includes(at.current) ? [...offer, at.current] : offer,
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     detected: at.detected,
     validate: at.validate,
     kept: at.kept,
@@ -169,6 +171,7 @@ export function askReviewer(
     given: string | null
     offered: readonly RuntimeName[]
     current: string | null
+    fallback?: string | undefined
     detected: string | null
     validate: Validate
     kept?: string | undefined
@@ -187,6 +190,7 @@ export function askReviewer(
       'none',
     ],
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     detected: at.detected,
     validate: at.validate,
     kept: at.kept,

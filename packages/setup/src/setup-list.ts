@@ -49,9 +49,10 @@ export interface SetupQuestion<C> {
   /** Absent: nothing is in force (a confirmation or a switch has none). */
   inForce?: (ctx: C) => Effect.Effect<InForce, unknown>
   /**
-   * The default where nothing is in force; absent or null where the question has none (0121 §9). `{ refused }` is a
-   * default that could not be read: the runner returns it only where that default would have been the answer — no
-   * flag, nothing in force, and no terminal to ask on — and a terminal is asked with no default drawn.
+   * The default where nothing is in force; absent or null where the question has none (0121 §9). Not read where a
+   * flag answers. `{ refused }` is a default that could not be read: the runner returns it where that default would
+   * have been the answer — no flag, nothing in force, and either no terminal to ask on or `--defaults` — and
+   * otherwise (a terminal, no `--defaults`) the question is asked with no default drawn.
    */
   systemDefault?: (ctx: C, mode: DefaultsMode) => Effect.Effect<string | null | { refused: string }, unknown>
   /** The answer that is equal to what is in force, where that is not its value (a token that is set is `keep`). */
@@ -256,8 +257,11 @@ export function runSetupList<C extends object>(
 
       if (inForce !== null && 'fault' in inForce) input.log(inForce.fault)
 
+      // A flag answers on its own: the default is not read, so one that cannot be read does not hold it up.
       const read =
-        q.systemDefault === undefined ? null : yield* q.systemDefault(ctx, { defaults, interactive: input.interactive })
+        q.systemDefault === undefined || flag !== null
+          ? null
+          : yield* q.systemDefault(ctx, { defaults, interactive: input.interactive })
       const system = read !== null && typeof read === 'object' ? null : read
       const systemRefused = read !== null && typeof read === 'object' ? read.refused : null
       const inForceAnswer =

@@ -121,7 +121,13 @@ type Validate = (answer: string) => Effect.Effect<string | null, unknown>
  */
 export function askLandingChoice(
   world: QuestionWorld,
-  at: { given: string | null; current: string | null; validate?: Validate; kept?: string | undefined },
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate?: Validate
+    kept?: string | undefined
+  },
 ): Effect.Effect<Asked, unknown> {
   if (at.given !== null) {
     return questionEffect(world, {
@@ -142,6 +148,7 @@ export function askLandingChoice(
     prompt: 'when an attempt is ready',
     choices: [WAIT, LAND],
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     detected: null,
     ...(at.validate === undefined ? {} : { validate: at.validate }),
     kept: at.kept,
@@ -151,7 +158,13 @@ export function askLandingChoice(
 /** How many times an attempt sends the agent back after a build or review refuses it. */
 export function askRefusalFixes(
   world: QuestionWorld,
-  at: { given: string | null; current: string; validate: Validate; kept?: string | undefined },
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
 ): Effect.Effect<Asked, unknown> {
   return questionEffect(world, {
     name: 'refusal fixes',
@@ -161,6 +174,7 @@ export function askRefusalFixes(
       'how many times an attempt sends the agent back after a build or review refuses it — ' +
       '0 buys no fix in the same worktree (a failed build then goes straight to you)',
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     validate: at.validate,
     kept: at.kept,
   })
@@ -169,7 +183,13 @@ export function askRefusalFixes(
 /** How many times an attempt sends the agent back to resolve a merge conflict. */
 export function askConflictResolutions(
   world: QuestionWorld,
-  at: { given: string | null; current: string; validate: Validate; kept?: string | undefined },
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
 ): Effect.Effect<Asked, unknown> {
   return questionEffect(world, {
     name: 'conflict resolutions',
@@ -179,6 +199,7 @@ export function askConflictResolutions(
       'how many times an attempt sends the agent back to resolve a merge conflict — ' +
       '0 buys no conflict resolution (a merge conflict then goes straight to you)',
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     validate: at.validate,
     kept: at.kept,
   })
@@ -187,7 +208,13 @@ export function askConflictResolutions(
 /** What one agent run may take. */
 export function askWall(
   world: QuestionWorld,
-  at: { given: string | null; current: string; validate: Validate; kept?: string | undefined },
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
 ): Effect.Effect<Asked, unknown> {
   return questionEffect(world, {
     name: 'wall',
@@ -195,6 +222,7 @@ export function askWall(
     given: at.given,
     prompt: 'what one agent run may take, like 30m or 2h',
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     validate: at.validate,
     kept: at.kept,
   })
@@ -203,7 +231,13 @@ export function askWall(
 /** The dollar ceiling per agent run, or `none`; the default is drawn as dollars. */
 export function askBudget(
   world: QuestionWorld,
-  at: { given: string | null; current: string; validate: Validate; kept?: string | undefined },
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
 ): Effect.Effect<Asked, unknown> {
   return questionEffect(world, {
     name: 'the spend ceiling',
@@ -211,6 +245,7 @@ export function askBudget(
     given: at.given,
     prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
     validate: at.validate,
     kept: at.kept,

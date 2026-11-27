@@ -29,6 +29,7 @@ export function askSandboxMode(
   at: {
     given: string | null
     current: 'on' | 'off' | null
+    fallback?: string | undefined
     validate?: Validate
     kept?: string | undefined
   },
@@ -39,7 +40,7 @@ export function askSandboxMode(
     given: at.given,
     prompt: 'run agents and build commands in the sandbox?',
     choices: ['on', 'off'],
-    fallback: 'on',
+    fallback: at.fallback ?? 'on',
     ...(at.current === null ? {} : { current: at.current }),
     ...(at.validate === undefined ? {} : { validate: at.validate }),
     kept: at.kept,
@@ -53,6 +54,7 @@ export function askSandboxHosts(
     given: string | null
     /** `none`, or the comma-separated hosts the recipe already allows; null where it says nothing. */
     current: string | null
+    fallback?: string | undefined
     builtIns: readonly string[]
     validate: Validate
     kept?: string | undefined
@@ -63,7 +65,7 @@ export function askSandboxHosts(
     flag: '--sandbox-hosts <a.example,b.example>|none',
     given: at.given,
     prompt: `more hosts a sandboxed run may reach, comma-separated, or none (already allowed: ${at.builtIns.join(', ')})`,
-    fallback: 'none',
+    fallback: at.fallback ?? 'none',
     ...(at.current === null ? {} : { current: at.current }),
     kept: at.kept,
     validate: at.validate,

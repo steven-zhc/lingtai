@@ -123,6 +123,7 @@ export function askInstallCommand(
   at: {
     given: string | null
     current: string | null
+    fallback?: string | undefined
     detected: { run: string; because: string } | null
     validate: (answer: string) => Effect.Effect<string | null, unknown>
     kept?: string | undefined
@@ -136,7 +137,7 @@ export function askInstallCommand(
     current: at.current,
     detected: at.detected?.run ?? null,
     ...(at.current === null && at.detected ? { why: [`install: ${at.detected.run} — ${at.detected.because}`] } : {}),
-    fallback: '',
+    fallback: at.fallback ?? '',
     validate: at.validate,
     kept: at.kept,
   })
@@ -171,7 +172,7 @@ function askInstall(
 /** Whether to keep the list as it stands (`yes`), or write one's own (`no`). */
 export function askKeepBuildList(
   world: SetupWorld,
-  at: { given: string | null; why: readonly string[]; kept?: string | undefined },
+  at: { given: string | null; fallback?: string | undefined; why: readonly string[]; kept?: string | undefined },
 ): Effect.Effect<Answered, unknown> {
   return questionEffect(world, {
     name: 'the build steps',
@@ -179,7 +180,7 @@ export function askKeepBuildList(
     given: at.given,
     prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
     choices: ['yes', 'no'],
-    fallback: 'yes',
+    fallback: at.fallback ?? 'yes',
     why: at.why,
     kept: at.kept,
   })
@@ -216,7 +217,13 @@ export function askBuildCommands(
 /** Whether to try the build list once now, on `base`. */
 export function askTrial(
   world: SetupWorld,
-  at: { given: string | null; base: string; recipeExisted: boolean; kept?: string | undefined },
+  at: {
+    given: string | null
+    base: string
+    recipeExisted: boolean
+    fallback?: string | undefined
+    kept?: string | undefined
+  },
 ): Effect.Effect<Answered, unknown> {
   const ending = at.recipeExisted ? 'This list is not written yet.' : 'Nothing is written yet.'
   return questionEffect(world, {
@@ -225,7 +232,7 @@ export function askTrial(
     given: at.given,
     prompt: `Try them once now, on \`${at.base}\`, to see that they work? ${ending}`,
     choices: ['yes', 'no'],
-    fallback: 'yes',
+    fallback: at.fallback ?? 'yes',
     kept: at.kept,
   })
 }

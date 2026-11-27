@@ -84,7 +84,7 @@ function resolvedRecipe(project: string, draft: RecipeDraft, home?: string): Rec
 /** Where this project's tickets come from: `github` or `db`. */
 export function askTicketSource(
   world: QuestionWorld,
-  at: { given: string | null; current: string | null; kept?: string | undefined },
+  at: { given: string | null; current: string | null; fallback?: string | undefined; kept?: string | undefined },
 ): Effect.Effect<Answered, unknown> {
   return questionEffect(world, {
     name: 'the ticket source',
@@ -92,6 +92,7 @@ export function askTicketSource(
     given: at.given,
     prompt: "where this project's tickets come from — github (this repository's issues), or db (Lingtai's own table)",
     current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
     choices: ['github', 'db'],
     kept: at.kept,
   })
