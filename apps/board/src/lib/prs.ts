@@ -205,13 +205,14 @@ const normal = (kind: string): string => kind.toLowerCase().replace(/\s+/g, '-')
 export const readPrFixes = (
   project: string,
   pr: PrState,
-  options: { listing: boolean; history?: boolean },
+  options: { listing: boolean; history?: boolean; steps?: boolean },
   reads: PrFixReads = liveReads(requestStore()),
 ): Effect.Effect<PrFixRead> =>
   Effect.gen(function* () {
     // Every pr-fix row, ended ones too: `fixingOf` excludes them, but they are authoritative for which issues the
     // projection already knows (the listing must not re-add them) and they carry the claim time History needs.
-    const rows = (yield* reads.tasks(project)).filter((t) => normal(t.kind) === PR_FIX_LABEL)
+    const all = yield* reads.tasks(project).pipe(Effect.timeout(ISSUE_READ_BUDGET))
+    const rows = all.filter((t) => normal(t.kind) === PR_FIX_LABEL)
     const claimed = yield* Effect.forEach(
       rows,
       (t) =>
@@ -220,11 +221,18 @@ export const readPrFixes = (
           // An ended row's claim is read only for History; a failed read fails the whole read (said on the card), never drops the entry.
           const claim = ended
             ? options.history === true
-              ? yield* reads.claim(project, t.issue)
+              ? yield* reads.claim(project, t.issue).pipe(Effect.timeout(ISSUE_READ_BUDGET))
               : { cutFromPr: undefined, claimedAt: null }
-            : yield* reads.claim(project, t.issue)
+            : yield* reads.claim(project, t.issue).pipe(Effect.timeout(ISSUE_READ_BUDGET))
           const running = ['running', 'verifying', 'approved'].includes(t.state)
-          const step = running && t.runId !== null ? yield* reads.step(t.runId) : null
+          // A slow or failed run read is a ticket with no step, never a stalled page.
+          const step =
+            running && t.runId !== null && options.steps !== false
+              ? yield* reads.step(t.runId).pipe(
+                  Effect.timeout(ISSUE_READ_BUDGET),
+                  Effect.orElseSucceed(() => null),
+                )
+              : null
           // A row with no run yet is queued, whatever the row says.
           const state = running && t.runId === null ? 'queued' : t.state
           return {
@@ -243,7 +251,8 @@ export const readPrFixes = (
     const mine = fixingOf(pr, { kind: 'read', tickets: claimed })
     if (!options.listing || mine.tickets.length > 0) return { kind: 'read', tickets: claimed } as PrFixRead
     const open = yield* reads.listing(project).pipe(Effect.timeout(ISSUE_READ_BUDGET))
-    const seen = new Set(claimed.map((c) => c.issue))
+    // Every projection row, of any kind: a ticket the conductor has claimed is not unclaimed because its row says `bug`.
+    const seen = new Set(all.map((c) => Number(c.issue)))
     const listed = open
       .filter((i) => !seen.has(i.number) && i.labels.some((l) => normal(l.name) === PR_FIX_LABEL))
       .map((i): PrFixTicket => ({
@@ -274,7 +283,7 @@ export const waitingPrs = (
   Effect.gen(function* () {
     const pr = yield* openPr(project, store)
     if (pr === null || pr.status !== 'waiting') return 0
-    const read = yield* readPrFixes(project, pr, { listing: false }, reads)
+    const read = yield* readPrFixes(project, pr, { listing: false, steps: false }, reads)
     if (read.kind === 'failed') return yield* Effect.fail(new Error(read.error))
     return countsAsWaiting(pr, fixingOf(pr, read)) ? 1 : 0
   })

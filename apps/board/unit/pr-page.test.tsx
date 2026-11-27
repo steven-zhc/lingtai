@@ -1077,6 +1077,12 @@ describe('a pr-fix on the PR (#1506)', () => {
     expect(labels(v)).toContain('New pr-fix ticket')
     expect(v.fixing).toEqual([])
   })
+  it('says a failed read on a PR that is no longer waiting', () => {
+    const v = page([requested, started, draftOpened, green, ['PrClosed', { headSha: 'f0f0f0f0' }] as Spec], {
+      fixes: { kind: 'failed' as const, error: 'projection down' },
+    })
+    expect(v.doNote).toContain('could not tell whether a pr-fix is open: projection down')
+  })
   it('adds no History line for an unclaimed ticket', () => {
     const v = page(ciWait, { fixes: fix({ source: 'listing', cutFromPr: undefined, claimedAt: null }) })
     expect(v.history.some((h) => h.text.includes('taken'))).toBe(false)

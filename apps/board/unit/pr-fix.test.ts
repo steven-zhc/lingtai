@@ -227,6 +227,21 @@ describe('readPrFixes and the PRs count', () => {
     expect(r.kind === 'read' && fixingOf(pr(), r).tickets).toEqual([])
     expect(r.kind === 'read' && r.tickets.map((t) => t.source)).toEqual(['claim', 'claim'])
   })
+  it('does not re-add from the listing a claimed ticket of another kind that now wears the label', async () => {
+    const tasks = () => Effect.succeed([{ issue: '1505', title: 'x', kind: 'bug', state: 'running', runId: 'r1' }])
+    const listing = () => Effect.succeed([{ number: 1505, title: 'x', labels: [{ name: 'lingtai:pr-fix' }] }])
+    const r = await Effect.runPromise(readPrFixes('p', pr(), { listing: true }, reads({ tasks, listing })))
+    expect(r.kind === 'read' && fixingOf(pr(), r).tickets).toEqual([])
+  })
+  it('turns a stalled projection read into a failed read, and never reads steps for the badge', async () => {
+    const stalled = reads({ tasks: () => Effect.never })
+    const r = await Effect.runPromise(readPrFixes('p', pr(), { listing: false }, stalled))
+    expect(r.kind).toBe('failed')
+    let steps = 0
+    const counting = reads({ step: () => (steps++, Effect.succeed('build')) })
+    await Effect.runPromise(readPrFixes('p', pr(), { listing: false, steps: false }, counting))
+    expect(steps).toBe(0)
+  })
   it('keeps the claim time of an ended ticket for History', async () => {
     const tasks = () =>
       Effect.succeed([{ issue: '1505', title: 'x', kind: 'lingtai:pr-fix', state: 'landed', runId: null }])

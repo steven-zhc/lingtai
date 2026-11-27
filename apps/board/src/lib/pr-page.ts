@@ -770,7 +770,12 @@ export function prPage(input: PrPageInput): PrPageView {
   let doNote: string | null = null
   const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name, pr })
   // Only a PR that is waiting or in review can be fixed now; the read may also have been made for History alone.
-  const fixing = pr.status === 'waiting' || pr.status === 'in-review' ? fixingOf(pr, input.fixes ?? null) : NOT_FIXING
+  const fixing =
+    pr.status === 'waiting' || pr.status === 'in-review'
+      ? fixingOf(pr, input.fixes ?? null)
+      : input.fixes?.kind === 'failed'
+        ? { ...NOT_FIXING, unknown: input.fixes.error }
+        : NOT_FIXING
   const addFix = () => {
     if (fix === null || fixing.tickets.length > 0) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
