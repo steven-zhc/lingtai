@@ -696,18 +696,20 @@ describe('askAgents', () => {
       if ('refused' in result) throw new Error(result.refused)
       await Effect.runPromise(draft.set([...result.changes, ...result.modelChanges]))
       // The two agent keys moved and no other byte of the file did.
+      // The recipe had no findings judge, so the derived one is added naming the new writer (#1523).
       expect(draft.text()).toBe(
         CODEX.replace('runtime:\n  agent: codex', 'runtime:\n  agent: claude-code').replace(
           '      agent: codex',
           '      agent: claude-code',
-        ),
+        ) +
+          '  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n',
       )
       expect(draft.get(['runtime', 'limits', 'run', 'turns'])).toBe(77)
       expect(draft.get(['runtime', 'agent'])).toBe('claude-code')
     })
 
     it('a runtime.agent that is installed but signed out is still the default, and a rerun on it changes nothing', async () => {
-      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n  review: []\n`
+      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: codex\n      when: findings\n`
       const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
       const { world, asked } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -726,7 +728,7 @@ describe('askAgents', () => {
     })
 
     it('a hand-edited runtime.agent beside an unchanged steps.implement writer is not overwritten by taking every default', async () => {
-      const HAND_EDITED = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n`
+      const HAND_EDITED = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n`
       const files = mapFiles({ [PATH]: HAND_EDITED })
       const { world } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -744,7 +746,7 @@ describe('askAgents', () => {
     })
 
     it('a signed-out writer taken as the default does not fail on the judge init generated for it', async () => {
-      const JUDGED = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: findings\n      judge: claude-code\n      when: red\n`
+      const JUDGED = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: findings\n      judge: claude-code\n      when: findings\n`
       const files = mapFiles({ [PATH]: JUDGED })
       const { world } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -883,7 +885,7 @@ describe('askAgents', () => {
   })
 
   describe('a re-run keeps the prompt', () => {
-    const RERUN_FIXTURE = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: |\n        Read the ticket.\n        Write the change.\n  review: []\n`
+    const RERUN_FIXTURE = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: |\n        Read the ticket.\n        Write the change.\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n`
 
     it('every default taken writes nothing', async () => {
       const files = mapFiles({ [PATH]: RERUN_FIXTURE })

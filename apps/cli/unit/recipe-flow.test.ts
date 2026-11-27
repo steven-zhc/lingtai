@@ -287,8 +287,8 @@ steps:
     const resolved = resolveSource(text, path, path).recipe
     expect(resolved.source.kinds).toEqual(['bug', 'feature'])
 
-    // A recipe already on disk gets no findings judge added (#1490).
-    expect(parseDocument(text).getIn(['steps', 'proposed'])).toBeUndefined()
+    // A recipe already on disk with no findings judge gains the one that follows its writer (#1523).
+    expect(JSON.stringify(parseDocument(text).getIn(['steps', 'proposed']))).toContain('"when":"findings"')
 
     // No `SAID` sentence was inserted — this file already existed.
     for (const dotted of Object.keys(SAID)) {

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest'
 import {
   budgetChange,
   findingsJudgeChanges,
+  followWriterJudgeChanges,
   kindsChanges,
   landingChanges,
   conflictResolutionsChange,
@@ -137,5 +138,37 @@ describe('findingsJudgeChanges (#1448)', () => {
     expect(findingsJudgeChanges(null, [])).toEqual([])
     expect(findingsJudgeChanges('copilot', [])).toEqual([])
     expect(findingsJudgeChanges('codex', [judge])).toEqual([])
+  })
+})
+
+describe('followWriterJudgeChanges (#1523)', () => {
+  const judge = (who: string) => ({ name: 'send findings back to the writer', judge: who, when: 'findings' })
+
+  it('appends a judge naming the new writer where the recipe has none', () => {
+    expect(followWriterJudgeChanges('codex', 'claude-code', [])).toEqual([
+      { path: ['steps', 'proposed'], value: [judge('claude-code')] },
+    ])
+  })
+
+  it('rewrites a judge that names the old writer', () => {
+    expect(followWriterJudgeChanges('codex', 'claude-code', [judge('codex')])).toEqual([
+      { path: ['steps', 'proposed', 0, 'judge'], value: 'claude-code' },
+    ])
+  })
+
+  it('removes the judge when the new writer runs only at implement', () => {
+    const hold = { name: 'hold', human: 'x' }
+    expect(followWriterJudgeChanges('codex', 'copilot', [hold, judge('codex')])).toEqual([
+      { path: ['steps', 'proposed'], value: [hold] },
+    ])
+  })
+
+  it('writes nothing for an unchanged writer, nor for a judge a person pointed at another runtime', () => {
+    expect(followWriterJudgeChanges('codex', 'codex', [judge('codex')])).toEqual([])
+    expect(followWriterJudgeChanges('codex', 'claude-code', [judge('claude-code')])).toEqual([])
+  })
+
+  it('writes no judge for a writer that cannot judge', () => {
+    expect(followWriterJudgeChanges('codex', 'copilot', [])).toEqual([])
   })
 })
