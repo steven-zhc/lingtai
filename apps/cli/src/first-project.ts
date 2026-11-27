@@ -97,7 +97,6 @@ import { Cause, Effect } from 'effect'
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect } from './board.ts'
-import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { lift } from './exit.ts'
 import {
   APP_WAIT_MS,
@@ -109,6 +108,7 @@ import {
 } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
+import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { onCancelExit } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'

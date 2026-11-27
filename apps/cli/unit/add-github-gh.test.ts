@@ -1,4 +1,3 @@
-import { parseDocument } from 'yaml'
 /**
  * `askBeforeGithubAdd` on a `gh` machine (#708): the saved login's access is
  * checked where the App check is on an App machine, before a recipe answer is
@@ -11,6 +10,7 @@ import type { SetupReader } from '@lingtai/setup'
 import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parseDocument } from 'yaml'
 
 import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 import { githubEntryFor } from '../src/machine-askers.ts'
@@ -230,5 +230,20 @@ describe('askBeforeGithubAdd asks how this machine reaches GitHub before it read
     expect(said).toContain('connect ETIMEDOUT')
     expect(said).toContain('--main')
     expect(said).toContain('Nothing was written')
+  })
+})
+
+describe('add owner/repo on a machine whose github.auth is none (#1522)', () => {
+  it('asks the GitHub entry and refuses none as its answer, by name, writing nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const written: string[] = []
+    const { deps, calls } = depsFor({
+      auth: () => null,
+      githubAuth: authDep('none', written, []),
+    })
+    expect(await askBeforeGithubAdd(SLUG, { 'github-auth': 'none' }, deps)).toBe(1)
+    expect(written).toEqual([])
+    expect(calls.writes).toBe(0)
+    expect(String(error.mock.calls[0]?.[0])).toContain('none is not one')
   })
 })

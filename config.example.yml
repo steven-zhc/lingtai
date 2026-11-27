@@ -101,6 +101,9 @@ limits:
   # `runtime.concurrency` above 1 needs this ceiling: without one it is ignored
   # and the installation runs one pass in all. LINGTAI_LIMITS_DAY_USD overrides
   # (and counts as setting it).
+  # `lingtai init` asks this on every run, defaulting to what is set here, else
+  # 100 (`--day-usd <dollars>`, or `--day-usd none` to take the line out); a
+  # figure that is not positive is refused, and 0 is never written.
   # day_usd: 50
 
 # --- optional Codex model-only calls ---------------------------------------

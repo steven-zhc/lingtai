@@ -276,8 +276,10 @@ export const githubEntryFor = (
   world: MachineWorld,
   flags: Readonly<Record<string, string>>,
   kept: string,
+  /** `add`'s: a GitHub project needs a way to reach GitHub, so `none` is refused. */
+  required = true,
 ): Effect.Effect<GithubAuthAnswer, unknown> => {
-  const setup = machineSetup(world, { githubRequired: true, command: 'lingtai add' })
+  const setup = machineSetup(world, { githubRequired: required, command: 'lingtai add' })
   return runSetupList(
     setup.list.filter((q) => q.id === 'github'),
     setup.input({ flags, defaults: flags['defaults'] !== undefined }),

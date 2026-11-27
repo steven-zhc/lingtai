@@ -145,7 +145,6 @@ import { type AddWorld, githubProjectEffect } from './add.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
 import { liveSetupTokenRun } from './claude-token.ts'
-import { askTokenFor, machineSetup, registeredRecipes } from './machine-askers.ts'
 import { lift, recovering } from './exit.ts'
 import {
   chooseFirstProjectEffect,
@@ -162,6 +161,7 @@ import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText } from './github-auth.ts'
 import { checkoutIssueForms, NO_FORMS, type IssueForms } from './issue-forms.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
+import { askTokenFor, machineSetup, registeredRecipes } from './machine-askers.ts'
 import { addSteps, githubInitSteps, type Here, hereSteps, type IssueTakes, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
@@ -465,12 +465,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     // A machine set up before the store was a written value (#186) has a `database.url` and no `store`: that is
     // the choice nobody recorded. It is verified and recorded once, ahead of the list, and the store is then in
     // force like any other — asked about, with the URL as its default.
-    if (
-      'refused' in preset &&
-      preset.because === 'nothing chosen' &&
-      named !== 'sqlite' &&
-      databaseFlag === null
-    ) {
+    if ('refused' in preset && preset.because === 'nothing chosen' && named !== 'sqlite' && databaseFlag === null) {
       const older = config.getIn(['database', 'url'])
       if (typeof older === 'string' && older !== '') {
         const check = yield* spunEffect(world, 'connecting to the database', world.database(older))
@@ -526,7 +521,10 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     } else {
       const schema = machine.schemaOf(storeNow.url)
       heldFact(held, 'Store', [
-        ['store', paint.pass(`${describeStore(storeNow)}${schema === undefined ? '' : ` · ${describeSchema(schema)}`}`)],
+        [
+          'store',
+          paint.pass(`${describeStore(storeNow)}${schema === undefined ? '' : ` · ${describeSchema(schema)}`}`),
+        ],
       ])
     }
     // A value the environment supplies is in force: not asked, not written, and said so.
@@ -846,9 +844,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
 
         if (chosen.project === 'local') {
           if (decidedAuth.pending) {
-            world.log(
-              'github.auth stays unwritten until a GitHub App exists — run lingtai init --project github',
-            )
+            world.log('github.auth stays unwritten until a GitHub App exists — run lingtai init --project github')
           }
           const recipeFile = recipePath(chosen.name, home)
           // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.

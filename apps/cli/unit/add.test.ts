@@ -1,4 +1,3 @@
-import { parseDocument } from 'yaml'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { recipePath, ProjectFiles } from '@lingtai/project'
 import { type RecipeFiles } from '@lingtai/recipe'
@@ -6,6 +5,7 @@ import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
 
 import { type AddWorld, addFlowEffect } from '../src/add.ts'
 

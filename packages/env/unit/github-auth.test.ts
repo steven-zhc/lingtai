@@ -90,3 +90,15 @@ describe('hasGitHubAuth', () => {
     expect(githubClientAuth({ ...home, ...app })).toMatchObject({ appId: '1' })
   })
 })
+
+describe('electGithubAuth reads none (#1522)', () => {
+  it('none is a written choice of no GitHub: not a refusal, and it beats a configured App', () => {
+    expect(electGithubAuth(env({}), machine({ auth: 'none' }))).toEqual({ kind: null, none: `${FILE} github.auth` })
+    expect(electGithubAuth(env({}), machine({ ...APP, auth: 'none' }))).toMatchObject({ kind: null })
+    expect(electGithubAuth(env({ LINGTAI_GITHUB_AUTH: 'none' }), machine({}))).toMatchObject({
+      kind: null,
+      none: 'LINGTAI_GITHUB_AUTH',
+    })
+    expect(electGithubAuth(env({}), machine({ auth: 'nope' }))).toMatchObject({ refused: expect.stringContaining('none') })
+  })
+})

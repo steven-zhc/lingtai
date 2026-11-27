@@ -159,3 +159,109 @@ describe('runSetupList', () => {
     expect(state.writes).toBe(0)
   })
 })
+
+describe('the token entry', () => {
+  const sandboxed = { runtime: { agent: 'claude-code' }, steps: {}, sandbox: { enabled: true } } as never
+  const tokenList = (ports: MachinePorts) =>
+    machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
+
+  it('is not asked where no recipe names claude-code with the sandbox on, and is asked once the draft does', async () => {
+    const { ports } = world('')
+    const list = tokenList(ports)
+    const none = await Effect.runPromise(
+      runSetupList(list, input({ askers: { 'claude-token': () => Effect.die('asked') } })),
+    )
+    expect(none.entries).toEqual([])
+    expect(none.deferred).toHaveLength(1)
+
+    const other = { runtime: { agent: 'codex' }, steps: {}, sandbox: { enabled: true } } as never
+    expect(await Effect.runPromise(list[0]!.needed!({ draft: other }))).toBe(false)
+
+    const seen: (string | null)[] = []
+    const asked = await Effect.runPromise(
+      runSetupList(
+        none.deferred,
+        input({
+          askers: {
+            'claude-token': (d) => {
+              seen.push(d.default)
+              return Effect.succeed({ answer: d.default! })
+            },
+          },
+        }),
+        { draft: sandboxed },
+      ),
+    )
+    expect(seen).toEqual(['skip'])
+    expect(asked.deferred).toEqual([])
+  })
+
+  it('a token that is set defaults to keep, which writes nothing', async () => {
+    const { state, ports } = world('claude:\n  oauth_token: sk-ant-oat01-x\n', {
+      tokenState: () => ({ environment: false, file: true, usable: true }),
+    })
+    const seen: (string | null)[] = []
+    const out = await Effect.runPromise(
+      runSetupList(
+        tokenList(ports),
+        input({
+          askers: {
+            'claude-token': (d) => {
+              seen.push(d.default)
+              return Effect.succeed({ answer: d.default! })
+            },
+          },
+        }),
+        { draft: sandboxed },
+      ),
+    )
+    expect(seen).toEqual(['keep'])
+    expect(out.entries[0]).toMatchObject({ wrote: false, after: 'keep' })
+    expect(state.writes).toBe(0)
+  })
+
+  it('--claude-token keep with no token is refused by name; the token itself is never a flag', async () => {
+    const { ports } = world('')
+    const kept = await Effect.runPromise(
+      runSetupList(tokenList(ports), input({ flags: { 'claude-token': 'keep' } }), { draft: sandboxed }),
+    )
+    expect(kept.refused).toContain('--claude-token keep')
+    const secret = await Effect.runPromise(
+      runSetupList(tokenList(ports), input({ flags: { 'claude-token': 'sk-ant-oat01-x' } }), { draft: sandboxed }),
+    )
+    expect(secret.refused).toContain('never a flag')
+  })
+})
+
+describe('the store entry', () => {
+  it('an exported Postgres URL is in force: not asked, not written, and a different flag is refused', async () => {
+    const { state, ports } = world('', {
+      store: () => ({ store: 'postgres', url: 'postgres://u:p@h/db', environment: true }),
+    })
+    const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+    const out = await Effect.runPromise(runSetupList(list, input({ askers: { store: () => Effect.die('asked') } })))
+    expect(out.entries[0]).toMatchObject({ asked: false, wrote: false })
+    const refused = await Effect.runPromise(
+      runSetupList(list, input({ flags: { 'database-url': 'postgres://u:p@other/db' } })),
+    )
+    expect(refused.refused).toContain('environment')
+    expect(state.writes).toBe(0)
+  })
+
+  it('a first run without a terminal writes sqlite; a Postgres URL that does not answer is refused, and nothing is written', async () => {
+    const { state, ports } = world('')
+    const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+    await Effect.runPromise(runSetupList(list, input({ interactive: false })))
+    expect(state.text).toContain('store: sqlite')
+    const down = world('', { database: () => Effect.succeed({ ok: false, why: 'connection refused' }) })
+    const refused = await Effect.runPromise(
+      runSetupList(
+        machineQuestions(down.ports, { githubRequired: false }).filter((q) => q.id === 'store'),
+        input({ flags: { 'database-url': 'postgres://me:secret@h/db' } }),
+      ),
+    )
+    expect(refused.refused).toContain('connection refused')
+    expect(refused.refused).not.toContain('secret')
+    expect(down.state.writes).toBe(0)
+  })
+})
