@@ -959,6 +959,15 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
         },
         runtimes: () => Effect.succeed([signedIn('claude-code')]),
         history: () => Effect.succeed([]),
+        // No network: every branch the list asks about exists, and no compare has a commit.
+        client: () =>
+          Effect.succeed({
+            branchExists: async () => true,
+            request: async () => ({ commits: [] }),
+            token: async () => 'token',
+            refSha: async () => 'sha',
+            createBranch: async () => {},
+          } as never),
       },
       labels: () =>
         Effect.succeed({

@@ -518,7 +518,12 @@ export function chooseFirstProjectEffect(
 
     return yield* kind === 'local'
       ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
-      : runGithubBranch(world, flags, flags['github'] ?? null, appCheck)
+      : runGithubBranch(
+          world,
+          world.asksProjectQuestionsAfterThePick === true ? withoutProjectFlags(flags) : flags,
+          flags['github'] ?? null,
+          appCheck,
+        )
   })
 }
 

@@ -219,8 +219,8 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
     }
   }
   const result = yield* chooseFirstProjectEffect(
-    world.project,
-    holdsBack ? withoutProjectFlags(flags) : flags,
+    holdsBack ? { ...world.project, asksProjectQuestionsAfterThePick: true } : world.project,
+    flags,
     buildFlags,
   )
   if ('refused' in result) {
