@@ -7,7 +7,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
 
-import { type AddWorld, addFlowEffect } from '../src/add.ts'
+import { type AddWorld, addFlowEffect, githubProjectEffect } from '../src/add.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 type AddTestWorld = AddWorld & { project: FirstProjectTestWorld }
@@ -754,6 +754,82 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(code).toBe(0)
     expect(asked).toEqual([])
     expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
+  /** `githubProjectEffect` itself, for what `addFlow` does not return: the entries the project list walked. */
+  const runProject = (h: { world: AddTestWorld }, argv: readonly string[], command: 'add' | 'init') =>
+    Effect.runPromise(
+      githubProjectEffect('acme/widgets', { ...flagsFromArgv(argv).flags, github: 'acme/widgets' }, [], h.world, {
+        command,
+        homeIsNew: false,
+      }).pipe(Effect.provideService(ProjectFiles, h.world.project.files)),
+    )
+
+  it('add owner/repo walks the project list, and the recipe written is what it answered (#1525)', async () => {
+    const h = githubHarness()
+    const done = await runProject(h, h.argv.slice(1), 'add')
+    expect(done.exit).toBe(0)
+    expect(h.errors).toEqual([])
+    const walked = (done.entries ?? []).map((e) => [e.id, e.asked])
+    expect(walked.map(([id]) => id)).toContain('kinds')
+    expect(walked.map(([id]) => id)).toContain('writer')
+    const recipe = await h.world.project.files.read(recipePath('widgets'))
+    expect(recipe).toMatch(/main:\s*main/)
+    expect(recipe).toContain('claude-code')
+    // The seeds a new recipe starts from are in it.
+    expect(recipe).toContain('close the ticket')
+  })
+
+  it('init --github owner/repo walks the same entries as add does (#1525)', async () => {
+    const added = githubHarness()
+    const viaAdd = await runProject(added, added.argv.slice(1), 'add')
+    const inited = githubHarness()
+    const viaInit = await runProject(inited, inited.argv.slice(1), 'init')
+    expect(viaInit.exit).toBe(0)
+    expect(viaInit.entries!.map((e) => [e.id, e.asked])).toEqual(viaAdd.entries!.map((e) => [e.id, e.asked]))
+  })
+
+  it('add owner/repo --agent codex --kinds bug is not refused, and the recipe names both (#1525)', async () => {
+    const h = githubHarness()
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      runtimes: () =>
+        fx(async () => [
+          { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+          { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
+        ]),
+    }
+    expect(
+      await addFlow(
+        { ...flagsFromArgv([...h.argv, '--agent', 'codex', '--kinds', 'bug']), positional: 'acme/widgets' },
+        h.world,
+      ),
+    ).toBe(0)
+    expect(h.errors).toEqual([])
+    const recipe = await h.world.project.files.read(recipePath('widgets'))
+    expect(recipe).toContain('codex')
+    expect(recipe).toMatch(/bug/)
+  })
+
+  it('an interrupt at the kinds question writes no recipe, makes no branch and registers nothing, and keeps github.auth (#1525)', async () => {
+    const h = unsetAuthHarness('gh')
+    const ask = h.world.githubDeps!.ask
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      ask: async (prompt, shape) => {
+        // `use every default?` defaults to yes, which would answer the kinds without asking.
+        if (prompt.startsWith('use every default?')) return 'no'
+        return prompt.startsWith('which labels are work') ? null : ask(prompt, shape)
+      },
+    }
+    const argv = h.argv.filter((a) => a !== '--install' && a !== 'none' && a !== '--build')
+    const code = await addFlow({ ...flagsFromArgv(argv.slice(1)), positional: 'acme/widgets' }, h.world)
+    expect(code).not.toBe(0)
+    expect(await h.world.project.files.read(recipePath('widgets'))).toBeNull()
+    const log = await h.world.project.store!.readAll(0n, 1000)
+    expect(log.filter((e) => e.type === 'ProjectConfigured')).toEqual([])
+    // The machine entry's answer is the machine's, written before the list (ADR 0125 §9), and stays.
+    expect(h.authNow()).toBe('gh')
   })
 
   it('prints a warning add reported before the card', async () => {
