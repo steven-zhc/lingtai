@@ -96,7 +96,18 @@ export const checksAsk = (
 
 /** `view`, with the branch still to be made read as the one it is cut from: it is not on GitHub yet. */
 const viewWithMake = (view: ProjectView, make: { name: string; from: string } | null): ProjectView =>
-  make === null ? view : { ...view, get: (path) => (path.join('.') === 'branch.personal' ? make.from : view.get(path)) }
+  make === null
+    ? view
+    : {
+        ...view,
+        // The branch to be made is `branch.personal` in team mode and `branch.main` otherwise: either reads as its source.
+        get: (path) => {
+          const key = path.join('.')
+          return (key === 'branch.personal' || key === 'branch.main') && view.get(path) === make.name
+            ? make.from
+            : view.get(path)
+        },
+      }
 
 /** One asker per id, over `world`. */
 export function projectAskers(world: QuestionWorld): ProjectAskers {
@@ -319,7 +330,7 @@ export function trialPortOver(
         again: {
           install: (previous) =>
             askInstallCommand(world, {
-              given: null,
+              given: pt.given.install,
               current: previous ?? 'none',
               detected: null,
               validate: (answer) => Effect.succeed(installRefusal(answer)),
@@ -327,6 +338,15 @@ export function trialPortOver(
             }).pipe(Effect.map((a: Answered) => ('refused' in a ? a : { run: a.answer === 'none' ? null : a.answer }))),
           build: (previous: NamedRun[]) =>
             Effect.gen(function* () {
+              // `--build` already answered the list: an edit of the install does not ask it again (as `askBuild`).
+              if (pt.given.build !== null) {
+                const build =
+                  pt.given.build[0] === 'none'
+                    ? []
+                    : namedFromTyped(pt.given.build, Array.isArray(original) ? original : [])
+                if (build.length === 0) world.log(NO_CHECKS_LINE)
+                return { build }
+              }
               const asked = yield* checksAsk(world, { list: previous.map((b) => b.run), why: [], kept: pt.kept })
               if ('refused' in asked) return asked
               if ('keep' in asked) return { build: previous.map(({ name, run }) => ({ name, run })) }

@@ -343,3 +343,64 @@ describe('the trial answered edit', () => {
     expect(after(drawn).slice(0, after(ticks(world.drawn)).length)).toEqual(after(ticks(world.drawn)))
   })
 })
+
+describe('the trial port, called directly', () => {
+  const view = (values: Record<string, unknown>) => ({
+    get: (path: readonly string[]) => values[path.join('.')] ?? null,
+    resolved: () => null,
+  })
+  const failedThenPassed = () =>
+    fakeTrial([
+      {
+        results: [
+          { command: 'pnpm install', outcome: 'failed', evidence: 'red' },
+          { command: 'pnpm test', outcome: 'skipped' as never, evidence: '' },
+        ],
+        nothingDeclared: false,
+      },
+    ])
+
+  it('a --build answer is not asked again when the install is edited', async () => {
+    const world = terminal([
+      { match: /keep the list as it is, edit it/, answers: ['edit'] },
+      { match: /install/, answers: ['pnpm i --frozen-lockfile'] },
+      { match: /keep this list/, answers: ['no'] },
+    ])
+    const port = trialPortOver(world, { project: PROJECT, home: HOME }, () => failedThenPassed())
+    const out = await Effect.runPromise(
+      port({
+        view: view({}),
+        install: 'pnpm install',
+        checks: [{ name: 'test', run: 'pnpm test' }],
+        given: { install: null, build: ['pnpm test'], check: null },
+        make: null,
+        recipeExisted: false,
+        kept: 'Nothing was written',
+      } as never),
+    )
+    expect('refused' in out).toBe(false)
+    expect(world.drawn.some((d) => /keep this list/.test(d.prompt))).toBe(false)
+    if (!('refused' in out)) expect(out.checks.map((c) => c.run)).toEqual(['pnpm test'])
+  })
+
+  it('a solo local branch still to be made is the base the trial cuts from', async () => {
+    let base: string | null = null
+    const world = terminal([])
+    const port = trialPortOver(world, { project: PROJECT, home: HOME }, (draft, b) => {
+      base = (draft.get(['branch', 'main']) as string | null) ?? b
+      return fakeTrial()
+    })
+    await Effect.runPromise(
+      port({
+        view: view({ 'branch.main': 'new-base' }),
+        install: null,
+        checks: [{ name: 'test', run: 'pnpm test' }],
+        given: { install: null, build: null, check: 'yes' },
+        make: { name: 'new-base', from: 'old-base' },
+        recipeExisted: true,
+        kept: 'Nothing was written',
+      } as never),
+    )
+    expect(base).toBe('old-base')
+  })
+})
