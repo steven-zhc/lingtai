@@ -48,8 +48,12 @@ export interface SetupQuestion<C> {
   normalize?: (answer: string) => string
   /** Absent: nothing is in force (a confirmation or a switch has none). */
   inForce?: (ctx: C) => Effect.Effect<InForce, unknown>
-  /** The default where nothing is in force; absent or null where the question has none (0121 §9). */
-  systemDefault?: (ctx: C, mode: DefaultsMode) => Effect.Effect<string | null, unknown>
+  /**
+   * The default where nothing is in force; absent or null where the question has none (0121 §9). `{ refused }` is a
+   * default that could not be read: the runner returns it only where that default would have been the answer — no
+   * flag, nothing in force, and no terminal to ask on — and a terminal is asked with no default drawn.
+   */
+  systemDefault?: (ctx: C, mode: DefaultsMode) => Effect.Effect<string | null | { refused: string }, unknown>
   /** The answer that is equal to what is in force, where that is not its value (a token that is set is `keep`). */
   answerOf?: (inForce: NonNullable<InForce>) => string | null
   /** Whether a flag answer is the one an exported value already is, where that is not its text. */
@@ -66,8 +70,12 @@ export interface SetupQuestion<C> {
   fixed?: (ctx: C, flag: string | null) => { answer: string } | { refused: string } | null
   /** An entry with no question: the answer is derived from `ctx`. Pure. */
   derive?: (ctx: C) => string
-  /** A confirmation: `--defaults` answers yes, no terminal is refused, and `no` is refused with `declined`. */
-  confirm?: { declined: string }
+  /**
+   * A confirmation: the `--defaults` flag answers yes, no terminal is refused, and `no` is refused with `declined` —
+   * a function where the sentence names what the walk has answered so far. Defaults a yes to the switch turned on
+   * do not answer it: a confirmation after the switch is still asked.
+   */
+  confirm?: { declined: string | ((ctx: C) => string) }
   /** The *use every default?* entry: a yes makes every later entry behave as under `--defaults`. */
   defaultsSwitch?: true
   write: (answer: string, inForce: InForce, ctx: C) => Effect.Effect<WriteResult | { refused: string }, unknown>
@@ -248,8 +256,10 @@ export function runSetupList<C extends object>(
 
       if (inForce !== null && 'fault' in inForce) input.log(inForce.fault)
 
-      const system =
+      const read =
         q.systemDefault === undefined ? null : yield* q.systemDefault(ctx, { defaults, interactive: input.interactive })
+      const system = read !== null && typeof read === 'object' ? null : read
+      const systemRefused = read !== null && typeof read === 'object' ? read.refused : null
       const inForceAnswer =
         inForce === null
           ? null
@@ -266,8 +276,8 @@ export function runSetupList<C extends object>(
         answer = normalized(q, flag)
         const why = yield* validateAnswer(answer)
         if (why !== null) return refuse(why)
-      } else if (q.confirm !== undefined && (defaults || !input.interactive)) {
-        if (!defaults) return refuse(`${q.name} needs an answer: pass --defaults. ${keptSaid.kept}`)
+      } else if (q.confirm !== undefined && (input.defaults || !input.interactive)) {
+        if (!input.defaults) return refuse(`${q.name} needs an answer: pass --defaults. ${keptSaid.kept}`)
         answer = 'yes'
       } else if (q.defaultsSwitch === true && defaults) {
         // The defaults are already on, so the switch is answered yes without a default of its own.
@@ -284,8 +294,10 @@ export function runSetupList<C extends object>(
           applies: true,
         })
         continue
-      } else if (defaults || !input.interactive) {
+      } else if ((defaults && q.confirm === undefined) || !input.interactive) {
+        // A confirmation is never answered from a default: past the switch it is asked, and here it has no terminal.
         if (fallback === null) {
+          if (systemRefused !== null) return refuse(systemRefused)
           return refuse(`${q.name} needs an answer: pass ${q.flag}. ${keptSaid.kept}`)
         }
         answer = fallback
@@ -314,7 +326,8 @@ export function runSetupList<C extends object>(
         answer = normalized(q, got.answer)
         asked = true
       }
-      if (q.confirm !== undefined && answer !== 'yes') return refuse(q.confirm.declined)
+      if (q.confirm !== undefined && answer !== 'yes')
+        return refuse(typeof q.confirm.declined === 'string' ? q.confirm.declined : q.confirm.declined(ctx))
 
       const done = yield* q.write(answer, inForce, ctx)
       if ('refused' in done) return refuse(done.refused)

@@ -107,6 +107,73 @@ describe('runSetupList', () => {
       const { out } = await run([c], input({ interactive: true, askers: { c: answering('yes') } }))
       expect(out.entries[0]).toMatchObject({ after: 'yes', asked: true })
     })
+    it('is asked after a switch answered yes, since only the flag answers it', async () => {
+      const sw = q('sw', { defaultsSwitch: true })
+      const { out } = await run(
+        [sw, c],
+        input({ interactive: true, askers: { sw: answering('yes'), c: answering('no') } }),
+      )
+      expect(out.refused).toBe('you declined')
+      expect(out.entries).toHaveLength(1)
+      expect(out.entries[0]).toMatchObject({ id: 'sw', after: 'yes' })
+    })
+    it('is asked after the switch, and written on yes', async () => {
+      const sw = q('sw', { defaultsSwitch: true })
+      const { out } = await run(
+        [sw, c],
+        input({ interactive: true, askers: { sw: answering('yes'), c: answering('yes') } }),
+      )
+      expect(out.entries[1]).toMatchObject({ id: 'c', after: 'yes', asked: true })
+    })
+    it('is still refused after a switch that had no terminal to ask on, naming --defaults', async () => {
+      const sw = q('sw', { defaultsSwitch: true })
+      const { out } = await run([sw, c], input())
+      expect(out.refused).toContain('pass --defaults')
+    })
+    it('words its decline from what the walk has answered, where declined is a function', async () => {
+      const seen = q('seen', { write: (a, _f, ctx) => Effect.sync(() => (ctx.log.push(`seen=${a}`), { wrote: true })) })
+      const named = q('c', { confirm: { declined: (ctx) => `declined after ${ctx.log.join(',')}` } })
+      const { out } = await run(
+        [seen, named],
+        input({ interactive: true, flags: { seen: 'one' }, askers: { c: answering('no') } }),
+      )
+      expect(out.refused).toBe('declined after seen=one')
+    })
+  })
+
+  describe('a systemDefault that refuses', () => {
+    const refusing = q('a', { systemDefault: () => Effect.succeed({ refused: 'could not read the default' }) })
+    it('is not read where a flag answered', async () => {
+      const { out } = await run([refusing], input({ flags: { a: 'given' } }))
+      expect(out.refused).toBeUndefined()
+      expect(out.entries[0]).toMatchObject({ after: 'given', wrote: true })
+    })
+    it('draws no default at a terminal, where the asker answers', async () => {
+      let seen: unknown = 'unset'
+      const { out } = await run(
+        [refusing],
+        input({
+          interactive: true,
+          askers: {
+            a: (d) => {
+              seen = d.default
+              return Effect.succeed({ answer: 'typed' })
+            },
+          },
+        }),
+      )
+      expect(seen).toBeNull()
+      expect(out.entries[0]).toMatchObject({ after: 'typed', asked: true })
+    })
+    it("is the refusal, in the port's words, where nothing else answers", async () => {
+      const { out } = await run([refusing], input())
+      expect(out.refused).toBe('could not read the default')
+      expect(out.entries).toEqual([])
+    })
+    it('is the refusal under --defaults too', async () => {
+      const { out } = await run([refusing], input({ defaults: true }))
+      expect(out.refused).toBe('could not read the default')
+    })
   })
 
   it('stops the walk on a write that refuses', async () => {
