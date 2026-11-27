@@ -53,6 +53,8 @@ export const initOptions = {
   github: text('github'),
   'github-app': text('github-app'),
   'github-auth': text('github-auth'),
+  'day-usd': text('day-usd'),
+  'claude-token': text('claude-token'),
   ...recipeOptions,
 }
 
@@ -62,6 +64,7 @@ export const addOptions = {
   project: text('project'),
   'github-app': text('github-app'),
   'github-auth': text('github-auth'),
+  'claude-token': text('claude-token'),
   ...recipeOptions,
 }
 

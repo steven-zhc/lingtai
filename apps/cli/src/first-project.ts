@@ -73,7 +73,14 @@ import {
   resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
-import { branchOf, landOnBranchChanges, resolveSource, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
+import {
+  branchOf,
+  landOnBranchChanges,
+  resolveSource,
+  type Recipe,
+  type ResolvedRecipe,
+  type SignedIn,
+} from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -90,7 +97,7 @@ import { Cause, Effect } from 'effect'
 import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect } from './board.ts'
-import { askClaudeTokenForRecipe, liveClaudeTokenWorld } from './claude-token.ts'
+import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { lift } from './exit.ts'
 import {
   APP_WAIT_MS,
@@ -100,7 +107,7 @@ import {
   type AppWaitResult,
   type AppWaitWorld,
 } from './github-app.ts'
-import { askGithubAuthEffect, liveMachineText, writeGithubAuth } from './github-auth.ts'
+import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
 import { onCancelExit } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
@@ -185,7 +192,7 @@ export interface FirstProjectWorld extends QuestionWorld {
    * Asks for the sandboxed Claude Code token once the recipe is final (#1169) — absent asks nothing. It never
    * refuses the add: the token belongs to the machine, not the project.
    */
-  claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
+  claudeToken?: (recipe: Recipe, flags: Record<string, string>) => Effect.Effect<void, unknown>
   /** The host check for the sandbox step (#1160), read only for a recipe that is new; absent asks no sandbox question. */
   sandboxHost?: () => NonNullable<ProposalReaders['host']>
   signedIn: SignedIn
@@ -233,6 +240,12 @@ export interface FirstProjectWorld extends QuestionWorld {
      * reads as null. Throws where `github.auth` is refused.
      */
     auth?: () => 'app' | 'gh' | null
+    /**
+     * What the machine list answered for how this machine reaches GitHub, where this run asked it (`init`).
+     * `pending`: `app` was chosen and is written only once the App exists. Absent where the caller (`add`)
+     * asked it itself: the elected auth, or `--github-auth app`, is then the answer.
+     */
+    decided?: { auth: 'gh' | 'app' | 'none'; pending: boolean }
     /** `gh auth status` (#706) — asked only when the auth question is, or `--github-auth gh` is given. */
     ghStatus: () => Effect.Effect<GhStatus, unknown>
     /** Writes `github.auth` into `config.yml`, keeping every other key and comment (0114 §6). */
@@ -384,13 +397,6 @@ function askProjectKind(
           refused:
             `--github-app ${flags['github-app']}, but --project local creates no GitHub App. Leave out ` +
             `--github-app, or pass --project github. ${kept}`,
-        }
-      }
-      if (flags['github-auth'] !== undefined) {
-        return {
-          refused:
-            `--github-auth ${flags['github-auth']}, but --project local reaches no GitHub. Leave out ` +
-            `--github-auth, or pass --project github. ${kept}`,
         }
       }
       return { kind: 'local' as const }
@@ -1266,7 +1272,7 @@ function runLocalBranch(
     const finalRecipe = resolveSource(previewed, path, path).recipe
     const final = branchOf(finalRecipe)
     if (world.claudeToken !== undefined && !repairOnly) {
-      yield* world.claudeToken(finalRecipe).pipe(Effect.catch(() => Effect.void))
+      yield* world.claudeToken(finalRecipe, flags).pipe(Effect.catch(() => Effect.void))
     }
 
     // The branch of a team-to-solo switch, made once the write has passed `changeRecipe`'s check.
@@ -1459,12 +1465,25 @@ function runGithubBranch(
       }
     }
 
-    // How this machine reaches GitHub, ahead of any App question (0114 §1). A
-    // `gh` machine never has the App asked about, so `GET /app` is not made for it.
+    // How this machine reaches GitHub was answered by the machine list, ahead of any App question (0114 §1).
+    // A `gh` machine never has the App asked about, so `GET /app` is not made for it.
     let app: AppCheck | null = knownApp
-    if (app === null && world.github.auth?.() !== 'gh') app = yield* world.github.app()
-    const decided = yield* askGithubAuthEffect(world, flags, app?.configured === true, world.kept, cancelFor(world))
-    if ('refused' in decided) return { refused: decided.refused }
+    const elected = world.github.auth?.() ?? null
+    const decided: { auth: 'gh' | 'app' | 'none'; pending: boolean } =
+      world.github.decided ??
+      (elected !== null
+        ? { auth: elected, pending: false }
+        : flags['github-auth'] === 'app'
+          ? { auth: 'app', pending: true }
+          : { auth: 'none', pending: false })
+    if (decided.auth === 'none') {
+      return {
+        refused:
+          'a GitHub project needs a way to reach GitHub, and github.auth is none here — run lingtai init ' +
+          `--github-auth gh, or --github-auth app. ${world.kept}`,
+      }
+    }
+    if (decided.auth !== 'gh') app ??= yield* world.github.app()
 
     if (decided.auth === 'gh') {
       // The saved `gh` login is the whole of the auth: no App to ask about or
@@ -1748,16 +1767,16 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     by: `human:${userInfo().username}`,
     home,
     sandboxHost: () => sandboxHostHere(),
-    claudeToken: (recipe) =>
-      askClaudeTokenForRecipe(
-        liveClaudeTokenWorld({
-          ask: options.ask,
-          log: options.log,
-          machine: liveMachineText(),
-          interactive: process.stdin.isTTY === true && process.stdout.isTTY === true,
-        }),
-        recipe,
-      ),
+    claudeToken: (recipe, flags) => {
+      const machine = machineSetup(
+        liveMachineWorld(
+          { ask: options.ask, log: options.log, ...(options.spin === undefined ? {} : { spin: options.spin }) },
+          { app: checkAppEffect, ghStatus: () => ghStatusEffect() },
+        ),
+        { githubRequired: false, command: 'lingtai add' },
+      )
+      return askTokenFor(machine, options, flags, recipe)
+    },
     signedIn: signedInHere,
     runtimes: askRuntimesEffect,
     setupReader: liveSetupReader,
