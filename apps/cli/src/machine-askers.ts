@@ -26,6 +26,7 @@ import {
   type MachineQuestionId,
   type MachineText,
   type SetupInput,
+  type RunContext,
   type SetupQuestion,
   liveMachineText,
   machineQuestions,
@@ -99,7 +100,7 @@ export const liveMachineWorld = (
 
 export interface MachineSetup {
   ports: MachinePorts
-  list: readonly SetupQuestion[]
+  list: readonly SetupQuestion<RunContext>[]
   askers: Record<MachineQuestionId, Asker>
   /** `GET /app` once per setup, however many entries ask. */
   app: () => Effect.Effect<AppCheck, unknown>
@@ -267,7 +268,7 @@ export const askTokenFor = (
   world: Pick<MachineWorld, 'log'>,
   flags: Readonly<Record<string, string>>,
   recipe: Recipe,
-  list: readonly SetupQuestion[] = setup.list.filter((q) => q.id === 'claude-token'),
+  list: readonly SetupQuestion<RunContext>[] = setup.list.filter((q) => q.id === 'claude-token'),
 ): Effect.Effect<void, unknown> =>
   runSetupList(list, setup.input({ flags, defaults: flags['defaults'] !== undefined }), { draft: recipe }).pipe(
     Effect.map((result) => {
