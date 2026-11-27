@@ -590,7 +590,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   const rerunBaseSource = (ctx: ProjectContext, answer: string) =>
     Effect.gen(function* () {
       if (!ports.local || !rerun(ctx)) return null
-      const old = text(atStart(ctx, ['branch', 'main']))
+      // The branch the recipe works on in the mode it started in: a team recipe's is `branch.personal`.
+      const old = text(atStart(ctx, ['branch', atStart(ctx, ['mode']) === 'team' ? 'personal' : 'main']))
       if (old === null || old === answer) return null
       const found = yield* ctx.ports.branchExists(old)
       return found === 'unreadable' ? found : found ? old : null

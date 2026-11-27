@@ -505,6 +505,29 @@ describe('branch, make-branch and move-landing', () => {
     expect(lost.result.refused).toContain('could not read whether the current base exists')
   })
 
+  it("cuts a team→solo rerun's new base from the team recipe's personal branch, not its main", async () => {
+    const start = [
+      `version: ${RECIPE_VERSION}`,
+      'mode: team',
+      'branch:',
+      '  main: main',
+      '  personal: work',
+      '',
+    ].join('\n')
+    const flags = { ...DEFAULTS, mode: 'solo', tickets: 'db', main: 'fresh' }
+    const { result, ctx } = await walk(
+      ports({
+        local: true,
+        knownLogin: null,
+        branchExists: (n) => Effect.succeed(n === 'main' || n === 'work'),
+      }),
+      { start, flags, seeds: [] },
+    )
+    expect(result.refused).toBeUndefined()
+    expect(ctx.answers.branch).toMatchObject({ name: 'fresh', exists: false, from: 'work' })
+    expect(ctx.answers.make).toEqual({ name: 'fresh', from: 'work' })
+  })
+
   it('writes the existence the port said, and refuses a read that failed', async () => {
     const { ctx } = await walk(ports(), { flags: { ...DEFAULTS, mode: 'solo' }, seeds: [] })
     expect(ctx.answers.branch).toMatchObject({ name: 'main', exists: true })
