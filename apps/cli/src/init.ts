@@ -627,7 +627,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         // and ignored, as they always were, until #1523's list takes this path over.
         const discardedFlag = PROJECT_FLAGS.find(
           (name) =>
-            !['sandbox', 'sandbox-hosts', 'mode', 'login', 'personal'].includes(name) && flags[name] !== undefined,
+            !['sandbox', 'sandbox-hosts', 'mode', 'login', 'personal', 'defaults'].includes(name) &&
+            flags[name] !== undefined,
         )
         if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
         if (discardedFlag !== undefined) {

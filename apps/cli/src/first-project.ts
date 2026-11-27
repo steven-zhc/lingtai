@@ -120,7 +120,7 @@ import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
 import { askMode, askPersonal, type Mode } from './team.ts'
-import { PROJECT_FLAGS, ROUNDS_RETIRED } from './wizard-options.ts'
+import { HANDED_OFF_FLAGS, ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -522,7 +522,7 @@ export function chooseFirstProjectEffect(
       : runGithubBranch(
           world,
           deferRecipeFlags
-            ? Object.fromEntries(Object.entries(flags).filter(([n]) => !PROJECT_FLAGS.includes(n)))
+            ? Object.fromEntries(Object.entries(flags).filter(([n]) => !HANDED_OFF_FLAGS.includes(n)))
             : flags,
           flags['github'] ?? null,
           appCheck,

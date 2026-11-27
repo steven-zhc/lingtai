@@ -1,4 +1,3 @@
-import type { Option } from 'effect'
 /**
  * The options `init` and `add` share, written once (#620), and the one function
  * that turns what `@effect/cli` parsed back into the `{ flags, repeated }` pair
@@ -8,6 +7,8 @@ import type { Option } from 'effect'
  * Every option is text on purpose: `--store` and `--port` are refused by
  * `init.ts` in its own words, and those words are what scripts and tests read.
  */
+import { PROJECT_FLAGS } from '@lingtai/setup'
+import type { Option } from 'effect'
 import { Flag } from 'effect/cli'
 
 const text = (name: string) => Flag.String(name).pipe(Flag.optional)
@@ -45,13 +46,18 @@ export const recipeOptions = {
 }
 
 /**
- * The flags a project's questions take: the one list of what `init` and `add` accept for a project. Anything that
- * must say "this flag was for the recipe" — the refusal where no project is named, and the hand-off from the add
- * that already asked to the branch that registers — reads this, and keeps no copy of it.
+ * The flags a project's questions take, from the project list's own entries (`@lingtai/setup`'s `projectList`): the
+ * one list of what `init` and `add` accept for a project. Anything that must say "this flag was for the recipe" — the
+ * refusal where no project is named — reads this, and keeps no copy of it.
  */
-export const PROJECT_FLAGS: readonly string[] = Object.keys(recipeOptions).filter(
-  (n) => n !== 'base' && n !== 'defaults' && n !== 'yes' && n !== 'no-color',
-)
+export { PROJECT_FLAGS }
+
+/**
+ * Today's set: what the add's two hand-offs strip before `runGithubBranch`. `defaults` stays, because `askTokenFor`
+ * reads it (`machine-askers.ts`), and `add owner/repo --defaults` at a terminal would otherwise start asking the Claude
+ * token question. #1525 deletes this with its two readers.
+ */
+export const HANDED_OFF_FLAGS: readonly string[] = PROJECT_FLAGS.filter((n) => n !== 'defaults')
 
 export const initOptions = {
   store: text('store'),
