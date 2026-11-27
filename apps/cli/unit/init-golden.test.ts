@@ -32,7 +32,7 @@ const GIT_PLAN: Record<string, GitResult> = {
   '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
 }
 
-async function run(): Promise<{ code: number; lines: string[] }> {
+async function run(extra: string[] = []): Promise<{ code: number; lines: string[] }> {
   const logged: string[] = []
   const log = (line: string) => logged.push(line)
   const machineFiles = new Map<string, string>()
@@ -97,7 +97,7 @@ async function run(): Promise<{ code: number; lines: string[] }> {
   }
   const lifted = liftInitWorld(world)
   const code = await Effect.runPromise(
-    initCommandEffect(flagsFromArgv(['--local', '/repo', '--mode', 'solo']), lifted).pipe(
+    initCommandEffect(flagsFromArgv(['--local', '/repo', '--mode', 'solo', ...extra]), lifted).pipe(
       Effect.provideService(ProjectFiles, lifted.files),
     ),
   )
@@ -107,4 +107,10 @@ async function run(): Promise<{ code: number; lines: string[] }> {
 it('init --local with Enter at each question prints what it printed before it was an Effect', async () => {
   const { code, lines } = await run()
   expect({ code, lines }).toEqual(golden)
+})
+
+it('init --local --day-usd 100 carries the ceiling on the card as its spend row', async () => {
+  const { code, lines } = await run(['--day-usd', '100'])
+  expect(code).toBe(0)
+  expect(lines.some((line) => /spend/.test(line) && /\$100/.test(line))).toBe(true)
 })

@@ -10,9 +10,10 @@ import type { SetupReader } from '@lingtai/setup'
 import { applySetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { parseDocument } from 'yaml'
 
 import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
-import { askGithubAuthEffect } from '../src/github-auth.ts'
+import { githubEntryFor } from '../src/machine-askers.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
@@ -135,23 +136,29 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
   })
 })
 
-/** `askGithubAuthEffect` over a world whose `gh` is signed in as `me`, answering the question with `answer`. */
+/** The machine list's GitHub entry over a world whose `gh` is signed in as `me`, answering the question with `answer`. */
 function authDep(answer: string, written: string[], asked: { message: string; defaultValue: string }[]) {
   return (flags: Record<string, string>) =>
-    askGithubAuthEffect(
+    githubEntryFor(
       {
         ask: async (_prompt, shape) => {
           asked.push({ message: shape!.message, defaultValue: shape!.defaultValue })
           return answer
         },
         log: () => {},
-        github: {
-          ghStatus: () => Effect.succeed({ ok: true, login: 'me', scopes: ['repo', 'workflow'] }),
-          writeAuth: (kind) => Effect.sync(() => void written.push(kind)),
+        env: {},
+        machine: {
+          read: () => null,
+          write: (_path, text) => void written.push(String(parseDocument(text).getIn(['github', 'auth']))),
         },
+        path: '/h/.lingtai/config.yml',
+        interactive: true,
+        app: () => Effect.succeed({ configured: false }),
+        ghStatus: () => Effect.succeed({ ok: true, login: 'me', scopes: ['repo', 'workflow'] }),
+        recipes: () => Effect.succeed([]),
+        run: () => Promise.resolve({ code: 0 }),
       },
       flags,
-      false,
       'Nothing was written',
     )
 }
@@ -223,5 +230,20 @@ describe('askBeforeGithubAdd asks how this machine reaches GitHub before it read
     expect(said).toContain('connect ETIMEDOUT')
     expect(said).toContain('--main')
     expect(said).toContain('Nothing was written')
+  })
+})
+
+describe('add owner/repo on a machine whose github.auth is none (#1522)', () => {
+  it('asks the GitHub entry and refuses none as its answer, by name, writing nothing', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const written: string[] = []
+    const { deps, calls } = depsFor({
+      auth: () => null,
+      githubAuth: authDep('none', written, []),
+    })
+    expect(await askBeforeGithubAdd(SLUG, { 'github-auth': 'none' }, deps)).toBe(1)
+    expect(written).toEqual([])
+    expect(calls.writes).toBe(0)
+    expect(String(error.mock.calls[0]?.[0])).toContain('none is not one')
   })
 })

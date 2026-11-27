@@ -38,7 +38,7 @@ lingtai add [<owner>/<repo>] [flags]
   --github-app <create|skip>
       create or skip the App, asked only when none is configured
   --github-auth <gh|app>
-      how this machine reaches GitHub, asked only when nothing is set:
+      how this machine reaches GitHub, asked when nothing is set or none:
       the signed-in gh login, or the App. gh is checked, not trusted
   --main <branch>
       the branch the recipe governs and merges into (branch.main).
@@ -732,9 +732,13 @@ lingtai init [flags]
   --local <dir>             a directory on this machine, as the project
   --github-app <create|skip>
       create or skip the App, asked only when none is configured
-  --github-auth <gh|app>
-      how this machine reaches GitHub, asked only when nothing is set:
-      the signed-in gh login, or the App. gh is checked, not trusted
+  --github-auth <gh|app|none>
+      how this machine reaches GitHub, asked on every run:
+      the signed-in gh login, the App, or none. gh is checked, not trusted
+  --day-usd <dollars|none>
+      the most one day may spend, default 100; none removes it
+  --claude-token <keep|skip>
+      the sandboxed Claude Code token, asked only where a recipe needs it
   --main <branch>           the branch a local project governs
   --mode <team|solo>        does anyone else work here? team is the default
   --personal <branch>       team mode: the branch Lingtai works on

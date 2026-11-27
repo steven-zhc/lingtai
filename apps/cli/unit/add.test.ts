@@ -5,6 +5,7 @@ import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
 
 import { type AddWorld, addFlowEffect } from '../src/add.ts'
 
@@ -18,7 +19,7 @@ import type { GitResult } from '../src/first-project.ts'
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
-import { askGithubAuthEffect } from '../src/github-auth.ts'
+import { githubEntryFor } from '../src/machine-askers.ts'
 import { stripColour } from '../src/output.ts'
 import {
   type FirstProjectTestWorld,
@@ -261,21 +262,25 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ...h.world.githubDeps!,
       auth: () => auth,
       githubAuth: (flags) =>
-        askGithubAuthEffect(
+        githubEntryFor(
           {
             ask: async (prompt, shape) => count(shape?.message ?? prompt),
             log: () => {},
-            github: {
-              auth: () => auth,
-              ghStatus: () => fx(status),
-              writeAuth: (kind) =>
-                Effect.sync(() => {
-                  auth = kind
-                }),
+            env: {},
+            machine: {
+              read: () => null,
+              write: (_path, text) => {
+                auth = parseDocument(text).getIn(['github', 'auth']) as 'gh' | 'app'
+              },
             },
+            path: '/h/.lingtai/config.yml',
+            interactive: true,
+            app: () => Effect.succeed({ configured: false }),
+            ghStatus: () => fx(status),
+            recipes: () => Effect.succeed([]),
+            run: () => Promise.resolve({ code: 0 }),
           },
           flags,
-          false,
           'Nothing was written',
         ),
     }
@@ -427,6 +432,26 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     // Only what is not already registered is offered, then the way to type one.
     expect(offered).toEqual(['acme/widgets', 'type owner/repo'])
     expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a bare add with --github-auth gh and a conflicting --github-app is refused before github.auth is written', async () => {
+    const { world, errors } = githubHarness()
+    world.project.github.auth = () => null
+    let answered = 0
+    world.githubDeps = {
+      ...world.githubDeps!,
+      githubAuth: () => {
+        answered++
+        return Effect.succeed({ auth: 'gh' } as never)
+      },
+    }
+    const code = await addFlow(
+      flagsFromArgv(['--mode', 'solo', '--project', 'github', '--github-auth', 'gh', '--github-app', 'create']),
+      world,
+    )
+    expect(code).toBe(1)
+    expect(answered).toBe(0)
+    expect(errors.join('\n')).toContain('--github-app create')
   })
 
   it('a bare add with recipe flags still reaches the picker, and the flags go on with the pick (#969)', async () => {

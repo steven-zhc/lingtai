@@ -23,7 +23,6 @@
  * GitHub one picked on the board, reach none of this yet.
  */
 import { hostname } from 'node:os'
-import { join } from 'node:path'
 
 import {
   checkGhAccessEffect,
@@ -47,16 +46,17 @@ import {
   parseSlug,
 } from '@lingtai/github'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
-import { type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { type Recipe, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveMachineText, liveTrialBuild, previewSetup } from '@lingtai/setup'
+import { liveTrialBuild, previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 
-import { askClaudeTokenForRecipe, liveClaudeTokenWorld } from './claude-token.ts'
+import { checkAppEffect } from './app-check.ts'
 import { lift, recovering } from './exit.ts'
 import { livePickerEffect } from './first-project.ts'
-import { askGithubAuthEffect, type GithubAuthAnswer, writeGithubAuth } from './github-auth.ts'
+import { type GithubAuthAnswer } from './github-auth.ts'
+import { askTokenFor, githubEntryFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, changedLeftBehind, ENV_PLANT_AT } from './recipe-flow.ts'
@@ -181,10 +181,10 @@ export interface AskBeforeGithubAddDeps {
   /** `askRecipe`'s `history` — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Effect.Effect<readonly string[], unknown>
   /** Asks for the sandboxed Claude Code token once the recipe is final (#1169); absent asks nothing, and it never refuses the add. */
-  claudeToken?: (recipe: Parameters<typeof askClaudeTokenForRecipe>[1]) => Effect.Effect<void, unknown>
+  claudeToken?: (recipe: Recipe, flags: Record<string, string>) => Effect.Effect<void, unknown>
   /**
-   * How this machine reaches GitHub, asked where nothing has answered (0114 §1, #1487) — `askGithubAuthEffect`
-   * over the live world. Absent asks nothing, and `kind` stays null as before.
+   * How this machine reaches GitHub, asked where nothing (or `none`) is in force (0114 §1, #1487) — the machine
+   * list's own GitHub entry, with `none` refused as an answer. Absent asks nothing, and `kind` stays null.
    */
   githubAuth?: (flags: Record<string, string>) => Effect.Effect<GithubAuthAnswer, unknown>
   /** Reads the default branch where the seed needs it; absent reads it live. */
@@ -193,7 +193,7 @@ export interface AskBeforeGithubAddDeps {
   sandboxHost?: () => NonNullable<ProposalReaders['host']>
 }
 
-const liveDeps: AskBeforeGithubAddDeps = {
+export const liveGithubDeps: AskBeforeGithubAddDeps = {
   check: checkInstallationEffect,
   auth: () => githubAuthKind(),
   interactive: () => {
@@ -209,36 +209,24 @@ const liveDeps: AskBeforeGithubAddDeps = {
   history: liveHistoryEffect,
   sandboxHost: () => sandboxHostHere(),
   githubAuth: (flags) =>
-    askGithubAuthEffect(
-      {
-        ask: liveAsk,
-        spin: liveSpin,
-        log: (line) => console.log(line),
-        github: {
-          auth: () => githubAuthKind(),
-          ghStatus: () => ghStatusEffect(),
-          writeAuth: (kind) =>
-            Effect.try({
-              try: () => writeGithubAuth(liveMachineText(), join(stateDir(), 'config.yml'), kind),
-              catch: (e) => e,
-            }),
-          gh: liveGh,
-        },
-      },
+    githubEntryFor(
+      liveMachineWorld(
+        { ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) },
+        { app: checkAppEffect, ghStatus: () => ghStatusEffect(), gh: liveGh },
+      ),
       flags,
-      false,
       ADD_KEPT,
     ),
-  claudeToken: (recipe) =>
-    askClaudeTokenForRecipe(
-      liveClaudeTokenWorld({
-        ask: liveAsk,
-        log: (line) => console.log(line),
-        machine: liveMachineText(),
-        interactive: interactivity(false).stdinIsTTY && interactivity(false).stdoutIsTTY,
-      }),
-      recipe,
-    ),
+  claudeToken: (recipe, flags) => {
+    const setup = machineSetup(
+      liveMachineWorld(
+        { ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) },
+        { app: checkAppEffect, ghStatus: () => ghStatusEffect(), gh: liveGh },
+      ),
+      { githubRequired: false, command: 'lingtai add' },
+    )
+    return askTokenFor(setup, { log: (line) => console.log(line) }, flags, recipe)
+  },
 }
 
 /** What the questions came to when the add goes on: the trial and the hints, for the card `add` ends on. */
@@ -285,7 +273,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (
   slug: string,
   flags: Record<string, string>,
-  deps: AskBeforeGithubAddDeps = liveDeps,
+  deps: AskBeforeGithubAddDeps = liveGithubDeps,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
 ): Effect.fn.Return<number | AskedBeforeAdd, unknown> {
@@ -336,20 +324,12 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     return 1
   }
   let kind: 'app' | 'gh' | null = elected.ok
-  // `--github-auth gh` answers the machine's question here too: the login is
-  // checked below, before any recipe question, and `runGithubBranch` writes it.
   const authFlag = flags['github-auth']
-  if (kind === null && authFlag === 'gh') kind = 'gh'
-  // `app` answered here, or by `--github-auth app`: it writes nothing until the App exists, and is told on to `chooseFirstProject`.
-  let appChosen = authFlag === 'app'
-  if (kind === null && authFlag === undefined) {
-    if (!deps.interactive()) {
-      console.error(
-        'no GitHub auth is configured here — pass --github-auth gh or --github-auth app, or run lingtai init. Nothing was written',
-      )
-      return 1
-    }
-    // Asked before the repository is read (#1487): `gh` is written here, so `chooseFirstProject` finds it set and asks nothing.
+  // `app` answered here: it writes nothing until the App exists, and is told on to `chooseFirstProject`.
+  let appChosen = false
+  // Nothing in force, or `none`, is the one case this asks (#1487): the machine list's own GitHub entry, with
+  // `none` refused as an answer — a GitHub project needs a way to reach GitHub. The entry checks `gh` and writes it.
+  if (kind === null) {
     if (deps.githubAuth !== undefined) {
       const answered = yield* attempt(deps.githubAuth(flags))
       if ('threw' in answered) {
@@ -361,8 +341,9 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
         return 1
       }
       if (answered.ok.auth === 'gh') kind = 'gh'
-      else appChosen = true
-    }
+      else if (answered.ok.auth === 'app') appChosen = true
+    } else if (authFlag === 'gh') kind = 'gh'
+    else if (authFlag === 'app') appChosen = true
   }
 
   // On a `gh` machine the saved login is the check: its scopes and its push
@@ -669,7 +650,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
         Effect.map((text) => resolveSource(text, recipePath(repo), recipePath(repo)).recipe),
       ),
     )
-    if ('ok' in final) yield* deps.claudeToken(final.ok).pipe(Effect.catch(() => Effect.void))
+    if ('ok' in final) yield* deps.claudeToken(final.ok, flags).pipe(Effect.catch(() => Effect.void))
   }
   return {
     trial: recipeResult.trial,
@@ -687,6 +668,6 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
               ? ({ kind: 'gh', login: ghLogin } as const)
               : ({ kind: 'app', slug: reach.installation.appSlug ?? null } as const),
         }),
-    ...(appChosen && authFlag === undefined ? { githubAuth: 'app' as const } : {}),
+    ...(appChosen && authFlag !== 'app' ? { githubAuth: 'app' as const } : {}),
   }
 })

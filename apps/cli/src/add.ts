@@ -16,7 +16,13 @@ import {
 } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
-import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
+import {
+  type AskedBeforeAdd,
+  askBeforeGithubAddEffect,
+  type AskBeforeGithubAddDeps,
+  attempt,
+  liveGithubDeps,
+} from './add-github.ts'
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
  * positional, which asks the same GitHub-or-directory question `lingtai init`
@@ -189,6 +195,27 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
   // leave them out (the local branch keeps them) and they are handed on with the pick, where `askBeforeGithubAdd` asks.
   const holdsBack =
     flags['project'] !== 'local' && flags['local'] === undefined && world.repositories?.interactive() === true
+  // `--github-auth` names how this machine reaches GitHub, and is the machine list's flag: answered here, ahead of the
+  // project, where nothing is in force yet, so `gh` is checked and written like any other answer of that entry.
+  if (
+    flags['github-auth'] !== undefined &&
+    flags['project'] !== 'local' &&
+    flags['local'] === undefined &&
+    (world.project.github.auth?.() ?? null) === null
+  ) {
+    // The refusals `chooseFirstProject` would make are made first: this writes `github.auth`, so a refusal after it
+    // could not say that nothing was written.
+    const conflict = conflictingFlags(flags, world.project.kept)
+    if (conflict !== null) {
+      world.error(conflict)
+      return 1
+    }
+    const answered = yield* (world.githubDeps ?? liveGithubDeps).githubAuth!(flags)
+    if ('refused' in answered) {
+      world.error(answered.refused)
+      return 1
+    }
+  }
   const result = yield* chooseFirstProjectEffect(world.project, flags, buildFlags, holdsBack)
   if ('refused' in result) {
     world.error(result.refused)
@@ -261,6 +288,8 @@ export interface GithubProjectEntry {
   homeIsNew: boolean
   /** What the command's own earlier steps left behind, ahead of the project's. */
   leftBehind?: readonly LeftBehind[]
+  /** The day's ceiling `init`'s list asked about or was told, as the card's `spend` row. */
+  spend?: string
 }
 
 /** What the project's setup came to; the command closes on `closing` (or `fix`) itself, and exits `exit`. */
@@ -467,6 +496,7 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
       labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
       trial: asked.trial,
       recipePath: path,
+      ...(entry.spend === undefined ? {} : { spend: entry.spend }),
       ...(left.length === 0 ? {} : { leftBehind: left }),
     },
     asked.hints,

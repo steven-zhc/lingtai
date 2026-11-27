@@ -339,7 +339,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     })
     world.ask = async (question) =>
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
     const text = stripColour(logged.join('\n'))
     expect(text).toMatch(/^this machine$/m)
     expect(text).toMatch(/github\s+gh, signed in as steven/)
@@ -456,7 +456,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(
+      await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'app']), world),
+    ).toBe(0)
     const text = logged.join('\n')
     expect(text).toMatch(/github\s+the App lingtai-me/)
     expect(text.match(/the App lingtai-me/g)).toHaveLength(1)
@@ -491,7 +493,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       return null
     }
 
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)
     expect(code).toBe(0)
 
     expect(countsWhenProjectAsked).toEqual({ boardAt: 0, board: 0 })
@@ -518,7 +520,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
           : /the GitHub App now/.test(question)
             ? 'create'
             : null
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     expectClosesOn(logged, githubInitSteps())
   })
@@ -526,7 +528,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('a configured App closes on lingtai add, last and once', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(
+      await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'app']), world),
+    ).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     expectClosesOn(logged, githubInitSteps())
   })
@@ -651,7 +655,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     world.ask = async (question) =>
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
 
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)
     expect(code).toBe(0)
     expect(parseDocument(machineFiles.get('/nonexistent/.lingtai/config.yml')!).getIn(['github', 'auth'])).toBe('gh')
     expect(calls.board).toBe(0)
@@ -669,7 +673,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       })
       world.ask = async (question) =>
         /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
-      expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+      expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
       return logged
     }
     const failed = await run(async () => ({ text: '1 failed', failed: true }))
@@ -685,7 +689,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       world,
     )
     expect(code).toBe(1)
-    expect(stripColour(logged.join('\n'))).toContain('--github-auth gh, but gh is not installed')
+    expect(stripColour(logged.join('\n'))).toContain('gh was chosen, but gh is not installed')
     const file = machineFiles.get('/nonexistent/.lingtai/config.yml') ?? ''
     expect(file).not.toContain('auth: gh')
   })
@@ -809,7 +813,10 @@ describe('lingtai init asks the store again (#1474)', () => {
   it('another database is written, and the output says the log is new and empty and nothing was copied', async () => {
     const h = harness()
     h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), h.world)
+    const code = await initCommand(
+      flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'none']),
+      h.world,
+    )
     // No project is named, so it stops at the project question — after the store is written and said.
     expect(code).toBe(1)
     const doc = parseDocument(h.machineFiles.get(CONFIG)!)
@@ -857,7 +864,7 @@ describe('lingtai init asks the store again (#1474)', () => {
     expect(doc.getIn(['database', 'url'])).toBe(URL)
   })
 
-  it('--defaults keeps a store that answers, and does not choose one on a machine that has none', async () => {
+  it('--defaults keeps a store that answers, and takes the system default for what was never written', async () => {
     const h = harness()
     h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
     const before = h.machineFiles.get(CONFIG)
@@ -867,7 +874,12 @@ describe('lingtai init asks the store again (#1474)', () => {
     }
     await initCommand(flagsFromArgv(['--defaults']), h.world)
     expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(false)
-    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    // The store is kept as it was; the keys that were never written are, with the system's defaults.
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'url'])).toBe(URL)
+    expect(doc.getIn(['limits', 'day_usd'])).toBe(100)
+    expect(doc.getIn(['github', 'auth'])).toBe('none')
+    expect(before).not.toContain('limits')
   })
 
   it('with postgres configured, the prompt names `sqlite` as the way to SQLite, and the password is in no default the front end draws', async () => {
@@ -895,6 +907,10 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
     'acme/widgets',
     '--store',
     'sqlite',
+    '--github-auth',
+    'gh',
+    '--day-usd',
+    '100',
     '--mode',
     'solo',
     '--main',
@@ -967,6 +983,8 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
     const text = lines(h.logged).join('\n')
     expect(text).toMatch(/^init {2}widgets/m)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
+    // The machine's ceiling is on the project's card as well: `--day-usd 100` is in ARGS.
+    expect(text).toMatch(/spend\s.*100/)
   })
 
   it('a rerun asks the prompts the first run asked, and with nothing changed registers nothing', async () => {
@@ -989,5 +1007,186 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
     expect(await initCommand(flagsFromArgv([...ARGS, '--local', '/repo']), h.world)).toBe(1)
     expect(lines(h.logged).join('\n')).toContain('name two different projects')
     expect(h.added).toEqual([])
+  })
+})
+
+describe('lingtai init asks the machine list from the top on every run (#1522)', () => {
+  const CONFIG = '/nonexistent/.lingtai/config.yml'
+  const READY: GhStatus = { ok: true, login: 'steven', scopes: ['repo', 'workflow'] }
+  const MACHINE = /Postgres URL for the log|signed in as steven|most one day may spend/
+
+  /** Enter at each machine question; `github` at the project question. */
+  const enter = (h: Harness, seen: { message: string; defaultValue: string }[]) => {
+    h.world.ask = async (prompt, shape) => {
+      const message = shape?.message ?? prompt
+      h.asked.push(message)
+      if (MACHINE.test(message)) seen.push({ message, defaultValue: shape?.defaultValue ?? '' })
+      return /a GitHub project/.test(message) ? 'github' : ''
+    }
+  }
+
+  it('a second run asks the same machine questions in the same order, each defaulting to the first run’s answer, and writes nothing', async () => {
+    const h = harness({ ghStatus: READY })
+    const first: { message: string; defaultValue: string }[] = []
+    enter(h, first)
+    expect(await initCommand(flagsFromArgv([]), h.world)).toBe(0)
+    const written = h.machineFiles.get(CONFIG)!
+    const doc = parseDocument(written)
+    expect(doc.getIn(['database', 'store'])).toBe('sqlite')
+    expect(doc.getIn(['github', 'auth'])).toBe('gh')
+    expect(doc.getIn(['limits', 'day_usd'])).toBe(100)
+    const writes = h.machineWrites
+
+    const second: { message: string; defaultValue: string }[] = []
+    enter(h, second)
+    expect(await initCommand(flagsFromArgv([]), h.world)).toBe(0)
+    expect(second.map((q) => q.message.slice(0, 20))).toEqual(first.map((q) => q.message.slice(0, 20)))
+    expect(first).toHaveLength(3)
+    // The default of each is the value the first run left in force.
+    expect(second.map((q) => q.defaultValue)).toEqual(['', 'gh', '100'])
+    expect(h.machineFiles.get(CONFIG)).toBe(written)
+    expect(h.machineWrites).toBe(writes)
+  })
+
+  it('a rerun answering app with no App configured does not write github.auth, and reaches the App step', async () => {
+    const h = harness({ ghStatus: READY })
+    h.machineFiles.set(CONFIG, 'database:\n  store: sqlite\ngithub:\n  auth: gh\nlimits:\n  day_usd: 100\n')
+    h.world.pressed = signalPort(async () => {})
+    h.world.appeared = signalPort(
+      (signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    )
+    h.world.ask = async (prompt, shape) => {
+      const message = shape?.message ?? prompt
+      return /a GitHub project/.test(message) ? 'github' : /the GitHub App now/.test(message) ? 'create' : ''
+    }
+    const code = await initCommand(flagsFromArgv(['--github-auth', 'app']), h.world)
+    expect(code).toBe(0)
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['github', 'auth'])).toBe('gh')
+    expect(h.calls.board).toBe(1)
+  })
+
+  it('a rerun on a machine with projects answering app with no App configured reaches the App step, without --project', async () => {
+    const h = harness({ ghStatus: READY })
+    h.machineFiles.set(CONFIG, 'database:\n  store: sqlite\ngithub:\n  auth: gh\nlimits:\n  day_usd: 100\n')
+    h.world.projects = liftPort(async () => [{ project: 'repo', name: 'repo', owner: null }] as never)
+    h.world.pressed = signalPort(async () => {})
+    h.world.appeared = signalPort(
+      (signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    )
+    h.world.ask = async (prompt, shape) => {
+      const message = shape?.message ?? prompt
+      return /the GitHub App now/.test(message) ? 'create' : ''
+    }
+    const code = await initCommand(flagsFromArgv(['--github-auth', 'app']), h.world)
+    expect(code).toBe(0)
+    expect(lines(h.logged).join('\n')).not.toContain('init --project github')
+    expect(h.calls.board).toBe(1)
+  })
+
+  it('--github-auth none with --project local on a machine with an App asks the local project, which it is not refused', async () => {
+    const h = harness({
+      gitPlan: {
+        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+        '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+      },
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
+    })
+    h.world.cwd = '/repo'
+    h.world.ask = async (prompt, shape) => (/director/i.test(shape?.message ?? prompt) ? '/repo' : '')
+    const code = await initCommand(
+      flagsFromArgv([
+        '--store',
+        'sqlite',
+        '--day-usd',
+        '100',
+        '--github-auth',
+        'none',
+        '--project',
+        'local',
+        '--defaults',
+        '--mode',
+        'solo',
+        '--install',
+        'none',
+      ]),
+      h.world,
+    )
+    expect(lines(h.logged).join('\n')).not.toContain('but a GitHub App is already configured')
+    expect(code).toBe(0)
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['github', 'auth'])).toBe('none')
+  })
+
+  it('--defaults writes limits.day_usd: 100; --day-usd none removes it; --day-usd 0 is refused by name and nothing is written', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, 'database:\n  store: sqlite\ngithub:\n  auth: none\n')
+    await initCommand(flagsFromArgv(['--defaults']), h.world)
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['limits', 'day_usd'])).toBe(100)
+
+    await initCommand(flagsFromArgv(['--day-usd', 'none', '--defaults']), h.world)
+    expect(h.machineFiles.get(CONFIG)).not.toContain('limits')
+
+    const refused = harness()
+    refused.machineFiles.set(CONFIG, 'database:\n  store: sqlite\ngithub:\n  auth: none\n')
+    const before = refused.machineFiles.get(CONFIG)
+    expect(
+      await initCommand(flagsFromArgv(['--day-usd', '0', '--github-auth', 'none', '--store', 'sqlite']), refused.world),
+    ).toBe(1)
+    expect(lines(refused.logged).join('\n')).toContain('0 is not a positive number of dollars')
+    expect(refused.machineFiles.get(CONFIG)).toBe(before)
+  })
+
+  it('with no terminal and no flags a rerun keeps every machine value and writes nothing; a first run writes sqlite and 100', async () => {
+    const first = harness()
+    first.world.interactive = false
+    first.world.ask = async () => {
+      throw new Error('asked without a terminal')
+    }
+    expect(await initCommand(flagsFromArgv(['--project', 'github']), first.world)).not.toBe(2)
+    const doc = parseDocument(first.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('sqlite')
+    expect(doc.getIn(['limits', 'day_usd'])).toBe(100)
+    expect(doc.getIn(['github', 'auth'])).toBe('none')
+
+    const again = harness()
+    again.machineFiles.set(CONFIG, first.machineFiles.get(CONFIG)!)
+    again.world.interactive = false
+    again.world.ask = first.world.ask
+    await initCommand(flagsFromArgv(['--project', 'github']), again.world)
+    expect(again.machineFiles.get(CONFIG)).toBe(first.machineFiles.get(CONFIG))
+    expect(again.machineWrites).toBe(0)
+  })
+
+  it('--github-auth none writes github.auth: none, and a rerun taking the default writes nothing', async () => {
+    const h = harness()
+    h.world.ask = async () => ''
+    await initCommand(
+      flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'none', '--project', 'github']),
+      h.world,
+    )
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['github', 'auth'])).toBe('none')
+    const written = h.machineFiles.get(CONFIG)
+    const writes = h.machineWrites
+    h.world.interactive = false
+    await initCommand(flagsFromArgv(['--store', 'sqlite', '--project', 'github']), h.world)
+    expect(h.machineFiles.get(CONFIG)).toBe(written)
+    expect(h.machineWrites).toBe(writes)
+  })
+
+  it('exported LINGTAI_LIMITS_DAY_USD and LINGTAI_GITHUB_AUTH are not asked and not written', async () => {
+    const h = harness()
+    h.world.env = { ...ENV, LINGTAI_LIMITS_DAY_USD: '50', LINGTAI_GITHUB_AUTH: 'none' }
+    const seen: string[] = []
+    h.world.ask = async (prompt, shape) => {
+      seen.push(shape?.message ?? prompt)
+      return /a GitHub project/.test(shape?.message ?? prompt) ? 'github' : ''
+    }
+    await initCommand(flagsFromArgv([]), h.world)
+    expect(seen.some((m) => /most one day may spend/.test(m))).toBe(false)
+    expect(seen.some((m) => /signed in as|GitHub App of its own/.test(m))).toBe(false)
+    const file = h.machineFiles.get(CONFIG) ?? ''
+    expect(file).not.toContain('limits')
+    expect(file).not.toContain('github')
+    expect(lines(h.logged).join('\n')).toContain('from the environment')
   })
 })

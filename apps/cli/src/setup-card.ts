@@ -75,6 +75,8 @@ export interface SetupCardFacts {
   where?: 'local' | 'github'
   /** How this machine reaches GitHub — `gh, signed in as me`, `the App x` — as a row of *this machine*. */
   github?: string
+  /** The day's spend ceiling this run asked about, as a row of *this machine*: `$100 a day`, `no ceiling`. */
+  spend?: string
   /**
    * `recipe` and `trial` come together, or not at all: `init --project github` has no repository yet, so
    * its card is *this machine* alone and `recipePath` is absent with them.
@@ -234,6 +236,7 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         ['log', logRow(facts.store)],
         ['agents', agentsRow(facts.runtimes)],
         ...(facts.github === undefined ? [] : [['github', facts.github] as const]),
+        ...(facts.spend === undefined ? [] : [['spend', facts.spend] as const]),
       ],
     },
   ]
