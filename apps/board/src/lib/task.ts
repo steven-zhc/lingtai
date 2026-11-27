@@ -1078,7 +1078,7 @@ export function whereOnBranch(input: {
     }
   }
   const changeOf = (pr: PrState) =>
-    prFixTicketLink({ project: input.project, owner: input.owner, github: input.github, name: nameOf(pr) })
+    prFixTicketLink({ project: input.project, owner: input.owner, github: input.github, name: nameOf(pr), pr })
 
   switch (holder.kind) {
     case 'unread':

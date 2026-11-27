@@ -521,14 +521,250 @@ describe('the tickets on the rail open their task pages', () => {
 })
 
 describe('prFixTicketLink', () => {
-  it('on GitHub: the new-issue form, with the label and the title put in', () => {
-    const link = prFixTicketLink({ project: 'p', owner: 'o', github: true, name: 'PR #88' })
+  const SHA = '296d90c1111111'
+  const row = (
+    name: string,
+    state = 'failure',
+    url = `https://github.com/o/p/actions/runs/1/job/${name.replace(/\W/g, '')}`,
+  ) => ({
+    name,
+    state,
+    url,
+    failing: true,
+  })
+  /** A PR waiting on `reason`, folded by the reducer; `checks` are the ones the red verdict was read from. */
+  const waitingPr = (
+    reason: string,
+    detail: string,
+    checks: readonly ReturnType<typeof row>[] = [],
+    checkedSha = SHA,
+  ): PrState =>
+    reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ...(checks.length > 0 ? [['PrChecked', { headSha: checkedSha, verdict: 'red', checks }] as Spec] : []),
+        ['PrWaiting', { step: 'ci', reason, detail, headSha: SHA }],
+      ]),
+    )
+  const decoded = (link: ReturnType<typeof prFixTicketLink>) => {
     expect(link?.kind).toBe('link')
     const url = new URL((link as { href: string }).href)
+    return { url, title: url.searchParams.get('title'), body: url.searchParams.get('body') ?? '' }
+  }
+  const input = { project: 'p', owner: 'o', github: true, name: 'PR #8' }
+
+  it('a red CI run: the title names the failure and the body is a ticket with every failing check', () => {
+    const pr = waitingPr('ci-red', 'CI failed', [row('integration (sqlite)'), row('integration (postgres)')])
+    const { url, title, body } = decoded(prFixTicketLink({ ...input, pr }))
     expect(url.origin + url.pathname).toBe('https://github.com/o/p/issues/new')
     expect(url.searchParams.get('labels')).toBe('lingtai:pr-fix')
-    expect(url.searchParams.get('title')).toBe('pr-fix for PR #88: ')
+    expect(title).toBe('pr-fix for PR #8: CI red in integration (sqlite), integration (postgres)')
+    expect(body).toBe(
+      [
+        '| | |',
+        '|---|---|',
+        '| **Problem** | CI is red on PR #8 (head `296d90c`): integration (sqlite), integration (postgres). |',
+        "| **Want** | CI is green on the PR's next head. |",
+        '| **Fix** | |',
+        '| **Watch out** | |',
+        '',
+        '---',
+        '',
+        '## Evidence',
+        '',
+        '- PR #8, branch `foundry-pr-7`, head `296d90c`.',
+        '- Failing checks:',
+        '  - integration (sqlite) — failure — https://github.com/o/p/actions/runs/1/job/integrationsqlite',
+        '  - integration (postgres) — failure — https://github.com/o/p/actions/runs/1/job/integrationpostgres',
+        '',
+      ].join('\n'),
+    )
   })
+
+  it('forty failing checks: the URL stays under 8,000 characters and the list ends in how many more', () => {
+    const checks = Array.from({ length: 40 }, (_, i) => row(`integration (shard ${i}) — a long check name`, 'failure'))
+    const pr = waitingPr('ci-red', 'CI failed', checks)
+    const link = prFixTicketLink({ ...input, pr })
+    const { body } = decoded(link)
+    expect((link as { href: string }).href.length).toBeLessThan(8000)
+    expect(body).toMatch(/\n {2}- … and \d+ more on the PR page\n$/)
+    const listed = body.split('\n').filter((l) => l.startsWith('  - integration')).length
+    const more = Number(/ and (\d+) more on the PR page\n$/.exec(body)?.[1])
+    expect(listed).toBeGreaterThan(0)
+    expect(listed + more).toBe(40)
+    expect(body).toContain('https://github.com/o/p/pull/88')
+  })
+
+  it('a PR with no wait: the empty table with its name and branch', () => {
+    const pr = reducePr(events([requested, started, draftOpened]))
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).toContain('| **Problem** | |\n| **Want** | |\n| **Fix** | |\n| **Watch out** | |')
+    expect(body).toContain('- PR #8, branch `foundry-pr-7`, head `f0f0f0f`.')
+    expect(body).not.toContain('Failing checks')
+  })
+
+  it('no PR at all: the title stub and an empty table', () => {
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr: null }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).toContain('| **Problem** | |')
+  })
+
+  it('checks read on another head than the wait are not listed', () => {
+    const pr = waitingPr('ci-red', 'CI failed on 296d90c: a (failure)', [row('a')], 'abcdef0123')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: CI failed')
+    expect(body).not.toContain('Failing checks')
+    expect(body).toContain('| **Problem** | CI failed on PR #8 (head `296d90c`): CI failed on 296d90c: a (failure). |')
+  })
+
+  it('another wait: its words and detail in Problem, nothing guessed in Want', () => {
+    const pr = waitingPr('sync-conflict', 'src/a.ts\nsrc/b.ts | both changed')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: conflicts with main')
+    expect(body).toContain(
+      '| **Problem** | conflicts with main on PR #8 (head `296d90c`): src/a.ts src/b.ts \\| both changed. |',
+    )
+    expect(body).toContain('| **Want** | |')
+  })
+
+  it('a check name with | or a missing link keeps the table whole and the line link-free', () => {
+    const pr = waitingPr('ci-red', 'CI failed', [row('a | b'), row('no link', 'timed-out', '')])
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('  - a | b — failure — https://')
+    expect(body).toContain('  - no link — timed-out\n')
+    expect(body.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(6)
+  })
+
+  it('the head is the one last checked, not the one Lingtai last pushed', () => {
+    const pushedA = 'aaaaaaa1111111'
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrPushed', { headSha: pushedA, found: 'pushed' }],
+        ['PrCiFollowing', { headSha: 'bbbbbbb2222222' }],
+        ['PrChecked', { headSha: 'bbbbbbb2222222', verdict: 'green', checks: [] }],
+      ]),
+    )
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain('aaaaaaa')
+  })
+
+  it('a pr-fix landed after the last check: the head is the landing, not the checked one', () => {
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        green,
+        ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+        ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(pr.checks?.headSha).not.toBe('bbbbbbb2222222')
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain(`head \`${pr.checks?.headSha.slice(0, 7)}\``)
+    const button = page([
+      requested,
+      started,
+      draftOpened,
+      green,
+      ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+      ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+    ]).buttons.find((b) => b.label === 'New pr-fix ticket')
+    expect(button?.kind).toBe('link')
+    expect(decodeURIComponent((button as { href: string }).href)).toContain('head `bbbbbbb`')
+  })
+
+  it('a wait left on the head before a landing is not written', () => {
+    const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrChecked', { headSha: SHA, verdict: 'red', checks: [row('a')] }],
+        ['PrWaiting', { step: 'ci', reason: 'ci-red', detail: 'CI failed', headSha: SHA }],
+        ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(waiting.wait).not.toBeNull()
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).not.toContain('Failing checks')
+    expect(body).toContain('head `bbbbbbb`')
+  })
+
+  it('a cut never splits an emoji: the link still encodes', () => {
+    const name = `${'a'.repeat(99)}🔥 checks`
+    const detail = `${'d'.repeat(499)}🔥 end`
+    const red = decoded(prFixTicketLink({ ...input, pr: waitingPr('ci-red', 'CI failed', [row(name)]) }))
+    expect(red.title).toContain('a'.repeat(99) + '🔥…')
+    const other = decoded(prFixTicketLink({ ...input, pr: waitingPr('sync-conflict', detail) }))
+    expect(other.body).toContain('d'.repeat(499) + '🔥…')
+  })
+
+  it('a fixed part past the limit is cut down until the URL fits', () => {
+    const han = '汉'.repeat(100)
+    const checks = Array.from({ length: 40 }, (_, i) => row(`${i}${han}`))
+    const pr = { ...waitingPr('ci-red', 'CI failed', checks), prBranch: Array(4).fill('分'.repeat(70)).join('/') }
+    const link = prFixTicketLink({ ...input, pr })
+    expect((link as { href: string }).href.length).toBeLessThan(8000)
+    expect(decoded(link).body).toContain('| **Problem** |')
+  })
+
+  it('an adopted head: the head is the adopted one, not the frozen commit the walk started again from', () => {
+    const adopted: Spec = ['PrHeadAdopted', { head: 'bbbbbbb2222222', by: 'human:steven' }]
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrWaiting', { step: 'sync', reason: 'sync-conflict', detail: 'src/a.ts', headSha: 'f0f0f0f0' }],
+        adopted,
+        started,
+      ]),
+    )
+    expect(pr.adopted).toBe('bbbbbbb2222222')
+    expect(pr.target).toBe('f0f0f0f0')
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain('f0f0f0f')
+  })
+
+  it('a failure recorded on the adopted head is written, though the adopted flag is still set', () => {
+    const adopted: Spec = ['PrHeadAdopted', { head: 'bbbbbbb2222222', by: 'human:steven' }]
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        adopted,
+        started,
+        ['BranchSynced', { mainCommit: 'm1', head: 'bbbbbbb2222222', how: 'already' }],
+        ['PrWaiting', { step: 'sync', reason: 'sync-red', detail: 'build failed', headSha: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(pr.adopted).toBe('bbbbbbb2222222')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).not.toBe('pr-fix for PR #8: ')
+    expect(body).toContain('(head `bbbbbbb`): build failed.')
+  })
+
+  it('a wait left over after the PR moved on is not written', () => {
+    const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
+    const pr = { ...waiting, status: 'in-progress' as const }
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).not.toContain('Failing checks')
+  })
+
   it('on a local project: the command, and the line to write', () => {
     expect(prFixTicketLink({ project: 'p', owner: null, github: false, name: 'PR 7' })).toEqual({
       kind: 'command',
