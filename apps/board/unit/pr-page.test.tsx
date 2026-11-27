@@ -1053,9 +1053,24 @@ describe('a pr-fix on the PR (#1506)', () => {
     expect(v.history[0]?.text).toBe('pr-fix #1505 taken')
   })
   it('does the same on In review', () => {
-    const v = page([requested, started, done('sync'), draftOpened, green, ['PrReady', {}] as Spec], { fixes: fix() })
+    const v = page(
+      [
+        requested,
+        started,
+        draftOpened,
+        green,
+        ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }] as Spec,
+      ],
+      { fixes: fix() },
+    )
     expect(labels(v)).not.toContain('New pr-fix ticket')
     expect(v.fixing).toHaveLength(1)
+  })
+  it('keeps the History line after the ticket landed, and after the PR restarted', () => {
+    const landed = fix({ state: 'landed' })
+    const v = page(ciWait, { fixes: landed })
+    expect(v.history.some((h) => h.text === 'pr-fix #1505 taken')).toBe(true)
+    expect(v.fixing).toEqual([])
   })
   it('keeps the button and adds no line for a claim naming another PR', () => {
     const v = page(ciWait, { fixes: fix({ cutFromPr: 3 }) })
