@@ -45,7 +45,7 @@ import {
   liveGh,
   parseSlug,
 } from '@lingtai/github'
-import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
+import { draftRecipe, recipePath } from '@lingtai/project'
 import { type Recipe, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import {
   type Answers,

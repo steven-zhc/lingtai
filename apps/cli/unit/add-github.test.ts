@@ -485,7 +485,7 @@ describe('askBeforeGithubAdd (#402)', () => {
     spy.mockRestore()
 
     expect(code).toBe(1)
-    expect(errors.join('\n')).toContain('could not read the repository\'s default branch')
+    expect(errors.join('\n')).toContain("could not read the repository's default branch")
     expect(errors.join('\n')).toContain('--main <branch>')
     expect(counted.writes).toBe(0)
     expect(counted.asks).toBe(0)
