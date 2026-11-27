@@ -130,10 +130,13 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
      a recipe whose judge was removed by hand keeps it removed while the writer
      stays (decided 2026-11-27). It is never reported as a question the person
      skipped.
-   - Nothing is written until the whole list is answered: a Ctrl+C anywhere in
-     it leaves `config.yml` and the recipe as they were (decided 2026-11-27,
+   - Each list is written once, when it is answered to its end: a Ctrl+C inside
+     a list leaves what that list writes as it was (decided 2026-11-27,
      replacing #392's keep-what-was-answered; a rerun's defaults are the values
      in force, so running again and pressing Enter returns to the same place).
+     The machine list is answered before the project list, so a Ctrl+C in the
+     project list keeps the machine answers already written (`github.auth`
+     included) and writes no recipe, makes no branch and registers nothing.
    - The list shown before *use this setup?* and the card at the end are built
      from the same lists; on a later run the card shows old → new for each value
      that changed.
