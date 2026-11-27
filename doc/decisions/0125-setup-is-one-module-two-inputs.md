@@ -103,7 +103,34 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    default?*, the recipe's questions, *register?*. `init` asks only this machine's
    own questions before them. *Use every default?* answers only what comes after
    it; the mode and the branch take their defaults only under `--defaults`, and the
-   card names them.
+   card names them. *Use every default?* is shown as the list of what it would
+   decide, each with its value, then *use this setup?* (§9).
+
+9. **Setup is two ordered lists of questions: the machine's and the project's**
+   (decided 2026-11-27).
+   - **The machine list**: the store, how this machine reaches GitHub, the daily
+     spend ceiling, the sandboxed Claude Code token. **The project list**: where
+     the code is, solo or team, the working or personal branch, then the writer
+     and its model, the reviewer and its model, the sandbox and its hosts, the
+     install command, the checks, the trial build, the ticket source and kinds,
+     the landing, the limits.
+   - `lingtai init` asks the machine list and then the project list; `lingtai add`
+     asks the project list. No question is asked outside these two lists, and no
+     command keeps a copy of one.
+   - **Every question has one default**: the value in force now — `config.yml` or
+     the recipe, the environment winning where it overrides
+     ([0117](0117-configuration-is-config-yml-and-the-environment.md)) — and the
+     system's default where nothing is in force. A first run and a later run are
+     the same code; only where the defaults come from differs.
+   - An answer equal to the value in force writes nothing; another answer is
+     written (§6). Taking the system's default for a key that was never written
+     writes it.
+   - What is written for the person but never asked (the findings judge, #1448)
+     follows the answers it derives from — the judge follows the writer — and is
+     never reported as a question the person skipped.
+   - The list shown before *use this setup?* and the card at the end are built
+     from the same lists; on a later run the card shows old → new for each value
+     that changed.
 
 ## Consequences
 
