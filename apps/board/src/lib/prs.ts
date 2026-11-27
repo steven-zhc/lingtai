@@ -21,7 +21,7 @@ import {
   readPr,
   readPrEvents,
 } from '@lingtai/project'
-import { readSpendEffect } from '@lingtai/projector'
+import { type SpendRow, readSpendEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
 import { context } from '@opentelemetry/api'
 import { Effect } from 'effect'
@@ -277,43 +277,83 @@ const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub |
 }
 
 /**
+ * A ticket's spend out of the rows of the one batch read: `null` where it has no rows, where any row's cost is unreported,
+ * or where the read failed (`rows` null) — never `$0`. A row of the PR's own stream (`pr-…`) is not a ticket's. The
+ * projection keys a ticket's rows by its stream id (`ticket-<project>-<issue>`), never by the bare number.
+ */
+export function spendOfTickets(
+  project: string,
+  tickets: readonly string[],
+  rows: readonly SpendRow[] | null,
+): Map<string, number | null> {
+  const byTicket = new Map<string, SpendRow[]>()
+  for (const r of rows ?? []) {
+    if (r.ticket === null || r.streamId.startsWith('pr-')) continue
+    const kept = byTicket.get(r.ticket)
+    if (kept === undefined) byTicket.set(r.ticket, [r])
+    else kept.push(r)
+  }
+  return new Map(
+    tickets.map((ticket) => {
+      const own = rows === null ? undefined : byTicket.get(ticketStream(project, ticket))
+      const spend =
+        own === undefined || own.length === 0 || own.some((r) => r.costUsd === null)
+          ? null
+          : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+      return [ticket, spend]
+    }),
+  )
+}
+
+/**
+ * The one spend read of a PR's tickets in a request, kept as a promise per `(project, n)` so the page and the generated
+ * description — two root runs — share it (#1511). Keyed by the two primitives, never by the tickets: `cache()` compares
+ * arguments by identity. Both callers fold the same PR stream (`requestStore()` keeps it), so whoever fills the slot
+ * first names the same streams. Pages read through it and actions never do: `request-store.ts` — "a server action never
+ * does: it reads, appends and reads again".
+ */
+const spendSlot = cache((_project: string, _n: number) => ({ rows: undefined as Promise<SpendRow[]> | undefined }))
+
+/** Every ticket's rows in one query, or null where there are no tickets' worth to read or the read failed. */
+const ticketRows = (project: string, n: number, tickets: readonly string[]): Effect.Effect<SpendRow[] | null> =>
+  Effect.gen(function* () {
+    if (tickets.length === 0) return []
+    const slot = spendSlot(project, n)
+    slot.rows ??= Effect.runPromiseWith(yield* Effect.context<never>())(
+      tracedEffect('spend.read', readSpendEffect({ project, ticket: tickets.map((t) => ticketStream(project, t)) })),
+    )
+    const kept = slot.rows
+    return yield* Effect.tryPromise(() => kept)
+  }).pipe(Effect.orElseSucceed(() => null))
+
+/**
  * What the description reads of each ticket, as the daemon's `facts` port does: whether it is still open on GitHub, and what
  * its runs cost (`null` where any run's cost is unreported, or the read failed). The PR's own stream is not a ticket's.
  */
 const ticketFacts = (
   project: string,
+  n: number,
   tickets: readonly string[],
   github: GitHub | null,
 ): Effect.Effect<{ ticket: string; open: boolean | null; spend: number | null }[]> =>
-  Effect.forEach(
-    tickets,
-    (ticket) =>
-      Effect.gen(function* () {
-        // The log's half first and never waiting on GitHub: the issue read runs beside it, in parallel with every other
-        // ticket's, and a slow or failed one is unknown after `ISSUE_READ_BUDGET` rather than holding the page.
-        const openRead =
-          github === null || !/^\d+$/.test(ticket)
-            ? Effect.succeed(null)
-            : github.getIssue(Number(ticket)).pipe(
-                Effect.map((issue): boolean | null => issue.state === 'open'),
-                Effect.timeout(ISSUE_READ_BUDGET),
-                Effect.orElseSucceed(() => null),
-              )
-        // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
-        const rows = yield* tracedEffect(
-          'spend.read',
-          readSpendEffect({ project, ticket: ticketStream(project, ticket) }),
-        ).pipe(Effect.orElseSucceed(() => null))
-        const open = yield* openRead
-        const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
-        const spend =
-          own === null || own.length === 0 || own.some((r) => r.costUsd === null)
-            ? null
-            : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
-        return { ticket, open, spend }
-      }),
-    { concurrency: 'unbounded' },
-  )
+  Effect.gen(function* () {
+    // The log's half first and never waiting on GitHub: the issue reads run in parallel, and a slow or failed one is
+    // unknown after `ISSUE_READ_BUDGET` rather than holding the page.
+    const opens = yield* Effect.forEach(
+      tickets,
+      (ticket) =>
+        github === null || !/^\d+$/.test(ticket)
+          ? Effect.succeed(null)
+          : github.getIssue(Number(ticket)).pipe(
+              Effect.map((issue): boolean | null => issue.state === 'open'),
+              Effect.timeout(ISSUE_READ_BUDGET),
+              Effect.orElseSucceed(() => null),
+            ),
+      { concurrency: 'unbounded' },
+    )
+    const spends = spendOfTickets(project, tickets, yield* ticketRows(project, n, tickets))
+    return tickets.map((ticket, i) => ({ ticket, open: opens[i] ?? null, spend: spends.get(ticket) ?? null }))
+  })
 
 /** What one PR's page knows, or why it could not be known. */
 export type PrDetailRead =
@@ -380,6 +420,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         // no request to the host holds the page back.
         const facts = yield* ticketFacts(
           project,
+          n,
           pr.tickets.map((t) => t.ticket),
           null,
         )
@@ -453,6 +494,7 @@ export async function readGeneratedBody(project: string, n: number): Promise<str
       const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
       const facts = yield* ticketFacts(
         project,
+        n,
         pr.tickets.map((t) => t.ticket),
         github,
       )
