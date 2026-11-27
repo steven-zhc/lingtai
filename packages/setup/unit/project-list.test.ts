@@ -474,6 +474,37 @@ describe('branch, make-branch and move-landing', () => {
     expect(base.ctx.answers.branch).toMatchObject({ name: LINGTAI_BASE, exists: false })
   })
 
+  it("cuts a local solo rerun's new base from the one the recipe names, where that exists", async () => {
+    const start = [`version: ${RECIPE_VERSION}`, 'branch:', `  main: ${LINGTAI_BASE}`, ''].join('\n')
+    const flags = { ...DEFAULTS, mode: 'solo', tickets: 'db', main: 'fresh' }
+    const local = (exists: (n: string) => boolean | 'unreadable') =>
+      ports({ local: true, knownLogin: null, branchExists: (n) => Effect.succeed(exists(n)) })
+    const cut = await walk(
+      local((n) => n === LINGTAI_BASE),
+      { start, flags, seeds: [] },
+    )
+    expect(cut.result.refused).toBeUndefined()
+    expect(cut.ctx.answers.branch).toMatchObject({ name: 'fresh', exists: false, from: LINGTAI_BASE })
+    expect(cut.entry('make-branch')).toMatchObject({ applies: true })
+    expect(cut.ctx.answers.make).toEqual({ name: 'fresh', from: LINGTAI_BASE })
+    // A first run has no base to cut from, and a gone base is no source.
+    const first = await walk(
+      local((n) => n === LINGTAI_BASE),
+      { flags, seeds: [] },
+    )
+    expect(first.result.refused).toBe('fresh is not a branch in this checkout')
+    const gone = await walk(
+      local(() => false),
+      { start, flags, seeds: [] },
+    )
+    expect(gone.result.refused).toBe('fresh is not a branch in this checkout')
+    const lost = await walk(
+      local((n) => (n === LINGTAI_BASE ? 'unreadable' : false)),
+      { start, flags, seeds: [] },
+    )
+    expect(lost.result.refused).toContain('could not read whether the current base exists')
+  })
+
   it('writes the existence the port said, and refuses a read that failed', async () => {
     const { ctx } = await walk(ports(), { flags: { ...DEFAULTS, mode: 'solo' }, seeds: [] })
     expect(ctx.answers.branch).toMatchObject({ name: 'main', exists: true })

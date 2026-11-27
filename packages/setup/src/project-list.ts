@@ -585,6 +585,17 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       }),
   })
 
+  // The branch the recipe lands on now, when a local solo rerun may cut `answer` from it: the recipe names it and it
+  // is there. Null where none is; `unreadable` where the checkout could not say.
+  const rerunBaseSource = (ctx: ProjectContext, answer: string) =>
+    Effect.gen(function* () {
+      if (!ports.local || !rerun(ctx)) return null
+      const old = text(atStart(ctx, ['branch', 'main']))
+      if (old === null || old === answer) return null
+      const found = yield* ctx.ports.branchExists(old)
+      return found === 'unreadable' ? found : found ? old : null
+    })
+
   const branch = entry('branch', {
     name: 'the branch',
     flag: '--main <branch> (solo), or --personal <branch> (team)',
@@ -624,11 +635,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         if (ctx.ports.local) {
           if (answer === LINGTAI_BASE) return null
           const found = yield* ctx.ports.branchExists(answer)
-          return found === 'unreadable'
-            ? `could not read whether ${answer} exists in this checkout`
-            : found
-              ? null
-              : `${answer} is not a branch in this checkout`
+          if (found === 'unreadable') return `could not read whether ${answer} exists in this checkout`
+          if (found) return null
+          // A rerun cuts a new base from the one the recipe names, where that exists.
+          const source = yield* rerunBaseSource(ctx, answer)
+          if (source === 'unreadable') return `could not read whether the current base exists in this checkout`
+          return source === null ? `${answer} is not a branch in this checkout` : null
         }
         return yield* branchOnGithubRefusal(answer, null, ctx.ports.branchExists)
       }),
@@ -639,11 +651,18 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
           const found = yield* ctx.ports.branchExists(answer)
           if (found === 'unreadable')
             return { refused: `could not read whether ${answer} exists ${where}. ${ctx.kept}` }
-          // The base a directory's project lands on is made after the list; no other name is.
+          // The base a directory's project lands on is made after the list; a rerun's new base is cut from the old
+          // one; no other name is made.
+          let from: string | null = null
           if (!found && !(ctx.ports.local && answer === LINGTAI_BASE)) {
-            return { refused: `${answer} is not a branch ${where}. ${ctx.kept}` }
+            const source = yield* rerunBaseSource(ctx, answer)
+            if (source === 'unreadable') {
+              return { refused: `could not read whether the current base exists in this checkout. ${ctx.kept}` }
+            }
+            if (source === null) return { refused: `${answer} is not a branch ${where}. ${ctx.kept}` }
+            from = source
           }
-          ctx.answers.branch = { name: answer, exists: found, from: null, onlyIn: null, main: answer }
+          ctx.answers.branch = { name: answer, exists: found, from, onlyIn: null, main: answer }
           return append(ctx, valueOf(inForce) === answer ? [] : [{ path: ['branch', 'main'], value: answer }])
         }
         const kept = ctx.kept
@@ -705,7 +724,10 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   const makeBranch = entry('make-branch', {
     name: 'making the personal branch',
     flag: '--defaults, or make the branch yourself',
-    applies: (ctx) => ctx.answers.mode === 'team' && ctx.answers.branch !== undefined && !ctx.answers.branch.exists,
+    applies: (ctx) =>
+      ctx.answers.branch !== undefined &&
+      !ctx.answers.branch.exists &&
+      (ctx.answers.mode === 'team' || (ports.local && ctx.answers.branch.from !== null)),
     confirm: {
       declined: (ctx) => {
         const at = ctx.answers.branch
