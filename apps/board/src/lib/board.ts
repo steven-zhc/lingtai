@@ -99,6 +99,7 @@ import {
   pausedNames,
 } from './lock-marks.ts'
 import { describeHeld, progressOf, spentOf, type Granted, type AttemptProgress } from './progress.ts'
+import { requestStore } from './request-store.ts'
 import { savedFixWorkFromState } from './saved-fix-work.ts'
 import { boardWriterOrNone } from './snapshot-writer.ts'
 import {
@@ -1015,7 +1016,7 @@ export async function askProject(
                   recipe: filter.recipe,
                   // Through the blocker cache, so `queue.blockers` below finds what this read fetched.
                   links: cachedBlockers(filter.project, filter.links ?? null, options.now ?? Date.now),
-                  store: eventStore,
+                  store: requestStore(),
                   project: filter.project,
                 }),
               }),
