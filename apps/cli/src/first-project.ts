@@ -120,7 +120,7 @@ import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
 import { askBaseBranch, askMakeBranch, askMode, askPersonal, type Mode } from './team.ts'
-import { ROUNDS_RETIRED } from './wizard-options.ts'
+import { ROUNDS_RETIRED, withoutProjectFlags } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -199,6 +199,11 @@ export const pathExistsEffect = (path: string): Effect.Effect<boolean> =>
  * A rejection or a throw inside a member is a failure or a defect, and the refusals below treat both alike.
  */
 export interface FirstProjectWorld extends QuestionWorld {
+  /**
+   * The caller asks a GitHub project's questions itself once a repository is picked (`lingtai add`), so the GitHub
+   * branch is handed the flags without the project's own, and the local branch still gets every one.
+   */
+  asksProjectQuestionsAfterThePick?: true
   git: (dir: string, args: readonly string[]) => Effect.Effect<GitResult, unknown>
   /** Whether a path exists — a seam so the unit tests never touch the disk (0060 §1). */
   exists: (path: string) => Effect.Effect<boolean, unknown>

@@ -229,6 +229,15 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ask: async () => '',
       runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
       history: () => Effect.succeed([]),
+      // No network: every branch the list asks about exists, and no compare has a commit.
+      client: () =>
+        Effect.succeed({
+          branchExists: async () => true,
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async () => {},
+        } as never),
     }
     if (over.doctorFails === true) {
       h.world.doctor = () =>
