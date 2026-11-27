@@ -30,10 +30,13 @@ export const BLOCKERS_FRESH_MS = 60_000
 
 type BlockerRead = NonNullable<BlockedSkip['blockers']>
 const blockerCache = new Map<string, { blockedBy: number | null; at: number; blockers: BlockerRead }>()
+/** The read in flight for a key and open count (#1508): a later caller with the same count waits for it. */
+const blockerReads = new Map<string, { blockedBy: number | null; read: Promise<readonly TicketLink[]> }>()
 
 /** Forgets every cached blocker list, so a test can start from *nothing read*. */
 export function forgetBlockers(): void {
   blockerCache.clear()
+  blockerReads.clear()
 }
 
 /**
@@ -109,20 +112,32 @@ export function cachedBlockers(
       if (hit && hit.blockedBy === count && now() - hit.at < BLOCKERS_FRESH_MS) {
         return hit.blockers.ok ? Promise.resolve(hit.blockers.issues) : Promise.reject(new Error(hit.blockers.problem))
       }
+      const flying = blockerReads.get(key)
+      if (flying && flying.blockedBy === count) return flying.read
       const at = now()
-      return links.listBlockedBy(issue, true).then(
+      // Only the read still registered for the key settles it: after `forgetBlockers()` or a newer count, it records nothing.
+      const current = () => blockerReads.get(key)?.read === read
+      const read: Promise<readonly TicketLink[]> = links.listBlockedBy(issue, true).then(
         (issues) => {
-          // A full page may be the start of a longer list: the explaining read must not draw from it.
-          if (issues.length < BLOCKERS_PAGE)
-            blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues } })
+          if (current()) {
+            blockerReads.delete(key)
+            // A full page may be the start of a longer list: the explaining read must not draw from it.
+            if (issues.length < BLOCKERS_PAGE)
+              blockerCache.set(key, { blockedBy: count, at, blockers: { ok: true, issues } })
+          }
           return issues
         },
         (error: unknown) => {
-          const problem = error instanceof Error ? error.message : String(error)
-          blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem } })
+          if (current()) {
+            blockerReads.delete(key)
+            const problem = error instanceof Error ? error.message : String(error)
+            blockerCache.set(key, { blockedBy: count, at, blockers: { ok: false, problem } })
+          }
           throw error
         },
       )
+      blockerReads.set(key, { blockedBy: count, read })
+      return read
     },
   }
 }
