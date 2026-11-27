@@ -143,6 +143,16 @@ describe('runSetupList', () => {
       )
       expect(out.entries[1]).toMatchObject({ after: 'mine', asked: true })
     })
+    it('under --defaults answers yes itself, with no default of its own, and the walk goes on', async () => {
+      const { out, ctx } = await run(
+        [sw, q('b', { systemDefault: () => Effect.succeed('dflt') })],
+        input({ defaults: true, askers: { sw: die, b: die } }),
+      )
+      expect(out.refused).toBeUndefined()
+      expect(out.entries[0]).toMatchObject({ id: 'sw', after: 'yes', asked: false })
+      expect(out.entries[1]).toMatchObject({ id: 'b', after: 'dflt', asked: false })
+      expect(ctx.log).toEqual(['sw=yes', 'b=dflt'])
+    })
     it('with no terminal goes on without writing', async () => {
       const { out, ctx } = await run(
         [sw, q('b', { systemDefault: () => Effect.succeed('dflt') })],

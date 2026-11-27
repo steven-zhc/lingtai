@@ -269,6 +269,9 @@ export function runSetupList<C extends object>(
       } else if (q.confirm !== undefined && (defaults || !input.interactive)) {
         if (!defaults) return refuse(`${q.name} needs an answer: pass --defaults. ${keptSaid.kept}`)
         answer = 'yes'
+      } else if (q.defaultsSwitch === true && defaults) {
+        // The defaults are already on, so the switch is answered yes without a default of its own.
+        answer = 'yes'
       } else if (q.defaultsSwitch === true && noTerminal) {
         // No terminal to ask on: the walk goes on, and nothing is written (#433).
         entries.push({
