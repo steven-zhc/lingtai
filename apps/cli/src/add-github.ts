@@ -177,7 +177,12 @@ const liveGithubReader = (
   }).pipe(recovering(() => Effect.succeed(EMPTY_SETUP_READER)))
 }
 
+/** What this function asks of a GitHub client: the live one, or a test's. */
+export type GithubClientPort = Pick<GitHubClient, 'branchExists' | 'request' | 'token' | 'refSha' | 'createBranch'>
+
 export interface AskBeforeGithubAddDeps {
+  /** The client the branch checks, the compare and the branch's making go through; absent builds the live one from `reach`. */
+  client?: (owner: string, repo: string, reach: Reach | undefined) => Effect.Effect<GithubClientPort, unknown>
   check: typeof checkInstallationEffect
   /** The machine's elected auth — `null` where nothing is configured. Throws where `github.auth` is refused. */
   auth: () => 'app' | 'gh' | null
@@ -541,16 +546,18 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
     },
   )
 
-  // Built per call, as the trial build's `token` is: an installation token lasts an hour.
-  const githubClient = () =>
-    lift(() =>
-      createGitHubClient({
-        auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
-        owner,
-        repo,
-        ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
-      }),
-    )
+  // Built per call, as the trial build's `token` is: an installation token lasts an hour. A test hands its own.
+  const githubClient = (): Effect.Effect<GithubClientPort, unknown> =>
+    deps.client !== undefined
+      ? deps.client(owner, repo, reach)
+      : lift(() =>
+          createGitHubClient({
+            auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
+            owner,
+            repo,
+            ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
+          }),
+        )
 
   const ports: ProjectPorts = {
     project: repo,
@@ -645,7 +652,8 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
   )
   flushLog(ctx)
   if (walked.refused !== undefined) {
-    console.error(walked.refused)
+    // A refusal the list's own questions made says what is kept; one a port's read made (the default branch) does not.
+    console.error(walked.refused.includes(kept) ? walked.refused : `${walked.refused}. ${kept}`)
     return 1
   }
   // Read before the write: it is the recipe as the run began that says what moved.

@@ -80,6 +80,15 @@ function depsFor(over: Partial<TestDeps>) {
     ask: async () => '',
     runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
     history: () => Effect.succeed([]),
+    // No network: every branch the list asks about exists, and no compare has a commit.
+    client: () =>
+      Effect.succeed({
+        branchExists: async () => true,
+        request: async () => ({ commits: [] }),
+        token: async () => 'token',
+        refSha: async () => 'sha',
+        createBranch: async () => {},
+      } as never),
     ...over,
   }
   return { deps, calls, store }
@@ -118,7 +127,7 @@ describe('askBeforeGithubAdd on a gh machine (#708)', () => {
   it('refuses naming --github-auth gh when nothing is configured and there is no terminal', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const { deps, calls } = depsFor({ auth: () => null, interactive: () => false })
-    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    expect(await askBeforeGithubAdd(SLUG, { mode: 'solo' }, deps)).toBe(1)
     expect(calls.writes).toBe(0)
     expect(String(error.mock.calls[0]?.[0])).toContain('--github-auth gh')
   })
@@ -197,8 +206,8 @@ describe('askBeforeGithubAdd asks how this machine reaches GitHub before it read
 
   it('refuses an app answer with no App and no --main, naming --main and --github-auth gh', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
-    const { deps, calls } = depsFor({ auth: () => null, githubAuth: authDep('app', [], []) })
-    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    const { deps, calls } = depsFor({ auth: () => null, interactive: () => false, githubAuth: authDep('app', [], []) })
+    expect(await askBeforeGithubAdd(SLUG, { mode: 'solo' }, deps)).toBe(1)
     expect(calls.writes).toBe(0)
     const said = String(error.mock.calls[0]?.[0])
     expect(said).toContain('no GitHub App is configured here yet')
@@ -209,8 +218,8 @@ describe('askBeforeGithubAdd asks how this machine reaches GitHub before it read
   it('refuses --github-auth app the same way, without asking', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => {})
     const asked: { message: string; defaultValue: string }[] = []
-    const { deps } = depsFor({ auth: () => null, githubAuth: authDep('gh', [], asked) })
-    expect(await askBeforeGithubAdd(SLUG, { 'github-auth': 'app' }, deps)).toBe(1)
+    const { deps } = depsFor({ auth: () => null, interactive: () => false, githubAuth: authDep('gh', [], asked) })
+    expect(await askBeforeGithubAdd(SLUG, { 'github-auth': 'app', mode: 'solo' }, deps)).toBe(1)
     expect(asked).toEqual([])
     expect(String(error.mock.calls[0]?.[0])).toContain('no GitHub App is configured here yet')
   })
@@ -221,10 +230,11 @@ describe('askBeforeGithubAdd asks how this machine reaches GitHub before it read
     process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY'] = 'x'
     const { deps, calls } = depsFor({
       auth: () => 'app',
+      interactive: () => false,
       check: () => Effect.succeed({ id: 7 } as never),
       defaultBranch: () => Effect.fail(new Error('GitHub did not answer: connect ETIMEDOUT')),
     })
-    expect(await askBeforeGithubAdd(SLUG, {}, deps)).toBe(1)
+    expect(await askBeforeGithubAdd(SLUG, { mode: 'solo' }, deps)).toBe(1)
     expect(calls.writes).toBe(0)
     const said = String(error.mock.calls[0]?.[0])
     expect(said).toContain('connect ETIMEDOUT')
