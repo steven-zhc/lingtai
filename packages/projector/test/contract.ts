@@ -858,6 +858,39 @@ export function describeProjectionStoreContract(name: string, make: () => Promis
       }
     })
 
+    it('reads spend filtered by stream: those streams only, none for an empty list, and anded with project', async () => {
+      const f = await make()
+      const task = f.stream('wi', '46')
+      const run = f.stream('run', 'spend-a')
+      const other = f.stream('run', 'spend-b')
+      try {
+        const a = await f.events.append(run, 0, [
+          started(task),
+          runSpent({ _tag: 'Action', step: 'proposed', name: 'build', round: 0 }),
+          runSpent({ _tag: 'Action', step: 'proposed', name: 'build', round: 1 }),
+        ])
+        const b = await f.events.append(other, 0, [
+          started(task),
+          runSpent({ _tag: 'Action', step: 'proposed', name: 'build', round: 0 }),
+        ])
+        await made(f, spendProjection, [...a, ...b])
+
+        const all = await f.store.spend({ project: f.project })
+        const mine = await f.store.spend({ stream: run })
+        expect(mine.length).toBeGreaterThan(0)
+        expect(mine.every((r) => r.streamId === run)).toBe(true)
+        expect(mine).toEqual(all.filter((r) => r.streamId === run))
+        expect(await f.store.spend({ stream: [run, other] })).toEqual(all)
+        expect(await f.store.spend({ stream: [] })).toEqual([])
+        expect(await f.store.spend({ stream: [other], project: f.project })).toEqual(
+          all.filter((r) => r.streamId === other),
+        )
+        expect(await f.store.spend({ stream: [run], project: `${f.project}-nobody` })).toEqual([])
+      } finally {
+        await f.close()
+      }
+    })
+
     it('reads an empty board rather than failing, when nothing has been reduced', async () => {
       const f = await make()
       try {
