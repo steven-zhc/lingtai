@@ -19,6 +19,7 @@ import {
   type TrialReport,
   type TrialResult,
   detectSetupEffect,
+  installRefusal,
 } from '@lingtai/setup'
 import { Effect } from 'effect'
 
@@ -274,7 +275,7 @@ function askInstall(
         ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
         : {}),
       fallback: '',
-      validate: (a) => Effect.succeed(a === '' ? 'type a command, or none' : null),
+      validate: (a) => Effect.succeed(installRefusal(a)),
       kept: input.kept,
     })
     if ('refused' in answer) return { run: null, refused: answer.refused }

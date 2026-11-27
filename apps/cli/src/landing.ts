@@ -26,17 +26,16 @@ import {
   holdRemovalChanges,
   landOnBranchChanges,
   landingChanges,
-  parseDuration,
   resolveSource,
   conflictResolutionsChange,
   refusalFixesChange,
   wallChange,
 } from '@lingtai/recipe'
+import { landingBranchRefusal, parseBudget, ROUNDS_RETIRED, wallRefusal, wholeNumberRefusal } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { lift, recovering } from './exit.ts'
 import { type QuestionWorld, questionEffect } from './question.ts'
-import { ROUNDS_RETIRED } from './wizard-options.ts'
 
 export interface LandingDeps {
   home?: string
@@ -156,7 +155,7 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
       prompt: 'land this on which branch, or "hold" to hold every attempt for a person',
       current: null,
       detected: null,
-      validate: (answer) => Effect.succeed(answer.trim() === '' ? 'needs a branch name, or "hold"' : null),
+      validate: (answer) => Effect.succeed(landingBranchRefusal(answer)),
       kept: deps.kept,
     })
     if ('refused' in result) return result
@@ -206,16 +205,6 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
   return { ok: true }
 })
 
-/** `--budget`'s "none", parsed the way the question accepts `5`, `5.00` and `$5`. */
-function parseBudget(answer: string): number | null | string {
-  if (answer.trim().toLowerCase() === 'none') return null
-  const n = Number(answer.trim().replace(/^\$/, ''))
-  if (!Number.isFinite(n) || n <= 0) {
-    return 'that is not a dollar amount — write a positive number like 5 or 5.00, or "none" for no ceiling'
-  }
-  return n
-}
-
 export interface LimitsFlags {
   /** Refused by name: it became two bounds (0108 §8). */
   rounds?: string
@@ -255,7 +244,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
       'how many times an attempt sends the agent back after a build or review refuses it — ' +
       '0 buys no fix in the same worktree (a failed build then goes straight to you)',
     current: String(limits.attempt.refusalFixes),
-    validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+    validate: (answer) => Effect.succeed(wholeNumberRefusal(answer)),
     kept: options.kept,
   })
   if ('refused' in refusalFixes) return refusalFixes
@@ -273,7 +262,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
       'how many times an attempt sends the agent back to resolve a merge conflict — ' +
       '0 buys no conflict resolution (a merge conflict then goes straight to you)',
     current: String(limits.attempt.conflictResolutions),
-    validate: (answer) => Effect.succeed(/^\d+$/.test(answer) ? null : 'that is not a whole number 0 or greater'),
+    validate: (answer) => Effect.succeed(wholeNumberRefusal(answer)),
     kept: options.kept,
   })
   if ('refused' in conflictResolutions) return conflictResolutions
@@ -289,14 +278,7 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     given: flags.wall ?? null,
     prompt: 'what one agent run may take, like 30m or 2h',
     current: limits.run.wall,
-    validate: (answer) =>
-      Effect.sync(() => {
-        try {
-          return parseDuration(answer) > 0 ? null : 'must be a positive duration, like 30m'
-        } catch {
-          return 'that is not a duration like 30s, 15m or 2h'
-        }
-      }),
+    validate: (answer) => Effect.succeed(wallRefusal(answer)),
     kept: options.kept,
   })
   if ('refused' in wall) return wall
@@ -320,8 +302,8 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
   })
   if ('refused' in budget) return budget
 
-  const usdValue =
-    budget.answer.trim().toLowerCase() === 'none' ? null : Number(budget.answer.trim().replace(/^\$/, ''))
+  const parsedBudget = parseBudget(budget.answer)
+  const usdValue = typeof parsedBudget === 'number' ? parsedBudget : null
   if ((usdValue ?? null) !== (limits.run.usd ?? null)) {
     const written = yield* setRecipeOrRefuse([budgetChange(usdValue)], options)
     if ('refused' in written) return written

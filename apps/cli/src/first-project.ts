@@ -83,7 +83,13 @@ import {
 } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
-import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
+import {
+  askRuntimesEffect,
+  NO_GITHUB_ORIGIN,
+  noRuntimesSignedInRefusal,
+  proposeSetup,
+  type RuntimeFound,
+} from '@lingtai/setup'
 import {
   alreadyAddedSentence,
   applySetup,
@@ -94,7 +100,6 @@ import {
 } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
-import { noRuntimesSignedInRefusal } from './agents.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect } from './board.ts'
 import { lift } from './exit.ts'

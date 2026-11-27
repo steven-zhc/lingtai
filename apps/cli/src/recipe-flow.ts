@@ -32,7 +32,13 @@ import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
 import { assigneeChanges, branchOf, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
 import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
-import { defaultPersonalBranch, type Proposal, type RuntimeFound } from '@lingtai/setup'
+import {
+  branchOnGithubRefusal,
+  defaultPersonalBranch,
+  loginRefusal,
+  type Proposal,
+  type RuntimeFound,
+} from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { askAgents } from './agents.ts'
@@ -43,7 +49,7 @@ import { askSandbox } from './sandbox-step.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuildEffect } from './setup-build.ts'
 import type { LeftBehind } from './setup-card.ts'
 import { askKinds, askTickets } from './source.ts'
-import { askLogin, askMode, askPersonal, GITHUB_LOGIN, type Mode } from './team.ts'
+import { askLogin, askMode, askPersonal, type Mode } from './team.ts'
 
 /**
  * What a refusal inside `askRecipe` says was kept, for `lingtai add`'s
@@ -352,15 +358,9 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         kept: askKept,
         validate: (answer) =>
           // The default is what GitHub or the recipe already named; only a different answer is looked up.
-          team === undefined || answer === mainBranch
+          team === undefined
             ? Effect.succeed(null)
-            : Effect.map(team.branchExists(answer), (exists) =>
-                exists === 'unreadable'
-                  ? `could not read whether ${answer} exists on GitHub`
-                  : exists
-                    ? null
-                    : `${answer} is not a branch on GitHub`,
-              ),
+            : branchOnGithubRefusal(answer, mainBranch, (name) => team.branchExists(name)),
       })
       if ('refused' in landed) return landed
       // Where the mode is still changing, the answer is written with that change: checked on its own, the new
@@ -407,8 +407,8 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         const typed = yield* askLogin(landWorld, { given: null, kept: askKept, current: currentLogin })
         if ('refused' in typed) return typed
         login = typed.login
-      } else if (given !== null && !GITHUB_LOGIN.test(given)) {
-        return { refused: `${given} is not a GitHub login (letters, digits and single -). ${askKept}` }
+      } else if (given !== null && loginRefusal(given) !== null) {
+        return { refused: `${loginRefusal(given)}. ${askKept}` }
       }
       // A team recipe asks no base question, so a typed `--main` that differs from the recipe's is the answer: checked
       // against GitHub, then written with the rest, and the personal branch below is cut from it.
@@ -421,11 +421,8 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
         return { refused: `no main branch to cut ${login}'s branch from — pass --main <branch>. ${askKept}` }
       }
       if (teamMain !== mainBranch) {
-        const there = yield* team.branchExists(teamMain)
-        if (there === 'unreadable') {
-          return { refused: `could not read whether ${teamMain} exists on GitHub. ${askKept}` }
-        }
-        if (!there) return { refused: `${teamMain} is not a branch on GitHub. ${askKept}` }
+        const missing = yield* branchOnGithubRefusal(teamMain, mainBranch, (name) => team.branchExists(name))
+        if (missing !== null) return { refused: `${missing}. ${askKept}` }
         collected.push({ path: ['branch', 'main'], value: teamMain })
       }
       const rawPersonal = draft.get(['branch', 'personal'])

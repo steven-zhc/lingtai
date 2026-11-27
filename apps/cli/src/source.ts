@@ -22,7 +22,7 @@ import {
   ticketsChange,
   type TicketSource,
 } from '@lingtai/recipe'
-import { parseKinds, ticketSourceOf } from '@lingtai/setup'
+import { DIFFERENT_SOURCE_CLASH, parseKinds, sourceClashRefusal, ticketSourceOf } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { lift } from './exit.ts'
@@ -72,9 +72,6 @@ function resolvedRecipe(project: string, draft: RecipeDraft, home?: string): Rec
   }
 }
 
-/** Why a project with work items in the log cannot change its ticket source. */
-export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own tickets into those same streams'
-
 /**
  * Where this project's tickets come from — `github` or `db`.
  *
@@ -113,13 +110,8 @@ export const askTickets = Effect.fn('source.askTickets')(function* (
   const current: TicketSource = ticketSourceOf(rawTickets, history)
 
   if (history.length > 0) {
-    if (given !== null && given !== current) {
-      return {
-        refused:
-          `--tickets ${given}, but ${project} already has work items in the log (${history.join(', ')}), ` +
-          `numbered under source.tickets: ${current} — ${DIFFERENT_SOURCE_CLASH}. Leave out --tickets, or remove the project first. ${kept}`,
-      }
-    }
+    const clash = sourceClashRefusal({ given, project, history, current, kept })
+    if (clash !== null) return { refused: clash }
     world.log(
       paint.muted(
         `tickets       ${current} — kept: the log already has work items for this project (${history.join(', ')}), ` +
