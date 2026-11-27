@@ -434,6 +434,26 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
   })
 
+  it('a bare add with --github-auth gh and a conflicting --github-app is refused before github.auth is written', async () => {
+    const { world, errors } = githubHarness()
+    world.project.github.auth = () => null
+    let answered = 0
+    world.githubDeps = {
+      ...world.githubDeps!,
+      githubAuth: () => {
+        answered++
+        return Effect.succeed({ auth: 'gh' } as never)
+      },
+    }
+    const code = await addFlow(
+      flagsFromArgv(['--mode', 'solo', '--project', 'github', '--github-auth', 'gh', '--github-app', 'create']),
+      world,
+    )
+    expect(code).toBe(1)
+    expect(answered).toBe(0)
+    expect(errors.join('\n')).toContain('--github-app create')
+  })
+
   it('a bare add with recipe flags still reaches the picker, and the flags go on with the pick (#969)', async () => {
     const { world, errors } = githubHarness()
     world.project.ask = async (prompt) => (/which repository/.test(prompt) ? 'acme/widgets' : '')

@@ -203,6 +203,13 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
     flags['local'] === undefined &&
     (world.project.github.auth?.() ?? null) === null
   ) {
+    // The refusals `chooseFirstProject` would make are made first: this writes `github.auth`, so a refusal after it
+    // could not say that nothing was written.
+    const conflict = conflictingFlags(flags, world.project.kept)
+    if (conflict !== null) {
+      world.error(conflict)
+      return 1
+    }
     const answered = yield* (world.githubDeps ?? liveGithubDeps).githubAuth!(flags)
     if ('refused' in answered) {
       world.error(answered.refused)
@@ -281,6 +288,8 @@ export interface GithubProjectEntry {
   homeIsNew: boolean
   /** What the command's own earlier steps left behind, ahead of the project's. */
   leftBehind?: readonly LeftBehind[]
+  /** The day's ceiling `init`'s list asked about or was told, as the card's `spend` row. */
+  spend?: string
 }
 
 /** What the project's setup came to; the command closes on `closing` (or `fix`) itself, and exits `exit`. */
@@ -487,6 +496,7 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
       labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
       trial: asked.trial,
       recipePath: path,
+      ...(entry.spend === undefined ? {} : { spend: entry.spend }),
       ...(left.length === 0 ? {} : { leftBehind: left }),
     },
     asked.hints,

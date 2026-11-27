@@ -983,6 +983,8 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
     const text = lines(h.logged).join('\n')
     expect(text).toMatch(/^init {2}widgets/m)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
+    // The machine's ceiling is on the project's card as well: `--day-usd 100` is in ARGS.
+    expect(text).toMatch(/spend\s.*100/)
   })
 
   it('a rerun asks the prompts the first run asked, and with nothing changed registers nothing', async () => {
@@ -1061,6 +1063,58 @@ describe('lingtai init asks the machine list from the top on every run (#1522)',
     expect(code).toBe(0)
     expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['github', 'auth'])).toBe('gh')
     expect(h.calls.board).toBe(1)
+  })
+
+  it('a rerun on a machine with projects answering app with no App configured reaches the App step, without --project', async () => {
+    const h = harness({ ghStatus: READY })
+    h.machineFiles.set(CONFIG, 'database:\n  store: sqlite\ngithub:\n  auth: gh\nlimits:\n  day_usd: 100\n')
+    h.world.projects = liftPort(async () => [{ project: 'repo', name: 'repo', owner: null }] as never)
+    h.world.pressed = signalPort(async () => {})
+    h.world.appeared = signalPort(
+      (signal) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(new Error('aborted')))),
+    )
+    h.world.ask = async (prompt, shape) => {
+      const message = shape?.message ?? prompt
+      return /the GitHub App now/.test(message) ? 'create' : ''
+    }
+    const code = await initCommand(flagsFromArgv(['--github-auth', 'app']), h.world)
+    expect(code).toBe(0)
+    expect(lines(h.logged).join('\n')).not.toContain('init --project github')
+    expect(h.calls.board).toBe(1)
+  })
+
+  it('--github-auth none with --project local on a machine with an App asks the local project, which it is not refused', async () => {
+    const h = harness({
+      gitPlan: {
+        '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
+        '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+        '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
+      },
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
+    })
+    h.world.cwd = '/repo'
+    h.world.ask = async (prompt, shape) => (/director/i.test(shape?.message ?? prompt) ? '/repo' : '')
+    const code = await initCommand(
+      flagsFromArgv([
+        '--store',
+        'sqlite',
+        '--day-usd',
+        '100',
+        '--github-auth',
+        'none',
+        '--project',
+        'local',
+        '--defaults',
+        '--mode',
+        'solo',
+        '--install',
+        'none',
+      ]),
+      h.world,
+    )
+    expect(lines(h.logged).join('\n')).not.toContain('but a GitHub App is already configured')
+    expect(code).toBe(0)
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['github', 'auth'])).toBe('none')
   })
 
   it('--defaults writes limits.day_usd: 100; --day-usd none removes it; --day-usd 0 is refused by name and nothing is written', async () => {

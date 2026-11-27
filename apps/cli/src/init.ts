@@ -564,6 +564,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     }
     const explicitChoice =
       flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
+    // The flags the project path is run with: what was typed, and — on a machine that has projects and was
+    // answered `app` with no App yet — the project path's own `github`, which is the step that makes the App.
+    let projectFlags = flags
     // Whether the project question is asked at all this run — false when the
     // machine already has projects and nothing named which to add, so the
     // question is not asked again (below), only answered by what is printed
@@ -574,7 +577,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     let here: Here | null = null
     if (!explicitChoice) {
       const registered = yield* world.projects()
-      if (registered.length > 0) {
+      if (registered.length > 0 && decidedAuth.pending) {
+        projectFlags = { ...flags, project: 'github' }
+      } else if (registered.length > 0) {
         const listed: string[] = []
         for (const p of registered) {
           if (p.owner !== null) {
@@ -734,14 +739,6 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     let githubClosing: Parameters<typeof addSteps>[0] | undefined
     // The board's `/setup/repository` page, when the App was just made here.
     let githubSetupUrl: string | undefined
-    // `app` was answered and no App exists yet: the step that makes one is the project path, which this run is not on.
-    // Said as a refusal rather than a 0 that leaves `github.auth` where it was.
-    if (!askProject && decidedAuth.pending) {
-      return stop(
-        'github.auth stays unwritten until a GitHub App exists — run lingtai init --project github. ' +
-          'Everything else chosen above is kept',
-      )
-    }
     if (askProject) {
       // Built from `world` directly rather than through a live default (#394's
       // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
@@ -835,7 +832,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             store: () => storeNow,
             userHome: world.env['HOME'] ?? '',
           },
-          { command: 'init', homeIsNew, leftBehind: storeLeft },
+          { command: 'init', homeIsNew, leftBehind: storeLeft, ...spendFact },
         )
         if (done.exit !== 0) return done.exit
         held.length = 0
@@ -843,7 +840,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         githubClosing = done.closing
         cardDrawn = true
       } else {
-        const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
+        const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, projectFlags, buildFlags)
         if ('refused' in chosen) {
           // `boardUrl()` above is the only caller of `startBoard` on this path —
           // if it was ever asked for, a refusal it hit is the real reason, over

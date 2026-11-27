@@ -449,7 +449,8 @@ export function chooseFirstProjectEffect(
             `and run this again. ${world.kept}`,
         }
       }
-      if (app.configured && world.githubAppIsTheProject === true) {
+      // An App the machine was just told not to use (`--github-auth none`) answers nothing: the project is asked.
+      if (app.configured && world.githubAppIsTheProject === true && world.github.decided?.auth !== 'none') {
         const namedProject = flags['project'] ?? null
         if (namedProject !== null && namedProject !== 'github') {
           return {

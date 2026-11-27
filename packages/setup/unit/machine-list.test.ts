@@ -160,8 +160,9 @@ describe('runSetupList', () => {
   })
 })
 
+const sandboxed = { runtime: { agent: 'claude-code' }, steps: {}, sandbox: { enabled: true } } as never
+
 describe('the token entry', () => {
-  const sandboxed = { runtime: { agent: 'claude-code' }, steps: {}, sandbox: { enabled: true } } as never
   const tokenList = (ports: MachinePorts) =>
     machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
 
@@ -293,9 +294,12 @@ describe('an exported value beside a flag', () => {
       const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
       const out = await Effect.runPromise(
         runSetupList(list, input({ flags: { 'claude-token': given } }), {
-          draft: { sandbox: 'claude-code' } as never,
+          draft: sandboxed,
         }),
       )
+      // The entry was reached and answered by the flag, not deferred: the comparison with the exported token ran.
+      expect(out.deferred).toEqual([])
+      expect(out.entries).toHaveLength(1)
       expect(out.refused).toBeUndefined()
       expect(state.writes).toBe(0)
     }
