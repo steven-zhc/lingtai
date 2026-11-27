@@ -217,6 +217,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     })
     // Never the live client: it would run `gh auth token` and POST to the repository.
     h.world.labels = () => Effect.succeed({ createLabel: async () => 'created' as const })
+    h.world.issueForms = () => Effect.succeed({ kind: 'none' })
     h.world.githubDeps = {
       check: () => Effect.succeed(null),
       auth: () => 'gh',
@@ -373,6 +374,23 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(logged.join('\n')).toContain(
       'lingtai:hold could not be checked — gh label create lingtai:hold --repo acme/widgets',
     )
+  })
+
+  it('an issue-forms read that fails leaves the add at 0 and the closing on the label line (#1518)', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    world.issueForms = () => Effect.die(new Error('403'))
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(logged.join('\n')).toContain('gh issue create -R acme/widgets --label bug')
+  })
+
+  it('one issue form closes on the form, not on gh issue create (#1518)', async () => {
+    const { world, logged, argv } = githubHarness()
+    world.issueForms = () => Effect.succeed({ kind: 'one', file: 'new-joke.yml', name: 'New joke' })
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).toContain("open 'https://github.com/acme/widgets/issues/new?template=new-joke.yml")
+    expect(text).not.toContain('gh issue create')
   })
 
   it('a bare add on a gh machine offers the login’s repositories and adds the one picked (#969)', async () => {

@@ -209,6 +209,7 @@ describe('the team card (#1324)', () => {
     reviewer: null,
     checks: ['pnpm test'],
     approves: false,
+    takes: { take: 'mine', login: 'sam' },
     findingsJudge: null,
     team: { login: 'steven-zhc', personal: 'steven-zhc/studio' },
   }

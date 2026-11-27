@@ -735,6 +735,7 @@ describe('init on a machine that already has projects names the directory it was
       },
     )
     expect(lines(logged).join('\n')).toContain("gh issue create -R acme/widgets --label 'tech debt'")
+    expect(lines(logged).join('\n')).not.toContain('--assignee')
   })
 
   it('a git failure is not inside a repository, never a project', async () => {
