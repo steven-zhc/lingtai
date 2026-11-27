@@ -26,6 +26,7 @@ const REQUIRED = [
   '.rtab',
   '.ti',
   '.lmeta',
+  '.lspend',
   '.iss',
   '.pr-name',
   '.pr-slip-title',
