@@ -376,13 +376,15 @@ describe('lingtai init (#186)', () => {
     // Each world keeps its own files, so the recipe the first run wrote is
     // handed on: its `repo.remote` is what marks the project local (#394's review).
     const second = world(home, {
+      answers: [''],
       projects: [registered],
       files: { [recipePath('repo', home)]: 'repo:\n  remote: git@github.com:acme/repo.git\n' },
     })
     expect(await initCommand(flagsFromArgv([]), second.world)).toBe(0)
     expect(second.seen.lines.join('\n')).toContain('repo — local, git@github.com:acme/repo.git')
     expect(second.seen.lines.join('\n')).toContain('lingtai add asks GitHub-or-directory')
-    expect(second.seen.asked).toEqual([])
+    // A re-run asks the store question again, the store it has as the default (0125 §6).
+    expect(second.seen.asked).toEqual(['ask:database'])
   })
 
   it('a machine with a project already registered starts no board when the App is not configured, rather than stopping at the list (#394, #434)', async () => {
@@ -534,15 +536,16 @@ describe('lingtai init (#186)', () => {
         const first = world(home, { runtimes, answers: [URL_], interruptAt: at }, db)
         await expect(initCommand(flagsFromArgv([]), first.world)).rejects.toThrow(Interrupted)
 
-        const second = world(home, { runtimes, answers: [URL_] }, db)
+        // A settled store is asked again with itself as the default (0125 §6): Enter keeps it.
+        const settledDatabase = STEPS.indexOf(at) > STEPS.indexOf('database')
+        const second = world(home, { runtimes, answers: [settledDatabase ? '' : URL_] }, db)
         expect(await initCommand(flagsFromArgv([]), second.world)).toBe(0)
 
         expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${URL_}\n${GITHUB_APP}`)
         expect(second.seen.opened).toEqual(['http://127.0.0.1:3200/setup/github-app'])
 
-        // What the first run settled, the second does not ask again.
-        const settledDatabase = STEPS.indexOf(at) > STEPS.indexOf('database')
-        expect(second.seen.asked.includes('ask:database')).toBe(!settledDatabase)
+        // What the first run settled, the second asks again, with the answer as the default.
+        expect(second.seen.asked).toContain('ask:database')
       })
     }
   })
@@ -568,10 +571,14 @@ describe('lingtai init (#186)', () => {
     const home = freshHome()
     const { world: w, seen } = world(home, { answers: [URL_] })
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
-    const second = world(home, { app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } })
+    const second = world(home, {
+      answers: [''],
+      app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+    })
     expect(await initCommand(flagsFromArgv([]), second.world)).toBe(0)
     // Written by the first run, and still connected to by the second.
-    expect(second.seen.connected).toEqual([URL_])
+    // Twice: the kept store is checked as it is asked about, and again for the card.
+    expect(second.seen.connected).toEqual([URL_, URL_])
     expect(seen.connected).toEqual([URL_])
     // The App is asked on every run, and only what the call answered is reported.
     expect(seen.apps).toBe(1)
@@ -581,7 +588,10 @@ describe('lingtai init (#186)', () => {
     expect(cardRow(second.seen.lines, 'github')).toBe('the App lingtai-me')
 
     // A configured App that does not answer is not reported as answering.
-    const failing = world(home, { app: { configured: true, ok: false, why: '401 Bad credentials' } })
+    const failing = world(home, {
+      answers: [''],
+      app: { configured: true, ok: false, why: '401 Bad credentials' },
+    })
     expect(await initCommand(flagsFromArgv([]), failing.world)).toBe(1)
     expect(failing.seen.apps).toBe(1)
     expect(failing.seen.lines.join('\n')).not.toContain('it answered')
@@ -718,18 +728,23 @@ describe('lingtai init (#186)', () => {
     // The board is up, as it is on a finished machine, so its port is taken.
     const again = world(
       home,
-      { app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' }, running: 'http://127.0.0.1:3200' },
+      {
+        answers: [''],
+        app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' },
+        running: 'http://127.0.0.1:3200',
+      },
       db,
     )
     expect(await initCommand(flagsFromArgv([]), again.world)).toBe(0)
     expect(again.seen.boards).toBe(0)
     expect(again.seen.opened).toEqual(['http://127.0.0.1:3200/setup/repository'])
 
-    expect(again.seen.asked).toEqual([])
+    // Asked again, with the store it has as the default; Enter keeps it and writes nothing (0125 §6).
+    expect(again.seen.asked).toEqual(['ask:database'])
     expect(config(home)).toBe(before)
     expect(statSync(configPath({ LINGTAI_HOME: home })).mtimeMs).toBe(mtime)
     // The database was reached again, and the card reports the state it found.
-    expect(again.seen.connected).toEqual([URL_])
+    expect(again.seen.connected).toEqual([URL_, URL_])
     expect(cardRow(again.seen.lines, 'log')).toBe('Postgres · db.example')
     expect(cardRow(again.seen.lines, 'agents')).toMatch(/^claude-code ✓/)
     expect(cardRow(again.seen.lines, 'github')).toBe('the App lingtai-me')
@@ -833,7 +848,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     ).rejects.toThrow(Interrupted)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ because: 'nothing chosen' })
 
-    // Stopped after it: the store is written, and the second run asks nothing about it.
+    // Stopped after it: the store is written, and the second run asks it again, with it as the default.
     await expect(
       initCommand(flagsFromArgv([]), world(home, { answers: [URL_], interruptAt: 'app' }, db).world),
     ).rejects.toThrow(Interrupted)
@@ -842,9 +857,9 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     // any point and leave a whole file or none, never half of one.
     expect(readdirSync(home).filter((name) => name.includes('partial'))).toEqual([])
 
-    const second = world(home, {}, db)
+    const second = world(home, { answers: [''] }, db)
     expect(await initCommand(flagsFromArgv([]), second.world)).toBe(0)
-    expect(second.seen.asked).toEqual([])
+    expect(second.seen.asked).toEqual(['ask:database'])
   })
 
   it('is the exported variable that wins, and the card reads the log it named', async () => {

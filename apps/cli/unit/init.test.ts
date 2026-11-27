@@ -60,6 +60,22 @@ describe('machineRuntimeRefusal', () => {
   })
 })
 
+describe('a file that still names a runtime is refused before the store is asked', () => {
+  it('exits 1 on the migration message and never asks', async () => {
+    const h = harness()
+    const { world, logged, asked, machineFiles } = h
+    machineFiles.set(
+      `${HOME}/config.yml`,
+      'database:\n  store: postgres\n  url: postgres://u:p@h/db\nruntime:\n  agent: codex\n',
+    )
+    const before = h.machineWrites
+    expect(await initCommand(flagsFromArgv([]), world)).toBe(1)
+    expect(lines(logged).join('\n')).toContain('runtime.agent in that project')
+    expect(asked).toEqual([])
+    expect(h.machineWrites).toBe(before)
+  })
+})
+
 // --------------------------------------------------------------------------
 
 const ENV = { VITEST: '1', HOME: '/nonexistent', LINGTAI_TEST_SQLITE_PATH: '/nonexistent/log.sqlite' }
