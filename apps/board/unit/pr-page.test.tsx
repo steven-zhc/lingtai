@@ -655,6 +655,52 @@ describe('prFixTicketLink', () => {
     expect(body).not.toContain('aaaaaaa')
   })
 
+  it('a pr-fix landed after the last check: the head is the landing, not the checked one', () => {
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        green,
+        ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+        ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(pr.checks?.headSha).not.toBe('bbbbbbb2222222')
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain(`head \`${pr.checks?.headSha.slice(0, 7)}\``)
+    const button = page([
+      requested,
+      started,
+      draftOpened,
+      green,
+      ['PrOpened', { host: 'github', number: 88, url: 'https://github.com/o/p/pull/88' }],
+      ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+    ]).buttons.find((b) => b.label === 'New pr-fix ticket')
+    expect(button?.kind).toBe('link')
+    expect(decodeURIComponent((button as { href: string }).href)).toContain('head `bbbbbbb`')
+  })
+
+  it('a wait left on the head before a landing is not written', () => {
+    const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrChecked', { headSha: SHA, verdict: 'red', checks: [row('a')] }],
+        ['PrWaiting', { step: 'ci', reason: 'ci-red', detail: 'CI failed', headSha: SHA }],
+        ['PrFixLanded', { ticket: '47', title: 'fix', mergeCommit: 'bbbbbbb2222222' }],
+      ]),
+    )
+    expect(waiting.wait).not.toBeNull()
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).not.toContain('Failing checks')
+    expect(body).toContain('head `bbbbbbb`')
+  })
+
   it('a cut never splits an emoji: the link still encodes', () => {
     const name = `${'a'.repeat(99)}🔥 checks`
     const detail = `${'d'.repeat(499)}🔥 end`
