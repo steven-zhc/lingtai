@@ -182,3 +182,17 @@ PR-list content starts immediately; remaining priorities are PR-detail header
 serialization, the homepage queue's broad historical task read, and measuring
 unexplained PR-discovery and response-completion intervals. Workloads and
 draft sizes differ, so this remains an observed comparison across versions.
+
+## November 25 afternoon retest
+
+The [b9f27c1 retest](021/production-2026-11-25-b9f27c1/report.md) confirms
+that PR detail starts alongside navigation reads (median 3 ms, maximum 14 ms)
+and empty-offer queue selection avoids its historical full-card read.
+Acceptance is blocked by a legacy-numbering gap: the project has seven PR
+streams but no `ProjectPrNumbered` record, so the list displays zero in every
+column. PR 7 also remains In review after its GitHub merge. The faster empty
+list is not a performance success. New phases expose 61 spend reads in a
+30-ticket PR detail request, including repeated per-ticket reads and a
+project-wide spend query. The report preserves five serial probes per
+target/mode, browser observations and 121 test-window HTTP roots separately
+from the morning cohort.

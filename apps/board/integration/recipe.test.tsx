@@ -370,7 +370,7 @@ const DIRECTIVE = /^\s*['"]use server['"]/m
 describe('the writer is one place', () => {
   const page = fileURLToPath(PAGE)
   const actions = fileURLToPath(new URL('../src/app/actions.ts', import.meta.url))
-  const segment = filesUnder(new URL('../src/app/recipe/', import.meta.url))
+  const segment = filesUnder(new URL('../src/app/p/[project]/recipe/', import.meta.url))
   const reached = importedBy(page, actions)
   const importsActions = (file: string) =>
     /from\s+["'][^"']*app\/actions(?:\.ts)?["']|from\s+["']@\/app\/actions/.test(readFileSync(file, 'utf8'))
