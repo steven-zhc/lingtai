@@ -169,7 +169,7 @@ import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { spunEffect, type QuestionWorld } from './question.ts'
 import { issueTakeOf, type LeftBehind } from './setup-card.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
-import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
+import { PROJECT_FLAGS, ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
 // -------------------------------------------------------------- the world --
 
@@ -623,24 +623,12 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         if (flags['base'] !== undefined) {
           return stop(`--base is now --main: pass --main ${flags['base']}. The store chosen above is kept`)
         }
-        const discardedFlag = [
-          'main',
-          'tickets',
-          'kinds',
-          'agent',
-          'model',
-          'reviewer',
-          'reviewer-model',
-          'install',
-          'build',
-          'check-build',
-          'land',
-          'rounds',
-          'refusal-fixes',
-          'conflict-resolutions',
-          'wall',
-          'budget',
-        ].find((name) => flags[name] !== undefined)
+        // The flags that name a recipe key the project list's own walk answers; `--mode` and the like are accepted here
+        // and ignored, as they always were, until #1523's list takes this path over.
+        const discardedFlag = PROJECT_FLAGS.find(
+          (name) =>
+            !['sandbox', 'sandbox-hosts', 'mode', 'login', 'personal'].includes(name) && flags[name] !== undefined,
+        )
         if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
         if (discardedFlag !== undefined) {
           return stop(

@@ -115,7 +115,7 @@ import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
 import { askMode, askPersonal, type Mode } from './team.ts'
-import { ROUNDS_RETIRED } from './wizard-options.ts'
+import { PROJECT_FLAGS, ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -498,32 +498,13 @@ export function chooseFirstProjectEffect(
       : runGithubBranch(
           world,
           deferRecipeFlags
-            ? Object.fromEntries(Object.entries(flags).filter(([n]) => !RECIPE_FLAGS.includes(n)))
+            ? Object.fromEntries(Object.entries(flags).filter(([n]) => !PROJECT_FLAGS.includes(n)))
             : flags,
           flags['github'] ?? null,
           appCheck,
         )
   })
 }
-
-/** The flags only `askBeforeGithubAdd` consumes, which the board branch refuses. */
-export const RECIPE_FLAGS = [
-  'tickets',
-  'kinds',
-  'agent',
-  'model',
-  'reviewer',
-  'reviewer-model',
-  'install',
-  'build',
-  'check-build',
-  'land',
-  'rounds',
-  'refusal-fixes',
-  'conflict-resolutions',
-  'wall',
-  'budget',
-]
 
 /** Git recognises a URL (`scheme://…`) and scp-style (`[user@]host:path`) — everything else is a path. */
 function isUrlOrScpLike(remote: string): boolean {

@@ -44,6 +44,15 @@ export const recipeOptions = {
   'no-color': Flag.Boolean('no-color').pipe(Flag.withDefault(false)),
 }
 
+/**
+ * The flags a project's questions take: the one list of what `init` and `add` accept for a project. Anything that
+ * must say "this flag was for the recipe" — the refusal where no project is named, and the hand-off from the add
+ * that already asked to the branch that registers — reads this, and keeps no copy of it.
+ */
+export const PROJECT_FLAGS: readonly string[] = Object.keys(recipeOptions).filter(
+  (n) => n !== 'base' && n !== 'defaults' && n !== 'yes' && n !== 'no-color',
+)
+
 export const initOptions = {
   store: text('store'),
   'database-url': text('database-url'),

@@ -287,7 +287,7 @@ steps:
     const resolved = resolveSource(text, path, path).recipe
     expect(resolved.source.kinds).toEqual(['bug', 'feature'])
 
-    // A recipe already on disk gets no findings judge added (#1490).
+    // A recipe already on disk gets no findings judge added while its writer is unchanged (#1490, #1523).
     expect(parseDocument(text).getIn(['steps', 'proposed'])).toBeUndefined()
 
     // No `SAID` sentence was inserted — this file already existed.

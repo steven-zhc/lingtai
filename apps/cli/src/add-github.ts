@@ -62,6 +62,7 @@ import type { QuestionWorld } from './question.ts'
 import { ADD_KEPT, askRecipeEffect, changedLeftBehind, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import type { LeftBehind } from './setup-card.ts'
+import { PROJECT_FLAGS } from './wizard-options.ts'
 
 /**
  * How this machine reaches the repository: through the App's installation on
@@ -602,28 +603,7 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // this function returns — deleted here, so that call's `runGithubBranch`
   // does not see them again and refuse what `askRecipe` already asked and
   // wrote (#396 fix round, finding 1; #431 fix round, finding 2).
-  for (const name of [
-    'tickets',
-    'kinds',
-    'agent',
-    'model',
-    'reviewer',
-    'reviewer-model',
-    'install',
-    'build',
-    'check-build',
-    'land',
-    'rounds',
-    'refusal-fixes',
-    'conflict-resolutions',
-    'wall',
-    'budget',
-    'sandbox',
-    'sandbox-hosts',
-    'mode',
-    'login',
-    'personal',
-  ]) {
+  for (const name of PROJECT_FLAGS) {
     delete flags[name]
   }
   if ('refused' in recipeResult) {

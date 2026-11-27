@@ -25,7 +25,13 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeDraft } from '@lingtai/project'
 import type { RecipeChange } from '@lingtai/recipe'
-import { isBuiltInJudge, isFindingsJudge, isImplementOnlyAgent, unboundedTurnsChange } from '@lingtai/recipe'
+import {
+  followedJudgeIndex,
+  followWriterJudgeChanges,
+  isBuiltInJudge,
+  isImplementOnlyAgent,
+  unboundedTurnsChange,
+} from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 import { Effect } from 'effect'
 
@@ -60,13 +66,6 @@ function asRuntime(value: unknown): RuntimeName | null {
 function findAgentAction(list: unknown): { index: number; action: Record<string, unknown> } | null {
   if (!Array.isArray(list)) return null
   const index = list.findIndex((item) => item !== null && typeof item === 'object' && 'agent' in (item as object))
-  return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
-}
-
-/** The first `findings` judge in a list, and where it stands — or null (the one `judgeDeclaredAt` reads). */
-function findFindingsJudge(list: unknown): { index: number; action: Record<string, unknown> } | null {
-  if (!Array.isArray(list)) return null
-  const index = list.findIndex(isFindingsJudge)
   return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
 }
 
@@ -348,16 +347,13 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
   else fullyReplaced.add('review')
 
-  const judgeEntry = writingAgent === null ? null : findFindingsJudge(at.draft.get(['steps', 'proposed']))
-  let followJudgeIndex: number | null = null
-  if (judgeEntry !== null && judgeEntry.action['judge'] === writingAgent) {
-    if (writer === writingAgent) {
-      editedInPlace.push({ step: 'proposed', index: judgeEntry.index })
-    } else if (!isImplementOnlyAgent(writer)) {
-      editedInPlace.push({ step: 'proposed', index: judgeEntry.index })
-      followJudgeIndex = judgeEntry.index
-    }
-  }
+  // A rerun's findings judge follows the writer (#1523): the first one, when it names the recipe's writer, is
+  // edited or removed by `followWriterJudgeChanges` below and so is not a leftover. A new recipe's judge is
+  // written after its landing (`recipe-flow.ts`), so its hold stays first.
+  const proposedNow = at.draft.get(['steps', 'proposed'])
+  const rerun = at.draft.text() !== null
+  const followedAt = rerun ? followedJudgeIndex(Array.isArray(proposedNow) ? proposedNow : null, writingAgent) : null
+  if (followedAt !== null) editedInPlace.push({ step: 'proposed', index: followedAt })
 
   const keptRuntimes = new Set<string>()
   if (writingAgent !== null && writer === writingAgent) keptRuntimes.add(writingAgent)
@@ -399,7 +395,8 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (writer !== writingAgent || at.draft.get(['runtime', 'agent']) === null) {
     changes.push({ path: ['runtime', 'agent'], value: writer })
   }
-  if (followJudgeIndex !== null) changes.push({ path: ['steps', 'proposed', followJudgeIndex, 'judge'], value: writer })
+  if (rerun)
+    changes.push(...followWriterJudgeChanges(writingAgent, writer, Array.isArray(proposedNow) ? proposedNow : null))
   // A runtime that cannot hold a turn count (#547) is not asked to promise one:
   // the schema's default of 300 is nobody's choice, and doctor would fail it
   // for ever. Decided from `enforces` and not from the runtime's name, and only
