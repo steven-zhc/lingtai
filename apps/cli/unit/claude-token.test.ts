@@ -2,7 +2,6 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import {
-  askClaudeTokenForRecipe,
   claudeTokenCommand,
   echoLine,
   maskTokens,
@@ -10,6 +9,7 @@ import {
   type SetupTokenRun,
 } from '../src/claude-token.ts'
 import { claudeTokenRow } from '../src/doctor.ts'
+import { askTokenFor, machineSetup } from '../src/machine-askers.ts'
 
 const FAKE = 'sk-ant-oat01-FAKE_TOKEN_must_not_appear_0123456789'
 const PATH = '/h/.lingtai/config.yml'
@@ -32,7 +32,7 @@ function world(
   const w: ClaudeTokenWorld = {
     ask: (_p, shape) => {
       asked.push(shape?.message ?? '')
-      if (shape?.choices !== undefined) return Promise.resolve(opts.choice ?? 'keep')
+      if (shape?.choices !== undefined) return Promise.resolve(opts.choice ?? 'run')
       return Promise.resolve(opts.pasted === undefined ? null : opts.pasted)
     },
     log: (line) => logs.push(line),
@@ -53,6 +53,23 @@ function world(
   }
   return { w, logs, asked, state }
 }
+
+/** The machine list's token entry, run the way `init` and `add` run it once a recipe is final (#1522). */
+const askClaudeTokenForRecipe = (w: ClaudeTokenWorld, recipe: never, flags: Record<string, string> = {}) =>
+  askTokenFor(
+    machineSetup(
+      {
+        ...w,
+        app: () => Effect.succeed({ configured: false }),
+        ghStatus: () => Effect.succeed({ ok: false, reason: 'missing', detail: 'gh is not installed' } as never),
+        recipes: () => Effect.succeed([]),
+      },
+      { githubRequired: false },
+    ),
+    w,
+    flags,
+    recipe,
+  )
 
 const go = <A>(e: Effect.Effect<A, unknown>) => Effect.runPromise(e)
 const everything = (x: { logs: string[]; asked: string[]; state: { file: string | null } }, skipFile = true) =>
@@ -145,13 +162,31 @@ describe('the add flows ask exactly when needed', () => {
     ['no sandbox', { runtime: { agent: 'claude-code' }, steps: {} }, {}],
     ['sandbox off', { runtime: { agent: 'claude-code' }, steps: {}, sandbox: { enabled: false } }, {}],
     ['no claude-code', { runtime: { agent: 'codex' }, steps: {}, sandbox: { enabled: true } }, {}],
-    ['environment set', sandboxed, { env: { LINGTAI_CLAUDE_OAUTH_TOKEN: 'x' } }],
-    ['file set', sandboxed, { file: `claude:\n  oauth_token: ${FAKE}\n` }],
   ])('does not ask: %s', async (_n, recipe, o) => {
     const x = world(o)
     await go(askClaudeTokenForRecipe(x.w, recipe as never))
     expect(x.asked).toEqual([])
     expect(x.logs).toEqual([])
+  })
+
+  it.each([
+    ['environment set', { env: { LINGTAI_CLAUDE_OAUTH_TOKEN: 'x' } }],
+    ['file set', { file: `claude:\n  oauth_token: ${FAKE}\n` }],
+  ])('a token that is set is shown as set and kept: %s', async (_n, o) => {
+    const x = world({ ...o, choice: 'keep' })
+    await go(askClaudeTokenForRecipe(x.w, sandboxed))
+    expect(x.state.writes).toBe(0)
+    expect(everything(x)).not.toContain(FAKE)
+  })
+
+  it('--claude-token keep with no token set is refused by name, and skip is a skip', async () => {
+    const kept = world()
+    await go(askClaudeTokenForRecipe(kept.w, sandboxed, { 'claude-token': 'keep' }))
+    expect(kept.logs.join('\n')).toContain('--claude-token keep, but no token is set')
+    const skipped = world()
+    await go(askClaudeTokenForRecipe(skipped.w, sandboxed, { 'claude-token': 'skip' }))
+    expect(skipped.asked).toEqual([])
+    expect(skipped.state.writes).toBe(0)
   })
 
   it('an unreadable file is said and the add goes on', async () => {

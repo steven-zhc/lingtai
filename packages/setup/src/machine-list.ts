@@ -548,7 +548,11 @@ export function machineQuestions(ports: MachinePorts, opts: { githubRequired: bo
     needed: (ctx) =>
       Effect.gen(function* () {
         const state = ports.tokenState()
-        if ('unreadable' in state) return false
+        if ('unreadable' in state) {
+          // Said once the recipe is final, where the add goes on past it; before that it would be said twice.
+          if (ctx.draft !== null) ports.say(`${state.unreadable}. ${CLAUDE_TOKEN_SKIPPED}`)
+          return false
+        }
         const recipes = yield* ports.recipes()
         const all = ctx.draft === null ? recipes : [...recipes, ctx.draft]
         return all.some((r) => needsClaudeToken(r, { environment: false, file: false, usable: false }))

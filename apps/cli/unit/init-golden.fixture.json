@@ -2,6 +2,7 @@
   "code": 0,
   "lines": [
     "· looking for runtimes",
+    "github       gh cannot be used yet — gh is not installed — install it (https://cli.github.com), run `gh auth login --hostname github.com --scopes repo,workflow`",
     "the reviewer runs the writer's runtime, on its own default model, unless a model is named here",
     "nothing will check a diff before review",
     "init  repo\n\nthis machine\n  home      ~/.lingtai  new\n  log       SQLite · lingtai.db\n  agents    claude-code ✓\n\nthis project\n  code      /repo  local\n  lands on  lingtai-base, in /repo\n  tickets   Lingtai’s table · bug › feature › tech-debt › documentation\n\neach attempt\n  writes    claude-code\n  reviews   claude-code\n  findings  go back to the writer up to 6 times — each is a claude-code judge call and another writer run\n  checks    none — nothing checks a diff before review\n  trial     not run — no checks\n  approve   an attempt lands with no one asking",
