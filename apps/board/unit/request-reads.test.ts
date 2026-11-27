@@ -5,7 +5,7 @@
  * vitest has no `react-server` condition, so `cache` is a passthrough there; it is mocked per run of an
  * `AsyncLocalStorage`, one run being one request, as `task-loader-spans.test.ts` does.
  */
-import { emptyControl, projectStream, prStream } from '@lingtai/domain'
+import { emptyControl, projectStream, prStream, ticketStream } from '@lingtai/domain'
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import type { EventStore } from '@lingtai/event-store/store'
 import { sourceHashOf } from '@lingtai/recipe'
@@ -102,7 +102,15 @@ import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 import { pauseSlot } from '../src/app/lock-banner.tsx'
 import { viewsFor } from '../src/app/place-line.tsx'
 import { readProjectLocks, readRegistered } from '../src/lib/locks.ts'
-import { loadPrBoard, placeViewsOf, readPrPage, spendByPr } from '../src/lib/prs.ts'
+import {
+  loadPrBoard,
+  placeViewsOf,
+  readGeneratedBody,
+  readPrDetail,
+  readPrPage,
+  spendByPr,
+  spendOfTickets,
+} from '../src/lib/prs.ts'
 
 const RECIPE =
   'version: 2\nmode: team\nbranch: { main: main, personal: foundry }\nsource:\n  kinds: [bug]\n  assignee: { login: me }\nruntime:\n  agent: claude-code\nenv:\n  plantAt: .env.local\n'
@@ -231,5 +239,89 @@ describe('spendByPr reads the streams of the PRs it shows (#1510)', () => {
       stream: [prStream('p', 1), prStream('p', 2), prStream('p', 3)],
     })
     expect(got).toEqual(new Map([[1, 0.75]]))
+  })
+})
+
+describe('a PR’s tickets share one spend read (#1511)', () => {
+  const TICKETS = Array.from({ length: 36 }, (_, i) => String(100 + i))
+  const streams = TICKETS.map((t) => ticketStream('p', t))
+  const ticketCalls = () =>
+    (h.spend as unknown as { mock: { calls: [{ ticket?: unknown }][] } }).mock.calls.filter(
+      ([o]) => o.ticket !== undefined,
+    )
+
+  beforeEach(async () => {
+    await h.inner.append(prStream('p', 9), 0, [
+      {
+        type: 'PrInProgress',
+        actor: 'conductor',
+        data: {
+          because: 'submit',
+          branch: 'foundry',
+          main: 'main',
+          frozenSha: 'abc',
+          prBranch: 'pr',
+          tickets: TICKETS.map((ticket) => ({ ticket, mergeCommit: 'm', title: `t${ticket}` })),
+        },
+      } as never,
+    ])
+    await recordPrNumber(h.inner, 'p', 9)
+  })
+
+  it('reads the 36 tickets once for the page and the description, and the PR’s own once', async () => {
+    h.spend = vi.fn(() => Effect.succeed([]))
+    await h.renders.run(new Map(), async () => {
+      await readPrDetail('p', 9)
+      await readGeneratedBody('p', 9)
+    })
+    const calls = ticketCalls()
+    expect(calls).toHaveLength(1)
+    expect(calls[0]![0].ticket).toEqual(streams)
+    expect(h.spend).toHaveBeenCalledTimes(2)
+  })
+
+  it('reads again for each caller outside a request', async () => {
+    h.spend = vi.fn(() => Effect.succeed([]))
+    await readPrDetail('p', 9)
+    await readGeneratedBody('p', 9)
+    expect(ticketCalls()).toHaveLength(2)
+  })
+
+  it('shares a failed read: still one call, and no ticket is $0', async () => {
+    h.spend = vi.fn(() => Effect.fail(new Error('gone')))
+    await h.renders.run(new Map(), async () => {
+      await readPrDetail('p', 9)
+      await readGeneratedBody('p', 9)
+    })
+    expect(ticketCalls()).toHaveLength(1)
+  })
+})
+
+describe('spendOfTickets', () => {
+  const r = (ticket: string, streamId: string, costUsd: number | null) =>
+    ({ ticket: ticketStream('p', ticket), streamId, costUsd }) as never
+
+  it('is null for no rows, a null cost, and a failed read; skips pr- rows; sums tickets apart', () => {
+    const got = spendOfTickets(
+      'p',
+      ['1', '2', '3', '4'],
+      [
+        r('1', 'run-a', 0.5),
+        r('1', 'run-b', 0.25),
+        r('1', 'pr-p-9', 99),
+        r('2', 'run-c', null),
+        r('2', 'run-d', 1),
+        r('4', 'pr-p-9', 5),
+      ],
+    )
+    expect(got).toEqual(
+      new Map([
+        ['1', 0.75],
+        ['2', null],
+        ['3', null],
+        ['4', null],
+      ]),
+    )
+    expect([...spendOfTickets('p', ['1', '2'], null).values()]).toEqual([null, null])
   })
 })

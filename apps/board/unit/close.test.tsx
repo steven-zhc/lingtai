@@ -20,9 +20,9 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Close } from '../src/app/decide.tsx'
-import { AnsweringPill, Card, LandedRow } from '../src/app/page.tsx'
+import { Card, LandedRow } from '../src/app/page.tsx'
 import { toCard } from '../src/lib/board.ts'
-import { billText, emptyBill } from '../src/lib/spend.ts'
+import { addBill, billText, emptyBill } from '../src/lib/spend.ts'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
@@ -149,7 +149,7 @@ describe('a closed item in the archive', () => {
     expect(landed).not.toContain('closed')
   })
 
-  it('is two lines: what it is above, what it cost below, with the answering pill drawn by the shared component', () => {
+  it("is two lines: what it is above, the whole ticket's bill and turns below", () => {
     const base = toCard(task({ state: 'landed' }))
     const work = { ...emptyBill(), reportedCents: 10, reportedRuns: 1 }
     const fix = { ...emptyBill(), reportedCents: 6, reportedRuns: 1 }
@@ -160,30 +160,27 @@ describe('a closed item in the archive', () => {
     const text2 = line2.replace(/<[^>]*>/g, '')
 
     expect(line1).toContain(card.kind)
-    expect(text2.startsWith(billText(work))).toBe(true)
+    expect(text2.startsWith(billText(addBill(work, fix)))).toBe(true)
     expect(text2).not.toContain(card.kind)
     expect(text2).not.toContain('ago')
     expect(line1).not.toContain('turns')
-    expect(text2.indexOf('answering')).toBeLessThan(text2.indexOf('9 turns'))
-    const pill = renderToStaticMarkup(
-      <ul>
-        <AnsweringPill bill={fix} />
-      </ul>,
-    ).replace(/<\/?ul>/g, '')
-    expect(html).toContain(pill)
+    expect(text2.endsWith('9 turns')).toBe(true)
+    expect(text2).not.toContain('·')
+    expect(html).not.toContain('class="pill')
   })
 
-  it('draws the same answering pill on the card and on the row, from the answering bill', () => {
+  it('draws the answering pill on the card, and one summed bill without it on the row', () => {
     const base = toCard(task({ state: 'landed' }))
     const work = { ...emptyBill(), reportedCents: 10, reportedRuns: 1 }
     const fix = { ...emptyBill(), reportedCents: 6, reportedRuns: 1 }
     const card = { ...base, costUsd: work, repairCostUsd: fix }
     const pillOf = (html: string) => /<li class="pill sig"[^>]*>.*?<\/li>/s.exec(html)?.[0] ?? null
-    const row = pillOf(renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />))
+    const rowHtml = renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />)
     const full = pillOf(renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />))
 
     expect(full).not.toBeNull()
-    expect(row).toBe(full)
+    expect(rowHtml).not.toContain('class="pill')
+    expect(rowHtml).toContain(billText(addBill(work, fix)))
     expect(full).toContain(`${billText(fix)} answering`)
     expect(full).not.toContain(billText(work))
 
@@ -191,10 +188,9 @@ describe('a closed item in the archive', () => {
     expect(
       pillOf(renderToStaticMarkup(<Card card={none} showProject={false} issue={null} paused={false} />)),
     ).toBeNull()
-    expect(pillOf(renderToStaticMarkup(<LandedRow card={none} showProject={false} issue={null} />))).toBeNull()
   })
 
-  it('draws no answering pill for an empty bill', () => {
+  it('says nothing of answering on a row, with or without an answering bill', () => {
     const card = { ...toCard(task({ state: 'landed' })), repairCostUsd: emptyBill() }
     const html = renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />)
 
