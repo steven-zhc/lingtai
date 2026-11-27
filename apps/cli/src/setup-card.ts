@@ -21,6 +21,7 @@ import {
 import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
+import type { IssueTakes } from './next-steps.ts'
 import { heading, symbol, width } from './output.ts'
 import type { TrialOutcome } from './setup-build.ts'
 
@@ -45,6 +46,14 @@ export interface CardRecipe {
   findingsJudge: { judge: string; rounds: number } | null
   /** Set only for a team project, read from the recipe as written: who it takes issues for, and the branch it works on. */
   team?: { login: string | null; personal: string }
+  /** Who the queue takes issues for, whatever the mode: what the first-ticket step assigns. */
+  takes: IssueTakes
+}
+
+/** The rule `assigneeSkip` applies (`discover.ts`): team mode is always `mine`, solo is the recipe's `take`. */
+export function issueTakeOf(recipe: Recipe): IssueTakes {
+  const rule = assigneeOf(recipe)
+  return { take: modeOf(recipe) === 'team' ? 'mine' : (rule?.take ?? 'all'), login: rule?.login ?? null }
 }
 
 export interface SetupCardFacts {
@@ -125,6 +134,7 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
     remote: remoteOf(recipe),
     tickets: ticketSourceOf(recipe),
     kinds: kindsOf(recipe),
+    takes: issueTakeOf(recipe),
     writer: agentOf(steps['implement']),
     reviewer: agentOf(steps['review']),
     checks: (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run'])),

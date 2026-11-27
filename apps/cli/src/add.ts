@@ -43,6 +43,7 @@ import {
   liveRepositoryListEffect,
   type FirstProjectWorld,
 } from './first-project.ts'
+import { githubIssueForms, type IssueForms } from './issue-forms.ts'
 import { addSteps } from './next-steps.ts'
 import { renderNextBlock, renderNextLine } from './output.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
@@ -57,6 +58,8 @@ export interface AddWorld {
   githubDeps?: AskBeforeGithubAddDeps
   /** The client that makes the project's labels (#1486) — the live one (built from `reach`) unless a test says otherwise. */
   labels?: (owner: string, repo: string, reach: GithubReach) => Effect.Effect<Pick<LabelClient, 'createLabel'>, unknown>
+  /** Reads the repository's issue forms (#1518) — the live read unless a test says otherwise; it cannot fail. */
+  issueForms?: (owner: string, repo: string, reach: GithubReach) => Effect.Effect<IssueForms>
   error: (line: string) => void
   /** Where the card goes — the same `log` the questions were asked through. */
   log: (line: string) => void
@@ -442,6 +445,9 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
     Effect.suspend(() => (world.labels ?? liveLabelClient)(owner, repo, reach)),
     labelNames(read.ok.recipe),
   )
+  const forms = yield* Effect.suspend(() => (world.issueForms ?? githubIssueForms)(owner, repo, reach)).pipe(
+    Effect.catchCause(() => Effect.succeed<IssueForms>({ kind: 'none' })),
+  )
   const left = [...(entry.leftBehind ?? []), ...(asked.leftBehind ?? [])]
   const end = yield* printSetupEndEffect(
     world,
@@ -468,7 +474,14 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
   return {
     exit: 0,
     ...(end.fix === undefined ? {} : { fix: end.fix }),
-    closing: { project: repo, tickets: recipeCard.tickets, kinds: recipeCard.kinds, slug: `${owner}/${repo}` },
+    closing: {
+      project: repo,
+      tickets: recipeCard.tickets,
+      kinds: recipeCard.kinds,
+      slug: `${owner}/${repo}`,
+      takes: recipeCard.takes,
+      forms,
+    },
   }
 })
 
