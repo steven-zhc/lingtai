@@ -357,6 +357,9 @@ export function parseCeiling(answer: string): { dollars: number | null } | { bad
   return { dollars: n }
 }
 
+/** A URL fit to print: the password is never shown. */
+const redactedUrl = (url: string): string => url.replace(/(\/\/[^:/@]*:)[^@]*@/, '$1***@')
+
 const dollarsText = (n: number): string => `$${n}`
 
 // ------------------------------------------------------------ the list --
@@ -398,7 +401,7 @@ export function machineQuestions(ports: MachinePorts, opts: { githubRequired: bo
           return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
         }
         const check = yield* ports.database(answer)
-        return check.ok ? null : `the database does not answer — ${check.why}. Nothing was written`
+        return check.ok ? null : `${redactedUrl(answer)} does not answer — ${check.why}. Nothing was written`
       }),
     write: (answer, inForce) =>
       Effect.try({

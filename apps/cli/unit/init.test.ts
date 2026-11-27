@@ -339,7 +339,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
     })
     world.ask = async (question) =>
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
     const text = stripColour(logged.join('\n'))
     expect(text).toMatch(/^this machine$/m)
     expect(text).toMatch(/github\s+gh, signed in as steven/)
@@ -456,7 +456,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never,
     })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(
+      await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'app']), world),
+    ).toBe(0)
     const text = logged.join('\n')
     expect(text).toMatch(/github\s+the App lingtai-me/)
     expect(text.match(/the App lingtai-me/g)).toHaveLength(1)
@@ -491,7 +493,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
       return null
     }
 
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)
     expect(code).toBe(0)
 
     expect(countsWhenProjectAsked).toEqual({ boardAt: 0, board: 0 })
@@ -518,7 +520,7 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
           : /the GitHub App now/.test(question)
             ? 'create'
             : null
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     expectClosesOn(logged, githubInitSteps())
   })
@@ -526,7 +528,9 @@ describe('lingtai init ends by printing the recipe, doctor, and the board line (
   it('a configured App closes on lingtai add, last and once', async () => {
     const { world, logged } = harness({ app: { configured: true, ok: true, slug: 'lingtai-me', owner: 'me' } as never })
     world.ask = async (question) => (/a GitHub project/.test(question) ? 'github' : null)
-    expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+    expect(
+      await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'app']), world),
+    ).toBe(0)
     expect(lines(logged).filter((l) => l.includes('[next]'))).toHaveLength(1)
     expectClosesOn(logged, githubInitSteps())
   })
@@ -651,7 +655,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
     world.ask = async (question) =>
       /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
 
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), world)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)
     expect(code).toBe(0)
     expect(parseDocument(machineFiles.get('/nonexistent/.lingtai/config.yml')!).getIn(['github', 'auth'])).toBe('gh')
     expect(calls.board).toBe(0)
@@ -669,7 +673,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       })
       world.ask = async (question) =>
         /a GitHub project/.test(question) ? 'github' : /signed in as steven/.test(question) ? '' : null
-      expect(await initCommand(flagsFromArgv(['--store', 'sqlite']), world)).toBe(0)
+      expect(await initCommand(flagsFromArgv(['--store', 'sqlite', '--day-usd', '100']), world)).toBe(0)
       return logged
     }
     const failed = await run(async () => ({ text: '1 failed', failed: true }))
@@ -685,7 +689,7 @@ describe('lingtai init asks how this machine reaches GitHub (#710)', () => {
       world,
     )
     expect(code).toBe(1)
-    expect(stripColour(logged.join('\n'))).toContain('--github-auth gh, but gh is not installed')
+    expect(stripColour(logged.join('\n'))).toContain('gh was chosen, but gh is not installed')
     const file = machineFiles.get('/nonexistent/.lingtai/config.yml') ?? ''
     expect(file).not.toContain('auth: gh')
   })
@@ -809,7 +813,10 @@ describe('lingtai init asks the store again (#1474)', () => {
   it('another database is written, and the output says the log is new and empty and nothing was copied', async () => {
     const h = harness()
     h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
-    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), h.world)
+    const code = await initCommand(
+      flagsFromArgv(['--store', 'sqlite', '--day-usd', '100', '--github-auth', 'none']),
+      h.world,
+    )
     // No project is named, so it stops at the project question — after the store is written and said.
     expect(code).toBe(1)
     const doc = parseDocument(h.machineFiles.get(CONFIG)!)
@@ -857,7 +864,7 @@ describe('lingtai init asks the store again (#1474)', () => {
     expect(doc.getIn(['database', 'url'])).toBe(URL)
   })
 
-  it('--defaults keeps a store that answers, and does not choose one on a machine that has none', async () => {
+  it('--defaults keeps a store that answers, and takes the system default for what was never written', async () => {
     const h = harness()
     h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
     const before = h.machineFiles.get(CONFIG)
@@ -867,7 +874,12 @@ describe('lingtai init asks the store again (#1474)', () => {
     }
     await initCommand(flagsFromArgv(['--defaults']), h.world)
     expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(false)
-    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    // The store is kept as it was; the keys that were never written are, with the system's defaults.
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'url'])).toBe(URL)
+    expect(doc.getIn(['limits', 'day_usd'])).toBe(100)
+    expect(doc.getIn(['github', 'auth'])).toBe('none')
+    expect(before).not.toContain('limits')
   })
 
   it('with postgres configured, the prompt names `sqlite` as the way to SQLite, and the password is in no default the front end draws', async () => {
@@ -895,6 +907,10 @@ describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#
     'acme/widgets',
     '--store',
     'sqlite',
+    '--github-auth',
+    'gh',
+    '--day-usd',
+    '100',
     '--mode',
     'solo',
     '--main',

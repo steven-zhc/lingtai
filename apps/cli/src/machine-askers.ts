@@ -65,7 +65,7 @@ export const registeredRecipes = (opts: {
   Effect.gen(function* () {
     const found: Recipe[] = []
     for (const p of yield* opts.projects()) {
-      if (p.project === null) continue
+      if (typeof p.project !== 'string') continue
       const path = recipePath(p.project, opts.home)
       const text = yield* recipeText(p.project, {
         home: opts.home,
