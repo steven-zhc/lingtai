@@ -2,7 +2,7 @@
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
-import { type ProposalReaders, proposeSetup, defaultAgents } from '../src/propose-setup.ts'
+import { type ProposalReaders, proposeSetup, defaultAgents, offeredRuntimes } from '../src/propose-setup.ts'
 import type { RuntimeFound } from '../src/runtimes.ts'
 import { githubSlugOfRemote } from '../src/ticket-source.ts'
 
@@ -210,6 +210,20 @@ describe('defaultAgents', () => {
     expect(defaultAgents(['claude-code', 'codex'])).toEqual({ writer: 'claude-code', reviewer: 'codex' })
     expect(defaultAgents(['codex'])).toEqual({ writer: 'codex', reviewer: 'codex' })
     expect(defaultAgents([])).toEqual({ writer: null, reviewer: null })
+  })
+})
+
+describe('offeredRuntimes', () => {
+  const found = (id: 'claude-code' | 'codex' | 'copilot', signedIn: boolean) => ({ id, signedIn }) as never
+  it('is the signed-in runtimes in the order they were found, without an implement-only agent', () => {
+    expect(offeredRuntimes([found('codex', true), found('copilot', true), found('claude-code', true)])).toEqual([
+      'codex',
+      'claude-code',
+    ])
+  })
+  it('leaves out a runtime that is not signed in', () => {
+    expect(offeredRuntimes([found('claude-code', false), found('codex', true)])).toEqual(['codex'])
+    expect(offeredRuntimes([])).toEqual([])
   })
 })
 

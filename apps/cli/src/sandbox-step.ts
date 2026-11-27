@@ -17,9 +17,58 @@ import {
 } from '@lingtai/setup'
 import { Effect } from 'effect'
 
-import { questionEffect, type QuestionWorld } from './question.ts'
+import { type Answered, questionEffect, type QuestionWorld } from './question.ts'
 
 export type SandboxAnswer = { changes: RecipeChange[] } | { refused: string }
+
+type Validate = (answer: string) => Effect.Effect<string | null, unknown>
+
+/** Whether agents and build commands run in the sandbox: `on` or `off`. */
+export function askSandboxMode(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: 'on' | 'off' | null
+    validate?: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the sandbox',
+    flag: '--sandbox on|off',
+    given: at.given,
+    prompt: 'run agents and build commands in the sandbox?',
+    choices: ['on', 'off'],
+    fallback: 'on',
+    ...(at.current === null ? {} : { current: at.current }),
+    ...(at.validate === undefined ? {} : { validate: at.validate }),
+    kept: at.kept,
+  })
+}
+
+/** The hosts a sandboxed run may reach beyond `builtIns`: comma-separated, or `none`. */
+export function askSandboxHosts(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    /** `none`, or the comma-separated hosts the recipe already allows; null where it says nothing. */
+    current: string | null
+    builtIns: readonly string[]
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the extra sandbox hosts',
+    flag: '--sandbox-hosts <a.example,b.example>|none',
+    given: at.given,
+    prompt: `more hosts a sandboxed run may reach, comma-separated, or none (already allowed: ${at.builtIns.join(', ')})`,
+    fallback: 'none',
+    ...(at.current === null ? {} : { current: at.current }),
+    kept: at.kept,
+    validate: at.validate,
+  })
+}
 
 export const askSandbox = Effect.fn('sandbox-step.askSandbox')(function* (
   world: QuestionWorld,
@@ -39,14 +88,9 @@ export const askSandbox = Effect.fn('sandbox-step.askSandbox')(function* (
   // Said where it is drawn — never when a flag answers it.
   if (cannot !== null && given === null) world.log(cannot)
 
-  const mode = yield* questionEffect(world, {
-    name: 'the sandbox',
-    flag: '--sandbox on|off',
+  const mode = yield* askSandboxMode(world, {
     given,
-    prompt: 'run agents and build commands in the sandbox?',
-    choices: ['on', 'off'],
-    fallback: 'on',
-    ...(at.current === undefined ? {} : { current: at.current.enabled ? 'on' : 'off' }),
+    current: at.current === undefined ? null : at.current.enabled ? 'on' : 'off',
     kept: at.kept,
   })
   if ('refused' in mode) return mode
@@ -67,17 +111,12 @@ export const askSandbox = Effect.fn('sandbox-step.askSandbox')(function* (
     }
   }
 
-  const hosts = yield* questionEffect(world, {
-    name: 'the extra sandbox hosts',
-    flag: '--sandbox-hosts <a.example,b.example>|none',
+  const hosts = yield* askSandboxHosts(world, {
     given: at.flags['sandbox-hosts'] ?? null,
-    prompt: `more hosts a sandboxed run may reach, comma-separated, or none (already allowed: ${at.proposal.builtIns.join(', ')})`,
-    fallback: 'none',
-    ...(at.current === undefined
-      ? {}
-      : { current: at.current.allow.length === 0 ? 'none' : at.current.allow.join(',') }),
-    kept: at.kept,
+    current: at.current === undefined ? null : at.current.allow.length === 0 ? 'none' : at.current.allow.join(','),
+    builtIns: at.proposal.builtIns,
     validate: (answer) => Effect.succeed(answer === 'none' ? null : hostsRefusal(parseHosts(answer))),
+    kept: at.kept,
   })
   if ('refused' in hosts) return hosts
   const allow = hosts.answer === 'none' ? [] : parseHosts(hosts.answer)
