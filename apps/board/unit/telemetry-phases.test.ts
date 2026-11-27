@@ -93,7 +93,7 @@ it('exports a start-response under a render-body that ends later, and as a reque
 it('never exports other Next spans, look-alikes, another scope, other routes or a request without a page', async () => {
   const r = await rig()
   const other = r.provider.getTracer('other')
-  const a = r.request('/p/[project]/pr')
+  const a = r.request('/p/[project]/other')
   r.page(a.span).end()
   r.phase(BODY, a.span).end()
   a.end()
@@ -112,7 +112,7 @@ it('never exports other Next spans, look-alikes, another scope, other routes or 
   other.startSpan('x', { attributes: { 'next.span_type': BODY } }, r.under(d.span)).end()
   d.end()
   expect(r.names()).toEqual([
-    'GET /p/[project]/pr',
+    'GET /p/[project]/other',
     'GET /p/[project]/ticket/[n]',
     'GET undefined',
     'page /task',
@@ -198,5 +198,17 @@ it('bounds live requests, copies per request and tracked spans, and cleans up on
   request.end()
   expect(r.out.filter((s) => s.name === 'next.render-body')).toHaveLength(4)
   made[1]!.end()
+  expect(r.only.phasesRemembered).toBe(0)
+})
+
+it('admits the phases of the PR list and detail routes', async () => {
+  const r = await rig()
+  for (const route of ['/p/[project]/pr', '/p/[project]/pr/[n]']) {
+    const request = r.request(route)
+    r.page(request.span).end()
+    r.phase(BODY, request.span).end()
+    request.end()
+  }
+  expect(r.names().filter((n) => n === 'next.render-body')).toHaveLength(2)
   expect(r.only.phasesRemembered).toBe(0)
 })

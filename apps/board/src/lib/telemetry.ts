@@ -2,6 +2,15 @@ import { machineOtlpEndpoint, type MachineFile } from '@lingtai/env'
 import { context, trace } from '@opentelemetry/api'
 import type { ReadableSpan, Span, SpanExporter, SpanProcessor } from '@opentelemetry/sdk-trace-base'
 
+import {
+  currentLifecycle,
+  HEADERS_SENT,
+  observeResponses,
+  OUTCOME,
+  RESPONSE_SCOPE,
+  RESPONSE_SPAN,
+  type Lifecycle,
+} from './response-lifecycle.ts'
 import { installTraceSeams } from './trace-seams.ts'
 
 /**
@@ -30,10 +39,20 @@ import { installTraceSeams } from './trace-seams.ts'
  *   interval. It fires on the first written chunk, right after the headers are
  *   flushed, so its duration is ~0 and means "first bytes reached the socket".
  *
- * Unmeasured: stream delivery and backpressure after the later of those two,
- * `res.end`, an RSC request's Flight render, and a client disconnect. A phase
- * that never ended, or ended after its request, is absent, never a zero-length
- * success. The next seam would be a Node `res` `finish` versus `close` timestamp.
+ * A third copy, `node.response` (`response-lifecycle.ts`), is one span per
+ * physical response from Node's own `http.server.request.start` channel, scoped
+ * `lingtai-board.response`, with two fixed attributes: `lingtai.response.outcome`
+ * (`finished` or `closed-before-finish`) and `lingtai.response.headers_sent`. It
+ * means the server handed the last bytes to its transport, or the connection
+ * closed first; it is not proof the browser received the page. It is bound to
+ * its request span by async context and leaves under the same gates as the phases.
+ * Compared with the request span it separates an interrupted navigation
+ * (`closed-before-finish`) from a request span that ended early (`finished`
+ * after it); no `node.response` under a request means unknown.
+ *
+ * Unmeasured: an RSC request's Flight render and backpressure before the last
+ * write. A phase or response that never ended, or whose request was not
+ * exported, is absent, never a zero-length success.
  *
  * Bounds: `limit` (1,000) live requests and as many with buffered phases, at
  * most `PHASES_PER_REQUEST` (4) copies each, and `limit * OWNERS_PER_REQUEST`
@@ -68,6 +87,8 @@ const MEASURED_ROUTES: ReadonlySet<string> = new Set([
   '/p/[project]/ticket/[n]/history',
   '/p/[project]/ticket/[n]/sandbox',
   '/p/[project]/ticket/[n]/attempt/[k]',
+  '/p/[project]/pr',
+  '/p/[project]/pr/[n]',
 ])
 const PHASES_PER_REQUEST = 4
 const OWNERS_PER_REQUEST = 8
@@ -142,6 +163,35 @@ function phaseCopy(span: ReadableSpan, name: string): ReadableSpan {
   }
 }
 
+/** Fixed name and the two lifecycle attributes, each only if it has its expected type. */
+function responseCopy(span: ReadableSpan): ReadableSpan {
+  const outcome = span.attributes[OUTCOME]
+  const sent = span.attributes[HEADERS_SENT]
+  const attributes: ReadableSpan['attributes'] = {}
+  if (outcome === 'finished' || outcome === 'closed-before-finish') attributes[OUTCOME] = outcome
+  if (typeof sent === 'boolean') attributes[HEADERS_SENT] = sent
+  const context = bare(span.spanContext())
+  return {
+    name: RESPONSE_SPAN,
+    kind: span.kind,
+    spanContext: () => context,
+    ...(span.parentSpanContext === undefined ? {} : { parentSpanContext: bare(span.parentSpanContext) }),
+    startTime: span.startTime,
+    endTime: span.endTime,
+    status: { code: span.status.code },
+    attributes,
+    links: [],
+    events: [],
+    duration: span.duration,
+    ended: span.ended,
+    resource: span.resource,
+    instrumentationScope: span.instrumentationScope,
+    droppedAttributesCount: 0,
+    droppedEventsCount: 0,
+    droppedLinksCount: 0,
+  }
+}
+
 const phaseName = (span: ReadableSpan): string | undefined => {
   if (span.instrumentationScope.name !== NEXT_SCOPE) return undefined
   const type = span.attributes['next.span_type']
@@ -202,17 +252,32 @@ export class OnlyScope implements SpanProcessor {
   readonly #owners = new Map<string, string>()
   /** Ended phases by request span id; at most `PHASES_PER_REQUEST` each, deleted when the request ends or is evicted. */
   readonly #phases = new Map<string, Phase[]>()
-  constructor(scope: string, inner: SpanProcessor, limit = 1000) {
+  /** The ended `node.response` copy by live request span id; its own slot, deleted with the request. */
+  readonly #responses = new Map<string, ReadableSpan>()
+  /** Exported requests whose response may still end, oldest first; bounded by `limit`. */
+  readonly #awaiting = new Set<string>()
+  readonly #current: () => Lifecycle | undefined
+  constructor(
+    scope: string,
+    inner: SpanProcessor,
+    limit = 1000,
+    current: () => Lifecycle | undefined = currentLifecycle,
+  ) {
     this.scope = scope
     this.inner = inner
     this.#limit = limit
+    this.#current = current
+  }
+  /** Exported requests still waiting for a response that ended later; not counted in `phasesRemembered`. */
+  get awaitingRemembered(): number {
+    return this.#awaiting.size
   }
   get remembered(): number {
     return this.#pages.size
   }
   /** Phase state held: live requests, buffered requests and tracked spans; 0 once every span has ended. */
   get phasesRemembered(): number {
-    return this.#phases.size + this.#live.size + this.#owners.size
+    return this.#phases.size + this.#live.size + this.#owners.size + this.#responses.size
   }
   #own(span: Span): void {
     const id = span.spanContext().spanId
@@ -231,7 +296,10 @@ export class OnlyScope implements SpanProcessor {
           const oldest = this.#live.keys().next().value!
           this.#live.delete(oldest)
           this.#phases.delete(oldest)
+          this.#responses.delete(oldest)
         }
+        const record = this.#current()
+        if (record !== undefined && record.request === undefined && !record.done) record.request = bare(context)
       }
       this.#own(span)
     }
@@ -249,6 +317,7 @@ export class OnlyScope implements SpanProcessor {
     const spanId = span.spanContext().spanId
     const owner = this.#owners.get(spanId)
     this.#owners.delete(spanId)
+    if (span.instrumentationScope.name === RESPONSE_SCOPE) return this.#response(span)
     if (span.instrumentationScope.name === this.scope) {
       if (!span.name.startsWith('page ')) return this.inner.onEnd(span)
       const request = this.#pages.get(traceId) // absent if evicted, and not re-added: it would evict a live one
@@ -260,6 +329,8 @@ export class OnlyScope implements SpanProcessor {
       this.#live.delete(spanId)
       const phases = this.#phases.get(spanId) ?? []
       this.#phases.delete(spanId)
+      const response = this.#responses.get(spanId)
+      this.#responses.delete(spanId)
       this.#requests.delete(traceId)
       // Forwarded only when the page that left was re-parented onto it.
       const request = this.#pages.get(traceId)
@@ -273,6 +344,9 @@ export class OnlyScope implements SpanProcessor {
         const nested = phases.find((p) => p.copy.spanContext().spanId === phase.sourceParent)
         this.inner.onEnd({ ...phase.copy, parentSpanContext: nested?.copy.spanContext() ?? here })
       }
+      if (response !== undefined) return this.inner.onEnd(response)
+      this.#awaiting.add(spanId)
+      if (this.#awaiting.size > this.#limit) this.#awaiting.delete(this.#awaiting.values().next().value!)
     } else if (owner !== undefined && this.#live.has(owner)) {
       const name = phaseName(span)
       if (name === undefined) return
@@ -281,6 +355,14 @@ export class OnlyScope implements SpanProcessor {
       buffered.push({ copy: phaseCopy(span, name), sourceParent: span.parentSpanContext?.spanId })
       this.#phases.set(owner, buffered)
     }
+  }
+  #response(span: ReadableSpan): void {
+    const parent = span.parentSpanContext?.spanId
+    if (span.name !== RESPONSE_SPAN || parent === undefined) return
+    const copy = responseCopy(span)
+    if (this.#live.has(parent)) this.#responses.set(parent, copy)
+    else if (this.#awaiting.delete(parent)) this.inner.onEnd(copy)
+    // Otherwise its request was not exported, not measured or evicted: absent, never a zero.
   }
   #remember(traceId: string, request: Context | undefined): void {
     if (this.#pages.has(traceId)) {
@@ -328,6 +410,7 @@ export async function installTracing(
   trace.setGlobalTracerProvider(provider)
   context.setGlobalContextManager(new sdk.hooks.AsyncLocalStorageContextManager().enable())
   installTraceSeams()
+  observeResponses(provider.getTracer(RESPONSE_SCOPE))
   return provider
 }
 
