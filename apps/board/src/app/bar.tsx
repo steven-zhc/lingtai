@@ -10,11 +10,14 @@
 import Link from 'next/link'
 import type { ReactNode } from 'react'
 
+import { homePath, recipePath } from '@/lib/paths'
+
 import type { SandboxMark } from '../lib/sandbox-state.ts'
 import { SandboxShield } from './sandbox-shield.tsx'
 
-export const withProject = (path: string, project: string | undefined): string =>
-  project === undefined ? path : `${path}?project=${encodeURIComponent(project)}`
+/** `/report` is the one page still named by a query parameter, not a path (#1498). */
+export const reportHref = (project: string | undefined): string =>
+  project === undefined ? '/report' : `/report?project=${encodeURIComponent(project)}`
 
 export function Bar({
   project,
@@ -44,7 +47,7 @@ export function Bar({
       {/* An empty span carrying a background, not an `<img>`: which file the
         mark is comes from `--mark`, so it follows the palette. `aria-hidden`
         because the word beside it already says what it says. */}
-      <Link className="brand" href={withProject('/', project)}>
+      <Link className="brand" href={homePath(project)}>
         <span className="mark" aria-hidden="true" />
         Lingtai
       </Link>
@@ -66,7 +69,7 @@ export function Bar({
         ) : null}
         <Link
           className={here === 'report' ? 'navlink on' : 'navlink'}
-          href={withProject('/report', project)}
+          href={reportHref(project)}
           aria-current={here === 'report' ? 'page' : undefined}
         >
           Report
@@ -95,7 +98,7 @@ export function BarActions({
         {recipe ? (
           <Link
             className={here === 'recipe' ? 'navlink on' : 'navlink'}
-            href={`/recipe/${encodeURIComponent(project)}`}
+            href={recipePath(project)}
             aria-current={here === 'recipe' ? 'page' : undefined}
           >
             Recipe
@@ -108,7 +111,7 @@ export function BarActions({
   )
 }
 
-const sectionOf = (project: string) => `/recipe/${encodeURIComponent(project)}#sandbox`
+const sectionOf = (project: string) => `${recipePath(project)}#sandbox`
 
 /**
  * The sandbox's one icon (#1163): no text, its sentence as tooltip and accessible name. One project in the worst

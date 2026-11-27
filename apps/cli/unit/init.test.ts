@@ -60,6 +60,22 @@ describe('machineRuntimeRefusal', () => {
   })
 })
 
+describe('a file that still names a runtime is refused before the store is asked', () => {
+  it('exits 1 on the migration message and never asks', async () => {
+    const h = harness()
+    const { world, logged, asked, machineFiles } = h
+    machineFiles.set(
+      `${HOME}/config.yml`,
+      'database:\n  store: postgres\n  url: postgres://u:p@h/db\nruntime:\n  agent: codex\n',
+    )
+    const before = h.machineWrites
+    expect(await initCommand(flagsFromArgv([]), world)).toBe(1)
+    expect(lines(logged).join('\n')).toContain('runtime.agent in that project')
+    expect(asked).toEqual([])
+    expect(h.machineWrites).toBe(before)
+  })
+})
+
 // --------------------------------------------------------------------------
 
 const ENV = { VITEST: '1', HOME: '/nonexistent', LINGTAI_TEST_SQLITE_PATH: '/nonexistent/log.sqlite' }
@@ -79,6 +95,8 @@ interface Harness {
   files: Map<string, string>
   machineFiles: Map<string, string>
   machineWrites: number
+  store: ReturnType<typeof createMemoryEventStore>
+  registrations: number
   calls: { boardAt: number; board: number }
 }
 
@@ -118,6 +136,9 @@ function harness(
   const files = new Map<string, string>()
   const machineFiles = new Map<string, string>()
   const writes = { count: 0 }
+  const registrations = { count: 0 }
+  const registered: string[] = []
+  const store = createMemoryEventStore()
   const calls = { boardAt: 0, board: 0 }
   const answers = [...(options.answers ?? [])]
   const world: PromiseInitWorld = {
@@ -163,7 +184,7 @@ function harness(
       if (found === undefined) throw new Error(`unplanned git call: ${dir}::${args.join(' ')}`)
       return found
     },
-    projects: async () => [],
+    projects: async () => registered.map((project) => ({ project, name: project, owner: null }) as never),
     locker: { tryLock: async () => ({ ok: true as const, lock: { release: async () => {} } }) },
     cwd: options.cwd ?? '/elsewhere',
     files: {
@@ -172,9 +193,13 @@ function harness(
         files.set(p, text)
       },
     } as RecipeFiles,
-    store: createMemoryEventStore(),
+    store,
     signedIn: async () => ['claude-code'] as never[],
-    registerLocal: async (payload) => ({ line: `added ${payload.project}`, updated: false }),
+    registerLocal: async (payload) => {
+      registrations.count++
+      registered.push(payload.project)
+      return { line: `added ${payload.project}`, updated: false }
+    },
     history: async () => [],
     doctor: async () => {
       const said: { text: string; failed: boolean; count?: number } = await (
@@ -195,6 +220,10 @@ function harness(
     asked,
     files,
     machineFiles,
+    store,
+    get registrations() {
+      return registrations.count
+    },
     get machineWrites() {
       return writes.count
     },
@@ -592,10 +621,15 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
     expect(configAfterFirst).toBeDefined()
     expect(recipeAfterFirst).toBeDefined()
     const writesAfterFirst = h.machineWrites
+    const registeredAfterFirst = h.registrations
+    const eventsAfterFirst = (await h.store.read('prj-repo')).length
 
     expect(await initCommand(flagsFromArgv(argv), h.world)).toBe(0)
+    // The rerun asked its questions (#1473) and took every default: no registration, no event on the project.
+    expect(h.registrations).toBe(registeredAfterFirst)
+    expect((await h.store.read('prj-repo')).length).toBe(eventsAfterFirst)
 
-    // A settled store is reported, not rewritten (this file's header), and a
+    // A settled store is asked about again and, answered the same, not rewritten (0125 §6), and a
     // recipe re-asked with every answer unchanged renders no differently
     // (`write.ts`'s `editRecipe`) — so the second run changes neither file.
     expect(h.machineFiles.get(configKey)).toBe(configAfterFirst)
@@ -764,5 +798,195 @@ describe('the database check answers { ok: false, why } for a defect too (#1114)
     expect(lines(logged).at(-1)).toContain(
       'postgres://me:***@db.example:5432/lingtai does not answer — connection dropped. Nothing was written',
     )
+  })
+})
+
+describe('lingtai init asks the store again (#1474)', () => {
+  const CONFIG = '/nonexistent/.lingtai/config.yml'
+  const URL = 'postgres://user:secret@db.example.com:5432/lingtai'
+
+  it('another database is written, and the output says the log is new and empty and nothing was copied', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const code = await initCommand(flagsFromArgv(['--store', 'sqlite']), h.world)
+    // No project is named, so it stops at the project question — after the store is written and said.
+    expect(code).toBe(1)
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('sqlite')
+    expect(doc.getIn(['database', 'url'])).toBeUndefined()
+    const said = lines(h.logged).join('\n')
+    expect(said).toMatch(/new, empty/)
+    expect(said).toMatch(/nothing was copied/)
+    expect(said).not.toContain('secret')
+  })
+
+  it('a store that answers is asked about again with itself as the default, and the same answer writes nothing', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      return /Postgres URL for the log/.test(prompt) ? '' : null
+    }
+    await initCommand(flagsFromArgv([]), h.world)
+    expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(true)
+    expect(h.asked.find((p) => /Postgres URL for the log/.test(p))).not.toContain('secret')
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    expect(lines(h.logged).join('\n')).not.toMatch(/new, empty/)
+  })
+
+  it('a configured Postgres that does not answer stays the default: Enter checks it again and writes nothing', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.database = () => Effect.succeed({ ok: false as const, why: 'connection refused' })
+    let answered = 0
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      // Enter once: the default is checked again and refused, so the question would come back — it is left there.
+      if (!/Postgres URL for the log/.test(prompt)) return null
+      if (answered++ > 0) throw new Error('asked again')
+      return ''
+    }
+    await initCommand(flagsFromArgv([]), h.world).catch(() => 1)
+    expect(h.asked.find((p) => /Postgres URL for the log/.test(p))).toContain('empty keeps')
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+    const doc = parseDocument(h.machineFiles.get(CONFIG)!)
+    expect(doc.getIn(['database', 'store'])).toBe('postgres')
+    expect(doc.getIn(['database', 'url'])).toBe(URL)
+  })
+
+  it('--defaults keeps a store that answers, and does not choose one on a machine that has none', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const before = h.machineFiles.get(CONFIG)
+    h.world.ask = async (prompt) => {
+      h.asked.push(prompt)
+      return null
+    }
+    await initCommand(flagsFromArgv(['--defaults']), h.world)
+    expect(h.asked.some((p) => /Postgres URL for the log/.test(p))).toBe(false)
+    expect(h.machineFiles.get(CONFIG)).toBe(before)
+  })
+
+  it('with postgres configured, the prompt names `sqlite` as the way to SQLite, and the password is in no default the front end draws', async () => {
+    const h = harness()
+    h.machineFiles.set(CONFIG, `database:\n  store: postgres\n  url: ${URL}\n`)
+    const shapes: { message: string; defaultValue: string }[] = []
+    h.world.ask = async (prompt, shape) => {
+      h.asked.push(prompt)
+      if (/Postgres URL for the log/.test(prompt) && shape !== undefined) shapes.push(shape)
+      return /Postgres URL for the log/.test(prompt) ? 'sqlite' : null
+    }
+    await initCommand(flagsFromArgv([]), h.world)
+    expect(shapes).toHaveLength(1)
+    expect(JSON.stringify(shapes)).not.toContain('secret')
+    expect(shapes[0]!.defaultValue).toBe('')
+    expect(shapes[0]!.message).toContain('sqlite')
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['database', 'store'])).toBe('sqlite')
+    expect(parseDocument(h.machineFiles.get(CONFIG)!).getIn(['database', 'url'])).toBeUndefined()
+  })
+})
+
+describe('lingtai init --github <owner>/<repo> runs the path lingtai add runs (#1497)', () => {
+  const ARGS = [
+    '--github',
+    'acme/widgets',
+    '--store',
+    'sqlite',
+    '--mode',
+    'solo',
+    '--main',
+    'main',
+    '--install',
+    'none',
+    '--build',
+    'none',
+  ]
+  const registered = {
+    project: 'widgets',
+    owner: 'acme',
+    base: 'main',
+    configHash: 'h',
+    fromSha: null,
+    refused: null,
+    paused: null,
+    recipe: null,
+    sandboxObserved: null,
+    highestPr: null,
+    version: 1,
+    lastSeq: null,
+  }
+
+  function githubInit() {
+    const h = harness({ ghStatus: { ok: true, login: 'sam', scopes: ['repo', 'workflow'] } })
+    h.machineFiles.set(`${HOME}/config.yml`, 'github:\n  auth: gh\n')
+    const prompts: string[] = []
+    const added: unknown[] = []
+    const labelled: string[] = []
+    h.world.githubProject = {
+      deps: {
+        check: () => Effect.succeed(null),
+        auth: () => 'gh',
+        interactive: () => true,
+        ghAccess: () => Effect.succeed({ login: 'sam', defaultBranch: 'main' }),
+        picker: () => Effect.succeed({ installations: [], installUrl: null }),
+        reader: () =>
+          Effect.succeed({
+            has: (path: string) => Effect.succeed(path === 'pnpm-lock.yaml'),
+            read: () => Effect.succeed(null),
+          }),
+        ask: async (prompt) => {
+          prompts.push(prompt)
+          return ''
+        },
+        runtimes: () => Effect.succeed([signedIn('claude-code')]),
+        history: () => Effect.succeed([]),
+      },
+      labels: () =>
+        Effect.succeed({
+          createLabel: async (name: string) => {
+            labelled.push(name)
+            return 'created' as const
+          },
+        }),
+      add: () => {
+        added.push(1)
+        return Effect.succeed({ ok: true, updated: false, warnings: [], reach: { kind: 'gh', login: 'sam' } } as const)
+      },
+    }
+    return { ...h, prompts, added, labelled }
+  }
+
+  it('a first run adds the project, draws init’s card and closes on the project’s steps', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    expect(h.added).toHaveLength(1)
+    expect(h.labelled).toContain('lingtai:hold')
+    const text = lines(h.logged).join('\n')
+    expect(text).toMatch(/^init {2}widgets/m)
+    expect(text).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a rerun asks the prompts the first run asked, and with nothing changed registers nothing', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    const first = [...h.prompts]
+    const events = await h.store.readAll(0n, 1000)
+    h.prompts.length = 0
+    h.added.length = 0
+    h.world.projects = liftPort(async () => [registered as never])
+    expect(await initCommand(flagsFromArgv(ARGS), h.world)).toBe(0)
+    expect(h.prompts).toEqual(first)
+    expect(h.added).toEqual([])
+    expect(await h.store.readAll(0n, 1000)).toEqual(events)
+    expect(lines(h.logged).join('\n')).toMatch(/^init {2}widgets {2}unchanged$/m)
+  })
+
+  it('--github beside --local names two projects and writes nothing', async () => {
+    const h = githubInit()
+    expect(await initCommand(flagsFromArgv([...ARGS, '--local', '/repo']), h.world)).toBe(1)
+    expect(lines(h.logged).join('\n')).toContain('name two different projects')
+    expect(h.added).toEqual([])
   })
 })

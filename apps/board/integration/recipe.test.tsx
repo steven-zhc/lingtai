@@ -39,7 +39,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 // below read text, so a stand-in is enough to render.
 vi.mock('../src/app/actions.ts', () => ({ saveRecipe: vi.fn() }))
 
-import { Recipe } from '../src/app/recipe/[project]/page.tsx'
+import { Recipe } from '../src/app/p/[project]/recipe/page.tsx'
 import { projectRecipe, sourceOf, type ProjectRecipe } from '../src/lib/recipe.ts'
 
 const RECIPE = `
@@ -98,7 +98,7 @@ database:
   store: sqlite
 `
 
-const PAGE = new URL('../src/app/recipe/[project]/page.tsx', import.meta.url)
+const PAGE = new URL('../src/app/p/[project]/recipe/page.tsx', import.meta.url)
 const state = { project: 'app', owner: 'me', base: 'main' } as ProjectState
 const render = (view: ProjectRecipe, edit = false) => renderToStaticMarkup(<Recipe view={view} edit={edit} />)
 const sourceIn = (view: ProjectRecipe, name: string) =>
@@ -358,7 +358,7 @@ describe('a recipe that cannot be read', () => {
  * never serves a method and a `route.ts` cannot sit in the same segment as
  * one, so a guard that greps this file for `export async function POST` is a
  * guard whose failing half cannot fail. What #206 would actually add is
- * `recipe/[project]/apply/route.ts` — a segment *under* this one — or a
+ * `p/[project]/recipe/apply/route.ts` — a segment *under* this one — or a
  * `"use server"` module the page imports; so the scan is the segment's whole
  * tree for a handler, a filesystem write and a server directive, and the
  * page's imports followed through for the directive, stopping at the one
@@ -370,7 +370,7 @@ const DIRECTIVE = /^\s*['"]use server['"]/m
 describe('the writer is one place', () => {
   const page = fileURLToPath(PAGE)
   const actions = fileURLToPath(new URL('../src/app/actions.ts', import.meta.url))
-  const segment = filesUnder(new URL('../src/app/recipe/', import.meta.url))
+  const segment = filesUnder(new URL('../src/app/p/[project]/recipe/', import.meta.url))
   const reached = importedBy(page, actions)
   const importsActions = (file: string) =>
     /from\s+["'][^"']*app\/actions(?:\.ts)?["']|from\s+["']@\/app\/actions/.test(readFileSync(file, 'utf8'))
@@ -383,7 +383,7 @@ describe('the writer is one place', () => {
   })
 
   it('has no edit/ segment any more', () => {
-    expect(existsSync(new URL('../src/app/recipe/[project]/edit/', import.meta.url))).toBe(false)
+    expect(existsSync(new URL('../src/app/p/[project]/recipe/edit/', import.meta.url))).toBe(false)
   })
 
   it('exports no method handler anywhere under the segment', () => {

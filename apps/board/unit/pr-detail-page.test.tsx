@@ -1,5 +1,5 @@
 /**
- * `/pr/<project>/<n>` starts its detail load alongside the bar's reads, not after them (#1439). Each read is a deferred
+ * `/p/<project>/pr/<n>` starts its detail load alongside the bar's reads, not after them (#1439). Each read is a deferred
  * promise the test settles, so what is asserted is what has started and what has settled — never a duration.
  */
 import { isValidElement, type ReactNode } from 'react'
@@ -32,7 +32,7 @@ vi.mock('../src/app/lock-banner.tsx', async (orig) => ({
 }))
 vi.mock('@lingtai/env', async (orig) => ({ ...(await orig<object>()), hasGitHubAuth: () => false }))
 
-import Page from '../src/app/pr/[project]/[n]/page.tsx'
+import Page from '../src/app/p/[project]/pr/[n]/page.tsx'
 
 type El = { type: (props: unknown) => Promise<unknown>; props: Record<string, unknown> }
 

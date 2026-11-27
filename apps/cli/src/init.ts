@@ -60,16 +60,14 @@ import { existsSync, readdirSync } from 'node:fs'
  * exactly as a Postgres one does. What is said about such a machine is
  * `SQLITE_MACHINE`, in one place.
  *
- * **Changing a store that answers is an edit, not a re-run** — 0056 left that
- * open and this settles it, for a run with no `--database-url`. A store
- * already written and connecting is reported and not asked about again:
- * re-asking would make every run of a finished `init` a chance to answer the
- * wrong way. To switch, set `database.store` in
- * `~/.lingtai/config.yml` and run `lingtai init`, which finds the half-state
- * that edit leaves — `store: sqlite` beside the old `url` — refuses it by
- * name, and completes the switch by asking. 0055 §3 is still the thing to know
- * before doing it: the other store is a new log, not the same one somewhere
- * else.
+ * **A store that answers is asked about again** (0125 §6), as every recipe
+ * question is: the answer defaults to the store that is written, an answer
+ * equal to it writes nothing, and another is written and then said — the log
+ * it opens is a new, empty one, and nothing is copied from the old
+ * (0100 §9). `--defaults` keeps a store that is settled and answers; it does
+ * not choose one on a machine that has none. Two things are still refused,
+ * because the machine could not obey another answer: an exported
+ * `LINGTAI_DATABASE_URL`, and an empty `--database-url`.
  *
  * **`--database-url <url>` given on its own is the one re-run that is still a
  * write** (#392): given to a machine already settled on another database that
@@ -110,7 +108,7 @@ import { existsSync, readdirSync } from 'node:fs'
 import { userInfo } from 'node:os'
 import { basename, join } from 'node:path'
 
-import { addLocalEffect } from '@lingtai/conductor/onboard'
+import { addEffect, addLocalEffect } from '@lingtai/conductor/onboard'
 import { sandboxHostHere, signedInHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { type ProjectState } from '@lingtai/domain'
@@ -143,6 +141,7 @@ import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lin
 import { Effect } from 'effect'
 import { Document, isMap, parseDocument } from 'yaml'
 
+import { type AddWorld, githubProjectEffect } from './add.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
 import { askClaudeTokenForRecipe, liveSetupTokenRun } from './claude-token.ts'
@@ -151,6 +150,7 @@ import {
   chooseFirstProjectEffect,
   type FirstProjectWorld,
   type GitResult,
+  livePickerEffect,
   liveGitEffect,
   liveOpen,
   liveSetupReader,
@@ -160,10 +160,11 @@ import {
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
-import { githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
+import { addSteps, githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
-import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import type { LeftBehind } from './setup-card.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
@@ -259,6 +260,16 @@ export interface InitWorld {
    * break a fresh machine.
    */
   doctor: () => Effect.Effect<SetupDoctor, unknown>
+  /**
+   * What `--github <owner>/<repo>` reaches GitHub with — the live ones where absent. `deps` and `labels` are
+   * `AddWorld`'s own; `add` and `picker` are `FirstProjectWorld.github`'s.
+   */
+  githubProject?: {
+    deps?: AddWorld['githubDeps']
+    labels?: AddWorld['labels']
+    add?: FirstProjectWorld['github']['add']
+    picker?: FirstProjectWorld['github']['picker']
+  }
   /** The directory `init` was run in (live: `process.cwd()`) — asked about when this machine already has projects (#756). */
   cwd: string
 }
@@ -332,8 +343,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     const { flags, repeated } = args
     // The heading, `Machine` and `Store` are printed only by a run that does not end on the card (#773).
     const held: string[] = []
+    // What a change of store leaves behind (#1474): on the card where there is one, and said here where there is not.
+    const storeLeft: LeftBehind[] = []
     const flush = (): void => {
       for (const line of held.splice(0)) world.log(line)
+      for (const l of storeLeft.splice(0)) world.log(`left behind: ${l.what}`)
     }
     const stop = (line: string, code = 1): number => {
       flush()
@@ -380,8 +394,27 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     })
     if ('refused' in config) return stop(config.refused)
 
+    // ---- the agent --------------------------------------------------------
+    // Which runtime runs is each project's question now (`#372`, `#398`),
+    // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
+    // `config.yml` naming one: that is a migration message for a file written
+    // before `#372`, not a question `init` is asking.
+    const agentRefusal = machineRuntimeRefusal(config, path)
+    if (agentRefusal !== null) return stop(agentRefusal)
+
     // ---- the store ------------------------------------------------------------
-    const store = yield* chooseStore(world, config, path, flags['database-url'] ?? null, named, held, flush, stop)
+    const store = yield* chooseStore(
+      world,
+      config,
+      path,
+      flags['database-url'] ?? null,
+      named,
+      held,
+      flush,
+      stop,
+      flags['defaults'] !== undefined,
+      storeLeft,
+    )
     if (store !== null) return store
     const storeNow = storeChoice(world.env, machineFor(world, path))
     const homeIsNew = !hadConfig && world.machine.read(path) !== null
@@ -391,14 +424,6 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       startedWithConfig: hadConfig,
       wrote: homeIsNew,
     })
-
-    // ---- the agent --------------------------------------------------------
-    // Which runtime runs is each project's question now (`#372`, `#398`),
-    // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
-    // `config.yml` naming one: that is a migration message for a file written
-    // before `#372`, not a question `init` is asking.
-    const agentRefusal = machineRuntimeRefusal(config, path)
-    if (agentRefusal !== null) return stop(agentRefusal)
 
     // ---- the App --------------------------------------------------------------
     // How this machine reaches GitHub, read off the file this world was handed
@@ -421,11 +446,15 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     // machine-wide holds "local" or "github". A machine that already has
     // projects is told what it has and how to add another, rather than asked
     // the question again; an explicit --project or --local names what to do
-    // next and reopens the question on one. (`--github` is `lingtai add`'s own
-    // flag, not `init`'s — `parseArgs` above refuses it, so a GitHub project
-    // here is always named through `--project github` instead; checking for it
-    // below was dead, since it could never be set.)
-    const explicitChoice = flags['project'] !== undefined || flags['local'] !== undefined
+    // next and reopens the question on one. `--github <owner>/<repo>` names the
+    // project outright and runs `lingtai add`'s own path for it (`githubProjectEffect`).
+    if (flags['github'] !== undefined && (flags['local'] !== undefined || flags['project'] === 'local')) {
+      return stop(
+        `--github ${flags['github']} and ${flags['local'] !== undefined ? `--local ${flags['local']}` : '--project local'} name two different projects. Pass one or the other. Nothing was written`,
+      )
+    }
+    const explicitChoice =
+      flags['project'] !== undefined || flags['local'] !== undefined || flags['github'] !== undefined
     // Whether the project question is asked at all this run — false when the
     // machine already has projects and nothing named which to add, so the
     // question is not asked again (below), only answered by what is printed
@@ -465,8 +494,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           section('Projects', [
             ...listed,
             paint.muted(
-              'lingtai add asks GitHub-or-directory for another project; lingtai init --project github sets up ' +
-                'the GitHub App on a machine that has only local projects',
+              'lingtai add <owner>/<repo> or lingtai init --github <owner>/<repo> sets up a GitHub project, or ' +
+                'changes one already added; lingtai add asks GitHub-or-directory for another; lingtai init ' +
+                '--project github sets up the GitHub App on a machine that has only local projects',
             ),
           ]),
         )
@@ -567,6 +597,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             store: storeNow,
             runtimes,
             github: how,
+            ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],
         )
@@ -590,6 +621,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     let fix: string | undefined
     // A local run's doctor report is part of the card; every other path prints it whole, below.
     let cardDrawn = false
+    // What `lingtai init --github` closes on: the project's own numbered block, as `lingtai add` does.
+    let githubClosing: Parameters<typeof addSteps>[0] | undefined
     // The board's `/setup/repository` page, when the App was just made here.
     let githubSetupUrl: string | undefined
     if (askProject) {
@@ -664,90 +697,116 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
               boardUrl,
               { waitMs: APP_WAIT_MS },
             ),
-          // `init` never gives `chooseFirstProject` a slug — `--github` is
-          // `lingtai add`'s own flag, refused by `parseArgs` above, so
-          // `runGithubBranch`'s `givenSlug` is always null here and returns
-          // before either of these runs (#394's dead-seam finding: `InitWorld`
-          // used to carry a `picker` and an `addGithub` that nothing called).
-          picker: () => {
-            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-          },
-          add: () => {
-            throw new Error('unreachable: lingtai init never gives chooseFirstProject a slug')
-          },
+          // `chooseFirstProject` is given a slug only through `--github <owner>/<repo>`, which
+          // `githubProjectEffect` hands it; `--project github` has none, and returns before either of these runs.
+          picker: world.githubProject?.picker ?? livePickerEffect,
+          add: world.githubProject?.add ?? ((opts, log) => addEffect(opts, log)),
         },
       }
-      const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
-      if ('refused' in chosen) {
-        // `boardUrl()` above is the only caller of `startBoard` on this path —
-        // if it was ever asked for, a refusal it hit is the real reason, over
-        // the GitHub-add sentence `chosen.refused` carries for a null URL.
-        const soFar = boardSoFar()
-        if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
-        return stop(chosen.refused)
-      }
-
-      if (chosen.project === 'local') {
-        const recipeFile = recipePath(chosen.name, home)
-        // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
-        if (
-          (yield* recipeText(chosen.name, { home, ...(world.store === undefined ? {} : { store: world.store }) })) ===
-          null
-        ) {
-          return stop(`the recipe could not be read back from ${recipeFile}`)
-        }
-        held.length = 0
-        const end = yield* printSetupEndEffect(
-          world,
+      const githubSlug = flags['github']
+      if (githubSlug !== undefined && githubSlug !== '') {
+        // The project is named, so there is nothing to pick: the same function `lingtai add` runs, after the machine's questions.
+        const done = yield* githubProjectEffect(
+          githubSlug,
+          flags,
+          buildFlags,
           {
-            command: 'init',
-            project: chosen.name,
-            updated: chosen.updated,
-            home,
-            homeIsNew,
+            project: firstProjectWorld,
+            ...(world.githubProject?.deps === undefined ? {} : { githubDeps: world.githubProject.deps }),
+            ...(world.githubProject?.labels === undefined ? {} : { labels: world.githubProject.labels }),
+            error: (line) => {
+              flush()
+              refuse(world, line)
+            },
+            log: world.log,
+            doctor: world.doctor,
+            store: () => storeNow,
             userHome: world.env['HOME'] ?? '',
-            store: storeNow,
-            runtimes,
-            recipe: chosen.card,
-            trial: chosen.trial,
-            recipePath: recipeFile,
           },
-          chosen.hints,
+          { command: 'init', homeIsNew, leftBehind: storeLeft },
         )
-        fix = end.fix
+        if (done.exit !== 0) return done.exit
+        held.length = 0
+        fix = done.fix
+        githubClosing = done.closing
         cardDrawn = true
       } else {
-        github = true
-        let how = yield* reachRow(chosen.auth === 'gh')
-        if (chosen.auth === 'gh') {
-          // No App to start a board for: the saved `gh` login is the whole of
-          // the auth, and a repository is named to `lingtai add`, not picked.
-        } else if (chosen.app === 'already') {
-          // Nothing upstream asked for a URL on this path — `app.configured` was
-          // already true, so `boardUrl()` above was never called.
-          const started = yield* startBoard()
-          if ('refused' in started) return boardRefused(started.refused)
-          const wizard = `${started.url}/setup/repository`
-          world.log(
-            (yield* world.open(wizard))
-              ? paint.pass(`opened ${wizard}`)
-              : `no browser could be opened here — open ${wizard}`,
-          )
-        } else if ('made' in chosen.app) {
-          // Already started, successfully, to hand `waitForApp` its URL above —
-          // this reads the same memo rather than starting a second one.
-          const started = yield* startBoard()
-          const url = 'url' in started ? started.url : ''
-          githubSetupUrl = `${url}/setup/repository`
-          how = `the App ${chosen.app.made.slug}`
+        const chosen = yield* chooseFirstProjectEffect(firstProjectWorld, flags, buildFlags)
+        if ('refused' in chosen) {
+          // `boardUrl()` above is the only caller of `startBoard` on this path —
+          // if it was ever asked for, a refusal it hit is the real reason, over
+          // the GitHub-add sentence `chosen.refused` carries for a null URL.
+          const soFar = boardSoFar()
+          if (soFar !== null && 'refused' in soFar) return boardRefused(soFar.refused)
+          return stop(chosen.refused)
         }
-        // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
-        // own call to `waitForApp` (`appComeBackLine`).
-        //
-        // `init`'s GitHub branch never has a slug, so there is no recipe file
-        // to name here — it exists once a repository is picked.
-        fix = yield* machineCard(how)
-        cardDrawn = true
+
+        if (chosen.project === 'local') {
+          const recipeFile = recipePath(chosen.name, home)
+          // Read back like `summariseRecipe` does: a recipe that cannot be read draws no card.
+          if (
+            (yield* recipeText(chosen.name, { home, ...(world.store === undefined ? {} : { store: world.store }) })) ===
+            null
+          ) {
+            return stop(`the recipe could not be read back from ${recipeFile}`)
+          }
+          held.length = 0
+          const end = yield* printSetupEndEffect(
+            world,
+            {
+              command: 'init',
+              project: chosen.name,
+              updated: chosen.updated,
+              ...(chosen.unchanged === true ? { unchanged: true } : {}),
+              home,
+              homeIsNew,
+              userHome: world.env['HOME'] ?? '',
+              store: storeNow,
+              runtimes,
+              recipe: chosen.card,
+              trial: chosen.trial,
+              recipePath: recipeFile,
+              ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0
+                ? {}
+                : { leftBehind: [...storeLeft, ...(chosen.leftBehind ?? [])] }),
+            },
+            chosen.hints,
+          )
+          fix = end.fix
+          cardDrawn = true
+        } else {
+          github = true
+          let how = yield* reachRow(chosen.auth === 'gh')
+          if (chosen.auth === 'gh') {
+            // No App to start a board for: the saved `gh` login is the whole of
+            // the auth, and a repository is named to `lingtai add`, not picked.
+          } else if (chosen.app === 'already') {
+            // Nothing upstream asked for a URL on this path — `app.configured` was
+            // already true, so `boardUrl()` above was never called.
+            const started = yield* startBoard()
+            if ('refused' in started) return boardRefused(started.refused)
+            const wizard = `${started.url}/setup/repository`
+            world.log(
+              (yield* world.open(wizard))
+                ? paint.pass(`opened ${wizard}`)
+                : `no browser could be opened here — open ${wizard}`,
+            )
+          } else if ('made' in chosen.app) {
+            // Already started, successfully, to hand `waitForApp` its URL above —
+            // this reads the same memo rather than starting a second one.
+            const started = yield* startBoard()
+            const url = 'url' in started ? started.url : ''
+            githubSetupUrl = `${url}/setup/repository`
+            how = `the App ${chosen.app.made.slug}`
+          }
+          // `skipped` and `timedOut` are already logged by `chooseFirstProject`'s
+          // own call to `waitForApp` (`appComeBackLine`).
+          //
+          // `init`'s GitHub branch never has a slug, so there is no recipe file
+          // to name here — it exists once a repository is picked.
+          fix = yield* machineCard(how)
+          cardDrawn = true
+        }
       }
     } else if (app.configured && !ghMachine) {
       github = true
@@ -821,7 +880,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       const closing =
         here !== null
           ? hereSteps(here)
-          : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
+          : githubClosing !== undefined
+            ? { steps: addSteps(githubClosing) }
+            : { steps: github ? githubInitSteps(githubSetupUrl) : localInitSteps(needBoard) }
       if (closing.preface !== undefined) world.log(closing.preface)
       for (const line of renderNextBlock(closing.steps)) world.log(line)
     }
@@ -895,12 +956,16 @@ function chooseStore(
   held: string[],
   flush: () => void,
   stop: (line: string, code?: number) => number,
+  /** `--defaults`: a store that is settled and answers is kept, as every recipe question's default is (#1474). */
+  defaults: boolean,
+  /** What a switch of store leaves behind, for the card. */
+  leftBehind: LeftBehind[],
 ): Effect.Effect<number | null, unknown> {
   return Effect.gen(function* () {
     // `--store sqlite` is refused, before anything else is looked at, wherever
     // the machine would not obey it — writing it there would be #215 again.
     if (named === 'sqlite') {
-      const refused = sqliteRefused(world, config, path)
+      const refused = sqliteRefused(world, path)
       if (refused !== null) return stop(refused)
     }
 
@@ -963,21 +1028,34 @@ function chooseStore(
     // through to whatever the file already says. That holds whether or not
     // `--store postgres` named it too: a flag given without `--store` is still
     // a flag, not silently discarded because nothing named the store.
+    // What the machine says before this run writes anything: a store that answers is the question's default, and
+    // the one a switch is said against.
+    const before = storeChoice(world.env, machineFor(world, path))
+    let current: string | undefined
+    let answering: StoreChosen | null = null
     if (flag === null) {
-      // The settled-store check runs once: a machine already answering is
-      // reported and not asked about again (this file's header).
-      const settled = storeChoice(world.env, machineFor(world, path))
+      // The settled-store check runs once. A machine already answering is asked about again, with that store as
+      // the default (0125 §6).
+      const settled = before
       if (!('refused' in settled)) {
-        if (settled.store === 'sqlite') return sqliteChosen(held, settled)
-        const check = yield* spunEffect(world, 'connecting to the database', world.database(settled.url))
-        if (check.ok) {
-          heldFact(held, 'Store', [
-            ['store', paint.pass(`${describeStore(settled)} · ${describeSchema(check.schema)}`)],
-          ])
-          return null
+        // A store that answers is asked about again with itself as the default (0125 §6): an answer equal to it
+        // writes nothing, and another is written and said.
+        if (settled.store === 'sqlite') {
+          current = ''
+          answering = settled
+        } else {
+          const check = yield* spunEffect(world, 'connecting to the database', world.database(settled.url))
+          if (check.ok) {
+            current = settled.url
+            answering = settled
+          } else {
+            flush()
+            fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
+            // The configured URL stays the default: an outage is not an answer, so Enter checks it again rather
+            // than taking SQLite and removing it. It is not `answering`, since nothing confirmed it.
+            current = settled.url
+          }
         }
-        flush()
-        fact(world, 'Store', [['store', paint.fail(`${describeStore(settled)} does not answer — ${check.why}`)]])
       } else if (settled.because === 'unreadable') {
         // `readConfig` refused this already; it is here because the two readers
         // are separate and one of them must not be the only one that looks.
@@ -1000,7 +1078,8 @@ function chooseStore(
         // loop that never reaches the question, since what makes it
         // inheritable — a `url` with no `store` — is still true after it failed.
         const older = config.getIn(['database', 'url'])
-        if (settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
+        // `--store sqlite` is the answer to that question, given: the inherited URL is not adopted over it.
+        if (named !== 'sqlite' && settled.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
           const check = yield* spunEffect(world, 'connecting to the database', world.database(older))
           if (check.ok) {
             config.setIn(['database', 'store'], 'postgres')
@@ -1013,6 +1092,8 @@ function chooseStore(
           }
           flush()
           world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
+          // Likewise the inherited URL: Enter checks it again rather than replacing it with SQLite.
+          current = older
         }
       }
     }
@@ -1021,17 +1102,25 @@ function chooseStore(
     // question is asked — `--store sqlite` is the empty answer, given in
     // advance, with no terminal needed to give it (#345).
     let schema: SchemaOutcome | null = null
-    const result = yield* questionEffect(world, {
+    // `--defaults` keeps a store that is settled and answers; it does not choose one on a fresh machine.
+    const storeWorld = defaults && current !== undefined ? acceptingDefaults(world) : world
+    const result = yield* questionEffect(storeWorld, {
       name: 'the store',
       command: 'lingtai init',
       flag: '--store sqlite, or --store postgres --database-url <url>',
       given: named === 'sqlite' ? '' : flag,
-      prompt: 'a Postgres URL for the log — empty for SQLite',
+      // Where Postgres is what answers, an empty answer keeps it, so SQLite is a word of its own.
+      prompt:
+        current !== undefined && current !== ''
+          ? 'a Postgres URL for the log — empty keeps the one shown, sqlite for SQLite'
+          : 'a Postgres URL for the log — empty for SQLite',
+      ...(current === undefined ? {} : { current }),
       fallback: '',
       show: redactUrl,
+      secret: true,
       validate: (answer) =>
         Effect.gen(function* () {
-          if (answer === '') return null
+          if (answer === '' || answer === 'sqlite') return null
           if (!/^postgres(ql)?:\/\//.test(answer)) {
             return 'that is not a Postgres URL — it begins postgres:// or postgresql://. Nothing was written'
           }
@@ -1042,8 +1131,16 @@ function chooseStore(
         }),
     })
     if ('refused' in result) return stop(result.refused)
+    const answered = result.answer === 'sqlite' ? '' : result.answer
 
-    if (result.answer === '') {
+    // The same store as the one that answers: nothing is written, and the line says what is there.
+    if (answering !== null && current !== undefined && answered === current) {
+      if (answering.store === 'sqlite') return sqliteChosen(held, answering)
+      heldFact(held, 'Store', [['store', paint.pass(`${describeStore(answering)} · ${describeSchema(schema!)}`)]])
+      return null
+    }
+
+    if (answered === '') {
       // The SQLite choice, written — and `database.url` removed in the same
       // write. Left behind it would go on selecting Postgres under a screen
       // that had just said SQLite, which is the whole of #215.
@@ -1051,6 +1148,7 @@ function chooseStore(
       config.deleteIn(['database', 'url'])
       world.machine.write(path, config.toString())
       const read = confirm(world, stop, path, 'sqlite')
+      if (typeof read !== 'number') storeSwitched(leftBehind, before, read)
       return typeof read === 'number' ? read : sqliteChosen(held, read)
     }
 
@@ -1059,8 +1157,24 @@ function chooseStore(
     world.machine.write(path, config.toString())
     const read = confirm(world, stop, path, 'postgres')
     if (typeof read === 'number') return read
+    storeSwitched(leftBehind, before, read)
     heldFact(held, 'Store', [['store', paint.pass(`${describeStore(read)} · ${describeSchema(schema!)}`)]])
     return null
+  })
+}
+
+/**
+ * The card's line for another store (ADR 0100 §9): the log it opens is a new, empty one, and nothing was copied
+ * from the old. Said only where a store was settled before this run — a first choice leaves nothing behind.
+ */
+function storeSwitched(into: LeftBehind[], before: ReturnType<typeof storeChoice>, now: StoreChosen): void {
+  if ('refused' in before) return
+  if (before.store === now.store && (before.store === 'sqlite' || (now.store === 'postgres' && before.url === now.url)))
+    return
+  into.push({
+    what:
+      `the log is a new, empty one — nothing was copied from ${describeStore(before)}, ` +
+      'and every project is added again',
   })
 }
 
@@ -1068,34 +1182,17 @@ function chooseStore(
  * Why `--store sqlite` cannot be obeyed here, or null when it can (#345).
  *
  * **A choice the machine will not obey is refused by name, never written.**
- * Three ways it would not be:
- *
- * - an exported `LINGTAI_DATABASE_URL`, which `storeChoice()` reads before the
- *   file (0056 §3) — writing `sqlite` under it shows SQLite and runs Postgres,
- *   which is #215;
- * - a file that already says `postgres`, with its URL or without one — taking
- *   the other store is a new, empty log rather than this one moved (0055 §3),
- *   and changing a store is an edit, not a re-run (this file's header);
- * - a `database.url` with no store written beside it, which is a Postgres log
- *   set up before the store was a written value (#186): the question adopts
- *   that URL, and a flag must not silently drop it instead.
- *
- * `store: sqlite` beside a `url` is **not** refused: that is the half-state the
- * documented switch leaves, and the empty answer completes it in the same way.
+ * One way it would not be: an exported `LINGTAI_DATABASE_URL`, which
+ * `storeChoice()` reads before the file (0056 §3) — writing `sqlite` under it
+ * shows SQLite and runs Postgres, which is #215. A file that already says
+ * `postgres` is not refused: another store is a change, written and then said
+ * (0125 §6), and the log it opens is a new, empty one (0100 §9).
  */
 /** `--database-url` (or `--store postgres --database-url`) named a URL other than the exported one. */
 export function exportedUrlRefusal(given: string, flag: string, from: string, exported: string): string {
   return (
     `${given} ${flag}, but ${from} names ${exported}, and ` +
     'an exported URL wins over the file. Unset it, or leave out --database-url. Nothing was written'
-  )
-}
-
-/** Why `--store sqlite` cannot flip a Postgres machine, and the edit that can. */
-export function sqliteEditSentence(path: string): string {
-  return (
-    'another store is a new, empty log rather than this one moved, so changing it is an edit and not a ' +
-    `flag: set database.store: sqlite in ${path}, then run lingtai init --store sqlite again. Nothing was written`
   )
 }
 
@@ -1107,22 +1204,10 @@ export function sqliteExportedRefusal(from: string): string {
   )
 }
 
-function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, config: Document, path: string): string | null {
+function sqliteRefused(world: Pick<InitWorld, 'env' | 'machine'>, path: string): string | null {
   const read = storeChoice(world.env, machineFor(world, path))
-  // The way through, and it works with no terminal: the edit leaves the
-  // two-keys half-state, which `--store sqlite` completes.
-  const edit = sqliteEditSentence(path)
   if (!('refused' in read) && read.where === 'environment' && read.store === 'postgres') {
     return sqliteExportedRefusal(read.from)
-  }
-  if (('refused' in read && read.because === 'no url') || (!('refused' in read) && read.store === 'postgres')) {
-    return `--store sqlite, but ${path} already says database.store: postgres — ${edit}`
-  }
-  // A `url` with no store this command can read beside it — none, or a value
-  // that is neither name — is what the question would adopt as Postgres (#186).
-  const older = config.getIn(['database', 'url'])
-  if ('refused' in read && read.because === 'nothing chosen' && typeof older === 'string' && older !== '') {
-    return `--store sqlite, but ${path} names database.url: ${redactUrl(older)} and no valid database.store beside it — ${edit}`
   }
   return null
 }

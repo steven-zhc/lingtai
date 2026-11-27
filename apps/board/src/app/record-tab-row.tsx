@@ -15,7 +15,8 @@ import Link from 'next/link'
 import { useSelectedLayoutSegments } from 'next/navigation'
 import { useEffect } from 'react'
 
-import { attemptOfSegment, sameTab, tabOfFragment, tabPath, taskPath, visibleAttempts, type TabKey } from '@/lib/tabs'
+import { tabPath, ticketPath } from '@/lib/paths'
+import { attemptOfSegment, sameTab, tabOfFragment, visibleAttempts, type TabKey } from '@/lib/tabs'
 
 export interface AttemptTabFact {
   attempt: number
@@ -25,7 +26,7 @@ export interface AttemptTabFact {
   cost: string
 }
 
-/** The tab the router has selected; the default's key at `/task/<id>`. */
+/** The tab the router has selected; the default's key at `/p/<project>/ticket/<n>`. */
 function selectedOf(segments: readonly string[] | null, fallback: TabKey): TabKey {
   const [kind, n] = segments ?? []
   if (kind === 'ticket') return 'ticket'
@@ -46,7 +47,7 @@ export function RecordTabRow({
   deciding: number | null
   /** The ticket stream's event count: the Ticket tab's fact. */
   events: number
-  /** The tab `/task/<id>` itself shows — the same function the default page uses. */
+  /** The tab `/p/<project>/ticket/<n>` itself shows — the same function the default page uses. */
   fallback: TabKey
 }) {
   const selected = selectedOf(useSelectedLayoutSegments(), fallback)
@@ -89,7 +90,7 @@ export function RecordTabRow({
 }
 
 /**
- * A pre-#885 link — `/task/<id>#attempt-7`, `#record-ticket`, `#record-diff` —
+ * A pre-#885 link — `/p/<project>/ticket/<n>#attempt-7`, `#record-ticket`, `#record-diff` —
  * lands on the tab it meant. Without JavaScript it opens the default tab,
  * which is accepted. A full replace rather than a router push: it runs on a
  * link that was written before the tabs had URLs, on load and on a hash change.
@@ -99,7 +100,7 @@ export function LegacyFragment({ taskId }: { taskId: string }) {
     const translate = () => {
       const tab = tabOfFragment(window.location.hash)
       if (tab === null) return
-      window.location.replace(tab === 'default' ? taskPath(taskId) : tabPath(taskId, tab))
+      window.location.replace(tab === 'default' ? ticketPath(taskId) : tabPath(taskId, tab))
     }
     translate()
     // A hash-only navigation on an open page fires `hashchange` and no mount.

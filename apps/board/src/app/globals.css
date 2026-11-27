@@ -490,7 +490,7 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
 .cols {
   /* Flex rather than equal grid tracks, because since #81 the lanes are not
-     equal: Landed is a list of one-line rows and does not need a card's width,
+     equal: Landed is a list of two-line rows and does not need a card's width,
      and the room it was taking belongs to the lanes where something is
      happening. Still sized from the lanes that exist and never from a number
      written here — `flex: 1` shares out whatever is left, so a lane added or
@@ -852,8 +852,8 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .shold { color: var(--muted); }
 
 /* The same rail on a landed row, at the width one line can give it and with no
-   labels — the row is one line by #81's decision, and what is scanned for here
-   is the hatch. */
+   labels — the row is two short lines (#81, then #1493), and what is scanned for
+   here is the hatch. */
 .lseq { flex: 0 0 auto; width: 34px; }
 .lseq .segs { gap: 2px; }
 .lseq .sbar { height: 4px; }
@@ -902,21 +902,36 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 
    A card each made the column that needs the least attention the heaviest thing
    on the page: six full-height cards of finished work, filling the screen,
-   beside one waiting card taking about a twelfth of the ink (#81). One line per
-   item, newest first, and everything past the most recent few behind a
+   beside one waiting card taking about a twelfth of the ink (#81). Two short
+   lines per item, newest first, and everything past the most recent few behind a
    disclosure — collapsed rather than dropped, because what landed is the record
    this system exists to keep. */
 .landed { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
 .lrow {
-  display: flex; gap: 5px; align-items: baseline;
+  display: flex; gap: 5px; align-items: flex-start;
   font-family: var(--mono); font-size: var(--fs-xs);
   color: var(--muted);
   padding: 3.5px 2px;
   border-bottom: 1px solid var(--rule);
 }
 .lrow:last-child { border-bottom: 0; }
-/* The rest of the line is the task page. Clipped rather than wrapped: a row
-   that wraps is a card again, in two lines instead of one. */
+.lbody { flex: 1; min-width: 0; }
+/* Line 1: what it is and where. Line 2: what it cost. */
+.lline { display: flex; gap: 5px; align-items: baseline; }
+.lspend { color: inherit; display: block; }
+.lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+/* One flex line, never wrapped between items: turns appear only if there is
+   room, and give way first. Turns shrink a thousand times faster than the Work
+   figure and the answering pill, and can shrink to nothing, so those two are
+   not touched until turns are gone. When even they do not fit — a project name
+   taking its share of a ~240px column — each wraps its own text inside its own
+   box (`white-space: normal`, `min-width: 0`) rather than extend past the
+   column's edge. Nothing on this line is clipped or dropped except turns. */
+.lbill { display: flex; flex-wrap: nowrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
+.lwork, .lbill > .pill { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
+.lturns { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The rest of line 1 is the task page. Clipped rather than wrapped: a row
+   that wraps is a card again. */
 .lmeta {
   color: inherit;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1227,22 +1242,9 @@ details[open] > summary::before { content: "▾"; }
 .topening { max-width: 62rem; font-size: var(--fs-md); color: var(--ink-2); }
 .topening > a { display: inline-block; margin-top: 0.5rem; }
 
-/* Rank 8: every identifier the page has, once, as one muted line in the bar
-   (#152). It was the block's own last line, and the attempt row printed the
-   same run id again as a full uuid. The bar's own size and grey; the dots are
-   drawn rather than typed so the markup holds the facts and nothing else. */
-.coords {
-  display: inline-flex;
-  flex-wrap: wrap;
-  align-items: baseline;
-  gap: 0 0.55rem;
-  min-width: 0;
-}
-.coords > * + *::before { content: "·"; margin-right: 0.55rem; color: var(--rule-2); }
-/* The coordinate, and it is also the way down (#132). `.sptr` supplies the
-   colour and the arrow's affordance; this takes back its push to the right,
-   which is for a line of its own and not for a place in this one. */
-.coords .sfrom { font-family: var(--mono); margin-left: 0; }
+/* The attempt pointer is in the facts line now (#1500). `.sptr` pushes itself right, which is for a line of its own
+   and not for a place in this one. */
+.ot-meta .sfrom { font-family: var(--mono); margin-left: 0; }
 
 /* The one neutral divider the design allows, and the extent of the block's
    argument: above it the state, below it what is being asked. */
@@ -1276,7 +1278,7 @@ details[open] > summary::before { content: "▾"; }
    while the type got smaller, so the sentence that mattered least was set
    largest. `.diag` is the reason and takes the block's prose size; `.sowhat`,
    rank 3's one sentence, is a step down from it. The coordinates are not in
-   the block at all: they are `.coords`, in the bar, at the bar's size (#152).
+   the block at all: they are in the facts line under the title, and the bar ends in `#<n>` (#152, #1500).
 
    These override the card's own `.diag`/`.did`/`.rec`, which are sized
    in `px` for a 22rem column. The words are shared (`describeWaitLines`); the sizes
@@ -1709,6 +1711,18 @@ details[open] > summary::before { content: "▾"; }
 /* Its run ended under a reader: under the refusal, and short, so the quote,
    the sentence and the moves are still on the first screen (#152). */
 .slog.ended .alogbody { height: auto; max-height: 5rem; }
+
+/* An answered ask, outside `blocked` (#1495): history, so a rule colour and
+   not the accent a live refusal carries. */
+.past {
+  border-left: 2px solid var(--rule-2);
+  padding: 0.25rem 0.6rem;
+  margin: 0.75rem 0;
+  font-size: var(--fs-sm);
+  line-height: 1.6;
+  color: var(--muted);
+}
+.past b { color: var(--ink-2); font-weight: 500; }
 
 /* One deciding line at rank 2, in two cases. A block that has no diagnosis at
    all — every block written before #83 — keeps its `in attempt N ↓`, because
@@ -3316,21 +3330,22 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 .prp-life li.current { background: var(--pr-navy); color: var(--pr-on-fill); border-color: var(--pr-navy); }
 .prp-life li.waiting.current { background: var(--fail); border-color: var(--fail); }
 .prp-life li.draft.current { background: transparent; color: var(--pr-navy); border-style: dashed; }
-.prp-drawing { width: 100%; height: auto; }
+.prp-drawing-scroll { overflow-x: auto; }
+.prp-drawing { display: block; min-width: 100%; height: auto; }
 .prp-lname { font-family: var(--mono); font-size: var(--fs-xs); fill: var(--pr-navy); }
 .prp-lname.idle { fill: var(--pr-idle); }
 .prp-line.personal { stroke: var(--pr-navy); }
 .prp-line.pr { stroke: var(--pr-indigo); }
 .prp-line.gone { stroke-dasharray: 5 4; opacity: 0.6; }
-.prp-now { stroke: var(--pr-amber); stroke-width: 1; stroke-dasharray: 3 3; }
-.prp-now-t { font: 600 var(--fs-2xs) var(--mono); fill: var(--pr-amber); }
+.prp-now { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; }
+.prp-now-t { font: 600 var(--fs-2xs) var(--mono); fill: var(--muted); }
 .prp-edge { fill: none; stroke-width: 2; stroke: var(--pr-edge); }
 .prp-edge.todo { stroke-dasharray: 4 3; }
 .prp-edge.red { stroke: var(--pr-red); }
 .prp-edge.merge.done { stroke: var(--pr-green); }
 .prp-brace { fill: none; stroke: var(--pr-brace); stroke-width: 1.2; }
 .prp-nd { fill: var(--pr-navy); stroke: var(--pr-navy); stroke-width: 1.5; }
-.prp-nd.todo, .prp-nd.main { fill: var(--surface); }
+.prp-nd.todo { fill: var(--surface); }
 .prp-nd.running { fill: var(--surface); stroke: var(--pr-amber); }
 .prp-nd.waiting { fill: var(--pr-red); stroke: var(--pr-red); }
 .prp-nd.ticket { fill: var(--pr-edge); stroke: var(--pr-edge); }
@@ -3542,6 +3557,8 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
   animation: sk-shimmer 1.6s ease-in-out infinite;
 }
 .sk-id { width: 30%; }
+/* A view still being read (`PRs`): the width of a word, so the bar holds its place. */
+.sk-view { width: 2.4em; }
 .sk-n { display: inline-block; width: 1.4em; vertical-align: middle; }
 .sk-strip { width: 55%; }
 .sk-title { width: 85%; height: 12px; }
@@ -3653,20 +3670,22 @@ html[data-os="pc"] .palette-keys .k-mac { display: none; }
 .step-empty { font-size: var(--fs-sm); color: var(--muted); opacity: .75; }
 .chip-code { font: var(--fs-sm) var(--mono); background: var(--surface-2); border: 1px solid var(--rule); border-radius: var(--radius); padding: 1px 7px; }
 .chip-kind { font-size: var(--fs-sm); color: var(--accent-ink); background: var(--accent-soft); border-radius: 999px; padding: 1px 10px; }
-.stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: 1px solid var(--rule); }
+.stats { display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--rule); }
 .stat { padding: 10px 0 8px; }
-.stat + .stat { border-left: 1px solid var(--rule); padding-left: 14px; }
+.stat:not(:first-child) { border-left: 1px solid var(--rule); padding-left: 14px; }
 .stat b { display: block; font: 500 var(--fs-xl)/1.15 var(--mono); color: var(--ink); }
 .stat span { font-size: var(--fs-xs); color: var(--muted); }
 .sv { display: flex; flex-wrap: wrap; gap: 4px 6px; align-items: baseline; min-width: 0; }
 .step-mono { font: var(--fs-md) var(--mono); }
 .step-q { color: var(--muted); }
+.say-more { padding: 0 0 6px; font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-2); }
+.say-more p { margin: 0 0 4px; }
 .say { margin: 0; padding: 8px 0 6px; border-top: 1px solid var(--rule); font-size: var(--fs-sm); line-height: 1.55; color: var(--ink-2); }
 .also { display: grid; grid-template-columns: 118px minmax(0, 1fr) auto; gap: 10px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--rule); }
 .ak { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
 .src { font: var(--fs-xs) var(--mono); color: var(--muted); }
 svg.mode-graph text { font-size: var(--fs-xs); }
-@media (max-width: 900px) { .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }
+@media (max-width: 900px) { .stats { grid-template-columns: repeat(3, 1fr); } .stat:nth-child(3n+1) { border-left: 0; padding-left: 0; } .s2 { grid-template-columns: 1fr; } .s2.s2-even { grid-template-columns: 1fr; } }
 .redit pre.fail { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* The row under the bar for a paused project (#994). Held colours only:

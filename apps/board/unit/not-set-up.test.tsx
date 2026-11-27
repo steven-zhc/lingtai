@@ -51,16 +51,24 @@ describe('/ with the store refused', () => {
 
   it('draws the setup screen, reads no log and opens no event stream', async () => {
     choice.now = { because: 'nothing chosen', refused: 'nothing on this machine says which store it runs' }
-    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+    const html = renderToStaticMarkup(await Page())
     expect(html).toContain('Nothing is set up in ~/lingtai-trial/a.')
     expect(html).toContain('lingtai init')
     expect(startBoard).not.toHaveBeenCalled()
     expect(html).not.toContain('class="health')
   })
 
+  it('draws Lingtai / Setup, with no chip and no Setup button', async () => {
+    choice.now = { because: 'nothing', refused: 'nothing is set up' }
+    const html = renderToStaticMarkup(await Page())
+    expect(html).toMatch(/<span class="crumb">Setup<\/span>/)
+    expect(html).not.toContain('class="chip')
+    expect(html).not.toContain('data-go')
+  })
+
   it('says a two-keys refusal in the same screen', async () => {
     choice.now = { because: 'two keys', refused: 'config.yml names two stores' }
-    const html = renderToStaticMarkup(await Page({ searchParams: Promise.resolve({}) }))
+    const html = renderToStaticMarkup(await Page())
     expect(html).toContain('config.yml names two stores')
     expect(html).not.toContain('Nothing is set up')
     expect(startBoard).not.toHaveBeenCalled()
@@ -68,7 +76,7 @@ describe('/ with the store refused', () => {
 })
 
 describe('the bar and the setup screen stay server components', () => {
-  it.each(['../src/app/bar.tsx', '../src/app/footer.tsx', '../src/app/not-set-up.tsx'])(
+  it.each(['../src/app/bar.tsx', '../src/app/footer.tsx', '../src/app/not-set-up.tsx', '../src/app/global-bars.tsx'])(
     '%s imports no @lingtai/env value and is not "use client"',
     (path) => {
       const src = readFileSync(new URL(path, import.meta.url), 'utf8')

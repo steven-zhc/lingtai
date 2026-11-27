@@ -48,8 +48,10 @@ vi.mock('../src/app/deferred.tsx', async () => {
 })
 
 import { AttemptTab } from '../src/app/attempt-tab.tsx'
-import { TaskBody, UnpushedBanner } from '../src/app/task/[id]/layout.tsx'
+import { TaskBody, UnpushedBanner } from '../src/app/p/[project]/ticket/[n]/layout.tsx'
+import type { PlaceView } from '../src/app/place-line.tsx'
 import { TicketTab } from '../src/app/ticket-tab.tsx'
+import { attemptTabPath, historyPath, sandboxTabPath } from '../src/lib/paths.ts'
 import type { OutgoingView } from '../src/lib/prompt.ts'
 import { planOf, type PlanView, type QueuedView } from '../src/lib/queued.ts'
 import {
@@ -513,7 +515,7 @@ describe('a blocked task', () => {
   it('puts Discussion between the reason and the moves on a blocked page', () => {
     const html = page(blocked())
     const at = (rank: string) => html.indexOf(`data-rank="${rank}"`)
-    const order = ['coords', 'state', 'why', 'discussion', 'moves', 'pair', 'record'].map(at)
+    const order = ['state', 'why', 'discussion', 'moves', 'pair', 'record'].map(at)
     expect(order.every((i) => i > -1)).toBe(true)
     expect([...order].sort((a, b) => a - b)).toEqual(order)
   })
@@ -594,10 +596,45 @@ describe('a blocked task', () => {
     expect(tab).toContain(CRASH)
   })
 
+  it('draws the place line ending in #<n>, with the pointer in the facts line (#1500)', () => {
+    const html = page(blocked())
+    const bar = html.slice(html.indexOf('<main'), html.indexOf('data-rank='))
+    expect(bar).toContain('aria-current="page"')
+    expect(bar).toContain('>#147<')
+    expect(bar).not.toContain('from Attempt')
+    expect(bar.split('>Recipe<').length - 1).toBe(1)
+    expect(html).toContain('from Attempt')
+  })
+
+  it('says so in the project menu when the project list could not be read (#1500)', () => {
+    const t = blocked()
+    const html = renderToStaticMarkup(
+      <TaskBody
+        task={t}
+        github={t.github}
+        menu={{ filters: [], registered: [], locks: new Map(), sandbox: new Map(), app: false, error: 'db down' }}
+      />,
+    )
+    expect(html).toContain('The list of projects could not be read: db down')
+    expect(html).toContain('role="alert"')
+  })
+
+  it("holds the PR view's width while it is read (#1500)", () => {
+    const t = blocked()
+    const html = renderToStaticMarkup(
+      <TaskBody task={t} github={t.github} views={new Promise<PlaceView[]>(() => {})} />,
+    )
+    expect(html).toContain('class="sk-bar sk-view"')
+  })
+
   it('prints each identifier once', () => {
     const read = page(blocked()).replace(/<[^>]*>/g, ' ')
     const count = (needle: string) => read.split(needle).length - 1
-    expect(count(ITEM)).toBe(1)
+    // The internal id is not printed at all: the bar ends in `#<n>` and the facts line carries `#n ↗` (#1500).
+    expect(count(ITEM)).toBe(0)
+    expect(count('since 2026')).toBe(0)
+    expect(count('04:27')).toBe(1)
+    expect(count('UTC')).toBe(0)
     // The run id is not visible text anywhere on the page: the attempt's tab
     // is `Attempt N`, and the id is only in a `title` (#885).
     expect(count('pass-52feebd1')).toBe(0)
@@ -843,9 +880,9 @@ describe('the rail on the task page', () => {
 
     const generic = opening(page(blocked()))
     expect(generic).not.toContain('The ticket’s context is in the complete issue.')
-    expect(generic).toContain(`href="/task/${ITEM}/ticket"`)
+    expect(generic).toContain(`href="${historyPath(ITEM)}"`)
     expect(generic).not.toContain('class="tcontext"')
-    expect(generic.indexOf(`href="/task/${ITEM}/ticket"`)).toBeLessThan(generic.indexOf('class="seq"'))
+    expect(generic.indexOf(`href="${historyPath(ITEM)}"`)).toBeLessThan(generic.indexOf('class="seq"'))
   })
 
   /**
@@ -928,10 +965,10 @@ describe('the record', () => {
       </TaskBody>,
     )
     expect(tabsOf(html)).toEqual([
-      `/task/${ITEM}/ticket`,
-      `/task/${ITEM}/sandbox`,
-      `/task/${ITEM}/attempt/2`,
-      `/task/${ITEM}/attempt/1`,
+      historyPath(ITEM),
+      sandboxTabPath(ITEM),
+      attemptTabPath(ITEM, 2),
+      attemptTabPath(ITEM, 1),
     ])
     // Labelled by the board's word, `Attempt N`, with no run id as text.
     expect(html).toContain('Attempt 2')
@@ -956,7 +993,7 @@ describe('the record', () => {
         x
       </TaskBody>,
     )
-    expect(tabsOf(html)).toEqual([`/task/${ITEM}/ticket`, `/task/${ITEM}/sandbox`])
+    expect(tabsOf(html)).toEqual([historyPath(ITEM), sandboxTabPath(ITEM)])
   })
 })
 
@@ -1010,7 +1047,7 @@ describe('the waiting links in the header (#584)', () => {
     const both = withWaiting({ previous: nb('1'), next: nb('3') })
     expect(both).toContain('previous waiting')
     expect(both).toContain('next waiting')
-    expect(both).toContain('/task/ticket-lingtai-3')
+    expect(both).toContain('/p/lingtai/ticket/3')
     const onlyNext = withWaiting({ previous: null, next: nb('3') })
     expect(onlyNext).not.toContain('previous waiting')
     expect(onlyNext).toContain('next waiting')
@@ -1251,7 +1288,7 @@ describe('what a pending page cannot lose or hide', () => {
     // Only what GitHub knows waits.
     expect(html).toContain('class="skeleton"')
     expect(out.replace(/<footer[\s\S]*<\/footer>/, '')).not.toContain('class="skeleton"')
-    expect(out).toContain('/task/ticket-lingtai-147/ticket')
+    expect(out).toContain('/p/lingtai/ticket/147/history')
   })
 
   it('draws Discussion outside every boundary for an untouched ticket too, so a draft is not lost', () => {

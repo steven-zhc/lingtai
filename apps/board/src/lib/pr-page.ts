@@ -1,5 +1,5 @@
 /**
- * One PR's page as data (#1320, 0130 §5): `/pr/<project>/<n>`, and `/pr/<project>/next` for the draft.
+ * One PR's page as data (#1320, 0130 §5): `/p/<project>/pr/<n>`, and `/p/<project>/pr/next` for the draft.
  *
  * Pure, like `pr-board.ts`: it takes the PR's events and the state folded from them, and returns every word the page
  * draws, so a test reads them without rendering. **Nothing here asks the log or the code host** — `lib/prs.ts` reads, and
@@ -15,6 +15,7 @@ import {
   type PayloadOf,
   type PrState,
   GENERATED_SECTIONS,
+  firstFrozenSha,
   isOpen,
   prDescription,
   prStepRows,
@@ -23,10 +24,23 @@ import {
   summaryEditTransition,
 } from '@lingtai/domain'
 import { type Recipe, ceilingOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import { Effect } from 'effect'
 
 import type { Tone } from '../app/object-title.tsx'
 import { summarise } from './history.ts'
-import { type Button, DRAFT_NAME, type DraftTicket, WAIT_WORDS, failingRun, prName, slipsOf } from './pr-board.ts'
+import { prPath } from './paths.ts'
+import {
+  type Button,
+  DRAFT_NAME,
+  type DraftTicket,
+  type PrRead,
+  WAIT_WORDS,
+  UNFOLLOWED_WHY,
+  failingRun,
+  prName,
+  slipsOf,
+  unfollowedRemote,
+} from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
@@ -173,7 +187,66 @@ export interface PrPageView {
   readonly facts: readonly { readonly label: string; readonly value: string }[]
   readonly checks: { readonly head: string; readonly rows: readonly PageCheck[] }
   readonly history: readonly { readonly at: string; readonly text: string }[]
+  /** An empty Next PR's first sentence: where the last tickets went. Null on every other page. */
+  readonly previous: {
+    readonly lead: string
+    readonly name: string
+    readonly state: string
+    readonly href: string | null
+  } | null
 }
+
+/** The newest submitted PR, for an empty Next PR: where its tickets went and the point the drawing marks. */
+export interface PreviousPr {
+  readonly pr: PrState
+  /** The commit the personal branch was frozen at (the PR's first `PrInProgress`); null where unknown or not wanted. */
+  readonly frozenSha: string | null
+  /** The newest caught-up point of any PR. */
+  readonly caughtUp: { readonly sha: string; readonly n: number | null } | null
+}
+
+/**
+ * What an empty Next PR page says about where the tickets went: the newest PR that is not a draft (`openAmong`'s walk without
+ * its open-only cut), the commit its first `PrInProgress` froze the personal branch at, and the newest caught-up point.
+ * The freeze commit is read from that PR's own events, because `PrState.frozenSha` is the latest walk's, and only when the
+ * drawing needs it. **A PR that could not be read fails this** rather than being skipped: it may be the newest, and the page
+ * would then name an older PR as where the tickets went. A freeze read that fails fails it too.
+ */
+export const previousOf = (
+  draft: PrPageInput['draft'],
+  reads: readonly PrRead[],
+  readEvents: (n: number) => Effect.Effect<readonly Envelope[], Error>,
+): Effect.Effect<PreviousPr | null, Error> =>
+  Effect.gen(function* () {
+    // Only an empty draft names a previous PR; a draft with tickets, or one that could not be read, reads nothing more.
+    if ('error' in draft || draft.length > 0) return null
+    const prs: PrState[] = []
+    for (const r of reads) {
+      if ('error' in r) return yield* Effect.fail(new Error(`PR ${r.n} could not be read: ${r.error}`))
+      prs.push(r.pr)
+    }
+    let pr: PrState | null = null
+    for (let i = prs.length - 1; i >= 0; i--) {
+      if (prs[i]!.status !== 'draft') {
+        pr = prs[i]!
+        break
+      }
+    }
+    if (pr === null) return null
+    let caughtUp: PreviousPr['caughtUp'] = null
+    for (let i = prs.length - 1; i >= 0; i--) {
+      const c = prs[i]!.catchUp
+      if (c?.outcome === 'caught-up') {
+        caughtUp = { sha: c.mergeCommit ?? c.mainSha, n: prs[i]!.n }
+        break
+      }
+    }
+    let frozenSha: string | null = null
+    if (caughtUp === null && pr.n !== null && pr.status !== 'closed' && pr.status !== 'refused') {
+      frozenSha = firstFrozenSha(yield* readEvents(pr.n))
+    }
+    return { pr, frozenSha, caughtUp }
+  })
 
 export interface PrPageInput {
   readonly project: string
@@ -187,6 +260,8 @@ export interface PrPageInput {
   readonly draft: readonly DraftTicket[] | { readonly error: string }
   /** The PR that is open now, whose name a draft's Submit says it waits for. */
   readonly open: PrState | null
+  /** The newest PR that is not a draft; only the draft's page reads it. */
+  readonly previous?: PreviousPr
   /** What the PR's stream cost, reported; null is unknown, never `$0`. */
   readonly spend: number | null
   /** What each ticket cost and whether it is still open, as the daemon's description reads them; absent is unknown. */
@@ -356,6 +431,19 @@ function stepRows(pr: PrState, events: readonly Envelope[], names: readonly stri
     const ms = times.get(row.step)
     const duration = ms === undefined || ms <= 0 ? null : span(ms)
     const base = { step: row.step, label, duration, link: null as PageStep['link'] }
+    if (row.status === 'pending' && (row.step === 'ci' || row.step === 'ready') && unfollowedRemote(pr)) {
+      out.push({
+        ...base,
+        status: 'skipped',
+        mark: '—',
+        text:
+          row.step === 'ci'
+            ? `no CI step — ${UNFOLLOWED_WHY}`
+            : 'opening the PR and marking it ready is yours to do on this remote',
+        duration: null,
+      })
+      continue
+    }
     if (row.status === 'pending') {
       if (inFlight !== undefined && inFlight.step === row.step) {
         out.push({ ...base, status: 'running', mark: '…', text: 'running now', duration: null })
@@ -504,7 +592,7 @@ function drawingOf(
   main: string,
   personal: string,
 ): Drawing | null {
-  const model = prBranches(pr, events, input.draft, { main, personal, stepNames: input.stepNames })
+  const model = prBranches(pr, events, input.draft, { main, personal, stepNames: input.stepNames }, input.previous)
   return model === null ? null : layoutBranches(model, DRAWING_WIDTH)
 }
 
@@ -681,10 +769,13 @@ export function prPage(input: PrPageInput): PrPageView {
           ? `${rows.length} checks`
           : pr.ciSkipped !== null
             ? `no CI step — ${pr.ciSkipped.why}`
-            : 'no checks ran',
+            : unfollowedRemote(pr)
+              ? `no CI step — ${UNFOLLOWED_WHY}`
+              : 'no checks ran',
       rows,
     },
     history: events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })).reverse(),
+    previous: null,
   }
 }
 
@@ -696,8 +787,9 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
     title: t.title,
     fix: false,
   }))
+  const empty = error === null && tickets.length === 0
   const buttons: Button[] = []
-  if (error === null) {
+  if (error === null && !empty) {
     buttons.push({
       kind: 'submit',
       label: 'Submit PR',
@@ -706,12 +798,36 @@ function draftPage(input: PrPageInput, main: string, personal: string): PrPageVi
         : { disabled: `one PR at a time — submit opens once ${prName(open)} is merged or closed` }),
     })
   }
+  // A closed or refused PR gave its tickets back (or never held them): *went into* would be false.
+  const prev = input.previous?.pr
+  const named = empty && prev !== undefined && prev.status !== 'closed' && prev.status !== 'refused' ? prev : null
+  const count = named === null ? 0 : named.status === 'requested' ? named.draft.length : slipsOf(named).length
   return {
     kind: 'draft',
     n: null,
-    header: { name: DRAFT_NAME, title: 'no title yet — the agent writes one at submit', host: null },
+    header: {
+      name: DRAFT_NAME,
+      title: empty ? 'Next PR — nothing in it yet' : 'no title yet — the agent writes one at submit',
+      host: null,
+    },
     sub: `${personal} → ${main} · ${error === null ? plural(tickets.length, 'ticket', 'tickets') : 'tickets unknown'}`,
-    poster: { word: 'DRAFT', tone: 'draft', where: 'ON YOUR MACHINE', line: 'ON YOUR MACHINE' },
+    poster: {
+      word: 'DRAFT',
+      tone: 'draft',
+      where: 'ON YOUR MACHINE',
+      line: empty
+        ? `the next ticket that lands on ${personal} starts this draft · Submit appears once it has one`
+        : 'ON YOUR MACHINE',
+    },
+    previous:
+      named === null
+        ? null
+        : {
+            lead: `Nothing is waiting for the next PR. The ${plural(count, 'ticket', 'tickets')} before went into`,
+            name: prName(named),
+            state: (POSTER[named.status ?? ''] ?? String(named.status)).toLowerCase(),
+            href: named.n === null ? null : prPath(project, named.n),
+          },
     strip: stripOf(null),
     drawing: drawingOf(null, [], input, main, personal),
     steps: [],

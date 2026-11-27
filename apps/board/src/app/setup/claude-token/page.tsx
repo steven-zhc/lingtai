@@ -7,7 +7,7 @@ import { join } from 'node:path'
 import { stateDir } from '@lingtai/env'
 import { liveMachineText } from '@lingtai/setup'
 
-import { Bar } from '@/app/bar.tsx'
+import { SetupBar } from '@/app/global-bars.tsx'
 
 import { ObjectTitle } from '../../object-title.tsx'
 import { claudeTokenSetAt } from './save.ts'
@@ -20,10 +20,7 @@ export default function ClaudeToken() {
   const set = 'unreadable' in state ? null : state.usable
   return (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">claude token</span>
-      </Bar>
+      <SetupBar step="Claude token" />
       <ObjectTitle tag="setup" tone="muted" title="Claude Code token" />
       <p>
         Run <code>claude setup-token</code> in a terminal and paste what it prints.

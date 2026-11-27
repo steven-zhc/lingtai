@@ -2,15 +2,9 @@
 
 import { useRef, useState } from 'react'
 
-/** The four pictures of the board; the caption is also each picture's `alt`. */
-export const SHOTS = [
-  { name: 'board', tab: 'Board', caption: 'The board — queued, running, waiting on you, landed' },
-  { name: 'task', tab: 'Task', caption: 'One ticket — every step, the review, what it cost' },
-  { name: 'landed', tab: 'Landed', caption: "Landed — what changed, with the AI review's summary" },
-  { name: 'report', tab: 'Report', caption: 'Report — how the work converges and what it cost' },
-] as const
+import type { SHOTS } from './shots-list'
 
-const src = (name: string, full: boolean) => `/img/docs/shot-${name}${full ? '-full' : ''}.png`
+export type Shot = (typeof SHOTS)[number] & { src: string; full: string }
 
 /**
  * The hero's picture: a browser-window frame holding one wide crop, four tabs
@@ -21,13 +15,13 @@ const src = (name: string, full: boolean) => `/img/docs/shot-${name}${full ? '-f
  * image. Script turns that click into a native `<dialog>` (focus trapped, Esc
  * closes); ← → move between the four and a click on the backdrop closes it.
  */
-export function Shots() {
+export function Shots({ shots }: { shots: readonly Shot[] }) {
   const [active, setActive] = useState(0)
   const [shown, setShown] = useState(0)
   const box = useRef<HTMLDialogElement>(null)
 
-  const full = SHOTS[shown]!
-  const step = (by: number) => setShown((i) => (i + by + SHOTS.length) % SHOTS.length)
+  const full = shots[shown]!
+  const step = (by: number) => setShown((i) => (i + by + shots.length) % shots.length)
 
   return (
     <figure className="shots">
@@ -37,30 +31,24 @@ export function Shots() {
           <i />
           <i />
         </div>
-        {SHOTS.map((s, i) => (
+        {shots.map((s, i) => (
           <div className="shot-panel" key={s.name} id={`shot-${s.name}`} role="tabpanel" hidden={i !== active}>
             <a
-              href={src(s.name, true)}
+              href={s.full}
               onClick={(e) => {
                 e.preventDefault()
                 setShown(i)
                 box.current?.showModal()
               }}
             >
-              <img
-                src={src(s.name, false)}
-                alt={s.caption}
-                width={1440}
-                height={600}
-                loading={i === 0 ? undefined : 'lazy'}
-              />
+              <img src={s.src} alt={s.caption} width={1440} height={600} loading={i === 0 ? undefined : 'lazy'} />
             </a>
             <p className="shot-cap">{s.caption}</p>
           </div>
         ))}
       </div>
       <div className="shot-tabs" role="tablist" aria-label="Screenshots of the board">
-        {SHOTS.map((s, i) => (
+        {shots.map((s, i) => (
           <button
             type="button"
             className="shot-tab"
@@ -88,7 +76,7 @@ export function Shots() {
           e.preventDefault()
         }}
       >
-        <img src={src(full.name, true)} alt={full.caption} width={1440} height={900} />
+        <img src={full.full} alt={full.caption} width={1440} height={900} />
         <div className="shot-foot">
           <p>{full.caption}</p>
           <div className="shot-nav">

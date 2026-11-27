@@ -264,6 +264,12 @@ export interface StatusReading {
   savedHeadOf?: (runId: string, project: ProjectState) => Effect.Effect<SavedHeadReading, unknown>
   /** The system's line for a ticket (#1259). Replaceable so a test need not own a log. */
   systemOf?: (taskId: string, limits: SystemLimits) => Effect.Effect<string | null, unknown>
+  /** Whether some conductor holds the lock. Replaceable so a test need not read the lock file. */
+  conductorHeld?: () => Effect.Effect<boolean>
+  /** The registered projects. Replaceable so a test need not own a log. */
+  projects?: () => Effect.Effect<readonly ProjectState[]>
+  /** The log's rows for a project. Replaceable so a test need not own a log. */
+  tasks?: typeof readTasksEffect
 }
 
 /** The ticket's standing triage resolution as one sentence, or null (#1259). A read that fails is no line, never a made-up one. */
@@ -442,7 +448,9 @@ export const readStatus = (
   reading: StatusReading = {},
 ): Effect.Effect<StatusReport, unknown> =>
   Effect.gen(function* () {
-    const projects = (yield* loadProjectsEffect()).filter((p) => !options.project || p.project === options.project)
+    const projects = (yield* (reading.projects ?? loadProjectsEffect)()).filter(
+      (p) => !options.project || p.project === options.project,
+    )
     if (projects.length === 0) {
       return {
         projects: [],
@@ -558,7 +566,7 @@ export const readStatus = (
         mode: filter.ok ? modeOf(filter.recipe) : 'solo',
         backoffMs,
       })
-      const tasks = yield* readTasksEffect({ project: name })
+      const tasks = yield* (reading.tasks ?? readTasksEffect)({ project: name })
       // **The arm comes from the row, because the offer cannot carry it** (#100):
       // a restarted ticket is queued, so it is listed from here and nowhere else.
       const newAttemptsByTask = new Map(tasks.map((t) => [t.taskId, t.newAttempts ?? 0]))
@@ -652,20 +660,27 @@ export const readStatus = (
             : locksOn({ project, control: controlState, accounts: accounts.accounts })
       let why: WhyNothingRuns | null = null
       // Only where the Queue section can say anything: a refusal or an unreadable source already does.
-      if (filter.ok && asked && offerError === null) {
+      // **Except the conductor's own refusal**, which the project's setup failing (no GitHub credentials, a recipe
+      // that would not resolve) does not make less true: with the source unanswered, the log's queued rows are
+      // what is waiting, as the board reads them.
+      const answered = filter.ok && asked && offerError === null
+      if (answered || project.refused != null) {
+        const logQueued = tasks.filter((t) => t.state === 'queued').map((t) => Number(t.issue))
         const facts: WhyFacts = {
           now: new Date(now),
           // Read last: nothing here is asked unless unheld work is queued and nothing is in flight.
           beacon: { up: true },
           draining: controlState !== null && controlState.shutdown !== null,
+          refused: project.refused,
+          queueUnseen: !answered,
           locks,
           base: lookedAt,
-          offered: offered.map((o) => Number(o.ref)),
-          runnable: runnable.map((r) => Number(r.issue)),
+          offered: answered ? offered.map((o) => Number(o.ref)) : logQueued,
+          runnable: answered ? runnable.map((r) => Number(r.issue)) : logQueued,
           skipped,
           rows: whyRows(tasks, backoffMs, now),
-          repository: filter.links?.repository ?? null,
-          canListBlockers: filter.links !== null,
+          repository: filter.ok ? (filter.links?.repository ?? null) : null,
+          canListBlockers: filter.ok && filter.links !== null,
         }
         // The order of the reads is the shared function's (#1216): the board reads them the same way.
         why = yield* explainQueueEffect(facts, {
@@ -681,13 +696,14 @@ export const readStatus = (
             ),
           ),
           // A `lingtai run` conducts without a beacon: its lock is what says a pass may be live. A failed read counts as held.
-          conductorHeld: Effect.tryPromise(() => conductorLockHolder()).pipe(
-            Effect.map((holder) => holder !== null),
-            recovering(() => Effect.succeed(true)),
-          ),
-          blockers: fullSkipped.some((s) => s.reason === 'blocked-by')
-            ? (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
-            : Effect.succeed(null),
+          conductorHeld: Effect.suspend(
+            reading.conductorHeld ??
+              (() => Effect.tryPromise(() => conductorLockHolder()).pipe(Effect.map((holder) => holder !== null))),
+          ).pipe(recovering(() => Effect.succeed(true))),
+          blockers:
+            filter.ok && fullSkipped.some((s) => s.reason === 'blocked-by')
+              ? (reading.blockers ?? readBlockersEffect)(filter, fullSkipped, () => now)
+              : Effect.succeed(null),
         })
       }
       out.push({

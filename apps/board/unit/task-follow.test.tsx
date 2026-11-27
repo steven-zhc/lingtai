@@ -5,7 +5,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
  *
  * **Not that the component exists — that this route has it** (#172). `Live` had
  * existed since #64 and was mounted in `health.tsx` alone, which only `/`
- * renders; `/task/<id>` — the one page with a discussion on it — never
+ * renders; `/p/<project>/ticket/<n>` — the one page with a discussion on it — never
  * re-rendered on an append, so a question, the trace's sentence and the answer
  * each waited for a reload. Every comment about that pane said *every append
  * re-renders the board*, and it was true of the board.
@@ -28,13 +28,13 @@ vi.mock('../src/lib/task.ts', async (original) => ({
   loadTaskAnswer: vi.fn(async () => answer),
 }))
 
-const { default: TaskLayout, TaskBody } = await import('../src/app/task/[id]/layout.tsx')
+const { default: TaskLayout, TaskBody } = await import('../src/app/p/[project]/ticket/[n]/layout.tsx')
 const { Follow, Following, Live, warning } = await import('../src/app/live.tsx')
 
 describe('the task route', () => {
   it('mounts the subscription around the page it re-renders', async () => {
     const page = (await TaskLayout({
-      params: Promise.resolve({ id: 'ticket-lingtai-172' }),
+      params: Promise.resolve({ project: 'lingtai', n: '172' }),
       children: 'tab',
     })) as ReactElement<{
       children: ReactNode

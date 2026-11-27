@@ -1,9 +1,10 @@
 import { exclusiveAdd } from '@lingtai/conductor/add-from-page'
 import type { GithubReach } from '@lingtai/conductor/onboard'
+import { taken } from '@lingtai/conductor/pick-repository'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, recipeText } from '@lingtai/project'
-import { resolveSource } from '@lingtai/recipe'
+import { branchOf, type Recipe, resolveSource } from '@lingtai/recipe'
 import {
   alreadyAdded,
   alreadyAddedSentence,
@@ -15,6 +16,7 @@ import {
 } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
+import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
 /**
  * `lingtai add <owner>/<repo>`, or — since #394 — `lingtai add` with no
  * positional, which asks the same GitHub-or-directory question `lingtai init`
@@ -33,9 +35,10 @@ import { Cause, Effect } from 'effect'
  * person typed it here, is refused rather than silently adopted when the
  * recipe disagrees (#75).
  */
-import { type AskedBeforeAdd, askBeforeGithubAddEffect, type AskBeforeGithubAddDeps, attempt } from './add-github.ts'
+import { ensureLabelsEffect, labelNames, liveLabelClient, type LabelClient } from './add-labels.ts'
 import {
   chooseFirstProjectEffect,
+  conflictingFlags,
   liveFirstProjectWorld,
   liveRepositoryListEffect,
   type FirstProjectWorld,
@@ -45,13 +48,15 @@ import { renderNextBlock, renderNextLine } from './output.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import { questionEffect } from './question.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
-import { type CardRecipe, cardRecipe } from './setup-card.ts'
+import { type CardRecipe, cardRecipe, type LeftBehind } from './setup-card.ts'
 import { liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 
 export interface AddWorld {
   project: FirstProjectWorld
   /** `askBeforeGithubAdd`'s own deps — its live ones unless a test says otherwise. */
   githubDeps?: AskBeforeGithubAddDeps
+  /** The client that makes the project's labels (#1486) — the live one (built from `reach`) unless a test says otherwise. */
+  labels?: (owner: string, repo: string, reach: GithubReach) => Effect.Effect<Pick<LabelClient, 'createLabel'>, unknown>
   error: (line: string) => void
   /** Where the card goes — the same `log` the questions were asked through. */
   log: (line: string) => void
@@ -170,48 +175,18 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
   }
 
   const slug = flags['github']
-  let asked: AskedBeforeAdd | null = null
-  let repaired: string | null = null
   if (slug !== undefined && slug !== '') {
-    // Refused before any question: a project already added is edited in its recipe. The one thing that
-    // goes on is an owner never recorded (`filter.ts`'s "re-run lingtai add <owner>/<repo>"), which asks
-    // nothing, writes no recipe and only registers again.
-    const repo = slugRepo(slug)
-    const found = repo === null ? undefined : alreadyAdded(yield* world.project.projects(), repo)
-    const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
-    if (repo !== null && found !== undefined && !ownerRepair) {
-      world.error(alreadyAddedSentence(repo))
-      return 1
-    }
-    if (ownerRepair) repaired = repo
-    if (!ownerRepair) {
-      const stopped = yield* askBeforeGithubAddEffect(slug, flags, world.githubDeps, buildFlags)
-      if (typeof stopped === 'number') return stopped
-      asked = stopped
-    }
+    const done = yield* githubProjectEffect(slug, flags, buildFlags, world, { command: 'add', homeIsNew: false })
+    if (done.exit === 0 && done.closing !== undefined) closeOn(world, done.fix, done.closing)
+    return done.exit
   }
-
-  // With a slug, `askBeforeGithubAdd` above has written nothing: its answers are held in `asked`, and
-  // `applySetup` writes them just before the registration they belong to.
-  const base = slug !== undefined && slug !== '' ? { ...world.project, kept: ADD_KEPT } : world.project
-  const pending = asked
-  const projectWorld: typeof base =
-    pending === null
-      ? base
-      : {
-          ...base,
-          github: { ...base.github, add: (opts, log) => addWithSetup(base, pending.answers, opts, log) },
-        }
 
   // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
   // the board branch refuses the recipe flags it does not ask, so it is told to
   // leave them out (the local branch keeps them) and they are handed on with the pick, where `askBeforeGithubAdd` asks.
   const holdsBack =
-    (slug === undefined || slug === '') &&
-    flags['project'] !== 'local' &&
-    flags['local'] === undefined &&
-    world.repositories?.interactive() === true
-  const result = yield* chooseFirstProjectEffect(projectWorld, flags, buildFlags, holdsBack)
+    flags['project'] !== 'local' && flags['local'] === undefined && world.repositories?.interactive() === true
+  const result = yield* chooseFirstProjectEffect(world.project, flags, buildFlags, holdsBack)
   if ('refused' in result) {
     world.error(result.refused)
     return 1
@@ -254,6 +229,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         command: 'add',
         project: result.name,
         updated: result.updated,
+        ...(result.unchanged === true ? { unchanged: true } : {}),
         home: world.project.home,
         // Only `init` writes `config.yml`.
         homeIsNew: false,
@@ -273,51 +249,227 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
       slug: null,
     })
   }
-  if (result.project === 'github' && asked !== null && result.updated !== undefined && result.reach !== undefined) {
-    const { owner, repo } = parseSlug(result.slug!)
-    // Warnings come first and whatever the read-back does: the project is registered either way.
-    for (const line of result.warnings ?? []) world.log(line)
-    const path = recipePath(repo)
-    // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
-    const read = yield* attempt(
-      Effect.gen(function* () {
-        const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
-        if (text === null) return yield* Effect.fail(new Error(`${path} is not there to read`))
-        return cardRecipe(resolveSource(text, path, path).recipe, `${owner}/${repo}`)
-      }),
-    )
-    if ('threw' in read) {
-      world.error(
-        `${repo} is registered, but its recipe could not be read back for the summary — ${read.threw.message}`,
-      )
-      return 1
+  return 0
+})
+
+/** Which command is drawing the card, and what only it knows (`init`'s config is new, and its store may have left things). */
+export interface GithubProjectEntry {
+  command: 'add' | 'init'
+  homeIsNew: boolean
+  /** What the command's own earlier steps left behind, ahead of the project's. */
+  leftBehind?: readonly LeftBehind[]
+}
+
+/** What the project's setup came to; the command closes on `closing` (or `fix`) itself, and exits `exit`. */
+export interface GithubProjectDone {
+  exit: number
+  fix?: string
+  closing?: Parameters<typeof addSteps>[0]
+}
+
+/**
+ * The one setup path for a GitHub project (ADR 0125 §6), run by `lingtai add <owner>/<repo>` and by
+ * `lingtai init --github <owner>/<repo>`. A first run adds the project; a later run asks every question
+ * the first did, each defaulting to what the recipe says now, and writes only a change.
+ */
+export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
+  slug: string,
+  flags: Record<string, string>,
+  buildFlags: string[],
+  world: AddWorld,
+  entry: GithubProjectEntry,
+): Effect.fn.Return<GithubProjectDone, unknown> {
+  // An owner never recorded (`filter.ts`'s "re-run lingtai add <owner>/<repo>") asks nothing, writes no recipe and only registers again.
+  const repo = slugRepo(slug)
+  const found = repo === null ? undefined : alreadyAdded(yield* world.project.projects(), repo)
+  const ownerRepair = found !== undefined && found.owner === null && found.configHash !== null
+  const rerun = found !== undefined && !ownerRepair
+  let repaired: string | null = null
+  // Whether `ProjectConfigured` names the base the recipe on disk names: a rerun that left them apart registers again.
+  let registeredAsRecipe = false
+  if (ownerRepair) repaired = repo
+  if (rerun && repo !== null) {
+    const { owner } = parseSlug(slug)
+    // Another owner's repository of the same name would be written onto this project's stream.
+    if (found.owner !== null && found.owner.toLowerCase() !== owner.toLowerCase()) {
+      world.error(taken({ slug, repo, takenBy: found.owner }))
+      return { exit: 1 }
     }
-    const card: CardRecipe = read.ok
-    const end = yield* printSetupEndEffect(
-      world,
-      {
-        command: 'add',
-        project: repo,
-        updated: result.updated,
-        home: world.project.home,
-        homeIsNew: false,
-        userHome: world.userHome,
-        store: world.store(),
-        runtimes: asked.runtimes,
-        where: 'github',
-        github: githubRow(result.reach),
-        recipe: card,
-        trial: asked.trial,
-        recipePath: path,
-      },
-      asked.hints,
-    )
-    closeOn(world, end.fix, { project: repo, tickets: card.tickets, kinds: card.kinds, slug: `${owner}/${repo}` })
+    // The project is keyed by its registered spelling: another spelling would read and write a recipe of its own.
+    if (found.project !== repo) {
+      world.error(
+        `${repo} is registered as ${found.project} — run lingtai add ${owner}/${found.project} instead. Nothing was written`,
+      )
+      return { exit: 1 }
+    }
+    // A recipe that does not resolve is refused by name before any question, never replaced by the defaults (0125 §6).
+    const recipeAt = recipePath(repo)
+    const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
+    if (text !== null) {
+      try {
+        // Registered means `ProjectConfigured` was appended (a pending project has no hash) naming the base the
+        // registration records: `branchOf`, the personal branch in team mode.
+        registeredAsRecipe =
+          found.configHash !== null &&
+          found.base !== null &&
+          found.base === branchOf(resolveSource(text, recipeAt, recipeAt).recipe)
+      } catch (error) {
+        world.error(`${recipeAt} does not resolve — ${asError(error).message}. ${ADD_KEPT}`)
+        return { exit: 1 }
+      }
+    }
   }
-  if (repaired !== null && result.project === 'github' && result.updated !== undefined) {
+  // This command registers a GitHub project; a flag that names another kind is refused where it is read, not after.
+  if (flags['project'] !== undefined && flags['project'] !== 'github') {
+    world.error(`${slug} is a GitHub project, and --project ${flags['project']} names another. Nothing was written`)
+    return { exit: 1 }
+  }
+
+  let asked: AskedBeforeAdd | null = null
+  if (!ownerRepair) {
+    const stopped = yield* askBeforeGithubAddEffect(slug, flags, world.githubDeps, buildFlags)
+    if (typeof stopped === 'number') return { exit: stopped }
+    asked = stopped
+  }
+
+  // Nothing changed: no event, nothing registered. The recipe is read back, the labels are put right, the card says so.
+  if (rerun && asked !== null && asked.answers.changes.length === 0 && registeredAsRecipe) {
+    const { owner, repo: name } = parseSlug(slug)
+    // The conflicts `chooseFirstProject` would refuse, which this return would otherwise step over.
+    const conflict = conflictingFlags(flags, entry.command === 'add' ? ADD_KEPT : world.project.kept)
+    if (conflict !== null) {
+      world.error(conflict)
+      return { exit: 1 }
+    }
+    // The same election `chooseFirstProject` would hold the flag to: the machine reaches GitHub one way.
+    const via = flags['github-auth']
+    if (via !== undefined && asked.reach !== undefined && via !== asked.reach.kind) {
+      world.error(
+        `--github-auth ${via}, but this machine reaches GitHub through ${asked.reach.kind === 'gh' ? 'gh' : 'the App'}. ` +
+          'Leave out --github-auth, or change it with lingtai init. Nothing was written',
+      )
+      return { exit: 1 }
+    }
+    return yield* drawGithubCard(world, entry, {
+      owner,
+      repo: name,
+      asked,
+      updated: true,
+      unchanged: true,
+      reach: asked.reach ?? { kind: 'app', slug: null },
+      warnings: [],
+    })
+  }
+
+  // With a slug, `askBeforeGithubAdd` above has written nothing but `github.auth`, the machine's own: its answers are held in `asked`, and
+  // `applySetup` writes them just before the registration they belong to.
+  const base = { ...world.project, kept: entry.command === 'add' ? ADD_KEPT : world.project.kept }
+  const pending = asked
+  const projectWorld: typeof base =
+    pending === null
+      ? base
+      : {
+          ...base,
+          github: { ...base.github, add: (opts, log) => addWithSetup(base, pending.answers, opts, log, rerun) },
+        }
+  // An `app` answered above writes nothing yet, so it is told on rather than asked a second time (#1487).
+  const handed = asked?.githubAuth === undefined ? flags : { ...flags, 'github-auth': asked.githubAuth }
+  const result = yield* chooseFirstProjectEffect(projectWorld, handed, buildFlags, false)
+  if ('refused' in result) {
+    world.error(result.refused)
+    return { exit: 1 }
+  }
+  if (result.project !== 'github') {
+    world.error(`${slug} is a GitHub project, and --project ${result.project} names another. Nothing was written`)
+    return { exit: 1 }
+  }
+  if (asked !== null && result.updated !== undefined && result.reach !== undefined) {
+    const { owner, repo: name } = parseSlug(result.slug!)
+    return yield* drawGithubCard(world, entry, {
+      owner,
+      repo: name,
+      asked,
+      updated: result.updated,
+      reach: result.reach,
+      warnings: result.warnings ?? [],
+    })
+  }
+  if (asked !== null && (result.updated === undefined || result.reach === undefined)) {
+    // `add()` said why; nothing was registered, and a script must not read this as success.
+    world.error(`${slug} was not registered`)
+    return { exit: 1 }
+  }
+  if (repaired !== null && result.updated !== undefined) {
     world.log(`${repaired}'s recipe is ${recipePath(repaired)}, and it is edited there`)
   }
-  return 0
+  return { exit: 0 }
+})
+
+/** The card a GitHub project ends on: the recipe read back as written, the labels put right, and what to do next. */
+const drawGithubCard = Effect.fn('add.githubCard')(function* (
+  world: AddWorld,
+  entry: GithubProjectEntry,
+  card: {
+    owner: string
+    repo: string
+    asked: AskedBeforeAdd
+    updated: boolean
+    unchanged?: boolean
+    reach: GithubReach
+    warnings: readonly string[]
+  },
+): Effect.fn.Return<GithubProjectDone, unknown> {
+  const { owner, repo, asked, reach } = card
+  // Warnings come first and whatever the read-back does: the project is registered either way.
+  for (const line of card.warnings) world.log(line)
+  const path = recipePath(repo)
+  // The card reads the recipe back as written, as the local path does; a read that fails says so and draws no card.
+  const read = yield* attempt(
+    Effect.gen(function* () {
+      const text = yield* recipeText(repo, world.project.store === undefined ? {} : { store: world.project.store })
+      if (text === null) return yield* Effect.fail(new Error(`${path} is not there to read`))
+      const recipe: Recipe = resolveSource(text, path, path).recipe
+      return { card: cardRecipe(recipe, `${owner}/${repo}`), recipe }
+    }),
+  )
+  if ('threw' in read) {
+    world.error(`${repo} is registered, but its recipe could not be read back for the summary — ${read.threw.message}`)
+    return { exit: 1 }
+  }
+  const recipeCard: CardRecipe = read.ok.card
+  // Never fails the add: a label that could not be made is on the card with the line that makes it (#1486).
+  const labels = yield* ensureLabelsEffect(
+    Effect.suspend(() => (world.labels ?? liveLabelClient)(owner, repo, reach)),
+    labelNames(read.ok.recipe),
+  )
+  const left = [...(entry.leftBehind ?? []), ...(asked.leftBehind ?? [])]
+  const end = yield* printSetupEndEffect(
+    world,
+    {
+      command: entry.command,
+      project: repo,
+      updated: card.updated,
+      ...(card.unchanged === true ? { unchanged: true } : {}),
+      home: world.project.home,
+      homeIsNew: entry.homeIsNew,
+      userHome: world.userHome,
+      store: world.store(),
+      runtimes: asked.runtimes,
+      where: 'github',
+      github: githubRow(reach),
+      recipe: recipeCard,
+      labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
+      trial: asked.trial,
+      recipePath: path,
+      ...(left.length === 0 ? {} : { leftBehind: left }),
+    },
+    asked.hints,
+  )
+  return {
+    exit: 0,
+    ...(end.fix === undefined ? {} : { fix: end.fix }),
+    closing: { project: repo, tickets: recipeCard.tickets, kinds: recipeCard.kinds, slug: `${owner}/${repo}` },
+  }
 })
 
 function slugRepo(slug: string): string | null {
@@ -347,11 +499,12 @@ function addWithSetup(
   answers: Answers,
   opts: Parameters<FirstProjectWorld['github']['add']>[0],
   log: (line: string) => void,
+  rerun: boolean,
 ): Effect.Effect<Added> {
   // The default home, as `askBeforeGithubAdd` read the file and as the card below reads it back.
   const path = recipePath(answers.project)
-  // Under the lock the board's Add takes, and with *already added* read again inside it: another
-  // process may have registered this project since the check above.
+  // Under the lock the board's Add takes, and on a first add with *already added* read again inside it: another
+  // process may have registered this project since the first read. A rerun is registered by definition.
   const guarded = world.projects().pipe(
     // A store failure is a defect (0101 §6), which `Effect.catch` does not see; an interruption is let through.
     Effect.catchCause((cause) =>
@@ -364,7 +517,7 @@ function addWithSetup(
           ),
     ),
     Effect.flatMap((projects) =>
-      alreadyAdded(projects, answers.project) === undefined
+      rerun || alreadyAdded(projects, answers.project) === undefined
         ? applySetup(
             { by: world.by, store: world.store },
             answers,

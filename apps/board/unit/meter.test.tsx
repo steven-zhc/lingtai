@@ -13,13 +13,11 @@
  * Asserted on the markup for the reason `#101` established: these are facts
  * about what a reader is shown, not about the reducer.
  */
-import type { SpendRow } from '@lingtai/projector'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { Discussion } from '../src/app/discussion.tsx'
-import { emptyBill } from '../src/lib/spend.ts'
-import { totalsFact, totalsOf, type DiscussionView, type AttemptView } from '../src/lib/task.ts'
+import type { DiscussionView } from '../src/lib/task.ts'
 
 function chat(over: Partial<DiscussionView> = {}): DiscussionView {
   return {
@@ -104,113 +102,5 @@ describe('the meter', () => {
     const html = render([chat({ held: 'none', turns: [turn('why?')] })], '$0.42')
 
     expect(html).toContain('1 discussion · $0.42 · no limit')
-  })
-})
-
-function run(over: Partial<AttemptView> = {}): AttemptView {
-  return {
-    runId: 'pass-1',
-    attempt: 1,
-    at: '2026-09-08T03:00:00.000Z',
-    baseSha: null,
-    headSha: null,
-    landing: null,
-    configHash: null,
-    turns: 73,
-    costUsd: emptyBill(),
-    durationMs: 700_000,
-    outcome: { state: 'finished', detail: null },
-    files: [],
-    diff: null,
-    prompt: null,
-    awaitingSha: null,
-    stepNow: null,
-    limits: null,
-    refusal: null,
-    steps: [],
-    progress: null,
-    review: null,
-    ...over,
-  }
-}
-
-/** `round: 0` is Work, `round` at 1 or above is Answering (0039 §3); the other `for`s ignore it. */
-function spent(
-  purpose: SpendRow['purpose'],
-  round: number | null,
-  costUsd: number | null,
-  pass: string | null,
-): SpendRow {
-  return {
-    seq: '1',
-    at: new Date('2026-09-08T03:00:00Z'),
-    streamId: pass ?? 'chat-1',
-    ticket: 'ticket-lingtai-1',
-    project: 'lingtai',
-    pass,
-    purpose,
-    step: purpose === 'Action' ? 'proposed' : null,
-    action: purpose === 'Action' ? 'build' : null,
-    round,
-    runtime: 'claude-code',
-    turns: 1,
-    durationMs: 1000,
-    costUsd,
-    usage: [],
-    estimatedUsd: null,
-    estimateFetched: null,
-    grant: null,
-    kind: null,
-  }
-}
-
-describe("the ledger's total", () => {
-  /**
-   * `$13.04` is the number a person acts on, so it is the first thing on the
-   * label. The split stays behind it because answering a refusal is
-   * default-on and a discussion has a meter rather than a limit (#84, 0033
-   * §4) — stated, but not the headline. The money is `spend`'s, by purpose
-   * (`#498`) — `totalsOf`'s third argument, never `AttemptView.costUsd` or
-   * `DiscussionView.costUsd`.
-   */
-  it('leads with the sum and keeps the split behind it', () => {
-    const fact = totalsFact(
-      totalsOf(
-        [run(), run({ runId: 'pass-2', attempt: 2, turns: 74 })],
-        [chat({ held: 'none' })],
-        [spent('Action', 0, 7.81, 'pass-1'), spent('Action', 1, 5.23, 'pass-2'), spent('Discussion', null, 0.42, null)],
-      ),
-    )
-
-    expect(fact?.startsWith('$13.46 · ')).toBe(true)
-    expect(fact).toContain('2 attempts + 1 discussion')
-    expect(fact).toContain('147 turns')
-    expect(fact).toContain('$7.81 work')
-    expect(fact).toContain('$5.23 answering')
-    expect(fact).toContain('$0.42 asking')
-  })
-
-  /**
-   * One kind of money needs no split: `$7.81 · $7.81 work` is one fact printed
-   * twice, which is the disagreement a second copy of an arithmetic invites.
-   */
-  it('drops the split when there is only one kind of money', () => {
-    const fact = totalsFact(totalsOf([run()], [], [spent('Action', 0, 7.81, 'pass-1')]))
-
-    expect(fact?.startsWith('$7.81 · 1 attempt · 73 turns')).toBe(true)
-    expect(fact).not.toContain('work')
-  })
-
-  /**
-   * An attempt that contributed not one row to `spend` — `rows` defaults to
-   * `[]` here, the no-row case a pre-`RunSpent` ticket like `ticket-lingtai-89`
-   * is always in — is unknown, never nothing: 0110 §7 asks for `unknown`,
-   * not silence, and `$0.00` is a third answer this bill must never give.
-   */
-  it('says unknown rather than nothing for an attempt that reported no cost at all', () => {
-    const fact = totalsFact(totalsOf([run()]))
-
-    expect(fact).toBe('unknown (1 run) · 1 attempt · 73 turns · 11m40s')
-    expect(fact).not.toContain('$0.00')
   })
 })

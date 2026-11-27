@@ -33,12 +33,12 @@ describe('whereOnBranch', () => {
     expect(run(landing({ base: 'main' }), { prs: [], draft: [] })).toBeNull()
   })
 
-  it('reads the draft as not in a PR yet', () => {
+  it('reads the draft as Draft PR, not submitted yet', () => {
     const w = run(landing(), { prs: [], draft: [tk('5')] })
     expect(w?.small).toBe('ON YOUR BRANCH')
-    expect(w?.in.text).toMatch(/not in a PR yet/)
+    expect(w?.in.text).toMatch(/Draft PR · not submitted yet/)
     expect(w?.sketch.box).toBe('draft')
-    expect(w?.in.page).toBe('/pr/p/next')
+    expect(w?.in.page).toBe('/p/p/pr/next')
   })
 
   it('reads an open PR with a host number, its branch, and that Lingtai closes it', () => {
@@ -84,7 +84,7 @@ describe('whereOnBranch', () => {
 
   it('gives a closed PR’s ticket back to the draft', () => {
     const w = run(landing(), { prs: [{ n: 7, pr: pr({ status: 'closed' }) }], draft: [tk('5')] })
-    expect(w?.in.text).toMatch(/not in a PR yet/)
+    expect(w?.in.text).toMatch(/Draft PR · not submitted yet/)
   })
 
   it('says a person-closed ticket goes in without Closes', () => {
@@ -113,7 +113,7 @@ describe('whereOnBranch', () => {
       prs: [{ n: 7, pr: pr({ status: 'closed', tickets: [] }) }],
       draft: [tk('5')],
     })
-    expect(w?.in.text).toMatch(/not in a PR yet/)
+    expect(w?.in.text).toMatch(/Draft PR · not submitted yet/)
   })
 
   it('names the ticket in the Closes clause and the PR state truthfully', () => {
@@ -148,12 +148,13 @@ describe('whereOnBranch', () => {
     expect(w?.notes.join()).toMatch(/no PR was open when it was claimed/)
   })
 
-  it('never says not in a PR yet for a read that failed', () => {
+  it('never says Draft PR for a read that failed', () => {
     for (const read of [{ error: 'boom' }, { prs: [{ n: 1, error: 'x' }], draft: { error: 'x' } }] as OnBranchRead[]) {
       const w = run(landing(), read)
       expect(w?.small).toBe('ON YOUR BRANCH')
       expect(w?.in.failed).toBe(true)
       expect(w?.in.text).toMatch(/could not be read/)
+      expect(w?.in.text).not.toMatch(/Draft PR/)
     }
   })
 
@@ -181,6 +182,6 @@ describe('OnYourBranchView', () => {
     const w = run(landing(), { prs: [], draft: [tk('5')] }, false)!
     const html = renderToStaticMarkup(<OnYourBranchView where={w} />)
     expect(html).not.toContain('Closes #')
-    expect(html).toContain('not in a PR yet')
+    expect(html).toContain('Draft PR · not submitted yet')
   })
 })

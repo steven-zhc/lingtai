@@ -12,7 +12,8 @@ You need Git, Claude Code or Codex signed in, and Node.js 26.13.0 with npm. See
 
 ## Step 1 — Set up this machine
 
-Install Lingtai, clone the site and register it. Press Enter at each question to take the default.
+Install Lingtai, clone the site and register it. `init` asks a few questions;
+press Enter to take the default at each, except the one below.
 
 ```sh
 curl -fsSL https://lingtai.hczhang.com/install.sh | sh
@@ -26,7 +27,8 @@ Skip it and the first ticket fails until `lingtai token claude`; see
 
 If `lingtai` is not found, add `~/.local/bin` to `PATH`.
 
-`init` picks from what is signed in:
+**The one choice: who writes, and who reviews.** `init` offers only the agents
+signed in on this machine, and proposes:
 
 | Signed in | Writes | Reviews |
 |---|---|---|
@@ -34,7 +36,16 @@ If `lingtai` is not found, add `~/.local/bin` to `PATH`.
 | Codex only | Codex | Codex |
 | Both | Claude Code | Codex |
 
-A reviewer from another vendor catches more of what the writer missed, but one agent is enough for this book.
+One is enough: it writes the change, then reads it again cold. A reviewer from
+another vendor catches more of what the writer missed. To choose instead,
+answer the two questions, or pass them:
+
+```sh
+lingtai init --local chapter-garden --agent codex --reviewer claude-code
+```
+
+`--reviewer none` skips review: cheaper, but nothing reads the change before
+it lands.
 
 Enter at the mode question makes a **team** project; [`solo`](solo.md) is the other.
 
@@ -56,8 +67,9 @@ Continue when Lingtai prints `created #N`.
 
 ## Step 3 — Start
 
-Starting pays for at least two runs, writer and reviewer, on the accounts above,
-more if a check buys a fix round.
+Starting pays for at least two runs, writer and reviewer, on the accounts above.
+Each finding sent back to the writer costs one judge run, one more writer run and
+one more reviewer run, since the fix is reviewed again.
 
 ```sh
 lingtai start
@@ -67,16 +79,11 @@ Leave it running; `Ctrl+C` stops after the attempt in flight. In a second
 terminal run `lingtai board` to watch it. The board has no login and listens on every network address; `board.host: 127.0.0.1`
 in `~/.lingtai/config.yml` keeps it on this machine.
 
-If review raises findings, the card stops in **Waiting on you**:
+If review raises findings, a judge sends them back to the writer, up to six
+times. The card stops in **Waiting on you** only when those rounds run out or
+the judge cannot settle it.
 
-![The card in Waiting on you after review, numbered 1 to 4.](img/tutorial-board-waiting.png)
-
-1. **Waiting on you**: nothing more is spent until you answer.
-2. **review** is red: built, then refused.
-3. The findings. On the card's page: another writer round, a new attempt, or approve.
-4. **Landed** is empty until review passes or you approve.
-
-When the card is **Landed**:
+When review passes, the card is **Landed**:
 
 ![The card in Landed, on your branch, numbered 1 to 3.](img/tutorial-board.png)
 
@@ -90,6 +97,17 @@ Look at what landed:
 git -C chapter-garden log -1 --stat lingtai-base
 git -C chapter-garden diff main...lingtai-base
 ```
+
+To read it on the site, start it from a second clone; Lingtai keeps landing into the first:
+
+```sh
+git clone -b lingtai-base chapter-garden garden-preview
+cd garden-preview && npm ci && npm run dev
+```
+
+Open `http://localhost:4321/en/` and the story you picked:
+
+![The new chapter in Chapter Garden, highlighted in the story's contents.](img/tutorial-site.png)
 
 The next chapter takes it to `main` in a PR. To OK each landing first, declare
 a `human:` at `proposed:`; see [the recipe](recipe.md).

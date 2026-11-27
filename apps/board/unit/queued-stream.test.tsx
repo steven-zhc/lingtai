@@ -54,9 +54,9 @@ describe('a problem links to the recipe only where it is about the recipe (#1014
     />,
   )
   it('links the first and not the second', () => {
-    expect(out).toContain('<a href="/recipe/broken"><strong>broken</strong></a>')
+    expect(out).toContain('<a href="/p/broken/recipe"><strong>broken</strong></a>')
     expect(out).toContain('<strong>quiet</strong>: the queue could not be listed')
-    expect(out).not.toContain('/recipe/quiet')
+    expect(out).not.toContain('/p/quiet/recipe')
   })
 })
 
@@ -78,7 +78,7 @@ describe('the Queued column while GitHub is being asked', () => {
 
   it('shows a recipe that will not read, which GitHub cannot change', () => {
     expect(out).toContain(
-      '<a href="/recipe/broken"><strong>broken</strong></a>: the queue could not be listed — recipe.yml: missing',
+      '<a href="/p/broken/recipe"><strong>broken</strong></a>: the queue could not be listed — recipe.yml: missing',
     )
   })
 

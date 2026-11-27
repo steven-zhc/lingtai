@@ -208,7 +208,7 @@ export function billOf(rows: readonly SpendRow[]): MoneyBill {
  * One bill per ticket, for every ticket named.
  *
  * A ticket with no rows at all is not an empty bill — `billOf([])` reduces to
- * nothing, which reads as nothing spent — it is `attempts` runs unknown
+ * nothing, which reads as nothing spent — it is `attempts` runs unpriced
  * (0110 §7): this reader never took that fallback at all, and a pre-`RunSpent`
  * ticket's cost pill simply vanished (`#498`'s review). Counted the way
  * `apps/board/src/lib/spend.ts`'s `withNoSpendFallback` counts it: the
@@ -406,9 +406,9 @@ export function elapsed(hours: number | null): string | null {
 export function money(bill: MoneyBill): string {
   if (bill.reportedRuns > 0) {
     const amount = `$${(bill.reportedCents / 100).toFixed(2)}`
-    return bill.unknown > 0 ? `${amount} + ${bill.unknown} unknown` : amount
+    return bill.unknown > 0 ? `${amount} + ${bill.unknown} unpriced` : amount
   }
-  if (bill.unknown > 0) return `unknown (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`
+  if (bill.unknown > 0) return `unpriced (${bill.unknown} run${bill.unknown === 1 ? '' : 's'})`
   return '—'
 }
 

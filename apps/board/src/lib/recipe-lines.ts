@@ -1,3 +1,4 @@
+import { ceilingReading, ceilingSentences } from '@lingtai/conductor/ceiling'
 import { LANDED_LABEL, PR_FIX_LABEL } from '@lingtai/conductor/labels'
 import { STEPS, type Step } from '@lingtai/domain'
 import {
@@ -16,7 +17,7 @@ import {
 } from '@lingtai/recipe'
 import { formatDuration } from '@lingtai/recipe/duration'
 
-import { readRecipe } from './recipe.ts'
+import { ceilingLimitsOf, readRecipe } from './recipe.ts'
 import { STEP_SAYS } from './step-says.ts'
 
 /** One read-only line of a step's settings: the label the add page uses and what the recipe says. */
@@ -49,8 +50,8 @@ export interface StepBlock {
 export interface RecipeLines {
   steps: StepBlock[]
   limits: { refusalFixes: string; conflictResolutions: string; newAttempts: string; wall: string; turns: string }
-  /** `an attempt`'s sentence, the note under the limits. */
-  ceiling: string
+  /** The sentence under the limits, and the counting behind it one sentence a line. */
+  ceiling: { summary: string; sentences: string[] }
 }
 
 type Run = Extract<StepAction, { run: string }>
@@ -88,6 +89,7 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
   const limits = ceilingOf(recipe)
   const rows = readRecipe(recipe)
   const says = (name: string): string => rows.find((row) => row.name === name)?.says ?? ''
+  const reading = ceilingReading(ceilingLimitsOf(recipe))
   const shown = discloseSteps(recipe.steps)
   const steps = STEPS.map((step): StepBlock => {
     const declared = shown[step]
@@ -151,7 +153,7 @@ export function recipeLines(recipe: Recipe, ref: string): RecipeLines {
       wall: String(limits.run.wall),
       turns: String(limits.run.turns),
     },
-    ceiling: says('an attempt'),
+    ceiling: { summary: reading.summary, sentences: ceilingSentences(reading) },
   }
 }
 

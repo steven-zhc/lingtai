@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { SHOTS } from '@/app/shots'
+import { SHOTS } from '@/app/shots-list'
 import { imageType } from '@/lib/doc-images'
 
 describe('imageType', () => {

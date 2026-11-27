@@ -15,7 +15,7 @@ import { alreadyAdded, defaultPersonalBranch, LINGTAI_BASE, machineName } from '
 import { alreadyAddedSentence, type SetupTarget } from '@lingtai/setup'
 import { Effect } from 'effect'
 
-import { Bar } from '@/app/bar.tsx'
+import { SetupBar } from '@/app/global-bars.tsx'
 
 import { ObjectTitle } from '../../../object-title.tsx'
 import type { TeamView } from './read-model.ts'
@@ -59,10 +59,7 @@ export default async function Read({ searchParams }: { searchParams: Promise<Par
   const target = await resolveTarget(params)
   const frame = (fact: string, body: React.ReactNode) => (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">repository</span>
-      </Bar>
+      <SetupBar step="Repository" />
       <div className="detail-body">
         <section>
           <ObjectTitle tag="setup" tone="muted" title="Repository" meta={fact} />

@@ -5,12 +5,13 @@
  */
 import { type Envelope, reducePr } from '@lingtai/domain'
 import type { Recipe } from '@lingtai/recipe'
+import { Effect } from 'effect'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { PrDetail } from '../src/app/pr-detail.tsx'
-import { type BranchModel, layoutBranches, prBranches, shownLabel } from '../src/lib/pr-branches.ts'
-import { prPage } from '../src/lib/pr-page.ts'
+import { type BranchModel, type Drawing, layoutBranches, prBranches, shownLabel } from '../src/lib/pr-branches.ts'
+import { previousOf, prPage } from '../src/lib/pr-page.ts'
 
 const STEPS = ['sync', 'build', 'summary', 'push', 'open', 'ci', 'topup', 'ready']
 const OPTS = { main: 'main', personal: 'studio', stepNames: STEPS }
@@ -35,9 +36,9 @@ const model = (specs: readonly Spec[]): BranchModel => {
   if (m === null) throw new Error('no drawing')
   return m
 }
-/** The lane's drawn nodes as `label` or `kind:label`, in order. */
+/** The lane's drawn nodes as `kind:line | line`, in order: a dot is a commit and its lines are what happened at it. */
 const on = (m: BranchModel, lane: string) =>
-  m.nodes.filter((n) => n.lane === lane && !n.hidden).map((n) => `${n.kind}:${n.label}`)
+  m.nodes.filter((n) => n.lane === lane && !n.hidden).map((n) => `${n.kind}:${n.lines.map((l) => l.text).join(' | ')}`)
 const lines = (m: BranchModel) =>
   m.edges.map((e) => {
     const f = m.nodes.find((n) => n.id === e.from)!
@@ -93,7 +94,7 @@ describe('the mock frames, as events', () => {
     expect(m.edges).toEqual([])
     expect(m.lanes.pr).toBeNull()
     expect(m.words).toContain('no PR yet')
-    expect(m.brace?.text).toBe('2 tickets not in a PR yet')
+    expect(m.brace?.text).toBe('2 tickets in Draft PR')
   })
 
   it('01 draft whose tickets cannot be read draws nothing', () => {
@@ -104,13 +105,7 @@ describe('the mock frames, as events', () => {
     const m = model([started(), ...sync(), step('build'), step('summary'), pushed(), draftOpened])
     expect(on(m, 'personal')).toEqual(['ticket:#1364', 'ticket:#1368', 'done:6266142 frozen'])
     expect(on(m, 'main')).toEqual(['main:856398c'])
-    expect(on(m, 'pr')).toEqual([
-      'done:0ab635b sync',
-      'done:build ✓',
-      'done:pushed · #1370',
-      'running:CI …',
-      'todo:ready',
-    ])
+    expect(on(m, 'pr')).toEqual(['done:0ab635b sync | build ✓ | pushed · #1370', 'running:CI …', 'todo:ready'])
     expect(lines(m)).toEqual(['fork/done personal→pr', 'sync/done main→pr'])
     expect(m.nodes.find((n) => n.id === m.now)?.label).toBe('CI …')
   })
@@ -132,13 +127,7 @@ describe('the mock frames, as events', () => {
       draftOpened,
       waits('ci-red', 'ci'),
     ])
-    expect(on(m, 'pr')).toEqual([
-      'done:0ab635b sync',
-      'done:build ✓',
-      'done:pushed · #1370',
-      'waiting:CI failed',
-      'todo:ready',
-    ])
+    expect(on(m, 'pr')).toEqual(['waiting:0ab635b sync | build ✓ | pushed · #1370 | CI failed', 'todo:ready'])
     expect(lines(m)).toEqual(['fork/done personal→pr', 'sync/done main→pr'])
   })
 
@@ -155,8 +144,7 @@ describe('the mock frames, as events', () => {
       'done:0ab635b sync',
       'done:ready',
       'ticket:#1371 pr-fix',
-      'done:9999999 sync',
-      'done:build ✓',
+      'done:9999999 sync | build ✓',
       'running:summary …',
       'todo:ready',
     ])
@@ -202,10 +190,8 @@ describe('the mock frames, as events', () => {
       ],
     ])
     expect(on(m, 'pr')).toEqual([
-      'done:0ab635b sync',
+      'done:0ab635b sync | build ✓ | pushed',
       'outside:a1b2c3d · alice',
-      'done:build ✓',
-      'done:pushed',
       'running:open …',
       'todo:ready',
     ])
@@ -214,7 +200,7 @@ describe('the mock frames, as events', () => {
   it('08 in review, merged back: back line done, the merge into main still to come', () => {
     const m = model([...inReview, mergedBack()])
     expect(on(m, 'personal').at(-1)).toBe('done:ef8a4d6 merged back')
-    expect(on(m, 'pr').at(-1)).toBe('done:CI ✓ · ready')
+    expect(on(m, 'pr').at(-1)).toBe('done:0ab635b sync | build ✓ | pushed · #1370 | CI ✓ · ready')
     expect(on(m, 'main')).toEqual(['main:856398c', 'todo:you merge #1370'])
     expect(lines(m)).toEqual([
       'fork/done personal→pr',
@@ -327,7 +313,9 @@ describe('the mock frames, as events', () => {
     ])
     expect(on(m, 'personal').at(-1)).toBe('done:ef8a4d6 merged back — stays')
     expect(on(m, 'personal')).not.toContain('todo:the tickets are Draft again')
-    expect(on(m, 'pr').at(-1)).toBe('todo:× closed by lingtai pr back')
+    expect(on(m, 'pr').at(-1)).toBe(
+      'done:0ab635b sync | build ✓ | pushed · #1370 | CI ✓ · ready | × closed by lingtai pr back',
+    )
   })
 })
 
@@ -427,6 +415,153 @@ describe('the edges of the builder', () => {
   })
 })
 
+/** PR 1 as F17 shows it: a local PR merged by git, so the merge has no sha and the catch-up follows it. */
+const pr1: Spec[] = [
+  [
+    'PrInProgress',
+    {
+      because: 'submit',
+      branch: 'studio',
+      main: 'main',
+      frozenSha: 'b3b0964aaaa',
+      prBranch: 'studio-pr-1',
+      tickets: [
+        { ticket: '1', mergeCommit: 'a1a1a1a', title: 'one' },
+        { ticket: '5', mergeCommit: 'a5a5a5a', title: 'five' },
+        { ticket: '4', mergeCommit: 'a4a4a4a', title: 'four' },
+      ],
+    },
+  ],
+  bs('clean', 'c7c0f78bbbb', 'fea9eb1cccc'),
+  step('build', 'fea9eb1cccc'),
+  pushed('fea9eb1cccc'),
+  mergedBack('fea9eb1cccc', '43b7af4dddd'),
+  ['PrMerged', { how: 'git', headSha: 'fea9eb1cccc', mergeSha: null }],
+  ['PrCaughtUp', { mainSha: 'bae6df3eeee', mergeCommit: '34ffb95ffff' }],
+]
+
+/** What must hold of any drawing: no two marks overlap and *now* stands clear of all of them. */
+function expectNoCollisions(d: Drawing) {
+  const dots = d.nodes.filter((n) => !n.hidden)
+  const R = (n: (typeof dots)[number]) => (n.kind === 'ticket' ? 4.5 : 7)
+  for (const lane of ['main', 'pr', 'personal'] as const) {
+    const xs = d.nodes.filter((n) => n.lane === lane).map((n) => n.x)
+    for (let i = 1; i < xs.length; i++) expect(xs[i]! - xs[i - 1]!).toBeGreaterThanOrEqual(36 - 1e-6)
+  }
+  for (const a of dots) for (const b of dots) if (a !== b) expect([a.x, a.y]).not.toEqual([b.x, b.y])
+  const boxes = d.nodes.flatMap((n) => (n.box === null ? [] : [{ n, ...n.box }]))
+  for (const a of boxes)
+    for (const b of boxes)
+      if (a !== b)
+        expect(a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height).toBe(false)
+  for (const b of boxes)
+    for (const n of dots) expect(n.x >= b.x && n.x <= b.x + b.width && n.y >= b.y && n.y <= b.y + b.height).toBe(false)
+  if (d.nowX !== null) {
+    for (const b of boxes) expect(d.nowX).toBeGreaterThan(b.x + b.width)
+    for (const n of dots) expect(d.nowX).toBeGreaterThan(n.x + R(n))
+    expect(d.nowX + 'now'.length * 6.2).toBeLessThanOrEqual(d.width)
+  }
+}
+
+describe('PR 1 as F17 shows it', () => {
+  const m = model(pr1)
+  const d = layoutBranches(m, 1000)
+  const lane = (l: string) => m.nodes.filter((n) => n.lane === l && !n.hidden)
+
+  it('is one dot per commit and one green dot for the merge', () => {
+    expect(on(m, 'main')).toEqual(['main:c7c0f78', 'merged:merged'])
+    expect(m.nodes.find((n) => n.kind === 'merged')?.sha).toBeNull()
+    expect(lane('pr').map((n) => n.sha)).toEqual(['fea9eb1cccc'])
+    expect(on(m, 'pr')).toEqual(['done:fea9eb1 sync | build ✓ | pushed'])
+    expect(on(m, 'personal')).toEqual([
+      'ticket:#1',
+      'ticket:#5',
+      'ticket:#4',
+      'done:b3b0964 frozen',
+      'done:43b7af4 merged back',
+      'done:caught up with main',
+    ])
+  })
+
+  it('leaves the catch-up from the merge dot without writing its sha on it', () => {
+    const merged = m.nodes.find((n) => n.kind === 'merged')!
+    const up = m.edges.find((e) => e.kind === 'catch-up')!
+    expect(up.from).toBe(merged.id)
+    expect(merged.lines.map((l) => l.text).join()).not.toContain('bae6df3')
+  })
+
+  it('draws now, and nothing overlaps', () => {
+    expect(d.nowX).not.toBeNull()
+    expectNoCollisions(d)
+  })
+
+  it('draws a merge whose sha is known as one dot', () => {
+    const k = model([...pr1.slice(0, 5), ['PrMerged', { how: 'host', headSha: 'x', mergeSha: 'bae6df3eeee' }], pr1[6]!])
+    expect(on(k, 'main')).toEqual(['main:c7c0f78', 'merged:bae6df3 merged'])
+  })
+
+  it('keeps a host merge and a later main commit as two dots', () => {
+    const k = model([...pr1.slice(0, 5), ['PrMerged', { how: 'host', headSha: 'x', mergeSha: '1234567aaaa' }], pr1[6]!])
+    expect(on(k, 'main')).toEqual(['main:c7c0f78', 'merged:1234567 merged', 'main:bae6df3'])
+  })
+})
+
+describe('PR 1 with a failed catch-up first, and walks that repeat themselves', () => {
+  it('draws the failure and its retry as one merge dot, and nothing overlaps', () => {
+    for (const sha of ['bae6df3eeee']) {
+      const k = [
+        ...pr1.slice(0, 5),
+        ['PrMerged', { how: 'host', headSha: 'x', mergeSha: sha }] as Spec,
+        ['PrCatchUpFailed', { mainSha: 'bae6df3eeee', why: 'conflict', detail: 'x' }] as Spec,
+        pr1[6]!,
+      ]
+      const m = model(k)
+      expect(on(m, 'main')).toEqual(['main:c7c0f78', 'merged:bae6df3 merged'])
+      const up = m.edges.filter((e) => e.kind === 'catch-up')
+      expect(up).toHaveLength(2)
+      expect(new Set(up.map((e) => e.from)).size).toBe(1)
+      const d = layoutBranches(m, 1000)
+      expect(d.width).toBeLessThan(2000)
+      expectNoCollisions(d)
+      // Never steeper than 45°: the page runs the rest along the lane.
+      for (const e of d.edges) expect(e.x2 - e.x1).toBeGreaterThanOrEqual(Math.abs(e.y2 - e.y1) - 1e-6)
+    }
+  })
+
+  it('draws a main commit synced again into a later head as one main dot', () => {
+    const m = model([
+      started(),
+      ...sync('clean', '856398cdddd', '0ab635bffff'),
+      pushed(),
+      ...sync('clean', '856398cdddd', '9999999aaaa'),
+    ])
+    expect(m.nodes.filter((n) => n.lane === 'main' && n.sha === '856398cdddd')).toHaveLength(1)
+    expectNoCollisions(layoutBranches(m, 1000))
+  })
+
+  it('keeps a folded commit while any walk that said its lines is kept', () => {
+    const walk = (n: number): Spec[] => [
+      [
+        'PrInProgress',
+        {
+          because: n === 0 ? 'submit' : 'retry',
+          branch: 'studio',
+          main: 'main',
+          frozenSha: 'f0f0f0f',
+          prBranch: 'studio-pr-2',
+          tickets: [{ ticket: '1', mergeCommit: 'a1a1a1a', title: 't' }],
+        },
+      ],
+      bs('already', '856398cdddd', '0ab635bffff'),
+    ]
+    const m = model([0, 1, 2, 3, 4].flatMap(walk))
+    expect(m.words).toContain('earlier walks: 2')
+    const at = (lane: string, sha: string) => m.nodes.find((n) => n.lane === lane && n.sha === sha)!
+    expect(at('pr', '0ab635bffff').lines.map((l) => l.text)).toEqual(['sync: nothing to merge'])
+    expect(at('main', '856398cdddd').lines.map((l) => l.text)).toEqual(['856398c — already in this PR'])
+  })
+})
+
 describe('layoutBranches', () => {
   const frames: Record<string, Spec[]> = {
     review: [...inReview, mergedBack()],
@@ -461,8 +596,10 @@ describe('layoutBranches', () => {
         expect(n.x).toBeGreaterThanOrEqual(d.gutter)
         expect(n.x).toBeLessThanOrEqual(d.width)
       }
-      // Labels are written whole, so a crowded frame widens the viewBox rather than overwrite itself; the SVG scales to the card.
+      // Labels are written whole, so a crowded frame widens the viewBox rather than overwrite itself; the SVG is drawn 1:1
+      // in a scroll box, never scaled to the card.
       expect(d.width).toBeGreaterThanOrEqual(1000)
+      expectNoCollisions(d)
     })
   }
 
@@ -535,5 +672,52 @@ describe('the page draws it', () => {
       opened,
     ])
     expect(out).toContain('nothing to merge back')
+  })
+})
+
+describe('an empty Next PR drawing', () => {
+  const evs = (specs: readonly Spec[]) => events(specs)
+  const prev = (specs: readonly Spec[]) => reducePr(evs(specs))
+  const at = (
+    pr: ReturnType<typeof prev>,
+    frozenSha: string | null,
+    caughtUp: { sha: string; n: number | null } | null,
+  ) => prBranches(null, [], [], OPTS, { pr, frozenSha, caughtUp })!
+  const added: Spec = ['PrDraftTicketAdded', { ticket: '1364', mergeCommit: 'aa', title: 'a' }]
+  const submitted = prev([added, ['PrSubmitRequested', { by: 'h' }], started()])
+
+  it('has no submit node, no PR lane and no word', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    expect(m.nodes.map((n) => n.id)).not.toContain('submit')
+    expect(m.prLane).toBe(false)
+    expect(m.words).toEqual([])
+  })
+  it('marks the freeze commit, with a pointer from that dot', () => {
+    const m = at(submitted, '6266142aaaa', null)
+    const dot = m.nodes[0]!
+    expect(dot.label).toBe('6266142 frozen for PR 2')
+    expect(m.pointer).toEqual({ from: dot.id, text: 'PR 2' })
+    expect(m.now).toBe(dot.id)
+  })
+  it('marks the caught-up commit instead when there is one', () => {
+    const m = at(submitted, '6266142aaaa', { sha: 'abcdef1234', n: 1 })
+    expect(m.nodes[0]!.label).toBe('abcdef1 caught up with main')
+    expect(m.pointer?.from).toBe(m.nodes[0]!.id)
+  })
+  it('has no pointer for a closed PR', () => {
+    const closed = prev([added, ['PrSubmitRequested', { by: 'h' }], started(), ['PrClosed', { by: 'h', why: 'x' }]])
+    expect(at(closed, null, null).pointer).toBeNull()
+  })
+  it('marks the first freeze, not a later walk', async () => {
+    // PrState.frozenSha is the latest walk's: the drawing must get the first PrInProgress's, through the page's own read.
+    const later: Spec = ['PrInProgress', { ...(started().at(1) as object), frozenSha: 'bbbbbbbbbbb' }] as Spec
+    const evs = events([added, ['PrSubmitRequested', { by: 'h' }], started(), later])
+    const state = reducePr(evs)
+    expect(state.frozenSha).toBe('bbbbbbbbbbb')
+    const p = await Effect.runPromise(previousOf([], [{ n: 2, pr: state }], () => Effect.succeed(evs)))
+    const m = prBranches(null, [], [], OPTS, p!)!
+    expect(m.nodes[0]!.label).toBe(`${p!.frozenSha!.slice(0, 7)} frozen for PR 2`)
+    expect(m.nodes[0]!.sha).toBe(p!.frozenSha)
+    expect(m.nodes[0]!.sha).not.toBe('bbbbbbbbbbb')
   })
 })

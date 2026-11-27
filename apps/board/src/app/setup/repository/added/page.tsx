@@ -10,7 +10,7 @@ import { readProject, recipePath } from '@lingtai/project'
 import { branchOf, modeOf, queueOf, ticketSourceOf } from '@lingtai/recipe/settings'
 import { liveMachineText, needsClaudeToken } from '@lingtai/setup'
 
-import { Bar } from '@/app/bar.tsx'
+import { SetupBar } from '@/app/global-bars.tsx'
 import { claudeTokenSetAt } from '@/app/setup/claude-token/save.ts'
 import { TokenForm } from '@/app/setup/claude-token/token-form.tsx'
 
@@ -88,10 +88,7 @@ export default async function AddedPage({ searchParams }: { searchParams: Promis
   const { added, token } = await read(project)
   return (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">repository</span>
-      </Bar>
+      <SetupBar step="Repository" />
       <div className="detail-body">
         <section>
           <ObjectTitle tag="setup" tone="muted" title="Repository" meta="added" />

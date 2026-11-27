@@ -59,7 +59,11 @@ vi.mock('../src/lib/task.ts', async (orig) => ({
   loadTaskAnswer: h.loadTaskAnswer,
 }))
 
-import TaskLayout from '../src/app/task/[id]/layout.tsx'
+// The place line's reads are the board's own and read the project list again; this file counts the layout's.
+vi.mock('../src/lib/prs.ts', async (orig) => ({ ...(await orig<object>()), placeViewsOf: vi.fn(async () => []) }))
+vi.mock('../src/lib/board.ts', async (orig) => ({ ...(await orig<object>()), onBoardProjects: vi.fn(async () => []) }))
+
+import TaskLayout from '../src/app/p/[project]/ticket/[n]/layout.tsx'
 import { controlObserve } from '../src/lib/locks.ts'
 import { installTracing } from '../src/lib/telemetry.ts'
 import { ApiContext, traced, tracedEffect } from '../src/lib/timing.ts'
@@ -81,7 +85,7 @@ const render = <T>(fn: () => Promise<T>): Promise<T> => h.renders.run(new Map(),
 
 const project = { project: 'p', owner: 'o' }
 const detail = { ticket: { project: 'p' } }
-const layout = (id = 'ticket-p-7') => TaskLayout({ params: Promise.resolve({ id }), children: null })
+const layout = (n = '7') => TaskLayout({ params: Promise.resolve({ project: 'p', n }), children: null })
 const paused = (element: Awaited<ReturnType<typeof layout>>) =>
   (element as unknown as { props: { children: { props: { children: { props: { pause: unknown } } } }[] } }).props
     .children[1]!.props.children.props.pause

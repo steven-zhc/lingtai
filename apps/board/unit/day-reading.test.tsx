@@ -61,7 +61,7 @@ describe('nearCeiling', () => {
   })
 
   it('names unknown runs only when there are some', () => {
-    expect(nearCeiling(at(17000, 0, 2), 200)).toMatch(/ \+ 2 unknown$/)
+    expect(nearCeiling(at(17000, 0, 2), 200)).toMatch(/ \+ 2 unpriced$/)
     expect(nearCeiling(at(17000, 0, 0), 200)).not.toContain('unknown')
   })
 

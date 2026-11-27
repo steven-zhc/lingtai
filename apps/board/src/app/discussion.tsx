@@ -102,7 +102,7 @@ function openMeter(open: DiscussionView): string {
  * it (0033 §4, #111).
  *
  * `total` is read off `spend`'s own Discussion rows, already formatted by
- * `billText` — `task/[id]/page.tsx`'s `task.totals.byPurpose.Discussion`, the
+ * `billText` — `p/[project]/ticket/[n]/page.tsx`'s `task.totals.byPurpose.Discussion`, the
  * same figure `totalsFact` sums in (`#498`). Not `DiscussionAnswered.costUsd`
  * summed here with `?? 0`: that read a Codex discussion, which 0110 §1 says
  * always records null, as free. Null when `billHasAny` says there is nothing
@@ -533,7 +533,7 @@ export function Discussion({
    * itself rather than waiting to be scrolled to (#132).
    *
    * **Which page is the fact that matters.** `/` re-renders on append because it
-   * mounts `Live`, and `/task/<id>` — the only page this pane is on — because
+   * mounts `Live`, and `/p/<project>/ticket/<n>` — the only page this pane is on — because
    * its route mounts `Follow`; both are in `live.tsx`. This comment used to say
    * *the board*, which was true of `/` and false here, and every reader after it
    * believed the task page was subscribed when it was not: a question, the

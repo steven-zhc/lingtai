@@ -11,7 +11,7 @@ import { readFileSync } from 'node:fs'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { RecipeBar } from '../src/app/recipe/[project]/recipe-bar.tsx'
+import { RecipeBar } from '../src/app/p/[project]/recipe/recipe-bar.tsx'
 
 describe('RecipeBar', () => {
   const out = renderToStaticMarkup(
@@ -24,7 +24,7 @@ describe('RecipeBar', () => {
   })
 
   it('draws the place line with Recipe as the current view, and not in .topnav', () => {
-    expect(out).toMatch(/<a class="view on" aria-current="page" href="\/recipe\/b">Recipe</)
+    expect(out).toMatch(/<a class="view on" aria-current="page" href="\/p\/b\/recipe">Recipe</)
     expect(out.indexOf('class="place"')).toBeLessThan(out.indexOf('class="filter"'))
     expect(out.indexOf('class="filter"')).toBeLessThan(out.indexOf('>Tickets<'))
     expect(out.indexOf('>Tickets<')).toBeLessThan(out.indexOf('>Recipe<'))
@@ -36,7 +36,7 @@ describe('RecipeBar', () => {
 
 describe('what the recipe page’s bar imports', () => {
   it('reaches no app/actions', () => {
-    for (const f of ['bar.tsx', 'projects.tsx', 'filter-menu.tsx', 'recipe/[project]/recipe-bar.tsx']) {
+    for (const f of ['bar.tsx', 'projects.tsx', 'filter-menu.tsx', 'p/[project]/recipe/recipe-bar.tsx']) {
       const src = readFileSync(new URL(`../src/app/${f}`, import.meta.url), 'utf8')
       expect(src.length).toBeGreaterThan(0)
       expect(src).not.toMatch(/from ['"][^'"]*actions['"]/)

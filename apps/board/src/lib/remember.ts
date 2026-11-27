@@ -1,11 +1,13 @@
 /**
  * The home page's memory of the project a person chose (#1435).
  *
- * Pure, with no `next/*`, `node:` or `@lingtai/*` value import: client files
+ * Pure, with no `next/*` or `node:` import: client files
  * import it (`unit/client-graph.test.ts`). **Only a person's choice writes the
  * cookie**, from the browser, through `rememberProject`; the proxy reads it for
  * a bare `/` and never writes it, so a refresh cannot rewrite the memory.
  */
+
+import { homePath } from './paths.ts'
 
 export const PROJECT_COOKIE = 'lingtai-project'
 
@@ -13,17 +15,14 @@ const YEAR = 60 * 60 * 24 * 365
 
 /**
  * The proxy's decision for `/`: the target to redirect (307) to, or `null` to
- * pass through. A request that names `project` (empty included) is never
- * redirected. `remembered` is the already-decoded cookie value; anything but a
- * non-empty string means *all projects*, so `''` never reaches the reads.
+ * pass through. `/` is all projects, so only a remembered, non-empty name sends
+ * it anywhere: to that project's home, the rest of the query kept. A `project` parameter means nothing here. `remembered` is the already-decoded
+ * cookie value.
  */
 export function homeRedirect(search: URLSearchParams, remembered: string | undefined): string | null {
-  if (search.has('project')) return null
-  const rest = new URLSearchParams(search)
-  const name = typeof remembered === 'string' && remembered !== '' ? remembered : ''
-  const q = new URLSearchParams({ project: name })
-  for (const [k, v] of rest) q.append(k, v)
-  return `/?${q.toString().replace(/\+/g, '%20')}`
+  if (typeof remembered !== 'string' || remembered === '') return null
+  const q = search.toString().replace(/\+/g, '%20')
+  return `${homePath(remembered)}${q === '' ? '' : `?${q}`}`
 }
 
 /**

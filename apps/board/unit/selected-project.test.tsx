@@ -1,7 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { withProject } from '../src/app/bar.tsx'
+import { reportHref } from '../src/app/bar.tsx'
 import { LandedCount } from '../src/app/page.tsx'
 import { selectedProject } from '../src/lib/board.ts'
 
@@ -19,7 +19,7 @@ describe('selectedProject (#993)', () => {
 
   it('makes Report and the Landed count carry the project on a one-project board', () => {
     const only = selectedProject(undefined, ['lingtai'])
-    expect(withProject('/report', only)).toBe('/report?project=lingtai')
-    expect(renderToStaticMarkup(<LandedCount count={2} only={only} />)).toContain('project=lingtai')
+    expect(reportHref(only)).toBe('/report?project=lingtai')
+    expect(renderToStaticMarkup(<LandedCount count={2} only={only} />)).toContain('/p/lingtai/ticket/landed')
   })
 })

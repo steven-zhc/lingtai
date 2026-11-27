@@ -1,5 +1,5 @@
 /**
- * One request to `/pr/<project>` reads each stream once (#1420): `prj` and every PR stream, counted on a memory store
+ * One request to `/p/<project>/pr` reads each stream once (#1420): `prj` and every PR stream, counted on a memory store
  * through what the page itself calls — `readRegistered`, `readProjectLocks`, `placeViewsOf`, `pauseSlot`, `loadPrBoard`.
  *
  * vitest has no `react-server` condition, so `cache` is a passthrough there; it is mocked per run of an
@@ -169,6 +169,45 @@ describe('one request reads each stream once (#1420)', () => {
       expect(read.kind).toBe('failed')
       expect(await placeViewsOf('p')).toEqual(viewsFor('p', { waiting: null }))
       expect(count(h.reads, projectStream('p'))).toBe(1)
+    })
+  })
+})
+
+describe('a local team project records no owner (#1484)', () => {
+  const local = async () => {
+    await h.inner.append(projectStream('loc'), 0, [
+      {
+        type: 'ProjectConfigured',
+        actor: 'conductor',
+        data: { project: 'loc', owner: null, base: 'main', configHash: 'h', fromSha: 's' },
+      },
+      {
+        type: 'ProjectRecipeChanged',
+        actor: 'conductor',
+        data: { sourceHash: sourceHashOf(RECIPE), source: RECIPE, by: 'file' },
+      },
+    ])
+  }
+
+  it('draws the board for a registered project with no owner', async () => {
+    await local()
+    await h.renders.run(new Map(), async () => {
+      expect((await readPrPage('loc')).kind).toBe('team')
+    })
+  })
+
+  it('offers PRs with its waiting count on the place line', async () => {
+    await local()
+    await h.renders.run(new Map(), async () => {
+      const views = await placeViewsOf('loc')
+      expect(views).toEqual(viewsFor('loc', { waiting: 0 }))
+      expect(views).not.toEqual(viewsFor('loc'))
+    })
+  })
+
+  it('still answers unknown for a project that is not registered', async () => {
+    await h.renders.run(new Map(), async () => {
+      expect((await readPrPage('nope')).kind).toBe('unknown')
     })
   })
 })

@@ -34,6 +34,10 @@ export interface WhyFacts {
   beacon: Beacon
   /** Whether some conductor holds the lock — a daemon or a live `lingtai run`, which writes no beacon. Unknown counts as held. */
   conductorHeld?: boolean
+  /** The conductor's recorded refusal of this project (`ProjectState.refused`), null when it has none. */
+  refused?: { detail: string; at: Date } | null
+  /** The project's queue could not be listed, so a recorded refusal is said though no queued row shows: it holds whatever is waiting. */
+  queueUnseen?: boolean
   /** A drain stands (`control.shutdown !== null`). */
   draining: boolean
   locks: readonly Lock[] | { unread: string }
@@ -55,6 +59,7 @@ export type RootKind =
   | 'beacon-unread'
   | 'drain'
   | 'lock'
+  | 'refused'
   | 'locks-unread'
   | 'base-red'
   | 'base-unreadable'
@@ -112,11 +117,12 @@ const freshlyFlying = (r: WhyRow, now: Date): boolean =>
   flying(r) && (r.updatedAt === null || now.getTime() - r.updatedAt.getTime() < IN_FLIGHT_WITHIN_MS)
 
 /**
- * Whether the sentence can still show before the beacon is read: unheld work queued and no row touched
+ * Whether the sentence can still show before the beacon is read: unheld work queued (or a refusal over a queue that could not be listed) and no row touched
  * within five minutes that is `running` or `verifying`.
  */
 export function mayApply(facts: WhyFacts): boolean {
-  return unheldQueued(facts).length > 0 && !facts.rows.some((r) => freshlyFlying(r, facts.now))
+  const refusedUnseen = facts.queueUnseen === true && facts.refused != null
+  return (unheldQueued(facts).length > 0 || refusedUnseen) && !facts.rows.some((r) => freshlyFlying(r, facts.now))
 }
 
 /**
@@ -135,7 +141,14 @@ export function applies(facts: WhyFacts): boolean {
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`
 const clock = (d: Date): string => `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 
-/** Installation-wide stops, which hold everything: a daemon that is not up, a drain, a lock. Null when none holds. */
+/** `HH:MM` for today, and the date before it for any other day, so an old refusal does not read as a fresh one. */
+const stamp = (at: Date, now: Date): string => {
+  const day = (d: Date): string =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  return day(at) === day(now) ? clock(at) : `${day(at)} ${clock(at)}`
+}
+
+/** Stops that hold everything this project has queued: a daemon that is not up, a drain, a lock, a refusal. Null when none holds. */
 export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
   if (!applies(facts)) return null
   const tickets = unheldQueued(facts)
@@ -166,6 +179,12 @@ export function rootBeforeChains(facts: WhyFacts): WhyNothingRuns | null {
       lock,
     })
   }
+  if (facts.refused)
+    return only({
+      root: 'refused',
+      sentence: `the conductor refused this project since ${stamp(facts.refused.at, facts.now)} — ${facts.refused.detail}`,
+      tickets,
+    })
   return null
 }
 

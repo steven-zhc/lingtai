@@ -57,6 +57,7 @@ const reach: DoctorReach = {
   settings: () => Effect.succeed(null),
   runtimes: () => [signedInRuntime],
   sea: () => ({ can: true }),
+  bun: () => Effect.succeed({ answered: '1.3.6\n' }),
   ...fakeSandbox(),
   recipe: () => {
     throw new Error('no project is registered — nothing should resolve a recipe')

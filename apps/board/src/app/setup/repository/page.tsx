@@ -21,7 +21,7 @@ import { repositoryList } from '@lingtai/conductor/repository-list'
 import { githubAuthKind } from '@lingtai/env'
 import { Effect } from 'effect'
 
-import { Bar } from '@/app/bar.tsx'
+import { SetupBar } from '@/app/global-bars.tsx'
 
 import { ObjectTitle } from '../../object-title.tsx'
 import type { Source } from './pick-model.ts'
@@ -57,10 +57,7 @@ export default async function PickRepositoryPage({ searchParams }: { searchParam
   const app = auth === 'app'
   return (
     <main className="detail">
-      <Bar project={undefined}>
-        <span className="sep" />
-        <span className="mono">repository</span>
-      </Bar>
+      <SetupBar step="Repository" />
 
       <div className="detail-body">
         <section>

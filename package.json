@@ -22,6 +22,9 @@
     "test:all": "vitest run",
     "lingtai": "node apps/cli/src/entry.ts",
     "docs:cli": "node scripts/cli-doc.ts",
+    "images:upload": "node scripts/doc-images.ts upload",
+    "images:download": "node scripts/doc-images.ts download",
+    "images:list": "node scripts/doc-images.ts list",
     "docs:errors": "node packages/domain/scripts/platform-errors.ts",
     "contract:emit": "pnpm --filter @lingtai/event-store contract:emit",
     "db:plan": "pnpm --filter @lingtai/event-store db:plan",
@@ -32,6 +35,8 @@
     "events:generate": "node packages/domain/scripts/events.ts && oxfmt doc/events.json"
   },
   "devDependencies": {
+    "@aws-sdk/client-s3": "^3.1177.0",
+    "effect": "^4.1.2",
     "oxfmt": "0.71.0",
     "oxlint": "1.86.0",
     "oxlint-tsgolint": "7.0.2007",

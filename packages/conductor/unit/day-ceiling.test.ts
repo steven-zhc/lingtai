@@ -57,7 +57,7 @@ describe('daySpend estimates', () => {
     expect(ceilingReached(day, 4.1)).toBe(true)
     expect(ceilingReached(day, 4.11)).toBe(false)
     const text = daySpendText(day, 4.1)
-    expect(text).toContain('$3.10 + ~$1.00 est. + 0 unknown')
+    expect(text).toContain('$3.10 + ~$1.00 est. + 0 unpriced')
   })
 
   it('counts a fetched estimate and says how many were', () => {
@@ -80,8 +80,8 @@ describe('daySpendText', () => {
   it('never says $0.00 over unknown rows, and names the unknown count with a ceiling', () => {
     const text = daySpendText(daySpend([today(null)], now), 50)
     expect(text).not.toContain('today $0.00')
-    expect(text).toContain('1 unknown')
-    expect(daySpendText(daySpend([today(1)], now), 50)).toContain('+ 0 unknown')
+    expect(text).toContain('1 unpriced')
+    expect(daySpendText(daySpend([today(1)], now), 50)).toContain('+ 0 unpriced')
   })
 })
 
@@ -168,9 +168,11 @@ describe('unknownWhy', () => {
       unknownRow(used('gpt-v')),
     ]
     const text = daySpendText(daySpend(rows, now), undefined)
-    expect(text).toContain('+ 6 unknown (gpt-x ×2, gpt-v ×1, gpt-w ×1, +2 more) —')
-    expect(daySpendText(daySpend([unknownRow([])], now), undefined)).toContain('+ 1 unknown (no usage reported ×1)')
-    expect(daySpendText(daySpend([unknownRow(used())], now), undefined)).toContain('+ 1 unknown (no model recorded ×1)')
-    expect(daySpendText(daySpend([], now), undefined)).toContain('+ 0 unknown —')
+    expect(text).toContain('+ 6 unpriced (gpt-x ×2, gpt-v ×1, gpt-w ×1, +2 more) —')
+    expect(daySpendText(daySpend([unknownRow([])], now), undefined)).toContain('+ 1 unpriced (no usage reported ×1)')
+    expect(daySpendText(daySpend([unknownRow(used())], now), undefined)).toContain(
+      '+ 1 unpriced (no model recorded ×1)',
+    )
+    expect(daySpendText(daySpend([], now), undefined)).toContain('+ 0 unpriced —')
   })
 })

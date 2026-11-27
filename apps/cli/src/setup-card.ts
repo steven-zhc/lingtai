@@ -7,7 +7,17 @@ import { basename } from 'node:path'
 
 import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
-import { type Recipe, assigneeOf, branchOf, kindsOf, modeOf, remoteOf, ticketSourceOf } from '@lingtai/recipe'
+import {
+  type Recipe,
+  assigneeOf,
+  ceilingOf,
+  branchOf,
+  isBuiltInJudge,
+  kindsOf,
+  modeOf,
+  remoteOf,
+  ticketSourceOf,
+} from '@lingtai/recipe'
 import type { RuntimeFound } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
@@ -31,6 +41,8 @@ export interface CardRecipe {
   reviewer: CardAgent | null
   checks: readonly string[]
   approves: boolean
+  /** The `judge:` declared for `findings` and how many times findings go back to it, from the recipe as written; `null` where none is declared. */
+  findingsJudge: { judge: string; rounds: number } | null
   /** Set only for a team project, read from the recipe as written: who it takes issues for, and the branch it works on. */
   team?: { login: string | null; personal: string }
 }
@@ -41,6 +53,8 @@ export interface SetupCardFacts {
   project?: string
   /** The project was already registered. */
   updated: boolean
+  /** A rerun that took every default: it wrote nothing and registered nothing (#1473). */
+  unchanged?: boolean
   home: string
   /** This run created `config.yml`. */
   homeIsNew: boolean
@@ -57,8 +71,24 @@ export interface SetupCardFacts {
    * its card is *this machine* alone and `recipePath` is absent with them.
    */
   recipe?: CardRecipe
+  /** The labels the queue reads, made at `add` (#1486); absent on `init`, whose card is unchanged. */
+  labels?: {
+    slug: string
+    created: readonly string[]
+    missing: readonly { name: string; why: 'denied' | 'unchecked' }[]
+  }
   trial?: TrialOutcome
   recipePath?: string
+  /**
+   * What a change in this run left where it was, and what the person does about it (#1474): each is a sentence
+   * and, where there is one, the command. A change never touches the person's commits to make itself fit.
+   */
+  leftBehind?: readonly LeftBehind[]
+}
+
+export interface LeftBehind {
+  what: string
+  command?: string
 }
 
 /**
@@ -76,6 +106,16 @@ function agentOf(actions: readonly Record<string, unknown>[] | undefined): CardA
   return { agent: String(action['agent']), model: typeof model === 'string' && model !== '' ? model : null }
 }
 
+function findingsJudgeOf(
+  proposed: readonly Record<string, unknown>[] | undefined,
+  rounds: number,
+): { judge: string; rounds: number } | null {
+  const entry = (proposed ?? []).find(
+    (a) => a['when'] === 'findings' && typeof a['judge'] === 'string' && !isBuiltInJudge(a['judge']),
+  )
+  return entry === undefined ? null : { judge: String(entry['judge']), rounds }
+}
+
 /** A recipe already resolved, read the way `summariseRecipe` reads it. */
 export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
   const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[] | undefined>
@@ -88,6 +128,7 @@ export function cardRecipe(recipe: Recipe, code: string): CardRecipe {
     writer: agentOf(steps['implement']),
     reviewer: agentOf(steps['review']),
     checks: (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run'])),
+    findingsJudge: findingsJudgeOf(steps['proposed'], ceilingOf(recipe).attempt.refusalFixes),
     approves: (steps['proposed'] ?? []).some((a) => 'human' in a),
     ...(modeOf(recipe) === 'team'
       ? { team: { login: assigneeOf(recipe)?.login ?? null, personal: branchOf(recipe) } }
@@ -165,6 +206,11 @@ function trialRow(trial: TrialOutcome): string {
 
 type Row = readonly [label: string, value: string]
 
+/** A word safe to paste into a shell: bare when it needs no quoting, else single-quoted. */
+function shellQuote(word: string): string {
+  return /^[A-Za-z0-9_./:@%+=,-]+$/.test(word) ? word : `'${word.replace(/'/g, `'\\''`)}'`
+}
+
 /** The card: a heading, three groups a blank line apart, one fact a row. No closing line — that is `renderReadyLine`. */
 export function renderSetupCard(facts: SetupCardFacts): string {
   const { recipe, trial, userHome } = facts
@@ -207,6 +253,16 @@ export function renderSetupCard(facts: SetupCardFacts): string {
         rows: [
           ['writes', agentRow(recipe.writer)],
           ['reviews', agentRow(recipe.reviewer)],
+          ...(recipe.findingsJudge === null
+            ? []
+            : [
+                [
+                  'findings',
+                  recipe.findingsJudge.rounds === 0
+                    ? `no fix rounds — the ${recipe.findingsJudge.judge} judge can still restart the attempt or hand a finding to you`
+                    : `go back to the writer up to ${recipe.findingsJudge.rounds} times — each is a ${recipe.findingsJudge.judge} judge call and another writer run`,
+                ] as const,
+              ]),
           [
             'checks',
             recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
@@ -234,11 +290,30 @@ export function renderSetupCard(facts: SetupCardFacts): string {
       },
     )
   }
+  const labels = facts.labels
+  if (labels !== undefined && recipe !== undefined && trial !== undefined) {
+    const rows: Row[] = []
+    if (labels.created.length > 0) rows.push(['labels', `made ${labels.created.join(', ')}`])
+    for (const m of labels.missing) {
+      rows.push([
+        'labels',
+        `${m.name} could not be ${m.why === 'denied' ? 'made' : 'checked'} — gh label create ${shellQuote(m.name)} --repo ${shellQuote(labels.slug)}`,
+      ])
+    }
+    if (rows.length > 0) groups[1]!.rows.push(...rows)
+  }
+  if (facts.leftBehind !== undefined && facts.leftBehind.length > 0) {
+    const rows: Row[] = facts.leftBehind.flatMap((l): Row[] => [
+      ['left', l.what],
+      ...(l.command === undefined ? [] : [['run', l.command] as const]),
+    ])
+    groups.splice(Math.min(2, groups.length), 0, { title: 'left behind', rows })
+  }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
   const top =
     recipe?.team !== undefined && facts.project !== undefined && !facts.updated
       ? `${symbol.pass()} ${facts.project} added — team`
-      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.updated ? `  ${paint.muted('updated')}` : ''}`
+      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.unchanged === true ? `  ${paint.muted('unchanged')}` : facts.updated ? `  ${paint.muted('updated')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),

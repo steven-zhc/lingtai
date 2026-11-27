@@ -88,7 +88,7 @@ describe('LockRows with the ceiling', () => {
   it('says a control read that failed, with no button, and keeps the paused rows', () => {
     const html = render({ ok: true, held: [held('a', false)], ceiling: undefined, controlProblem: 'db down' })
     expect(html).toContain('could not read whether today&#x27;s ceiling holds — db down')
-    expect(html).toContain('href="/?project=a"')
+    expect(html).toContain('href="/p/a/ticket"')
     expect(html.match(/<button/g)).toHaveLength(1)
   })
 })

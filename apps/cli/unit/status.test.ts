@@ -7,8 +7,9 @@ import {
   locksOn,
   waitWords,
   type ControlState,
+  type ProjectState,
 } from '@lingtai/domain'
-import { describeWaitLines } from '@lingtai/projector'
+import { describeWaitLines, type readTasksEffect } from '@lingtai/projector'
 import { Effect } from 'effect'
 /**
  * `lingtai status`'s two ticket-source lines, named after where a project's
@@ -26,6 +27,7 @@ import {
   offerFailedLine,
   offerLine,
   readingOf,
+  readStatus,
   renderStatus,
   conflictLines,
   conflictRecommendation,
@@ -33,6 +35,7 @@ import {
   waitPassOf,
   statusJson,
   type StatusFilter,
+  type StatusReading,
   type StatusReport,
   type StatusRow,
   type StatusWait,
@@ -320,6 +323,84 @@ describe('statusJson', () => {
         },
       ],
     })
+  })
+})
+
+describe('lingtai status says the conductor\'s recorded refusal instead of "no reason was found" (#1477)', () => {
+  const detail = 'no lingtai-hook binary at /x/lingtai-hook'
+  const at = new Date()
+  const project = (over: Partial<ProjectState>): ProjectState => ({
+    project: 'p',
+    owner: null,
+    base: 'main',
+    configHash: 'h',
+    fromSha: 's',
+    refused: { ref: null, detail, codeSha: null, at } as ProjectState['refused'],
+    paused: null,
+    recipe: null,
+    sandboxObserved: null,
+    highestPr: null,
+    version: 1,
+    lastSeq: null,
+    ...over,
+  })
+  const queued = [
+    { taskId: 'p#1', issue: '1', kind: 'bug', title: 'one', state: 'queued', newAttempts: 0, updatedAt: null },
+  ] as unknown as Effect.Success<ReturnType<typeof readTasksEffect>>
+  const control: ControlState = {
+    paused: false,
+    by: null,
+    reason: null,
+    shutdown: null,
+    requested: [],
+    continuing: [],
+    discussions: [],
+    dayCeiling: { reached: null, raised: null },
+  }
+  const reading = (state: ProjectState, over: StatusReading = {}): StatusReading => ({
+    projects: () => Effect.succeed([state]),
+    tasks: () => Effect.succeed(queued),
+    control: () => Effect.succeed(control),
+    accounts: () => Effect.succeed(new Map()),
+    beacon: () => Effect.succeed({ up: true }),
+    conductorHeld: () => Effect.succeed(false),
+    ...over,
+  })
+  const said = async (state: ProjectState, over: StatusReading = {}) => {
+    const report = await Effect.runPromise(readStatus({}, reading(state, over)))
+    return { report, text: renderStatus(report, { all: false }).join('\n') }
+  }
+
+  it('prints the refused sentence for a project whose setup is fine, and not "no reason was found"', async () => {
+    const { report, text } = await said(project({}))
+    expect(report.projects[0]?.whyNothingRuns?.roots[0]?.root).toBe('refused')
+    expect(text).toContain(detail)
+    expect(text).not.toContain('no reason was found')
+  })
+
+  it("prints it where the project's setup failed (no GitHub credentials), the failure standing beside it", async () => {
+    const { report, text } = await said(project({ owner: 'steven-zhc' }), {
+      clientFor: (() => Promise.reject(new Error('no GitHub App configured'))) as never,
+    })
+    expect(report.projects[0]?.filter.ok).toBe(false)
+    expect(report.projects[0]?.whyNothingRuns?.roots[0]?.root).toBe('refused')
+    expect(text).toContain(detail)
+  })
+
+  it('prints it for a project whose setup failed and whose queue the log has no row for yet', async () => {
+    const { report, text } = await said(project({ owner: 'steven-zhc' }), {
+      clientFor: (() => Promise.reject(new Error('no GitHub App configured'))) as never,
+      tasks: () => Effect.succeed([] as never),
+    })
+    expect(report.projects[0]?.whyNothingRuns?.roots[0]?.root).toBe('refused')
+    expect(text).toContain(detail)
+  })
+
+  it('says nothing more of a project the conductor has not refused', async () => {
+    const { report } = await said(project({ refused: null, owner: 'steven-zhc' }), {
+      clientFor: (() => Promise.reject(new Error('no GitHub App configured'))) as never,
+    })
+    expect(report.projects[0]?.whyNothingRuns ?? null).toBeNull()
   })
 })
 

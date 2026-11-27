@@ -112,7 +112,7 @@ import {
 } from './spend.ts'
 import { ApiContext, boardTracer, timed, traced, tracedEffect, tracedSync } from './timing.ts'
 import { presentCause, type CausePresentation } from './triage-cause.ts'
-import type { Explain } from './why-read.ts'
+import { readRefusedWhy, type Explain } from './why-read.ts'
 
 /**
  * Four, not five. `verifying` reduces into `running` (ADR 0016 §8).
@@ -1382,6 +1382,11 @@ export async function githubQueue(
   askable: readonly AskableFilter[],
   known: ReadonlySet<string>,
   ask: (filter: AskableFilter) => Promise<ProjectQueue> = askProject,
+  /** The projects that were not asked, and how to say a refusal of one: a failed setup does not hide it. */
+  unreadable: { projects: readonly string[]; why: (project: string) => Promise<WhyNothingRuns | null> } = {
+    projects: [],
+    why: () => Promise.resolve(null),
+  },
 ): Promise<GithubQueue> {
   const cards: BoardCard[] = []
   const problems: QueueProblem[] = []
@@ -1415,6 +1420,15 @@ export async function githubQueue(
       })),
     ),
   )
+
+  // A project whose setup failed was never asked, and its refusal stands all the same.
+  const refusedSaid = await Promise.all(unreadable.projects.map((project) => unreadable.why(project).catch(() => null)))
+  unreadable.projects.forEach((project, i) => {
+    const said = refusedSaid[i]
+    if (said == null) return
+    why.push({ project, why: said })
+    lastWhy.add(project)
+  })
 
   for (const answer of asked) {
     const filter = answer.filter
@@ -1778,7 +1792,26 @@ export function loadBoard(project?: string): Promise<Board> {
 }
 
 /** What GitHub's half of the Queued column needs, known before the board is (#1430). */
-export type QueueAsk = { askable: AskableFilter[]; known: Set<string> }
+export type QueueAsk = {
+  askable: AskableFilter[]
+  known: Set<string>
+  /** The projects whose recipe or GitHub client would not resolve, so are not asked: only a recorded refusal can still be said of them. */
+  unreadable: string[]
+}
+
+/**
+ * The Queued column's GitHub half for what `queueAsk` settled: the projects asked, and the ones whose setup
+ * failed, whose recorded refusal is still said (#1477).
+ */
+export function askQueue(
+  ask: QueueAsk,
+  askOne: (filter: AskableFilter) => Promise<ProjectQueue>,
+): Promise<GithubQueue> {
+  return githubQueue(ask.askable, ask.known, askOne, {
+    projects: ask.unreadable,
+    why: readRefusedWhy,
+  })
+}
 
 /**
  * `loadBoard`, with the part the queue needs handed out early (#1430):
@@ -1837,6 +1870,7 @@ async function readBoardStart(project?: string): Promise<{ queueAsk: Promise<Que
   const queueAsk: Promise<QueueAsk> = queuedRead.then((q) => ({
     askable: q.askable,
     known: new Set(tasks.map((t) => t.taskId)),
+    unreadable: q.problems.map((p) => p.project),
   }))
   const board = (async (): Promise<Board> => {
     // `queueAsk` is derived from `queuedRead`, so it is not awaited ahead of the

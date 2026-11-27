@@ -371,7 +371,7 @@ describe('askBeforeGithubAdd (#402)', () => {
       const pair = parent.items.find((p) => isScalar(p.key) && p.key.value === keyPath[keyPath.length - 1])
       if (!pair) {
         // `sandbox` is asked only where the caller read the host (#1160), which this test does not.
-        expect(['steps.proposed', 'runtime.limits', 'sandbox', 'repo'], dotted).toContain(dotted)
+        expect(['steps.proposed', 'runtime.limits', 'sandbox', 'repo', 'discuss'], dotted).toContain(dotted)
         continue
       }
       const comment = (pair.key as Node).commentBefore ?? (parent.items[0] === pair ? parent.commentBefore : '') ?? ''
@@ -388,10 +388,13 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(doc.getIn(['source', 'backoff'])).toBeUndefined()
     expect(doc.getIn(['repo', 'submodules'])).toBeUndefined()
     expect(doc.getIn(['env', 'deny'])).toBeUndefined()
-    expect(doc.getIn(['steps', 'proposed'])).toBeUndefined()
+    // A new recipe declares the writer as its judge for `findings` (#1448), and no hold.
+    expect((doc.getIn(['steps', 'proposed']) as { toJSON(): unknown }).toJSON()).toEqual([
+      { name: 'send findings back to the writer', judge: doc.getIn(['runtime', 'agent']), when: 'findings' },
+    ])
   })
 
-  it('asks the sandbox step of a new recipe only: the first add reads the host and writes the block, a re-run reads nothing and changes nothing (#1160)', async () => {
+  it('asks the sandbox step of a re-run too: the first add writes the block, and `--sandbox off` over it changes only `enabled` (#1474)', async () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
     const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
@@ -415,15 +418,18 @@ describe('askBeforeGithubAdd (#402)', () => {
     const created = counted.written[path]!
     expect(resolveSource(created, path, path).recipe.sandbox).toMatchObject({ enabled: true, required: false })
 
-    // Asking again over the recipe it just wrote: `--sandbox off` would write `enabled: false` if it were asked.
+    // Asking again over the recipe it just wrote: the host is read, and the answer changes `enabled` alone.
     await askBeforeGithubAdd(
       'steven-zhc/nextloom-ai-admin',
       { main: 'main', mode: 'solo', install: 'none', sandbox: 'off' },
       counted.deps,
       ['none'],
     )
-    expect(hostReads).toBe(1)
-    expect(resolveSource(counted.written[path]!, path, path).recipe.sandbox).toMatchObject({ enabled: true })
+    expect(hostReads).toBe(2)
+    expect(resolveSource(counted.written[path]!, path, path).recipe.sandbox).toMatchObject({
+      enabled: false,
+      required: false,
+    })
   })
 
   it('leaves an existing recipe byte for byte as it was, with its own empty end:, and seeds no steps.end (#749)', async () => {

@@ -6,8 +6,9 @@ Setting up a project — detect what a repository is, propose a recipe, write it
 register the project — is one module, `@lingtai/setup`. `lingtai add` and the
 board's wizard are two inputs to it: each gathers answers and hands them over,
 and neither carries a question, a detection or a recipe writer of its own.
-Changing a project that already exists is not a wizard; it is editing its recipe
-YAML, which is checked by resolving it.
+Changing a project that already exists is running setup again, `lingtai add` or
+`lingtai init`: the same questions, with the recipe's own values as their
+defaults.
 
 ## Context
 
@@ -54,22 +55,55 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
    - The default kinds are `bug`, `feature`, `tech-debt`, `documentation`.
    - Kinds are a filter: nothing creates labels, and a missing label is not a
      warning.
-   - `proposed:` is `[]` by default.
+   - `proposed:` holds one `judge:` for `findings` naming the writer (#1448), and no hold unless a person asks for one; it is empty when the writer cannot judge (`copilot`, `antigravity`) or nobody is signed in. An existing recipe is never rewritten.
    - *Already added* is `registered`, `pending` or `unrecorded`, as
      `alreadyOnboarded` answers.
    - Detected values are defaults the person may override
      ([0103](0103-a-pass-is-ten-fixed-steps.md)).
 
-6. **There is no edit wizard.** Changing an existing project is editing its recipe
-   YAML, through `@lingtai/project`'s `changeRecipe`, which appends the change on
-   `prj-{project}` and then writes the file
-   ([0128](0128-the-project-aggregate-holds-every-project-fact.md) §6). Saving resolves the recipe and writes nothing that fails to resolve —
-   the check `lingtai add`, `lingtai doctor` and the daemon already share
-   ([0104](0104-the-recipe-is-the-pipeline.md) §11).
+6. **Changing a project is running setup again.** `lingtai add` and `lingtai
+   init` share one path for a project. `add` runs it; `init` first asks the
+   machine's own questions (the database, how this machine reaches GitHub, the
+   sandbox token) and then runs the same path, for a local directory or an
+   `owner/repo`. The first run of that path on a project adds it; a later run, by
+   either command, asks every question the first run asks, in the same order and
+   in the same way. Only the defaults differ: the first run offers the system's, a
+   later run offers what the recipe says. `lingtai add` on a project already added
+   is therefore not refused: it is that later run (decided 2026-11-26).
+   - An answer that differs is written, through `@lingtai/project`'s
+     `changeRecipe`, which appends the change on `prj-{project}` and then writes
+     the file ([0128](0128-the-project-aggregate-holds-every-project-fact.md) §6).
+     An answer that does not differ writes nothing, so a run that takes every
+     default changes neither the file nor the log, however often it runs.
+   - A recipe that cannot be read is refused by name, never replaced by the
+     system's defaults.
+   - A change that leaves something behind is written, and then said with what
+     the person has to do. Team to solo is refused by name while a ticket has landed on the
+     personal branch and not reached `main`, or a PR is open
+     ([0130](0130-a-project-is-solo-or-team.md) §1); once neither holds it is written.
+     Solo to team leaves nothing. Another working branch that does not exist yet
+     is cut from the old one, so nothing that has not reached `main` is lost; one
+     that exists is left as it is, and the commits only the old one has are listed.
+     Another database is a new, empty log
+     ([0100](0100-one-append-only-log.md) §9);
+     nothing is copied across.
+   - Lingtai moves, merges and deletes no branch or commit of the person's to make
+     a change fit.
+   - Editing the YAML by hand stays possible. Either way, saving resolves the recipe
+     and writes nothing that fails to resolve — the check `lingtai add`, `lingtai
+     doctor` and the daemon already share
+     ([0104](0104-the-recipe-is-the-pipeline.md) §11).
 
 7. **The trial build is the terminal's alone.** It is in `lingtai add` and is not
    offered on the board. It runs after the module has finished and is not a setup
    question, so it is the one difference between the inputs and not a copy.
+
+8. **`init` and `add` ask a project the same questions in the same order.** Where
+   the code is, solo or team, the working or personal branch, *use every
+   default?*, the recipe's questions, *register?*. `init` asks only this machine's
+   own questions before them. *Use every default?* answers only what comes after
+   it; the mode and the branch take their defaults only under `--defaults`, and the
+   card names them.
 
 ## Consequences
 

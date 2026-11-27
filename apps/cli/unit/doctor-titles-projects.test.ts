@@ -252,6 +252,40 @@ describe('per-project rows through declaredEnvironment', () => {
     expect(signed[0]!.title).not.toBe(signed[1]!.title)
   })
 
+  it('discuss: a default agent that cannot run warns, a declared one fails (#1476)', async () => {
+    const statusOf = async (text: string) => {
+      const rows = await Effect.runPromise(
+        declaredEnvironment({}, () => Effect.succeed([state]), {
+          recipe: recipeOf(text),
+          agentEnv: agentEnv([]),
+          runtimes: (() => [signedOut('claude-code')]) as never,
+        }),
+      )
+      return rows.find((r) => r.name === 'discuss: alpha signed in')?.status
+    }
+    expect(await statusOf(RECIPE)).toBe('warn')
+    expect(await statusOf(`${RECIPE}\ndiscuss: { agent: claude-code }\n`)).toBe('fail')
+  })
+
+  it('discuss: an invalid codex_text is reported when the default agent cannot run (#1476)', async () => {
+    const rowsOf = async (text: string) =>
+      Effect.runPromise(
+        declaredEnvironment({}, () => Effect.succeed([state]), {
+          recipe: recipeOf(text),
+          agentEnv: agentEnv([]),
+          runtimes: (() => [signedOut('claude-code')]) as never,
+          codexText: () => {
+            throw new Error('codex_text.max_usd must be positive')
+          },
+        } as never),
+      )
+    const rows = await rowsOf(RECIPE)
+    const invalid = rows.find((r) => r.name === 'discuss: alpha codex_text')
+    expect(invalid?.status).toBe('fail')
+    expect(invalid?.detail).toContain('max_usd')
+    expect(rows.find((r) => r.name === 'discuss: alpha signed in')?.status).toBe('warn')
+  })
+
   it('triage and discuss: signed out, limits and codex-ready rows are titled', async () => {
     const recipe = recipeOf(`${RECIPE}\ntriage: { agent: codex, tools: full }\ndiscuss: { agent: codex }\n`)
     const rows = await Effect.runPromise(

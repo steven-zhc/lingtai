@@ -55,9 +55,9 @@ describe('a row per repository', () => {
 
     // the project's row, then the menu's last row: add a repository
     expect(out.match(/href=/g)).toHaveLength(2)
-    expect(out).toContain('href="/?project=lingtai"')
+    expect(out).toContain('href="/p/lingtai/ticket"')
     expect(out).toContain('<span class="phint">recipe · pause</span>')
-    expect(out).not.toContain('/recipe/')
+    expect(out).not.toContain('/recipe"')
   })
 
   it('draws no hint on a project that is not registered', () => {
@@ -68,7 +68,7 @@ describe('a row per repository', () => {
   })
 
   it('escapes a name a URL must', () => {
-    expect(html(['a b'], true)).toContain('href="/?project=a%20b"')
+    expect(html(['a b'], true)).toContain('href="/p/a%20b/ticket"')
   })
 
   it('ends the menu with the add a repository row, to where the App says', () => {
@@ -78,7 +78,7 @@ describe('a row per repository', () => {
   })
 
   it('adds nothing to the empty board', () => {
-    expect(html([], true)).not.toContain('/recipe/')
+    expect(html([], true)).not.toContain('/recipe"')
   })
 })
 
@@ -218,7 +218,7 @@ describe('the filter is one menu', () => {
     const out = html(['a', 'b'], true)
 
     expect(out).toContain('<summary title="Projects · G S">all projects ')
-    expect(ascending(order(out, ['/?project=', '/?project=a', '/?project=b']))).toBe(true)
+    expect(ascending(order(out, ['/', '/p/a/ticket', '/p/b/ticket']))).toBe(true)
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
     expect(out).toMatch(/aria-current="page"[^>]*>all projects</)
   })
@@ -228,6 +228,6 @@ describe('the filter is one menu', () => {
 
     expect(out).toContain('<summary title="b · G S">b ')
     expect(out.match(/aria-current="page"/g)).toHaveLength(1)
-    expect(out).toMatch(/<a class="tab prj on" aria-current="page" href="\/\?project=b">b</)
+    expect(out).toMatch(/<a class="tab prj on" aria-current="page" href="\/p\/b\/ticket">b</)
   })
 })

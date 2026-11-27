@@ -15,7 +15,7 @@ import {
   notSessionModeDetail,
   postgresOnlyRows,
 } from '../src/doctor.js'
-import { exportedUrlRefusal, sqliteEditSentence, sqliteExportedRefusal } from '../src/init.js'
+import { exportedUrlRefusal, sqliteExportedRefusal } from '../src/init.js'
 import { dollarCeilingNote } from '../src/landing.js'
 import { DIFFERENT_SOURCE_CLASH } from '../src/source.js'
 
@@ -55,7 +55,6 @@ const SET: [string, string][] = [
   ['githubApp renamed', thrown(() => githubApp({ GITHUB_APP_ID: '123', GITHUB_APP_PRIVATE_KEY: 'k', HOME: '/h' }))],
   ['postgresUrl test side', thrown(() => postgresUrl({ VITEST: 'true', DATABASE_URL: 'x', HOME: '/h' }))],
   ['exportedUrlRefusal', exportedUrlRefusal('--database-url', 'postgres://a', 'LINGTAI_DATABASE_URL', 'postgres://b')],
-  ['sqliteEditSentence', sqliteEditSentence('/h/config.yml')],
   ['sqliteExportedRefusal', sqliteExportedRefusal('LINGTAI_DATABASE_URL is exported')],
   ['dollarCeilingNote (named)', dollarCeilingNote('codex')],
   ['dollarCeilingNote (unnamed)', dollarCeilingNote(null)],
