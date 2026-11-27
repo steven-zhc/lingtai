@@ -986,7 +986,7 @@ rename, the same way `gate` sat in `events.ts` until `#247`'s reset spent it.
 
 ### the allowlist
 
-**26 occurrences in 17 files, counted 2026-10-20** — and that sentence is
+**26 occurrences in 18 files, counted 2026-10-20** — and that sentence is
 counted by the test rather than remembered, so it is the size of the table
 below and not a number somebody forgot to raise when the table grew.
 
@@ -1099,7 +1099,7 @@ failure, not a number nobody was watching.
 | `apps/cli/src/attach.ts` | `work-item` ×1 |
 | `apps/cli/src/commands.ts` | `work-item` ×1 |
 | `apps/cli/src/doctor.ts` | `work-item` ×2 |
-| `apps/cli/src/source.ts` | `work-items` ×2 |
+| `apps/cli/src/source.ts` | `work-items` ×1 |
 | `apps/site/src/app/snapshot-board.tsx` | `work-items` ×1 |
 | `packages/conductor/src/discuss.ts` | `work-item` ×2 |
 | `packages/conductor/src/run-attempt.ts` | `work-item` ×1 |
@@ -1113,6 +1113,7 @@ failure, not a number nobody was watching.
 | `packages/extension/src/index.ts` | `NotifiedWorkItem` ×2 |
 | `packages/github/src/app.ts` | `work-items` ×1 |
 | `packages/recipe/src/recipe.ts` | `work-item` ×2 |
+| `packages/setup/src/project-checks.ts` | `work-items` ×1 |
 
 ### ordinary English
 

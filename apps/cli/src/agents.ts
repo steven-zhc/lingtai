@@ -28,33 +28,21 @@ import type { RecipeChange } from '@lingtai/recipe'
 import {
   followedJudgeIndex,
   followWriterJudgeChanges,
-  isBuiltInJudge,
   isImplementOnlyAgent,
   unboundedTurnsChange,
 } from '@lingtai/recipe'
-import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
+import {
+  defaultAgents,
+  leftoverRefusal,
+  noRuntimesSignedInRefusal,
+  runtimeRefusal,
+  whyMissing,
+  type RuntimeFound,
+  type RuntimeName,
+} from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
-
-/** The phrasing `init.ts`'s look lines already use for a runtime that cannot run. */
-function whyMissing(r: RuntimeFound): string {
-  return runtimeStateSentence(r.id, r.state, r.detail)
-}
-
-/**
- * Nothing signed in at all — shared with `first-project.ts`'s own pre-write
- * check (#431), so the two name the same gap the same way rather than two
- * sentences that drift. `askAgents` refuses with this before its first
- * question; the local branch refuses with it before writing anything at all.
- */
-export function noRuntimesSignedInRefusal(runtimes: readonly RuntimeFound[]): string {
-  return (
-    `no agent runtime is signed in on this machine — ${runtimes.map(whyMissing).join('; ')}. ` +
-    `${[...new Set(runtimes.map((r) => remedyFor(r.state)))].join(', or ')}, and try again; ` +
-    'whether it is paid for is between you and its provider'
-  )
-}
 
 function asRuntime(value: unknown): RuntimeName | null {
   if (typeof value !== 'string') return null
@@ -67,71 +55,6 @@ function findAgentAction(list: unknown): { index: number; action: Record<string,
   if (!Array.isArray(list)) return null
   const index = list.findIndex((item) => item !== null && typeof item === 'object' && 'agent' in (item as object))
   return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
-}
-
-/**
- * Every `agent:` or runtime `judge:` action this write does not itself touch,
- * logged when its own runtime is still signed in and refused when it is not.
- *
- * `agentRefusal` (`conduct.ts:282`) reads every step's every action against
- * what is signed in — not only `steps.implement`'s and `steps.review`'s first
- * entry, which is all `question()` above ever asked about — so a second
- * `agent:` left in `steps.implement`, or a runtime `judge:` at `steps.proposed`,
- * fails the very next pass exactly as an untouched second `steps.review` entry
- * would. `fullyReplaced` names a step whose whole list this write is about to
- * overwrite — its current entries are not "left as written", they are gone —
- * and `editedInPlace` names the one action within a step this write edits
- * where it stands.
- */
-function leftoverRefusal(
-  at: AskAgentsAt,
-  signedInIds: readonly string[],
-  world: QuestionWorld,
-  editedInPlace: readonly { step: string; index: number }[],
-  fullyReplaced: ReadonlySet<string>,
-  /** Signed-out runtimes the recipe already names as its writer or reviewer and this write keeps (#1473). */
-  keptRuntimes: ReadonlySet<string> = new Set(),
-): string | null {
-  const steps = at.draft.get(['steps'])
-  if (steps === null || typeof steps !== 'object') return null
-  for (const [step, list] of Object.entries(steps as Record<string, unknown>)) {
-    if (fullyReplaced.has(step) || !Array.isArray(list)) continue
-    for (let i = 0; i < list.length; i++) {
-      if (editedInPlace.some((e) => e.step === step && e.index === i)) continue
-      const item = list[i]
-      if (item === null || typeof item !== 'object') continue
-      const action = item as Record<string, unknown>
-      const key: 'agent' | 'judge' | null =
-        typeof action['agent'] === 'string'
-          ? 'agent'
-          : typeof action['judge'] === 'string' && !isBuiltInJudge(action['judge'])
-            ? 'judge'
-            : null
-      if (key === null) continue
-      const name = action[key] as string
-      const actionName = typeof action['name'] === 'string' ? (action['name'] as string) : `steps.${step}[${i}]`
-      if (signedInIds.includes(name)) {
-        world.log(
-          `steps.${step}'s "${actionName}" also names ${key} ${name} — only the first agent: entry is asked ` +
-            'about here, so this one is left as written',
-        )
-        continue
-      }
-      if (keptRuntimes.has(name)) {
-        world.log(
-          `steps.${step}'s "${actionName}" also names ${key} ${name}, which is not signed in here — it is the ` +
-            "recipe's own, kept as written",
-        )
-        continue
-      }
-      return (
-        `steps.${step}'s "${actionName}" also names ${key} ${name}, which is not signed in here — only the ` +
-        'first agent: entry is asked about here, so fix or remove that one by hand and run lingtai add again. ' +
-        'Nothing was written'
-      )
-    }
-  }
-  return null
 }
 
 export interface AskAgentsAt {
@@ -227,16 +150,10 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   const offeredRuntimes = RuntimeId.options.filter((id) => signedInIds.includes(id))
   // The recipe's own runtime is accepted as an answer whether or not it is signed in: a rerun that takes
   // every default keeps it (#1473), and any other signed-out runtime is still refused.
-  const refuseUnlessOffered =
-    (kept: string | null, extra = '') =>
-    (answer: string): Effect.Effect<string | null> => {
-      if (signedInIds.includes(answer)) return Effect.succeed(null)
-      if (kept !== null && answer === kept) return Effect.succeed(null)
-      if (answer === '') return Effect.succeed(`no agent is chosen yet — choose one of ${choiceList}${extra}`)
-      const found = at.runtimes.find((r) => r.id === answer)
-      if (!found) return Effect.succeed(`${answer} is not a runtime — choose one of ${choiceList}${extra}`)
-      return Effect.succeed(`${whyMissing(found)} — ${remedyFor(found.state)}, or choose one of ${choiceList}${extra}`)
-    }
+  const refuse =
+    (kept: string | null, orNone = false) =>
+    (answer: string): Effect.Effect<string | null> =>
+      Effect.succeed(runtimeRefusal(answer, { signedIn: signedInIds, runtimes: at.runtimes, kept, orNone }))
 
   const implementAction = findAgentAction(at.draft.get(['steps', 'implement']))
   const reviewList = at.draft.get(['steps', 'review'])
@@ -262,7 +179,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
     current: currentAgent,
     // The enum's own order, not the list's (#313, doc/design/398.md:43).
     detected: defaultAgents(signedInIds).writer,
-    validate: refuseUnlessOffered(currentAgent),
+    validate: refuse(currentAgent),
     kept: at.kept,
   })
   if ('refused' in agentAnswer) return agentAnswer
@@ -315,8 +232,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
     ],
     current: currentReviewer,
     detected: defaultReviewer,
-    validate: (answer) =>
-      answer === 'none' ? Effect.succeed(null) : refuseUnlessOffered(currentReviewer, ', or none')(answer),
+    validate: refuse(currentReviewer, true),
     kept: at.kept,
   })
   if ('refused' in reviewerAnswer) return reviewerAnswer
@@ -360,8 +276,9 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (currentReviewer !== null && currentReviewer !== 'none' && reviewer === currentReviewer) {
     keptRuntimes.add(currentReviewer)
   }
-  const leftover = leftoverRefusal(at, signedInIds, world, editedInPlace, fullyReplaced, keptRuntimes)
-  if (leftover !== null) return { refused: leftover }
+  const leftover = leftoverRefusal(at.draft.get(['steps']), signedInIds, editedInPlace, fullyReplaced, keptRuntimes)
+  for (const line of leftover.log) world.log(line)
+  if (leftover.refused !== null) return { refused: leftover.refused }
 
   let reviewerModel = ''
   if (reviewer !== 'none') {

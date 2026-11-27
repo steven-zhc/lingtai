@@ -225,7 +225,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
           : { known: true, value, because: value === null ? 'no runtime is signed in' : 'a signed-in runtime' }
 
     // History overrides `origin`: another source would number its own tickets
-    // into the same streams (`DIFFERENT_SOURCE_CLASH`, apps/cli/src/source.ts).
+    // into the same streams (`DIFFERENT_SOURCE_CLASH`, packages/setup/src/project-checks.ts).
     const history = yield* settle(() => readers.history(project))
     const origin = target.kind === 'local' ? yield* settle(() => readers.origin(target.path)) : null
     const repository =
