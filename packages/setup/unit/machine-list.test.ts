@@ -2,14 +2,8 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { MachineText } from '../src/claude-token.ts'
-import {
-  type Asker,
-  type MachinePorts,
-  type SetupInput,
-  machineQuestions,
-  runSetupList,
-  writeDayCeiling,
-} from '../src/machine-list.ts'
+import { type MachinePorts, machineQuestions, writeDayCeiling } from '../src/machine-list.ts'
+import { type Asker, type SetupInput, runSetupList } from '../src/setup-list.ts'
 
 const PATH = '/h/config.yml'
 

@@ -1,0 +1,334 @@
+/**
+ * The runner a setup list walks (0125 §9, #1527): one `runSetupList`, generic over the context `C`
+ * every question receives. The machine's list (`machine-list.ts`) and the project's run on it; each
+ * supplies descriptors and a terminal or a board supplies an `Asker` per question id.
+ *
+ * **A descriptor decides; an asker only asks.** The runner reads what is in force, decides the
+ * default, gets an answer — a flag, the default where there is no terminal or `--defaults`, a fixed
+ * or derived answer, or the asker — and writes it. The runner writes nothing to `ctx` itself: what a
+ * later question reads from an earlier answer, the earlier question's `write` put there.
+ */
+import { Effect } from 'effect'
+
+/** What is in force for one question: the value and whose it is, a fault in it, or nothing. */
+export type InForce =
+  | { value: string; from: 'environment' | 'file' }
+  | {
+      /** What is wrong with it, said before asking. */
+      fault: string
+      from: 'environment' | 'file'
+      /** The answer that keeps what is there, where the fault is not the value's own (a database that is down). */
+      value?: string
+      /** A fault the run cannot repair (an exported variable): refused by name rather than asked. */
+      fatal?: boolean
+    }
+  | null
+
+export interface WriteResult {
+  wrote: boolean
+  /** The answer needs a step this list does not run (an App that does not exist yet); nothing was written. */
+  pending?: true
+}
+
+/** The runner's view of the defaults, handed to `systemDefault`: `defaults` includes a switch already answered yes. */
+export interface DefaultsMode {
+  defaults: boolean
+  interactive: boolean
+}
+
+export interface SetupQuestion<C> {
+  id: string
+  /** The subject of a refusal — "the daily spend ceiling". */
+  name: string
+  /** The text after "pass" in a refusal. */
+  flag: string
+  /** The answer a flag names, null where none does (or absent); a refusal where the flag is not one this question takes. */
+  fromFlags?: (flags: Readonly<Record<string, string>>, ctx: C) => string | null | { refused: string }
+  /** What a flag value is compared with what is in force as, and what is written. */
+  normalize?: (answer: string) => string
+  /** Absent: nothing is in force (a confirmation or a switch has none). */
+  inForce?: (ctx: C) => Effect.Effect<InForce, unknown>
+  /** The default where nothing is in force; absent or null where the question has none (0121 §9). */
+  systemDefault?: (ctx: C, mode: DefaultsMode) => Effect.Effect<string | null, unknown>
+  /** The answer that is equal to what is in force, where that is not its value (a token that is set is `keep`). */
+  answerOf?: (inForce: NonNullable<InForce>) => string | null
+  /** Whether a flag answer is the one an exported value already is, where that is not its text. */
+  sameAsEnvironment?: (answer: string, value: string) => boolean
+  /** A refusal of an exported value this command cannot use, or null. */
+  refusesEnvironment?: (value: string) => string | null
+  /** Null accepts; a string is why not. Absent accepts. */
+  validate?: (answer: string, ctx: C) => Effect.Effect<string | null, unknown>
+  /** Whether this run is to ask it now; no puts it in `deferred`, with no entry. */
+  needed?: (ctx: C) => Effect.Effect<boolean, unknown>
+  /** False: not part of this run — neither asked nor refused; the entry says so. Pure. */
+  applies?: (ctx: C) => boolean
+  /** An answer this run fixes, or a refusal of the flag that contradicts it; null where nothing is fixed. Pure. */
+  fixed?: (ctx: C, flag: string | null) => { answer: string } | { refused: string } | null
+  /** An entry with no question: the answer is derived from `ctx`. Pure. */
+  derive?: (ctx: C) => string
+  /** A confirmation: `--defaults` answers yes, no terminal is refused, and `no` is refused with `declined`. */
+  confirm?: { declined: string }
+  /** The *use every default?* entry: a yes makes every later entry behave as under `--defaults`. */
+  defaultsSwitch?: true
+  write: (answer: string, inForce: InForce, ctx: C) => Effect.Effect<WriteResult | { refused: string }, unknown>
+  /** The card row: the value, and what it was. */
+  row: (value: string, before: InForce) => string
+  /** Words for `why`, drawn where the question is asked. */
+  why?: readonly string[]
+  /** What the environment's value is shown as. */
+  show?: (value: string) => string
+}
+
+/** What an asker sees of a question: `ctx` already applied, so nothing here takes it. */
+export interface AskedQuestion {
+  id: string
+  name: string
+  flag: string
+  why?: readonly string[]
+  show?: (value: string) => string
+  validate: (answer: string) => Effect.Effect<string | null, unknown>
+}
+
+/** What an asker is handed: the question, the default already decided, and what is kept if it is abandoned. */
+export interface Decided<C = unknown> {
+  question: AskedQuestion
+  ctx: C
+  default: string | null
+  inForce: InForce
+  kept: string
+  startOver?: string
+  why: readonly string[]
+}
+
+export type AskerAnswer = { answer: string } | { refused: string }
+export type Asker<C = unknown> = (decided: Decided<C>) => Effect.Effect<AskerAnswer, unknown>
+
+export interface SetupInput<C = unknown> {
+  /** False where there is no terminal. Never inferred from an asker answering nothing. */
+  interactive: boolean
+  /** `--defaults`. */
+  defaults: boolean
+  flags: Readonly<Record<string, string>>
+  askers: Readonly<Record<string, Asker<C>>>
+  /** Said by the runner: a fault in what is in force, before it asks again. */
+  log: (line: string) => void
+  /** What is still true if the next question is abandoned, given what this run has written. */
+  kept?: (written: readonly Entry[]) => { kept: string; startOver?: string }
+}
+
+export interface Entry {
+  id: string
+  before: InForce
+  /** The answer, or null where an environment value decided, nothing was asked, or the entry did not apply. */
+  after: string | null
+  wrote: boolean
+  pending: boolean
+  asked: boolean
+  /** False only where the question's `applies` said no. */
+  applies: boolean
+}
+
+export type ListResult<C> =
+  | { refused: string; entries: Entry[]; deferred: SetupQuestion<C>[] }
+  | { refused?: undefined; entries: Entry[]; deferred: SetupQuestion<C>[] }
+
+const normalized = <C>(q: SetupQuestion<C>, answer: string): string =>
+  q.normalize === undefined ? answer : q.normalize(answer)
+
+const defaultKept = (written: readonly Entry[]): { kept: string; startOver?: string } => ({
+  kept:
+    written.filter((e) => e.wrote).length === 0
+      ? 'Nothing was written'
+      : `what was answered above is kept (${written
+          .filter((e) => e.wrote)
+          .map((e) => e.id)
+          .join(', ')})`,
+})
+
+/**
+ * Walks `list` in order. A question whose `needed` says no is not asked and not skipped: it is returned in
+ * `deferred`, for a later run. A refusal stops the walk; what was already written stays, and `entries` says so.
+ * Where `C` has a required field the context is required; where every field is optional it may be left out.
+ */
+export function runSetupList<C extends object>(
+  list: readonly SetupQuestion<C>[],
+  input: SetupInput<NoInfer<C>>,
+  ...[given]: {} extends C ? [ctx?: C] : [ctx: C]
+): Effect.Effect<ListResult<C>, unknown> {
+  const ctx = (given ?? {}) as C
+  return Effect.gen(function* () {
+    const entries: Entry[] = []
+    const deferred: SetupQuestion<C>[] = []
+    const refuse = (refused: string): ListResult<C> => ({ refused, entries, deferred })
+    let defaults = input.defaults
+
+    for (const q of list) {
+      if (q.needed !== undefined && !(yield* q.needed(ctx))) {
+        deferred.push(q)
+        continue
+      }
+      const flag = q.fromFlags?.(input.flags, ctx) ?? null
+      if (flag !== null && typeof flag === 'object') return refuse(flag.refused)
+
+      if (q.applies !== undefined && !q.applies(ctx)) {
+        entries.push({
+          id: q.id,
+          before: null,
+          after: null,
+          wrote: false,
+          pending: false,
+          asked: false,
+          applies: false,
+        })
+        continue
+      }
+
+      const validateAnswer = (answer: string): Effect.Effect<string | null, unknown> =>
+        q.validate === undefined ? Effect.succeed(null) : q.validate(answer, ctx)
+
+      // An answer the runner does not ask for: derived, or fixed by the run.
+      let settled: string | null = null
+      if (q.derive !== undefined) {
+        settled = q.derive(ctx)
+      } else if (q.fixed !== undefined) {
+        const fix = q.fixed(ctx, flag)
+        if (fix !== null) {
+          if ('refused' in fix) return refuse(fix.refused)
+          const why = yield* validateAnswer(fix.answer)
+          if (why !== null) return refuse(why)
+          settled = fix.answer
+        }
+      }
+      if (settled !== null) {
+        const done = yield* q.write(settled, null, ctx)
+        if ('refused' in done) return refuse(done.refused)
+        entries.push({
+          id: q.id,
+          before: null,
+          after: settled,
+          wrote: done.wrote,
+          pending: done.pending === true,
+          asked: false,
+          applies: true,
+        })
+        continue
+      }
+
+      const inForce = q.inForce === undefined ? null : yield* q.inForce(ctx)
+
+      // A fault the run cannot repair (an exported variable, an App that does not answer) is refused by name.
+      if (inForce !== null && 'fault' in inForce && inForce.fatal === true) return refuse(inForce.fault)
+      // The environment decides: not asked, not written; a flag that differs is refused by name.
+      if (inForce !== null && inForce.from === 'environment') {
+        if ('fault' in inForce) return refuse(`${q.name}: ${inForce.fault}`)
+        const unusable = q.refusesEnvironment?.(inForce.value) ?? null
+        if (unusable !== null) return refuse(unusable)
+        const sameAsExported =
+          flag !== null &&
+          (q.sameAsEnvironment !== undefined
+            ? q.sameAsEnvironment(normalized(q, flag), inForce.value)
+            : normalized(q, flag) === normalized(q, q.answerOf?.(inForce) ?? inForce.value))
+        if (flag !== null && !sameAsExported) {
+          return refuse(
+            `${q.flag.split(',')[0]} ${flag}, but the environment names ${q.show?.(inForce.value) ?? inForce.value} ` +
+              `for ${q.name}, and an exported value wins over the file. Unset it, or leave out the flag. Nothing was written`,
+          )
+        }
+        entries.push({
+          id: q.id,
+          before: inForce,
+          after: null,
+          wrote: false,
+          pending: false,
+          asked: false,
+          applies: true,
+        })
+        continue
+      }
+
+      if (inForce !== null && 'fault' in inForce) input.log(inForce.fault)
+
+      const system =
+        q.systemDefault === undefined ? null : yield* q.systemDefault(ctx, { defaults, interactive: input.interactive })
+      const inForceAnswer =
+        inForce === null
+          ? null
+          : 'fault' in inForce
+            ? (inForce.value ?? null)
+            : (q.answerOf?.(inForce) ?? inForce.value)
+      const fallback = inForceAnswer ?? system
+
+      const keptSaid = (input.kept ?? defaultKept)(entries.filter((e) => e.wrote))
+      let answer: string
+      let asked = false
+      const noTerminal = !defaults && !input.interactive
+      if (flag !== null) {
+        answer = normalized(q, flag)
+        const why = yield* validateAnswer(answer)
+        if (why !== null) return refuse(why)
+      } else if (q.confirm !== undefined && (defaults || !input.interactive)) {
+        if (!defaults) return refuse(`${q.name} needs an answer: pass --defaults. ${keptSaid.kept}`)
+        answer = 'yes'
+      } else if (q.defaultsSwitch === true && defaults) {
+        // The defaults are already on, so the switch is answered yes without a default of its own.
+        answer = 'yes'
+      } else if (q.defaultsSwitch === true && noTerminal) {
+        // No terminal to ask on: the walk goes on, and nothing is written (#433).
+        entries.push({
+          id: q.id,
+          before: inForce,
+          after: null,
+          wrote: false,
+          pending: false,
+          asked: false,
+          applies: true,
+        })
+        continue
+      } else if (defaults || !input.interactive) {
+        if (fallback === null) {
+          return refuse(`${q.name} needs an answer: pass ${q.flag}. ${keptSaid.kept}`)
+        }
+        answer = fallback
+        const why = yield* validateAnswer(answer)
+        if (why !== null) return refuse(why)
+      } else {
+        const asker = input.askers[q.id]
+        if (asker === undefined) return refuse(`${q.name} has no asker here. ${keptSaid.kept}`)
+        const got = yield* asker({
+          question: {
+            id: q.id,
+            name: q.name,
+            flag: q.flag,
+            ...(q.why === undefined ? {} : { why: q.why }),
+            ...(q.show === undefined ? {} : { show: q.show }),
+            validate: (a) => validateAnswer(a),
+          },
+          ctx,
+          default: fallback,
+          inForce,
+          kept: keptSaid.kept,
+          ...(keptSaid.startOver === undefined ? {} : { startOver: keptSaid.startOver }),
+          why: q.why ?? [],
+        })
+        if ('refused' in got) return refuse(got.refused)
+        answer = normalized(q, got.answer)
+        asked = true
+      }
+      if (q.confirm !== undefined && answer !== 'yes') return refuse(q.confirm.declined)
+
+      const done = yield* q.write(answer, inForce, ctx)
+      if ('refused' in done) return refuse(done.refused)
+      entries.push({
+        id: q.id,
+        before: inForce,
+        after: answer,
+        wrote: done.wrote,
+        pending: done.pending === true,
+        asked,
+        applies: true,
+      })
+      if (q.defaultsSwitch === true && answer === 'yes') defaults = true
+    }
+    return { entries, deferred }
+  })
+}
