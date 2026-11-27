@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock · a Landed row</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+.light { --ground:#f1f4f4; --surface:#ffffff; --surface-2:#e9eeee; --ink:#0f181c; --ink-2:#3a4a50; --muted:#5e6e74; --rule:#d8e0e1; --rule-2:#c3cfd1; --accent:#0b6a70; --accent-soft:#dcedee; --accent-ink:#075056; --signal:#9c5a08; --pass:#2c7a4c; --pass-soft:#dfeee4; --fail:#a33029; --line:#44507a; }
+.dark { --ground:#0c1316; --surface:#18262b; --surface-2:#0e181b; --ink:#dde6e8; --ink-2:#b4c4c8; --muted:#87999f; --rule:#2e434b; --rule-2:#3a525b; --accent:#54c6cc; --accent-soft:#10312f; --accent-ink:#7fdade; --signal:#e0a55c; --pass:#61be86; --pass-soft:#122c1e; --fail:#e2776e; --line:#8a93b5; }
+:root { --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; --radius:3px; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:var(--sans); font-size:13.5px; background:#888; }
+.note { font:600 12px var(--sans); color:#fff; background:#333; padding:8px 16px; margin:0; }
+.note small { font-weight:400; opacity:.85; }
+.theme { background:var(--ground); color:var(--ink); padding:8px 16px 40px; }
+a { color:var(--accent); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:2px; }
+.var { font:600 12px var(--sans); color:#fff; background:#63549e; display:inline-block; padding:3px 9px; border-radius:var(--radius); margin:30px 0 14px; }
+.var.old { background:#7a2b25; }
+.sec-h { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0; }
+code { font:12px var(--mono); }
+
+.lanes { display:flex; gap:20px; align-items:flex-start; flex-wrap:wrap; }
+.lane { width:296px; background:var(--surface-2); padding:12px 10px; border-radius:var(--radius); }
+.lane-h { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+.lane-h .all { font:600 11px var(--sans); color:var(--accent-ink); background:var(--surface); border:1px solid var(--rule-2); border-radius:var(--radius); padding:4px 9px; }
+.landed { list-style:none; margin:0; padding:0; }
+.lrow { display:grid; grid-template-columns:34px minmax(0,1fr) auto; column-gap:6px; row-gap:2px; align-items:baseline; font:11px var(--mono); color:var(--muted); padding:6px 2px; border-bottom:1px solid var(--rule); }
+.lrow:last-child { border-bottom:0; }
+.ticks { display:flex; gap:1px; align-self:center; }
+.ticks i { width:2px; height:6px; background:var(--pass); }
+.ticks i.r { background:var(--fail); }
+.lmeta { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.ltag { font-size:10px; padding:0 5px; border-radius:var(--radius); background:var(--pass-soft); color:var(--pass); }
+.lbill { grid-column:2 / 4; display:flex; justify-content:space-between; gap:8px; white-space:nowrap; }
+.lbill .n { color:var(--ink); }
+.older { font:11px var(--mono); color:var(--muted); padding:8px 2px 0; }
+</style>
+</head>
+<body>
+<p class="note">light <small>· the turn counts on #1497 and #1502 are placeholders · a mock of layout: the rules are in the ticket and in the-board-style.md, the variables are globals.css’s</small></p>
+<div class="theme light">
+<div><span class="var">Landed rows · #1514 · one bill for the whole ticket at the left, turns at the right</span></div>
+<div class="lanes"><div class="lane">
+  <div class="lane-h"><span class="sec-h">Landed</span><span class="all">76 all →</span></div>
+  <ul class="landed">
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1505 · lingtai:pr-fix · 12m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$1.74</span> + ~$1.27 est.</span><span>25 turns</span></span></li>
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1497 · feature · 1h 41m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$5.86</span> + ~$7.81 est.</span><span>212 turns</span></span></li>
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1502 · documentation · 38m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$2.07</span> + ~$2.95 est.</span><span>64 turns</span></span></li>
+  </ul>
+  <div class="older">▸ 73 older</div>
+</div></div>
+</div>
+<p class="note">dark <small>· the turn counts on #1497 and #1502 are placeholders · a mock of layout: the rules are in the ticket and in the-board-style.md, the variables are globals.css’s</small></p>
+<div class="theme dark">
+<div><span class="var">Landed rows · #1514 · one bill for the whole ticket at the left, turns at the right</span></div>
+<div class="lanes"><div class="lane">
+  <div class="lane-h"><span class="sec-h">Landed</span><span class="all">76 all →</span></div>
+  <ul class="landed">
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1505 · lingtai:pr-fix · 12m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$1.74</span> + ~$1.27 est.</span><span>25 turns</span></span></li>
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1497 · feature · 1h 41m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$5.86</span> + ~$7.81 est.</span><span>212 turns</span></span></li>
+    <li class="lrow"><span class="ticks"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i class="r"></i><i></i></span><span class="lmeta">#1502 · documentation · 38m</span><span class="ltag">merged</span><span class="lbill"><span><span class="n">$2.07</span> + ~$2.95 est.</span><span>64 turns</span></span></li>
+  </ul>
+  <div class="older">▸ 73 older</div>
+</div></div>
+</div>
+</body>
+</html>
