@@ -19,6 +19,7 @@ import {
   type ProjectPorts,
   type ProjectQuestionId,
   type RuntimeName,
+  type Trial,
   type TrialAt,
   detectedOf,
   installRefusal,
@@ -290,27 +291,24 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
 }
 
 /**
- * `ProjectPorts['trial']`'s live body: runs the trial build over `runTrialLoop`, and on *edit* asks install and the
+ * `ProjectPorts['trial']` over `trialFor`: runs the trial build over `runTrialLoop`, and on *edit* asks install and the
  * build list again through the same code the record's `install` and `checks` askers call. The `trial` entry has
  * already asked *try them once now?*, so the loop's first round does not (`askFirst: false`); an *edit* asks again,
  * as it always did. No terminal is refused where the loop refuses it: at *what to do with the failed build list*.
  */
-export function liveTrialPort(
+export function trialPortOver(
   world: QuestionWorld,
-  at: Omit<TrialAt, 'base' | 'draft' | 'interrupt'>,
+  at: { project: string; home?: string | undefined },
+  /** The trial to run, given the recipe as the answers so far make it and the base to cut from where it names none. */
+  trialFor: (draft: ProjectView, base: string) => Trial,
 ): NonNullable<ProjectPorts['trial']> {
   return (pt) =>
     Effect.gen(function* () {
       // The branch still to be made is not on GitHub: the trial reads it as the one it is cut from.
       const view = viewWithMake(pt.view, pt.make)
       const original = pt.view.get(['steps', 'build'])
-      const trial = liveTrialBuild({
-        ...at,
-        base: pt.make?.from ?? text(view.get(['branch', 'main'])) ?? '',
-        draft: view,
-      })
       const looped = yield* runTrialLoop(world, {
-        trial,
+        trial: trialFor(view, pt.make?.from ?? text(view.get(['branch', 'main'])) ?? ''),
         install: pt.install,
         build: pt.checks,
         given: pt.given,
@@ -341,3 +339,10 @@ export function liveTrialPort(
       return { install: looped.install, checks: looped.build, trial: looped.trial }
     })
 }
+
+/** The live trial port: a throwaway worktree of the project, cut where the recipe lands. */
+export const liveTrialPort = (
+  world: QuestionWorld,
+  at: Omit<TrialAt, 'base' | 'draft' | 'interrupt'>,
+): NonNullable<ProjectPorts['trial']> =>
+  trialPortOver(world, at, (draft, base) => liveTrialBuild({ ...at, base, draft }))
