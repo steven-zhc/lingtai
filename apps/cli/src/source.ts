@@ -57,7 +57,7 @@ export interface TicketsDeps extends SourceDeps {
 
 /**
  * The resolved recipe, or null where the file is absent or does not resolve
- * on its own — `setup-build.ts`'s `resolvedRunActions` reads the same way,
+ * on its own — `resolvedRunActions` (packages/setup/src/setup-build-actions.ts) reads the same way,
  * for the same reason: "unknown" is the only safe reading for a file that
  * is not there yet, or not there on its own.
  */
