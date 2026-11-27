@@ -159,12 +159,13 @@ import {
 } from './first-project.ts'
 import { APP_WAIT_MS, waitForAppEffect } from './github-app.ts'
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
+import { checkoutIssueForms, NO_FORMS, type IssueForms } from './issue-forms.ts'
 import { type RawStdin, waitForKeypress } from './keypress.ts'
-import { addSteps, githubInitSteps, type Here, hereSteps, localInitSteps } from './next-steps.ts'
+import { addSteps, githubInitSteps, type Here, hereSteps, type IssueTakes, localInitSteps } from './next-steps.ts'
 import { heading, keyValues, renderNextBlock, renderNextLine, section, symbol } from './output.ts'
 import { interactivity, liveAsk, liveSpin, refusal } from './prompt.ts'
 import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
-import type { LeftBehind } from './setup-card.ts'
+import { issueTakeOf, type LeftBehind } from './setup-card.ts'
 import { DOCTOR_VERBOSE, liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 import { ROUNDS_RETIRED, type WizardFlags } from './wizard-options.ts'
 
@@ -242,6 +243,8 @@ export interface InitWorld {
   runGit: (dir: string, args: readonly string[]) => Effect.Effect<GitResult, unknown>
   /** `loadAllProjects` — registered and pending alike, keyed by name (#394). */
   projects: () => Effect.Effect<readonly ProjectState[], unknown>
+  /** The checkout's issue forms (#1518), over `node:fs`; absent means none. It cannot fail. */
+  issueForms?: (toplevel: string) => Effect.Effect<IssueForms>
   /** The lock an add is made under; the machine's file lock unless a test hands one in. */
   locker?: Locker
   /** The log a recipe written by the first project is recorded on: the process's own when absent. */
@@ -909,6 +912,7 @@ function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: s
     // The effective settings, as the conductor resolves them: an omitted `tickets` is github, and kinds may sit under a `queue:`.
     let tickets: 'db' | 'github' | null = null
     let kinds: string[] = []
+    let takes: IssueTakes | null = null
     yield* Effect.gen(function* () {
       const path = recipePath(project, home)
       const text = yield* recipeText(project, { home, ...(world.store === undefined ? {} : { store: world.store }) })
@@ -916,6 +920,7 @@ function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: s
         const recipe = resolveSource(text, path, path).recipe
         tickets = ticketSourceOf(recipe)
         kinds = [...kindsOf(recipe)]
+        takes = issueTakeOf(recipe)
       }
     }).pipe(
       recovering(() => {
@@ -923,11 +928,17 @@ function whereAmI(world: InitWorld, registered: readonly ProjectState[], home: s
         return Effect.void
       }),
     )
+    const forms =
+      world.issueForms === undefined || tickets !== 'github'
+        ? NO_FORMS
+        : yield* world.issueForms(toplevel).pipe(Effect.catchCause(() => Effect.succeed(NO_FORMS)))
     return {
       kind: 'registered',
       project,
       tickets,
       kinds,
+      takes,
+      forms,
       slug: match.owner === null ? null : `${match.owner}/${match.project}`,
     } as const
   })
@@ -1451,6 +1462,7 @@ export function liveInitWorld(): InitWorld {
       }),
     open: (url) => lift(() => liveOpen(url)),
     runGit: liveGitEffect,
+    issueForms: checkoutIssueForms,
     projects: () => loadAllProjectsEffect(),
     signedIn: signedInHere,
     registerLocal: (payload) =>

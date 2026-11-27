@@ -28,6 +28,7 @@ const RECIPE: CardRecipe = {
   reviewer: { agent: 'claude-code', model: 'opus' },
   checks: ['npm run check', 'npm run build'],
   approves: true,
+  takes: { take: 'all', login: null },
   findingsJudge: { judge: 'claude-code', rounds: 6 },
 }
 

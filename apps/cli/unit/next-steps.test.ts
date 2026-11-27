@@ -80,3 +80,64 @@ describe('the steps each path closes on (0121 §1, #756)', () => {
     )
   })
 })
+
+describe("the first ticket takes the queue's own rule and the repository's form (#1518)", () => {
+  const base = { project: 'w', tickets: 'github', kinds: ['bug', 'feature'], slug: 'acme/w' } as const
+  const command = (extra: object) => addSteps({ ...base, ...extra })[0]!.command
+  const mine = { take: 'mine', login: 'sam' } as const
+
+  it("team mode (always mine): the recipe's login", () => {
+    expect(command({ takes: mine })).toBe('gh issue create -R acme/w --label bug --assignee sam')
+  })
+  it('solo take: mine is the same', () => {
+    expect(command({ takes: { take: 'mine', login: 'steven-zhc' } })).toBe(
+      'gh issue create -R acme/w --label bug --assignee steven-zhc',
+    )
+  })
+  it('solo take: all and take: unassigned assign nobody', () => {
+    expect(command({ takes: { take: 'all', login: 'sam' } })).toBe('gh issue create -R acme/w --label bug')
+    expect(command({ takes: { take: 'unassigned', login: 'sam' } })).toBe('gh issue create -R acme/w --label bug')
+  })
+  it('team with no login writes @me', () => {
+    expect(command({ takes: { take: 'mine', login: null } })).toBe(
+      'gh issue create -R acme/w --label bug --assignee @me',
+    )
+  })
+  it('one form: opens it by file, assigned, quoted so & does not background it', () => {
+    const forms = { kind: 'one', file: 'new-joke.yml', name: 'New joke' } as const
+    const [step] = addSteps({ ...base, takes: mine, forms })
+    expect(step!.command).toBe("open 'https://github.com/acme/w/issues/new?template=new-joke.yml&assignees=sam'")
+    expect(step!.for).toContain('"New joke"')
+    expect(step!.command).not.toContain('--label')
+    expect(command({ takes: { take: 'all', login: null }, forms })).toBe(
+      "open 'https://github.com/acme/w/issues/new?template=new-joke.yml'",
+    )
+  })
+  it('one form under take: unassigned never names an assignee', () => {
+    const forms = { kind: 'one', file: 'f.yml', name: 'F' } as const
+    expect(command({ takes: { take: 'unassigned', login: 'sam' }, forms })).not.toContain('assignees')
+  })
+  it('several forms: the chooser, and who to assign when it is mine', () => {
+    const forms = { kind: 'several' } as const
+    expect(addSteps({ ...base, takes: mine, forms })[0]).toEqual({
+      command: 'open https://github.com/acme/w/issues/new/choose',
+      for: 'its first ticket, from one of its forms, then assign it to sam',
+    })
+    expect(addSteps({ ...base, forms })[0]!.for).toBe('its first ticket, from one of its forms')
+  })
+  it('team with no login and a form falls back to the gh line', () => {
+    expect(command({ takes: { take: 'mine', login: null }, forms: { kind: 'several' } })).toBe(
+      'gh issue create -R acme/w --label bug --assignee @me',
+    )
+  })
+  it('here: a registered checkout follows the same rule', () => {
+    expect(hereSteps({ kind: 'registered', ...base, takes: mine, forms: { kind: 'none' } }).steps[0]!.command).toBe(
+      'gh issue create -R acme/w --label bug --assignee sam',
+    )
+  })
+  it('local tickets are untouched', () => {
+    expect(addSteps({ project: 'p', tickets: 'db', kinds: [], slug: null, takes: mine })[1]!.command).toBe(
+      'lingtai ticket new --project p',
+    )
+  })
+})
