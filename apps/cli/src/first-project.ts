@@ -119,7 +119,7 @@ import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } fro
 import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
-import { askMode, askPersonal, type Mode } from './team.ts'
+import { askBaseBranch, askMakeBranch, askMode, askPersonal, type Mode } from './team.ts'
 import { HANDED_OFF_FLAGS, ROUNDS_RETIRED } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
@@ -763,11 +763,8 @@ function runLocalBranch(
                 return null
               }),
           }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
-        : yield* questionEffect(flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world, {
-            name: 'the base branch',
-            flag: '--main <branch>',
+        : yield* askBaseBranch(flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world, {
             given: flags['main'] ?? null,
-            prompt: "the branch this project's recipe governs and merges into",
             // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
             current: typeof currentBase === 'string' && ports === null ? currentBase : null,
             detected,
@@ -972,13 +969,12 @@ function runLocalBranch(
     // said yes: the trial build below cuts at `branch.main`, which is where the branch would be cut from anyway.
     const deferBranch = mode === 'team' && source !== null
     if (deferBranch) {
-      const confirmed = yield* questionEffect(lingtaiWorld, {
-        name: 'making the personal branch',
-        flag: `--defaults, or make it yourself: git branch ${base} ${source}`,
+      const confirmed = yield* askMakeBranch(lingtaiWorld, {
+        name: base,
+        // Set by `validate`; `deferBranch` is only true once it is.
+        from: (source as string | null) ?? '',
+        where: { checkout: toplevel },
         given: flags['defaults'] !== undefined ? 'yes' : null,
-        prompt: `${base} does not exist in ${toplevel}. Make it from ${source}?`,
-        choices: ['yes', 'no'],
-        fallback: 'yes',
         kept: world.kept,
       })
       if ('refused' in confirmed) return { refused: confirmed.refused }

@@ -152,19 +152,23 @@ export const PROJECT_FLAGS: readonly string[] = PROJECT_QUESTION_IDS.flatMap((id
 
 export type Mode = 'team' | 'solo'
 
-/** How the trial build went, for the card (the same union `setup-build.ts` holds; #1529 retypes the port body). */
+/** How the trial build went, for the card. `apps/cli`'s trial loop imports this one union. */
 export type TrialOutcome =
   | { trial: 'passed'; ms: number }
   | { trial: 'failed-kept'; command: string; ms: number }
   | { trial: 'not-run'; because: 'declined' | 'no checkout' | 'no checks' }
 
-/** What the trial port is given, and what it hands back. Its live body is #1529's. */
+/** What the trial port is given, and what it hands back. Its live body is `apps/cli`'s `liveTrialPort`. */
 export interface ProjectTrialAt {
   /** The recipe as the answers so far would make it: `get` for what is written, `resolved` for what it would run. */
   view: ProjectView
   install: string | null
   checks: NamedRun[]
   given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
+  /** The branch still to be made, once the person said yes: the trial cuts from `from`, which is where it is cut from. */
+  make: { name: string; from: string } | null
+  /** Whether the recipe file existed when the run began: *this list is not written yet* against *nothing is*. */
+  recipeExisted: boolean
   kept: string
 }
 
@@ -351,7 +355,8 @@ function reviewerAtStart(ctx: ProjectContext): string | null {
 /** What the recipe resolves to in the middle of a run: the starting text with every pending change laid over it. */
 const resolvedNow = (ctx: ProjectContext): ResolvedRecipe | null => ctx.view.resolved()
 
-const detectedOf = (ctx: ProjectContext): Effect.Effect<DetectedSetup, unknown> =>
+/** What detection read of the project: the proposal's where it holds one, else read from the project's own reader. */
+export const detectedOf = (ctx: ProjectContext): Effect.Effect<DetectedSetup, unknown> =>
   ctx.ports.proposal?.detected.known === true
     ? Effect.succeed(ctx.ports.proposal.detected.value)
     : detectSetupEffect(ctx.ports.reader)
@@ -415,7 +420,7 @@ const readDetected = (ctx: ProjectContext): Effect.Effect<{ detected: DetectedSe
     }),
   )
 
-const personalFallback = (ctx: ProjectContext): string =>
+export const personalFallback = (ctx: ProjectContext): string =>
   ctx.ports.local ? LINGTAI_BASE : defaultPersonalBranch(ctx.answers.login ?? '', ctx.ports.hostname)
 
 /** The login the recipe's queue takes by, on a rerun: the `claim` entry's own `queue:`, else `source.assignee`. */
@@ -1151,6 +1156,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
               build: ctx.buildFlags.length === 0 ? null : [...ctx.buildFlags],
               check: flag === 'yes' || flag === 'no' ? flag : null,
             },
+            make: ctx.answers.make ?? null,
+            recipeExisted: rerun(ctx),
             kept: ctx.kept,
           }),
         ).pipe(

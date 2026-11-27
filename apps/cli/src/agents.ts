@@ -105,11 +105,14 @@ export const askModel = Effect.fn('agents.askModel')(function* (
     prompt: string
     current: string | null
     kept?: string | undefined
+    validate?: (answer: string) => Effect.Effect<string | null, unknown>
   },
 ): Effect.fn.Return<Answered, unknown> {
   if (q.given !== null) return yield* questionEffect(world, q)
+  // The offer's own words (the runtime's default, *another*) are not model names: `validate` judges what is typed.
+  const { validate, ...asked } = q
   const picked = yield* questionEffect(world, {
-    ...q,
+    ...asked,
     offer: [RUNTIME_DEFAULT, ...(q.current === null ? [] : [q.current]), ANOTHER],
     offerLabels: MODEL_LABELS,
     show: (value) => MODEL_LABELS[value] ?? value,
@@ -123,7 +126,12 @@ export const askModel = Effect.fn('agents.askModel')(function* (
     flag: q.flag,
     given: null,
     prompt: 'which model — its name',
-    validate: (a) => Effect.succeed(a === '' ? "a model needs a name — or choose the runtime's own default" : null),
+    validate: (a) =>
+      a === ''
+        ? Effect.succeed("a model needs a name — or choose the runtime's own default")
+        : validate === undefined
+          ? Effect.succeed(null)
+          : validate(a),
     kept: q.kept,
   })
 })
@@ -200,7 +208,7 @@ export function askReviewer(
 /** Which model the writer runs on. */
 export function askWriterModel(
   world: QuestionWorld,
-  at: { given: string | null; current: string | null; kept?: string | undefined },
+  at: { given: string | null; current: string | null; kept?: string | undefined; validate?: Validate },
 ): Effect.Effect<Answered, unknown> {
   return askModel(world, {
     name: 'which model the writer runs on',
@@ -209,13 +217,14 @@ export function askWriterModel(
     prompt: 'which model',
     current: at.current,
     kept: at.kept,
+    ...(at.validate === undefined ? {} : { validate: at.validate }),
   })
 }
 
 /** Which model the reviewer runs on. */
 export function askReviewerModel(
   world: QuestionWorld,
-  at: { given: string | null; current: string | null; kept?: string | undefined },
+  at: { given: string | null; current: string | null; kept?: string | undefined; validate?: Validate },
 ): Effect.Effect<Answered, unknown> {
   return askModel(world, {
     name: "the reviewer's model",
@@ -224,6 +233,7 @@ export function askReviewerModel(
     prompt: 'on which model',
     current: at.current,
     kept: at.kept,
+    ...(at.validate === undefined ? {} : { validate: at.validate }),
   })
 }
 

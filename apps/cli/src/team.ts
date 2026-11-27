@@ -92,3 +92,61 @@ export const askPersonal = (
     },
     kept: input.kept,
   }).pipe(Effect.map((a) => ('refused' in a ? a : { personal: a.answer })))
+
+/** The branch this project's recipe governs and merges into — a solo project's base. */
+export const askBaseBranch = (
+  world: QuestionWorld,
+  input: {
+    given: string | null
+    current: string | null
+    detected: string | null
+    fallback?: string | undefined
+    validate: (answer: string) => Effect.Effect<string | null, unknown>
+    kept: string
+    startOver?: string | undefined
+    command?: string | undefined
+  },
+): Effect.Effect<{ answer: string } | { refused: string }, unknown> =>
+  questionEffect(world, {
+    name: 'the base branch',
+    flag: '--main <branch>',
+    given: input.given,
+    prompt: "the branch this project's recipe governs and merges into",
+    current: input.current,
+    detected: input.detected,
+    ...(input.fallback === undefined ? {} : { fallback: input.fallback }),
+    kept: input.kept,
+    ...(input.startOver === undefined ? {} : { startOver: input.startOver }),
+    ...(input.command === undefined ? {} : { command: input.command }),
+    validate: input.validate,
+  })
+
+/**
+ * Whether to make the personal branch that is not there yet, and from what. On GitHub it is cut from `origin/<from>`
+ * and pushed; in a checkout it is cut from `from` there. A `no` is the caller's to refuse with.
+ */
+export const askMakeBranch = (
+  world: QuestionWorld,
+  input: {
+    name: string
+    from: string
+    where: { github: true } | { checkout: string }
+    given: string | null
+    kept: string
+  },
+): Effect.Effect<{ answer: string } | { refused: string }, unknown> =>
+  questionEffect(world, {
+    name: 'making the personal branch',
+    flag:
+      'github' in input.where
+        ? `--defaults, or make it yourself: git push origin origin/${input.from}:refs/heads/${input.name}`
+        : `--defaults, or make it yourself: git branch ${input.name} ${input.from}`,
+    given: input.given,
+    prompt:
+      'github' in input.where
+        ? `${input.name} does not exist. Make it from origin/${input.from} and push it?`
+        : `${input.name} does not exist in ${input.where.checkout}. Make it from ${input.from}?`,
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })

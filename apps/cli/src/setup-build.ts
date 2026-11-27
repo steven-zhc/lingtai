@@ -19,6 +19,7 @@ import {
   type SetupReader,
   type Trial,
   type TrialReport,
+  type TrialOutcome,
   type TrialResult,
   detectSetupEffect,
   installRefusal,
@@ -62,14 +63,7 @@ export interface AskInstallAndBuildInput {
   onPath?: (tool: string) => Promise<boolean>
 }
 
-/**
- * How the trial build went, for the summary card: one fact above the per-command
- * results. `ms` is wall time around the `tryBuild` call.
- */
-export type TrialOutcome =
-  | { trial: 'passed'; ms: number }
-  | { trial: 'failed-kept'; command: string; ms: number }
-  | { trial: 'not-run'; because: 'declined' | 'no checkout' | 'no checks' }
+export type { TrialOutcome }
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[]; trial: TrialOutcome } | { refused: string }
 
@@ -169,6 +163,16 @@ function askInstall(
   })
 }
 
+/** What detection read of the build, as the lines that say why a default list is what it is. */
+export const detectionWhy = (detected: DetectedSetup): string[] => [
+  ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
+  ...detected.skipped.map((s) => `skipped \`${s.script}\`: ${s.why}`),
+  ...detected.notes,
+]
+
+/** Said wherever the build list ends up empty. */
+export const NO_CHECKS_LINE = 'nothing will check a diff before review'
+
 /** Whether to keep the list as it stands (`yes`), or write one's own (`no`). */
 export function askKeepBuildList(
   world: SetupWorld,
@@ -251,6 +255,11 @@ export interface TrialLoopInput {
   build: NamedRun[]
   given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
   recipeExisted: boolean
+  /**
+   * Whether the first round asks *try them once now?* itself. False where the caller already asked it (the project
+   * list's `trial` entry does); an *edit* still asks again, as it always did, and a *drop* never does.
+   */
+  askFirst: boolean
   /** Where the recipe is, for the line that says what a check that needs a variable should do. */
   recipeFile: string
   kept?: string | undefined
@@ -382,14 +391,16 @@ export function runTrialLoop(
     let install = at.install
     let build = at.build
     let tried: Tried
+    let firstRound = true
     for (;;) {
-      let asked = true
+      let asked = firstRound ? at.askFirst : true
+      firstRound = false
       for (;;) {
         tried = yield* tryTheBuild(world, at, install, build, asked)
         if ('again' in tried && tried.again === 'drop') {
           const failed: Set<string> = new Set(tried.failed)
           build = build.filter((b) => !failed.has(b.run))
-          if (build.length === 0) world.log('nothing will check a diff before review')
+          if (build.length === 0) world.log(NO_CHECKS_LINE)
           asked = false
           continue
         }
@@ -436,7 +447,7 @@ function askBuild(
         return { refused: '--build takes a command, or none — not empty' }
       }
       const build = input.given.build[0] === 'none' ? [] : namedFromTyped(input.given.build, originalBuild ?? [])
-      if (build.length === 0) world.log('nothing will check a diff before review')
+      if (build.length === 0) world.log(NO_CHECKS_LINE)
       return { build }
     }
 
@@ -446,14 +457,7 @@ function askBuild(
     const defaultList =
       current.length > 0 ? current : !answeredNone && detected.build.length > 0 ? detected.build : null
     // What detection found explains a default only when the default came from it, not from the file's own list.
-    const why =
-      current.length > 0 || previous !== undefined || answeredNone
-        ? []
-        : [
-            ...detected.build.map((b) => `build (${b.name}): ${b.run} — ${b.because}`),
-            ...detected.skipped.map((s) => `skipped \`${s.script}\`: ${s.why}`),
-            ...detected.notes,
-          ]
+    const why = current.length > 0 || previous !== undefined || answeredNone ? [] : [...detectionWhy(detected)]
 
     if (defaultList !== null) {
       const answer = yield* askKeepBuildList(world, { given: null, why, kept: input.kept })
@@ -463,7 +467,7 @@ function askBuild(
 
     const typed = yield* askBuildCommands(world, { why: defaultList === null ? why : [], kept: input.kept })
     if ('refused' in typed) return { refused: typed.refused }
-    if (typed.commands.length === 0) world.log('nothing will check a diff before review')
+    if (typed.commands.length === 0) world.log(NO_CHECKS_LINE)
     return { build: namedFromTyped(typed.commands, originalBuild ?? []) }
   })
 }
@@ -488,6 +492,7 @@ export function askInstallAndBuildEffect(
       build: build.build,
       given: input.given,
       recipeExisted: input.recipeExisted === true,
+      askFirst: true,
       recipeFile: recipePath(input.project, input.home),
       kept: input.kept,
       again: {
