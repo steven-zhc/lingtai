@@ -156,7 +156,9 @@ export interface PrFixReads {
 }
 
 const liveReads = (store: EventStore): PrFixReads => ({
-  tasks: (project) => readTasksEffect({ project }).pipe(Effect.mapError(failed)),
+  // No retention window: a pr-fix that ended is still the projection's answer for its issue, and the listing must
+  // not re-add it as unclaimed nor History lose it after two days.
+  tasks: (project) => readTasksEffect({ project, retentionDays: ALL_TIME_DAYS }).pipe(Effect.mapError(failed)),
   claim: (project, issue) =>
     Effect.tryPromise({
       try: () => readState(store, ticketReducer, ticketStream(project, issue), 'all'),
@@ -189,6 +191,8 @@ const liveReads = (store: EventStore): PrFixReads => ({
     }),
 })
 
+const ALL_TIME_DAYS = 36_500
+
 const normal = (kind: string): string => kind.toLowerCase().replace(/\s+/g, '-')
 
 /**
@@ -213,12 +217,10 @@ export const readPrFixes = (
       (t) =>
         Effect.gen(function* () {
           const ended = ['landed', 'satisfied', 'closed'].includes(t.state)
-          // An ended row's claim is read only for History, and a failure there never hides the PR's fixes.
+          // An ended row's claim is read only for History; a failed read fails the whole read (said on the card), never drops the entry.
           const claim = ended
             ? options.history === true
-              ? yield* reads
-                  .claim(project, t.issue)
-                  .pipe(Effect.orElseSucceed(() => ({ cutFromPr: undefined, claimedAt: null })))
+              ? yield* reads.claim(project, t.issue)
               : { cutFromPr: undefined, claimedAt: null }
             : yield* reads.claim(project, t.issue)
           const running = ['running', 'verifying', 'approved'].includes(t.state)
