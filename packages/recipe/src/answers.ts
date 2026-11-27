@@ -67,7 +67,7 @@ export function landingChanges(answer: LandingAnswer, currentProposed: readonly 
   return landOnBranchChanges(answer.land, proposed)
 }
 
-function isFindingsJudge(entry: unknown): boolean {
+export function isFindingsJudge(entry: unknown): boolean {
   return (
     typeof entry === 'object' && entry !== null && 'judge' in entry && (entry as { when?: unknown }).when === 'findings'
   )
