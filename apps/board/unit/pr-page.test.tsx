@@ -638,6 +638,41 @@ describe('prFixTicketLink', () => {
     expect(body.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(6)
   })
 
+  it('the head is the one last checked, not the one Lingtai last pushed', () => {
+    const pushedA = 'aaaaaaa1111111'
+    const pr = reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ['PrPushed', { headSha: pushedA, branch: 'foundry-pr-7' }],
+        ['PrCiFollowing', { headSha: 'bbbbbbb2222222' }],
+        ['PrChecked', { headSha: 'bbbbbbb2222222', verdict: 'green', checks: [] }],
+      ]),
+    )
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('head `bbbbbbb`')
+    expect(body).not.toContain('aaaaaaa')
+  })
+
+  it('a cut never splits an emoji: the link still encodes', () => {
+    const name = `${'a'.repeat(99)}🔥 checks`
+    const detail = `${'d'.repeat(499)}🔥 end`
+    const red = decoded(prFixTicketLink({ ...input, pr: waitingPr('ci-red', 'CI failed', [row(name)]) }))
+    expect(red.title).toContain('a'.repeat(99) + '🔥…')
+    const other = decoded(prFixTicketLink({ ...input, pr: waitingPr('sync-conflict', detail) }))
+    expect(other.body).toContain('d'.repeat(499) + '🔥…')
+  })
+
+  it('a fixed part past the limit is cut down until the URL fits', () => {
+    const han = '汉'.repeat(100)
+    const checks = Array.from({ length: 40 }, (_, i) => row(`${i}${han}`))
+    const pr = { ...waitingPr('ci-red', 'CI failed', checks), prBranch: Array(4).fill('分'.repeat(70)).join('/') }
+    const link = prFixTicketLink({ ...input, pr })
+    expect((link as { href: string }).href.length).toBeLessThan(8000)
+    expect(decoded(link).body).toContain('| **Problem** |')
+  })
+
   it('a wait left over after the PR moved on is not written', () => {
     const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
     const pr = { ...waiting, status: 'in-progress' as const }

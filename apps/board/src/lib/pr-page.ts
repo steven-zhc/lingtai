@@ -71,7 +71,23 @@ const DETAIL_CUT = 500
 /** A check's name is cut here in the title and the Problem row. */
 const NAME_CUT = 100
 
-const cut = (text: string, n: number): string => (text.length > n ? `${text.slice(0, n)}…` : text)
+/** Cut at `n` code points, never inside a surrogate pair: `encodeURIComponent` throws on a lone one. */
+const cut = (text: string, n: number): string => {
+  const points = Array.from(text)
+  return points.length > n ? `${points.slice(0, n).join('')}…` : text
+}
+
+/** Any lone surrogate (from a name or a detail the board did not write) becomes U+FFFD, so the URL can be encoded. */
+const wellFormed = (text: string): string =>
+  text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
+
+/** What each tier of the draft keeps; a tier is tried only when the one before it did not fit the URL. */
+type Keep = { named: number; name: number; detail: number; branch: number }
+const TIERS: readonly Keep[] = [
+  { named: NAMED_CHECKS, name: NAME_CUT, detail: DETAIL_CUT, branch: Infinity },
+  { named: 1, name: 40, detail: 100, branch: 100 },
+  { named: 0, name: 0, detail: 0, branch: 40 },
+]
 
 /** A value in a table row: `|` would end the cell and a newline would end the row. */
 const cell = (text: string): string => text.replace(/\|/g, '\\|').replace(/\s*[\r\n]+\s*/g, ' ')
@@ -91,6 +107,7 @@ const checkLine = (c: { name: string; state: string; url: string }): string =>
 function prFixDraft(
   name: string,
   pr: PrState | null,
+  keep: Keep,
 ): {
   title: string
   body: (n: number, more: number) => string
@@ -98,16 +115,25 @@ function prFixDraft(
   prUrl: string | null
 } {
   const wait = pr !== null && pr.status === 'waiting' && pr.wait !== null ? pr.wait : null
-  const head = wait !== null ? wait.headSha : pr === null ? null : (pr.lastPushed ?? pr.target)
+  // The head the state last knew: the wait's, else the last checked or followed (a push by somebody else moves it past
+  // `lastPushed`), else what Lingtai pushed or means to.
+  const head =
+    wait !== null
+      ? wait.headSha
+      : pr === null
+        ? null
+        : (pr.checks?.headSha ?? pr.following ?? pr.lastPushed ?? pr.target)
   const sha = head === null ? null : head.slice(0, 7)
   const headWords = sha === null ? '' : ` (head \`${sha}\`)`
   const failing =
     pr !== null && wait !== null && wait.reason === 'ci-red' && pr.checks !== null && pr.checks.headSha === wait.headSha
       ? failingChecks(pr)
       : []
-  const named = failing.slice(0, NAMED_CHECKS).map((c) => cut(c.name, NAME_CUT))
+  const named = failing.slice(0, keep.named).map((c) => cut(c.name, keep.name))
   const namedWords =
-    named.join(', ') + (failing.length > NAMED_CHECKS ? `, and ${failing.length - NAMED_CHECKS} more` : '')
+    named.length === 0
+      ? `${failing.length} failing checks`
+      : named.join(', ') + (failing.length > named.length ? `, and ${failing.length - named.length} more` : '')
 
   let title = `pr-fix for ${name}: `
   let problem = ''
@@ -121,12 +147,16 @@ function prFixDraft(
     } else {
       title += words
       const detail = wait.detail.trim()
-      problem = `${words} on ${name}${headWords}${detail === '' ? '.' : `: ${cut(detail, DETAIL_CUT)}${/[.!?]$/.test(detail) ? '' : '.'}`}`
+      problem = `${words} on ${name}${headWords}${detail === '' ? '.' : `: ${cut(detail, keep.detail)}${/[.!?]$/.test(detail) ? '' : '.'}`}`
     }
   }
 
   const prUrl = pr?.host?.url ?? null
-  const facts = [name, pr?.prBranch ? `branch \`${pr.prBranch}\`` : null, sha === null ? null : `head \`${sha}\``]
+  const facts = [
+    name,
+    pr?.prBranch ? `branch \`${cut(pr.prBranch, keep.branch)}\`` : null,
+    sha === null ? null : `head \`${sha}\``,
+  ]
     .filter((x) => x !== null)
     .join(', ')
 
@@ -171,21 +201,22 @@ export function prFixTicketLink(input: {
     }
   }
   if (input.owner === null || input.owner === '') return null
-  const draft = prFixDraft(input.name, input.pr ?? null)
-  const urlOf = (body: string): string =>
+  const urlOf = (title: string, body: string): string =>
     `https://github.com/${input.owner}/${input.project}/issues/new?labels=${encodeURIComponent(PR_FIX_LABEL)}` +
-    `&title=${encodeURIComponent(draft.title)}&body=${encodeURIComponent(body)}`
+    `&title=${encodeURIComponent(wellFormed(title))}&body=${encodeURIComponent(wellFormed(body))}`
   // The most checks that fit, measured on the encoded URL; the "N more" line is held back for until the last one fits.
-  const total = draft.checks.length
-  let href = urlOf(draft.body(0, total))
-  for (let n = total; n >= 0; n--) {
-    const candidate = urlOf(draft.body(n, total - n))
-    if (candidate.length < ISSUE_URL_LIMIT) {
-      href = candidate
-      break
+  // When even none fits, the draft keeps less of its names, detail and branch, tier by tier.
+  for (const keep of TIERS) {
+    const draft = prFixDraft(input.name, input.pr ?? null, keep)
+    const total = draft.checks.length
+    for (let n = total; n >= 0; n--) {
+      const candidate = urlOf(draft.title, draft.body(n, total - n))
+      if (candidate.length < ISSUE_URL_LIMIT) return { kind: 'link', href: candidate }
     }
   }
-  return { kind: 'link', href }
+  // Nothing the state holds fits: the empty form with the PR's name, which is never guessed at and never long.
+  const bare = prFixDraft(cut(input.name, NAME_CUT), null, TIERS[2]!)
+  return { kind: 'link', href: urlOf(bare.title, bare.body(0, 0)) }
 }
 
 // ── What the code host says, as the one streamed part draws it ──────────────────────────────────────────────────────
