@@ -44,12 +44,12 @@ import { Effect } from 'effect'
 import { askAgents } from './agents.ts'
 import { recovering } from './exit.ts'
 import { askLanding, askLimits } from './landing.ts'
-import { acceptingDefaults, questionEffect, type QuestionWorld } from './question.ts'
+import { acceptingDefaults, type Answered, questionEffect, type QuestionWorld } from './question.ts'
 import { askSandbox } from './sandbox-step.ts'
 import { type AskInstallAndBuildInput, type TrialOutcome, askInstallAndBuildEffect } from './setup-build.ts'
 import type { LeftBehind } from './setup-card.ts'
 import { askKinds, askTickets } from './source.ts'
-import { askLogin, askMode, askPersonal, type Mode } from './team.ts'
+import { askBaseBranch, askLogin, askMakeBranch, askMode, askPersonal, type Mode } from './team.ts'
 
 /**
  * What a refusal inside `askRecipe` says was kept, for `lingtai add`'s
@@ -249,6 +249,51 @@ type Recipe =
     }
   | { refused: string }
 
+/** *use every default?* — the switch that answers every later question with its default (#433). */
+export const askEveryDefault = (
+  world: QuestionWorld,
+  input: { given: string | null; kept: string },
+): Effect.Effect<Answered, unknown> =>
+  questionEffect(world, {
+    name: 'every default',
+    flag: '--defaults',
+    given: input.given,
+    prompt: 'use every default?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+
+/** The last confirmation: what the defaults would register without anyone having looked, said in one sentence. */
+export const askRegister = (
+  world: QuestionWorld,
+  input: {
+    unseenEmptyBuild: boolean
+    unseenUnattended: boolean
+    /** The branch an attempt lands on; empty where the recipe names none. */
+    base: string
+    given: string | null
+    kept: string
+  },
+): Effect.Effect<Answered, unknown> => {
+  const lands = `an attempt lands on ${input.base || 'the base branch'} with no one asking`
+  const asks =
+    input.unseenEmptyBuild && input.unseenUnattended
+      ? `nothing checks a diff before review, and ${lands}`
+      : input.unseenEmptyBuild
+        ? 'nothing checks a diff before review'
+        : lands
+  return questionEffect(world, {
+    name: 'registering with these defaults',
+    flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
+    given: input.given,
+    prompt: `${asks} — register anyway?`,
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+}
+
 export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   world: QuestionWorld,
   at: RecipeAt,
@@ -310,11 +355,8 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
       // The branch the recipe governs and merges into, asked as `init --local` asks it (#1488). `--main` already
       // seeded the default, so it answers this and nothing new is asked.
       const team = at.team
-      const landed = yield* questionEffect(landWorld, {
-        name: 'the base branch',
-        flag: '--main <branch>',
+      const landed = yield* askBaseBranch(landWorld, {
         given: at.flags['main'] ?? null,
-        prompt: "the branch this project's recipe governs and merges into",
         current: typeof rawMain === 'string' && rawMain !== '' && !absent ? rawMain : null,
         detected: mainBranch,
         kept: askKept,
@@ -420,13 +462,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
           }
           if (oldExists) from = oldPersonal
         }
-        const confirmed = yield* questionEffect(world, {
-          name: 'making the personal branch',
-          flag: `--defaults, or make it yourself: git push origin origin/${from}:refs/heads/${personal.personal}`,
+        const confirmed = yield* askMakeBranch(world, {
+          name: personal.personal,
+          from,
+          where: { github: true },
           given: at.flags['defaults'] !== undefined ? 'yes' : null,
-          prompt: `${personal.personal} does not exist. Make it from origin/${from} and push it?`,
-          choices: ['yes', 'no'],
-          fallback: 'yes',
           kept: askKept,
         })
         if ('refused' in confirmed) return confirmed
@@ -472,13 +512,8 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   // `{refused}` is no `--defaults` flag and no terminal to ask at. That is not a reason to stop the run: a headless
   // run whose every later question is already answered by a flag must still succeed, and one whose own flag is
   // missing must be refused by that question's own name, not this one's (#433).
-  const defaults = yield* questionEffect(world, {
-    name: 'every default',
-    flag: '--defaults',
+  const defaults = yield* askEveryDefault(world, {
     given: at.flags['defaults'] !== undefined ? 'yes' : null,
-    prompt: 'use every default?',
-    choices: ['yes', 'no'],
-    fallback: 'yes',
     kept: askKept,
   })
   const askWorld = 'answer' in defaults && defaults.answer === 'yes' ? acceptingDefaults(world) : world
@@ -716,20 +751,11 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   const unseenUnattended = mode === 'solo' && summary.landsUnattended && at.flags['land'] === undefined
   if (askWorld !== world && (unseenEmptyBuild || unseenUnattended)) {
     // Asked of `world`, never `askWorld`: a terminal that accepted every default still stops to read.
-    const lands = `an attempt lands on ${summary.base || 'the base branch'} with no one asking`
-    const asks =
-      unseenEmptyBuild && unseenUnattended
-        ? `nothing checks a diff before review, and ${lands}`
-        : unseenEmptyBuild
-          ? 'nothing checks a diff before review'
-          : lands
-    const confirmed = yield* questionEffect(world, {
-      name: 'registering with these defaults',
-      flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
+    const confirmed = yield* askRegister(world, {
+      unseenEmptyBuild,
+      unseenUnattended,
+      base: summary.base,
       given: at.flags['defaults'] !== undefined ? 'yes' : null,
-      prompt: `${asks} — register anyway?`,
-      choices: ['yes', 'no'],
-      fallback: 'yes',
       kept: at.kept,
     })
     if ('refused' in confirmed) return confirmed
