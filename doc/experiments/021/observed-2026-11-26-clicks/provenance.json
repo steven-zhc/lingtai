@@ -1,0 +1,58 @@
+{
+  "captured_at_utc": "2026-11-27T00:41:18.496372+00:00",
+  "window_utc": [
+    "2026-11-26T22:30:00Z",
+    "2026-11-27T00:36:30Z"
+  ],
+  "window_cst": [
+    "2026-11-26T16:30:00-06:00",
+    "2026-11-26T18:36:30-06:00"
+  ],
+  "query": {
+    "service_name": "lingtai-board",
+    "search_depth": 10000,
+    "raw_traces": true
+  },
+  "source_sha256": "c3386114698311337759d2eeed50bca8b6d7d46c203121862a808e2885ad5643",
+  "runtime": {
+    "pid": 22585,
+    "parent_pid": 22555,
+    "started_at": "2026-11-25T15:13:49-06:00",
+    "cwd": "dist/board/apps/board",
+    "build_id": "b9f27c1157875e24168fc40d15007adcc991e720",
+    "checkout": "5fb7d27fd",
+    "runtime_commit_in_resource": null
+  },
+  "raw_request_count": 239,
+  "primary_request_count": 236,
+  "trace_count": 253,
+  "span_count": 26604,
+  "witness_trace_ids": [
+    "764892ecb04660f7aadc7bddba04a27c",
+    "9816cdc40306f3cd8a6e51c079a2f7e3",
+    "d6af516893f44477e926fd596eee3c24",
+    "932461439da893cc28c9103c14cfd70b",
+    "5cbaf7f36a4b520347ceef9494160bf5",
+    "72bb8ab34dc092d695ad8abe0fb15e87",
+    "cf2c07986c49f171431edb236a38d6de"
+  ],
+  "witness_span_count": 944,
+  "witness_missing_parent_counts": {
+    "764892ecb04660f7aadc7bddba04a27c": 0,
+    "9816cdc40306f3cd8a6e51c079a2f7e3": 0,
+    "d6af516893f44477e926fd596eee3c24": 0,
+    "932461439da893cc28c9103c14cfd70b": 0,
+    "5cbaf7f36a4b520347ceef9494160bf5": 0,
+    "72bb8ab34dc092d695ad8abe0fb15e87": 0,
+    "cf2c07986c49f171431edb236a38d6de": 0
+  },
+  "activity": "Observed traffic only; no assistant page probes, browser tabs, SSE replay or synthetic load generated in this analysis. Read-only Jaeger, log, GitHub and one numbering DB check.",
+  "limitations": [
+    "Not all process logs are timestamped; exporter intentionally filters spans. This is available captured traffic, not proof of every click or all runtime work.",
+    "Cannot distinguish physical clicks, prefetch and automatic refresh; no browser click-to-ready signal.",
+    "Route patterns do not identify project or numeric-versus-Next detail.",
+    "Three roots with late children are excluded from primary latency statistics; abort/cancellation is not proven.",
+    "Project/draft sizes vary and background work changes; no controlled causal before/after claim.",
+    "No application code, events, service lifecycle, GitHub issue or PR state changed."
+  ]
+}
