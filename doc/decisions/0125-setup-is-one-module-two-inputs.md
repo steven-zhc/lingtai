@@ -126,8 +126,14 @@ the repository ([0104](0104-the-recipe-is-the-pipeline.md) §1).
      written (§6). Taking the system's default for a key that was never written
      writes it.
    - What is written for the person but never asked (the findings judge, #1448)
-     follows the answers it derives from — the judge follows the writer — and is
-     never reported as a question the person skipped.
+     is added on a new recipe and follows the writer when the writer changes;
+     a recipe whose judge was removed by hand keeps it removed while the writer
+     stays (decided 2026-11-27). It is never reported as a question the person
+     skipped.
+   - Nothing is written until the whole list is answered: a Ctrl+C anywhere in
+     it leaves `config.yml` and the recipe as they were (decided 2026-11-27,
+     replacing #392's keep-what-was-answered; a rerun's defaults are the values
+     in force, so running again and pressing Enter returns to the same place).
    - The list shown before *use this setup?* and the card at the end are built
      from the same lists; on a later run the card shows old → new for each value
      that changed.
