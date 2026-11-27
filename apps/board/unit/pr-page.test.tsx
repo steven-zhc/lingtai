@@ -1015,3 +1015,56 @@ describe('which PR an empty Next PR names (previousOf)', () => {
     expect(r._tag).toBe('Failure')
   })
 })
+
+describe('a pr-fix on the PR (#1506)', () => {
+  const fix = (over: object = {}) => ({
+    kind: 'read' as const,
+    tickets: [
+      {
+        issue: 1505,
+        title: 'pr-fix for PR #1503:',
+        source: 'claim' as const,
+        state: 'running',
+        cutFromPr: 7,
+        labels: [],
+        step: 'build',
+        claimedAt: new Date(T0 + 5 * 3600_000).toISOString(),
+        ...over,
+      },
+    ],
+  })
+  const ciWait = [
+    requested,
+    started,
+    done('sync'),
+    done('build'),
+    done('push'),
+    draftOpened,
+    red,
+    waiting('ci-red', 'ci'),
+  ]
+
+  it('shows the fixing line in place of New pr-fix ticket on a CI wait, and dates the claim in History', () => {
+    const v = page(ciWait, { fixes: fix() })
+    expect(labels(v)).not.toContain('New pr-fix ticket')
+    expect(v.fixing).toEqual([
+      { text: 'fixing: #1505 pr-fix for PR #1503: · running · build', href: '/p/p/ticket/1505' },
+    ])
+    expect(v.history[0]?.text).toBe('pr-fix #1505 taken')
+  })
+  it('does the same on In review', () => {
+    const v = page([requested, started, done('sync'), draftOpened, green, ['PrReady', {}] as Spec], { fixes: fix() })
+    expect(labels(v)).not.toContain('New pr-fix ticket')
+    expect(v.fixing).toHaveLength(1)
+  })
+  it('keeps the button and adds no line for a claim naming another PR', () => {
+    const v = page(ciWait, { fixes: fix({ cutFromPr: 3 }) })
+    expect(labels(v)).toContain('New pr-fix ticket')
+    expect(v.fixing).toEqual([])
+  })
+  it('adds no History line for an unclaimed ticket', () => {
+    const v = page(ciWait, { fixes: fix({ source: 'listing', cutFromPr: undefined, claimedAt: null }) })
+    expect(v.history.some((h) => h.text.includes('taken'))).toBe(false)
+    expect(v.fixing).toHaveLength(1)
+  })
+})
