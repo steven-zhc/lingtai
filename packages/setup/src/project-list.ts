@@ -210,7 +210,7 @@ export interface ProjectAnswers {
   /** The branch to make, once the person said yes. */
   make?: { name: string; from: string }
   defaults?: 'yes' | 'no'
-  /** The log's work items for this project, read once at the first entry. */
+  /** The log's tickets for this project, read once at the first entry. */
   history?: readonly string[]
   writer?: string
   reviewer?: string
@@ -279,8 +279,37 @@ const valueOf = (i: InForce): string | null => (i === null ? null : (i.value ?? 
 const inForceOf = (value: string | null): Effect.Effect<InForce> =>
   Effect.succeed(value === null ? null : { value, from: 'file' })
 
+/**
+ * A change inside a value an earlier pending change wrote whole (an array or a map) is folded into that whole. The
+ * overlay holds a value it was handed as plain data, and `setIn` cannot go through plain data: the view would turn
+ * blind to the key, and so would the one write at the end.
+ */
+function foldIntoWhole(ctx: ProjectContext, change: RecipeChange): RecipeChange {
+  for (let n = change.path.length - 1; n >= 1; n--) {
+    const prefix = change.path.slice(0, n)
+    const whole = ctx.pending.findLast(
+      (c) =>
+        c.path.length === n &&
+        c.path.every((p, i) => p === prefix[i]) &&
+        typeof c.value === 'object' &&
+        c.value !== null,
+    )
+    if (whole === undefined) continue
+    const next: unknown = JSON.parse(JSON.stringify(ctx.view.get(prefix)))
+    let at = next as Record<string | number, unknown>
+    for (const key of change.path.slice(n, -1)) at = (at[key] ??= {}) as Record<string | number, unknown>
+    const last = change.path[change.path.length - 1]!
+    if (change.value === undefined) {
+      if (Array.isArray(at)) at.splice(Number(last), 1)
+      else delete at[last]
+    } else at[last] = change.value
+    return { path: prefix, value: next }
+  }
+  return change
+}
+
 const append = (ctx: ProjectContext, changes: readonly RecipeChange[]): WriteResult => {
-  ctx.pending.push(...changes)
+  for (const change of changes) ctx.pending.push(foldIntoWhole(ctx, change))
   return { wrote: changes.length > 0 }
 }
 const nothing = (): Effect.Effect<WriteResult> => Effect.succeed({ wrote: false })
@@ -469,7 +498,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
             return { wrote: false }
           },
           onFailure: (error): WriteResult | { refused: string } => ({
-            refused: `could not read the work items already in the log for ${ctx.ports.project} — ${errorText(error)}. ${ctx.kept}`,
+            refused: `could not read the tickets already in the log for ${ctx.ports.project} — ${errorText(error)}. ${ctx.kept}`,
           }),
         }),
       ),
@@ -1055,7 +1084,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       if (given === undefined) return null
       return given === 'github' || given === 'db' ? given : { refused: `${given} is not one of github, db` }
     },
-    // A project with work items keeps its source and is never switched: streams numbered under one source would
+    // A project with tickets in the log keeps its source and is never switched: streams numbered under one source would
     // collide with another's (#381). A local project has one legal answer.
     fixed: (ctx, flag) => {
       const history = ctx.answers.history ?? []
@@ -1085,7 +1114,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         const history = ctx.answers.history ?? []
         if (history.length > 0) {
           ctx.log.push(
-            `tickets       ${decided} — kept: the log already has work items for this project (${history.join(', ')}), ` +
+            `tickets       ${decided} — kept: the log already has tickets for this project (${history.join(', ')}), ` +
               `and ${DIFFERENT_SOURCE_CLASH}`,
           )
         }
