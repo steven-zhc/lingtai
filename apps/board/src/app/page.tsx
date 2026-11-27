@@ -46,7 +46,7 @@ import { placeViewsOf, readLandedWhere } from '@/lib/prs.ts'
 import { currentReport, reportHref, reportQuery } from '@/lib/report'
 import { RESOLUTION_COPY } from '@/lib/resolution-copy'
 import { sandboxStates } from '@/lib/sandbox-state.ts'
-import { type Bill, billHasAny, billText } from '@/lib/spend'
+import { type Bill, addBill, billHasAny, billText } from '@/lib/spend'
 import { measure, timed, type Timing } from '@/lib/timing'
 import { TimingMeta } from '@/lib/timing-meta'
 import { footLine, type LandedWhereRead, whereLanded, type Where } from '@/lib/where-landed.ts'
@@ -503,11 +503,13 @@ export function LandedCount({ count, only }: { count: number; only: string | und
 }
 
 /**
- * The answering bill as a pill, drawn once for the card and the landed row.
+ * The answering bill as a pill, drawn on the card only.
  *
  * Apart from the work's cost, deliberately. Answering a refusal is default-on
  * and spends an agent without being asked again, so reducing it into the number
- * beside it would make it an invisible bill (#84).
+ * beside it would make it an invisible bill (#84). The landed row is the one
+ * exception, chosen by the operator in #1514: it adds the two, because the
+ * split is still read one click away on the task page. Do not "fix" the row back.
  *
  * It says *answering* rather than *repair* since 0039 §3: the column holds every
  * round a pass bought, a refused review, a red build, and after `#142` a
@@ -528,12 +530,12 @@ export function AnsweringPill({ bill }: { bill: Bill }) {
  * One landed item, on two lines.
  *
  * Line 1 is what it is and where: `#150 · enhancement · 2d` and the where-tag.
- * Line 2 is what it cost: `$1.46 [$0.06 answering] · 25 turns`. The Work figure
- * and the answering pill never clip; only the turns give way. On one clipped
- * line the spend went first and the answering bill was never said at all. The
- * same facts a card carried, at the weight finished work deserves. Nothing here is a new claim: the
- * numbers, their words and their absences are the card's (#78, #79), and only
- * the ink they take has changed.
+ * Line 2 is the whole ticket's bill, work and answering added (`$5.86 + ~$7.81
+ * est.`), at the left, and `212 turns` at the right; the bill never wraps or
+ * clips, and the turns are drawn whole or not at all. The split went to the task
+ * page's *Spent* / *Of which answering* (`totals-strip.tsx`, #1494). Nothing
+ * here is a new claim: the numbers, their words and their absences are the
+ * card's (#78, #79), added with `addBill` and never by hand.
  *
  * The title is not on the row and is on its hover, which is the one real cost
  * of the density. Both destinations survive it: the number goes to GitHub and
@@ -565,6 +567,7 @@ export function LandedRow({
     // saying "landed", so the row says only how long ago (#79).
     card.updatedAt === null ? null : inWords(Date.now() - Date.parse(card.updatedAt)),
   ].filter((s): s is string => s !== null)
+  const bill = addBill(card.costUsd, card.repairCostUsd)
 
   return (
     <li className="lrow">
@@ -607,9 +610,8 @@ export function LandedRow({
         {/* The same page, out of the tab order so the row stays one stop. */}
         <Link className="lspend" href={ticketPath(card.taskId)} title={card.title} tabIndex={-1}>
           <ul className="lbill">
-            {billHasAny(card.costUsd) ? <li className="lwork">{billText(card.costUsd)}</li> : null}
-            <AnsweringPill bill={card.repairCostUsd} />
-            {card.turns === null ? null : <li className="lturns">· {card.turns} turns</li>}
+            {billHasAny(bill) ? <li className="lwork">{billText(bill)}</li> : null}
+            {card.turns === null ? null : <li className="lturns">{card.turns} turns</li>}
           </ul>
         </Link>
       </div>

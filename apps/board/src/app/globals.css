@@ -162,7 +162,7 @@ a, a:where(:visited) {
 }
 .bar a, .place .view, .tab, .addp, .navlink, .rtab, .sbswitch a, .ld-filter a, .rp-seg a,
 .ti, .heldlist .ti, .pr-name, .pr-head a, .lmeta, .pr-slip-id, .pr-slip-title, .rp-table td.t a, .eg-n,
-.iss, .ltag, .bk, a.btn { text-decoration: none; }
+.iss, .ltag, .bk, .lspend, a.btn { text-decoration: none; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -920,16 +920,14 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .lline { display: flex; gap: 5px; align-items: baseline; }
 .lspend { color: inherit; display: block; }
 .lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-/* One flex line, never wrapped between items: turns appear only if there is
-   room, and give way first. Turns shrink a thousand times faster than the Work
-   figure and the answering pill, and can shrink to nothing, so those two are
-   not touched until turns are gone. When even they do not fit — a project name
-   taking its share of a ~240px column — each wraps its own text inside its own
-   box (`white-space: normal`, `min-width: 0`) rather than extend past the
-   column's edge. Nothing on this line is clipped or dropped except turns. */
-.lbill { display: flex; flex-wrap: nowrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
-.lwork, .lbill > .pill { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.lturns { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Line 2: the bill at the left, the turns at the right. One line tall: if the
+   turns do not fit beside the bill they wrap onto a second flex line, which is
+   clipped away, so they are drawn whole or not at all. The bill never wraps or
+   clips. `clip` rather than `hidden` so a bill wider than the column is not cut
+   off by the other axis scrolling. `1lh` keeps an empty line 2 as tall as a full one. */
+.lbill { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; height: 1lh; overflow-x: visible; overflow-y: clip; }
+.lwork { flex: none; white-space: nowrap; }
+.lturns { white-space: nowrap; margin-left: auto; }
 /* The rest of line 1 is the task page. Clipped rather than wrapped: a row
    that wraps is a card again. */
 .lmeta {
