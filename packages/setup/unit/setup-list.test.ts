@@ -115,7 +115,7 @@ describe('runSetupList', () => {
         q('a', { write: () => Effect.succeed({ refused: 'cannot' }) }),
         q('b', { systemDefault: () => Effect.succeed('x') }),
       ],
-      input({ defaults: true }),
+      input({ flags: { a: 'v' }, defaults: true }),
     )
     expect(out.refused).toBe('cannot')
     expect(out.entries).toEqual([])
