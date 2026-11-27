@@ -25,16 +25,12 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeDraft } from '@lingtai/project'
 import type { RecipeChange } from '@lingtai/recipe'
-import {
-  followedJudgeIndex,
-  followWriterJudgeChanges,
-  isImplementOnlyAgent,
-  unboundedTurnsChange,
-} from '@lingtai/recipe'
+import { followedJudgeIndex, followWriterJudgeChanges, unboundedTurnsChange } from '@lingtai/recipe'
 import {
   defaultAgents,
   leftoverRefusal,
   noRuntimesSignedInRefusal,
+  offeredRuntimes,
   runtimeRefusal,
   whyMissing,
   type RuntimeFound,
@@ -100,7 +96,7 @@ const MODEL_LABELS: Readonly<Record<string, string>> = {
  * one the recipe already names, or another, which asks for its name. A flag
  * answers as it is, `''` included, and never reaches the choice.
  */
-const askModel = Effect.fn('agents.askModel')(function* (
+export const askModel = Effect.fn('agents.askModel')(function* (
   world: QuestionWorld,
   q: {
     name: string
@@ -132,13 +128,107 @@ const askModel = Effect.fn('agents.askModel')(function* (
   })
 })
 
+/** What a question here is validated by: null accepts, a string is why not. */
+type Validate = (answer: string) => Effect.Effect<string | null, unknown>
+
+/**
+ * Which agent writes the change. `offered` is `offeredRuntimes`' answer — what is signed in and can be proposed — and
+ * is what the words list; the select shows it in the enum's own order (#313, doc/design/398.md:43), with the recipe's
+ * own writer beside it where that is not signed in.
+ */
+export function askWriter(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    offered: readonly RuntimeName[]
+    current: RuntimeName | null
+    detected: string | null
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  const choiceList = at.offered.join(', ')
+  const offer = RuntimeId.options.filter((id) => at.offered.includes(id))
+  return questionEffect(world, {
+    name: 'which agent writes the change',
+    flag: `--agent <${choiceList}>`,
+    given: at.given,
+    prompt: `which agent writes the change (${choiceList})`,
+    offer: at.current !== null && !offer.includes(at.current) ? [...offer, at.current] : offer,
+    current: at.current,
+    detected: at.detected,
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
+/** Whether a cold reviewer reads the change, and which agent: an offered runtime, or `none`. */
+export function askReviewer(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    offered: readonly RuntimeName[]
+    current: string | null
+    detected: string | null
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  const choiceList = at.offered.join(', ')
+  const offer: string[] = RuntimeId.options.filter((id) => at.offered.includes(id))
+  return questionEffect(world, {
+    name: 'a cold reviewer',
+    flag: `--reviewer <${choiceList}|none>`,
+    given: at.given,
+    prompt: `does a cold reviewer read it, and which agent (${choiceList}, or none)`,
+    offer: [
+      ...offer,
+      ...(at.current !== null && at.current !== 'none' && !offer.includes(at.current) ? [at.current] : []),
+      'none',
+    ],
+    current: at.current,
+    detected: at.detected,
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
+/** Which model the writer runs on. */
+export function askWriterModel(
+  world: QuestionWorld,
+  at: { given: string | null; current: string | null; kept?: string | undefined },
+): Effect.Effect<Answered, unknown> {
+  return askModel(world, {
+    name: 'which model the writer runs on',
+    flag: "--model <name>, or --model ''",
+    given: at.given,
+    prompt: 'which model',
+    current: at.current,
+    kept: at.kept,
+  })
+}
+
+/** Which model the reviewer runs on. */
+export function askReviewerModel(
+  world: QuestionWorld,
+  at: { given: string | null; current: string | null; kept?: string | undefined },
+): Effect.Effect<Answered, unknown> {
+  return askModel(world, {
+    name: "the reviewer's model",
+    flag: "--reviewer-model <name>, or --reviewer-model ''",
+    given: at.given,
+    prompt: 'on which model',
+    current: at.current,
+    kept: at.kept,
+  })
+}
+
 export const askAgents = Effect.fn('agents.askAgents')(function* (
   world: QuestionWorld,
   at: AskAgentsAt,
 ): Effect.fn.Return<{ changes: RecipeChange[]; modelChanges: RecipeChange[] } | { refused: string }, unknown> {
-  const signedIn = at.runtimes.filter((r) => r.signedIn)
   // Not an agent that runs only at `implement` (#1298): the wizard proposes none, so it offers none.
-  const signedInIds: string[] = signedIn.map((r) => r.id).filter((id) => !isImplementOnlyAgent(id))
+  const signedInIds: string[] = offeredRuntimes(at.runtimes)
   for (const r of at.runtimes) {
     if (!r.signedIn) world.log(whyMissing(r))
   }
@@ -146,8 +236,6 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
     return { refused: noRuntimesSignedInRefusal(at.runtimes) }
   }
 
-  const choiceList = signedInIds.join(', ')
-  const offeredRuntimes = RuntimeId.options.filter((id) => signedInIds.includes(id))
   // The recipe's own runtime is accepted as an answer whether or not it is signed in: a rerun that takes
   // every default keeps it (#1473), and any other signed-out runtime is still refused.
   const refuse =
@@ -167,17 +255,10 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   // The recipe's own value, signed in or not: the `whyMissing` line above says when it is not.
   const currentAgent = writingAgent
 
-  const agentAnswer = yield* questionEffect(world, {
-    name: 'which agent writes the change',
-    flag: `--agent <${choiceList}>`,
+  const agentAnswer = yield* askWriter(world, {
     given: at.flags.agent ?? null,
-    prompt: `which agent writes the change (${choiceList})`,
-    offer:
-      currentAgent !== null && !offeredRuntimes.includes(currentAgent)
-        ? [...offeredRuntimes, currentAgent]
-        : offeredRuntimes,
+    offered: offeredRuntimes(at.runtimes),
     current: currentAgent,
-    // The enum's own order, not the list's (#313, doc/design/398.md:43).
     detected: defaultAgents(signedInIds).writer,
     validate: refuse(currentAgent),
     kept: at.kept,
@@ -193,11 +274,8 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
       ? (implementAction.action['model'] as string)
       : null
 
-  const modelAnswer = yield* askModel(world, {
-    name: 'which model the writer runs on',
-    flag: "--model <name>, or --model ''",
+  const modelAnswer = yield* askWriterModel(world, {
     given: at.flags.model ?? null,
-    prompt: 'which model',
     current: currentModel,
     kept: at.kept,
   })
@@ -216,20 +294,9 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   const currentReviewer =
     rawReviewer !== null ? asRuntime(rawReviewer) : Array.isArray(reviewList) && reviewList.length === 0 ? 'none' : null
 
-  const reviewerAnswer = yield* questionEffect(world, {
-    name: 'a cold reviewer',
-    flag: `--reviewer <${choiceList}|none>`,
+  const reviewerAnswer = yield* askReviewer(world, {
     given: at.flags.reviewer ?? null,
-    prompt: `does a cold reviewer read it, and which agent (${choiceList}, or none)`,
-    offer: [
-      ...offeredRuntimes,
-      ...(currentReviewer !== null &&
-      currentReviewer !== 'none' &&
-      !offeredRuntimes.includes(currentReviewer as RuntimeName)
-        ? [currentReviewer]
-        : []),
-      'none',
-    ],
+    offered: offeredRuntimes(at.runtimes),
     current: currentReviewer,
     detected: defaultReviewer,
     validate: refuse(currentReviewer, true),
@@ -289,11 +356,8 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
       reviewAction && reviewer === currentReviewer && typeof reviewAction.action['model'] === 'string'
         ? (reviewAction.action['model'] as string)
         : null
-    const reviewerModelAnswer = yield* askModel(world, {
-      name: "the reviewer's model",
-      flag: "--reviewer-model <name>, or --reviewer-model ''",
+    const reviewerModelAnswer = yield* askReviewerModel(world, {
       given: at.flags.reviewerModel ?? null,
-      prompt: 'on which model',
       current: currentReviewerModel,
       kept: at.kept,
     })

@@ -17,7 +17,7 @@ import { Effect } from 'effect'
 
 import { detectSetupEffect, type DetectedSetup, type SetupReader } from './detect-setup.ts'
 import { portCause } from './port-cause.ts'
-import { remedyFor, runtimeStateSentence, type RuntimeFound } from './runtimes.ts'
+import { remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from './runtimes.ts'
 import { type SandboxInstall, type SandboxProposal } from './sandbox-step.ts'
 import { githubSlugOfRemote, ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
@@ -98,14 +98,21 @@ function turnsFor(writer: string | null): number | 'unbounded' {
 }
 
 /**
- * The writer and reviewer `askAgents` offers as defaults: the first signed-in
- * runtime in the enum's order, and a different signed-in one where there is
- * one (doc/design/398.md §1). `askAgents` calls this, so the rule is not
- * written twice.
+ * The runtimes offered as a new choice for the writer or the reviewer, in the order `runtimes` lists them: signed in,
+ * and not an agent that runs only at `implement` (#1298) — the wizard proposes none, so it offers none. The one
+ * filter, so what a question shows and what its check accepts cannot drift.
  */
-export function defaultAgents(signedIn: readonly string[]): { writer: string | null; reviewer: string | null } {
-  // An agent that runs only at `implement` (#1298) is never proposed: a recipe a person writes names it by hand.
-  const offered = signedIn.filter((id) => !isImplementOnlyAgent(id))
+export function offeredRuntimes(runtimes: readonly RuntimeFound[]): RuntimeName[] {
+  return runtimes.filter((r) => r.signedIn && !isImplementOnlyAgent(r.id)).map((r) => r.id)
+}
+
+/**
+ * The writer and reviewer `askAgents` offers as defaults: the first offered
+ * runtime in the enum's order, and a different one where there is one
+ * (doc/design/398.md §1). `offered` is `offeredRuntimes`' answer.
+ * `askAgents` calls this, so the rule is not written twice.
+ */
+export function defaultAgents(offered: readonly string[]): { writer: string | null; reviewer: string | null } {
   const writer = RuntimeId.options.find((id) => offered.includes(id)) ?? null
   if (writer === null) return { writer: null, reviewer: null }
   return { writer, reviewer: offered.find((id) => id !== writer) ?? writer }
@@ -198,7 +205,7 @@ export function proposeSetup(target: SetupTarget, readers: ProposalReaders): Eff
     const probed = yield* settle(readers.runtimes)
     const foundRuntimes = probed.ok ? probed.value : []
     const signedIn = foundRuntimes.filter((r) => r.signedIn).map((r) => r.id)
-    const agents = defaultAgents(signedIn)
+    const agents = defaultAgents(offeredRuntimes(foundRuntimes))
     const withRemedy: ProposalRuntime[] = foundRuntimes.map((r) => ({
       ...r,
       remedy: r.signedIn ? null : `${runtimeStateSentence(r.id, r.state, r.detail)} — ${remedyFor(r.state)}`,
