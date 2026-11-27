@@ -169,6 +169,6 @@ it('exports no attribute but the two fixed ones', async () => {
 })
 
 it('installs no subscriber without an endpoint', async () => {
-  expect(await installTracing({}, undefined)).toBeUndefined()
+  expect(await installTracing({ NODE_ENV: 'test' }, undefined)).toBeUndefined()
   expect(channel(CHANNEL).hasSubscribers).toBe(false)
 })
