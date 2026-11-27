@@ -43,7 +43,7 @@ import {
   unfollowedRemote,
 } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
-import { type PrFixRead, fixingLines, fixingOf, unknownLine } from './pr-fix.ts'
+import { type PrFixRead, claimedFixes, NOT_FIXING, fixingLines, fixingOf, unknownLine } from './pr-fix.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
@@ -769,7 +769,8 @@ export function prPage(input: PrPageInput): PrPageView {
   let fixCommand: PrPageView['fixCommand'] = null
   let doNote: string | null = null
   const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name, pr })
-  const fixing = fixingOf(pr, input.fixes ?? null)
+  // Only a PR that is waiting or in review can be fixed now; the read may also have been made for History alone.
+  const fixing = pr.status === 'waiting' || pr.status === 'in-review' ? fixingOf(pr, input.fixes ?? null) : NOT_FIXING
   const addFix = () => {
     if (fix === null || fixing.tickets.length > 0) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
@@ -840,7 +841,8 @@ export function prPage(input: PrPageInput): PrPageView {
   else if (pr.status === 'closed') doNote = 'closed without merging — its tickets are back in the draft'
   else if (pr.status === 'refused') doNote = pr.refusal?.detail ?? 'the submit was refused'
 
-  if (fixing.unknown !== null && doNote === null) doNote = unknownLine(fixing.unknown)
+  if (fixing.unknown !== null)
+    doNote = doNote === null ? unknownLine(fixing.unknown) : `${doNote} — ${unknownLine(fixing.unknown)}`
 
   // The summary and the generated rest.
   const edit = summaryEditTransition(pr, 'team', project, { by: 'page', summary: 'x' })
@@ -929,9 +931,7 @@ export function prPage(input: PrPageInput): PrPageView {
     history: [
       ...events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })),
       // No event records the opening of an issue, so a pr-fix is dated at its claim; an unclaimed one adds no line.
-      ...fixing.tickets.flatMap((t) =>
-        t.claimedAt === null ? [] : [{ at: t.claimedAt, text: `pr-fix #${t.issue} taken` }],
-      ),
+      ...claimedFixes(pr, input.fixes ?? null).map((c) => ({ at: c.at, text: `pr-fix #${c.issue} taken` })),
     ]
       .sort((a, b) => a.at.localeCompare(b.at))
       .reverse(),

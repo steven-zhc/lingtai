@@ -534,7 +534,11 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     const stillDraft =
       pr.host !== null && !pr.markedReady ? ['still a GitHub draft — nobody was asked to review it'] : []
     if (view === null) {
-      return cardOf(pr, 'waiting', { pill: 'waiting', sub: ['waiting on you'], fixing: fixingLines(project, fixing) })
+      return cardOf(pr, 'waiting', {
+        pill: 'waiting',
+        sub: ['waiting on you', ...(fixing.unknown === null ? [] : [unknownLine(fixing.unknown)])],
+        fixing: fixingLines(project, fixing),
+      })
     }
     const inFlight = fixing.tickets.length > 0
     const toProgress = movesToProgress(pr, fixing)
@@ -569,6 +573,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
           `at ${view.merging === 'back' ? 'merge back' : 'submit'} · ${
             view.paths === null ? 'files unknown' : view.paths.join(', ')
           } · ${rounds} · ${usd(spent)}`,
+          ...waitsLine,
+          ...unknown,
         ],
         meta: [
           view.ours === null

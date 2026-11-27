@@ -10,7 +10,7 @@ import { describe, expect, it } from 'vitest'
 
 import { ticketPath } from '../src/lib/paths.ts'
 import { type CardView, type PrBoardInput, prBoard } from '../src/lib/pr-board.ts'
-import { type PrFixRead, type PrFixTicket, fixingOf } from '../src/lib/pr-fix.ts'
+import { type PrFixRead, type PrFixTicket, claimedFixes, fixingOf } from '../src/lib/pr-fix.ts'
 import { type PrFixReads, readPrFixes } from '../src/lib/prs.ts'
 
 const recipe = {
@@ -168,6 +168,12 @@ describe('the board with a pr-fix', () => {
     expect(card.buttons.map((b) => b.label)).toContain('New pr-fix ticket')
     expect(v.waiting).toBe(1)
   })
+  it('says it could not tell on a conflict card and on a card with no wait', () => {
+    const failed: PrFixRead = { kind: 'failed', error: 'gone' }
+    const conflict = pr({ wait: { step: 'sync', reason: 'sync-conflict', detail: 'conflict', headSha: 'h' } })
+    const c = cardsOf(prBoard(input(conflict, failed)), 'waiting')[0]!
+    expect(c.sub).toContain('could not tell whether a pr-fix is open: gone')
+  })
   it('keeps another wait in Waiting on you and only adds the line', () => {
     const p = pr({ wait: { step: 'ci', reason: 'ci-timeout', detail: 'slow', headSha: 'h' } })
     const v = prBoard(input(p, read(ticket())))
@@ -204,6 +210,28 @@ describe('readPrFixes and the PRs count', () => {
     const none = reads({ tasks: () => Effect.succeed([]), listing })
     const r = await Effect.runPromise(readPrFixes('p', pr(), { listing: true }, none))
     expect(r.kind === 'read' && r.tickets.map((t) => t.issue)).toEqual([1505, 1600])
+  })
+  it('does not re-add a pr-fix the projection knows as ended, nor one claimed for another PR', async () => {
+    const tasks = () =>
+      Effect.succeed([
+        { issue: '1505', title: 'x', kind: 'lingtai:pr-fix', state: 'satisfied', runId: 'r1' },
+        { issue: '1506', title: 'y', kind: 'lingtai:pr-fix', state: 'running', runId: 'r2' },
+      ])
+    const listing = () =>
+      Effect.succeed([
+        { number: 1505, title: 'x', labels: [{ name: 'lingtai:pr-fix' }] },
+        { number: 1506, title: 'y', labels: [{ name: 'lingtai:pr-fix' }] },
+      ])
+    const claim = () => Effect.succeed({ cutFromPr: 3, claimedAt: null })
+    const r = await Effect.runPromise(readPrFixes('p', pr(), { listing: true }, reads({ tasks, listing, claim })))
+    expect(r.kind === 'read' && fixingOf(pr(), r).tickets).toEqual([])
+    expect(r.kind === 'read' && r.tickets.map((t) => t.source)).toEqual(['claim', 'claim'])
+  })
+  it('keeps the claim time of an ended ticket for History', async () => {
+    const tasks = () =>
+      Effect.succeed([{ issue: '1505', title: 'x', kind: 'lingtai:pr-fix', state: 'landed', runId: null }])
+    const r = await Effect.runPromise(readPrFixes('p', pr(), { listing: false, history: true }, reads({ tasks })))
+    expect(r.kind === 'read' && claimedFixes(pr(), r)).toEqual([{ issue: 1505, at: '2026-11-26T10:00:00.000Z' }])
   })
   it('turns a failed or slow listing into a failed read, never an empty one', async () => {
     const none = reads({ tasks: () => Effect.succeed([]), listing: () => Effect.fail(new Error('rate limited')) })

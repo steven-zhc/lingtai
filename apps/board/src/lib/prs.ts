@@ -10,6 +10,7 @@ import { inProgressStepNames } from '@lingtai/conductor'
 import { projectClientEffect } from '@lingtai/conductor/filter'
 import { PR_FIX_LABEL } from '@lingtai/conductor/labels'
 import { readState } from '@lingtai/conductor/snapshot-state'
+import { type Tickets, ticketsForEffect } from '@lingtai/conductor/ticket-store'
 import { conductorLockHolder } from '@lingtai/daemon'
 import {
   type PrState,
@@ -35,6 +36,7 @@ import {
 } from '@lingtai/project'
 import { readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
+import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 import { cache } from 'react'
@@ -144,7 +146,7 @@ export interface PrFixReads {
   readonly claim: (
     project: string,
     issue: string,
-  ) => Effect.Effect<{ cutFromPr: number | null; claimedAt: string | null }, Error>
+  ) => Effect.Effect<{ cutFromPr: number | null | undefined; claimedAt: string | null }, Error>
   /** The step a run is at; null where there is none or the run's stream could not be read. */
   readonly step: (runId: string) => Effect.Effect<string | null>
   /** The open issues on the ticket source. */
@@ -177,8 +179,13 @@ const liveReads = (store: EventStore): PrFixReads => ({
     Effect.gen(function* () {
       const state = yield* Effect.tryPromise({ try: () => projectOf(project), catch: failed })
       if (state === null || state === undefined) return yield* Effect.fail(new Error(`no project named ${project}`))
-      const { client } = yield* projectClientEffect(state)
-      return yield* Effect.tryPromise({ try: () => client.listOpenIssues(), catch: failed })
+      // A `db` project's tickets are local: read them without GitHub's App or an owner (as `projectFilterEffect` does).
+      const { recipe } = yield* Effect.tryPromise({ try: () => recipeOf(project), catch: failed })
+      const source =
+        ticketSourceOf(recipe) === 'db'
+          ? yield* ticketsForEffect(state, recipe, undefined as unknown as Tickets)
+          : (yield* projectClientEffect(state)).client
+      return yield* Effect.tryPromise({ try: () => source.listOpenIssues(), catch: failed })
     }),
 })
 
@@ -194,18 +201,26 @@ const normal = (kind: string): string => kind.toLowerCase().replace(/\s+/g, '-')
 export const readPrFixes = (
   project: string,
   pr: PrState,
-  options: { listing: boolean },
+  options: { listing: boolean; history?: boolean },
   reads: PrFixReads = liveReads(requestStore()),
 ): Effect.Effect<PrFixRead> =>
   Effect.gen(function* () {
-    const rows = (yield* reads.tasks(project)).filter(
-      (t) => normal(t.kind) === PR_FIX_LABEL && !['landed', 'satisfied', 'closed'].includes(t.state),
-    )
+    // Every pr-fix row, ended ones too: `fixingOf` excludes them, but they are authoritative for which issues the
+    // projection already knows (the listing must not re-add them) and they carry the claim time History needs.
+    const rows = (yield* reads.tasks(project)).filter((t) => normal(t.kind) === PR_FIX_LABEL)
     const claimed = yield* Effect.forEach(
       rows,
       (t) =>
         Effect.gen(function* () {
-          const claim = yield* reads.claim(project, t.issue)
+          const ended = ['landed', 'satisfied', 'closed'].includes(t.state)
+          // An ended row's claim is read only for History, and a failure there never hides the PR's fixes.
+          const claim = ended
+            ? options.history === true
+              ? yield* reads
+                  .claim(project, t.issue)
+                  .pipe(Effect.orElseSucceed(() => ({ cutFromPr: undefined, claimedAt: null })))
+              : { cutFromPr: undefined, claimedAt: null }
+            : yield* reads.claim(project, t.issue)
           const running = ['running', 'verifying', 'approved'].includes(t.state)
           const step = running && t.runId !== null ? yield* reads.step(t.runId) : null
           // A row with no run yet is queued, whatever the row says.
@@ -540,7 +555,8 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         )
         const tickets = facts.some((f) => f.spend === null) ? null : facts.reduce((sum, f) => sum + (f.spend ?? 0), 0)
         const spend = own === null || tickets === null ? null : own + tickets
-        const fixes = yield* fixesFor(project, isOpen(pr) ? pr : null)
+        // The page reads for every PR, not only a waiting one: History keeps a pr-fix's claim after it landed or ended.
+        const fixes = yield* readPrFixes(project, pr, { listing: isOpen(pr) && asksListing(pr), history: true })
         const view = prPage({
           project,
           recipe,

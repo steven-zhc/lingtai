@@ -115,3 +115,16 @@ export const fixingLines = (project: string, fixing: Fixing): { readonly text: s
 
 /** The sentence a failed read leaves on the card and the page. */
 export const unknownLine = (error: string): string => `could not tell whether a pr-fix is open: ${error}`
+
+/**
+ * The pr-fix claims that belong to this PR whatever the ticket has become since: History is a record of what happened,
+ * not of what is fixing the PR now, so a landed or closed ticket keeps its line. Unclaimed tickets add none.
+ */
+export const claimedFixes = (pr: PrState, read: PrFixRead | null): { readonly issue: number; readonly at: string }[] =>
+  read === null || read.kind !== 'read'
+    ? []
+    : read.tickets.flatMap((t) =>
+        t.source === 'claim' && t.cutFromPr === pr.n && t.claimedAt !== null
+          ? [{ issue: t.issue, at: t.claimedAt }]
+          : [],
+      )
