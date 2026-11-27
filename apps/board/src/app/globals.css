@@ -1381,12 +1381,11 @@ details[open] > summary::before { content: "▾"; }
   background: transparent;
   gap: 0.5rem;
 }
+.topening { max-width: none; }
 .detail--framed .topening,
-.detail--waiting .topening { max-width: none; padding: 0; border: 0; }
+.detail--waiting .topening { padding: 0; border: 0; }
 .detail--framed .topening > p,
-.detail--waiting .topening > p,
-.detail--framed .tcontext,
-.detail--waiting .tcontext { margin-bottom: 0; }
+.detail--waiting .topening > p { margin-bottom: 0; }
 .detail--framed .swaiting-head .segs,
 .detail--waiting .swaiting-head .segs { margin: 0; }
 .detail--framed .swaiting-head .slab,
@@ -1406,27 +1405,30 @@ details[open] > summary::before { content: "▾"; }
   color: var(--ink);
   font-size: var(--fs-lg);
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .topening {
+.topening {
   padding-top: 0.65rem;
   border-top: 1px solid var(--rule);
   min-width: 0;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .topening > p { margin: 0 0 0.65rem; }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext {
+.topening > p { margin: 0 0 0.65rem; }
+.tcontext {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--rule);
   background: var(--surface);
   margin-bottom: 0.65rem;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field {
+.tcontext:not(:has(> .tcontext-field--watch)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tcontext-more { grid-column: 1 / -1; padding: 8px 16px; border-top: 1px solid var(--rule); font-size: var(--fs-sm); }
+.tcontext-more > a { display: inline-block; }
+.tcontext-field {
   min-width: 0;
   padding: 0.9rem 1rem;
   overflow-wrap: anywhere;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field + .tcontext-field { border-left: 1px solid var(--surface-2); }
+.tcontext-field + .tcontext-field { border-left: 1px solid var(--surface-2); }
 /* A cell is a sentence, so it reads as one: no second box inside the first. */
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field .md {
+.tcontext-field .md {
   max-height: none;
   margin: 0;
   padding: 0;
@@ -1437,13 +1439,13 @@ details[open] > summary::before { content: "▾"; }
   font-size: var(--fs-md);
   line-height: 1.5;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field h2 {
+.tcontext-field h2 {
   margin: 0 0 0.3rem;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field .md p { margin: 0; }
+.tcontext-field .md p { margin: 0; }
 @media (max-width: 46rem) {
-  :is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext { grid-template-columns: minmax(0, 1fr); }
-  :is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field + .tcontext-field {
+  .tcontext, .tcontext:not(:has(> .tcontext-field--watch)) { grid-template-columns: minmax(0, 1fr); }
+  .tcontext-field + .tcontext-field {
     border-left: 0;
     border-top: 1px solid var(--surface-2);
   }
@@ -3725,6 +3727,28 @@ svg.mode-graph text { font-size: var(--fs-xs); }
 .meters.facts .meter dt { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; }
 .meters.facts .meter dd { margin: 0; }
 .meters.facts .meter dd.sub { font-size: var(--fs-xs); color: var(--muted); }
+/* The totals strip is a panel (#1515). Every rule says [data-totals]: the running card's meters share .meters.facts. */
+.meters.facts[data-totals] {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.standing > .meters.facts[data-totals] { margin-bottom: 0.35rem; }
+.meters.facts[data-totals] .meter { min-width: 0; padding: 12px 16px; }
+.meters.facts[data-totals] .meter + .meter { border-left: 1px solid var(--surface-2); }
+.meters.facts[data-totals] .meter dt { font-weight: 600; letter-spacing: 0.08em; }
+.meters.facts[data-totals] .meter dd:not(.sub) { font-size: var(--fs-lg); font-family: var(--mono); color: var(--ink); }
+.meters.facts[data-totals] .meter dd.sub { font-size: var(--fs-2xs); font-family: var(--mono); }
+@media (max-width: 46rem) {
+  .meters.facts[data-totals] { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .meters.facts[data-totals] .meter:nth-child(odd) { border-left: 0; }
+  .meters.facts[data-totals] .meter:nth-child(n+3) { border-top: 1px solid var(--surface-2); }
+}
 .livelog { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }
