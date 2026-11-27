@@ -25,7 +25,7 @@ import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
 import type { RecipeDraft } from '@lingtai/project'
 import type { RecipeChange } from '@lingtai/recipe'
-import { isBuiltInJudge, isImplementOnlyAgent, unboundedTurnsChange } from '@lingtai/recipe'
+import { isBuiltInJudge, isFindingsJudge, isImplementOnlyAgent, unboundedTurnsChange } from '@lingtai/recipe'
 import { defaultAgents, remedyFor, runtimeStateSentence, type RuntimeFound, type RuntimeName } from '@lingtai/setup'
 import { Effect } from 'effect'
 
@@ -60,6 +60,13 @@ function asRuntime(value: unknown): RuntimeName | null {
 function findAgentAction(list: unknown): { index: number; action: Record<string, unknown> } | null {
   if (!Array.isArray(list)) return null
   const index = list.findIndex((item) => item !== null && typeof item === 'object' && 'agent' in (item as object))
+  return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
+}
+
+/** The first `findings` judge in a list, and where it stands — or null (the one `judgeDeclaredAt` reads). */
+function findFindingsJudge(list: unknown): { index: number; action: Record<string, unknown> } | null {
+  if (!Array.isArray(list)) return null
+  const index = list.findIndex(isFindingsJudge)
   return index === -1 ? null : { index, action: list[index] as Record<string, unknown> }
 }
 
@@ -326,7 +333,10 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   }
 
   // Only the first `agent:` entry in `steps.implement` and in `steps.review`
-  // is ever rewritten below — the one `question()` above asked about in each.
+  // is ever rewritten below — the one `question()` above asked about in each —
+  // and, since #1519, the findings judge init itself wrote at `steps.proposed`:
+  // the first `findings` judge (the only one `judgeDeclaredAt` reads) when it
+  // names the recipe's writer. It follows the writer instead of being a leftover.
   // Every other action, in either step or in any other, is left exactly as
   // written when its own step's list is not being replaced wholesale —
   // `leftoverRefusal` is what checks that is still safe to leave.
@@ -337,6 +347,17 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (reviewer === 'none') fullyReplaced.add('review')
   else if (reviewAction) editedInPlace.push({ step: 'review', index: reviewAction.index })
   else fullyReplaced.add('review')
+
+  const judgeEntry = writingAgent === null ? null : findFindingsJudge(at.draft.get(['steps', 'proposed']))
+  let followJudgeIndex: number | null = null
+  if (judgeEntry !== null && judgeEntry.action['judge'] === writingAgent) {
+    if (writer === writingAgent) {
+      editedInPlace.push({ step: 'proposed', index: judgeEntry.index })
+    } else if (!isImplementOnlyAgent(writer)) {
+      editedInPlace.push({ step: 'proposed', index: judgeEntry.index })
+      followJudgeIndex = judgeEntry.index
+    }
+  }
 
   const keptRuntimes = new Set<string>()
   if (writingAgent !== null && writer === writingAgent) keptRuntimes.add(writingAgent)
@@ -378,6 +399,7 @@ export const askAgents = Effect.fn('agents.askAgents')(function* (
   if (writer !== writingAgent || at.draft.get(['runtime', 'agent']) === null) {
     changes.push({ path: ['runtime', 'agent'], value: writer })
   }
+  if (followJudgeIndex !== null) changes.push({ path: ['steps', 'proposed', followJudgeIndex, 'judge'], value: writer })
   // A runtime that cannot hold a turn count (#547) is not asked to promise one:
   // the schema's default of 300 is nobody's choice, and doctor would fail it
   // for ever. Decided from `enforces` and not from the runtime's name, and only
