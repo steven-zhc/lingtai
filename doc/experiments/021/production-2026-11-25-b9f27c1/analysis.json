@@ -1,0 +1,213 @@
+{
+  "client_totals": {
+    "html": {
+      "home": {
+        "n": 5,
+        "median_s": 1.10038,
+        "min_s": 0.989065,
+        "max_s": 1.27418
+      },
+      "pr_7": {
+        "n": 5,
+        "median_s": 1.265476,
+        "min_s": 1.221779,
+        "max_s": 1.476204
+      },
+      "pr_list": {
+        "n": 5,
+        "median_s": 0.585041,
+        "min_s": 0.419461,
+        "max_s": 0.806915
+      },
+      "pr_next": {
+        "n": 5,
+        "median_s": 0.257904,
+        "min_s": 0.230008,
+        "max_s": 0.348535
+      }
+    },
+    "synthetic_rsc": {
+      "home": {
+        "n": 5,
+        "median_s": 2.433406,
+        "min_s": 1.012087,
+        "max_s": 2.649698
+      },
+      "pr_7": {
+        "n": 5,
+        "median_s": 2.47618,
+        "min_s": 1.209483,
+        "max_s": 3.110216
+      },
+      "pr_list": {
+        "n": 5,
+        "median_s": 0.900254,
+        "min_s": 0.465349,
+        "max_s": 1.58084
+      },
+      "pr_next": {
+        "n": 5,
+        "median_s": 0.26662,
+        "min_s": 0.171479,
+        "max_s": 0.470378
+      }
+    }
+  },
+  "rsc_first_byte_note": "Do not interpret curl first_byte_s as final response first byte: the synthetic RSC requests follow one Next normalization redirect. Use total_s and server spans.",
+  "stages": {
+    "/": {
+      "db.acquire": {
+        "n": 35,
+        "median_s": 0.02113375,
+        "min_s": 0.008287334,
+        "max_s": 0.30576275
+      },
+      "spend.read": {
+        "n": 35,
+        "median_s": 0.130001042,
+        "min_s": 0.042152958,
+        "max_s": 0.278676334
+      },
+      "recipe.resolve": {
+        "n": 35,
+        "median_s": 7.833e-06,
+        "min_s": 3.791e-06,
+        "max_s": 1.2334e-05
+      },
+      "pr.numbers": {
+        "n": 35,
+        "median_s": 6.4833e-05,
+        "min_s": 3.8458e-05,
+        "max_s": 9.4667e-05
+      },
+      "pr.draft": {
+        "n": 35,
+        "median_s": 5.5417e-05,
+        "min_s": 3.1458e-05,
+        "max_s": 8.9291e-05
+      },
+      "queue.list": {
+        "n": 35,
+        "median_s": 0.425050833,
+        "min_s": 0.347114333,
+        "max_s": 0.967024458
+      },
+      "queue.select": {
+        "n": 35,
+        "median_s": 0.000148542,
+        "min_s": 4.2458e-05,
+        "max_s": 0.00054875
+      },
+      "queue.project": {
+        "n": 35,
+        "median_s": 0.75956125,
+        "min_s": 0.505491,
+        "max_s": 1.345358333
+      }
+    },
+    "/pr/[project]": {
+      "db.acquire": {
+        "n": 55,
+        "median_s": 0.001248875,
+        "min_s": 0.000392167,
+        "max_s": 0.003109583
+      },
+      "recipe.resolve": {
+        "n": 55,
+        "median_s": 0.014084958,
+        "min_s": 0.004545166,
+        "max_s": 0.169398667
+      },
+      "pr.numbers": {
+        "n": 55,
+        "median_s": 9.25e-05,
+        "min_s": 4.0625e-05,
+        "max_s": 0.000237042
+      },
+      "pr.draft": {
+        "n": 55,
+        "median_s": 9.0458e-05,
+        "min_s": 4.1208e-05,
+        "max_s": 0.026921333
+      },
+      "spend.read": {
+        "n": 55,
+        "median_s": 0.722894583,
+        "min_s": 0.354181625,
+        "max_s": 1.7902135
+      },
+      "pr.board": {
+        "n": 55,
+        "median_s": 0.891433667,
+        "min_s": 0.41557475,
+        "max_s": 1.988742291
+      }
+    },
+    "/pr/[project]/[n]": {
+      "db.acquire": {
+        "n": 26,
+        "median_s": 0.087265417,
+        "min_s": 0.000390875,
+        "max_s": 0.56292325
+      },
+      "recipe.resolve": {
+        "n": 26,
+        "median_s": 0.013473667,
+        "min_s": 0.004819333,
+        "max_s": 0.024094666
+      },
+      "spend.read": {
+        "n": 16,
+        "median_s": 0.640123125,
+        "min_s": 0.30724175,
+        "max_s": 1.280376042
+      },
+      "pr.detail": {
+        "n": 26,
+        "median_s": 0.702015833,
+        "min_s": 0.084477917,
+        "max_s": 2.253914166
+      },
+      "pr.numbers": {
+        "n": 10,
+        "median_s": 5.2167e-05,
+        "min_s": 2.8167e-05,
+        "max_s": 0.000219916
+      },
+      "pr.draft": {
+        "n": 10,
+        "median_s": 4.7875e-05,
+        "min_s": 2.2959e-05,
+        "max_s": 0.000137583
+      }
+    }
+  },
+  "detail_start_offsets": {
+    "n": 26,
+    "median_s": 0.003,
+    "min_s": 0.001,
+    "max_s": 0.014
+  },
+  "late_child_roots": [],
+  "slow_detail": {
+    "trace_id": "365f2d0255138c75315c1c37a10f7989",
+    "counts": {
+      "RSC GET /pr/[project]/[n]": 1,
+      "db.acquire": 62,
+      "control.latest": 1,
+      "events.read": 7,
+      "control.tail": 1,
+      "projects.load": 1,
+      "recipe.resolve": 2,
+      "control.recheck": 1,
+      "control.reduce": 1,
+      "control.snapshot": 1,
+      "locks.account": 2,
+      "locks.read": 1,
+      "spend.read": 61,
+      "pr.detail": 1,
+      "page /pr detail": 1,
+      "github.request": 31
+    }
+  }
+}

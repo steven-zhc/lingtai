@@ -394,6 +394,14 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     })
     if ('refused' in config) return stop(config.refused)
 
+    // ---- the agent --------------------------------------------------------
+    // Which runtime runs is each project's question now (`#372`, `#398`),
+    // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
+    // `config.yml` naming one: that is a migration message for a file written
+    // before `#372`, not a question `init` is asking.
+    const agentRefusal = machineRuntimeRefusal(config, path)
+    if (agentRefusal !== null) return stop(agentRefusal)
+
     // ---- the store ------------------------------------------------------------
     const store = yield* chooseStore(
       world,
@@ -416,14 +424,6 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       startedWithConfig: hadConfig,
       wrote: homeIsNew,
     })
-
-    // ---- the agent --------------------------------------------------------
-    // Which runtime runs is each project's question now (`#372`, `#398`),
-    // asked by `lingtai add`'s `agents.ts` — never here. This still refuses a
-    // `config.yml` naming one: that is a migration message for a file written
-    // before `#372`, not a question `init` is asking.
-    const agentRefusal = machineRuntimeRefusal(config, path)
-    if (agentRefusal !== null) return stop(agentRefusal)
 
     // ---- the App --------------------------------------------------------------
     // How this machine reaches GitHub, read off the file this world was handed

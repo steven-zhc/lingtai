@@ -1,0 +1,47 @@
+{
+  "captured_at_utc": "2026-11-25T22:49:58.947721+00:00",
+  "source_sha256": "a867e5146d0cd824d35d956ecad2c06d7cb09096251e53fd2929357590dd342d",
+  "source_window": [
+    "2026-11-25T22:42:00Z",
+    "2026-11-25T22:47:24Z"
+  ],
+  "source_service": "lingtai-board",
+  "search_depth": 10000,
+  "kind": "assistant serial document/RSC probes plus browser navigation and automatic Follow/prefetch traffic; not controlled single-concurrency or natural-only cohort",
+  "runtime": {
+    "pid": 22585,
+    "parent_pid": 22555,
+    "started_at": "2026-11-25T15:13:49-06:00",
+    "cwd": "dist/board/apps/board",
+    "command": "pnpm lingtai board start --no-open",
+    "build_id": "b9f27c1157875e24168fc40d15007adcc991e720",
+    "runtime_commit_in_resource": null
+  },
+  "request_count": 121,
+  "controlled_html_requests": 20,
+  "controlled_synthetic_rsc_requests": 20,
+  "excluded_redirect_only_probes": 20,
+  "witness_trace_ids": [
+    "935b9850ecc4c4a5ef659a44a3bfea62",
+    "c75ee6d074e1ee606665d891d1323c41",
+    "365f2d0255138c75315c1c37a10f7989",
+    "f7d4a95b5df31c8e62ac2df6809584ed"
+  ],
+  "witness_span_count": 306,
+  "witness_missing_parent_counts": {
+    "935b9850ecc4c4a5ef659a44a3bfea62": 0,
+    "c75ee6d074e1ee606665d891d1323c41": 0,
+    "365f2d0255138c75315c1c37a10f7989": 0,
+    "f7d4a95b5df31c8e62ac2df6809584ed": 0
+  },
+  "functional_validation": "FAIL: project has no ProjectPrNumbered record; seven physical PR streams exist, six contain PrMerged; list renders all zero. Direct PR 7 remains in review although GitHub PR 1465 merged at 21:08:11Z.",
+  "read_only": true,
+  "limitations": [
+    "Five client repetitions per path/mode, not enough for stable P95.",
+    "Synthetic RSC requests omit browser router-state headers and follow one normalization redirect; not equivalent to measured click-to-ready.",
+    "Browser Follow/prefetch and other background activity overlap probes; serial describes dispatch of the probe script only.",
+    "PR list and Next timings are not comparable performance acceptance while legacy data is hidden.",
+    "Numbered detail is PR 7 with 30 tickets; old detail cohort mixes other PRs and Next.",
+    "No missing record was appended or repaired, no service was restarted and no application source was changed."
+  ]
+}
