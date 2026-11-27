@@ -506,14 +506,9 @@ describe('branch, make-branch and move-landing', () => {
   })
 
   it("cuts a team→solo rerun's new base from the team recipe's personal branch, not its main", async () => {
-    const start = [
-      `version: ${RECIPE_VERSION}`,
-      'mode: team',
-      'branch:',
-      '  main: main',
-      '  personal: work',
-      '',
-    ].join('\n')
+    const start = [`version: ${RECIPE_VERSION}`, 'mode: team', 'branch:', '  main: main', '  personal: work', ''].join(
+      '\n',
+    )
     const flags = { ...DEFAULTS, mode: 'solo', tickets: 'db', main: 'fresh' }
     const { result, ctx } = await walk(
       ports({
