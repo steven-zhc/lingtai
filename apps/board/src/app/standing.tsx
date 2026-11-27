@@ -734,37 +734,48 @@ function TicketContext({
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className={`topening${pending ? '' : ' arrive'}`}>
-      {pending ? <Skeleton shape="lines" count={3} /> : null}
       {problem ? (
         <p className={problem.askedGitHub ? 'refusal' : 'note'}>
           {problem.askedGitHub ? `The issue could not be read from GitHub: ${problem.text}` : problem.text}
         </p>
       ) : null}
-      {opening === null ? null : (
+      {opening === null && !pending ? (
+        <Link href={historyPath(taskId)} scroll={false}>
+          The whole ticket ↓
+        </Link>
+      ) : (
         <div className="tcontext">
-          {(
-            [
-              ['Problem', opening.problem],
-              ['Want', opening.want],
-              ['Watch out', opening.watchOut],
-            ] as const
-          )
-            .filter(([, value]) => value !== null)
-            .map(([label, value]) => (
-              <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
-                <h2 className="sec-h">{label}</h2>
-                <DocumentBody
-                  source="ticket-body"
-                  text={references ? `${value!}\n\n${references}` : value!}
-                  rawClass="tbodytext"
-                />
-              </div>
-            ))}
+          {pending || opening === null ? (
+            <div className="tcontext-more" style={{ borderTop: 0 }}>
+              <Skeleton shape="lines" count={3} />
+            </div>
+          ) : (
+            (
+              [
+                ['Problem', opening.problem],
+                ['Want', opening.want],
+                ['Watch out', opening.watchOut],
+              ] as const
+            )
+              .filter(([, value]) => value !== null)
+              .map(([label, value]) => (
+                <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
+                  <h2 className="sec-h">{label}</h2>
+                  <DocumentBody
+                    source="ticket-body"
+                    text={references ? `${value!}\n\n${references}` : value!}
+                    rawClass="tbodytext"
+                  />
+                </div>
+              ))
+          )}
+          <div className="tcontext-more">
+            <Link href={historyPath(taskId)} scroll={false}>
+              The whole ticket ↓
+            </Link>
+          </div>
         </div>
       )}
-      <Link href={historyPath(taskId)} scroll={false}>
-        The whole ticket ↓
-      </Link>
     </div>
   )
 }

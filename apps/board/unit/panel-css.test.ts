@@ -77,3 +77,35 @@ describe('the hold pill (#1168)', () => {
     expect(block('.pill')).toContain('white-space: nowrap')
   })
 })
+
+describe('the figures and ticket panels (#1515)', () => {
+  const OLD = ['.meters.facts', '.meters.facts .meter dt', '.meters.facts .meter dd', '.meters.facts .meter dd.sub']
+
+  it('styles the totals strip only by [data-totals], so the running card keeps its meters', () => {
+    const meters = selectors
+      .map((x) => x.replace(/\/\*[\s\S]*?\*\//g, '').trim())
+      .filter((x) => /\.meters\b/.test(x) && !OLD.includes(x))
+    expect(meters.length).toBeGreaterThan(0)
+    for (const x of meters) {
+      expect(x.startsWith('.meters.facts[data-totals]') || x.startsWith('.standing > .meters.facts[data-totals]')).toBe(
+        true,
+      )
+      expect(x).not.toContain('running-card')
+    }
+  })
+
+  it('draws the ticket panel in every state, not under a page class', () => {
+    const tcontext = selectors.filter((x) => /tcontext|topening/.test(x))
+    expect(tcontext.length).toBeGreaterThan(0)
+    expect(tcontext.filter((x) => /\.tcontext/.test(x) && /detail--/.test(x))).toEqual([])
+  })
+
+  it('adds no colour or font-size literal to the panel rules', () => {
+    const rules = css.replace(/\/\*[\s\S]*?\*\//g, '').match(/[^{}]*(?:tcontext|\[data-totals\])[^{}]*\{[^}]*\}/g) ?? []
+    expect(rules.length).toBeGreaterThan(0)
+    for (const r of rules) {
+      expect(r).not.toMatch(/#[0-9a-fA-F]{3,8}\b|rgba?\(/)
+      expect(r).not.toMatch(/font-size:\s*[\d.]/)
+    }
+  })
+})

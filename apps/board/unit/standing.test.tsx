@@ -2222,6 +2222,39 @@ describe('the subject, at the top', () => {
     expect(context).not.toContain('[the API][api]')
   })
 
+  it('draws the ticket panel the same way in a landed and a blocked state, the link last inside it', () => {
+    const base = '| | |\n|---|---|\n| **Problem** | A problem |\n| **Want** | A want |\n| **Fix** | A fix |'
+    const draw = (body: string, standing: typeof HELD) =>
+      renderToStaticMarkup(
+        <Standing
+          subject={{ ref: '159', title: 'A ticket', url: null, askedGitHub: false }}
+          body={body}
+          standing={standing}
+          project="lingtai"
+          issue={159}
+          taskId="ticket-lingtai-159"
+          discussions={[]}
+          outgoing={null}
+          queued={null}
+        />,
+      )
+    const classes = (html: string) => [...html.matchAll(/class="(tcontext[^"]*)"/g)].map((m) => m[1])
+    const withWatch = `${base}\n| **Watch out** | A trap |`
+    const landed = { ...HELD, state: 'landed' } as unknown as typeof HELD
+    const a = draw(withWatch, HELD)
+    const b = draw(withWatch, landed)
+    expect(classes(a)).toEqual(classes(b))
+    for (const html of [a, b]) {
+      const panel = html.slice(html.indexOf('class="tcontext"'))
+      expect(panel.indexOf('tcontext-more')).toBeGreaterThan(panel.indexOf('>Watch out</h2>'))
+      expect(panel.indexOf('tcontext-more')).toBeLessThan(panel.indexOf('href="/p/lingtai/ticket/159/history"'))
+    }
+    expect(classes(draw(base, HELD)).join(' ')).not.toContain('tcontext-field--watch')
+    const none = draw('no table here', HELD)
+    expect(none).not.toContain('class="tcontext"')
+    expect(none).toContain('href="/p/lingtai/ticket/159/history"')
+  })
+
   it('does not promote malformed, hostile, or long cells into facts', () => {
     const base = '| | |\n|---|---|\n| **Problem** | A problem |\n| **Want** | A want |\n| **Fix** | A fix |'
     expect(ticketOpening(`${base}\n| **Watch out** | <script>alert(1)</script> |`)).toBeNull()
