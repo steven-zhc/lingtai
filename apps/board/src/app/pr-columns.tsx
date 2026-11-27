@@ -42,6 +42,11 @@ export function PrCard({ project, card }: { project: string; card: CardView }) {
             {s}
           </p>
         ))}
+        {(card.fixing ?? []).map((f) => (
+          <p key={f.href} className="pr-sub pr-fixing">
+            <Link href={f.href}>{f.text}</Link>
+          </p>
+        ))}
         {card.chips.length === 0 ? null : (
           <div className="pr-chips">
             {card.chips.map((c) => (
