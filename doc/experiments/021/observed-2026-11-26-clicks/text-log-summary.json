@@ -1,0 +1,304 @@
+{
+  "source": "~/.lingtai/board-prod.log",
+  "mtime_utc": "2026-11-27T00:41:14.324384+00:00",
+  "bytes": 203051,
+  "lines": 3243,
+  "slow_timing_entry_count": 3088,
+  "last_timing_entries": [
+    {
+      "line": 3224,
+      "route_label": "/",
+      "duration_ms": 1370,
+      "stages": [
+        [
+          "daemon.status",
+          382
+        ],
+        [
+          "spend.day",
+          368
+        ],
+        [
+          "board.recipes",
+          348
+        ]
+      ]
+    },
+    {
+      "line": 3225,
+      "route_label": "/ queue",
+      "duration_ms": 2095,
+      "stages": [
+        [
+          "board.queue",
+          2095
+        ]
+      ]
+    },
+    {
+      "line": 3226,
+      "route_label": "/",
+      "duration_ms": 1777,
+      "stages": [
+        [
+          "daemon.status",
+          627
+        ],
+        [
+          "events.control",
+          507
+        ],
+        [
+          "triage.declared",
+          500
+        ]
+      ]
+    },
+    {
+      "line": 3227,
+      "route_label": "/ queue",
+      "duration_ms": 2486,
+      "stages": [
+        [
+          "board.queue",
+          2486
+        ]
+      ]
+    },
+    {
+      "line": 3228,
+      "route_label": "/",
+      "duration_ms": 1413,
+      "stages": [
+        [
+          "daemon.status",
+          394
+        ],
+        [
+          "board.progress",
+          340
+        ],
+        [
+          "board.recipes",
+          307
+        ]
+      ]
+    },
+    {
+      "line": 3229,
+      "route_label": "/ queue",
+      "duration_ms": 3619,
+      "stages": [
+        [
+          "board.queue",
+          3619
+        ]
+      ]
+    },
+    {
+      "line": 3230,
+      "route_label": "/ queue",
+      "duration_ms": 2379,
+      "stages": [
+        [
+          "board.queue",
+          2379
+        ]
+      ]
+    },
+    {
+      "line": 3231,
+      "route_label": "/",
+      "duration_ms": 2126,
+      "stages": [
+        [
+          "board.progress",
+          586
+        ],
+        [
+          "spend.day",
+          541
+        ],
+        [
+          "projects.all",
+          471
+        ]
+      ]
+    },
+    {
+      "line": 3232,
+      "route_label": "/ queue",
+      "duration_ms": 3738,
+      "stages": [
+        [
+          "board.queue",
+          3738
+        ]
+      ]
+    },
+    {
+      "line": 3233,
+      "route_label": "/",
+      "duration_ms": 1411,
+      "stages": [
+        [
+          "daemon.status",
+          591
+        ],
+        [
+          "events.control",
+          340
+        ],
+        [
+          "board.recipes",
+          323
+        ]
+      ]
+    },
+    {
+      "line": 3234,
+      "route_label": "/ queue",
+      "duration_ms": 2884,
+      "stages": [
+        [
+          "board.queue",
+          2884
+        ]
+      ]
+    },
+    {
+      "line": 3235,
+      "route_label": "/",
+      "duration_ms": 1414,
+      "stages": [
+        [
+          "projects.all",
+          438
+        ],
+        [
+          "events.control",
+          363
+        ],
+        [
+          "daemon.status",
+          352
+        ]
+      ]
+    },
+    {
+      "line": 3236,
+      "route_label": "/ queue",
+      "duration_ms": 3039,
+      "stages": [
+        [
+          "board.queue",
+          3039
+        ]
+      ]
+    },
+    {
+      "line": 3237,
+      "route_label": "/",
+      "duration_ms": 1775,
+      "stages": [
+        [
+          "board.recipes",
+          582
+        ],
+        [
+          "projects.all",
+          574
+        ],
+        [
+          "daemon.status",
+          506
+        ]
+      ]
+    },
+    {
+      "line": 3238,
+      "route_label": "/ queue",
+      "duration_ms": 1596,
+      "stages": [
+        [
+          "board.queue",
+          1596
+        ]
+      ]
+    },
+    {
+      "line": 3239,
+      "route_label": "/",
+      "duration_ms": 1509,
+      "stages": [
+        [
+          "daemon.status",
+          516
+        ],
+        [
+          "events.control",
+          331
+        ],
+        [
+          "board.progress",
+          331
+        ]
+      ]
+    },
+    {
+      "line": 3240,
+      "route_label": "/ queue",
+      "duration_ms": 3309,
+      "stages": [
+        [
+          "board.queue",
+          3309
+        ]
+      ]
+    },
+    {
+      "line": 3241,
+      "route_label": "/",
+      "duration_ms": 1925,
+      "stages": [
+        [
+          "daemon.status",
+          697
+        ],
+        [
+          "projects.all",
+          609
+        ],
+        [
+          "events.control",
+          585
+        ]
+      ]
+    },
+    {
+      "line": 3242,
+      "route_label": "/ queue",
+      "duration_ms": 1631,
+      "stages": [
+        [
+          "board.queue",
+          1631
+        ]
+      ]
+    },
+    {
+      "line": 3243,
+      "route_label": "/ queue",
+      "duration_ms": 1344,
+      "stages": [
+        [
+          "board.queue",
+          1344
+        ]
+      ]
+    }
+  ],
+  "destination_stream_closed_early_count": 17,
+  "idle_projection_connection_drop_count": 2,
+  "warning": "File has no timestamps for these entries and spans the process lifetime. Counts are not counts within the Jaeger window, cannot be joined to a click by line proximity, and timing logs include only reads over their logging threshold."
+}
