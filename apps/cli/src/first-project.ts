@@ -1728,9 +1728,11 @@ export interface LiveFirstProjectOptions {
   log: (line: string) => void
   /**
    * What a refusal says was kept. `Nothing was written` unless the caller
-   * already wrote something: `lingtai add <owner>/<repo>` runs
-   * `githubProjectAnswers` first, which writes each answer as it is given
-   * (#396–#399), so a refusal here must not tell the operator nothing was.
+   * already wrote something. `lingtai add <owner>/<repo>` runs
+   * `githubProjectAnswers` first, but its answers are a pending draft that
+   * `applySetup` writes only just before the registration they belong to; what
+   * it has already written is the machine's own `github.auth`, so a refusal
+   * here says what was kept only for that.
    */
   kept?: string
 }
@@ -1781,7 +1783,8 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     runtimes: askRuntimesEffect,
     setupReader: liveSetupReader,
     // `lingtai add` is the only caller. With a slug, `githubProjectAnswers`
-    // has already written its answers, and `addCommand` says so (#402).
+    // holds its answers as a pending draft, written by `applySetup` just before
+    // the registration, so a refusal before that keeps none of them.
     kept: options.kept ?? 'Nothing was written',
     register: (payload) =>
       addLocalEffect(

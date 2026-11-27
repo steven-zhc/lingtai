@@ -564,6 +564,8 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
     local: false,
     checkout: null,
     knownLogin: ghLogin,
+    // No App yet and no client handed in: the repository is read after `runGithubBranch` creates it.
+    ...(reach === undefined && deps.client === undefined ? { notReadableYet: true } : {}),
     hostname: hostname(),
     defaultBranch: defaultBranchPort,
     // An exact ref, never `matchingRefs`: `foundry-pr-7` existing is not `foundry` existing.

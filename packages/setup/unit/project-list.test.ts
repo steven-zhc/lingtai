@@ -1206,15 +1206,30 @@ describe('register', () => {
       },
     })
     expect(declined.result.refused).toBe('stopped before registering — nothing was written and nothing was registered')
-    // No terminal and no --defaults: the switch is skipped, so the confirmation never applies.
+    // No terminal and no --defaults: the switch is never asked, so nobody has looked, and the confirmation is refused.
     const headless = await walk(ports(), { flags: { mode: 'solo', main: 'main' } })
-    expect(headless.entry('register')).toMatchObject({ applies: false })
+    expect(headless.result.refused).toContain('--defaults')
+    // The same where nothing checks a diff, whichever landing is unattended.
+    const bare = ports({
+      proposal: proposal({ detected: { known: true, value: { install: null, build: [], skipped: [], notes: [] } } }),
+    })
+    const noChecks = await walk(bare, { flags: { mode: 'solo', main: 'main', land: 'hold' } })
+    expect(noChecks.result.refused).toContain('--defaults')
+  })
+})
+
+describe('a repository no App can read yet', () => {
+  it('does not look the main up, so setup reaches the App it creates after the list', async () => {
+    const down = ports({ branchExists: () => Effect.succeed('unreadable'), notReadableYet: true })
+    const { result, ctx } = await walk(down, { flags: { ...DEFAULTS, mode: 'solo', main: 'main' } })
+    expect(result.refused).toBeUndefined()
+    expect(ctx.answers.branch).toMatchObject({ name: 'main' })
   })
 })
 
 describe('no terminal, no flag', () => {
   it('takes every default where one exists, and refuses naming what is missing', async () => {
-    const solo = await walk(ports(), { flags: { mode: 'solo', main: 'main' } })
+    const solo = await walk(ports(), { flags: { mode: 'solo', main: 'main', land: 'hold' } })
     expect(solo.result.refused).toBeUndefined()
     expect(solo.result.entries.filter((e) => e.asked)).toEqual([])
     const noLogin = await walk(ports({ knownLogin: null }), { flags: { mode: 'team' } })

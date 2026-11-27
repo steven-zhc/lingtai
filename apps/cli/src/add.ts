@@ -420,7 +420,8 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
         }
   // An `app` answered above writes nothing yet, so it is told on rather than asked a second time (#1487).
   const handed = {
-    ...withoutProjectFlags(flags),
+    // Only the list's answers consume project flags; an owner repair asked nothing, so they stay for `runGithubBranch` to refuse.
+    ...(asked === null ? flags : withoutProjectFlags(flags)),
     ...(asked?.githubAuth === undefined ? {} : { 'github-auth': asked.githubAuth }),
   }
   const result = yield* chooseFirstProjectEffect(projectWorld, handed, buildFlags)
