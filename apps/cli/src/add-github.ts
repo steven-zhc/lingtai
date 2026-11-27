@@ -34,7 +34,7 @@ import { makePersonalBranch as sharedMakePersonalBranch } from '@lingtai/conduct
 import { alreadyOnboarded, choose, type Choice, refusalLines } from '@lingtai/conductor/pick-repository'
 import { sandboxHostHere } from '@lingtai/conductor/projects'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
-import { githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
+import { codexTextConfig, githubApp, githubAuthKind, githubClientAuth, hasGitHubApp, stateDir } from '@lingtai/env'
 import {
   createGitHubClient,
   type GitHubClient,
@@ -45,11 +45,26 @@ import {
   liveGh,
   parseSlug,
 } from '@lingtai/github'
-import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
+import { draftRecipe, recipePath } from '@lingtai/project'
 import { type Recipe, type RecipeChange, resolveSource } from '@lingtai/recipe'
-import { type Answers, EMPTY_SETUP_READER, type Picker, type ProposalReaders, type SetupReader } from '@lingtai/setup'
+import {
+  type Answers,
+  type Asker,
+  type Decided,
+  EMPTY_SETUP_READER,
+  type Entry,
+  type Picker,
+  type ProjectContext,
+  type ProjectPorts,
+  type ProposalReaders,
+  type SetupReader,
+  projectContext,
+  projectList,
+  runSetupList,
+  summariseRecipe,
+} from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { liveTrialBuild, previewSetup } from '@lingtai/setup'
+import { previewSetup } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { checkAppEffect } from './app-check.ts'
@@ -57,12 +72,21 @@ import { lift, recovering } from './exit.ts'
 import { livePickerEffect } from './first-project.ts'
 import { type GithubAuthAnswer } from './github-auth.ts'
 import { askTokenFor, githubEntryFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
+import { projectAskers, liveTrialPort } from './project-askers.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
-import { ADD_KEPT, askRecipeEffect, changedLeftBehind, ENV_PLANT_AT } from './recipe-flow.ts'
+import {
+  ADD_KEPT,
+  changedLeftBehind,
+  changedOf,
+  ENV_PLANT_AT,
+  fetchedRates,
+  priceHints,
+  SAID,
+  toolOnPath,
+} from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import type { LeftBehind } from './setup-card.ts'
-import { HANDED_OFF_FLAGS } from './wizard-options.ts'
 
 /**
  * How this machine reaches the repository: through the App's installation on
@@ -153,7 +177,12 @@ const liveGithubReader = (
   }).pipe(recovering(() => Effect.succeed(EMPTY_SETUP_READER)))
 }
 
+/** What this function asks of a GitHub client: the live one, or a test's. */
+export type GithubClientPort = Pick<GitHubClient, 'branchExists' | 'request' | 'token' | 'refSha' | 'createBranch'>
+
 export interface AskBeforeGithubAddDeps {
+  /** The client the branch checks, the compare and the branch's making go through; absent builds the live one from `reach`. */
+  client?: (owner: string, repo: string, reach: Reach | undefined) => Effect.Effect<GithubClientPort, unknown>
   check: typeof checkInstallationEffect
   /** The machine's elected auth — `null` where nothing is configured. Throws where `github.auth` is refused. */
   auth: () => 'app' | 'gh' | null
@@ -231,7 +260,7 @@ export const liveGithubDeps: AskBeforeGithubAddDeps = {
 }
 
 /** What the questions came to when the add goes on: the trial and the hints, for the card `add` ends on. */
-export interface AskedBeforeAdd {
+export interface GithubAnswers {
   trial: TrialOutcome
   hints: string[]
   /** The runtimes it probed, so the card does not probe them again. */
@@ -244,6 +273,8 @@ export interface AskedBeforeAdd {
   leftBehind?: readonly LeftBehind[]
   /** How the repository was read here, in the shape the card and the labels take; absent while the App is yet to be made. */
   reach?: GithubReach
+  /** What the project list asked and wrote, in its own order: the entries the runner returned. */
+  entries: readonly Entry[]
 }
 
 /** An Effect settled to the value or what it threw: a failure and a defect alike, an interruption never. */
@@ -271,13 +302,15 @@ export const makePersonalBranch = (
 const errorText = (err: unknown): string => (err instanceof Error ? err.message : String(err))
 
 /** A number is an exit code: the add stops there. Otherwise the add goes on. */
-export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (
+export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAnswers')(function* (
   slug: string,
   flags: Record<string, string>,
   deps: AskBeforeGithubAddDeps = liveGithubDeps,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
-): Effect.fn.Return<number | AskedBeforeAdd, unknown> {
+  /** What a refusal says is already true: `add`'s sentence, or `init`'s own. */
+  kept: string = ADD_KEPT,
+): Effect.fn.Return<number | GithubAnswers, unknown> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.
   // `named`, because a person typed it here: a recipe that contradicts `--main`
@@ -440,7 +473,11 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   // The read keeps its error, once: the seed names it, the other two callers take it as null (#1487).
   const readOnce = yield* Effect.cached(
     (reach === undefined
-      ? Effect.fail(new Error('no GitHub App is configured here yet'))
+      ? Effect.fail(
+          new Error(
+            'no GitHub App is configured here yet — the App is created after these questions, or pass --github-auth gh',
+          ),
+        )
       : (deps.defaultBranch ?? readDefaultBranch)(owner, repo, reach)
     ).pipe(Effect.result),
   )
@@ -449,34 +486,31 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   )
   const defaultBranch: Effect.Effect<string | null> =
     ghDefaultBranch !== null ? Effect.succeed(ghDefaultBranch) : cachedDefaultBranch
+  // The list's own port keeps the failure: it is the list's refusal, never an absent value (#1525).
+  const defaultBranchPort: Effect.Effect<string | null, unknown> =
+    ghDefaultBranch !== null
+      ? Effect.succeed(ghDefaultBranch)
+      : readOnce.pipe(
+          Effect.flatMap((read) =>
+            read._tag === 'Success' ? Effect.succeed(read.success) : Effect.fail(read.failure),
+          ),
+        )
 
-  let seeds: readonly RecipeChange[] = []
-  if (existing === null) {
-    let seedBase: string | null = base ?? ghDefaultBranch
-    if (seedBase === null) {
-      const read = yield* readOnce
-      if (read._tag === 'Success') seedBase = read.success
-      else {
-        const why =
-          reach === undefined
-            ? `no GitHub App is configured here yet to read ${slug}'s default branch — pass --main <branch> (the App is created after these questions), or --github-auth gh`
-            : `could not read ${slug}'s default branch — ${errorText(read.failure)}. Pass --main <branch>, or fix that and run this again`
-        console.error(`${path} does not exist: ${why}. Nothing was written`)
-        return 1
-      }
-    }
-    seeds = [
-      { path: ['branch', 'main'], value: seedBase },
-      { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
-      {
-        path: ['steps', 'end'],
-        value: [
-          { name: 'close the ticket', when: 'landed', close: true },
-          { name: 'close the ticket a person ended', when: 'closed', close: true },
-        ],
-      },
-    ]
-  } else {
+  // A new recipe starts from these; `branch.main` is the `branch` entry's, from the default-branch port.
+  const seeds: readonly RecipeChange[] =
+    existing !== null
+      ? []
+      : [
+          { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
+          {
+            path: ['steps', 'end'],
+            value: [
+              { name: 'close the ticket', when: 'landed', close: true },
+              { name: 'close the ticket a person ended', when: 'closed', close: true },
+            ],
+          },
+        ]
+  if (existing !== null) {
     // A file that `extends:` a preset and writes no `steps:` of its own
     // inherits every step from the preset — the first `steps.*` answer below
     // pins that preset's steps into the file for good (`write.ts`'s
@@ -512,108 +546,134 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
     },
   )
 
-  // `askRecipe`'s `defaultBranch` is still a promise port (`landing.ts`, `init.ts`): run in this fiber's
-  // services, and through the same memo, so one run still asks GitHub once (#402).
-  const run = Effect.runPromiseWith(yield* Effect.context<never>())
-  // Built per call, as the trial build's `token` is: an installation token lasts an hour.
-  const githubClient = () =>
-    lift(() =>
-      createGitHubClient({
-        auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
-        owner,
-        repo,
-        ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
-      }),
-    )
-  const recipeResult = yield* askRecipeEffect(world, {
+  // Built per call, as the trial build's `token` is: an installation token lasts an hour. A test hands its own.
+  const githubClient = (): Effect.Effect<GithubClientPort, unknown> =>
+    deps.client !== undefined
+      ? deps.client(owner, repo, reach)
+      : lift(() =>
+          createGitHubClient({
+            auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
+            owner,
+            repo,
+            ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
+          }),
+        )
+
+  const ports: ProjectPorts = {
     project: repo,
     local: false,
-    team: {
-      knownLogin: ghLogin,
-      hostname: () => hostname(),
-      // An exact ref, never `matchingRefs`: `foundry-pr-7` existing is not `foundry` existing.
-      branchExists: (name) =>
-        githubClient().pipe(
-          Effect.flatMap((client) => lift(() => client.branchExists(name))),
-          recovering(() => Effect.succeed('unreadable' as const)),
-        ),
-      // `base...head` is what `head` has that `base` does not; a compare that fails is `null`, said on the card.
-      // The compare answers 30 commits a page by default and at most 250 in all, whatever `total_commits` says: this
-      // pages through what it will give, and a list shorter than the total ends in a line that says how many are
-      // not listed, so a partial list is never presented as the whole.
-      commitsOnlyIn: (base, head) =>
-        Effect.gen(function* () {
-          const client = yield* githubClient()
-          const lines: string[] = []
-          let total = 0
-          for (let page = 1; page <= 3; page++) {
-            const r = yield* lift(() =>
-              client.request<{ total_commits?: number; commits?: { sha: string; commit: { message: string } }[] }>(
-                'GET',
-                `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=100&page=${page}`,
-              ),
-            )
-            const commits = r.commits ?? []
-            total = r.total_commits ?? total
-            lines.push(...commits.map((c) => `${c.sha.slice(0, 9)} ${c.commit.message.split('\n')[0] ?? ''}`.trim()))
-            if (commits.length < 100 || lines.length >= total) break
-          }
-          if (total > lines.length) {
-            lines.push(
-              `… and ${total - lines.length} more not listed — git log --oneline origin/${base}..origin/${head} lists them all`,
-            )
-          }
-          return lines
-        }).pipe(recovering(() => Effect.succeed(null))),
-    },
-    proposal,
-    runtimes,
+    checkout: null,
+    knownLogin: ghLogin,
+    // No App yet and no client handed in: the repository is read after `runGithubBranch` creates it.
+    ...(reach === undefined && deps.client === undefined ? { notReadableYet: true } : {}),
+    hostname: hostname(),
+    defaultBranch: defaultBranchPort,
+    // An exact ref, never `matchingRefs`: `foundry-pr-7` existing is not `foundry` existing.
+    branchExists: (name) =>
+      githubClient().pipe(
+        Effect.flatMap((client) => lift(() => client.branchExists(name))),
+        recovering(() => Effect.succeed('unreadable' as const)),
+      ),
+    // `base...head` is what `head` has that `base` does not; a compare that fails is `null`, said on the card.
+    // The compare answers 30 commits a page by default and at most 250 in all, whatever `total_commits` says: this
+    // pages through what it will give, and a list shorter than the total ends in a line that says how many are
+    // not listed, so a partial list is never presented as the whole.
+    commitsOnlyIn: (base, head) =>
+      Effect.gen(function* () {
+        const client = yield* githubClient()
+        const lines: string[] = []
+        let total = 0
+        for (let page = 1; page <= 3; page++) {
+          const r = yield* lift(() =>
+            client.request<{ total_commits?: number; commits?: { sha: string; commit: { message: string } }[] }>(
+              'GET',
+              `/repos/${owner}/${repo}/compare/${encodeURIComponent(base)}...${encodeURIComponent(head)}?per_page=100&page=${page}`,
+            ),
+          )
+          const commits = r.commits ?? []
+          total = r.total_commits ?? total
+          lines.push(...commits.map((c) => `${c.sha.slice(0, 9)} ${c.commit.message.split('\n')[0] ?? ''}`.trim()))
+          if (commits.length < 100 || lines.length >= total) break
+        }
+        if (total > lines.length) {
+          lines.push(
+            `… and ${total - lines.length} more not listed — git log --oneline origin/${base}..origin/${head} lists them all`,
+          )
+        }
+        return lines
+      }).pipe(recovering(() => Effect.succeed(null))),
     reader,
-    flags,
-    buildFlags,
-    defaultBranch: () => run(defaultBranch),
+    runtimes: Effect.succeed(runtimes),
+    history: (project) => deps.history(project),
+    proposal,
+    codexText: Effect.try(() => codexTextConfig() !== undefined),
+    onPath: (tool) => lift(() => toolOnPath(tool)),
     ...(reach === undefined || ref === null
       ? {}
       : {
-          tryBuild: (draft: RecipeDraft) =>
-            liveTrialBuild({
-              project: repo,
-              owner,
-              repo,
-              base: ref,
-              // An Effect, run again by every git invocation: an installation token lasts an hour.
-              token: lift(() =>
-                createGitHubClient({
-                  auth: reach?.kind === 'gh' ? { kind: 'gh' as const } : githubClientAuth(),
-                  owner,
-                  repo,
-                  ...(reach?.kind === 'app' ? { installation: reach.installation } : {}),
-                }),
-              ).pipe(Effect.flatMap((client) => lift(() => client.token()))),
-              draft,
-            }),
+          trial: liveTrialPort(world, {
+            project: repo,
+            owner,
+            repo,
+            // An Effect, run again by every git invocation: an installation token lasts an hour.
+            token: githubClient().pipe(Effect.flatMap((client) => lift(() => client.token()))),
+          }),
         }),
-    history: (project) => run(deps.history(project)),
-    seeds,
-    again: `lingtai add ${owner}/${repo}`,
-    keptBeforeWrite: 'Nothing was written',
-    kept: ADD_KEPT,
-  })
-  // `addCommand` hands this same `flags` object to `chooseFirstProject` once
-  // this function returns — deleted here, so that call's `runGithubBranch`
-  // does not see them again and refuse what `askRecipe` already asked and
-  // wrote (#396 fix round, finding 1; #431 fix round, finding 2).
-  for (const name of HANDED_OFF_FLAGS) {
-    delete flags[name]
   }
-  if ('refused' in recipeResult) {
-    console.error(recipeResult.refused)
+
+  // Each question's hints print before it is asked, as they did when each step said its own: the list only collects
+  // them. The cursor never splices the array — the entries push onto it.
+  const asker = projectAskers(world)
+  let printed = 0
+  const flushLog = (ctx: ProjectContext) => {
+    for (; printed < ctx.log.length; printed++) console.log(ctx.log[printed])
+  }
+  const askers = Object.fromEntries(
+    Object.entries(asker).map(([id, ask]) => [
+      id,
+      (decided: Decided<ProjectContext>) => {
+        flushLog(decided.ctx)
+        return ask(decided)
+      },
+    ]),
+  ) as Record<string, Asker<ProjectContext>>
+
+  const ctx = projectContext({ start: onDisk, buildFlags, flags, ports, kept, seeds })
+  const walked = yield* runSetupList(
+    projectList(ports),
+    {
+      interactive: deps.interactive(),
+      defaults: flags['defaults'] !== undefined,
+      flags,
+      askers,
+      log: (line) => console.log(line),
+      // Nothing is written until the list ends, so a Ctrl+C keeps no recipe — whatever `append` marked as pending.
+      kept: () => ({ kept }),
+    },
+    ctx,
+  )
+  flushLog(ctx)
+  if (walked.refused !== undefined) {
+    // A refusal the list's own questions made says what is kept; one a port's read made (the default branch) does not.
+    console.error(walked.refused.includes(kept) ? walked.refused : `${walked.refused}. ${kept}`)
     return 1
   }
+  // Read before the write: it is the recipe as the run began that says what moved.
+  const changed = changedOf(onDisk, ctx.answers)
+  // The one write: every answer is held in `ctx.pending` until the list is answered to its end.
+  if (ctx.pending.length > 0) {
+    const set = yield* attempt(onDisk.set(ctx.pending))
+    if ('threw' in set) {
+      console.error(`${errorText(set.threw)}. ${kept}`)
+      return 1
+    }
+  }
+  const answers: Answers = { project: repo, changes: onDisk.changes(), said: SAID }
   // After every question and before `applySetup` writes the recipe: a crash between them leaves a branch and no
   // project, and the next add finds the branch *exists* and uses it. Never retried: a 422 is read as *exists*.
-  if (recipeResult.make !== undefined) {
-    const { name, from } = recipeResult.make
+  const make = ctx.answers.make
+  if (make !== undefined) {
+    const { name, from } = make
     const made = yield* attempt(githubClient().pipe(Effect.flatMap((client) => makePersonalBranch(client, name, from))))
     if ('threw' in made) {
       console.error(
@@ -626,20 +686,28 @@ export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd
   if (deps.claudeToken !== undefined) {
     // The recipe is a draft until `applySetup` writes it, so its final form is the preview of the answers.
     const final = yield* attempt(
-      previewSetup({ home: stateDir() }, recipeResult.answers).pipe(
+      previewSetup({ home: stateDir() }, answers).pipe(
         Effect.map((text) => resolveSource(text, recipePath(repo), recipePath(repo)).recipe),
       ),
     )
     if ('ok' in final) yield* deps.claudeToken(final.ok, flags).pipe(Effect.catch(() => Effect.void))
   }
+  const finalText = onDisk.text()
+  const hints: string[] = (() => {
+    if (finalText === null) return []
+    try {
+      return priceHints(summariseRecipe(resolveSource(finalText, path, path).recipe).models, fetchedRates())
+    } catch {
+      return []
+    }
+  })()
   return {
-    trial: recipeResult.trial,
-    hints: recipeResult.hints,
+    trial: ctx.answers.trial ?? { trial: 'not-run', because: 'no checks' },
+    hints,
     runtimes,
-    answers: recipeResult.answers,
-    ...(changedLeftBehind(recipeResult.changed, slug).length === 0
-      ? {}
-      : { leftBehind: changedLeftBehind(recipeResult.changed, slug) }),
+    answers,
+    entries: walked.entries,
+    ...(changedLeftBehind(changed, slug).length === 0 ? {} : { leftBehind: changedLeftBehind(changed, slug) }),
     ...(reach === undefined
       ? {}
       : {

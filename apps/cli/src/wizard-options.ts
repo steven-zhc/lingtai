@@ -53,11 +53,13 @@ export const recipeOptions = {
 export { PROJECT_FLAGS }
 
 /**
- * Today's set: what the add's two hand-offs strip before `runGithubBranch`. `defaults` stays, because `askTokenFor`
- * reads it (`machine-askers.ts`), and `add owner/repo --defaults` at a terminal would otherwise start asking the Claude
- * token question. #1525 deletes this with its two readers.
+ * The flags without the project's own questions, as a copy: what the add's two hand-offs give `chooseFirstProject`, so
+ * a flag the project list already answered is not refused a second time by `runGithubBranch`. `defaults` stays,
+ * because `askTokenFor` reads it (`machine-askers.ts`), and `add owner/repo --defaults` at a terminal would otherwise
+ * start asking the Claude token question. Never mutates the object it is given.
  */
-export const HANDED_OFF_FLAGS: readonly string[] = PROJECT_FLAGS.filter((n) => n !== 'defaults')
+export const withoutProjectFlags = (flags: Readonly<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(Object.entries(flags).filter(([name]) => name === 'defaults' || !PROJECT_FLAGS.includes(name)))
 
 export const initOptions = {
   store: text('store'),

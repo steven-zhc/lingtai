@@ -14,11 +14,12 @@ import {
   type RepositoryList,
   SetupWriteError,
 } from '@lingtai/setup'
+import type { Entry } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
 import {
-  type AskedBeforeAdd,
-  askBeforeGithubAddEffect,
+  type GithubAnswers,
+  githubProjectAnswersEffect,
   type AskBeforeGithubAddDeps,
   attempt,
   liveGithubDeps,
@@ -57,10 +58,11 @@ import { questionEffect } from './question.ts'
 import { ADD_KEPT } from './recipe-flow.ts'
 import { type CardRecipe, cardRecipe, type LeftBehind } from './setup-card.ts'
 import { liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
+import { withoutProjectFlags } from './wizard-options.ts'
 
 export interface AddWorld {
   project: FirstProjectWorld
-  /** `askBeforeGithubAdd`'s own deps — its live ones unless a test says otherwise. */
+  /** `githubProjectAnswers`'s own deps — its live ones unless a test says otherwise. */
   githubDeps?: AskBeforeGithubAddDeps
   /** The client that makes the project's labels (#1486) — the live one (built from `reach`) unless a test says otherwise. */
   labels?: (owner: string, repo: string, reach: GithubReach) => Effect.Effect<Pick<LabelClient, 'createLabel'>, unknown>
@@ -192,7 +194,7 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
 
   // A bare `lingtai add --agent …` (GitHub named or chosen at the prompt) reaches the picker below:
   // the board branch refuses the recipe flags it does not ask, so it is told to
-  // leave them out (the local branch keeps them) and they are handed on with the pick, where `askBeforeGithubAdd` asks.
+  // leave them out (the local branch keeps them) and they are handed on with the pick, where `githubProjectAnswers` asks.
   const holdsBack =
     flags['project'] !== 'local' && flags['local'] === undefined && world.repositories?.interactive() === true
   // `--github-auth` names how this machine reaches GitHub, and is the machine list's flag: answered here, ahead of the
@@ -216,7 +218,11 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
       return 1
     }
   }
-  const result = yield* chooseFirstProjectEffect(world.project, flags, buildFlags, holdsBack)
+  const result = yield* chooseFirstProjectEffect(
+    holdsBack ? { ...world.project, asksProjectQuestionsAfterThePick: true } : world.project,
+    flags,
+    buildFlags,
+  )
   if ('refused' in result) {
     world.error(result.refused)
     return 1
@@ -295,6 +301,8 @@ export interface GithubProjectEntry {
 /** What the project's setup came to; the command closes on `closing` (or `fix`) itself, and exits `exit`. */
 export interface GithubProjectDone {
   exit: number
+  /** What the project list asked and wrote, for a test to assert and nothing else to read. */
+  entries?: readonly Entry[]
   fix?: string
   closing?: Parameters<typeof addSteps>[0]
 }
@@ -357,9 +365,15 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
     return { exit: 1 }
   }
 
-  let asked: AskedBeforeAdd | null = null
+  let asked: GithubAnswers | null = null
   if (!ownerRepair) {
-    const stopped = yield* askBeforeGithubAddEffect(slug, flags, world.githubDeps, buildFlags)
+    const stopped = yield* githubProjectAnswersEffect(
+      slug,
+      flags,
+      world.githubDeps,
+      buildFlags,
+      entry.command === 'add' ? ADD_KEPT : world.project.kept,
+    )
     if (typeof stopped === 'number') return { exit: stopped }
     asked = stopped
   }
@@ -393,7 +407,7 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
     })
   }
 
-  // With a slug, `askBeforeGithubAdd` above has written nothing but `github.auth`, the machine's own: its answers are held in `asked`, and
+  // With a slug, `githubProjectAnswers` above has written nothing but `github.auth`, the machine's own: its answers are held in `asked`, and
   // `applySetup` writes them just before the registration they belong to.
   const base = { ...world.project, kept: entry.command === 'add' ? ADD_KEPT : world.project.kept }
   const pending = asked
@@ -405,8 +419,12 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
           github: { ...base.github, add: (opts, log) => addWithSetup(base, pending.answers, opts, log, rerun) },
         }
   // An `app` answered above writes nothing yet, so it is told on rather than asked a second time (#1487).
-  const handed = asked?.githubAuth === undefined ? flags : { ...flags, 'github-auth': asked.githubAuth }
-  const result = yield* chooseFirstProjectEffect(projectWorld, handed, buildFlags, false)
+  const handed = {
+    // Only the list's answers consume project flags; an owner repair asked nothing, so they stay for `runGithubBranch` to refuse.
+    ...(asked === null ? flags : withoutProjectFlags(flags)),
+    ...(asked?.githubAuth === undefined ? {} : { 'github-auth': asked.githubAuth }),
+  }
+  const result = yield* chooseFirstProjectEffect(projectWorld, handed, buildFlags)
   if ('refused' in result) {
     world.error(result.refused)
     return { exit: 1 }
@@ -444,7 +462,7 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
   card: {
     owner: string
     repo: string
-    asked: AskedBeforeAdd
+    asked: GithubAnswers
     updated: boolean
     unchanged?: boolean
     reach: GithubReach
@@ -503,6 +521,7 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
   )
   return {
     exit: 0,
+    entries: asked.entries,
     ...(end.fix === undefined ? {} : { fix: end.fix }),
     closing: {
       project: repo,
@@ -544,7 +563,7 @@ function addWithSetup(
   log: (line: string) => void,
   rerun: boolean,
 ): Effect.Effect<Added> {
-  // The default home, as `askBeforeGithubAdd` read the file and as the card below reads it back.
+  // The default home, as `githubProjectAnswers` read the file and as the card below reads it back.
   const path = recipePath(answers.project)
   // Under the lock the board's Add takes, and on a first add with *already added* read again inside it: another
   // process may have registered this project since the first read. A rerun is registered by definition.

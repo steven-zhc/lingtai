@@ -7,7 +7,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { parseDocument } from 'yaml'
 
-import { type AddWorld, addFlowEffect } from '../src/add.ts'
+import { type AddWorld, addFlowEffect, githubProjectEffect } from '../src/add.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 type AddTestWorld = AddWorld & { project: FirstProjectTestWorld }
@@ -229,6 +229,15 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ask: async () => '',
       runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
       history: () => Effect.succeed([]),
+      // No network: every branch the list asks about exists, and no compare has a commit.
+      client: () =>
+        Effect.succeed({
+          branchExists: async () => true,
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async () => {},
+        } as never),
     }
     if (over.doctorFails === true) {
       h.world.doctor = () =>
@@ -745,6 +754,229 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(code).toBe(0)
     expect(asked).toEqual([])
     expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
+  it('an owner repair given a project flag is refused, not returned as a success that changed nothing (#1525)', async () => {
+    const { world, errors, asked } = githubHarness()
+    world.project.projects = liftPort(async () => [
+      {
+        project: 'widgets',
+        owner: null,
+        base: 'main',
+        configHash: 'h',
+        fromSha: null,
+        refused: null,
+        paused: null,
+        recipe: null,
+        sandboxObserved: null,
+        highestPr: null,
+        version: 1,
+        lastSeq: null,
+      },
+    ])
+    const code = await addFlow(
+      { ...flagsFromArgv(['--mode', 'solo', '--agent', 'codex']), positional: 'acme/widgets' },
+      world,
+    )
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('--agent')
+    expect(asked).toEqual([])
+    expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
+  /** `githubProjectEffect` itself, for what `addFlow` does not return: the entries the project list walked. */
+  const runProject = (h: { world: AddTestWorld }, argv: readonly string[], command: 'add' | 'init') =>
+    Effect.runPromise(
+      githubProjectEffect('acme/widgets', { ...flagsFromArgv(argv).flags, github: 'acme/widgets' }, [], h.world, {
+        command,
+        homeIsNew: false,
+      }).pipe(Effect.provideService(ProjectFiles, h.world.project.files)),
+    )
+
+  /** The list's entries in the order it walks them, and whether a person was asked, for `--defaults` with every flag given. */
+  const WALKED_WITH_DEFAULTS: readonly (readonly [string, boolean])[] = [
+    ['where', false],
+    ['mode', false],
+    ['login', false],
+    ['branch', false],
+    ['make-branch', false],
+    ['move-landing', false],
+    ['defaults', true],
+    ['writer', false],
+    ['writer-model', false],
+    ['reviewer', false],
+    ['reviewer-model', false],
+    ['sandbox', false],
+    ['sandbox-hosts', false],
+    ['install', false],
+    ['checks', false],
+    ['trial', false],
+    ['tickets', false],
+    ['kinds', false],
+    ['landing', false],
+    ['findings-judge', false],
+    ['refusal-fixes', false],
+    ['conflict-resolutions', false],
+    ['wall', false],
+    ['budget', false],
+    ['register', true],
+  ]
+
+  it('add owner/repo walks the project list, and the recipe written is what it answered (#1525)', async () => {
+    const h = githubHarness()
+    const done = await runProject(h, h.argv.slice(1), 'add')
+    expect(done.exit).toBe(0)
+    expect(h.errors).toEqual([])
+    const entries = done.entries ?? []
+    expect(entries.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    const recipe = parseDocument((await h.world.project.files.read(recipePath('widgets')))!)
+    const answered = Object.fromEntries(entries.map((e) => [e.id, e.after]))
+    // Every answer the list gave that a recipe field holds is that field.
+    expect(recipe.getIn(['branch', 'main'])).toBe(answered['branch'])
+    expect(recipe.getIn(['runtime', 'agent'])).toBe(answered['writer'])
+    expect(
+      (recipe.getIn(['steps', 'review']) as { items: { get: (k: string) => unknown }[] }).items[0]!.get('agent'),
+    ).toBe(answered['reviewer'])
+    expect(recipe.getIn(['source', 'tickets'])).toBe(answered['tickets'])
+    expect((recipe.getIn(['source', 'kinds']) as { toJSON: () => string[] }).toJSON().join(', ')).toBe(
+      answered['kinds'],
+    )
+    // The seeds a new recipe starts from are in it.
+    expect(recipe.getIn(['env', 'plantAt'])).toBe('.env.local')
+    expect(JSON.stringify(recipe.getIn(['steps', 'end'])?.valueOf())).toContain('close the ticket')
+  })
+
+  it('init --github owner/repo walks the same entries as add does, in the same order (#1525)', async () => {
+    const added = githubHarness()
+    const viaAdd = await runProject(added, added.argv.slice(1), 'add')
+    const inited = githubHarness()
+    const viaInit = await runProject(inited, inited.argv.slice(1), 'init')
+    expect(viaInit.exit).toBe(0)
+    expect(viaInit.entries!.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    expect(viaAdd.entries!.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    expect(await inited.world.project.files.read(recipePath('widgets'))).toBe(
+      await added.world.project.files.read(recipePath('widgets')),
+    )
+  })
+
+  it('add owner/repo --agent codex --kinds documentation is not refused, and the recipe names both (#1525)', async () => {
+    const h = githubHarness()
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      runtimes: () =>
+        fx(async () => [
+          { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+          { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
+        ]),
+    }
+    expect(
+      await addFlow(
+        { ...flagsFromArgv([...h.argv, '--agent', 'codex', '--kinds', 'documentation']), positional: 'acme/widgets' },
+        h.world,
+      ),
+    ).toBe(0)
+    expect(h.errors).toEqual([])
+    const recipe = parseDocument((await h.world.project.files.read(recipePath('widgets')))!)
+    expect(recipe.getIn(['runtime', 'agent'])).toBe('codex')
+    // Not the default four: `bug` is among them, so only the flag's own answer can make this the whole list.
+    expect((recipe.getIn(['source', 'kinds']) as { toJSON: () => string[] }).toJSON()).toEqual(['documentation'])
+  })
+
+  it('an interrupt at the kinds question writes no recipe, makes no branch and registers nothing, and keeps github.auth (#1525)', async () => {
+    const h = unsetAuthHarness('gh')
+    const made: string[] = []
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      // Team mode, and the personal branch is not there: the list would have it made, once it is answered to its end.
+      client: () =>
+        Effect.succeed({
+          branchExists: async (name: string) => name === 'main',
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async (name: string) => {
+            made.push(name)
+          },
+        } as never),
+    }
+    const ask = h.world.githubDeps!.ask
+    let asked = false
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      ask: async (prompt, shape) => {
+        // `use every default?` defaults to yes, which would answer the kinds without asking.
+        if (prompt.startsWith('use every default?')) return 'no'
+        if (prompt.startsWith('which labels are work')) {
+          asked = true
+          return null
+        }
+        return ask(prompt, shape)
+      },
+    }
+    const argv = [
+      'acme/widgets',
+      '--mode',
+      'team',
+      '--login',
+      'sam',
+      '--personal',
+      'sam/studio',
+      '--main',
+      'main',
+      '--build',
+      'none',
+    ]
+    const code = await addFlow({ ...flagsFromArgv(argv.slice(1)), positional: 'acme/widgets' }, h.world)
+    expect(asked).toBe(true)
+    expect(code).not.toBe(0)
+    expect(made).toEqual([])
+    expect(await h.world.project.files.read(recipePath('widgets'))).toBeNull()
+    const log = await h.world.project.store!.readAll(0n, 1000)
+    expect(log.filter((e) => e.type === 'ProjectConfigured')).toEqual([])
+    // The machine entry's answer is the machine's, written before the list (ADR 0125 §9), and stays.
+    expect(h.authNow()).toBe('gh')
+  })
+
+  it('the same team answers, taken to the end, do make the personal branch — after the list, before registering (#1525)', async () => {
+    const h = githubHarness()
+    const made: string[] = []
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      client: () =>
+        Effect.succeed({
+          branchExists: async (name: string) => name === 'main',
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async (name: string) => {
+            made.push(name)
+          },
+        } as never),
+    }
+    const argv = [
+      '--mode',
+      'team',
+      '--login',
+      'sam',
+      '--personal',
+      'sam/studio',
+      '--main',
+      'main',
+      '--defaults',
+      '--install',
+      'none',
+      '--build',
+      'none',
+    ]
+    const done = await Effect.runPromise(
+      githubProjectEffect('acme/widgets', { ...flagsFromArgv(argv).flags, github: 'acme/widgets' }, [], h.world, {
+        command: 'add',
+        homeIsNew: false,
+      }).pipe(Effect.provideService(ProjectFiles, h.world.project.files)),
+    )
+    expect(h.errors).toEqual([])
+    expect(done.exit).toBe(0)
+    expect(made).toEqual(['sam/studio'])
   })
 
   it('prints a warning add reported before the card', async () => {

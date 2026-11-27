@@ -120,7 +120,7 @@ import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
 import { askBaseBranch, askMakeBranch, askMode, askPersonal, type Mode } from './team.ts'
-import { HANDED_OFF_FLAGS, ROUNDS_RETIRED } from './wizard-options.ts'
+import { ROUNDS_RETIRED, withoutProjectFlags } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
 const LINGTAI_BASE = 'lingtai-base'
@@ -199,6 +199,11 @@ export const pathExistsEffect = (path: string): Effect.Effect<boolean> =>
  * A rejection or a throw inside a member is a failure or a defect, and the refusals below treat both alike.
  */
 export interface FirstProjectWorld extends QuestionWorld {
+  /**
+   * The caller asks a GitHub project's questions itself once a repository is picked (`lingtai add`), so the GitHub
+   * branch is handed the flags without the project's own, and the local branch still gets every one.
+   */
+  asksProjectQuestionsAfterThePick?: true
   git: (dir: string, args: readonly string[]) => Effect.Effect<GitResult, unknown>
   /** Whether a path exists — a seam so the unit tests never touch the disk (0060 §1). */
   exists: (path: string) => Effect.Effect<boolean, unknown>
@@ -439,12 +444,6 @@ export function chooseFirstProjectEffect(
   flags: Record<string, string>,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
-  /**
-   * The caller will ask the recipe questions itself once a repository is picked
-   * (`lingtai add`), so the GitHub branch is handed the flags without them. The
-   * local branch still gets every flag: it asks the recipe here.
-   */
-  deferRecipeFlags = false,
 ): Effect.Effect<FirstProjectOutcome, unknown> {
   return Effect.gen(function* () {
     const conflict = conflictingFlags(flags, world.kept, world.github.decided !== undefined)
@@ -521,9 +520,7 @@ export function chooseFirstProjectEffect(
       ? runLocalBranch(world, flags, buildFlags, flags['local'] ?? null)
       : runGithubBranch(
           world,
-          deferRecipeFlags
-            ? Object.fromEntries(Object.entries(flags).filter(([n]) => !HANDED_OFF_FLAGS.includes(n)))
-            : flags,
+          world.asksProjectQuestionsAfterThePick === true ? withoutProjectFlags(flags) : flags,
           flags['github'] ?? null,
           appCheck,
         )
@@ -1421,7 +1418,7 @@ function runGithubBranch(
   knownApp: AppCheck | null,
 ): Effect.Effect<FirstProjectOutcome, unknown> {
   return Effect.gen(function* () {
-    // #396's two questions are asked only by `lingtai add`'s `askBeforeGithubAdd`
+    // #396's two questions are asked only by `lingtai add`'s `githubProjectAnswers`
     // (`lingtai.ts`), once a recipe already exists — never by the board wizard
     // this branch drives (#399's scope: "a GitHub one picked on the board …
     // reach[es] none of this yet"). Refused by name instead of silently
@@ -1731,9 +1728,11 @@ export interface LiveFirstProjectOptions {
   log: (line: string) => void
   /**
    * What a refusal says was kept. `Nothing was written` unless the caller
-   * already wrote something: `lingtai add <owner>/<repo>` runs
-   * `askBeforeGithubAdd` first, which writes each answer as it is given
-   * (#396–#399), so a refusal here must not tell the operator nothing was.
+   * already wrote something. `lingtai add <owner>/<repo>` runs
+   * `githubProjectAnswers` first, but its answers are a pending draft that
+   * `applySetup` writes only just before the registration they belong to; what
+   * it has already written is the machine's own `github.auth`, so a refusal
+   * here says what was kept only for that.
    */
   kept?: string
 }
@@ -1783,8 +1782,9 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
     signedIn: signedInHere,
     runtimes: askRuntimesEffect,
     setupReader: liveSetupReader,
-    // `lingtai add` is the only caller. With a slug, `askBeforeGithubAdd`
-    // has already written its answers, and `addCommand` says so (#402).
+    // `lingtai add` is the only caller. With a slug, `githubProjectAnswers`
+    // holds its answers as a pending draft, written by `applySetup` just before
+    // the registration, so a refusal before that keeps none of them.
     kept: options.kept ?? 'Nothing was written',
     register: (payload) =>
       addLocalEffect(

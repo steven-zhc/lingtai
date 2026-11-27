@@ -187,6 +187,12 @@ export interface ProjectPorts {
   defaultBranch: Effect.Effect<string | null, unknown>
   /** Whether the exact ref exists; `'unreadable'` is the read failing, never *absent*. */
   branchExists: (name: string) => Effect.Effect<boolean | 'unreadable'>
+  /**
+   * The repository cannot be read from here yet: the machine reaches GitHub through an App that is created after the
+   * list. A main the list was told is then not looked up — it stands as named, and the App's own reads check it — rather
+   * than refusing the run before the App can be made.
+   */
+  notReadableYet?: boolean
   /** The commits (`<sha> <subject>`) `head` has that `base` does not; null where they could not be read. */
   commitsOnlyIn: (base: string, head: string) => Effect.Effect<string[] | null>
   reader: SetupReader
@@ -648,13 +654,14 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
           if (source === 'unreadable') return `could not read whether the current base exists in this checkout`
           return source === null ? `${answer} is not a branch in this checkout` : null
         }
+        if (ctx.ports.notReadableYet === true) return null
         return yield* branchOnGithubRefusal(answer, null, ctx.ports.branchExists)
       }),
     write: (answer, inForce, ctx) =>
       Effect.gen(function* () {
         if (ctx.answers.mode !== 'team') {
           const where = ctx.ports.local ? 'in this checkout' : 'on GitHub'
-          const found = yield* ctx.ports.branchExists(answer)
+          const found = ctx.ports.notReadableYet === true ? true : yield* ctx.ports.branchExists(answer)
           if (found === 'unreadable')
             return { refused: `could not read whether ${answer} exists ${where}. ${ctx.kept}` }
           // The base a directory's project lands on is made after the list; a rerun's new base is cut from the old
@@ -686,7 +693,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         // A main the port read from GitHub's own default is not looked up again; every other one is.
         const named = text(ctx.view.get(['branch', 'main']))
         if ((typedMain !== undefined && typedMain !== '') || named !== null || ctx.ports.local) {
-          const found = yield* ctx.ports.branchExists(main)
+          const found = ctx.ports.notReadableYet === true ? true : yield* ctx.ports.branchExists(main)
           if (found === 'unreadable') return { refused: `could not read whether ${main} exists. ${kept}` }
           if (!found) {
             return { refused: `${main} is not a branch ${ctx.ports.local ? 'in this checkout' : 'on GitHub'}. ${kept}` }
@@ -1434,7 +1441,9 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     // Only the defaults can reach registration without anyone having looked: a person who typed an answer, or named
     // `--build none` or `--land <branch>`, chose it. Team lands on the person's own branch, so nothing is unattended.
     applies: (ctx) => {
-      if (ctx.answers.defaults !== 'yes') return false
+      // `no` is somebody asked for the defaults who declined them. With no terminal the switch is never asked, so
+      // `undefined` is nobody having looked either, and the confirmation stands: it refuses without --defaults.
+      if (ctx.answers.defaults === 'no') return false
       const resolved = resolvedNow(ctx)
       if (resolved === null) return false
       const summary = summariseRecipe(resolved.recipe)
