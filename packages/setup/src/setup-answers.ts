@@ -35,7 +35,7 @@ import { personalRefusal } from './personal-branch.ts'
 import type { SetupTarget, TicketsProposal } from './propose-setup.ts'
 import { hostsRefusal } from './sandbox-step.ts'
 
-/** A GitHub login: letters, digits and single dashes (the CLI's `GITHUB_LOGIN`). */
+/** A GitHub login: letters, digits and single dashes (`loginRefusal`'s shape). */
 export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
 
 /** The branch a directory with no GitHub base lands on: made from the checked-out one (0104 §15). */

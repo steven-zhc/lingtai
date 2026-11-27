@@ -132,7 +132,4 @@ export function valuelessFlag(argv: readonly string[]): string | null {
   return null
 }
 
-/** `--rounds` became two bounds (0108 §8); every guard that would refuse it generically says this instead. */
-export const ROUNDS_RETIRED =
-  '--rounds is gone: it was two bounds, so write --refusal-fixes <n> (fixes after a build or review ' +
-  'refusal) and --conflict-resolutions <n> (merge conflict resolutions), 0108 §8'
+export { ROUNDS_RETIRED } from '@lingtai/setup'
