@@ -141,6 +141,7 @@ import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lin
 import { Effect } from 'effect'
 import { Document, isMap, parseDocument } from 'yaml'
 
+import { liveGithubDeps } from './add-github.ts'
 import { type AddWorld, githubProjectEffect } from './add.ts'
 import { checkAppEffect, pollForAppEffect, type AppCheck } from './app-check.ts'
 import { boardAtEffect, boardLock, builtBoardDir, serveBoardEffect } from './board.ts'
@@ -456,12 +457,9 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       const older = config.getIn(['database', 'url'])
       if (typeof older === 'string' && older !== '') {
         const check = yield* spunEffect(world, 'connecting to the database', world.database(older))
-        if (check.ok) {
-          writeStore(world.machine, path, { url: older })
-        } else {
-          flush()
-          world.log(paint.fail(`${redactUrl(older)} does not answer — ${check.why}`))
-        }
+        // A URL that does not answer is not discarded: the store question reads it as in force, with a fault, and
+        // it stays the default — a run with no terminal refuses by name rather than choosing SQLite over it.
+        if (check.ok) writeStore(world.machine, path, { url: older })
       }
     }
 
@@ -522,6 +520,19 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         if (q !== undefined) heldFact(held, q.name, [[q.id, `${q.row(was.value, was)} — from the environment`]])
       }
     }
+
+    // The day's ceiling this run asked about or was told, as the card's `spend` row.
+    const ceilingEntry = listed.entries.find((e) => e.id === 'ceiling')
+    const ceilingQuestion = machine.list.find((x) => x.id === 'ceiling')
+    const spendRow: string | undefined = (() => {
+      if (ceilingEntry === undefined || ceilingQuestion === undefined) return undefined
+      if (ceilingEntry.after !== null) return ceilingQuestion.row(ceilingEntry.after, ceilingEntry.before)
+      const was = ceilingEntry.before
+      return was !== null && was.value !== undefined
+        ? `${ceilingQuestion.row(was.value, was)} — from the environment`
+        : undefined
+    })()
+    const spendFact = spendRow === undefined ? {} : { spend: spendRow }
 
     // ---- how this machine reaches GitHub, as the list left it --------------------
     // Read off the file this world was handed and the environment, not off the disk. A refused `github.auth`
@@ -694,6 +705,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             store: storeNow,
             runtimes,
             github: how,
+            ...spendFact,
             ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],
@@ -722,6 +734,14 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
     let githubClosing: Parameters<typeof addSteps>[0] | undefined
     // The board's `/setup/repository` page, when the App was just made here.
     let githubSetupUrl: string | undefined
+    // `app` was answered and no App exists yet: the step that makes one is the project path, which this run is not on.
+    // Said as a refusal rather than a 0 that leaves `github.auth` where it was.
+    if (!askProject && decidedAuth.pending) {
+      return stop(
+        'github.auth stays unwritten until a GitHub App exists — run lingtai init --project github. ' +
+          'Everything else chosen above is kept',
+      )
+    }
     if (askProject) {
       // Built from `world` directly rather than through a live default (#394's
       // finding 6): every seam `chooseFirstProject` reaches for — `git`, the
@@ -800,7 +820,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
           buildFlags,
           {
             project: firstProjectWorld,
-            ...(world.githubProject?.deps === undefined ? {} : { githubDeps: world.githubProject.deps }),
+            // The token was asked at its place in the list: the project's own question is the list's deferred entry only.
+            githubDeps: {
+              ...(world.githubProject?.deps ?? liveGithubDeps),
+              claudeToken: (recipe, given) => askTokenFor(machine, world, given, recipe, listed.deferred),
+            },
             ...(world.githubProject?.labels === undefined ? {} : { labels: world.githubProject.labels }),
             error: (line) => {
               flush()
@@ -854,6 +878,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
               userHome: world.env['HOME'] ?? '',
               store: storeNow,
               runtimes,
+              ...spendFact,
               recipe: chosen.card,
               trial: chosen.trial,
               recipePath: recipeFile,

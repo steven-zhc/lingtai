@@ -299,7 +299,12 @@ export type FirstProjectOutcome =
   | { refused: string }
 
 /** Why a combination of flags cannot both be obeyed, or null when they can. */
-export function conflictingFlags(flags: Record<string, string>, kept: string): string | null {
+export function conflictingFlags(
+  flags: Record<string, string>,
+  kept: string,
+  /** `init`'s: `--github-auth` is the machine list's flag, already answered before any project is, so no project kind conflicts with it. */
+  githubAuthIsMachine = false,
+): string | null {
   const local = flags['local']
   const github = flags['github']
   // A valueless flag parses as '' (`@effect/cli`'s empty option), and `git` run
@@ -318,13 +323,13 @@ export function conflictingFlags(flags: Record<string, string>, kept: string): s
     return `--local ${local}, but --project github names the other kind. Leave out --project, or leave out --local. ${kept}`
   }
   const auth = flags['github-auth']
-  if (auth !== undefined && local !== undefined) {
+  if (!githubAuthIsMachine && auth !== undefined && local !== undefined) {
     return (
       `--github-auth ${auth}, but --local ${local} reaches no GitHub. Leave out --github-auth, or leave out ` +
       `--local. ${kept}`
     )
   }
-  if (auth !== undefined && flags['project'] === 'local') {
+  if (!githubAuthIsMachine && auth !== undefined && flags['project'] === 'local') {
     return `--github-auth ${auth}, but --project local reaches no GitHub. Leave out --github-auth, or pass --project github. ${kept}`
   }
   if (auth === 'gh' && flags['github-app'] !== undefined && flags['github-app'] !== 'skip') {
@@ -418,7 +423,7 @@ export function chooseFirstProjectEffect(
   deferRecipeFlags = false,
 ): Effect.Effect<FirstProjectOutcome, unknown> {
   return Effect.gen(function* () {
-    const conflict = conflictingFlags(flags, world.kept)
+    const conflict = conflictingFlags(flags, world.kept, world.github.decided !== undefined)
     if (conflict !== null) return { refused: conflict }
 
     let kind: 'local' | 'github' | null =
@@ -1475,8 +1480,10 @@ function runGithubBranch(
         ? { auth: elected, pending: false }
         : flags['github-auth'] === 'none'
           ? { auth: 'none', pending: false }
-          : // Nothing elected and nothing decided for it: `app` is the one way left, and is written once the App exists.
-            { auth: 'app', pending: true })
+          : flags['github-auth'] === 'gh'
+            ? { auth: 'gh', pending: false }
+            : // Nothing elected and nothing decided for it: `app` is the one way left, and is written once the App exists.
+              { auth: 'app', pending: true })
     if (decided.auth === 'none') {
       return {
         refused:

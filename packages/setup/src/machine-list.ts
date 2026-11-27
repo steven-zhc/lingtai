@@ -70,6 +70,10 @@ export interface SetupQuestion {
   systemDefault: Effect.Effect<string | null, unknown>
   /** The answer that is equal to what is in force, where that is not its value (a token that is set is `keep`). */
   answerOf?: (inForce: NonNullable<InForce>) => string | null
+  /** Whether a flag answer is the one an exported value already is, where that is not its text (a token: `skip` beside a set token). */
+  sameAsEnvironment?: (answer: string, value: string) => boolean
+  /** A refusal of an exported value this command cannot use (`add` is refused `none`), or null. */
+  refusesEnvironment?: (value: string) => string | null
   /** Null accepts; a string is why not. */
   validate: (answer: string) => Effect.Effect<string | null, unknown>
   /** Absent for every question but the token: whether this run applies to it. */
@@ -166,7 +170,14 @@ export function runSetupList(
       if (inForce !== null && 'fault' in inForce && inForce.fatal === true) return refuse(inForce.fault)
       if (inForce !== null && inForce.from === 'environment') {
         if ('fault' in inForce) return refuse(`${q.name}: ${inForce.fault}`)
-        if (flag !== null && normalized(q, flag) !== normalized(q, inForce.value)) {
+        const unusable = q.refusesEnvironment?.(inForce.value) ?? null
+        if (unusable !== null) return refuse(unusable)
+        const sameAsExported =
+          flag !== null &&
+          (q.sameAsEnvironment !== undefined
+            ? q.sameAsEnvironment(normalized(q, flag), inForce.value)
+            : normalized(q, flag) === normalized(q, q.answerOf?.(inForce) ?? inForce.value))
+        if (flag !== null && !sameAsExported) {
           return refuse(
             `${q.flag.split(',')[0]} ${flag}, but the environment names ${q.show?.(inForce.value) ?? inForce.value} ` +
               `for ${q.name}, and an exported value wins over the file. Unset it, or leave out the flag. Nothing was written`,
@@ -484,6 +495,10 @@ export function machineQuestions(ports: MachinePorts, opts: { githubRequired: bo
         })
         return { wrote: true }
       }),
+    refusesEnvironment: (value) =>
+      value === 'none' && opts.githubRequired
+        ? 'LINGTAI_GITHUB_AUTH names none, and a GitHub project needs a way to reach GitHub — unset it or export gh or app. Nothing was written'
+        : null,
     row: (value) => (value === 'none' ? 'no GitHub' : value),
   }
 
@@ -517,8 +532,11 @@ export function machineQuestions(ports: MachinePorts, opts: { githubRequired: bo
         try: () => {
           const parsed = parseCeiling(answer)
           if ('bad' in parsed) throw new Error(`${parsed.bad}. Nothing was written`)
-          const now = inForce !== null && !('fault' in inForce) ? Number(inForce.value) : null
-          if (parsed.dollars === now) return { wrote: false }
+          // A value that could not be read is not an absent one: it stays in the file until it is replaced or removed.
+          if (inForce === null || !('fault' in inForce)) {
+            const now = inForce === null ? null : Number(inForce.value)
+            if (parsed.dollars === now) return { wrote: false }
+          }
           writeDayCeiling(ports.machine, ports.path, parsed.dollars)
           return { wrote: true }
         },
@@ -563,6 +581,8 @@ export function machineQuestions(ports: MachinePorts, opts: { githubRequired: bo
       return { value: 'set', from: state.environment ? 'environment' : 'file' }
     }),
     answerOf: () => 'keep',
+    // `skip` beside a token that is set is `keep`: nothing is written either way.
+    sameAsEnvironment: (answer) => answer === 'keep' || answer === 'skip',
     systemDefault: Effect.succeed('skip'),
     validate: (answer) =>
       Effect.sync(() => {

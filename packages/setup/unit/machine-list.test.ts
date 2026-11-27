@@ -265,3 +265,49 @@ describe('the store entry', () => {
     expect(down.state.writes).toBe(0)
   })
 })
+
+describe('a value that could not be read is not an absent one', () => {
+  const faulty = (text: string) =>
+    world(text, { dayCeiling: () => ({ fault: 'limits.day_usd 0 is not a positive number', environment: false }) })
+
+  it('removes a malformed ceiling for `none`, and reports that it wrote', async () => {
+    const { state, ports } = faulty('limits:\n  day_usd: 0\n  other: 1\n')
+    const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': 'none' } }))
+    expect(out.entries[0]).toMatchObject({ after: 'none', wrote: true })
+    expect(state.text).not.toContain('day_usd')
+    expect(state.text).toContain('other: 1')
+  })
+
+  it('replaces it for a positive answer', async () => {
+    const { state, ports } = faulty('limits:\n  day_usd: 0\n')
+    const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': '50' } }))
+    expect(out.entries[0]).toMatchObject({ after: '50', wrote: true })
+    expect(state.text).toContain('day_usd: 50')
+  })
+})
+
+describe('an exported value beside a flag', () => {
+  it('accepts --claude-token keep and skip beside an exported token, writing nothing', async () => {
+    for (const given of ['keep', 'skip']) {
+      const { state, ports } = world('', { tokenState: () => ({ environment: true, file: false, usable: true }) })
+      const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
+      const out = await Effect.runPromise(
+        runSetupList(list, input({ flags: { 'claude-token': given } }), {
+          draft: { sandbox: 'claude-code' } as never,
+        }),
+      )
+      expect(out.refused).toBeUndefined()
+      expect(state.writes).toBe(0)
+    }
+  })
+
+  it('refuses an exported none for a command that needs GitHub, and accepts it for init', async () => {
+    const ports = world('', { githubAuth: () => ({ kind: 'none', environment: true, written: true }) }).ports
+    const github = (required: boolean) =>
+      machineQuestions(ports, { githubRequired: required }).filter((q) => q.id === 'github')
+    const refused = await run(github(true), input())
+    expect(refused.refused).toContain('GitHub')
+    const fine = await run(github(false), input())
+    expect(fine.refused).toBeUndefined()
+  })
+})

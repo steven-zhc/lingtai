@@ -32,6 +32,7 @@ import {
   runSetupList,
 } from '@lingtai/setup'
 import { Effect } from 'effect'
+import { parseDocument } from 'yaml'
 
 import type { AppCheck } from './app-check.ts'
 import { claudeTokenAsker, liveSetupTokenRun, obtainClaudeToken, type ClaudeTokenWorld } from './claude-token.ts'
@@ -135,7 +136,13 @@ export function machineSetup(world: MachineWorld, opts: { githubRequired: boolea
     store: () => {
       const read = storeChoice(world.env, fileNow())
       if ('refused' in read) {
-        return read.because === 'nothing chosen' ? { store: null } : { store: null, fault: read.refused }
+        if (read.because !== 'nothing chosen') return { store: null, fault: read.refused }
+        // A `database.url` with no `store` beside it is the choice nobody recorded (#186): it is the store in force, so
+        // it is the answer kept, and a database that does not answer is a fault with the URL as its default, never absence.
+        const older = parseDocument(world.machine.read(world.path) ?? '').getIn(['database', 'url'])
+        return typeof older === 'string' && older !== ''
+          ? { store: 'postgres', url: older, environment: false }
+          : { store: null }
       }
       return read.store === 'sqlite'
         ? { store: 'sqlite' }

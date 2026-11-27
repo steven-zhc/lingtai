@@ -193,7 +193,7 @@ export interface AskBeforeGithubAddDeps {
   sandboxHost?: () => NonNullable<ProposalReaders['host']>
 }
 
-const liveDeps: AskBeforeGithubAddDeps = {
+export const liveGithubDeps: AskBeforeGithubAddDeps = {
   check: checkInstallationEffect,
   auth: () => githubAuthKind(),
   interactive: () => {
@@ -273,7 +273,7 @@ const errorText = (err: unknown): string => (err instanceof Error ? err.message 
 export const askBeforeGithubAddEffect = Effect.fn('add-github.askBeforeGithubAdd')(function* (
   slug: string,
   flags: Record<string, string>,
-  deps: AskBeforeGithubAddDeps = liveDeps,
+  deps: AskBeforeGithubAddDeps = liveGithubDeps,
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
 ): Effect.fn.Return<number | AskedBeforeAdd, unknown> {
