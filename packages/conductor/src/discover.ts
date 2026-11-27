@@ -617,7 +617,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
     const landed = options.landed
 
     // Step 1, serial and in listing order: decide each issue, and note the ones that need a blocker read.
-    const decided = issues.map((issue) => {
+    const decided = issues.map((issue, index) => {
       if (issue.dependencies === null) unread.push(issue.number)
 
       const matched = kindLabelOf(issue, kinds)
@@ -637,12 +637,13 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
         (issue.dependencies?.blockedBy ?? 0) > 0 &&
         considerIssue({ ...issue, dependencies: { ...issue.dependencies!, blockedBy: 0 } }, queue, selection).skip ===
           null
-      return { issue, matched, skip, label, needsRead }
+      return { index, issue, matched, skip, label, needsRead }
     })
 
     // Step 2: at most eight reads in flight. Every failure is a value before `forEach` sees it, so none interrupts
     // another.
     type BlockerList = { ok: true; blockers: readonly BlockerRead[] } | { ok: false; why: string }
+    // Keyed by position in the listing, never by issue number: the same number may be listed twice.
     const reads = new Map<number, BlockerList>()
     if (landed !== undefined) {
       const pending = decided.filter((d) => d.needsRead)
@@ -658,7 +659,7 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
           ),
         { concurrency: BLOCKER_READS_IN_FLIGHT },
       )
-      pending.forEach((d, i) => reads.set(d.issue.number, results[i]!))
+      pending.forEach((d, i) => reads.set(d.index, results[i]!))
     }
 
     // Step 3: the drafted tickets, read once and only when some read came back with a usable list.
@@ -676,12 +677,12 @@ export function runnableNowEffect(options: RunnableNowOptions): Effect.Effect<Of
     }
 
     // Step 4, serial and in listing order: assemble.
-    for (const { issue, matched, skip, label } of decided) {
+    for (const { index, issue, matched, skip, label } of decided) {
       let landedBlockers: readonly number[] | undefined
       let held: string | undefined
       let blockersRead: BlockersRead | undefined
       let released = false
-      const read = reads.get(issue.number)
+      const read = reads.get(index)
       if (landed !== undefined && read !== undefined) {
         if (!read.ok) {
           held = blockersUnread(read.why)

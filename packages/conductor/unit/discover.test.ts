@@ -939,21 +939,25 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
     expect(clear.asked).toEqual([])
   })
 
-  /** A store that counts every call made on it, so the drafted read shows as a number. */
+  /** A store that records the stream of every `read` made on it, so the drafted read shows as a number. */
   const counted = (store: EventStore) => {
-    const state = { calls: 0 }
+    const reads: unknown[] = []
     const proxy = new Proxy(store, {
       get(target, key, receiver) {
         const value = Reflect.get(target, key, receiver)
-        return typeof value === 'function'
+        return key === 'read' && typeof value === 'function'
           ? (...args: unknown[]) => {
-              state.calls++
+              reads.push(args[0])
               return (value as (...a: unknown[]) => unknown).apply(target, args)
             }
           : value
       },
     })
-    return { state, store: proxy as EventStore }
+    return {
+      reads,
+      ofPr: (n: number) => reads.filter((r) => r === prStream(PROJECT, n)).length,
+      store: proxy as EventStore,
+    }
   }
 
   /** `listBlockedBy` answers per number; each answer is a function so a test may hold it open. */
@@ -1000,7 +1004,7 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
     expect(found.runnable.map((r) => r.ref)).toEqual(held.map((h) => String(h.number)))
   })
 
-  it('concurrent reads give what the serial loop gave: same fields, same order', async () => {
+  it('concurrent reads give what the serial loop gave: every field, in listing order', async () => {
     const store = createMemoryEventStore()
     await prWith(store, '1395', 'draft')
     const answers: Record<number, readonly BlockerRead[] | Error> = {
@@ -1008,62 +1012,125 @@ describe('runnableNow in a team project: a blocker that landed on branch.persona
       1602: Array.from({ length: 100 }, (_, i) => blocker({ number: 2000 + i, state: 'closed' })),
       1603: [],
       1604: [blocker()],
+      1607: [blocker({ number: 1300, state: 'closed' })],
     }
     const read = scripted(async (n) => {
       // Later tickets answer first, so completion order is the reverse of listing order.
-      await new Promise((r) => setTimeout(r, (1605 - n) * 3))
+      await new Promise((r) => setTimeout(r, (1608 - n) * 3))
       const a = answers[n]!
       if (a instanceof Error) throw a
       return a
     })
+    const parent = { repository: REPO, number: 1500 }
+    const subIssues = { total: 2, completed: 2 }
+    const feature = (color: string) => [{ name: 'feature', color }]
     const issues = [
-      dependent({ number: 1601 }),
-      dependent({ number: 1602 }),
-      dependent({ number: 1603 }),
-      dependent({ number: 1604 }),
-      dependent({ number: 1605, assignees: ['somebody-else'] }),
+      dependent({ number: 1601, title: 'first', labels: feature('111111'), parent, subIssues }),
+      dependent({ number: 1602, title: 'second', labels: feature('222222'), parent }),
+      dependent({ number: 1603, title: 'third', subIssues }),
+      dependent({ number: 1604, title: 'fourth', parent, subIssues }),
+      dependent({ number: 1605, title: 'fifth', assignees: ['somebody-else'] }),
+      dependent({ number: 1606, title: 'sixth', dependencies: null }),
+      dependent({ number: 1607, title: 'seventh' }),
     ]
     const found = await ask(store, read as never, issues)
-    expect(read.asked.slice().sort()).toEqual([1601, 1602, 1603, 1604])
-    expect(found.runnable.map((r) => [r.ref, r.landedBlockers])).toEqual([['1604', [1395]]])
-    expect(found.skipped.map((s) => [s.ref, s.held, s.blockersRead])).toEqual([
-      [1601, blockersUnread('rate limited'), { ok: false, problem: 'rate limited' }],
-      [
-        1602,
-        blockersUnread('it has 100 blockers or more, which is more than one page reads'),
-        { ok: false, problem: 'it has 100 blockers or more, which is more than one page reads' },
+    expect(read.asked.slice().sort()).toEqual([1601, 1602, 1603, 1604, 1607])
+    const skipped = (ref: number, title: string, why: string, over: object = {}) => ({
+      ref,
+      reason: 'blocked-by',
+      label: null,
+      title,
+      kind: 'feature',
+      blockedBy: 1,
+      parent: null,
+      subIssues: null,
+      held: blockersUnread(why),
+      blockersRead: { ok: false, problem: why },
+      ...over,
+    })
+    const full = 'it has 100 blockers or more, which is more than one page reads'
+    const none = 'GitHub listed none, though it counts some open'
+    expect(found).toEqual({
+      runnable: [
+        { ref: '1604', title: 'fourth', kind: 'feature', parent, subIssues, landedBlockers: [1395] },
+        { ref: '1606', title: 'sixth', kind: 'feature', parent: null, subIssues: null },
+        { ref: '1607', title: 'seventh', kind: 'feature', parent: null, subIssues: null },
       ],
-      [
-        1603,
-        blockersUnread('GitHub listed none, though it counts some open'),
-        { ok: false, problem: 'GitHub listed none, though it counts some open' },
+      skipped: [
+        skipped(1601, 'first', 'rate limited', { parent, subIssues }),
+        skipped(1602, 'second', full, { parent }),
+        skipped(1603, 'third', none, { subIssues }),
+        {
+          ref: 1605,
+          reason: 'blocked-by',
+          label: null,
+          title: 'fifth',
+          kind: 'feature',
+          blockedBy: 1,
+          parent: null,
+          subIssues: null,
+        },
       ],
-      [1605, undefined, undefined],
-    ])
-    expect(found.kindColors).toEqual({})
-    expect(found.dependenciesUnread).toBeNull()
+      // First wins, in listing order, though 1602 answered before 1601.
+      kindColors: { feature: '111111' },
+      dependenciesUnread: 'GitHub sent no dependency summary for #1606 — it is not held by a blocker',
+    })
   })
 
-  it('reads the drafted tickets never when no read needs them, and once when several do', async () => {
-    const none = counted(createMemoryEventStore())
-    await ask(
-      none.store,
-      links([blocker({ state: 'closed' }), ...Array.from({ length: 99 }, (_, i) => blocker({ number: 3000 + i }))]),
-      [dependent({ number: 1701 }), dependent({ number: 1702 })],
-    )
-    // A full page and a failure both hold without the drafted read.
-    expect(none.state.calls).toBe(0)
+  it('the same number listed twice is two entries: each keeps its own read', async () => {
+    let call = 0
+    const read = scripted(async () => {
+      // The first read to start fails; the second finds a closed blocker.
+      if (call++ === 0) throw new Error('rate limited')
+      return [blocker({ state: 'closed' })]
+    })
+    const found = await runnableNow({
+      selection: TEAM,
+      client: fakeClient([dependent()], PROJECT),
+      queue: teamQueue,
+      only: [1396, 1396],
+      landed: {
+        links: read.links as never,
+        store: createMemoryEventStore(),
+        project: PROJECT,
+        branch: 'steven-zhc/studio',
+      },
+    })
+    expect(read.asked).toEqual([1396, 1396])
+    expect(found.skipped.map((s) => [s.ref, s.held, s.blockersRead])).toEqual([
+      [1396, blockersUnread('rate limited'), { ok: false, problem: 'rate limited' }],
+    ])
+    expect(found.runnable.map((r) => r.ref)).toEqual(['1396'])
+  })
 
-    const one = counted(createMemoryEventStore())
+  it('reads the drafted tickets never when no read needs them, and exactly once when several do', async () => {
+    const seeded = async () => {
+      const c = counted(createMemoryEventStore())
+      await prWith(c.store, '1395', 'draft')
+      return c
+    }
+    const page = Array.from({ length: 100 }, (_, i) => blocker({ number: 3000 + i }))
+    const held = [dependent({ number: 1701 }), dependent({ number: 1702 })]
+
+    // A full page, an empty list and a failure each hold without the drafted read.
+    for (const answer of [page, [], new Error('rate limited')]) {
+      const none = await seeded()
+      const before = none.reads.length
+      await ask(none.store, links(answer), held)
+      expect(none.reads.length - before).toBe(0)
+    }
+
+    const one = await seeded()
     await ask(one.store, links([blocker()]), [dependent({ number: 1701 })])
-    expect(one.state.calls).toBeGreaterThan(0)
+    expect(one.ofPr(1)).toBe(1)
 
-    const several = counted(createMemoryEventStore())
-    await ask(several.store, links([blocker()]), [
+    const several = await seeded()
+    const found = await ask(several.store, links([blocker()]), [
       dependent({ number: 1701 }),
       dependent({ number: 1702 }),
       dependent({ number: 1703 }),
     ])
-    expect(several.state.calls).toBe(one.state.calls)
+    expect(found.runnable.map((r) => r.ref)).toEqual(['1701', '1702', '1703'])
+    expect(several.ofPr(1)).toBe(1)
   })
 })
