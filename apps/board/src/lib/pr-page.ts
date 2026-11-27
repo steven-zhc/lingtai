@@ -43,6 +43,7 @@ import {
   unfollowedRemote,
 } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
+import { type PrFixRead, fixingLines, fixingOf, unknownLine } from './pr-fix.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
@@ -327,6 +328,8 @@ export interface PrPageView {
   readonly buttons: readonly Button[]
   readonly fixCommand: { readonly command: string; readonly note: string } | null
   readonly doNote: string | null
+  /** The `fixing:` lines: a link to each pr-fix ticket on this PR, in place of *New pr-fix ticket* (#1506). */
+  readonly fixing?: readonly { readonly text: string; readonly href: string }[]
   readonly facts: readonly { readonly label: string; readonly value: string }[]
   readonly checks: { readonly head: string; readonly rows: readonly PageCheck[] }
   readonly history: readonly { readonly at: string; readonly text: string }[]
@@ -413,6 +416,8 @@ export interface PrPageInput {
   readonly spendParts?: { readonly tickets: number | null; readonly pr: number | null }
   /** The conductor's own step list, in order. */
   readonly stepNames: readonly string[]
+  /** The pr-fix tickets read for this PR (#1506); null or absent where nothing was asked. */
+  readonly fixes?: PrFixRead | null
   readonly now: Date
 }
 
@@ -764,8 +769,9 @@ export function prPage(input: PrPageInput): PrPageView {
   let fixCommand: PrPageView['fixCommand'] = null
   let doNote: string | null = null
   const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name, pr })
+  const fixing = fixingOf(pr, input.fixes ?? null)
   const addFix = () => {
-    if (fix === null) return
+    if (fix === null || fixing.tickets.length > 0) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
     else fixCommand = { command: fix.command, note: fix.note }
   }
@@ -833,6 +839,8 @@ export function prPage(input: PrPageInput): PrPageView {
   } else if (pr.status === 'merged') doNote = 'its tickets are closed'
   else if (pr.status === 'closed') doNote = 'closed without merging — its tickets are back in the draft'
   else if (pr.status === 'refused') doNote = pr.refusal?.detail ?? 'the submit was refused'
+
+  if (fixing.unknown !== null && doNote === null) doNote = unknownLine(fixing.unknown)
 
   // The summary and the generated rest.
   const edit = summaryEditTransition(pr, 'team', project, { by: 'page', summary: 'x' })
@@ -905,6 +913,7 @@ export function prPage(input: PrPageInput): PrPageView {
     buttons,
     fixCommand,
     doNote,
+    fixing: fixingLines(project, fixing),
     facts,
     checks: {
       head:
@@ -917,7 +926,15 @@ export function prPage(input: PrPageInput): PrPageView {
               : 'no checks ran',
       rows,
     },
-    history: events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })).reverse(),
+    history: [
+      ...events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })),
+      // No event records the opening of an issue, so a pr-fix is dated at its claim; an unclaimed one adds no line.
+      ...fixing.tickets.flatMap((t) =>
+        t.claimedAt === null ? [] : [{ at: t.claimedAt, text: `pr-fix #${t.issue} taken` }],
+      ),
+    ]
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .reverse(),
     previous: null,
   }
 }
