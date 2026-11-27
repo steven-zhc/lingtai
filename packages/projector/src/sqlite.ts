@@ -802,6 +802,14 @@ export function makeSqliteProjections(db: DatabaseSync): ProjectionsPort {
         where.push('project = ?')
         args.push(query.project)
       }
+      if (query.stream !== undefined) {
+        const streams = Array.isArray(query.stream) ? query.stream : [query.stream]
+        if (streams.length === 0) where.push('0 = 1')
+        else {
+          where.push(`stream_id in (${streams.map(() => '?').join(', ')})`)
+          args.push(...streams)
+        }
+      }
       if (query.since !== undefined) {
         where.push('at >= ?')
         args.push(query.since.toISOString())

@@ -120,12 +120,13 @@ export const spendProjectionWith = (ports: SpendPorts): Projection => ({
         estimate_fetched boolean,
         kind        text
       )`)
-      // `readSpend({ ticket })` and `readSpend({ project })` are both filters on
+      // `readSpend({ ticket })`, `readSpend({ project })` and `readSpend({ stream })` are all filters on
       // a table that grows with the log's whole lifetime (0110 §10's six
       // places, several per pass) — without these, every board render scans
       // every row ever to bill the handful of cards on screen.
       yield* ctx.query('create index if not exists spend_ticket_idx on spend (ticket)')
       yield* ctx.query('create index if not exists spend_project_idx on spend (project)')
+      yield* ctx.query('create index if not exists spend_stream_idx on spend (stream_id)')
 
       // Which ticket a stream `RunSpent` arrives on is about. Kept here and not
       // read from another projection's run-link table, for `backlog.ts`'s
@@ -384,9 +385,8 @@ export interface ReadSpendOptions extends SpendQuery {
  * that is no spend rather than a failure.**
  */
 export const readSpendEffect = Effect.fn('projector.readSpend')(function* (options: ReadSpendOptions = {}) {
-  return yield* withStoreEffect({ url: options.url, max: 1 }, (p) =>
-    p.spend({ ticket: options.ticket, project: options.project, since: options.since }),
-  )
+  const { url, ...query } = options
+  return yield* withStoreEffect({ url, max: 1 }, (p) => p.spend(query))
 })
 
 /** The promise face (0101 §7). */
