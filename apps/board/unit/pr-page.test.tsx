@@ -521,14 +521,131 @@ describe('the tickets on the rail open their task pages', () => {
 })
 
 describe('prFixTicketLink', () => {
-  it('on GitHub: the new-issue form, with the label and the title put in', () => {
-    const link = prFixTicketLink({ project: 'p', owner: 'o', github: true, name: 'PR #88' })
+  const SHA = '296d90c1111111'
+  const row = (
+    name: string,
+    state = 'failure',
+    url = `https://github.com/o/p/actions/runs/1/job/${name.replace(/\W/g, '')}`,
+  ) => ({
+    name,
+    state,
+    url,
+    failing: true,
+  })
+  /** A PR waiting on `reason`, folded by the reducer; `checks` are the ones the red verdict was read from. */
+  const waitingPr = (
+    reason: string,
+    detail: string,
+    checks: readonly ReturnType<typeof row>[] = [],
+    checkedSha = SHA,
+  ): PrState =>
+    reducePr(
+      events([
+        requested,
+        started,
+        draftOpened,
+        ...(checks.length > 0 ? [['PrChecked', { headSha: checkedSha, verdict: 'red', checks }] as Spec] : []),
+        ['PrWaiting', { step: 'ci', reason, detail, headSha: SHA }],
+      ]),
+    )
+  const decoded = (link: ReturnType<typeof prFixTicketLink>) => {
     expect(link?.kind).toBe('link')
     const url = new URL((link as { href: string }).href)
+    return { url, title: url.searchParams.get('title'), body: url.searchParams.get('body') ?? '' }
+  }
+  const input = { project: 'p', owner: 'o', github: true, name: 'PR #8' }
+
+  it('a red CI run: the title names the failure and the body is a ticket with every failing check', () => {
+    const pr = waitingPr('ci-red', 'CI failed', [row('integration (sqlite)'), row('integration (postgres)')])
+    const { url, title, body } = decoded(prFixTicketLink({ ...input, pr }))
     expect(url.origin + url.pathname).toBe('https://github.com/o/p/issues/new')
     expect(url.searchParams.get('labels')).toBe('lingtai:pr-fix')
-    expect(url.searchParams.get('title')).toBe('pr-fix for PR #88: ')
+    expect(title).toBe('pr-fix for PR #8: CI red in integration (sqlite), integration (postgres)')
+    expect(body).toBe(
+      [
+        '| | |',
+        '|---|---|',
+        '| **Problem** | CI is red on PR #8 (head `296d90c`): integration (sqlite), integration (postgres). |',
+        "| **Want** | CI is green on the PR's next head. |",
+        '| **Fix** | |',
+        '| **Watch out** | |',
+        '',
+        '---',
+        '',
+        '## Evidence',
+        '',
+        '- PR #8, branch `foundry-pr-7`, head `296d90c`.',
+        '- Failing checks:',
+        '  - integration (sqlite) — failure — https://github.com/o/p/actions/runs/1/job/integrationsqlite',
+        '  - integration (postgres) — failure — https://github.com/o/p/actions/runs/1/job/integrationpostgres',
+        '',
+      ].join('\n'),
+    )
   })
+
+  it('forty failing checks: the URL stays under 8,000 characters and the list ends in how many more', () => {
+    const checks = Array.from({ length: 40 }, (_, i) => row(`integration (shard ${i}) — a long check name`, 'failure'))
+    const pr = waitingPr('ci-red', 'CI failed', checks)
+    const link = prFixTicketLink({ ...input, pr })
+    const { body } = decoded(link)
+    expect((link as { href: string }).href.length).toBeLessThan(8000)
+    expect(body).toMatch(/\n {2}- … and \d+ more on the PR page\n$/)
+    const listed = body.split('\n').filter((l) => l.startsWith('  - integration')).length
+    const more = Number(/ and (\d+) more on the PR page\n$/.exec(body)?.[1])
+    expect(listed).toBeGreaterThan(0)
+    expect(listed + more).toBe(40)
+    expect(body).toContain('https://github.com/o/p/pull/88')
+  })
+
+  it('a PR with no wait: the empty table with its name and branch', () => {
+    const pr = reducePr(events([requested, started, draftOpened]))
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).toContain('| **Problem** | |\n| **Want** | |\n| **Fix** | |\n| **Watch out** | |')
+    expect(body).toContain('- PR #8, branch `foundry-pr-7`, head `f0f0f0f`.')
+    expect(body).not.toContain('Failing checks')
+  })
+
+  it('no PR at all: the title stub and an empty table', () => {
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr: null }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).toContain('| **Problem** | |')
+  })
+
+  it('checks read on another head than the wait are not listed', () => {
+    const pr = waitingPr('ci-red', 'CI failed on 296d90c: a (failure)', [row('a')], 'abcdef0123')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: CI failed')
+    expect(body).not.toContain('Failing checks')
+    expect(body).toContain('| **Problem** | CI failed on PR #8 (head `296d90c`): CI failed on 296d90c: a (failure). |')
+  })
+
+  it('another wait: its words and detail in Problem, nothing guessed in Want', () => {
+    const pr = waitingPr('sync-conflict', 'src/a.ts\nsrc/b.ts | both changed')
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: conflicts with main')
+    expect(body).toContain(
+      '| **Problem** | conflicts with main on PR #8 (head `296d90c`): src/a.ts src/b.ts \\| both changed. |',
+    )
+    expect(body).toContain('| **Want** | |')
+  })
+
+  it('a check name with | or a missing link keeps the table whole and the line link-free', () => {
+    const pr = waitingPr('ci-red', 'CI failed', [row('a | b'), row('no link', 'timed-out', '')])
+    const { body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(body).toContain('  - a | b — failure — https://')
+    expect(body).toContain('  - no link — timed-out\n')
+    expect(body.split('\n').filter((l) => l.startsWith('|'))).toHaveLength(6)
+  })
+
+  it('a wait left over after the PR moved on is not written', () => {
+    const waiting = waitingPr('ci-red', 'CI failed', [row('a')])
+    const pr = { ...waiting, status: 'in-progress' as const }
+    const { title, body } = decoded(prFixTicketLink({ ...input, pr }))
+    expect(title).toBe('pr-fix for PR #8: ')
+    expect(body).not.toContain('Failing checks')
+  })
+
   it('on a local project: the command, and the line to write', () => {
     expect(prFixTicketLink({ project: 'p', owner: null, github: false, name: 'PR 7' })).toEqual({
       kind: 'command',

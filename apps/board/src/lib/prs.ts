@@ -182,12 +182,13 @@ export async function readPrPage(project: string): Promise<PrsRead> {
               Effect.orElseSucceed(() => 'unknown' as string | null),
             )
           : null
-        const fixHref = (name: string | null): FixTicket | null =>
+        const fixHref = (name: string | null, pr: PrState | null): FixTicket | null =>
           prFixTicketLink({
             project,
             owner: state.owner ?? null,
             github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
+            pr,
           })
         return prBoard({
           project,
@@ -198,8 +199,8 @@ export async function readPrPage(project: string): Promise<PrsRead> {
           spend,
           daemon: holder === null ? 'none' : holder === 'unknown' ? 'unknown' : 'running',
           viewer: actor(),
-          newFixHref: fixHref(null),
-          newFixFor: (pr) => fixHref(prName(pr)),
+          newFixHref: fixHref(null, null),
+          newFixFor: (pr) => fixHref(prName(pr), pr),
         })
       }).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, active)),
     )

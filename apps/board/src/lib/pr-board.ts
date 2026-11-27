@@ -204,15 +204,19 @@ const shown = (all: readonly Slip[]): { slips: Slip[]; more: number } => ({
 
 const usd = (n: number | null): string => (n === null ? 'unknown' : `$${n.toFixed(2)}`)
 
-/** The failing check's link, picked as `lingtai pr` picks it. */
-export function failingRun(pr: PrState): string | null {
+/** The failing checks of the last read, picked as `lingtai pr` picks them: the flagged rows, else any not passing or pending. */
+export function failingChecks(pr: PrState): readonly NonNullable<PrState['checks']>['checks'][number][] {
   const read = pr.checks
-  if (read === null) return null
+  if (read === null) return []
   const flagged = read.checks.some((c) => c.failing === true)
-  const failing = read.checks.filter((c) =>
+  return read.checks.filter((c) =>
     flagged ? c.failing === true : !['success', 'neutral', 'skipped', 'queued', 'running'].includes(c.state),
   )
-  return failing.find((c) => c.url !== '')?.url ?? null
+}
+
+/** The failing check's link, picked as `lingtai pr` picks it. */
+export function failingRun(pr: PrState): string | null {
+  return failingChecks(pr).find((c) => c.url !== '')?.url ?? null
 }
 
 /** Why nothing follows a PR whose remote is not GitHub: the one sentence the page's rows and the card's chip share. */

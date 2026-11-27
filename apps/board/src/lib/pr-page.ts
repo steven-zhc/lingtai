@@ -36,6 +36,7 @@ import {
   type PrRead,
   WAIT_WORDS,
   UNFOLLOWED_WHY,
+  failingChecks,
   failingRun,
   prName,
   slipsOf,
@@ -57,9 +58,101 @@ export type PrFixLink =
 
 /**
  * *New pr-fix ticket* (0130 §5: *opened from the PR's page the label is put on for the person*). **The board creates no
- * issue** — the body is the agent's prompt and the person writes it. On GitHub it is the new-issue form with the label
- * and a title put in; on a project with no GitHub host it is the command, and the line to write.
+ * issue** — it fills in what it knows (what the PR waits on, and for a red CI run every failing check with its link),
+ * and the person reads it, adds what only they know, and submits it. On GitHub it is the new-issue form with the label,
+ * a title and a body put in; on a project with no GitHub host it is the command, and the line to write.
  */
+/** GitHub's new-issue URL is refused past about 8,000 characters; the whole URL is kept under this. */
+const ISSUE_URL_LIMIT = 8000
+/** How many failing checks the title and the Problem row name before `, and N more`. */
+const NAMED_CHECKS = 3
+/** A wait's `detail` is cut here, so the fixed part of the body cannot fill the URL on its own. */
+const DETAIL_CUT = 500
+/** A check's name is cut here in the title and the Problem row. */
+const NAME_CUT = 100
+
+const cut = (text: string, n: number): string => (text.length > n ? `${text.slice(0, n)}…` : text)
+
+/** A value in a table row: `|` would end the cell and a newline would end the row. */
+const cell = (text: string): string => text.replace(/\|/g, '\\|').replace(/\s*[\r\n]+\s*/g, ' ')
+
+/** The rest of a table row after its label: an empty value is `| |`, as the house shape writes it. */
+const row = (text: string): string => (text === '' ? ' |' : ` ${cell(text)} |`)
+
+/** One failing check's line in Evidence; a check with no link has nothing after its state. */
+const checkLine = (c: { name: string; state: string; url: string }): string =>
+  `  - ${c.name.replace(/[\r\n]+/g, ' ')} — ${c.state}${c.url === '' ? '' : ` — ${c.url}`}`
+
+/**
+ * What the board knows of the PR's wait, as the title and the body of the ticket (the four-row table, then Evidence).
+ * Reads only `pr`: a wait counts only while the PR is waiting, and the failing checks only when they were read on the
+ * head the wait names — never a failure the state does not hold.
+ */
+function prFixDraft(
+  name: string,
+  pr: PrState | null,
+): {
+  title: string
+  body: (n: number, more: number) => string
+  checks: readonly { name: string; state: string; url: string }[]
+  prUrl: string | null
+} {
+  const wait = pr !== null && pr.status === 'waiting' && pr.wait !== null ? pr.wait : null
+  const head = wait !== null ? wait.headSha : pr === null ? null : (pr.lastPushed ?? pr.target)
+  const sha = head === null ? null : head.slice(0, 7)
+  const headWords = sha === null ? '' : ` (head \`${sha}\`)`
+  const failing =
+    pr !== null && wait !== null && wait.reason === 'ci-red' && pr.checks !== null && pr.checks.headSha === wait.headSha
+      ? failingChecks(pr)
+      : []
+  const named = failing.slice(0, NAMED_CHECKS).map((c) => cut(c.name, NAME_CUT))
+  const namedWords =
+    named.join(', ') + (failing.length > NAMED_CHECKS ? `, and ${failing.length - NAMED_CHECKS} more` : '')
+
+  let title = `pr-fix for ${name}: `
+  let problem = ''
+  let want = ''
+  if (wait !== null) {
+    const words = WAIT_WORDS[wait.reason]
+    if (failing.length > 0) {
+      title += `CI red in ${namedWords}`
+      problem = `CI is red on ${name}${headWords}: ${namedWords}.`
+      want = "CI is green on the PR's next head."
+    } else {
+      title += words
+      const detail = wait.detail.trim()
+      problem = `${words} on ${name}${headWords}${detail === '' ? '.' : `: ${cut(detail, DETAIL_CUT)}${/[.!?]$/.test(detail) ? '' : '.'}`}`
+    }
+  }
+
+  const prUrl = pr?.host?.url ?? null
+  const facts = [name, pr?.prBranch ? `branch \`${pr.prBranch}\`` : null, sha === null ? null : `head \`${sha}\``]
+    .filter((x) => x !== null)
+    .join(', ')
+
+  const body = (n: number, more: number): string =>
+    [
+      '| | |',
+      '|---|---|',
+      `| **Problem** |${row(problem)}`,
+      `| **Want** |${row(want)}`,
+      '| **Fix** | |',
+      '| **Watch out** | |',
+      '',
+      '---',
+      '',
+      '## Evidence',
+      '',
+      `- ${facts}.`,
+      ...(more > 0 && prUrl !== null ? [`- PR page: ${prUrl}`] : []),
+      ...(failing.length > 0 ? ['- Failing checks:', ...failing.slice(0, n).map(checkLine)] : []),
+      ...(more > 0 ? [`  - … and ${more} more on the PR page`] : []),
+      '',
+    ].join('\n')
+
+  return { title: cell(title), body, checks: failing, prUrl }
+}
+
 export function prFixTicketLink(input: {
   readonly project: string
   readonly owner: string | null
@@ -67,6 +160,8 @@ export function prFixTicketLink(input: {
   readonly github: boolean
   /** The PR's name as the page draws it: `PR #88`. */
   readonly name: string
+  /** The PR's state, which holds what it waits on; null where there is no PR (the board's fallback link). */
+  readonly pr?: PrState | null
 }): PrFixLink | null {
   if (!input.github) {
     return {
@@ -76,11 +171,21 @@ export function prFixTicketLink(input: {
     }
   }
   if (input.owner === null || input.owner === '') return null
-  const title = encodeURIComponent(`pr-fix for ${input.name}: `)
-  return {
-    kind: 'link',
-    href: `https://github.com/${input.owner}/${input.project}/issues/new?labels=${encodeURIComponent(PR_FIX_LABEL)}&title=${title}`,
+  const draft = prFixDraft(input.name, input.pr ?? null)
+  const urlOf = (body: string): string =>
+    `https://github.com/${input.owner}/${input.project}/issues/new?labels=${encodeURIComponent(PR_FIX_LABEL)}` +
+    `&title=${encodeURIComponent(draft.title)}&body=${encodeURIComponent(body)}`
+  // The most checks that fit, measured on the encoded URL; the "N more" line is held back for until the last one fits.
+  const total = draft.checks.length
+  let href = urlOf(draft.body(0, total))
+  for (let n = total; n >= 0; n--) {
+    const candidate = urlOf(draft.body(n, total - n))
+    if (candidate.length < ISSUE_URL_LIMIT) {
+      href = candidate
+      break
+    }
   }
+  return { kind: 'link', href }
 }
 
 // ── What the code host says, as the one streamed part draws it ──────────────────────────────────────────────────────
@@ -620,7 +725,7 @@ export function prPage(input: PrPageInput): PrPageView {
   const buttons: Button[] = []
   let fixCommand: PrPageView['fixCommand'] = null
   let doNote: string | null = null
-  const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name })
+  const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name, pr })
   const addFix = () => {
     if (fix === null) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
