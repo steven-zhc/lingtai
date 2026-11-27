@@ -11,7 +11,7 @@ import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askKinds as askKindsEffect, askTickets as askTicketsEffect } from '../src/source.ts'
+import { askKinds as askKindsEffect, askTicketSource, askTickets as askTicketsEffect } from '../src/source.ts'
 
 const askKinds = (...args: Parameters<typeof askKindsEffect>) => Effect.runPromise(askKindsEffect(...args))
 const askTickets = (...args: Parameters<typeof askTicketsEffect>) => Effect.runPromise(askTicketsEffect(...args))
@@ -390,5 +390,13 @@ describe('kept — neither question claims "Nothing was written" once a caller h
     })
     expect(result).toMatchObject({ refused: expect.stringContaining('the ticket source chosen above is kept') })
     expect(result).not.toMatchObject({ refused: expect.stringContaining('Nothing was written') })
+  })
+})
+
+describe('askTicketSource — a descriptor default', () => {
+  it('takes the fallback as the default where nothing is in force', async () => {
+    const { world: w } = world([''])
+    const result = await Effect.runPromise(askTicketSource(w, { given: null, current: null, fallback: 'github' }))
+    expect(result).toEqual({ answer: 'github' })
   })
 })

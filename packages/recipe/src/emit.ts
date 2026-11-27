@@ -161,6 +161,30 @@ function dropOldBase(doc: ReturnType<typeof read>): void {
   }
 }
 
+/** Makes `changes` on `doc`, in order: a later change at a path replaces an earlier one. */
+function overlay(doc: Document, changes: readonly RecipeChange[]): void {
+  for (const { path, value } of changes) {
+    if (value === undefined) doc.deleteIn(path)
+    else if (doc.hasIn(path)) replace(doc, path, value)
+    else doc.setIn(path, value)
+  }
+  // `branch.main` is the base's one home: an old spelling the file still carries is the same setting
+  // written twice, so a write of the new one takes the old one out in the same edit.
+  if (changes.some((c) => c.path[0] === 'branch')) dropOldBase(doc)
+}
+
+/**
+ * The document of `existing` with `changes` made on it, and nothing checked: no `Recipe.parse`, no carrying onto the
+ * file. What `editRecipe` makes its edit with, for a reader that must see a prefix of an answer that does not resolve
+ * yet (`projectView`). Throws only where the text is not a mapping, which `setIn` cannot write into.
+ */
+export function overlaid(existing: string, changes: readonly RecipeChange[]): Document {
+  const doc = read(existing)
+  if (!isMap(doc.contents)) throw new Error('the recipe is not a mapping')
+  overlay(doc, changes)
+  return doc
+}
+
 /**
  * The same file with `changes` made, and every other byte as it was.
  *
@@ -175,14 +199,7 @@ export function editRecipe(existing: string, changes: readonly RecipeChange[]): 
 
   const before = doc.toString(RENDER)
   const firsts = firstLines(doc)
-  for (const { path, value } of changes) {
-    if (value === undefined) doc.deleteIn(path)
-    else if (doc.hasIn(path)) replace(doc, path, value)
-    else doc.setIn(path, value)
-  }
-  // `branch.main` is the base's one home: an old spelling the file still carries is the same setting
-  // written twice, so a write of the new one takes the old one out in the same edit.
-  if (changes.some((c) => c.path[0] === 'branch')) dropOldBase(doc)
+  overlay(doc, changes)
   // A blank line above an item is space between items, and a new first item has nothing above it.
   for (const [collection, first] of firstLines(doc)) {
     if (first !== firsts.get(collection) && first.spaceBefore) first.spaceBefore = false

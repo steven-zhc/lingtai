@@ -35,7 +35,7 @@ import { landingBranchRefusal, parseBudget, ROUNDS_RETIRED, wallRefusal, wholeNu
 import { Effect } from 'effect'
 
 import { lift, recovering } from './exit.ts'
-import { type QuestionWorld, questionEffect } from './question.ts'
+import { type Answered as Asked, type QuestionWorld, questionEffect } from './question.ts'
 
 export interface LandingDeps {
   home?: string
@@ -109,8 +109,148 @@ export function dollarCeilingNote(named: unknown): string {
     : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.run.usd is written, and holds only where claude-code is the runtime that runs'
 }
 
-const WAIT = 'wait for me to approve'
-const LAND = 'land it without asking'
+export const WAIT = 'wait for me to approve'
+export const LAND = 'land it without asking'
+
+type Validate = (answer: string) => Effect.Effect<string | null, unknown>
+
+/**
+ * The landing question, in its two forms. With a `given` it is one question with no `choices` — a flag is run through
+ * `question()` as it is, and `--land main` is a branch, which the two phrases below would refuse as "not one of …";
+ * `validate` is what checks it. Without one it is the choice, "when an attempt is ready", defaulting to `current`.
+ */
+export function askLandingChoice(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate?: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Asked, unknown> {
+  if (at.given !== null) {
+    return questionEffect(world, {
+      name: 'the landing',
+      flag: '--land <branch>|hold',
+      given: at.given,
+      prompt: 'land this on which branch, or "hold" to hold every attempt for a person',
+      current: null,
+      detected: null,
+      ...(at.validate === undefined ? {} : { validate: at.validate }),
+      kept: at.kept,
+    })
+  }
+  return questionEffect(world, {
+    name: 'the landing',
+    flag: '--land hold (wait for me to approve) or --land <branch> (land on that branch)',
+    given: null,
+    prompt: 'when an attempt is ready',
+    choices: [WAIT, LAND],
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    detected: null,
+    ...(at.validate === undefined ? {} : { validate: at.validate }),
+    kept: at.kept,
+  })
+}
+
+/** How many times an attempt sends the agent back after a build or review refuses it. */
+export function askRefusalFixes(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Asked, unknown> {
+  return questionEffect(world, {
+    name: 'refusal fixes',
+    flag: '--refusal-fixes <n>',
+    given: at.given,
+    prompt:
+      'how many times an attempt sends the agent back after a build or review refuses it — ' +
+      '0 buys no fix in the same worktree (a failed build then goes straight to you)',
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
+/** How many times an attempt sends the agent back to resolve a merge conflict. */
+export function askConflictResolutions(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Asked, unknown> {
+  return questionEffect(world, {
+    name: 'conflict resolutions',
+    flag: '--conflict-resolutions <n>',
+    given: at.given,
+    prompt:
+      'how many times an attempt sends the agent back to resolve a merge conflict — ' +
+      '0 buys no conflict resolution (a merge conflict then goes straight to you)',
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
+/** What one agent run may take. */
+export function askWall(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Asked, unknown> {
+  return questionEffect(world, {
+    name: 'wall',
+    flag: '--wall <duration>',
+    given: at.given,
+    prompt: 'what one agent run may take, like 30m or 2h',
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
+/** The dollar ceiling per agent run, or `none`; the default is drawn as dollars. */
+export function askBudget(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: Validate
+    kept?: string | undefined
+  },
+): Effect.Effect<Asked, unknown> {
+  return questionEffect(world, {
+    name: 'the spend ceiling',
+    flag: '--budget <dollars>|none',
+    given: at.given,
+    prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
 
 /**
  * **Land on a branch, or hold every pass for a person** — `--land <branch>|hold`.
@@ -146,15 +286,9 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
 
   let changes: ReturnType<typeof landingChanges>
   if (land !== null) {
-    // A flag is run through `question()` with no `choices`: `--land main` is a
-    // branch, which the two phrases below would refuse as "not one of …".
-    const result = yield* questionEffect(world, {
-      name: 'the landing',
-      flag: '--land <branch>|hold',
+    const result = yield* askLandingChoice(world, {
       given: land,
-      prompt: 'land this on which branch, or "hold" to hold every attempt for a person',
       current: null,
-      detected: null,
       validate: (answer) => Effect.succeed(landingBranchRefusal(answer)),
       kept: deps.kept,
     })
@@ -162,14 +296,9 @@ export const askLanding = Effect.fn('landing.askLanding')(function* (
     const proposed = rawProposed()
     changes = landingChanges({ land: result.answer }, Array.isArray(proposed) ? proposed : file.proposed)
   } else {
-    const result = yield* questionEffect(world, {
-      name: 'the landing',
-      flag: '--land hold (wait for me to approve) or --land <branch> (land on that branch)',
+    const result = yield* askLandingChoice(world, {
       given: null,
-      prompt: 'when an attempt is ready',
-      choices: [WAIT, LAND],
       current: currentlyHolds ? WAIT : LAND,
-      detected: null,
       kept: deps.kept,
     })
     if ('refused' in result) return result
@@ -236,13 +365,8 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     }
   }
 
-  const refusalFixes = yield* questionEffect(world, {
-    name: 'refusal fixes',
-    flag: '--refusal-fixes <n>',
+  const refusalFixes = yield* askRefusalFixes(world, {
     given: flags.refusalFixes ?? null,
-    prompt:
-      'how many times an attempt sends the agent back after a build or review refuses it — ' +
-      '0 buys no fix in the same worktree (a failed build then goes straight to you)',
     current: String(limits.attempt.refusalFixes),
     validate: (answer) => Effect.succeed(wholeNumberRefusal(answer)),
     kept: options.kept,
@@ -254,13 +378,8 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     if ('refused' in written) return written
   }
 
-  const conflictResolutions = yield* questionEffect(world, {
-    name: 'conflict resolutions',
-    flag: '--conflict-resolutions <n>',
+  const conflictResolutions = yield* askConflictResolutions(world, {
     given: flags.conflictResolutions ?? null,
-    prompt:
-      'how many times an attempt sends the agent back to resolve a merge conflict — ' +
-      '0 buys no conflict resolution (a merge conflict then goes straight to you)',
     current: String(limits.attempt.conflictResolutions),
     validate: (answer) => Effect.succeed(wholeNumberRefusal(answer)),
     kept: options.kept,
@@ -272,11 +391,8 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     if ('refused' in written) return written
   }
 
-  const wall = yield* questionEffect(world, {
-    name: 'wall',
-    flag: '--wall <duration>',
+  const wall = yield* askWall(world, {
     given: flags.wall ?? null,
-    prompt: 'what one agent run may take, like 30m or 2h',
     current: limits.run.wall,
     validate: (answer) => Effect.succeed(wallRefusal(answer)),
     kept: options.kept,
@@ -287,13 +403,9 @@ export const askLimits = Effect.fn('landing.askLimits')(function* (
     if ('refused' in written) return written
   }
 
-  const budget = yield* questionEffect(world, {
-    name: 'the spend ceiling',
-    flag: '--budget <dollars>|none',
+  const budget = yield* askBudget(world, {
     given: flags.budget ?? null,
-    prompt: 'a dollar ceiling per agent run, like $5, or "none" for no ceiling',
     current: limits.run.usd === undefined ? 'none' : String(limits.run.usd),
-    show: (value) => (value === 'none' ? 'none' : `$${Number(value).toFixed(2)}`),
     validate: (answer) => {
       const parsed = parseBudget(answer)
       return Effect.succeed(typeof parsed === 'string' ? parsed : null)

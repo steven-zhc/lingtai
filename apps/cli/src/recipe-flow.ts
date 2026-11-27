@@ -30,8 +30,8 @@ import { type RateRow, shipped } from '@lingtai/domain/rate-card'
 import { codexTextConfig, type CodexTextConfig } from '@lingtai/env'
 import { draftRecipe, recipePath, type RecipeDraft } from '@lingtai/project'
 import { readJson, snapshotPath } from '@lingtai/projector'
-import { assigneeChanges, branchOf, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
-import { type Answers, ENV_PLANT_AT, SAID, type SetupReader } from '@lingtai/setup'
+import { assigneeChanges, findingsJudgeChanges, type RecipeChange, resolveSource } from '@lingtai/recipe'
+import { type Answers, ENV_PLANT_AT, SAID, type SetupReader, type Summary, summariseRecipe } from '@lingtai/setup'
 import {
   branchOnGithubRefusal,
   defaultPersonalBranch,
@@ -140,15 +140,7 @@ export interface PersonalBranchToMake {
   from: string
 }
 
-/** What the recipe, as written, will do with a change — the three facts a newcomer needs before anything is registered (#542). */
-export interface Summary {
-  checks: readonly string[]
-  review: string | null
-  landsUnattended: boolean
-  base: string
-  /** The model each agent action names, `null` where it names none (#693). */
-  models: readonly { role: 'writer' | 'reviewer'; model: string | null }[]
-}
+export { summariseRecipe, type Summary }
 
 /** The snapshot's rows; `null` where the file exists and is not a `{ rows: [...] }` document. */
 function fetchedRates(): readonly unknown[] | null {
@@ -180,36 +172,6 @@ export function priceHints(models: Summary['models'], snapshot: readonly unknown
     lines.push('A role with no model is priced by the model its runtime reports on the first run.')
   }
   return lines
-}
-
-/** The draft as it stands, read the way the pass will read it. */
-export function summariseRecipe(
-  project: string,
-  options: { home?: string; draft: RecipeDraft },
-): Summary | { refused: string } {
-  const path = recipePath(project, options.home)
-  const text = options.draft.text()
-  if (text === null) return { refused: `no recipe at ${path} to summarise` }
-  try {
-    const { recipe } = resolveSource(text, path, path)
-    const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[]>
-    const checks = (steps['build'] ?? []).filter((a) => typeof a['run'] === 'string').map((a) => String(a['run']))
-    const reviewer = (steps['review'] ?? []).find((a) => typeof a['agent'] === 'string')
-    const writer = (steps['implement'] ?? []).find((a) => typeof a['agent'] === 'string')
-    const modelOf = (role: 'writer' | 'reviewer', action: Record<string, unknown> | undefined) =>
-      action === undefined
-        ? []
-        : [{ role, model: typeof action['model'] === 'string' && action['model'] !== '' ? action['model'] : null }]
-    return {
-      models: [...modelOf('writer', writer), ...modelOf('reviewer', reviewer)],
-      checks,
-      review: reviewer === undefined ? null : String(reviewer['agent']),
-      landsUnattended: !(steps['proposed'] ?? []).some((a) => 'human' in a),
-      base: branchOf(recipe),
-    }
-  } catch (err) {
-    return { refused: (err as Error).message }
-  }
 }
 
 /** `draft.set`, with its refusal turned into the same `{refused}` shape every question here returns. */
@@ -736,8 +698,15 @@ export const askRecipeEffect = Effect.fn('recipe-flow.askRecipe')(function* (
   if ('refused' in limited) return limited
 
   // Last, and read back from the file: every registration follows this function (#542).
-  const summary = summariseRecipe(at.project, { home: at.home, draft })
-  if ('refused' in summary) return summary
+  const summaryPath = recipePath(at.project, at.home)
+  const summaryText = draft.text()
+  if (summaryText === null) return { refused: `no recipe at ${summaryPath} to summarise` }
+  let summary: Summary
+  try {
+    summary = summariseRecipe(resolveSource(summaryText, summaryPath, summaryPath).recipe)
+  } catch (err) {
+    return { refused: (err as Error).message }
+  }
   const hints = priceHints(summary.models, (at.rates ?? fetchedRates)())
 
   // Only the defaults can reach here without anyone having looked: a person who

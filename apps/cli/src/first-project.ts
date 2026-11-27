@@ -165,6 +165,25 @@ export interface RegisterLocalPayload {
 }
 
 /**
+ * Whether to move `name`'s landing from `oldRemote` to this checkout and rebuild its mirror. A raw `world.ask`, as it
+ * always was: the answer is `yes` or `no`, and no terminal (`null`) is `yes` — the line the caller printed above it is
+ * the record. What a `no` refuses with is the caller's.
+ */
+export function askMoveLanding(
+  world: Pick<QuestionWorld, 'ask'>,
+  at: { name: string; oldRemote: string; kept?: string | undefined },
+): Effect.Effect<'yes' | 'no', unknown> {
+  return lift(() =>
+    world.ask(`Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror? [y/N]`, {
+      message: `Move ${at.name}'s landing to this checkout?`,
+      defaultValue: 'no',
+      choices: ['yes', 'no'],
+      kept: at.kept,
+    }),
+  ).pipe(Effect.map((confirmed) => (confirmed === null || /^y(es)?$/i.test(confirmed.trim()) ? 'yes' : 'no')))
+}
+
+/**
  * `FirstProjectWorld.exists` over `node:fs`: only a path that is not there is
  * `false`. A directory that cannot be reached (EACCES on a parent) exists —
  * it is git's to say why it cannot be read, not ours to call it missing.
@@ -880,16 +899,9 @@ function runLocalBranch(
             `on two remotes. Run this again once they finish, or after lingtai shutdown. ${world.kept}`,
         }
       }
-      const confirmed = yield* lift(() =>
-        world.ask(`Move ${name}'s landing from ${oldRemote} to this checkout, and rebuild its mirror? [y/N]`, {
-          message: `Move ${name}'s landing to this checkout?`,
-          defaultValue: 'no',
-          choices: ['yes', 'no'],
-          kept: world.kept,
-        }),
-      )
-      // `null` is no terminal: the line above is the record.
-      if (confirmed !== null && !/^y(es)?$/i.test(confirmed.trim())) {
+      const moved = yield* askMoveLanding(world, { name, oldRemote, kept: world.kept })
+      // The refusal is the caller's, so it can be worded where the answer is.
+      if (moved === 'no') {
         return { refused: `${name}'s landing was not moved. ${world.kept}` }
       }
     }

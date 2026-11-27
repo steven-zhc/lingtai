@@ -14,26 +14,27 @@ import { type RecipeDraft, recipePath } from '@lingtai/project'
 import { type RecipeChange, resolveSource } from '@lingtai/recipe'
 import {
   type DetectedSetup,
+  NO_CHECKOUT_LINE,
+  type NamedRun,
   type SetupReader,
   type Trial,
   type TrialReport,
   type TrialResult,
   detectSetupEffect,
   installRefusal,
+  isRunAction,
+  mergeRunActions,
+  namedFromTyped,
+  resolvedRunActions,
 } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { lift, recovering } from './exit.ts'
-import { type QuestionWorld, questionEffect } from './question.ts'
+import { type Answered, type QuestionWorld, questionEffect } from './question.ts'
 
 export type SetupWorld = QuestionWorld
 
 export type { Trial, TrialReport, TrialResult }
-
-interface NamedRun {
-  name: string
-  run: string
-}
 
 export interface AskInstallAndBuildInput {
   project: string
@@ -72,148 +73,11 @@ export type TrialOutcome =
 
 export type AskInstallAndBuildResult = { changes: RecipeChange[]; trial: TrialOutcome } | { refused: string }
 
-function isRunAction(value: unknown): value is NamedRun & Record<string, unknown> {
-  return typeof value === 'object' && value !== null && typeof (value as { run?: unknown }).run === 'string'
-}
-
 /** The `run:` actions already at `path`, in file order — `[]` where the step is absent or writes none. */
 function currentRunActions(draft: RecipeDraft, path: readonly string[]): NamedRun[] {
   const value = draft.get(path)
   if (!Array.isArray(value)) return []
   return value.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
-}
-
-/**
- * The `run:` actions that would actually execute at `step` — the file's own,
- * or inherited from a preset the file `extends:` — or `null` where there is
- * no recipe yet or it does not resolve on its own. `currentRunActions` reads
- * the file's own raw key and is right for *what to show as a default*;
- * deciding whether an answer changes anything needs this instead, or an
- * answer that only restates what a preset already supplies reads as
- * unchanged and widening later pins the preset's value in anyway.
- *
- * `null` and `[]` are kept apart on purpose: `[]` is a confirmed "nothing
- * runs here today", and the caller may skip writing a change that would say
- * the same thing. `null` is "unknown" — the file does not exist yet, or does
- * not resolve without an answer this call has not been given (`extends:`
- * written by the same batch, elsewhere in a first-run call) — and the only
- * safe reading of "unknown" is "assume it differs", so the caller always
- * writes its answer explicitly rather than risk a later preset default
- * silently filling in what the person declined.
- */
-function resolvedRunActions(
-  project: string,
-  step: 'prepared' | 'build',
-  options: { home?: string; draft: RecipeDraft },
-): NamedRun[] | null {
-  const path = recipePath(project, options.home)
-  const text = options.draft.text()
-  if (text === null) return null
-  try {
-    const actions = resolveSource(text, path, path).recipe.steps[step] as unknown[]
-    return actions.filter(isRunAction).map((a) => ({ name: String(a.name ?? ''), run: a.run }))
-  } catch {
-    return null
-  }
-}
-
-/** A flag that takes its value as a separate following token, e.g. `pnpm --filter web test`. */
-const VALUE_FLAGS = /^(?:--filter|-F|--workspace|-w)$/
-/**
- * pnpm's own spelling of `-w`/`--workspace`: short for `--workspace-root`, and
- * takes no value at all — unlike npm's `-w`/`--workspace <name>`, which `VALUE_FLAGS`
- * is otherwise right about.
- */
-const PNPM_WORKSPACE_ROOT = /^(?:-w|--workspace-root)$/
-/** A subcommand that runs an arbitrary following binary rather than naming the check itself. */
-const PASSTHROUGH_SUBCOMMAND = /^(?:exec|dlx|x)$/
-
-/**
- * The script a command invokes, when it is `<pm> [run[-script]] <script>`.
- * Walks past a `-F`/`--filter`-style flag's own value and past a passthrough
- * subcommand like `exec`, since either would otherwise be captured in place
- * of the check it actually names — a numbered name where nothing is left.
- */
-function nameForCommand(command: string, used: Set<string>): string {
-  const m = /^(pnpm|yarn|npm|bun)\s+(?:run(?:-script)?\s+)?(.*)$/.exec(command.trim())
-  // A typed command that is no `<manager> <script>` is named by itself: whitespace
-  // collapsed, cut to 40 characters with `…`.
-  const whole = command.trim().replace(/\s+/g, ' ')
-  let base = whole.length > 40 ? `${whole.slice(0, 39)}…` : whole
-  if (m) {
-    const manager = m[1]
-    const tokens = m[2]!.split(/\s+/).filter((t) => t !== '')
-    let i = 0
-    while (i < tokens.length && tokens[i]!.startsWith('-')) {
-      const takesValue = VALUE_FLAGS.test(tokens[i]!) && !(manager === 'pnpm' && PNPM_WORKSPACE_ROOT.test(tokens[i]!))
-      i += takesValue ? 2 : 1
-    }
-    if (i < tokens.length && PASSTHROUGH_SUBCOMMAND.test(tokens[i]!)) i += 1
-    const candidate = tokens[i]
-    if (candidate !== undefined && /^[\w:.-]+$/.test(candidate)) base = candidate
-  }
-  // `:` is reserved for the conductor's own actions; the recipe refuses it in a name.
-  base = base.replaceAll(':', '-')
-  let name = base
-  let n = 2
-  while (used.has(name)) name = `${base}-${n++}`
-  used.add(name)
-  return name
-}
-
-/**
- * The names `mergeRunActions` keeps from `original` when `wantedRuns` are
- * written: every non-`run:` action's name, and the name of each `run:` entry
- * whose text matches a wanted one. Beside the merge so the two cannot drift.
- */
-function keptNames(
-  original: unknown[],
-  wantedRuns: readonly string[],
-): { byRun: Map<string, string>; all: Set<string> } {
-  const byRun = new Map<string, string>()
-  const all = new Set<string>()
-  for (const item of original) {
-    const name = (item as { name?: unknown } | null)?.name
-    if (typeof name !== 'string') continue
-    if (!isRunAction(item)) all.add(name)
-    else if (wantedRuns.includes(item.run)) {
-      all.add(name)
-      if (!byRun.has(item.run)) byRun.set(item.run, name)
-    }
-  }
-  return { byRun, all }
-}
-
-function namedFromTyped(commands: readonly string[], original: unknown[]): NamedRun[] {
-  const kept = keptNames(original, commands)
-  const used = new Set(kept.all)
-  return commands.map((run) => ({ name: kept.byRun.get(run) ?? nameForCommand(run, used), run }))
-}
-
-/**
- * `original` with its `run:` entries replaced by `wanted`, in place — every
- * other action keeps its position. A `wanted` entry is matched against
- * `original` by its `run:` text, not by where either sits in its list — an
- * action removed or reordered ahead of it must not make it look unchanged.
- * A match keeps the original's other fields (`timeout`, `env`) too, rather
- * than being rebuilt bare; an entry with no match in `original` is new and
- * gets none.
- */
-function mergeRunActions(original: unknown[], wanted: NamedRun[]): unknown[] {
-  const remaining = [...wanted]
-  const merged: unknown[] = []
-  for (const item of original) {
-    if (isRunAction(item)) {
-      const i = remaining.findIndex((w) => w.run === item.run)
-      if (i === -1) continue
-      const [next] = remaining.splice(i, 1)
-      merged.push({ ...item, run: next!.run })
-    } else {
-      merged.push(item)
-    }
-  }
-  merged.push(...remaining)
-  return merged
 }
 
 function printFound(
@@ -250,6 +114,35 @@ function printFound(
   )
 }
 
+/**
+ * The install command. `detected` is what detection found, drawn as the default and explained where nothing is in
+ * force; null where this is a second time round, or nothing was found.
+ */
+export function askInstallCommand(
+  world: SetupWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    detected: { run: string; because: string } | null
+    validate: (answer: string) => Effect.Effect<string | null, unknown>
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the install command',
+    flag: '--install <command>, or --install none',
+    given: at.given,
+    prompt: 'the install command',
+    current: at.current,
+    detected: at.detected?.run ?? null,
+    ...(at.current === null && at.detected ? { why: [`install: ${at.detected.run} — ${at.detected.because}`] } : {}),
+    fallback: at.fallback ?? '',
+    validate: at.validate,
+    kept: at.kept,
+  })
+}
+
 function askInstall(
   world: SetupWorld,
   input: AskInstallAndBuildInput,
@@ -264,22 +157,83 @@ function askInstall(
     const answeredNone = input.recipeExisted === true && Array.isArray(input.draft.get(['steps', 'prepared']))
     const currentRun = again ? (previous ?? 'none') : (current[0]?.run ?? (answeredNone ? 'none' : null))
 
-    const answer = yield* questionEffect(world, {
-      name: 'the install command',
-      flag: '--install <command>, or --install none',
+    const answer = yield* askInstallCommand(world, {
       given: input.given.install,
-      prompt: 'the install command',
       current: currentRun,
-      detected: again ? null : (detected.install?.run ?? null),
-      ...(!again && currentRun === null && detected.install
-        ? { why: [`install: ${detected.install.run} — ${detected.install.because}`] }
-        : {}),
-      fallback: '',
+      detected: again ? null : detected.install,
       validate: (a) => Effect.succeed(installRefusal(a)),
       kept: input.kept,
     })
     if ('refused' in answer) return { run: null, refused: answer.refused }
     return { run: answer.answer === 'none' ? null : answer.answer }
+  })
+}
+
+/** Whether to keep the list as it stands (`yes`), or write one's own (`no`). */
+export function askKeepBuildList(
+  world: SetupWorld,
+  at: { given: string | null; fallback?: string | undefined; why: readonly string[]; kept?: string | undefined },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the build steps',
+    flag: '--build <command> (repeatable), or --build none',
+    given: at.given,
+    prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
+    choices: ['yes', 'no'],
+    fallback: at.fallback ?? 'yes',
+    why: at.why,
+    kept: at.kept,
+  })
+}
+
+/**
+ * The commands a person types, one to a question, until an empty answer. `why` is drawn on the first only, and only
+ * where no list was offered before it.
+ */
+export function askBuildCommands(
+  world: SetupWorld,
+  at: { why: readonly string[]; kept?: string | undefined },
+): Effect.Effect<{ commands: string[] } | { refused: string }, unknown> {
+  return Effect.gen(function* () {
+    const typed: string[] = []
+    for (;;) {
+      const answer = yield* questionEffect(world, {
+        name: 'a build command',
+        flag: '--build <command> (repeatable), or --build none',
+        given: null,
+        prompt: 'a command that must pass before review — empty when done',
+        fallback: '',
+        ...(typed.length === 0 && at.why.length > 0 ? { why: at.why } : {}),
+        kept: at.kept,
+      })
+      if ('refused' in answer) return { refused: answer.refused }
+      if (answer.answer === '') break
+      typed.push(answer.answer)
+    }
+    return { commands: typed }
+  })
+}
+
+/** Whether to try the build list once now, on `base`. */
+export function askTrial(
+  world: SetupWorld,
+  at: {
+    given: string | null
+    base: string
+    recipeExisted: boolean
+    fallback?: string | undefined
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  const ending = at.recipeExisted ? 'This list is not written yet.' : 'Nothing is written yet.'
+  return questionEffect(world, {
+    name: 'the trial run',
+    flag: '--check-build yes, or --check-build no',
+    given: at.given,
+    prompt: `Try them once now, on \`${at.base}\`, to see that they work? ${ending}`,
+    choices: ['yes', 'no'],
+    fallback: at.fallback ?? 'yes',
+    kept: at.kept,
   })
 }
 
@@ -289,6 +243,24 @@ type Tried =
   | { again: 'drop'; failed: string[] }
   | { refused: string }
 
+/** What the trial loop is given: the answers so far, and what it needs to ask again and to say where the recipe is. */
+export interface TrialLoopInput {
+  /** Null where there is nowhere to run it — logged, never run silently. */
+  trial: Trial | null
+  install: string | null
+  build: NamedRun[]
+  given: { install: string | null; build: string[] | null; check: 'yes' | 'no' | null }
+  recipeExisted: boolean
+  /** Where the recipe is, for the line that says what a check that needs a variable should do. */
+  recipeFile: string
+  kept?: string | undefined
+  /** The two questions the *edit* answer goes back to, each told what was just tried. */
+  again: {
+    install: (previous: string | null) => Effect.Effect<{ run: string | null } | { refused: string }, unknown>
+    build: (previous: NamedRun[]) => Effect.Effect<{ build: NamedRun[] } | { refused: string }, unknown>
+  }
+}
+
 /**
  * Runs the trial build, prints its results, and asks what to do with a red one:
  * keep the list, go back and edit it, or drop the checks that failed.
@@ -296,32 +268,25 @@ type Tried =
  */
 function tryTheBuild(
   world: SetupWorld,
-  input: AskInstallAndBuildInput,
+  at: Omit<TrialLoopInput, 'again'>,
   install: string | null,
   build: NamedRun[],
   asked: boolean,
 ): Effect.Effect<Tried, unknown> {
   return Effect.gen(function* () {
     if (build.length === 0) return { ok: true, trial: { trial: 'not-run', because: 'no checks' } }
-    const trial = input.tryBuild
+    const trial = at.trial
     if (trial === null) {
-      world.log(
-        'the trial run was not run — no checkout on this machine; the first attempt’s `build` is where these first run',
-      )
+      world.log(NO_CHECKOUT_LINE)
       return { ok: true, trial: { trial: 'not-run', because: 'no checkout' } }
     }
 
     if (asked) {
-      const base = yield* trial.base
-      const ending = input.recipeExisted === true ? 'This list is not written yet.' : 'Nothing is written yet.'
-      const check = yield* questionEffect(world, {
-        name: 'the trial run',
-        flag: '--check-build yes, or --check-build no',
-        given: input.given.check,
-        prompt: `Try them once now, on \`${base}\`, to see that they work? ${ending}`,
-        choices: ['yes', 'no'],
-        fallback: 'yes',
-        kept: input.kept,
+      const check = yield* askTrial(world, {
+        given: at.given.check,
+        base: yield* trial.base,
+        recipeExisted: at.recipeExisted,
+        kept: at.kept,
       })
       if ('refused' in check) return { refused: check.refused }
       if (check.answer === 'no') return { ok: true, trial: { trial: 'not-run', because: 'declined' } }
@@ -344,7 +309,7 @@ function tryTheBuild(
         ),
       )
     if ('interrupted' in ran) {
-      return { refused: `the trial run was interrupted. ${input.kept ?? 'Nothing was written'}` }
+      return { refused: `the trial run was interrupted. ${at.kept ?? 'Nothing was written'}` }
     }
     const report: TrialReport = ran.report
     const ms = Date.now() - startedAt
@@ -359,7 +324,7 @@ function tryTheBuild(
     }
     if (nothingDeclared) {
       world.log(
-        `the recipe declares no env, so these ran without any of your variables — if a check needs one, declare it under env: in ${recipePath(input.project, input.home)}`,
+        `the recipe declares no env, so these ran without any of your variables — if a check needs one, declare it under env: in ${at.recipeFile}`,
       )
     }
 
@@ -381,26 +346,67 @@ function tryTheBuild(
         : 'keep the list as it is, or edit it?',
       choices: canDrop ? ['edit', 'keep', 'drop'] : ['edit', 'keep'],
       fallback: 'edit',
-      kept: input.kept,
+      kept: at.kept,
     })
     if ('refused' in decide) return { refused: decide.refused }
     if (decide.answer === 'drop') return { again: 'drop', failed: failedChecks }
     if (decide.answer === 'edit') {
-      const at = failedChecks.length > 0 && failedOther.length === 0 ? 'build' : 'install'
-      if (at === 'build' && input.given.build !== null) {
+      const to = failedChecks.length > 0 && failedOther.length === 0 ? 'build' : 'install'
+      if (to === 'build' && at.given.build !== null) {
         return {
           refused: 'the trial build failed and the list was not written — rerun with --build to give a different list',
         }
       }
-      if (at === 'install' && input.given.install !== null) {
+      if (to === 'install' && at.given.install !== null) {
         return {
           refused:
             'the trial’s install failed and the list was not written — rerun with --install to give a different one',
         }
       }
-      return { again: 'edit', at }
+      return { again: 'edit', at: to }
     }
     return { ok: true, trial: { trial: 'failed-kept', command: firstFailed.command, ms } }
+  })
+}
+
+/**
+ * The trial build, and what to do with a red one, until it is kept, passed, declined or refused. A *drop* repeats the
+ * run without asking again; an *edit* goes back to the question that can change what failed, through `again`, every
+ * earlier answer kept. Returns what the list and the install are by then.
+ */
+export function runTrialLoop(
+  world: SetupWorld,
+  at: TrialLoopInput,
+): Effect.Effect<{ install: string | null; build: NamedRun[]; trial: TrialOutcome } | { refused: string }, unknown> {
+  return Effect.gen(function* () {
+    let install = at.install
+    let build = at.build
+    let tried: Tried
+    for (;;) {
+      let asked = true
+      for (;;) {
+        tried = yield* tryTheBuild(world, at, install, build, asked)
+        if ('again' in tried && tried.again === 'drop') {
+          const failed: Set<string> = new Set(tried.failed)
+          build = build.filter((b) => !failed.has(b.run))
+          if (build.length === 0) world.log('nothing will check a diff before review')
+          asked = false
+          continue
+        }
+        break
+      }
+      if (!('again' in tried)) break
+      if (tried.at === 'install') {
+        const again = yield* at.again.install(install)
+        if ('refused' in again) return { refused: again.refused }
+        install = again.run
+      }
+      const again = yield* at.again.build(build)
+      if ('refused' in again) return { refused: again.refused }
+      build = again.build
+    }
+    if ('refused' in tried) return { refused: tried.refused }
+    return { install, build, trial: tried.trial }
   })
 }
 
@@ -450,37 +456,15 @@ function askBuild(
           ]
 
     if (defaultList !== null) {
-      const answer = yield* questionEffect(world, {
-        name: 'the build steps',
-        flag: '--build <command> (repeatable), or --build none',
-        given: null,
-        prompt: 'Each attempt runs these checks before review — keep this list? (yes / no to write your own)',
-        choices: ['yes', 'no'],
-        fallback: 'yes',
-        why,
-        kept: input.kept,
-      })
+      const answer = yield* askKeepBuildList(world, { given: null, why, kept: input.kept })
       if ('refused' in answer) return { refused: answer.refused }
       if (answer.answer === 'yes') return { build: defaultList.map(({ name, run }) => ({ name, run })) }
     }
 
-    const typed: string[] = []
-    for (;;) {
-      const answer = yield* questionEffect(world, {
-        name: 'a build command',
-        flag: '--build <command> (repeatable), or --build none',
-        given: null,
-        prompt: 'a command that must pass before review — empty when done',
-        fallback: '',
-        ...(defaultList === null && typed.length === 0 && why.length > 0 ? { why } : {}),
-        kept: input.kept,
-      })
-      if ('refused' in answer) return { refused: answer.refused }
-      if (answer.answer === '') break
-      typed.push(answer.answer)
-    }
-    if (typed.length === 0) world.log('nothing will check a diff before review')
-    return { build: namedFromTyped(typed, originalBuild ?? []) }
+    const typed = yield* askBuildCommands(world, { why: defaultList === null ? why : [], kept: input.kept })
+    if ('refused' in typed) return { refused: typed.refused }
+    if (typed.commands.length === 0) world.log('nothing will check a diff before review')
+    return { build: namedFromTyped(typed.commands, originalBuild ?? []) }
   })
 }
 
@@ -492,58 +476,60 @@ export function askInstallAndBuildEffect(
     const detected = input.detected ?? (yield* detectSetupEffect(input.reader))
     yield* printFound(world, detected, input.onPath)
 
-    let install = yield* askInstall(world, input, detected)
+    const install = yield* askInstall(world, input, detected)
     if ('refused' in install) return { refused: install.refused }
 
-    let build = yield* askBuild(world, input, detected)
+    const build = yield* askBuild(world, input, detected)
     if ('refused' in build) return { refused: build.refused }
 
-    let tried: Tried
-    for (;;) {
-      let asked = true
-      for (;;) {
-        tried = yield* tryTheBuild(world, input, install.run, build.build, asked)
-        if ('again' in tried && tried.again === 'drop') {
-          const failed: Set<string> = new Set(tried.failed)
-          build = { build: build.build.filter((b) => !failed.has(b.run)) }
-          if (build.build.length === 0) world.log('nothing will check a diff before review')
-          asked = false
-          continue
-        }
-        break
-      }
-      if (!('again' in tried)) break
-      // edit: back to the question that can change what failed, every earlier answer kept.
-      if (tried.at === 'install') {
-        install = yield* askInstall(world, input, detected, install.run)
-        if ('refused' in install) return { refused: install.refused }
-      }
-      build = yield* askBuild(world, input, detected, build.build)
-      if ('refused' in build) return { refused: build.refused }
-    }
-    if ('refused' in tried) return { refused: tried.refused }
+    const looped = yield* runTrialLoop(world, {
+      trial: input.tryBuild,
+      install: install.run,
+      build: build.build,
+      given: input.given,
+      recipeExisted: input.recipeExisted === true,
+      recipeFile: recipePath(input.project, input.home),
+      kept: input.kept,
+      again: {
+        install: (previous) => askInstall(world, input, detected, previous),
+        build: (previous) => askBuild(world, input, detected, previous),
+      },
+    })
+    if ('refused' in looped) return { refused: looped.refused }
 
     const changes: RecipeChange[] = []
-    const fileOptions = { home: input.home, draft: input.draft }
+    const resolved = resolvedFromDraft(input)
 
-    const effectiveInstall = resolvedRunActions(input.project, 'prepared', fileOptions)
+    const effectiveInstall = resolvedRunActions(resolved, 'prepared')
     const effectiveInstallRun = effectiveInstall?.[0]?.run ?? null
-    if (effectiveInstall === null || install.run !== effectiveInstallRun) {
+    if (effectiveInstall === null || looped.install !== effectiveInstallRun) {
       const originalPrepared = input.draft.get(['steps', 'prepared']) as unknown[] | null
-      const wanted = install.run === null ? [] : [{ name: 'install', run: install.run }]
+      const wanted = looped.install === null ? [] : [{ name: 'install', run: looped.install }]
       changes.push({ path: ['steps', 'prepared'], value: mergeRunActions(originalPrepared ?? [], wanted) })
     }
 
-    const effectiveBuild = resolvedRunActions(input.project, 'build', fileOptions)
+    const effectiveBuild = resolvedRunActions(resolved, 'build')
     const sameBuild =
       effectiveBuild !== null &&
-      effectiveBuild.length === build.build.length &&
-      effectiveBuild.every((a, i) => a.run === build.build[i]!.run)
+      effectiveBuild.length === looped.build.length &&
+      effectiveBuild.every((a, i) => a.run === looped.build[i]!.run)
     if (!sameBuild) {
       const originalBuild = input.draft.get(['steps', 'build']) as unknown[] | null
-      changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], build.build) })
+      changes.push({ path: ['steps', 'build'], value: mergeRunActions(originalBuild ?? [], looped.build) })
     }
 
-    return { changes, trial: tried.trial }
+    return { changes, trial: looped.trial }
   })
+}
+
+/** The draft's text resolved on its own, or null where there is none or it does not resolve yet. */
+function resolvedFromDraft(input: AskInstallAndBuildInput) {
+  const path = recipePath(input.project, input.home)
+  const text = input.draft.text()
+  if (text === null) return null
+  try {
+    return resolveSource(text, path, path).recipe
+  } catch {
+    return null
+  }
 }
