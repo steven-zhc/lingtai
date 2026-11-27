@@ -22,6 +22,7 @@ const h = vi.hoisted(() => {
     failing: new Set<string>(),
     inner: null as unknown as EventStore,
     recipe: '',
+    spend: null as unknown as (...a: unknown[]) => unknown,
   }
 })
 
@@ -92,7 +93,7 @@ vi.mock('@lingtai/daemon/control', async (orig) => ({
 }))
 vi.mock('@lingtai/projector', async (orig) => ({
   ...(await orig<typeof import('@lingtai/projector')>()),
-  readSpendEffect: () => Effect.succeed([]),
+  readSpendEffect: (...a: unknown[]) => h.spend(...a),
 }))
 vi.mock('../src/lib/snapshot-writer.ts', () => ({ boardWriterOrNone: vi.fn(async () => undefined) }))
 
@@ -101,7 +102,7 @@ import { recordPrNumber } from '@lingtai/project/test/pr-numbers'
 import { pauseSlot } from '../src/app/lock-banner.tsx'
 import { viewsFor } from '../src/app/place-line.tsx'
 import { readProjectLocks, readRegistered } from '../src/lib/locks.ts'
-import { loadPrBoard, placeViewsOf, readPrPage } from '../src/lib/prs.ts'
+import { loadPrBoard, placeViewsOf, readPrPage, spendByPr } from '../src/lib/prs.ts'
 
 const RECIPE =
   'version: 2\nmode: team\nbranch: { main: main, personal: foundry }\nsource:\n  kinds: [bug]\n  assignee: { login: me }\nruntime:\n  agent: claude-code\nenv:\n  plantAt: .env.local\n'
@@ -120,6 +121,7 @@ async function page(): Promise<void> {
 const count = (ids: string[], id: string) => ids.filter((s) => s === id).length
 
 beforeEach(async () => {
+  h.spend = vi.fn(() => Effect.succeed([]))
   h.reads.length = 0
   h.heads.length = 0
   h.failing.clear()
@@ -209,5 +211,25 @@ describe('a local team project records no owner (#1484)', () => {
     await h.renders.run(new Map(), async () => {
       expect((await readPrPage('nope')).kind).toBe('unknown')
     })
+  })
+})
+
+describe('spendByPr reads the streams of the PRs it shows (#1510)', () => {
+  const row = (n: number, costUsd: number | null) => ({ streamId: prStream('p', n), costUsd })
+
+  it('reads nothing for no PRs', async () => {
+    expect(await Effect.runPromise(spendByPr('p', []))).toEqual(new Map())
+    expect(h.spend).not.toHaveBeenCalled()
+  })
+
+  it('asks by stream, sums reported cost, skips null and leaves a PR with no rows absent', async () => {
+    h.spend = vi.fn(() => Effect.succeed([row(1, 0.5), row(1, 0.25), row(1, null), row(2, null)]))
+    const got = await Effect.runPromise(spendByPr('p', [1, 2, 3]))
+    expect(h.spend).toHaveBeenCalledTimes(1)
+    expect(h.spend).toHaveBeenCalledWith({
+      project: 'p',
+      stream: [prStream('p', 1), prStream('p', 2), prStream('p', 3)],
+    })
+    expect(got).toEqual(new Map([[1, 0.75]]))
   })
 })

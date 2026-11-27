@@ -539,6 +539,10 @@ export function makePostgresProjections(
         args.push(query.project)
         where.push(`project = $${args.length}`)
       }
+      if (query.stream !== undefined) {
+        args.push(Array.isArray(query.stream) ? query.stream : [query.stream])
+        where.push(`stream_id = any($${args.length}::text[])`)
+      }
       if (query.since !== undefined) {
         args.push(query.since)
         where.push(`at >= $${args.length}`)

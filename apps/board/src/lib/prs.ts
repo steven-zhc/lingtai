@@ -135,15 +135,22 @@ export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { 
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
 export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
-  Effect.gen(function* () {
-    const rows = yield* tracedEffect('spend.read', readSpendEffect({ project }).pipe(Effect.mapError(failed)))
-    const spend = new Map<number, number>()
-    for (const row of rows) {
-      if (row.costUsd === null) continue
-      for (const n of ns) if (row.streamId === prStream(project, n)) spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
-    }
-    return spend
-  })
+  ns.length === 0
+    ? Effect.succeed(new Map<number, number>())
+    : Effect.gen(function* () {
+        const byStream = new Map(ns.map((n) => [prStream(project, n), n] as const))
+        const rows = yield* tracedEffect(
+          'spend.read',
+          readSpendEffect({ project, stream: [...byStream.keys()] }).pipe(Effect.mapError(failed)),
+        )
+        const spend = new Map<number, number>()
+        for (const row of rows) {
+          const n = byStream.get(row.streamId)
+          if (row.costUsd === null || n === undefined) continue
+          spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
+        }
+        return spend
+      })
 
 /** What the board knows of a project's PRs, or why it could not be known. */
 export type PrsRead =
