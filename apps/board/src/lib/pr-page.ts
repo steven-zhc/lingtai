@@ -73,8 +73,8 @@ const NAME_CUT = 100
 
 /** Cut at `n` code points, never inside a surrogate pair: `encodeURIComponent` throws on a lone one. */
 const cut = (text: string, n: number): string => {
-  const points = Array.from(text)
-  return points.length > n ? `${points.slice(0, n).join('')}…` : text
+  const chars = Array.from(text)
+  return chars.length > n ? `${chars.slice(0, n).join('')}…` : text
 }
 
 /** Any lone surrogate (from a name or a detail the board did not write) becomes U+FFFD, so the URL can be encoded. */

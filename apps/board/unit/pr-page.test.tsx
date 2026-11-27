@@ -645,7 +645,7 @@ describe('prFixTicketLink', () => {
         requested,
         started,
         draftOpened,
-        ['PrPushed', { headSha: pushedA, branch: 'foundry-pr-7' }],
+        ['PrPushed', { headSha: pushedA, found: 'pushed' }],
         ['PrCiFollowing', { headSha: 'bbbbbbb2222222' }],
         ['PrChecked', { headSha: 'bbbbbbb2222222', verdict: 'green', checks: [] }],
       ]),
