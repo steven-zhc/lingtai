@@ -729,7 +729,8 @@ function runLocalBranch(
       hints,
       entries: walked.entries,
     }
-    if (found !== undefined && onDisk.changes().length === 0) return { ...common, updated: true, unchanged: true }
+    if (found !== undefined && onDisk.changes().length === 0 && ctx.answers.make === undefined)
+      return { ...common, updated: true, unchanged: true }
 
     // A team-to-solo switch checks PRs before making anything; changeRecipe repeats the check at its write.
     const switching = fileText !== null && fileMode === 'team' && ctx.answers.mode === 'solo'

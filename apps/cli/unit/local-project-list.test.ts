@@ -287,6 +287,29 @@ describe('init and add use the same project list (#1526)', () => {
       })
     })
   })
+
+  it.each(['solo', 'team'])('a %s rerun makes its missing working branch even when the recipe is unchanged', (mode) => {
+    const flags = { local: '/repo', mode, ...(mode === 'team' ? { personal: 'my-work' } : {}) }
+    const base = mode === 'team' ? 'my-work' : 'lingtai-base'
+    const first = setupWorld()
+    return runLocal(first, { ...flags, defaults: '' }).then(() => {
+      const original = first.recipes.get(PATH)!
+      const w = setupWorld({ text: original, projects: [{ ...projectState(), base }] })
+      const ask = w.project.ask
+      w.project.ask = (prompt, opts) => (/Make it from/.test(prompt) ? Promise.resolve('yes') : ask(prompt, opts))
+      observe = () => w.events.push('list-finished')
+      return runLocal(w, { local: '/repo' }).then((result) => {
+        expect(result, w.logged.join('\n')).toMatchObject({ ok: true, base })
+        expect(result).not.toHaveProperty('unchanged', true)
+        expect(w.branches.get(base)).toBe('abc123f')
+        expect(w.events.filter((e) => !e.startsWith('ask:'))).toEqual(['list-finished', `branch:${base}`, 'register'])
+        expect(w.recipes.get(PATH)).toBe(original)
+        expect(w.writes).toEqual([])
+        expect(w.registered[0]).toMatchObject({ base, fromSha: 'abc123f' })
+      })
+    })
+  })
+
   it('a team personal branch is made only after the whole list, and cancellation makes none', () => {
     const w = setupWorld()
     observe = () => w.events.push('list-finished')
