@@ -162,7 +162,7 @@ a, a:where(:visited) {
 }
 .bar a, .place .view, .tab, .addp, .navlink, .rtab, .sbswitch a, .ld-filter a, .rp-seg a,
 .ti, .heldlist .ti, .pr-name, .pr-head a, .lmeta, .pr-slip-id, .pr-slip-title, .rp-table td.t a, .eg-n,
-.iss, .ltag, .bk, a.btn { text-decoration: none; }
+.iss, .ltag, .bk, .lspend, a.btn { text-decoration: none; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
@@ -920,16 +920,14 @@ html[data-os="pc"] .bar .search .k-mac { display: none; }
 .lline { display: flex; gap: 5px; align-items: baseline; }
 .lspend { color: inherit; display: block; }
 .lspend:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
-/* One flex line, never wrapped between items: turns appear only if there is
-   room, and give way first. Turns shrink a thousand times faster than the Work
-   figure and the answering pill, and can shrink to nothing, so those two are
-   not touched until turns are gone. When even they do not fit — a project name
-   taking its share of a ~240px column — each wraps its own text inside its own
-   box (`white-space: normal`, `min-width: 0`) rather than extend past the
-   column's edge. Nothing on this line is clipped or dropped except turns. */
-.lbill { display: flex; flex-wrap: nowrap; gap: 0 5px; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; min-height: 1em; }
-.lwork, .lbill > .pill { flex: 0 1 auto; min-width: 0; white-space: normal; overflow-wrap: anywhere; }
-.lturns { flex: 0 1000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Line 2: the bill at the left, the turns at the right. One line tall: if the
+   turns do not fit beside the bill they wrap onto a second flex line, which is
+   clipped away, so they are drawn whole or not at all. The bill never wraps or
+   clips. `clip` rather than `hidden` so a bill wider than the column is not cut
+   off by the other axis scrolling. `1lh` keeps an empty line 2 as tall as a full one. */
+.lbill { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; list-style: none; margin: 0; padding: 0; min-width: 0; height: 1lh; overflow-x: visible; overflow-y: clip; }
+.lwork { flex: none; white-space: nowrap; }
+.lturns { white-space: nowrap; margin-left: auto; }
 /* The rest of line 1 is the task page. Clipped rather than wrapped: a row
    that wraps is a card again. */
 .lmeta {
@@ -1383,12 +1381,11 @@ details[open] > summary::before { content: "▾"; }
   background: transparent;
   gap: 0.5rem;
 }
+.topening { max-width: none; }
 .detail--framed .topening,
-.detail--waiting .topening { max-width: none; padding: 0; border: 0; }
+.detail--waiting .topening { padding: 0; border: 0; }
 .detail--framed .topening > p,
-.detail--waiting .topening > p,
-.detail--framed .tcontext,
-.detail--waiting .tcontext { margin-bottom: 0; }
+.detail--waiting .topening > p { margin-bottom: 0; }
 .detail--framed .swaiting-head .segs,
 .detail--waiting .swaiting-head .segs { margin: 0; }
 .detail--framed .swaiting-head .slab,
@@ -1408,27 +1405,30 @@ details[open] > summary::before { content: "▾"; }
   color: var(--ink);
   font-size: var(--fs-lg);
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .topening {
+.topening {
   padding-top: 0.65rem;
   border-top: 1px solid var(--rule);
   min-width: 0;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .topening > p { margin: 0 0 0.65rem; }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext {
+.topening > p { margin: 0 0 0.65rem; }
+.tcontext {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   border: 1px solid var(--rule);
   background: var(--surface);
   margin-bottom: 0.65rem;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field {
+.tcontext:not(:has(> .tcontext-field--watch)) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tcontext-more { grid-column: 1 / -1; padding: 8px 16px; border-top: 1px solid var(--rule); font-size: var(--fs-sm); }
+.tcontext-more > a { display: inline-block; }
+.tcontext-field {
   min-width: 0;
   padding: 0.9rem 1rem;
   overflow-wrap: anywhere;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field + .tcontext-field { border-left: 1px solid var(--surface-2); }
+.tcontext-field + .tcontext-field { border-left: 1px solid var(--surface-2); }
 /* A cell is a sentence, so it reads as one: no second box inside the first. */
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field .md {
+.tcontext-field .md {
   max-height: none;
   margin: 0;
   padding: 0;
@@ -1439,13 +1439,13 @@ details[open] > summary::before { content: "▾"; }
   font-size: var(--fs-md);
   line-height: 1.5;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field h2 {
+.tcontext-field h2 {
   margin: 0 0 0.3rem;
 }
-:is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field .md p { margin: 0; }
+.tcontext-field .md p { margin: 0; }
 @media (max-width: 46rem) {
-  :is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext { grid-template-columns: minmax(0, 1fr); }
-  :is(.detail--waiting, .detail--resolved, .detail--framed) .tcontext-field + .tcontext-field {
+  .tcontext, .tcontext:not(:has(> .tcontext-field--watch)) { grid-template-columns: minmax(0, 1fr); }
+  .tcontext-field + .tcontext-field {
     border-left: 0;
     border-top: 1px solid var(--surface-2);
   }
@@ -3433,17 +3433,35 @@ a.ti:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; bord
 @media (max-width: 900px) { .pr-cols { grid-template-columns: 1fr; } }
 
 /* The task page's *on your branch* part (#1323). */
-.obs { margin-top: 0.8rem; }
-.obs-poster { margin: 0 0 0.3rem; }
-.obs-sketch { width: 100%; height: auto; max-height: 170px; }
+/* The panel is #1515's frame: the graph on the left, the facts on the right (#1513). */
+.obs {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  background: var(--surface);
+  min-width: 0;
+}
+.obs-sketch { width: 100%; height: auto; padding: 16px 20px; box-sizing: border-box; }
 .obs-box { fill: none; stroke: var(--pr-teal); stroke-width: 1.5; }
 .obs-ring { fill: none; stroke: var(--pr-amber); stroke-width: 2; }
-.obs-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0.4rem 0; font-size: var(--fs-md); }
-.obs-facts dt { color: var(--pr-slate); }
-.obs-facts dd { margin: 0; overflow-wrap: anywhere; }
+.obs-side { display: flex; flex-direction: column; justify-content: center; min-width: 0; padding: 16px 20px; border-left: 1px solid var(--surface-2); }
+.obs-facts { display: grid; grid-template-columns: max-content 1fr; gap: 0.25rem 1rem; margin: 0; font-size: var(--fs-md); }
+.obs-facts dt { color: var(--muted); font-size: var(--fs-sm); }
+.obs-facts dd { margin: 0; overflow-wrap: anywhere; color: var(--ink); }
+.obs-facts code { font-size: var(--fs-sm); font-family: var(--mono); }
 .obs-fail { color: var(--fail); }
-.obs-note { font-size: var(--fs-md); color: var(--pr-slate); margin: 0.2rem 0; }
-@media (max-width: 700px) { .obs-facts { grid-template-columns: 1fr; } }
+.obs-note { font-size: var(--fs-md); color: var(--muted); margin: 0.4rem 0 0; }
+.obs-tag { margin-left: 0.5rem; padding: 0 6px; border-radius: var(--radius); font-family: var(--mono); font-size: var(--fs-xs); font-weight: 600; white-space: nowrap; }
+.obs-tag--branch { background: var(--accent-soft); color: var(--accent-ink); }
+.obs-tag--merged { background: var(--pass-soft); color: var(--pass); }
+.obs-tag--off { background: var(--fail-soft); color: var(--fail); }
+/* The panel's own border divides the section, so the sentence's rule goes. */
+.swhere:has(> .obs) > .sbody { border-top: 0; padding-top: 0; }
+@media (max-width: 46rem) {
+  .obs { grid-template-columns: minmax(0, 1fr); }
+  .obs-side { border-left: 0; border-top: 1px solid var(--surface-2); }
+}
 
 /* /report (#689). Everything is prefixed `rp-`; series wear --s1..--s4 and
    --muted, never the board's state hues. */
@@ -3727,6 +3745,28 @@ svg.mode-graph text { font-size: var(--fs-xs); }
 .meters.facts .meter dt { font-size: var(--fs-xs); color: var(--muted); text-transform: uppercase; }
 .meters.facts .meter dd { margin: 0; }
 .meters.facts .meter dd.sub { font-size: var(--fs-xs); color: var(--muted); }
+/* The totals strip is a panel (#1515). Every rule says [data-totals]: the running card's meters share .meters.facts. */
+.meters.facts[data-totals] {
+  grid-template-columns: none;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  gap: 0;
+  margin: 0;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+}
+.standing > .meters.facts[data-totals] { margin-bottom: 0.35rem; }
+.meters.facts[data-totals] .meter { min-width: 0; padding: 12px 16px; }
+.meters.facts[data-totals] .meter + .meter { border-left: 1px solid var(--surface-2); }
+.meters.facts[data-totals] .meter dt { font-weight: 600; letter-spacing: 0.08em; }
+.meters.facts[data-totals] .meter dd:not(.sub) { font-size: var(--fs-lg); font-family: var(--mono); color: var(--ink); }
+.meters.facts[data-totals] .meter dd.sub { font-size: var(--fs-2xs); font-family: var(--mono); }
+@media (max-width: 46rem) {
+  .meters.facts[data-totals] { grid-auto-flow: row; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .meters.facts[data-totals] .meter:nth-child(odd) { border-left: 0; }
+  .meters.facts[data-totals] .meter:nth-child(n+3) { border-top: 1px solid var(--surface-2); }
+}
 .livelog { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr); gap: 1rem; }
 @media (max-width: 40rem) { .livelog { grid-template-columns: minmax(0, 1fr); } }
 .running-log .alogbody { height: 14rem; margin-top: 0.3rem; }

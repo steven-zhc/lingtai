@@ -5,9 +5,9 @@ import { recipePath, ProjectFiles } from '@lingtai/project'
  * answers (#971). `askRecipe` is driven with `--defaults` over a
  * chapter-garden-shaped repository; the page's answers are the proposal's own,
  * run through `setupAnswers`; both are written by `applySetup` over a `Map`,
- * and the two files are compared byte for byte, comments included.
+ * and their executable recipes are compared. The list names typed checks; the form keeps detection names.
  */
-import { LIMIT_DEFAULTS, type RecipeFiles, resolveSource } from '@lingtai/recipe'
+import { LIMIT_DEFAULTS, type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { SandboxUnavailable } from '@lingtai/sandbox'
 import {
   applySetup,
@@ -20,12 +20,12 @@ import {
   setupAnswers,
   type SetupReader,
 } from '@lingtai/setup'
+import { ENV_PLANT_AT, SAID } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipeEffect, type RecipeAt } from '../src/recipe-flow.ts'
-import { ENV_PLANT_AT } from '../src/recipe-flow.ts'
+import { walkProject } from '../test/project-list.ts'
 
 const HOME = '/home/me/.lingtai'
 
@@ -63,10 +63,6 @@ function mapFiles(): RecipeFiles & { store: Map<string, string> } {
 }
 
 const world: QuestionWorld = { ask: async () => '', log: () => {} }
-type TestAt = RecipeAt & { files: RecipeFiles }
-const askRecipe = (w: QuestionWorld, { files, ...at }: TestAt) =>
-  Effect.runPromise(askRecipeEffect(w, at).pipe(Effect.provideService(ProjectFiles, files)))
-
 /** A host that can sandbox, one that cannot, and one that dies — never the real check (#1160). */
 const HOST_CAN = Effect.void
 const HOST_CANNOT = Effect.fail(new SandboxUnavailable({ reason: 'bwrap is missing', sentences: ['no bwrap on PATH'] }))
@@ -105,28 +101,29 @@ async function viaAdd(
   } = {},
 ) {
   const files = extra.files ?? mapFiles()
-  const result = await askRecipe(world, {
-    ...(extra.proposal === undefined ? {} : { proposal: extra.proposal }),
-    project,
-    local,
-    runtimes: RUNTIMES,
-    reader,
-    flags: { defaults: 'yes', mode: 'solo', ...extra.flags },
-    buildFlags: [],
-    defaultBranch: async () => 'main',
-    history: async () => [],
-    seeds: seeds as never,
-    kept: 'kept',
-    keptBeforeWrite: 'Nothing was written',
-    again: 'lingtai add',
-    home: HOME,
-    files,
-  })
-  if (!('ok' in result)) throw new Error(JSON.stringify(result))
+  const start = files.store.get(recipePath(project, HOME)) ?? null
+  const { result, ctx } = await Effect.runPromise(
+    walkProject(world, {
+      start,
+      flags: { defaults: '', mode: 'solo', ...extra.flags },
+      seeds: seeds as RecipeChange[],
+      ports: {
+        project,
+        local,
+        checkout: local ? '/work/chapter-garden' : null,
+        reader,
+        runtimes: Effect.succeed(RUNTIMES),
+        ...(extra.proposal === undefined ? {} : { proposal: extra.proposal }),
+      },
+    }),
+  )
+  if (result.refused !== undefined) throw new Error(result.refused)
   await Effect.runPromise(
-    applySetup({ home: HOME, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
-      Effect.provideService(ProjectFiles, files),
-    ),
+    applySetup(
+      { home: HOME, by: 'human:me', store: createMemoryEventStore() },
+      { project, changes: ctx.pending, said: SAID },
+      Effect.void,
+    ).pipe(Effect.provideService(ProjectFiles, files)),
   )
   return files.store.get(recipePath(project, HOME))
 }
@@ -152,6 +149,18 @@ const LIMITS = {
   refusalFixes: LIMIT_DEFAULTS.attempt.refusalFixes,
   conflictResolutions: LIMIT_DEFAULTS.attempt.conflictResolutions,
   newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
+}
+
+/** Check names and YAML key/comment order belong to each input; the executed commands and all other values agree. */
+const recipeFacts = (text: string | undefined) => {
+  const recipe = resolveSource(text ?? '', 'chapter-garden', 'chapter-garden').recipe
+  return {
+    ...recipe,
+    steps: {
+      ...recipe.steps,
+      build: recipe.steps.build.map((action) => ('run' in action ? { run: action.run } : action)),
+    },
+  }
 }
 
 describe('the page writes what lingtai add writes (#971)', () => {
@@ -190,7 +199,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
       sandbox: null,
     }))
     expect(expected).toBeDefined()
-    expect(written).toBe(expected)
+    expect(recipeFacts(written)).toEqual(recipeFacts(expected))
   })
 
   it('a local directory, every default', async () => {
@@ -221,7 +230,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
       login: null,
       sandbox: null,
     }))
-    expect(written).toBe(expected)
+    expect(recipeFacts(written)).toEqual(recipeFacts(expected))
   })
 })
 
@@ -290,33 +299,25 @@ describe('the sandbox step, new recipe (#1160)', () => {
     const proposal = await proposalWith(HOST_CANNOT)
     const lines: string[] = []
     const files = mapFiles()
-    const result = await askRecipe(
-      { ask: async () => '', log: (l) => lines.push(l) },
-      {
-        project: 'chapter-garden',
-        local: false,
-        proposal,
-        runtimes: RUNTIMES,
-        reader,
-        flags: { defaults: 'yes', mode: 'solo' },
-        buildFlags: [],
-        defaultBranch: async () => 'main',
-        history: async () => [],
-        seeds: GH_SEEDS as never,
-        kept: 'kept',
-        keptBeforeWrite: 'Nothing was written',
-        again: 'lingtai add',
-        home: HOME,
-        files,
-      },
+    const { result, ctx } = await Effect.runPromise(
+      walkProject(
+        { ask: () => Promise.resolve(''), log: (line) => lines.push(line) },
+        {
+          flags: { defaults: '', mode: 'solo' },
+          seeds: GH_SEEDS,
+          ports: { project: 'chapter-garden', local: false, proposal, reader, runtimes: Effect.succeed(RUNTIMES) },
+        },
+      ),
     )
-    if (!('ok' in result)) throw new Error(JSON.stringify(result))
+    expect(result.refused).toBeUndefined()
     expect(lines.join('\n')).toContain('cannot run the sandbox yet: bwrap is missing; no bwrap on PATH')
     expect(lines.join('\n')).toContain('apt install bubblewrap')
     await Effect.runPromise(
-      applySetup({ home: HOME, by: 'human:me', store: createMemoryEventStore() }, result.answers, Effect.void).pipe(
-        Effect.provideService(ProjectFiles, files),
-      ),
+      applySetup(
+        { home: HOME, by: 'human:me', store: createMemoryEventStore() },
+        { project: 'chapter-garden', changes: ctx.pending, said: SAID },
+        Effect.void,
+      ).pipe(Effect.provideService(ProjectFiles, files)),
     )
     expect(sandboxOf(files.store.get(recipePath('chapter-garden', HOME)))).toMatchObject({
       enabled: true,
@@ -324,7 +325,7 @@ describe('the sandbox step, new recipe (#1160)', () => {
     })
   })
 
-  it('an existing recipe is not asked, and its block is neither added nor changed', async () => {
+  it('a rerun takes the value in force, so off leaves an absent sandbox block absent', async () => {
     const files = mapFiles()
     await viaAdd('chapter-garden', false, GH_SEEDS, { files })
     const before = files.store.get(recipePath('chapter-garden', HOME))

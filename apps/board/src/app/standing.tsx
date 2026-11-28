@@ -430,7 +430,7 @@ import { EditPromptAction } from './edit-prompt.tsx'
 import { LastEvent } from './last-event.tsx'
 import { DocumentBody } from './markdown.tsx'
 import { ObjectTitle, joinMeta, taskTone } from './object-title.tsx'
-import { OnYourBranch } from './on-your-branch.tsx'
+import { OnYourBranch, SentenceUnlessPanel, WhereHeading, whereItIs } from './on-your-branch.tsx'
 import { Outgoing, OutgoingPrompt } from './outgoing.tsx'
 import { PlanStep, Rail, UNREADABLE, limits } from './rail.tsx'
 import { FollowedLog, LiveLog, RawRunLog } from './run-log.tsx'
@@ -734,37 +734,48 @@ function TicketContext({
   const references = body?.match(/^ {0,3}\[[^\]\n]+\]:[ \t]*\S.*$/gm)?.join('\n') ?? ''
   return (
     <div className={`topening${pending ? '' : ' arrive'}`}>
-      {pending ? <Skeleton shape="lines" count={3} /> : null}
       {problem ? (
         <p className={problem.askedGitHub ? 'refusal' : 'note'}>
           {problem.askedGitHub ? `The issue could not be read from GitHub: ${problem.text}` : problem.text}
         </p>
       ) : null}
-      {opening === null ? null : (
+      {opening === null && !pending ? (
+        <Link href={historyPath(taskId)} scroll={false}>
+          The whole ticket ↓
+        </Link>
+      ) : (
         <div className="tcontext">
-          {(
-            [
-              ['Problem', opening.problem],
-              ['Want', opening.want],
-              ['Watch out', opening.watchOut],
-            ] as const
-          )
-            .filter(([, value]) => value !== null)
-            .map(([label, value]) => (
-              <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
-                <h2 className="sec-h">{label}</h2>
-                <DocumentBody
-                  source="ticket-body"
-                  text={references ? `${value!}\n\n${references}` : value!}
-                  rawClass="tbodytext"
-                />
-              </div>
-            ))}
+          {pending || opening === null ? (
+            <div className="tcontext-more" style={{ borderTop: 0 }}>
+              <Skeleton shape="lines" count={3} />
+            </div>
+          ) : (
+            (
+              [
+                ['Problem', opening.problem],
+                ['Want', opening.want],
+                ['Watch out', opening.watchOut],
+              ] as const
+            )
+              .filter(([, value]) => value !== null)
+              .map(([label, value]) => (
+                <div className={`tcontext-field${label === 'Watch out' ? ' tcontext-field--watch' : ''}`} key={label}>
+                  <h2 className="sec-h">{label}</h2>
+                  <DocumentBody
+                    source="ticket-body"
+                    text={references ? `${value!}\n\n${references}` : value!}
+                    rawClass="tbodytext"
+                  />
+                </div>
+              ))
+          )}
+          <div className="tcontext-more">
+            <Link href={historyPath(taskId)} scroll={false}>
+              The whole ticket ↓
+            </Link>
+          </div>
         </div>
       )}
-      <Link href={historyPath(taskId)} scroll={false}>
-        The whole ticket ↓
-      </Link>
     </div>
   )
 }
@@ -1328,6 +1339,11 @@ export function Standing({
   // sentence and the so-what step back, and anything else this section holds
   // — a conflict's paths, an unknown ticket, a log — still draws.
   const quiet = waiting && advisedSurface
+  // One read for the heading's tag, the panel and the `who` sentence: they decide from what it returns (#1513).
+  const panelRead =
+    standing.state !== 'queued' && standing.landedOn && project !== null && issue !== null
+      ? whereItIs(project, String(issue), standing.landedOn)
+      : null
   const soWhatLine = () => {
     const text = soWhat(standing)
     return quiet || text === null || standing.state === 'running' ? null : (
@@ -1458,14 +1474,15 @@ export function Standing({
               aria-label={standing.state === 'queued' ? undefined : 'Where it is'}
               data-rank="where"
             >
-              {quiet || standing.state === 'queued' ? null : <h2 className="ssectiontitle sec-h">Where it is</h2>}
-
-              {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. */}
-              {standing.state !== 'queued' && standing.landedOn && project !== null && issue !== null ? (
-                <Suspense fallback={null}>
-                  <OnYourBranch project={project} ticket={String(issue)} landing={standing.landedOn} />
+              {/* A team's landing, said as such (#1323): streamed, so the readout above draws at once. The heading
+                  is inside the boundary with the panel, since its tag comes from the same read (#1513). */}
+              {panelRead !== null ? (
+                <Suspense fallback={<WhereHeading />}>
+                  <OnYourBranch read={panelRead} />
                 </Suspense>
-              ) : null}
+              ) : quiet || standing.state === 'queued' ? null : (
+                <WhereHeading />
+              )}
 
               {!isFramed && (standing.state === 'blocked' || standing.afterMove) && progress !== null ? (
                 <Rail progress={progress} live={false} held={budget} />
@@ -1555,8 +1572,28 @@ export function Standing({
             ticket wants on this page goes to rank 2 or to the record, and the
             snapshots in `task-page.test.tsx` make it say which (#152). */}
                 {standing.state === 'queued' ? null : (
-                  <Gh g={g} pending={pending} fallback={soWhatLine()}>
-                    {(a) => (missingOf(a) ? null : soWhatLine())}
+                  <Gh
+                    g={g}
+                    pending={pending}
+                    fallback={
+                      panelRead === null ? (
+                        soWhatLine()
+                      ) : (
+                        <Suspense fallback={null}>
+                          <SentenceUnlessPanel read={panelRead}>{soWhatLine()}</SentenceUnlessPanel>
+                        </Suspense>
+                      )
+                    }
+                  >
+                    {(a) =>
+                      missingOf(a) ? null : panelRead === null ? (
+                        soWhatLine()
+                      ) : (
+                        <Suspense fallback={null}>
+                          <SentenceUnlessPanel read={panelRead}>{soWhatLine()}</SentenceUnlessPanel>
+                        </Suspense>
+                      )
+                    }
                   </Gh>
                 )}
               </div>

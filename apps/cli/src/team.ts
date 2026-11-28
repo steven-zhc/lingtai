@@ -4,20 +4,17 @@
  * this machine cannot know it, and the personal branch.
  *
  * Nothing here writes: each returns an answer, and the caller decides what it
- * means to write and when. The branch-name check is `branchNameRefusal` — the
- * pure copy of git's rules in `@lingtai/recipe` — and never a git process:
+ * means to write and when. The branch-name check is `personalBranchRefusal` in
+ * `@lingtai/setup` — over the pure copy of git's rules in `@lingtai/recipe` — and never a git process:
  * `git check-ref-format --branch` expands `@{-1}` inside a repository and
  * exits 0 with another name.
  */
-import { branchNameRefusal } from '@lingtai/recipe'
+import { loginRefusal, personalBranchRefusal } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { questionEffect, type QuestionWorld } from './question.ts'
 
 export type Mode = 'team' | 'solo'
-
-/** A GitHub login: 1–39 alphanumerics and single hyphens, none at either end. */
-export const GITHUB_LOGIN = /^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/
 
 const MODE_LABELS: Readonly<Record<Mode, string>> = {
   team: 'Team — Lingtai stays on your branch; the team sees your work as a PR you send (recommended)',
@@ -63,40 +60,9 @@ export const askLogin = (
     given: input.given,
     prompt: 'your GitHub login — issues assigned to it are the ones taken',
     ...(input.current == null ? {} : { current: input.current }),
-    validate: (answer) =>
-      Effect.succeed(
-        GITHUB_LOGIN.test(answer) ? null : `${answer} is not a GitHub login (letters, digits and single -)`,
-      ),
+    validate: (answer) => Effect.succeed(loginRefusal(answer)),
     kept: input.kept,
   }).pipe(Effect.map((a) => ('refused' in a ? a : { login: a.answer })))
-
-/** What a person's near miss becomes: git-safe characters only, or `fallback` where nothing sensible is left. */
-function madeSafe(answer: string, fallback: string): string {
-  const candidate = answer
-    .trim()
-    .replace(/[^A-Za-z0-9/_.-]+/g, '-')
-    .replace(/\.{2,}/g, '.')
-    .replace(/\/{2,}/g, '/')
-    .replace(/^[-/.]+|[/.]+$/g, '')
-  return candidate === '' || branchNameRefusal(candidate) !== null ? fallback : candidate
-}
-
-/**
- * Why `name` cannot be the personal branch, or null. `main` is compared ignoring
- * case, as `refuseOnMeaning` does when the recipe resolves — a refusal here says
- * the same thing in its own words.
- */
-export function personalRefusal(name: string, main: string, fallback: string): string | null {
-  const why = branchNameRefusal(name)
-  if (why !== null) {
-    const safe = madeSafe(name, fallback)
-    return `git refuses ${JSON.stringify(name)}: it ${why} — use ${safe}?`
-  }
-  if (name.toLowerCase() === main.toLowerCase()) {
-    return `${name} is the same branch as ${main}, ignoring case — name a different one for your own work`
-  }
-  return null
-}
 
 /** The personal branch's name, defaulting to `fallback` and checked before anything is made. */
 export const askPersonal = (
@@ -120,9 +86,67 @@ export const askPersonal = (
     fallback: input.fallback,
     ...(input.current == null ? {} : { current: input.current }),
     validate: (answer) => {
-      const refusal = personalRefusal(answer, input.main, input.fallback)
+      const refusal = personalBranchRefusal(answer, input.main, input.fallback)
       if (refusal !== null) return Effect.succeed(refusal)
       return input.validate === undefined ? Effect.succeed(null) : input.validate(answer)
     },
     kept: input.kept,
   }).pipe(Effect.map((a) => ('refused' in a ? a : { personal: a.answer })))
+
+/** The branch this project's recipe governs and merges into — a solo project's base. */
+export const askBaseBranch = (
+  world: QuestionWorld,
+  input: {
+    given: string | null
+    current: string | null
+    detected: string | null
+    fallback?: string | undefined
+    validate: (answer: string) => Effect.Effect<string | null, unknown>
+    kept: string
+    startOver?: string | undefined
+    command?: string | undefined
+  },
+): Effect.Effect<{ answer: string } | { refused: string }, unknown> =>
+  questionEffect(world, {
+    name: 'the base branch',
+    flag: '--main <branch>',
+    given: input.given,
+    prompt: "the branch this project's recipe governs and merges into",
+    current: input.current,
+    detected: input.detected,
+    ...(input.fallback === undefined ? {} : { fallback: input.fallback }),
+    kept: input.kept,
+    ...(input.startOver === undefined ? {} : { startOver: input.startOver }),
+    ...(input.command === undefined ? {} : { command: input.command }),
+    validate: input.validate,
+  })
+
+/**
+ * Whether to make the personal branch that is not there yet, and from what. On GitHub it is cut from `origin/<from>`
+ * and pushed; in a checkout it is cut from `from` there. A `no` is the caller's to refuse with.
+ */
+export const askMakeBranch = (
+  world: QuestionWorld,
+  input: {
+    name: string
+    from: string
+    where: { github: true } | { checkout: string }
+    given: string | null
+    kept: string
+  },
+): Effect.Effect<{ answer: string } | { refused: string }, unknown> =>
+  questionEffect(world, {
+    name: 'making the personal branch',
+    flag:
+      'github' in input.where
+        ? `--defaults, or make it yourself: git push origin origin/${input.from}:refs/heads/${input.name}`
+        : `--defaults, or make it yourself: git branch ${input.name} ${input.from}`,
+    given: input.given,
+    prompt:
+      'github' in input.where
+        ? `${input.name} does not exist. Make it from origin/${input.from} and push it?`
+        : `${input.name} does not exist in ${input.where.checkout}. Make it from ${input.from}?`,
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })

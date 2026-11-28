@@ -36,12 +36,14 @@ import {
   type PrRead,
   WAIT_WORDS,
   UNFOLLOWED_WHY,
+  failingChecks,
   failingRun,
   prName,
   slipsOf,
   unfollowedRemote,
 } from './pr-board.ts'
 import { type Drawing, layoutBranches, prBranches } from './pr-branches.ts'
+import { type PrFixRead, claimedFixes, NOT_FIXING, fixingLines, fixingOf, unknownLine } from './pr-fix.ts'
 
 /** Whether the PR is pushed to GitHub: the recipe names no remote of its own (`prHostOf`, 0130 §5). */
 export const githubHosted = (recipe: Recipe): boolean => remoteOf(recipe) === null
@@ -57,9 +59,138 @@ export type PrFixLink =
 
 /**
  * *New pr-fix ticket* (0130 §5: *opened from the PR's page the label is put on for the person*). **The board creates no
- * issue** — the body is the agent's prompt and the person writes it. On GitHub it is the new-issue form with the label
- * and a title put in; on a project with no GitHub host it is the command, and the line to write.
+ * issue** — it fills in what it knows (what the PR waits on, and for a red CI run every failing check with its link),
+ * and the person reads it, adds what only they know, and submits it. On GitHub it is the new-issue form with the label,
+ * a title and a body put in; on a project with no GitHub host it is the command, and the line to write.
  */
+/** GitHub's new-issue URL is refused past about 8,000 characters; the whole URL is kept under this. */
+const ISSUE_URL_LIMIT = 8000
+/** How many failing checks the title and the Problem row name before `, and N more`. */
+const NAMED_CHECKS = 3
+/** A wait's `detail` is cut here, so the fixed part of the body cannot fill the URL on its own. */
+const DETAIL_CUT = 500
+/** A check's name is cut here in the title and the Problem row. */
+const NAME_CUT = 100
+
+/** Cut at `n` code points, never inside a surrogate pair: `encodeURIComponent` throws on a lone one. */
+const cut = (text: string, n: number): string => {
+  const chars = Array.from(text)
+  return chars.length > n ? `${chars.slice(0, n).join('')}…` : text
+}
+
+/** Any lone surrogate (from a name or a detail the board did not write) becomes U+FFFD, so the URL can be encoded. */
+const wellFormed = (text: string): string =>
+  text.replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '\uFFFD')
+
+/** What each tier of the draft keeps; a tier is tried only when the one before it did not fit the URL. */
+type Keep = { named: number; name: number; detail: number; branch: number }
+const TIERS: readonly Keep[] = [
+  { named: NAMED_CHECKS, name: NAME_CUT, detail: DETAIL_CUT, branch: Infinity },
+  { named: 1, name: 40, detail: 100, branch: 100 },
+  { named: 0, name: 0, detail: 0, branch: 40 },
+]
+
+/** A value in a table row: `|` would end the cell and a newline would end the row. */
+const cell = (text: string): string => text.replace(/\|/g, '\\|').replace(/\s*[\r\n]+\s*/g, ' ')
+
+/** The rest of a table row after its label: an empty value is `| |`, as the house shape writes it. */
+const row = (text: string): string => (text === '' ? ' |' : ` ${cell(text)} |`)
+
+/** One failing check's line in Evidence; a check with no link has nothing after its state. */
+const checkLine = (c: { name: string; state: string; url: string }): string =>
+  `  - ${c.name.replace(/[\r\n]+/g, ' ')} — ${c.state}${c.url === '' ? '' : ` — ${c.url}`}`
+
+/**
+ * What the board knows of the PR's wait, as the title and the body of the ticket (the four-row table, then Evidence).
+ * Reads only `pr`: a wait counts only while the PR is waiting, and the failing checks only when they were read on the
+ * head the wait names — never a failure the state does not hold.
+ */
+function prFixDraft(
+  name: string,
+  pr: PrState | null,
+  keep: Keep,
+): {
+  title: string
+  body: (n: number, more: number) => string
+  checks: readonly { name: string; state: string; url: string }[]
+  prUrl: string | null
+} {
+  // A pr-fix landing or an adopted head moves `lastPushed` and leaves `wait`, `checks` and `following` on the head before
+  // it: until In progress starts again they are about a head that is no longer the PR's. `adopted` stays set until a build
+  // of it is recorded, so it is stale only against a wait that names another head: a wait recorded on the adopted head is
+  // the build's own, and is written.
+  const moved = pr !== null && (pr.fixOwed || (pr.adopted !== null && pr.wait?.headSha !== pr.adopted))
+  const wait = pr !== null && !moved && pr.status === 'waiting' && pr.wait !== null ? pr.wait : null
+  // The head the state last knew: the wait's; else, when nothing has moved it since, the last checked or followed; else
+  // what Lingtai means to push (a sync or an outside merge moves `target` past `lastPushed`).
+  const head =
+    wait !== null
+      ? wait.headSha
+      : pr === null
+        ? null
+        : moved
+          ? (pr.lastPushed ?? pr.target)
+          : (pr.checks?.headSha ?? pr.following ?? pr.target ?? pr.lastPushed)
+  const sha = head === null ? null : head.slice(0, 7)
+  const headWords = sha === null ? '' : ` (head \`${sha}\`)`
+  const failing =
+    pr !== null && wait !== null && wait.reason === 'ci-red' && pr.checks !== null && pr.checks.headSha === wait.headSha
+      ? failingChecks(pr)
+      : []
+  const named = failing.slice(0, keep.named).map((c) => cut(c.name, keep.name))
+  const namedWords =
+    named.length === 0
+      ? `${failing.length} failing checks`
+      : named.join(', ') + (failing.length > named.length ? `, and ${failing.length - named.length} more` : '')
+
+  let title = `pr-fix for ${name}: `
+  let problem = ''
+  let want = ''
+  if (wait !== null) {
+    const words = WAIT_WORDS[wait.reason]
+    if (failing.length > 0) {
+      title += `CI red in ${namedWords}`
+      problem = `CI is red on ${name}${headWords}: ${namedWords}.`
+      want = "CI is green on the PR's next head."
+    } else {
+      title += words
+      const detail = wait.detail.trim()
+      problem = `${words} on ${name}${headWords}${detail === '' ? '.' : `: ${cut(detail, keep.detail)}${/[.!?]$/.test(detail) ? '' : '.'}`}`
+    }
+  }
+
+  const prUrl = pr?.host?.url ?? null
+  const facts = [
+    name,
+    pr?.prBranch ? `branch \`${cut(pr.prBranch, keep.branch)}\`` : null,
+    sha === null ? null : `head \`${sha}\``,
+  ]
+    .filter((x) => x !== null)
+    .join(', ')
+
+  const body = (n: number, more: number): string =>
+    [
+      '| | |',
+      '|---|---|',
+      `| **Problem** |${row(problem)}`,
+      `| **Want** |${row(want)}`,
+      '| **Fix** | |',
+      '| **Watch out** | |',
+      '',
+      '---',
+      '',
+      '## Evidence',
+      '',
+      `- ${facts}.`,
+      ...(more > 0 && prUrl !== null ? [`- PR page: ${prUrl}`] : []),
+      ...(failing.length > 0 ? ['- Failing checks:', ...failing.slice(0, n).map(checkLine)] : []),
+      ...(more > 0 ? [`  - … and ${more} more on the PR page`] : []),
+      '',
+    ].join('\n')
+
+  return { title: cell(title), body, checks: failing, prUrl }
+}
+
 export function prFixTicketLink(input: {
   readonly project: string
   readonly owner: string | null
@@ -67,6 +198,8 @@ export function prFixTicketLink(input: {
   readonly github: boolean
   /** The PR's name as the page draws it: `PR #88`. */
   readonly name: string
+  /** The PR's state, which holds what it waits on; null where there is no PR (the board's fallback link). */
+  readonly pr?: PrState | null
 }): PrFixLink | null {
   if (!input.github) {
     return {
@@ -76,11 +209,22 @@ export function prFixTicketLink(input: {
     }
   }
   if (input.owner === null || input.owner === '') return null
-  const title = encodeURIComponent(`pr-fix for ${input.name}: `)
-  return {
-    kind: 'link',
-    href: `https://github.com/${input.owner}/${input.project}/issues/new?labels=${encodeURIComponent(PR_FIX_LABEL)}&title=${title}`,
+  const urlOf = (title: string, body: string): string =>
+    `https://github.com/${input.owner}/${input.project}/issues/new?labels=${encodeURIComponent(PR_FIX_LABEL)}` +
+    `&title=${encodeURIComponent(wellFormed(title))}&body=${encodeURIComponent(wellFormed(body))}`
+  // The most checks that fit, measured on the encoded URL; the "N more" line is held back for until the last one fits.
+  // When even none fits, the draft keeps less of its names, detail and branch, tier by tier.
+  for (const keep of TIERS) {
+    const draft = prFixDraft(input.name, input.pr ?? null, keep)
+    const total = draft.checks.length
+    for (let n = total; n >= 0; n--) {
+      const candidate = urlOf(draft.title, draft.body(n, total - n))
+      if (candidate.length < ISSUE_URL_LIMIT) return { kind: 'link', href: candidate }
+    }
   }
+  // Nothing the state holds fits: the empty form with the PR's name, which is never guessed at and never long.
+  const bare = prFixDraft(cut(input.name, NAME_CUT), null, TIERS[2]!)
+  return { kind: 'link', href: urlOf(bare.title, bare.body(0, 0)) }
 }
 
 // ── What the code host says, as the one streamed part draws it ──────────────────────────────────────────────────────
@@ -184,6 +328,8 @@ export interface PrPageView {
   readonly buttons: readonly Button[]
   readonly fixCommand: { readonly command: string; readonly note: string } | null
   readonly doNote: string | null
+  /** The `fixing:` lines: a link to each pr-fix ticket on this PR, in place of *New pr-fix ticket* (#1506). */
+  readonly fixing?: readonly { readonly text: string; readonly href: string }[]
   readonly facts: readonly { readonly label: string; readonly value: string }[]
   readonly checks: { readonly head: string; readonly rows: readonly PageCheck[] }
   readonly history: readonly { readonly at: string; readonly text: string }[]
@@ -270,6 +416,8 @@ export interface PrPageInput {
   readonly spendParts?: { readonly tickets: number | null; readonly pr: number | null }
   /** The conductor's own step list, in order. */
   readonly stepNames: readonly string[]
+  /** The pr-fix tickets read for this PR (#1506); null or absent where nothing was asked. */
+  readonly fixes?: PrFixRead | null
   readonly now: Date
 }
 
@@ -620,9 +768,16 @@ export function prPage(input: PrPageInput): PrPageView {
   const buttons: Button[] = []
   let fixCommand: PrPageView['fixCommand'] = null
   let doNote: string | null = null
-  const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name })
+  const fix = prFixTicketLink({ project, owner: input.owner, github: ticketsOnGitHub(recipe), name, pr })
+  // Only a PR that is waiting or in review can be fixed now; the read may also have been made for History alone.
+  const fixing =
+    pr.status === 'waiting' || pr.status === 'in-review'
+      ? fixingOf(pr, input.fixes ?? null)
+      : input.fixes?.kind === 'failed'
+        ? { ...NOT_FIXING, unknown: input.fixes.error }
+        : NOT_FIXING
   const addFix = () => {
-    if (fix === null) return
+    if (fix === null || fixing.tickets.length > 0) return
     if (fix.kind === 'link') buttons.push({ kind: 'link', label: 'New pr-fix ticket', href: fix.href })
     else fixCommand = { command: fix.command, note: fix.note }
   }
@@ -690,6 +845,9 @@ export function prPage(input: PrPageInput): PrPageView {
   } else if (pr.status === 'merged') doNote = 'its tickets are closed'
   else if (pr.status === 'closed') doNote = 'closed without merging — its tickets are back in the draft'
   else if (pr.status === 'refused') doNote = pr.refusal?.detail ?? 'the submit was refused'
+
+  if (fixing.unknown !== null)
+    doNote = doNote === null ? unknownLine(fixing.unknown) : `${doNote} — ${unknownLine(fixing.unknown)}`
 
   // The summary and the generated rest.
   const edit = summaryEditTransition(pr, 'team', project, { by: 'page', summary: 'x' })
@@ -762,6 +920,7 @@ export function prPage(input: PrPageInput): PrPageView {
     buttons,
     fixCommand,
     doNote,
+    fixing: fixingLines(project, fixing),
     facts,
     checks: {
       head:
@@ -774,7 +933,13 @@ export function prPage(input: PrPageInput): PrPageView {
               : 'no checks ran',
       rows,
     },
-    history: events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })).reverse(),
+    history: [
+      ...events.map((e) => ({ at: e.at.toISOString(), text: summarise(e, { attempts: new Map() }) })),
+      // No event records the opening of an issue, so a pr-fix is dated at its claim; an unclaimed one adds no line.
+      ...claimedFixes(pr, input.fixes ?? null).map((c) => ({ at: c.at, text: `pr-fix #${c.issue} taken` })),
+    ]
+      .sort((a, b) => a.at.localeCompare(b.at))
+      .reverse(),
     previous: null,
   }
 }

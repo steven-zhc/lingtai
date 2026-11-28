@@ -35,13 +35,13 @@ import { held as heldBy } from '@lingtai/daemon/control'
  * *no queue position*, and only the reason tells them apart (#76).
  */
 import { reduceTicket, STEPS, type Envelope, type Lock } from '@lingtai/domain'
-import { eventStore } from '@lingtai/event-store'
 import { readProject } from '@lingtai/project'
 import { plannedAt } from '@lingtai/recipe/defaults'
 import type { TurnLimit } from '@lingtai/recipe/duration'
 import { branchOf, ceilingOf, queueOf, selectionOf } from '@lingtai/recipe/settings'
 
 import { lockStanding } from './lock-marks.ts'
+import { requestStore } from './request-store.ts'
 
 /** One of the ten steps, and what the recipe runs there. */
 export interface PlannedStep {
@@ -346,7 +346,7 @@ export async function queuedFor(input: {
       landed: landedFor({
         recipe: filter.recipe,
         links: cachedBlockers(project, filter.links ?? null),
-        store: eventStore,
+        store: requestStore(),
         project,
       }),
     })

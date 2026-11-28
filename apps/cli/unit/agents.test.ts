@@ -435,6 +435,86 @@ describe('askAgents', () => {
     })
   })
 
+  describe('the findings judge init wrote follows the writer (#1519)', () => {
+    const INIT_JUDGE = { name: 'send findings back to the writer', judge: 'codex', when: 'findings' }
+    const recipeWith = (proposed: Record<string, unknown>[]) =>
+      `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n  review:\n    - name: review\n      agent: claude-code\n      prompt: ''\n  proposed:\n${proposed
+        .map(
+          (e) =>
+            `    - ${Object.entries(e)
+              .map(([k, v]) => `${k}: ${v}`)
+              .join('\n      ')}`,
+        )
+        .join('\n')}\n`
+    const run = async (proposed: Record<string, unknown>[], answers: string[], codexIn = true) => {
+      const files = mapFiles({ [PATH]: recipeWith(proposed) })
+      const { world, lines } = fakeWorld(answers)
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code'), runtime('codex', { state: codexIn ? 'signed-in' : 'signed-out' })],
+        flags: {},
+        home: HOME,
+        draft: await draftOver('app', { home: HOME, files }),
+      })
+      return { result, lines }
+    }
+
+    it('says nothing and changes nothing under steps.proposed when every default is taken', async () => {
+      const { result, lines } = await run([INIT_JUDGE], ['', '', '', ''])
+      if ('refused' in result) throw new Error(result.refused)
+      expect(lines.some((l) => l.includes('also names'))).toBe(false)
+      expect(result.changes.some((c) => c.path[1] === 'proposed')).toBe(false)
+    })
+
+    it('rewrites judge to the new writer, and is not refused when codex is signed out', async () => {
+      const { result } = await run([INIT_JUDGE], ['claude-code', '', '', ''], false)
+      if ('refused' in result) throw new Error(result.refused)
+      expect(result.changes).toContainEqual({ path: ['steps', 'proposed', 0, 'judge'], value: 'claude-code' })
+    })
+
+    it('treats the entry as init’s when only name: was changed', async () => {
+      const { result, lines } = await run([{ ...INIT_JUDGE, name: 'mine now' }], ['claude-code', '', '', ''])
+      if ('refused' in result) throw new Error(result.refused)
+      expect(lines.some((l) => l.includes('mine now'))).toBe(false)
+      expect(result.changes).toContainEqual({ path: ['steps', 'proposed', 0, 'judge'], value: 'claude-code' })
+    })
+
+    it('still logs a findings judge naming another runtime when signed in', async () => {
+      const { result, lines } = await run([{ ...INIT_JUDGE, judge: 'claude-code' }], ['', '', '', ''])
+      if ('refused' in result) throw new Error(result.refused)
+      expect(lines.some((l) => l.includes('also names judge claude-code'))).toBe(true)
+    })
+
+    it('still refuses a findings judge naming another runtime when it is signed out', async () => {
+      const files = mapFiles({
+        [PATH]: recipeWith([{ ...INIT_JUDGE, judge: 'claude-code' }]).replace('agent: claude-code', 'agent: codex'),
+      })
+      const { world } = fakeWorld(['', '', '', ''])
+      const result = await askAgents(world, {
+        project: 'app',
+        runtimes: [runtime('claude-code', { state: 'signed-out' }), runtime('codex')],
+        flags: {},
+        home: HOME,
+        draft: await draftOver('app', { home: HOME, files }),
+      })
+      expect(result).toHaveProperty('refused')
+      expect((result as { refused: string }).refused).toContain('judge claude-code')
+    })
+
+    it('only the first findings judge is init’s: a second naming the writer is logged', async () => {
+      const { result, lines } = await run(
+        [
+          { ...INIT_JUDGE, name: 'first', judge: 'claude-code' },
+          { ...INIT_JUDGE, name: 'second' },
+        ],
+        ['claude-code', '', '', ''],
+      )
+      if ('refused' in result) throw new Error(result.refused)
+      expect(result.changes.some((c) => c.path[1] === 'proposed')).toBe(false)
+      expect(lines.some((l) => l.includes('"second"') && l.includes('also names judge codex'))).toBe(true)
+    })
+  })
+
   describe('the reviewer defaults to a different model', () => {
     it('with two signed in, the reviewer default is the other runtime', async () => {
       const files = mapFiles({ [PATH]: FIXTURE })
@@ -616,18 +696,20 @@ describe('askAgents', () => {
       if ('refused' in result) throw new Error(result.refused)
       await Effect.runPromise(draft.set([...result.changes, ...result.modelChanges]))
       // The two agent keys moved and no other byte of the file did.
+      // The recipe had no findings judge, so the derived one is added naming the new writer (#1523).
       expect(draft.text()).toBe(
         CODEX.replace('runtime:\n  agent: codex', 'runtime:\n  agent: claude-code').replace(
           '      agent: codex',
           '      agent: claude-code',
-        ),
+        ) +
+          '  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n',
       )
       expect(draft.get(['runtime', 'limits', 'run', 'turns'])).toBe(77)
       expect(draft.get(['runtime', 'agent'])).toBe('claude-code')
     })
 
     it('a runtime.agent that is installed but signed out is still the default, and a rerun on it changes nothing', async () => {
-      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n  review: []\n`
+      const RUNTIME_SIGNED_OUT = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: codex\n      prompt: ''\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: codex\n      when: findings\n`
       const files = mapFiles({ [PATH]: RUNTIME_SIGNED_OUT })
       const { world, asked } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -646,7 +728,7 @@ describe('askAgents', () => {
     })
 
     it('a hand-edited runtime.agent beside an unchanged steps.implement writer is not overwritten by taking every default', async () => {
-      const HAND_EDITED = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n`
+      const HAND_EDITED = `${FIXTURE}runtime:\n  agent: codex\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n`
       const files = mapFiles({ [PATH]: HAND_EDITED })
       const { world } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -664,7 +746,7 @@ describe('askAgents', () => {
     })
 
     it('a signed-out writer taken as the default does not fail on the judge init generated for it', async () => {
-      const JUDGED = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: findings\n      judge: claude-code\n      when: red\n`
+      const JUDGED = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      prompt: ''\n  review: []\n  proposed:\n    - name: findings\n      judge: claude-code\n      when: findings\n`
       const files = mapFiles({ [PATH]: JUDGED })
       const { world } = fakeWorld(['', '', '', ''])
       const draft = await draftOver('app', { home: HOME, files })
@@ -803,7 +885,7 @@ describe('askAgents', () => {
   })
 
   describe('a re-run keeps the prompt', () => {
-    const RERUN_FIXTURE = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: |\n        Read the ticket.\n        Write the change.\n  review: []\n`
+    const RERUN_FIXTURE = `${FIXTURE}runtime:\n  agent: claude-code\nsteps:\n  implement:\n    - name: write the change\n      agent: claude-code\n      model: opus\n      prompt: |\n        Read the ticket.\n        Write the change.\n  review: []\n  proposed:\n    - name: send findings back to the writer\n      judge: claude-code\n      when: findings\n`
 
     it('every default taken writes nothing', async () => {
       const files = mapFiles({ [PATH]: RERUN_FIXTURE })

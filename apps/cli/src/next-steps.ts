@@ -2,6 +2,7 @@
  * What `init` and `add` close on (0121 §1): one list of `{ command, for }` per
  * path. Pure, so a test asserts the steps and not the drawing.
  */
+import type { IssueForms } from './issue-forms.ts'
 import type { NextStep } from './output.ts'
 
 const START = 'takes it, leave it running'
@@ -15,6 +16,16 @@ export interface TicketSource {
   kinds: readonly string[]
   /** `<owner>/<repo>`; null when it is not recorded. */
   slug: string | null
+  /** Who the queue takes issues for (`issueTakeOf`); absent reads as `all`. */
+  takes?: IssueTakes | null
+  /** The repository's issue forms; absent reads as none. */
+  forms?: IssueForms
+}
+
+/** The queue's assignee rule and the recipe's login, as `assigneeSkip` reads them. */
+export interface IssueTakes {
+  take: 'all' | 'mine' | 'unassigned'
+  login: string | null
 }
 
 /** One shell word: left bare when it is plainly safe, else single-quoted, so a copied command means what it says. */
@@ -27,8 +38,28 @@ function ticketStep(source: TicketSource, forWords: string): NextStep | null {
   if (source.tickets === 'db')
     return { command: `lingtai ticket new --project ${shellWord(source.project)}`, for: forWords }
   if (source.slug === null) return null
+  const mine = source.takes?.take === 'mine'
+  const login = source.takes?.login ?? null
+  const forms = source.forms ?? { kind: 'none' }
+  // `mine` with nobody named matches no issue, so a form cannot assign anyone: fall back to gh's `@me`.
+  if (forms.kind !== 'none' && !(mine && login === null)) {
+    const base = `https://github.com/${source.slug}/issues/new`
+    const assignee = mine && login !== null ? `&assignees=${encodeURIComponent(login)}` : ''
+    if (forms.kind === 'one') {
+      const url = `${base}?template=${encodeURIComponent(forms.file)}${assignee}`
+      return { command: `open ${shellWord(url)}`, for: `${forWords}, from the "${forms.name}" form` }
+    }
+    return {
+      command: `open ${shellWord(`${base}/choose`)}`,
+      for: `${forWords}, from one of its forms${mine && login !== null ? `, then assign it to ${login}` : ''}`,
+    }
+  }
   const label = source.kinds[0] === undefined ? '' : ` --label ${shellWord(source.kinds[0])}`
-  return { command: `gh issue create -R ${shellWord(source.slug)}${label}`, for: `${forWords}, with a kind label` }
+  const assign = mine ? ` --assignee ${shellWord(login ?? '@me')}` : ''
+  return {
+    command: `gh issue create -R ${shellWord(source.slug)}${label}${assign}`,
+    for: `${forWords}, with a kind label`,
+  }
 }
 
 /** A local `init`. */

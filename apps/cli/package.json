@@ -2,10 +2,10 @@
   "name": "@lingtai/cli",
   "version": "0.0.0",
   "private": true,
-  "type": "module",
   "bin": {
     "lingtai": "./src/entry.ts"
   },
+  "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit"
   },

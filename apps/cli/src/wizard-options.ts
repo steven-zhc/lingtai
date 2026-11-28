@@ -1,4 +1,3 @@
-import type { Option } from 'effect'
 /**
  * The options `init` and `add` share, written once (#620), and the one function
  * that turns what `@effect/cli` parsed back into the `{ flags, repeated }` pair
@@ -8,6 +7,8 @@ import type { Option } from 'effect'
  * Every option is text on purpose: `--store` and `--port` are refused by
  * `init.ts` in its own words, and those words are what scripts and tests read.
  */
+import { PROJECT_FLAGS } from '@lingtai/setup'
+import type { Option } from 'effect'
 import { Flag } from 'effect/cli'
 
 const text = (name: string) => Flag.String(name).pipe(Flag.optional)
@@ -44,6 +45,22 @@ export const recipeOptions = {
   'no-color': Flag.Boolean('no-color').pipe(Flag.withDefault(false)),
 }
 
+/**
+ * The flags a project's questions take, from the project list's own entries (`@lingtai/setup`'s `projectList`): the
+ * one list of what `init` and `add` accept for a project. Anything that must say "this flag was for the recipe" — the
+ * refusal where no project is named — reads this, and keeps no copy of it.
+ */
+export { PROJECT_FLAGS }
+
+/**
+ * The flags without the project's own questions, as a copy: what the add's two hand-offs give `chooseFirstProject`, so
+ * a flag the project list already answered is not refused a second time by `runGithubBranch`. `defaults` stays,
+ * because `askTokenFor` reads it (`machine-askers.ts`), and `add owner/repo --defaults` at a terminal would otherwise
+ * start asking the Claude token question. Never mutates the object it is given.
+ */
+export const withoutProjectFlags = (flags: Readonly<Record<string, string>>): Record<string, string> =>
+  Object.fromEntries(Object.entries(flags).filter(([name]) => name === 'defaults' || !PROJECT_FLAGS.includes(name)))
+
 export const initOptions = {
   store: text('store'),
   'database-url': text('database-url'),
@@ -53,6 +70,8 @@ export const initOptions = {
   github: text('github'),
   'github-app': text('github-app'),
   'github-auth': text('github-auth'),
+  'day-usd': text('day-usd'),
+  'claude-token': text('claude-token'),
   ...recipeOptions,
 }
 
@@ -62,6 +81,7 @@ export const addOptions = {
   project: text('project'),
   'github-app': text('github-app'),
   'github-auth': text('github-auth'),
+  'claude-token': text('claude-token'),
   ...recipeOptions,
 }
 
@@ -120,7 +140,4 @@ export function valuelessFlag(argv: readonly string[]): string | null {
   return null
 }
 
-/** `--rounds` became two bounds (0108 §8); every guard that would refuse it generically says this instead. */
-export const ROUNDS_RETIRED =
-  '--rounds is gone: it was two bounds, so write --refusal-fixes <n> (fixes after a build or review ' +
-  'refusal) and --conflict-resolutions <n> (merge conflict resolutions), 0108 §8'
+export { ROUNDS_RETIRED } from '@lingtai/setup'

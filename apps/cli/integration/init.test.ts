@@ -35,20 +35,21 @@ const GITHUB_APP = 'github:\n  auth: app\n'
  * given base as a local branch, not as `main^{commit}`).
  */
 const LOCAL_REPO_GIT = {
+  '/repo::remote': { ok: true, stdout: 'origin\n', stderr: '' },
   '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
   '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
   '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
 }
 
 /**
- * Every `askRecipe` (#431) question on the local branch, answered by flag
+ * Every project-list question on the local branch, answered by flag
  * rather than scripted through `ask()` — this suite's own `ask` only
  * recognises the project, App, database and kinds questions (#431 fix
  * round, finding 1), and base is `main` in every test that uses this. Solo,
  * because these tests land on `main` (--land main); the team/solo question
  * is 3b80a64d9's and a team project lands on its personal branch (0130 §1).
  */
-const RECIPE_FLOW_FLAGS = [
+const PROJECT_FLAGS = [
   '--mode',
   'solo',
   '--agent',
@@ -71,6 +72,8 @@ const RECIPE_FLOW_FLAGS = [
   '30m',
   '--budget',
   'none',
+  '--claude-token',
+  'skip',
 ]
 
 /** A step a Ctrl+C can land in. Each is a call into the world that has not returned. */
@@ -104,6 +107,8 @@ interface Script {
   project?: 'github' | 'local' | null
   /** The App question's answer, when the project is `github` (#393). Defaults to `create`; `null` is the same no-terminal world, for this question alone. */
   appAnswer?: 'create' | 'skip' | null
+  /** The machine's GitHub answer; registered-project tests can keep GitHub disabled without starting App setup. */
+  githubAuth?: 'app' | 'none'
   /**
    * The local branch's own seams (#394) — never reached unless a test asks
    * for `--local`/`--project local` explicitly, since every other test here
@@ -181,12 +186,12 @@ function world(home: string, script: Script, db = database()): { world: InitTest
         // #710's GitHub-access question, asked before the database one. The
         // world's `ghStatus` is never ready, so `app` is the one answer that
         // carries on to the App question these tests were written against.
-        if (/a GitHub App of its own/.test(question)) return 'app'
-        // #433's first recipe question, answered with its own default so
-        // `acceptingDefaults` wraps the world and every later recipe question
-        // takes its default without reaching this `ask` — this suite is about
-        // the database question alone.
-        if (/use every default/.test(question)) return ''
+        if (/a GitHub App of its own/.test(question)) return script.githubAuth ?? 'app'
+        // These tests exercise the store, not the ceiling. Keep it absent so exact file assertions still
+        // prove what the store and App wrote; the machine-list unit tests cover the default of $100.
+        if (/the most one day may spend/.test(question)) return 'none'
+        // The list switch takes later defaults; its individual questions are answered by flags below.
+        if (/use this setup/.test(question)) return ''
         // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)
@@ -202,8 +207,8 @@ function world(home: string, script: Script, db = database()): { world: InitTest
         step('runtimes')
         return script.runtimes ?? [signedIn('claude-code'), notInstalled('codex')]
       },
-      // `askRecipe`'s own questions (#431) are answered by flag instead —
-      // `RECIPE_FLOW_FLAGS` — rather than scripted here: this suite's `ask`
+      // The project list's questions are answered by flag instead —
+      // `PROJECT_FLAGS` — rather than scripted here: this suite's `ask`
       // only recognises the project, App, database and kinds questions.
       // `/repo` is the repository `LOCAL_REPO_GIT` plans git for; it is not on
       // this machine, and `--local` refuses a directory that is not.
@@ -329,7 +334,7 @@ describe('lingtai init (#186)', () => {
       answers: [URL_],
       gitPlan: LOCAL_REPO_GIT,
     })
-    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
     expect(seen.lines.join('\n')).toMatch(/init {2}repo/)
@@ -338,7 +343,7 @@ describe('lingtai init (#186)', () => {
   it('--base on a first --local run is refused by name, and nothing is registered (13a4060)', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, { answers: [URL_], gitPlan: LOCAL_REPO_GIT })
-    const code = await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)
+    const code = await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...PROJECT_FLAGS]), w)
     expect(code).not.toBe(0)
     expect(seen.lines.join('\n')).toContain('--base is now --main: pass --main main')
     expect(seen.registered).toEqual([])
@@ -349,7 +354,7 @@ describe('lingtai init (#186)', () => {
     const git = LOCAL_REPO_GIT
     const first = world(home, { answers: [URL_], gitPlan: git })
     expect(
-      await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), first.world),
+      await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]), first.world),
     ).toBe(0)
 
     // The first run actually registered the directory — not just printed a
@@ -377,6 +382,7 @@ describe('lingtai init (#186)', () => {
     // handed on: its `repo.remote` is what marks the project local (#394's review).
     const second = world(home, {
       answers: [''],
+      githubAuth: 'none',
       projects: [registered],
       files: { [recipePath('repo', home)]: 'repo:\n  remote: git@github.com:acme/repo.git\n' },
     })
@@ -405,7 +411,7 @@ describe('lingtai init (#186)', () => {
     }
     // No App is configured and no wizard follows the listing, so nothing
     // here ever asks for a board's URL — #434 makes the start lazy.
-    const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
+    const { world: w, seen } = world(home, { answers: [URL_], githubAuth: 'none', projects: [registered] })
     expect(await initCommand(flagsFromArgv(['--port', '17900']), w)).toBe(0)
     expect(seen.boards).toBe(0)
     expect(seen.lines.join('\n')).toContain('widget — owner not recorded')
@@ -428,12 +434,20 @@ describe('lingtai init (#186)', () => {
       version: 1,
       lastSeq: 1n,
     }
-    const { world: withKinds, seen: seenKinds } = world(home, { answers: [URL_], projects: [registered] })
+    const { world: withKinds, seen: seenKinds } = world(home, {
+      answers: [URL_],
+      githubAuth: 'none',
+      projects: [registered],
+    })
     expect(await initCommand(flagsFromArgv(['--kinds', 'bug,documentation']), withKinds)).toBe(1)
     expect(seenKinds.lines.join('\n')).toContain('--kinds bug,documentation')
     expect(seenKinds.boards).toBe(0)
 
-    const { world: withTickets, seen: seenTickets } = world(home, { answers: [URL_], projects: [registered] })
+    const { world: withTickets, seen: seenTickets } = world(home, {
+      answers: [''],
+      githubAuth: 'none',
+      projects: [registered],
+    })
     expect(await initCommand(flagsFromArgv(['--tickets', 'db']), withTickets)).toBe(1)
     expect(seenTickets.lines.join('\n')).toContain('--tickets db')
     expect(seenTickets.boards).toBe(0)
@@ -455,7 +469,7 @@ describe('lingtai init (#186)', () => {
       version: 1,
       lastSeq: 1n,
     }
-    const { world: w, seen } = world(home, { answers: [URL_], projects: [registered] })
+    const { world: w, seen } = world(home, { answers: [URL_], githubAuth: 'none', projects: [registered] })
     expect(
       await initCommand(flagsFromArgv(['--refusal-fixes', '3', '--agent', 'claude-code', '--budget', '9']), w),
     ).toBe(1)
@@ -613,24 +627,24 @@ describe('lingtai init (#186)', () => {
       mkdirSync(home, { recursive: true })
       // No `store` key, which is every machine set up before this existed.
       writeFileSync(configPath({ LINGTAI_HOME: home }), `# mine\ndatabase:\n  url: ${URL_}\n`)
-      const { world: w, seen } = world(home, { answers: [] })
+      const { world: w, seen } = world(home, { answers: [''] })
       expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
-      // Asked nothing: the URL it already had is the choice nobody recorded.
-      expect(seen.asked).toEqual([])
-      expect(seen.connected).toEqual([URL_])
+      // Adoption verifies the old URL, then the list asks it again with that URL as the default.
+      expect(seen.asked).toEqual(['ask:database'])
+      expect(seen.connected).toEqual([URL_, URL_, URL_])
       expect(config(home)).toContain('# mine')
       expect(config(home)).toContain('store: postgres')
       expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'postgres', url: URL_ })
     })
 
-    it('tries a URL it inherited once, then asks — never again, which would never reach the question', async () => {
+    it('checks an inherited URL during adoption and the list read, then accepts a replacement', async () => {
       const home = freshHome()
       mkdirSync(home, { recursive: true })
       const gone = 'postgresql://me@gone.example/lingtai'
       writeFileSync(configPath({ LINGTAI_HOME: home }), `database:\n  url: ${gone}\n`)
       const { world: w, seen } = world(home, { answers: [URL_] })
       expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
-      expect(seen.connected).toEqual([gone, URL_])
+      expect(seen.connected).toEqual([gone, gone, URL_])
       expect(seen.asked.filter((q) => q === 'ask:database')).toHaveLength(1)
       expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'postgres', url: URL_ })
     })
@@ -715,7 +729,7 @@ describe('lingtai init (#186)', () => {
     expect(config(home)).toBe(GITHUB_APP)
     // It is the process's answer and not the file's, so the file still says nothing —
     // and the card reads the log the variable named.
-    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example')
+    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example — from LINGTAI_DATABASE_URL')
   })
 
   it('re-running a finished init reports the state and changes nothing', async () => {
@@ -805,7 +819,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     // The assertion this ticket exists for: what is read afterwards is not Postgres.
     const read = storeChoice({ LINGTAI_HOME: home })
     expect(read).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
-    expect(cardRow(seen.lines, 'log')).toBe('SQLite · lingtai.db')
+    expect(cardRow(seen.lines, 'log')).toBe('SQLite')
     // And nothing offers Postgres as the store this version runs on.
     expect(seen.lines.join('\n')).not.toContain('--database-url')
   })
@@ -870,7 +884,7 @@ describe('the store is written down, and the screen is a reading of it (#215)', 
     const { world: w, seen } = world(home, { env: { LINGTAI_DATABASE_URL: URL_ } })
     expect(await initCommand(flagsFromArgv([]), w)).toBe(0)
     expect(seen.connected).toEqual([URL_])
-    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example')
+    expect(cardRow(seen.lines, 'log')).toBe('Postgres · db.example — from LINGTAI_DATABASE_URL')
     // And nothing was written over: the file's choice is still the file's.
     expect(config(home)).toContain('store: sqlite')
   })
@@ -914,7 +928,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     })
     expect(
       await initCommand(
-        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]),
+        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]),
         w,
       ),
     ).toBe(0)
@@ -923,7 +937,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     expect(config(home)).toBe('database:\n  store: sqlite\n')
     expect(statSync(configPath({ LINGTAI_HOME: home })).mode & 0o777).toBe(0o600)
     expect(storeChoice({ LINGTAI_HOME: home })).toMatchObject({ store: 'sqlite', path: join(home, 'lingtai.db') })
-    expect(cardRow(seen.lines, 'log')).toBe('SQLite · lingtai.db')
+    expect(cardRow(seen.lines, 'log')).toBe('SQLite')
     // The local branch never asks for a board's URL (#434) — nothing here
     // opens a wizard, so nothing starts one.
     expect(seen.boards).toBe(0)
@@ -1046,7 +1060,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
       const { world: w, seen } = world(home, { answering: [URL_, newer] })
       expect(await initCommand(flagsFromArgv(['--database-url', newer]), w)).toBe(0)
       expect(seen.asked).toEqual([])
-      expect(seen.connected).toEqual([newer])
+      expect(seen.connected).toEqual([URL_, newer])
       expect(config(home)).toBe(`database:\n  store: postgres\n  url: ${newer}\n${GITHUB_APP}`)
     })
 

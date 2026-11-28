@@ -307,8 +307,11 @@ export function draftedTicketsIn(streams: readonly (readonly Envelope[])[]): Set
 export function readDraftedTickets(project: string, store: EventStore): Effect.Effect<ReadonlySet<string>, Error> {
   return Effect.gen(function* () {
     const { highest } = yield* highestPr(project, store)
-    const streams: Envelope[][] = []
-    for (let n = 1; n <= (highest ?? 0); n++) streams.push(yield* readPrEvents(project, n, store))
+    const numbers = Array.from({ length: highest ?? 0 }, (_, i) => i + 1)
+    // At most 8 reads in flight; results come back in PR-number order, and the first failed read fails the whole.
+    const streams = yield* Effect.forEach(numbers, (n) => readPrEvents(project, n, store), {
+      concurrency: READ_CONCURRENCY,
+    })
     return draftedTicketsIn(streams)
   })
 }

@@ -194,7 +194,7 @@ function toEntry(row: pg.QueryResultRow): BacklogEntry {
 }
 
 /** A `spend` row → `SpendRow`. Unchanged from `readSpend`. */
-function toSpendRow(row: pg.QueryResultRow): SpendRow {
+export function toSpendRow(row: pg.QueryResultRow): SpendRow {
   return {
     seq: String(row.seq),
     at: row.at,
@@ -208,7 +208,8 @@ function toSpendRow(row: pg.QueryResultRow): SpendRow {
     round: row.round,
     runtime: row.runtime,
     turns: row.turns,
-    durationMs: row.duration_ms,
+    // `duration_ms` is a bigint, which `pg` returns as a string (#1512).
+    durationMs: Number(row.duration_ms),
     costUsd: row.cost_usd,
     usage: row.usage,
     estimatedUsd: row.estimated_usd ?? null,
@@ -538,6 +539,10 @@ export function makePostgresProjections(
       if (query.project !== undefined) {
         args.push(query.project)
         where.push(`project = $${args.length}`)
+      }
+      if (query.stream !== undefined) {
+        args.push(Array.isArray(query.stream) ? query.stream : [query.stream])
+        where.push(`stream_id = any($${args.length}::text[])`)
       }
       if (query.since !== undefined) {
         args.push(query.since)

@@ -19,13 +19,13 @@ import {
   CLAUDE_TOKEN_SKIPPED,
   type ClaudeTokenSetAt,
   environmentWinsSentence,
+  type Asker,
   type MachineText,
-  needsClaudeToken,
   setClaudeTokenEffect,
 } from '@lingtai/setup'
 import { Effect, Redacted } from 'effect'
 
-import type { QuestionWorld } from './question.ts'
+import { questionEffect, type QuestionWorld } from './question.ts'
 
 /** What `claude setup-token` prints a token as. Global, so a line with two is two matches. */
 const TOKEN_RUN = /sk-ant-oat01-[A-Za-z0-9_-]+/g
@@ -135,17 +135,23 @@ export const takeFromSetupToken = (
   })
 
 /** The token from `claude setup-token`, else pasted at a hidden prompt; null is a skip (an empty answer). */
-export const obtainClaudeToken = (world: ClaudeTokenWorld): Effect.Effect<Redacted.Redacted<string> | null, unknown> =>
+export const obtainClaudeToken = (
+  world: ClaudeTokenWorld,
+  /** False where the choice to run was already the answer to a question (the machine list's own). */
+  askFirst = true,
+): Effect.Effect<Redacted.Redacted<string> | null, unknown> =>
   Effect.gen(function* () {
     // Before the browser sign-in starts, so deferring is a choice and not a Ctrl+C that abandons the command.
-    const go = yield* Effect.tryPromise(() =>
-      world.ask('', {
-        message: 'run `claude setup-token` now, or skip and set the token later?',
-        defaultValue: 'run',
-        choices: ['run', 'skip'],
-      }),
-    )
-    if (go === 'skip') return null
+    if (askFirst) {
+      const go = yield* Effect.tryPromise(() =>
+        world.ask('', {
+          message: 'run `claude setup-token` now, or skip and set the token later?',
+          defaultValue: 'run',
+          choices: ['run', 'skip'],
+        }),
+      )
+      if (go === 'skip') return null
+    }
     world.log('running `claude setup-token` — finish the sign-in in the browser')
     const taken = yield* takeFromSetupToken(world)
     if ('token' in taken) return taken.token
@@ -184,32 +190,34 @@ const save = (world: ClaudeTokenWorld, token: Redacted.Redacted<string>): Effect
   )
 
 /**
- * `init` and `add`, once the recipe is final: asks only when the sandbox is on,
- * a step names `claude-code` and no token is set. Never refuses the add — the
- * token belongs to the machine, not the project — so every outcome is a line.
+ * The terminal's asker for the machine list's token entry (#1522). A token that is set is shown as set and
+ * `keep` is the default; where none is, the choices are `run` (`claude setup-token`) and `skip`.
  */
-export const askClaudeTokenForRecipe = (
-  world: ClaudeTokenWorld,
-  recipe: Parameters<typeof needsClaudeToken>[0],
-): Effect.Effect<void, unknown> =>
-  Effect.gen(function* () {
-    const state = stateOf(world)
-    if ('unreadable' in state) {
-      world.log(`${state.unreadable}. ${CLAUDE_TOKEN_SKIPPED}`)
-      return
-    }
-    if (!needsClaudeToken(recipe, state)) return
-    if (!world.interactive) {
-      world.log(`no terminal to ask for the Claude Code token at — ${CLAUDE_TOKEN_SKIPPED}`)
-      return
-    }
-    const token = yield* obtainClaudeToken(world)
-    if (token === null) {
-      world.log(CLAUDE_TOKEN_SKIPPED)
-      return
-    }
-    yield* save(world, token)
-  })
+export const claudeTokenAsker =
+  (world: ClaudeTokenWorld & QuestionWorld): Asker =>
+  (d) =>
+    Effect.gen(function* () {
+      const set = d.inForce !== null
+      if (set) {
+        world.log(
+          `claude token   set${d.inForce !== null && d.inForce.from === 'environment' ? ' in the environment' : ` in ${world.path}`}`,
+        )
+      }
+      return yield* questionEffect(world, {
+        name: d.question.name,
+        flag: d.question.flag,
+        given: null,
+        prompt: set
+          ? 'a Claude Code token is set — keep it, or run `claude setup-token` for another'
+          : 'run `claude setup-token` now, or skip and set the token later',
+        fallback: d.default ?? (set ? 'keep' : 'skip'),
+        choices: set ? ['keep', 'run'] : ['run', 'skip'],
+        kept: d.kept,
+        validate: d.question.validate,
+        ...(d.startOver === undefined ? {} : { startOver: d.startOver }),
+        command: 'lingtai init',
+      })
+    })
 
 /** `lingtai token claude`: runs whenever asked. Exit code 0 saved or kept, 1 refused. */
 export const claudeTokenCommand = (world: ClaudeTokenWorld): Effect.Effect<0 | 1, unknown> =>

@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Mock · the task page’s panels</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+.light { --ground:#f1f4f4; --surface:#ffffff; --surface-2:#e9eeee; --ink:#0f181c; --ink-2:#3a4a50; --muted:#5e6e74; --rule:#d8e0e1; --rule-2:#c3cfd1; --accent:#0b6a70; --accent-soft:#dcedee; --accent-ink:#075056; --signal:#9c5a08; --pass:#2c7a4c; --pass-soft:#dfeee4; --fail:#a33029; --line:#44507a; }
+.dark { --ground:#0c1316; --surface:#18262b; --surface-2:#0e181b; --ink:#dde6e8; --ink-2:#b4c4c8; --muted:#87999f; --rule:#2e434b; --rule-2:#3a525b; --accent:#54c6cc; --accent-soft:#10312f; --accent-ink:#7fdade; --signal:#e0a55c; --pass:#61be86; --pass-soft:#122c1e; --fail:#e2776e; --line:#8a93b5; }
+:root { --sans:"IBM Plex Sans",system-ui,sans-serif; --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace; --radius:3px; }
+* { box-sizing:border-box; }
+body { margin:0; font-family:var(--sans); font-size:13.5px; background:#888; }
+.note { font:600 12px var(--sans); color:#fff; background:#333; padding:8px 16px; margin:0; }
+.note small { font-weight:400; opacity:.85; }
+.theme { background:var(--ground); color:var(--ink); padding:8px 16px 40px; }
+a { color:var(--accent); text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:2px; }
+.var { font:600 12px var(--sans); color:#fff; background:#63549e; display:inline-block; padding:3px 9px; border-radius:var(--radius); margin:30px 0 14px; }
+.var.old { background:#7a2b25; }
+.sec-h { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); margin:0; }
+code { font:12px var(--mono); }
+
+.tag { font:600 11px var(--mono); padding:1px 6px; border-radius:var(--radius); background:var(--accent-soft); color:var(--accent-ink); margin-left:8px; text-transform:none; letter-spacing:0; }
+.tag.ok { background:var(--pass-soft); color:var(--pass); }
+.standing { border-left:3px solid var(--pass); padding-left:16px; }
+.standing.run { border-left-color:var(--accent); }
+.title { font-size:20px; font-weight:700; margin:0; line-height:1.3; }
+.title .state { color:var(--pass); } .run .title .state { color:var(--accent); }
+.facts-line { font:10px var(--mono); color:var(--muted); margin:6px 0 14px; }
+.panel { background:var(--surface); border:1px solid var(--rule); border-radius:var(--radius); }
+.panel + .panel { margin-top:12px; }
+.figs { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:0; }
+.figs.three { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.figs > div { padding:12px 16px; border-left:1px solid var(--surface-2); }
+.figs > div:first-child { border-left:0; }
+.figs dt { font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:.08em; color:var(--muted); }
+.figs dd { margin:0; }
+.figs .fig { font:16px var(--mono); margin-top:3px; }
+.figs .sub { font:10px var(--mono); color:var(--muted); margin-top:2px; }
+.figs .ans { color:var(--signal); }
+.tcx { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); }
+.tcx > div { padding:12px 16px; border-left:1px solid var(--surface-2); color:var(--ink-2); line-height:1.55; }
+.tcx > div:first-child { border-left:0; }
+.tcx h2 { margin-bottom:5px; }
+.foot { padding:8px 16px; border-top:1px solid var(--rule); font-size:12px; }
+.where { display:grid; grid-template-columns:minmax(0,1.4fr) minmax(0,1fr); }
+.where .graph { padding:14px 16px; }
+.where dl { margin:0; padding:14px 16px; border-left:1px solid var(--surface-2); display:grid; grid-template-columns:auto minmax(0,1fr); gap:9px 16px; align-content:center; }
+.where dt { color:var(--muted); font-size:12px; } .where dd { margin:0; }
+svg { display:block; width:100%; height:auto; } svg text { font:10px var(--mono); fill:var(--muted); }
+.where-h { margin:20px 0 8px; }
+.log { padding:12px 16px; font:11px var(--mono); color:var(--muted); line-height:1.7; }
+</style>
+</head>
+<body>
+<p class="note">light <small>· “agents ran 31m” is a placeholder; the ticket text is #1442’s in both states · a mock of layout: the rules are in the ticket and in the-board-style.md, the variables are globals.css’s</small></p>
+<div class="theme light">
+<div><span class="var">Landed, on a team project · #1515 draws the two panels, #1513 draws Where it is</span></div>
+<div class="standing">
+  <h1 class="title"><span class="state">landed</span> feature(board): New pr-fix ticket opens GitHub's form filled in</h1>
+  <p class="facts-line"><a href="#">#1504 ↗</a> · claimed 00:06 · landed 01:01 on steven-zhc/studio · <a href="#">from Attempt 1 of 1 ↓</a></p>
+  <div class="panel"><dl class="figs">
+    <div><dt>Spent</dt><dd class="fig">$3.14 + ~$6.19 est.</dd><dd class="sub">5 runs estimated from tokens</dd></div>
+    <div><dt>Of which answering</dt><dd class="fig ans">$1.32 + ~$4.55 est.</dd></div>
+    <div><dt>Took</dt><dd class="fig">55m</dd><dd class="sub">claim → landed · agents ran 31m</dd></div>
+    <div><dt>Attempts</dt><dd class="fig">1</dd><dd class="sub">80 turns · 3 fix rounds</dd></div>
+  </dl></div>
+  <div class="panel"><div class="tcx"><div><h2 class="sec-h">Problem</h2>A 5.107 s homepage request has no exported read after 2.922 s, leaving 2.185 s unattributed; an early-ended request can also keep doing child work after its root ends.</div><div><h2 class="sec-h">Want</h2>Traces distinguish response first write, server-side finish, premature close and request-span end, with correct request identity and explicit missing measurements.</div><div><h2 class="sec-h">Watch out</h2>Node <code>finish</code> means the server handed response bytes to its transport; it is not browser receipt. <code>close</code> can follow a normal finish: do not count that as an abort.</div></div><div class="foot"><a href="#">The whole ticket ↓</a></div></div>
+  <h2 class="sec-h where-h">Where it is <span class="tag">on your branch</span></h2>
+  <div class="panel where"><div class="graph"><svg viewBox="0 0 560 140" role="img" aria-label="branch sketch">
+  <text x="0" y="12">main</text>
+  <line x1="0" y1="24" x2="560" y2="24" stroke="var(--line)" stroke-width="1.5" opacity=".55"/>
+  <path d="M28 24 C58 24 44 100 84 100 L560 100" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <rect x="104" y="66" width="214" height="58" rx="3" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="114" y="82">in the draft · not submitted</text>
+  <circle cx="140" cy="100" r="10" fill="none" stroke="var(--signal)" stroke-width="1.3"/><circle cx="140" cy="100" r="6" fill="var(--line)"/>
+  <text x="140" y="58" text-anchor="middle">this ticket</text>
+  <text x="0" y="136">steven-zhc/studio</text>
+</svg></div>
+  <dl><dt>In</dt><dd>Draft PR · not submitted yet · <a href="#">PR page →</a></dd><dt>Merge commit</dt><dd><code>59f5c15</code> on <code>steven-zhc/studio</code></dd><dt>Closed when</dt><dd>its PR is merged into main</dd></dl></div>
+</div>
+<div><span class="var">Running · the same two panels; the run log is not part of #1515</span></div>
+<div class="standing run">
+  <h1 class="title"><span class="state">running</span> measure(board): distinguish response finish from early close</h1>
+  <p class="facts-line"><a href="#">#1442 ↗</a> · claimed 01:07 · [implement] · step 6m38s · attempt 10m47s · <a href="#">from Attempt 1 of 1 ↓</a></p>
+  <div class="panel"><dl class="figs three">
+    <div><dt>Spent</dt><dd class="fig">$1.29</dd></div>
+    <div><dt>Took</dt><dd class="fig">10m49s</dd><dd class="sub">since claim · agents ran 3m55s</dd></div>
+    <div><dt>Attempts</dt><dd class="fig">1</dd><dd class="sub">16 turns</dd></div>
+  </dl></div>
+  <div class="panel"><div class="tcx"><div><h2 class="sec-h">Problem</h2>A 5.107 s homepage request has no exported read after 2.922 s, leaving 2.185 s unattributed; an early-ended request can also keep doing child work after its root ends.</div><div><h2 class="sec-h">Want</h2>Traces distinguish response first write, server-side finish, premature close and request-span end, with correct request identity and explicit missing measurements.</div><div><h2 class="sec-h">Watch out</h2>Node <code>finish</code> means the server handed response bytes to its transport; it is not browser receipt. <code>close</code> can follow a normal finish: do not count that as an abort.</div></div><div class="foot"><a href="#">The whole ticket ↓</a></div></div>
+  <h2 class="sec-h where-h">Run log</h2><div class="panel log">implement · reading apps/board/src/lib/telemetry.ts<br>implement · editing trace-seams.ts<br>implement · pnpm typecheck …</div>
+</div>
+</div>
+<p class="note">dark <small>· “agents ran 31m” is a placeholder; the ticket text is #1442’s in both states · a mock of layout: the rules are in the ticket and in the-board-style.md, the variables are globals.css’s</small></p>
+<div class="theme dark">
+<div><span class="var">Landed, on a team project · #1515 draws the two panels, #1513 draws Where it is</span></div>
+<div class="standing">
+  <h1 class="title"><span class="state">landed</span> feature(board): New pr-fix ticket opens GitHub's form filled in</h1>
+  <p class="facts-line"><a href="#">#1504 ↗</a> · claimed 00:06 · landed 01:01 on steven-zhc/studio · <a href="#">from Attempt 1 of 1 ↓</a></p>
+  <div class="panel"><dl class="figs">
+    <div><dt>Spent</dt><dd class="fig">$3.14 + ~$6.19 est.</dd><dd class="sub">5 runs estimated from tokens</dd></div>
+    <div><dt>Of which answering</dt><dd class="fig ans">$1.32 + ~$4.55 est.</dd></div>
+    <div><dt>Took</dt><dd class="fig">55m</dd><dd class="sub">claim → landed · agents ran 31m</dd></div>
+    <div><dt>Attempts</dt><dd class="fig">1</dd><dd class="sub">80 turns · 3 fix rounds</dd></div>
+  </dl></div>
+  <div class="panel"><div class="tcx"><div><h2 class="sec-h">Problem</h2>A 5.107 s homepage request has no exported read after 2.922 s, leaving 2.185 s unattributed; an early-ended request can also keep doing child work after its root ends.</div><div><h2 class="sec-h">Want</h2>Traces distinguish response first write, server-side finish, premature close and request-span end, with correct request identity and explicit missing measurements.</div><div><h2 class="sec-h">Watch out</h2>Node <code>finish</code> means the server handed response bytes to its transport; it is not browser receipt. <code>close</code> can follow a normal finish: do not count that as an abort.</div></div><div class="foot"><a href="#">The whole ticket ↓</a></div></div>
+  <h2 class="sec-h where-h">Where it is <span class="tag">on your branch</span></h2>
+  <div class="panel where"><div class="graph"><svg viewBox="0 0 560 140" role="img" aria-label="branch sketch">
+  <text x="0" y="12">main</text>
+  <line x1="0" y1="24" x2="560" y2="24" stroke="var(--line)" stroke-width="1.5" opacity=".55"/>
+  <path d="M28 24 C58 24 44 100 84 100 L560 100" fill="none" stroke="var(--line)" stroke-width="1.5"/>
+  <rect x="104" y="66" width="214" height="58" rx="3" fill="none" stroke="var(--accent)" stroke-width="1.2" stroke-dasharray="5 4"/>
+  <text x="114" y="82">in the draft · not submitted</text>
+  <circle cx="140" cy="100" r="10" fill="none" stroke="var(--signal)" stroke-width="1.3"/><circle cx="140" cy="100" r="6" fill="var(--line)"/>
+  <text x="140" y="58" text-anchor="middle">this ticket</text>
+  <text x="0" y="136">steven-zhc/studio</text>
+</svg></div>
+  <dl><dt>In</dt><dd>Draft PR · not submitted yet · <a href="#">PR page →</a></dd><dt>Merge commit</dt><dd><code>59f5c15</code> on <code>steven-zhc/studio</code></dd><dt>Closed when</dt><dd>its PR is merged into main</dd></dl></div>
+</div>
+<div><span class="var">Running · the same two panels; the run log is not part of #1515</span></div>
+<div class="standing run">
+  <h1 class="title"><span class="state">running</span> measure(board): distinguish response finish from early close</h1>
+  <p class="facts-line"><a href="#">#1442 ↗</a> · claimed 01:07 · [implement] · step 6m38s · attempt 10m47s · <a href="#">from Attempt 1 of 1 ↓</a></p>
+  <div class="panel"><dl class="figs three">
+    <div><dt>Spent</dt><dd class="fig">$1.29</dd></div>
+    <div><dt>Took</dt><dd class="fig">10m49s</dd><dd class="sub">since claim · agents ran 3m55s</dd></div>
+    <div><dt>Attempts</dt><dd class="fig">1</dd><dd class="sub">16 turns</dd></div>
+  </dl></div>
+  <div class="panel"><div class="tcx"><div><h2 class="sec-h">Problem</h2>A 5.107 s homepage request has no exported read after 2.922 s, leaving 2.185 s unattributed; an early-ended request can also keep doing child work after its root ends.</div><div><h2 class="sec-h">Want</h2>Traces distinguish response first write, server-side finish, premature close and request-span end, with correct request identity and explicit missing measurements.</div><div><h2 class="sec-h">Watch out</h2>Node <code>finish</code> means the server handed response bytes to its transport; it is not browser receipt. <code>close</code> can follow a normal finish: do not count that as an abort.</div></div><div class="foot"><a href="#">The whole ticket ↓</a></div></div>
+  <h2 class="sec-h where-h">Run log</h2><div class="panel log">implement · reading apps/board/src/lib/telemetry.ts<br>implement · editing trace-seams.ts<br>implement · pnpm typecheck …</div>
+</div>
+</div>
+</body>
+</html>

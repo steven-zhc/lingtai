@@ -288,6 +288,8 @@ export interface SpendQuery {
   /** One ticket, or several — a board render asks for every card at once. */
   ticket?: string | readonly string[]
   project?: string
+  /** One stream id, or several. An empty list reads nothing. */
+  stream?: string | readonly string[]
   /** `at >= since`. Absent reads from the beginning, which `readSpend({ ticket })` wants. */
   since?: Date
 }

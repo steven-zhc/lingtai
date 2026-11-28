@@ -586,6 +586,43 @@ describe('readDraftedTickets (#1423)', () => {
   it('no PR at all: nothing drafted', async () => {
     expect([...(await run(readDraftedTickets('lingtai', createMemoryEventStore())))]).toEqual([])
   })
+
+  it('reads the PR streams together, at most READ_CONCURRENCY at once, and finds what a serial read finds (#1509)', async () => {
+    const inner = createMemoryEventStore()
+    await reviewBelowDraft(inner)
+    await recordPrNumber(inner, 'lingtai', 9)
+    const serial = [...(await run(readDraftedTickets('lingtai', inner)))].sort()
+    let inFlight = 0
+    let most = 0
+    const store: EventStore = Object.create(inner, {
+      read: {
+        value: async (id: string) => {
+          if (!id.startsWith('pr-lingtai-')) return inner.read(id)
+          inFlight++
+          most = Math.max(most, inFlight)
+          for (let i = 0; i < 10; i++) await Promise.resolve()
+          inFlight--
+          return inner.read(id)
+        },
+      },
+    })
+    expect([...(await run(readDraftedTickets('lingtai', store)))].sort()).toEqual(serial)
+    expect(serial).toEqual(['1', '2'])
+    expect(most).toBeGreaterThan(1)
+    expect(most).toBeLessThanOrEqual(READ_CONCURRENCY)
+  })
+
+  it('fails when one PR stream cannot be read: never a partial set (#1509)', async () => {
+    const inner = createMemoryEventStore()
+    await reviewBelowDraft(inner)
+    await recordPrNumber(inner, 'lingtai', 9)
+    const store: EventStore = Object.create(inner, {
+      read: {
+        value: (id: string) => (id === prStream('lingtai', 5) ? Promise.reject(new Error('boom')) : inner.read(id)),
+      },
+    })
+    await expect(run(readDraftedTickets('lingtai', store))).rejects.toThrow('boom')
+  })
 })
 
 /** A store that remembers which streams `head` was asked about. */

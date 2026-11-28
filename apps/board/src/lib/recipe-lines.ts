@@ -234,7 +234,7 @@ export function modeLines(recipe: Recipe): ModeReading {
       },
     }
   }
-  // The same expression as `summariseRecipe`'s `landsUnattended` (apps/cli/src/recipe-flow.ts:192).
+  // The same expression as `summariseRecipe`'s `landsUnattended` (packages/setup/src/summary.ts).
   const steps = recipe.steps as unknown as Record<string, readonly Record<string, unknown>[]>
   const unattended = !(steps['proposed'] ?? []).some((a) => 'human' in a)
   const excluded = excludeOf(recipe)

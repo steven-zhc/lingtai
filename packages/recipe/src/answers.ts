@@ -67,7 +67,7 @@ export function landingChanges(answer: LandingAnswer, currentProposed: readonly 
   return landOnBranchChanges(answer.land, proposed)
 }
 
-function isFindingsJudge(entry: unknown): boolean {
+export function isFindingsJudge(entry: unknown): boolean {
   return (
     typeof entry === 'object' && entry !== null && 'judge' in entry && (entry as { when?: unknown }).when === 'findings'
   )
@@ -93,6 +93,46 @@ export function findingsJudgeChanges(
       value: [...proposed, { name: 'send findings back to the writer', judge: writer, when: 'findings' }],
     },
   ]
+}
+
+/**
+ * The index of the judge that follows the writer (#1523): the first `findings` judge, when it names `writer`.
+ * It is the one `judgeDeclaredAt` reads, and the one init itself wrote (#1448, #1519); a judge naming any other
+ * runtime is somebody's own and is left as written.
+ */
+export function followedJudgeIndex(currentProposed: readonly unknown[] | null, writer: string | null): number | null {
+  if (writer === null) return null
+  const proposed = currentProposed ?? []
+  const index = proposed.findIndex(isFindingsJudge)
+  if (index === -1) return null
+  return (proposed[index] as { judge?: unknown }).judge === writer ? index : null
+}
+
+/**
+ * The changes that make the findings judge follow the writer, on a new recipe and on a rerun alike (#1523):
+ * - the new writer can judge and there is no `findings` judge: one is appended, naming it;
+ * - the first `findings` judge names the old writer: it names the new one, or is removed where the new writer
+ *   runs only at `implement` (`isImplementOnlyAgent`: a `judge:` naming it would not resolve);
+ * - the judge names anything else: nothing, it is as a person wrote it.
+ * Empty where the writer is unchanged, whether or not a judge is there.
+ */
+export function followWriterJudgeChanges(
+  oldWriter: string | null,
+  newWriter: string,
+  currentProposed: readonly unknown[] | null,
+): RecipeChange[] {
+  const proposed = currentProposed ?? []
+  const index = followedJudgeIndex(proposed, oldWriter)
+  if (index !== null) {
+    if (oldWriter === newWriter) return []
+    if (isImplementOnlyAgent(newWriter)) {
+      return [{ path: ['steps', 'proposed'], value: proposed.filter((_, i) => i !== index) }]
+    }
+    return [{ path: ['steps', 'proposed', index, 'judge'], value: newWriter }]
+  }
+  // An unchanged writer adds nothing: an absent judge is one an operator may have removed on purpose.
+  if (oldWriter === newWriter) return []
+  return findingsJudgeChanges(newWriter, proposed)
 }
 
 /**

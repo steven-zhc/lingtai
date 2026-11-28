@@ -7,8 +7,21 @@
  * returned as itself and the others are still read, so a card can say what it could not read.
  */
 import { inProgressStepNames } from '@lingtai/conductor'
+import { projectClientEffect } from '@lingtai/conductor/filter'
+import { PR_FIX_LABEL } from '@lingtai/conductor/labels'
+import { readState } from '@lingtai/conductor/snapshot-state'
+import { type Tickets, ticketsForEffect } from '@lingtai/conductor/ticket-store'
 import { conductorLockHolder } from '@lingtai/daemon'
-import { type PrState, isOpen, openAmong, prStream, reducePr, ticketStream } from '@lingtai/domain'
+import {
+  type PrState,
+  attemptReducer,
+  isOpen,
+  openAmong,
+  prStream,
+  reducePr,
+  ticketReducer,
+  ticketStream,
+} from '@lingtai/domain'
 import { githubClientAuth, hasGitHubAuth } from '@lingtai/env'
 import type { EventStore } from '@lingtai/event-store/store'
 import { type GitHub, makeGitHub } from '@lingtai/github'
@@ -21,8 +34,9 @@ import {
   readPr,
   readPrEvents,
 } from '@lingtai/project'
-import { readSpendEffect } from '@lingtai/projector'
+import { type SpendRow, readSpendEffect, readTasksEffect } from '@lingtai/projector'
 import { type Recipe, modeOf } from '@lingtai/recipe'
+import { ticketSourceOf } from '@lingtai/recipe/settings'
 import { context } from '@opentelemetry/api'
 import { Effect } from 'effect'
 import { cache } from 'react'
@@ -31,6 +45,7 @@ import { viewsFor, type PlaceView } from '@/app/place-line.tsx'
 import { actor } from '@/lib/actor.ts'
 
 import { type FixTicket, MERGED_SHOWN, type PrBoardView, type PrRead, prBoard, prHolding, prName } from './pr-board.ts'
+import { type PrFixRead, type PrFixTicket, countsAsWaiting, fixingOf } from './pr-fix.ts'
 import {
   type HostRead,
   type PrPageView,
@@ -41,12 +56,16 @@ import {
   prPage,
   ticketsOnGitHub,
 } from './pr-page.ts'
+import { progressOf, stepOf } from './progress.ts'
 import { projectOf, recipeOf } from './request-reads.ts'
 import { requestStore } from './request-store.ts'
 import type { SearchPr } from './search.ts'
 import type { OnBranchRead } from './task.ts'
 import { ApiContext, boardTracer, measure, timed, traced, tracedEffect } from './timing.ts'
 import type { LandedWhereRead } from './where-landed.ts'
+
+/** How long a page waits for one ticket's state on GitHub before it says *unknown*. */
+const ISSUE_READ_BUDGET = '3 seconds'
 
 const failed = (err: unknown): Error => (err instanceof Error ? err : new Error(String(err)))
 
@@ -116,12 +135,171 @@ export const prsOf = cache((project: string) => {
   )
 })
 
-/** The count of PRs waiting on the person: the open PR is the only one that can wait. */
-export const waitingPrs = (project: string, store: EventStore): Effect.Effect<number, Error> =>
+/** The reads `readPrFixes` makes, as a seam: a test hands in plain ones and needs no store. */
+export interface PrFixReads {
+  readonly tasks: (
+    project: string,
+  ) => Effect.Effect<
+    readonly { issue: string; title: string; kind: string; state: string; runId: string | null }[],
+    Error
+  >
+  readonly claim: (
+    project: string,
+    issue: string,
+  ) => Effect.Effect<{ cutFromPr: number | null | undefined; claimedAt: string | null }, Error>
+  /** The step a run is at; null where there is none or the run's stream could not be read. */
+  readonly step: (runId: string) => Effect.Effect<string | null>
+  /** The open issues on the ticket source. */
+  readonly listing: (
+    project: string,
+  ) => Effect.Effect<readonly { number: number; title: string; labels: readonly { name: string }[] }[], Error>
+}
+
+const liveReads = (store: EventStore): PrFixReads => ({
+  // No retention window: a pr-fix that ended is still the projection's answer for its issue, and the listing must
+  // not re-add it as unclaimed nor History lose it after two days.
+  tasks: (project) => readTasksEffect({ project, retentionDays: ALL_TIME_DAYS }).pipe(Effect.mapError(failed)),
+  claim: (project, issue) =>
+    Effect.tryPromise({
+      try: () => readState(store, ticketReducer, ticketStream(project, issue), 'all'),
+      catch: failed,
+    }).pipe(
+      Effect.map((t) => ({
+        cutFromPr: t.cutFrom?.pr ?? null,
+        claimedAt: t.claims[0]?.at.toISOString() ?? null,
+      })),
+    ),
+  step: (runId) =>
+    Effect.tryPromise({ try: () => readState(store, attemptReducer, runId, 'all'), catch: failed }).pipe(
+      Effect.map((a) => {
+        const label = progressOf(a)?.now?.label
+        return label === undefined ? null : stepOf(label)
+      }),
+      Effect.orElseSucceed(() => null),
+    ),
+  listing: (project) =>
+    Effect.gen(function* () {
+      const state = yield* Effect.tryPromise({ try: () => projectOf(project), catch: failed })
+      if (state === null || state === undefined) return yield* Effect.fail(new Error(`no project named ${project}`))
+      // A `db` project's tickets are local: read them without GitHub's App or an owner (as `projectFilterEffect` does).
+      const { recipe } = yield* Effect.tryPromise({ try: () => recipeOf(project), catch: failed })
+      const source =
+        ticketSourceOf(recipe) === 'db'
+          ? yield* ticketsForEffect(state, recipe, undefined as unknown as Tickets)
+          : (yield* projectClientEffect(state)).client
+      return yield* Effect.tryPromise({ try: () => source.listOpenIssues(), catch: failed })
+    }),
+})
+
+const ALL_TIME_DAYS = 36_500
+
+const normal = (kind: string): string => kind.toLowerCase().replace(/\s+/g, '-')
+
+/**
+ * The pr-fix tickets that may be fixing `pr`, as plain data for `fixingOf` (#1506). The projection first: the rows whose
+ * kind is the pr-fix label and that have not ended; then, for those only, the ticket stream (the claim's `cutFrom` and
+ * time) and, for a running one, the run's step. **The ticket source is asked only with `listing`, and only when the
+ * projection found nothing**, because only it knows a ticket nobody has claimed. A failure is `{ kind: 'failed' }`,
+ * never an empty list; a run whose stream cannot be read is a ticket with no step.
+ */
+export const readPrFixes = (
+  project: string,
+  pr: PrState,
+  options: { listing: boolean; history?: boolean; steps?: boolean },
+  reads: PrFixReads = liveReads(requestStore()),
+): Effect.Effect<PrFixRead> =>
+  Effect.gen(function* () {
+    // Every pr-fix row, ended ones too: `fixingOf` excludes them, but they are authoritative for which issues the
+    // projection already knows (the listing must not re-add them) and they carry the claim time History needs.
+    const all = yield* reads.tasks(project).pipe(Effect.timeout(ISSUE_READ_BUDGET))
+    const rows = all.filter((t) => normal(t.kind) === PR_FIX_LABEL)
+    const claimed = yield* Effect.forEach(
+      rows,
+      (t) =>
+        Effect.gen(function* () {
+          const ended = ['landed', 'satisfied', 'closed'].includes(t.state)
+          // An ended row's claim is read only for History; a failed read fails the whole read (said on the card), never drops the entry.
+          const claim = ended
+            ? options.history === true
+              ? yield* reads.claim(project, t.issue).pipe(Effect.timeout(ISSUE_READ_BUDGET))
+              : { cutFromPr: undefined, claimedAt: null }
+            : yield* reads.claim(project, t.issue).pipe(Effect.timeout(ISSUE_READ_BUDGET))
+          const running = ['running', 'verifying', 'approved'].includes(t.state)
+          // A slow or failed run read is a ticket with no step, never a stalled page.
+          const step =
+            running && t.runId !== null && options.steps !== false
+              ? yield* reads.step(t.runId).pipe(
+                  Effect.timeout(ISSUE_READ_BUDGET),
+                  Effect.orElseSucceed(() => null),
+                )
+              : null
+          // A row with no run yet is queued, whatever the row says.
+          const state = running && t.runId === null ? 'queued' : t.state
+          return {
+            issue: Number(t.issue),
+            title: t.title,
+            source: 'claim',
+            state,
+            cutFromPr: claim.cutFromPr,
+            labels: [],
+            step,
+            claimedAt: claim.claimedAt,
+          } satisfies PrFixTicket
+        }),
+      { concurrency: 4 },
+    )
+    const mine = fixingOf(pr, { kind: 'read', tickets: claimed })
+    if (!options.listing || mine.tickets.length > 0) return { kind: 'read', tickets: claimed } as PrFixRead
+    const open = yield* reads.listing(project).pipe(Effect.timeout(ISSUE_READ_BUDGET))
+    // Every projection row, of any kind: a ticket the conductor has claimed is not unclaimed because its row says `bug`.
+    const seen = new Set(all.map((c) => Number(c.issue)))
+    const listed = open
+      .filter((i) => !seen.has(i.number) && i.labels.some((l) => normal(l.name) === PR_FIX_LABEL))
+      .map((i): PrFixTicket => ({
+        issue: i.number,
+        title: i.title,
+        source: 'listing',
+        state: 'queued',
+        cutFromPr: undefined,
+        labels: i.labels.map((l) => l.name),
+        step: null,
+        claimedAt: null,
+      }))
+    return { kind: 'read', tickets: [...claimed, ...listed] } as PrFixRead
+  }).pipe(Effect.catch((err) => Effect.succeed({ kind: 'failed', error: failed(err).message } as PrFixRead)))
+
+/**
+ * The count of PRs waiting on the person: the open PR is the only one that can wait. **A PR a pr-fix is on is not
+ * waiting on you** (#1506), decided by the same `countsAsWaiting` the board's column uses. It reads the projection and
+ * the claimed tickets' streams only, never the ticket listing, because it runs on every page: a pr-fix nobody has claimed
+ * is invisible here, so the badge may show one for up to a queue pass while the board shows In progress. A failed read
+ * fails the Effect, and the caller shows no badge.
+ */
+export const waitingPrs = (
+  project: string,
+  store: EventStore,
+  reads: PrFixReads = liveReads(store),
+): Effect.Effect<number, Error> =>
   Effect.gen(function* () {
     const pr = yield* openPr(project, store)
-    return pr !== null && pr.status === 'waiting' ? 1 : 0
+    if (pr === null || pr.status !== 'waiting') return 0
+    const read = yield* readPrFixes(project, pr, { listing: false, steps: false }, reads)
+    if (read.kind === 'failed') return yield* Effect.fail(new Error(read.error))
+    return countsAsWaiting(pr, fixingOf(pr, read)) ? 1 : 0
   })
+
+/** Whether the board asks the ticket source for this PR: only where a button would otherwise be offered. */
+const asksListing = (pr: PrState): boolean =>
+  (pr.status === 'waiting' &&
+    pr.wait !== null &&
+    ['ci-red', 'ci-none-started', 'ci-timeout'].includes(pr.wait.reason)) ||
+  pr.status === 'in-review'
+
+/** The pr-fix read for the open PR of a render, or null where nothing is open or the PR cannot be fixed now. */
+const fixesFor = (project: string, pr: PrState | null): Effect.Effect<PrFixRead | null> =>
+  pr === null || (pr.status !== 'waiting' && pr.status !== 'in-review')
+    ? Effect.succeed(null)
+    : readPrFixes(project, pr, { listing: asksListing(pr) })
 
 /**
  * The draft, read from the draft PR's own stream, each ticket with its title. A read that fails is said as such where the
@@ -135,15 +313,22 @@ export const readDraftOf = (project: string): Effect.Effect<PrDraftTicket[] | { 
 
 /** Reported spend on each PR's stream, by `n`. A PR with nothing reported is absent: unknown, never `$0`. */
 export const spendByPr = (project: string, ns: readonly number[]): Effect.Effect<Map<number, number>, Error> =>
-  Effect.gen(function* () {
-    const rows = yield* tracedEffect('spend.read', readSpendEffect({ project }).pipe(Effect.mapError(failed)))
-    const spend = new Map<number, number>()
-    for (const row of rows) {
-      if (row.costUsd === null) continue
-      for (const n of ns) if (row.streamId === prStream(project, n)) spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
-    }
-    return spend
-  })
+  ns.length === 0
+    ? Effect.succeed(new Map<number, number>())
+    : Effect.gen(function* () {
+        const byStream = new Map(ns.map((n) => [prStream(project, n), n] as const))
+        const rows = yield* tracedEffect(
+          'spend.read',
+          readSpendEffect({ project, stream: [...byStream.keys()] }).pipe(Effect.mapError(failed)),
+        )
+        const spend = new Map<number, number>()
+        for (const row of rows) {
+          const n = byStream.get(row.streamId)
+          if (row.costUsd === null || n === undefined) continue
+          spend.set(n, (spend.get(n) ?? 0) + row.costUsd)
+        }
+        return spend
+      })
 
 /** What the board knows of a project's PRs, or why it could not be known. */
 export type PrsRead =
@@ -182,24 +367,27 @@ export async function readPrPage(project: string): Promise<PrsRead> {
               Effect.orElseSucceed(() => 'unknown' as string | null),
             )
           : null
-        const fixHref = (name: string | null): FixTicket | null =>
+        const fixHref = (name: string | null, pr: PrState | null): FixTicket | null =>
           prFixTicketLink({
             project,
             owner: state.owner ?? null,
             github: ticketsOnGitHub(recipe),
             name: name ?? 'the PR',
+            pr,
           })
+        const fixes = yield* fixesFor(project, openAmong(prs.flatMap((r) => ('pr' in r ? [r.pr] : []))))
         return prBoard({
           project,
           recipe,
+          fixes,
           prs,
           draft,
           stepNames: inProgressStepNames(),
           spend,
           daemon: holder === null ? 'none' : holder === 'unknown' ? 'unknown' : 'running',
           viewer: actor(),
-          newFixHref: fixHref(null),
-          newFixFor: (pr) => fixHref(prName(pr)),
+          newFixHref: fixHref(null, null),
+          newFixFor: (pr) => fixHref(prName(pr), pr),
         })
       }).pipe(Effect.withTracer(boardTracer), Effect.provideService(ApiContext, active)),
     )
@@ -259,9 +447,6 @@ export async function placeViewsOf(project: string | undefined): Promise<PlaceVi
   return viewsFor(project, { waiting })
 }
 
-/** How long a page waits for one ticket's state on GitHub before it says *unknown*. */
-const ISSUE_READ_BUDGET = '3 seconds'
-
 /** The project's GitHub, or null where there is no App, no owner or the client could not be made: never a failure. */
 const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub | null> => {
   if (owner === null || owner === '' || !hasGitHubAuth()) return Effect.succeed(null)
@@ -269,43 +454,83 @@ const githubOf = (project: string, owner: string | null): Effect.Effect<GitHub |
 }
 
 /**
+ * A ticket's spend out of the rows of the one batch read: `null` where it has no rows, where any row's cost is unreported,
+ * or where the read failed (`rows` null) — never `$0`. A row of the PR's own stream (`pr-…`) is not a ticket's. The
+ * projection keys a ticket's rows by its stream id (`ticket-<project>-<issue>`), never by the bare number.
+ */
+export function spendOfTickets(
+  project: string,
+  tickets: readonly string[],
+  rows: readonly SpendRow[] | null,
+): Map<string, number | null> {
+  const byTicket = new Map<string, SpendRow[]>()
+  for (const r of rows ?? []) {
+    if (r.ticket === null || r.streamId.startsWith('pr-')) continue
+    const kept = byTicket.get(r.ticket)
+    if (kept === undefined) byTicket.set(r.ticket, [r])
+    else kept.push(r)
+  }
+  return new Map(
+    tickets.map((ticket) => {
+      const own = rows === null ? undefined : byTicket.get(ticketStream(project, ticket))
+      const spend =
+        own === undefined || own.length === 0 || own.some((r) => r.costUsd === null)
+          ? null
+          : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
+      return [ticket, spend]
+    }),
+  )
+}
+
+/**
+ * The one spend read of a PR's tickets in a request, kept as a promise per `(project, n)` so the page and the generated
+ * description — two root runs — share it (#1511). Keyed by the two primitives, never by the tickets: `cache()` compares
+ * arguments by identity. Both callers fold the same PR stream (`requestStore()` keeps it), so whoever fills the slot
+ * first names the same streams. Pages read through it and actions never do: `request-store.ts` — "a server action never
+ * does: it reads, appends and reads again".
+ */
+const spendSlot = cache((_project: string, _n: number) => ({ rows: undefined as Promise<SpendRow[]> | undefined }))
+
+/** Every ticket's rows in one query, or null where there are no tickets' worth to read or the read failed. */
+const ticketRows = (project: string, n: number, tickets: readonly string[]): Effect.Effect<SpendRow[] | null> =>
+  Effect.gen(function* () {
+    if (tickets.length === 0) return []
+    const slot = spendSlot(project, n)
+    slot.rows ??= Effect.runPromiseWith(yield* Effect.context<never>())(
+      tracedEffect('spend.read', readSpendEffect({ project, ticket: tickets.map((t) => ticketStream(project, t)) })),
+    )
+    const kept = slot.rows
+    return yield* Effect.tryPromise(() => kept)
+  }).pipe(Effect.orElseSucceed(() => null))
+
+/**
  * What the description reads of each ticket, as the daemon's `facts` port does: whether it is still open on GitHub, and what
  * its runs cost (`null` where any run's cost is unreported, or the read failed). The PR's own stream is not a ticket's.
  */
 const ticketFacts = (
   project: string,
+  n: number,
   tickets: readonly string[],
   github: GitHub | null,
 ): Effect.Effect<{ ticket: string; open: boolean | null; spend: number | null }[]> =>
-  Effect.forEach(
-    tickets,
-    (ticket) =>
-      Effect.gen(function* () {
-        // The log's half first and never waiting on GitHub: the issue read runs beside it, in parallel with every other
-        // ticket's, and a slow or failed one is unknown after `ISSUE_READ_BUDGET` rather than holding the page.
-        const openRead =
-          github === null || !/^\d+$/.test(ticket)
-            ? Effect.succeed(null)
-            : github.getIssue(Number(ticket)).pipe(
-                Effect.map((issue): boolean | null => issue.state === 'open'),
-                Effect.timeout(ISSUE_READ_BUDGET),
-                Effect.orElseSucceed(() => null),
-              )
-        // The projection keys a ticket's spend by its stream id (`ticket-<project>-<issue>`), never by the bare number.
-        const rows = yield* tracedEffect(
-          'spend.read',
-          readSpendEffect({ project, ticket: ticketStream(project, ticket) }),
-        ).pipe(Effect.orElseSucceed(() => null))
-        const open = yield* openRead
-        const own = rows === null ? null : rows.filter((r) => !r.streamId.startsWith('pr-'))
-        const spend =
-          own === null || own.length === 0 || own.some((r) => r.costUsd === null)
-            ? null
-            : own.reduce((sum, r) => sum + (r.costUsd ?? 0), 0)
-        return { ticket, open, spend }
-      }),
-    { concurrency: 'unbounded' },
-  )
+  Effect.gen(function* () {
+    // The log's half first and never waiting on GitHub: the issue reads run in parallel, and a slow or failed one is
+    // unknown after `ISSUE_READ_BUDGET` rather than holding the page.
+    const opens = yield* Effect.forEach(
+      tickets,
+      (ticket) =>
+        github === null || !/^\d+$/.test(ticket)
+          ? Effect.succeed(null)
+          : github.getIssue(Number(ticket)).pipe(
+              Effect.map((issue): boolean | null => issue.state === 'open'),
+              Effect.timeout(ISSUE_READ_BUDGET),
+              Effect.orElseSucceed(() => null),
+            ),
+      { concurrency: 'unbounded' },
+    )
+    const spends = spendOfTickets(project, tickets, yield* ticketRows(project, n, tickets))
+    return tickets.map((ticket, i) => ({ ticket, open: opens[i] ?? null, spend: spends.get(ticket) ?? null }))
+  })
 
 /** What one PR's page knows, or why it could not be known. */
 export type PrDetailRead =
@@ -372,6 +597,7 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         // no request to the host holds the page back.
         const facts = yield* ticketFacts(
           project,
+          n,
           pr.tickets.map((t) => t.ticket),
           null,
         )
@@ -381,9 +607,12 @@ export async function readPrDetail(project: string, n: number | 'next'): Promise
         )
         const tickets = facts.some((f) => f.spend === null) ? null : facts.reduce((sum, f) => sum + (f.spend ?? 0), 0)
         const spend = own === null || tickets === null ? null : own + tickets
+        // The page reads for every PR, not only a waiting one: History keeps a pr-fix's claim after it landed or ended.
+        const fixes = yield* readPrFixes(project, pr, { listing: isOpen(pr) && asksListing(pr), history: true })
         const view = prPage({
           project,
           recipe,
+          fixes,
           owner: state.owner ?? null,
           pr,
           events,
@@ -445,6 +674,7 @@ export async function readGeneratedBody(project: string, n: number): Promise<str
       const github = ticketsOnGitHub(recipe) ? yield* githubOf(project, state.owner ?? null) : null
       const facts = yield* ticketFacts(
         project,
+        n,
         pr.tickets.map((t) => t.ticket),
         github,
       )

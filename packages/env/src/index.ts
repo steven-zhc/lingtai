@@ -1598,7 +1598,7 @@ export type GitHubAuth = { kind: 'app' } | { kind: 'gh' }
 /** The outcome of `electGithubAuth`, before anything throws. */
 export type ElectedGitHubAuth =
   | { kind: 'app' | 'gh'; source: string }
-  | { kind: null; unreadable?: string }
+  | { kind: null; unreadable?: string; none?: string }
   | { refused: string }
 
 /**
@@ -1622,7 +1622,9 @@ export function electGithubAuth(environment: GitHubAppSection, machine: MachineG
   if (named !== null) {
     const [value, source] = named
     if (value === 'app' || value === 'gh') return { kind: value, source }
-    return { refused: `${source} is "${value}" — it is "app" or "gh"` }
+    // `none` is a written answer: no GitHub on this machine. It beats a configured App, and is not a fault.
+    if (value === 'none') return { kind: null, none: source }
+    return { refused: `${source} is "${value}" — it is "app", "gh" or "none"` }
   }
   const configured = (section: GitHubAppSection) =>
     Boolean(section.appId && (section.privateKeyPath || section.privateKey))
@@ -1656,6 +1658,9 @@ export function githubAuth(from: NodeJS.ProcessEnv = process.env): GitHubAuth {
   if ('refused' in elected) throw new Error(elected.refused)
   if (elected.kind !== null) return { kind: elected.kind }
   const file = machineFilePath(from) ?? join(stateDir(from), 'config.yml')
+  if (elected.none !== undefined) {
+    throw new Error(`github.auth is none (${elected.none}) — this machine reaches no GitHub; set it to "gh" or "app"`)
+  }
   throw new Error(
     `no GitHub auth: ${file} names no github.auth and no github.app_id, and nothing exported does — ` +
       `set github.auth to "gh" or "app", or export ${PREFIX}GITHUB_AUTH.` +

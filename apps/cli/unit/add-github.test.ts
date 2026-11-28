@@ -22,7 +22,7 @@ import { Effect } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { isMap, isScalar, parseDocument, type Node, type YAMLMap } from 'yaml'
 
-import { askBeforeGithubAddEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
+import { githubProjectAnswersEffect, type AskBeforeGithubAddDeps } from '../src/add-github.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 
@@ -36,7 +36,7 @@ async function askBeforeGithubAdd(
   buildFlags?: readonly string[],
 ) {
   const result = await Effect.runPromise(
-    askBeforeGithubAddEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
+    githubProjectAnswersEffect(slug, flags, deps, buildFlags).pipe(Effect.provideService(ProjectFiles, files)),
   )
   if (typeof result === 'object') {
     await Effect.runPromise(
@@ -47,7 +47,7 @@ async function askBeforeGithubAdd(
   }
   return result
 }
-import { SAID } from '../src/recipe-flow.ts'
+import { SAID } from '@lingtai/setup'
 
 const PREVIOUS_ENV = { ...process.env }
 
@@ -161,6 +161,15 @@ function countedDeps(
     },
     runtimes: overrides.runtimes ?? (() => Effect.succeed([])),
     history: overrides.history ?? (() => Effect.succeed([])),
+    // No network: every branch the list asks about exists, and no compare has a commit.
+    client: () =>
+      Effect.succeed({
+        branchExists: async () => true,
+        request: async () => ({ commits: [] }),
+        token: async () => 'token',
+        refSha: async () => 'sha',
+        createBranch: async () => {},
+      } as never),
   }
   return counted
 }
@@ -290,20 +299,16 @@ describe('askBeforeGithubAdd (#402)', () => {
   })
 
   it('reaches the recipe check once the installation is good, showing the order is not just "always return"', async () => {
-    // No agent runtime signed in (`countedDeps`'s default) — `askRecipe`
-    // refuses at its agent question rather than succeeding, but by then it
-    // has already read the file twice (once here, once inside `askRecipe`
-    // itself), proving the installation check ran first and did not short
-    // the rest of the function out. `--defaults` (#433) answers `askRecipe`'s
-    // own first question, "use every default?" — with no terminal and no
-    // flag that question would refuse before either read, which is not what
-    // this test is about.
+    // No agent runtime signed in (`countedDeps`'s default) — the list refuses at its writer question rather than
+    // succeeding, but by then it has already read the file (the one draft), proving the installation check ran first
+    // and did not short the rest of the function out. `--defaults` (#433) answers the list's own first question,
+    // "use this setup?".
     const counted = countedDeps(async () => FULLY_PERMISSIONED)
 
     const code = await askBeforeGithubAdd(SLUG, { main: 'main', defaults: '', mode: 'solo' }, counted.deps)
 
     expect(code).toBe(1)
-    expect(counted.reads.length).toBe(2)
+    expect(counted.reads.length).toBe(1)
     expect(counted.writes).toBe(0)
   })
 
@@ -466,24 +471,22 @@ describe('askBeforeGithubAdd (#402)', () => {
     expect(rerun).not.toContain('close the ticket')
   })
 
-  it('refuses by name, before asking a runtime whether it is signed in, when there is no --base and no default branch to seed an absent file (#432)', async () => {
+  it('refuses by name, asking nothing, when there is no --main and no default branch to start an absent file from (#432)', async () => {
     delete process.env['LINGTAI_GITHUB_APP_ID']
     delete process.env['LINGTAI_GITHUB_APP_PRIVATE_KEY']
-    const counted = countedDeps(async () => FULLY_PERMISSIONED, undefined, {
-      runtimes: () => {
-        throw new Error('no runtimes in this test')
-      },
-    })
+    const counted = countedDeps(async () => FULLY_PERMISSIONED)
+    counted.deps.interactive = () => false
     const errors: string[] = []
     const spy = vi.spyOn(console, 'error').mockImplementation((msg: unknown) => {
       errors.push(String(msg))
     })
 
-    const code = await askBeforeGithubAdd(SLUG, {}, counted.deps)
+    const code = await askBeforeGithubAdd(SLUG, { mode: 'solo' }, counted.deps)
     spy.mockRestore()
 
     expect(code).toBe(1)
-    expect(errors.join('\n')).toContain('pass --main')
+    expect(errors.join('\n')).toContain("could not read the repository's default branch")
+    expect(errors.join('\n')).toContain('--main <branch>')
     expect(counted.writes).toBe(0)
     expect(counted.asks).toBe(0)
   })

@@ -3,11 +3,13 @@
  * Rendered to static markup, so nothing here reads a database or GitHub.
  */
 import type { TicketReportRow } from '@lingtai/projector'
+import type { TaskCard } from '@lingtai/projector/task-view'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
 import { LandedView, type LandedEnv } from '../src/app/landed/view.tsx'
-import { ColumnLabel, LandedCount } from '../src/app/page.tsx'
+import { Card, ColumnLabel, LandedCount, LandedRow } from '../src/app/page.tsx'
+import { toCard } from '../src/lib/board.ts'
 import {
   costText,
   cursorText,
@@ -24,6 +26,7 @@ import {
 } from '../src/lib/landed.ts'
 import { landedHref, landedLink } from '../src/lib/paths.ts'
 import { projectionChip } from '../src/lib/report.ts'
+import { addBill, billText, emptyBill } from '../src/lib/spend.ts'
 
 const row = (over: Partial<TicketReportRow> = {}): TicketReportRow => ({
   ticket: 'ticket-lingtai-101',
@@ -269,5 +272,84 @@ describe('the home page Landed heading and count', () => {
     expect(renderToStaticMarkup(<LandedCount count={1} only={undefined} />)).toContain('href="/landed"')
     expect(renderToStaticMarkup(<LandedCount count={0} only={undefined} />)).toContain('>0<')
     expect(landedLink(undefined)).toBe('/landed')
+  })
+})
+
+describe('LandedRow bill (#1514)', () => {
+  const task = (over: Partial<TaskCard> = {}): TaskCard => ({
+    taskId: 'ticket-lingtai-1497',
+    project: 'lingtai',
+    issue: '1497',
+    title: 'A landed row is two lines',
+    kind: 'feature',
+    state: 'landed',
+    runId: null,
+    turns: 212,
+    passed: 0,
+    failed: 0,
+    waived: 0,
+    approved: 0,
+    baseSha: null,
+    headSha: null,
+    files: null,
+    insertions: null,
+    deletions: null,
+    note: null,
+    updatedAt: new Date('2026-09-14T04:27:22Z'),
+    closedAt: null,
+    attempts: 0,
+    lastAttemptAt: null,
+    awaitingSha: null,
+    awaitingApproval: false,
+    wait: null,
+    answer: null,
+    split: null,
+    triage: { started: null, result: null },
+    triageHeadSha: null,
+    repairPending: false,
+    newAttempts: 0,
+    newAttemptsOf: 0,
+    ...over,
+  })
+  const work = { ...emptyBill(), reportedCents: 10, reportedRuns: 1, estimates: [0.5] }
+  const fix = { ...emptyBill(), reportedCents: 6, reportedRuns: 1, estimates: [0.25] }
+  const html = (card: ReturnType<typeof toCard>) =>
+    renderToStaticMarkup(<LandedRow card={card} showProject={false} issue={null} />)
+  const line2 = (h: string) => /<ul class="lbill">(.*?)<\/ul>/s.exec(h)?.[1] ?? ''
+
+  it('shows work and answering as one bill added with addBill, and no pill', () => {
+    const card = { ...toCard(task()), costUsd: work, repairCostUsd: fix }
+    const h = html(card)
+
+    expect(h).not.toContain('class="pill')
+    expect(h).toContain(`<li class="lwork">${billText(addBill(work, fix))}</li>`)
+    expect(billText(addBill(work, fix))).toBe('$0.16 + ~$0.75 est.')
+  })
+
+  it('reads as before with only work spend, turns without the leading dot', () => {
+    const card = { ...toCard(task()), costUsd: work, repairCostUsd: emptyBill() }
+    const text = line2(html(card)).replace(/<[^>]*>/g, '')
+
+    expect(text).toBe(`${billText(work)}212 turns`)
+    expect(html(card)).not.toContain('class="pill')
+  })
+
+  it('keeps the answering pill on the waiting card', () => {
+    const card = { ...toCard(task({ state: 'landed' })), costUsd: work, repairCostUsd: fix }
+    const full = renderToStaticMarkup(<Card card={card} showProject={false} issue={null} paused={false} />)
+
+    expect(full).toContain(`${billText(fix)} answering`)
+  })
+
+  it('shows only the answering bill when there is no work spend', () => {
+    const card = { ...toCard(task()), costUsd: emptyBill(), repairCostUsd: fix }
+
+    expect(html(card)).toContain(`<li class="lwork">${billText(fix)}</li>`)
+  })
+
+  it('draws no bill and no turns for an empty line 2', () => {
+    const card = { ...toCard(task({ turns: null })), costUsd: emptyBill(), repairCostUsd: emptyBill() }
+
+    expect(line2(html(card))).toBe('')
   })
 })

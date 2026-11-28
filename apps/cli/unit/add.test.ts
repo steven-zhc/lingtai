@@ -5,8 +5,9 @@ import type { SetupReader } from '@lingtai/setup'
 import type { RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
+import { parseDocument } from 'yaml'
 
-import { type AddWorld, addFlowEffect } from '../src/add.ts'
+import { type AddWorld, addFlowEffect, githubProjectEffect } from '../src/add.ts'
 
 const fx = <A>(f: () => Promise<A>) => Effect.tryPromise({ try: f, catch: (e) => e })
 type AddTestWorld = AddWorld & { project: FirstProjectTestWorld }
@@ -18,7 +19,7 @@ import type { GitResult } from '../src/first-project.ts'
  * `lingtai.ts` import — that file calls `main()` on import, which is why
  * `addFlow` lives in its own module (`add.ts`'s own header).
  */
-import { askGithubAuthEffect } from '../src/github-auth.ts'
+import { githubEntryFor } from '../src/machine-askers.ts'
 import { stripColour } from '../src/output.ts'
 import {
   type FirstProjectTestWorld,
@@ -87,7 +88,7 @@ interface Harness {
 /**
  * A TTY: `ask` answers the first prompt `local`, the second `/repo`, and
  * every later one `''` — the default at every later question, including
- * `askRecipe`'s own "use every default?", which takes every recipe question's
+ * `askRecipe`'s own "use this setup?", which takes every recipe question's
  * default along with it (#435's Done-when 3).
  */
 function ttyHarness(): Harness {
@@ -130,6 +131,9 @@ function ttyHarness(): Harness {
   }
   const logged: string[] = []
   const world: AddTestWorld = {
+    machine: Effect.succeed([
+      { id: 'github', label: 'github', text: 'gh, signed in as sam', group: 'machine', changed: false },
+    ]),
     project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
@@ -157,12 +161,12 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     // anything (`world.github.app()` answers directly, with no prompt).
     expect(asked[0]).toMatch(/a GitHub project, or one on this machine only/)
     // Every later prompt is the directory, the base branch, or a recipe
-    // question — `askRecipe`'s "use every default?" is the only one of
+    // question — `askRecipe`'s "use this setup?" is the only one of
     // those actually reached, since taking its own default (an empty answer)
     // answers every question beneath it without asking again — and then the summary's confirm.
     for (const prompt of asked.slice(1)) {
       expect(prompt).toMatch(
-        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?|register anyway\?/,
+        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use this setup\?|register anyway\?/,
       )
     }
     expect(asked.length).toBeGreaterThan(1)
@@ -217,6 +221,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     })
     // Never the live client: it would run `gh auth token` and POST to the repository.
     h.world.labels = () => Effect.succeed({ createLabel: async () => 'created' as const })
+    h.world.issueForms = () => Effect.succeed({ kind: 'none' })
     h.world.githubDeps = {
       check: () => Effect.succeed(null),
       auth: () => 'gh',
@@ -227,6 +232,15 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ask: async () => '',
       runtimes: () => fx(async () => [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }]),
       history: () => Effect.succeed([]),
+      // No network: every branch the list asks about exists, and no compare has a commit.
+      client: () =>
+        Effect.succeed({
+          branchExists: async () => true,
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async () => {},
+        } as never),
     }
     if (over.doctorFails === true) {
       h.world.doctor = () =>
@@ -260,21 +274,25 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
       ...h.world.githubDeps!,
       auth: () => auth,
       githubAuth: (flags) =>
-        askGithubAuthEffect(
+        githubEntryFor(
           {
             ask: async (prompt, shape) => count(shape?.message ?? prompt),
             log: () => {},
-            github: {
-              auth: () => auth,
-              ghStatus: () => fx(status),
-              writeAuth: (kind) =>
-                Effect.sync(() => {
-                  auth = kind
-                }),
+            env: {},
+            machine: {
+              read: () => null,
+              write: (_path, text) => {
+                auth = parseDocument(text).getIn(['github', 'auth']) as 'gh' | 'app'
+              },
             },
+            path: '/h/.lingtai/config.yml',
+            interactive: true,
+            app: () => Effect.succeed({ configured: false }),
+            ghStatus: () => fx(status),
+            recipes: () => Effect.succeed([]),
+            run: () => Promise.resolve({ code: 0 }),
           },
           flags,
-          false,
           'Nothing was written',
         ),
     }
@@ -306,7 +324,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/^add {2}widgets$/m)
     expect(text).toMatch(/github\s+gh, signed in as sam/)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
-    expect(text).toMatch(/lands on\s+main, on GitHub/)
+    expect(text).toMatch(/works on\s+main/)
     expect(text).toContain('each attempt')
     expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
     expect(text).not.toContain('a dump line')
@@ -375,6 +393,23 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     )
   })
 
+  it('an issue-forms read that fails leaves the add at 0 and the closing on the label line (#1518)', async () => {
+    const { world, logged, errors, argv } = githubHarness()
+    world.issueForms = () => Effect.die(new Error('403'))
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    expect(errors).toEqual([])
+    expect(logged.join('\n')).toContain('gh issue create -R acme/widgets --label bug')
+  })
+
+  it('one issue form closes on the form, not on gh issue create (#1518)', async () => {
+    const { world, logged, argv } = githubHarness()
+    world.issueForms = () => Effect.succeed({ kind: 'one', file: 'new-joke.yml', name: 'New joke' })
+    expect(await addFlow({ ...flagsFromArgv(argv), positional: 'acme/widgets' }, world)).toBe(0)
+    const text = logged.join('\n')
+    expect(text).toContain("open 'https://github.com/acme/widgets/issues/new?template=new-joke.yml")
+    expect(text).not.toContain('gh issue create')
+  })
+
   it('a bare add on a gh machine offers the login’s repositories and adds the one picked (#969)', async () => {
     const { world, logged, errors, asked } = githubHarness()
     const offered: string[] = []
@@ -409,6 +444,26 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     // Only what is not already registered is offered, then the way to type one.
     expect(offered).toEqual(['acme/widgets', 'type owner/repo'])
     expect(logged.join('\n')).toMatch(/code\s+acme\/widgets {2}github/)
+  })
+
+  it('a bare add with --github-auth gh and a conflicting --github-app is refused before github.auth is written', async () => {
+    const { world, errors } = githubHarness()
+    world.project.github.auth = () => null
+    let answered = 0
+    world.githubDeps = {
+      ...world.githubDeps!,
+      githubAuth: () => {
+        answered++
+        return Effect.succeed({ auth: 'gh' } as never)
+      },
+    }
+    const code = await addFlow(
+      flagsFromArgv(['--mode', 'solo', '--project', 'github', '--github-auth', 'gh', '--github-app', 'create']),
+      world,
+    )
+    expect(code).toBe(1)
+    expect(answered).toBe(0)
+    expect(errors.join('\n')).toContain('--github-app create')
   })
 
   it('a bare add with recipe flags still reaches the picker, and the flags go on with the pick (#969)', async () => {
@@ -702,6 +757,229 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(code).toBe(0)
     expect(asked).toEqual([])
     expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
+  it('an owner repair given a project flag is refused, not returned as a success that changed nothing (#1525)', async () => {
+    const { world, errors, asked } = githubHarness()
+    world.project.projects = liftPort(async () => [
+      {
+        project: 'widgets',
+        owner: null,
+        base: 'main',
+        configHash: 'h',
+        fromSha: null,
+        refused: null,
+        paused: null,
+        recipe: null,
+        sandboxObserved: null,
+        highestPr: null,
+        version: 1,
+        lastSeq: null,
+      },
+    ])
+    const code = await addFlow(
+      { ...flagsFromArgv(['--mode', 'solo', '--agent', 'codex']), positional: 'acme/widgets' },
+      world,
+    )
+    expect(code).toBe(1)
+    expect(errors.join('\n')).toContain('--agent')
+    expect(asked).toEqual([])
+    expect(await world.project.files.read(recipePath('widgets'))).toBeNull()
+  })
+
+  /** `githubProjectEffect` itself, for what `addFlow` does not return: the entries the project list walked. */
+  const runProject = (h: { world: AddTestWorld }, argv: readonly string[], command: 'add' | 'init') =>
+    Effect.runPromise(
+      githubProjectEffect('acme/widgets', { ...flagsFromArgv(argv).flags, github: 'acme/widgets' }, [], h.world, {
+        command,
+        homeIsNew: false,
+      }).pipe(Effect.provideService(ProjectFiles, h.world.project.files)),
+    )
+
+  /** The list's entries in the order it walks them, and whether a person was asked, for `--defaults` with every flag given. */
+  const WALKED_WITH_DEFAULTS: readonly (readonly [string, boolean])[] = [
+    ['where', false],
+    ['mode', false],
+    ['login', false],
+    ['branch', false],
+    ['make-branch', false],
+    ['move-landing', false],
+    ['defaults', true],
+    ['writer', false],
+    ['writer-model', false],
+    ['reviewer', false],
+    ['reviewer-model', false],
+    ['sandbox', false],
+    ['sandbox-hosts', false],
+    ['install', false],
+    ['checks', false],
+    ['trial', false],
+    ['tickets', false],
+    ['kinds', false],
+    ['landing', false],
+    ['findings-judge', false],
+    ['refusal-fixes', false],
+    ['conflict-resolutions', false],
+    ['wall', false],
+    ['budget', false],
+    ['register', true],
+  ]
+
+  it('add owner/repo walks the project list, and the recipe written is what it answered (#1525)', async () => {
+    const h = githubHarness()
+    const done = await runProject(h, h.argv.slice(1), 'add')
+    expect(done.exit).toBe(0)
+    expect(h.errors).toEqual([])
+    const entries = done.entries ?? []
+    expect(entries.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    const recipe = parseDocument((await h.world.project.files.read(recipePath('widgets')))!)
+    const answered = Object.fromEntries(entries.map((e) => [e.id, e.after]))
+    // Every answer the list gave that a recipe field holds is that field.
+    expect(recipe.getIn(['branch', 'main'])).toBe(answered['branch'])
+    expect(recipe.getIn(['runtime', 'agent'])).toBe(answered['writer'])
+    expect(
+      (recipe.getIn(['steps', 'review']) as { items: { get: (k: string) => unknown }[] }).items[0]!.get('agent'),
+    ).toBe(answered['reviewer'])
+    expect(recipe.getIn(['source', 'tickets'])).toBe(answered['tickets'])
+    expect((recipe.getIn(['source', 'kinds']) as { toJSON: () => string[] }).toJSON().join(', ')).toBe(
+      answered['kinds'],
+    )
+    // The seeds a new recipe starts from are in it.
+    expect(recipe.getIn(['env', 'plantAt'])).toBe('.env.local')
+    expect(JSON.stringify(recipe.getIn(['steps', 'end'])?.valueOf())).toContain('close the ticket')
+  })
+
+  it('init --github owner/repo walks the same entries as add does, in the same order (#1525)', async () => {
+    const added = githubHarness()
+    const viaAdd = await runProject(added, added.argv.slice(1), 'add')
+    const inited = githubHarness()
+    const viaInit = await runProject(inited, inited.argv.slice(1), 'init')
+    expect(viaInit.exit).toBe(0)
+    expect(viaInit.entries!.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    expect(viaAdd.entries!.map((e) => [e.id, e.asked])).toEqual(WALKED_WITH_DEFAULTS)
+    expect(await inited.world.project.files.read(recipePath('widgets'))).toBe(
+      await added.world.project.files.read(recipePath('widgets')),
+    )
+  })
+
+  it('add owner/repo --agent codex --kinds documentation is not refused, and the recipe names both (#1525)', async () => {
+    const h = githubHarness()
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      runtimes: () =>
+        fx(async () => [
+          { id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' },
+          { id: 'codex', state: 'signed-in', signedIn: true, detail: 'signed in' },
+        ]),
+    }
+    expect(
+      await addFlow(
+        { ...flagsFromArgv([...h.argv, '--agent', 'codex', '--kinds', 'documentation']), positional: 'acme/widgets' },
+        h.world,
+      ),
+    ).toBe(0)
+    expect(h.errors).toEqual([])
+    const recipe = parseDocument((await h.world.project.files.read(recipePath('widgets')))!)
+    expect(recipe.getIn(['runtime', 'agent'])).toBe('codex')
+    // Not the default four: `bug` is among them, so only the flag's own answer can make this the whole list.
+    expect((recipe.getIn(['source', 'kinds']) as { toJSON: () => string[] }).toJSON()).toEqual(['documentation'])
+  })
+
+  it('an interrupt at the kinds question writes no recipe, makes no branch and registers nothing, and keeps github.auth (#1525)', async () => {
+    const h = unsetAuthHarness('gh')
+    const made: string[] = []
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      // Team mode, and the personal branch is not there: the list would have it made, once it is answered to its end.
+      client: () =>
+        Effect.succeed({
+          branchExists: async (name: string) => name === 'main',
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async (name: string) => {
+            made.push(name)
+          },
+        } as never),
+    }
+    const ask = h.world.githubDeps!.ask
+    let asked = false
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      ask: async (prompt, shape) => {
+        // `use this setup?` defaults to yes, which would answer the kinds without asking.
+        if (prompt.startsWith('use this setup?')) return 'no'
+        if (prompt.startsWith('which labels are work')) {
+          asked = true
+          return null
+        }
+        return ask(prompt, shape)
+      },
+    }
+    const argv = [
+      'acme/widgets',
+      '--mode',
+      'team',
+      '--login',
+      'sam',
+      '--personal',
+      'sam/studio',
+      '--main',
+      'main',
+      '--build',
+      'none',
+    ]
+    const code = await addFlow({ ...flagsFromArgv(argv.slice(1)), positional: 'acme/widgets' }, h.world)
+    expect(asked).toBe(true)
+    expect(code).not.toBe(0)
+    expect(made).toEqual([])
+    expect(await h.world.project.files.read(recipePath('widgets'))).toBeNull()
+    const log = await h.world.project.store!.readAll(0n, 1000)
+    expect(log.filter((e) => e.type === 'ProjectConfigured')).toEqual([])
+    // The machine entry's answer is the machine's, written before the list (ADR 0125 §9), and stays.
+    expect(h.authNow()).toBe('gh')
+  })
+
+  it('the same team answers, taken to the end, do make the personal branch — after the list, before registering (#1525)', async () => {
+    const h = githubHarness()
+    const made: string[] = []
+    h.world.githubDeps = {
+      ...h.world.githubDeps!,
+      client: () =>
+        Effect.succeed({
+          branchExists: async (name: string) => name === 'main',
+          request: async () => ({ commits: [] }),
+          token: async () => 'token',
+          refSha: async () => 'sha',
+          createBranch: async (name: string) => {
+            made.push(name)
+          },
+        } as never),
+    }
+    const argv = [
+      '--mode',
+      'team',
+      '--login',
+      'sam',
+      '--personal',
+      'sam/studio',
+      '--main',
+      'main',
+      '--defaults',
+      '--install',
+      'none',
+      '--build',
+      'none',
+    ]
+    const done = await Effect.runPromise(
+      githubProjectEffect('acme/widgets', { ...flagsFromArgv(argv).flags, github: 'acme/widgets' }, [], h.world, {
+        command: 'add',
+        homeIsNew: false,
+      }).pipe(Effect.provideService(ProjectFiles, h.world.project.files)),
+    )
+    expect(h.errors).toEqual([])
+    expect(done.exit).toBe(0)
+    expect(made).toEqual(['sam/studio'])
   })
 
   it('prints a warning add reported before the card', async () => {

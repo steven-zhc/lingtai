@@ -22,11 +22,11 @@ import {
   ticketsChange,
   type TicketSource,
 } from '@lingtai/recipe'
-import { parseKinds, ticketSourceOf } from '@lingtai/setup'
+import { DIFFERENT_SOURCE_CLASH, parseKinds, sourceClashRefusal, ticketSourceOf } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { lift } from './exit.ts'
-import { type QuestionWorld, questionEffect } from './question.ts'
+import { type Answered, type QuestionWorld, questionEffect } from './question.ts'
 
 export type SourceAnswer = { changes: RecipeChange[] } | { refused: string }
 
@@ -57,7 +57,7 @@ export interface TicketsDeps extends SourceDeps {
 
 /**
  * The resolved recipe, or null where the file is absent or does not resolve
- * on its own — `setup-build.ts`'s `resolvedRunActions` reads the same way,
+ * on its own — `resolvedRunActions` (packages/setup/src/setup-build-actions.ts) reads the same way,
  * for the same reason: "unknown" is the only safe reading for a file that
  * is not there yet, or not there on its own.
  */
@@ -72,9 +72,6 @@ function resolvedRecipe(project: string, draft: RecipeDraft, home?: string): Rec
   }
 }
 
-/** Why a project with work items in the log cannot change its ticket source. */
-export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own tickets into those same streams'
-
 /**
  * Where this project's tickets come from — `github` or `db`.
  *
@@ -84,6 +81,53 @@ export const DIFFERENT_SOURCE_CLASH = 'a different source would number its own t
  * numbered under one source would collide with a different source's own
  * numbering (`packages/domain/src/streams.ts:14`, #381).
  */
+/** Where this project's tickets come from: `github` or `db`. */
+export function askTicketSource(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    kept?: string | undefined
+    validate?: (answer: string) => Effect.Effect<string | null, unknown>
+  },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the ticket source',
+    flag: '--tickets <github|db>',
+    given: at.given,
+    prompt: "where this project's tickets come from — github (this repository's issues), or db (Lingtai's own table)",
+    current: at.current,
+    ...(at.fallback === undefined ? {} : { fallback: at.fallback }),
+    choices: ['github', 'db'],
+    kept: at.kept,
+    ...(at.validate === undefined ? {} : { validate: at.validate }),
+  })
+}
+
+/** Which labels are work, comma-separated, first = taken first. `fallback` is the default where nothing is in force. */
+export function askKindsList(
+  world: QuestionWorld,
+  at: {
+    given: string | null
+    current: string | null
+    fallback?: string | undefined
+    validate: (answer: string) => Effect.Effect<string | null, unknown>
+    kept?: string | undefined
+  },
+): Effect.Effect<Answered, unknown> {
+  return questionEffect(world, {
+    name: 'the kinds',
+    flag: '--kinds <a,b,c>',
+    given: at.given,
+    prompt: 'which labels are work, comma-separated, first = taken first',
+    current: at.current,
+    fallback: at.fallback,
+    kept: at.kept,
+    validate: at.validate,
+  })
+}
+
 export const askTickets = Effect.fn('source.askTickets')(function* (
   world: QuestionWorld,
   project: string,
@@ -113,13 +157,8 @@ export const askTickets = Effect.fn('source.askTickets')(function* (
   const current: TicketSource = ticketSourceOf(rawTickets, history)
 
   if (history.length > 0) {
-    if (given !== null && given !== current) {
-      return {
-        refused:
-          `--tickets ${given}, but ${project} already has work items in the log (${history.join(', ')}), ` +
-          `numbered under source.tickets: ${current} — ${DIFFERENT_SOURCE_CLASH}. Leave out --tickets, or remove the project first. ${kept}`,
-      }
-    }
+    const clash = sourceClashRefusal({ given, project, history, current, kept })
+    if (clash !== null) return { refused: clash }
     world.log(
       paint.muted(
         `tickets       ${current} — kept: the log already has work items for this project (${history.join(', ')}), ` +
@@ -140,15 +179,7 @@ export const askTickets = Effect.fn('source.askTickets')(function* (
     return current === 'db' ? { changes: [], current: 'db' } : { changes: [ticketsChange('db')], current: 'db' }
   }
 
-  const result = yield* questionEffect(world, {
-    name: 'the ticket source',
-    flag: '--tickets <github|db>',
-    given,
-    prompt: "where this project's tickets come from — github (this repository's issues), or db (Lingtai's own table)",
-    current,
-    choices: ['github', 'db'],
-    kept,
-  })
+  const result = yield* askTicketSource(world, { given, current, kept })
   if ('refused' in result) return result
   const decided = result.answer as TicketSource
   return decided === current
@@ -180,18 +211,15 @@ export const askKinds = Effect.fn('source.askKinds')(function* (
     resolved !== null ? kindsOf(resolved) : Array.isArray(rawKinds) ? rawKinds.map((k) => String(k)) : null
   const currentDisplay = currentKinds === null ? null : currentKinds.join(', ')
 
-  const result = yield* questionEffect(world, {
-    name: 'the kinds',
-    flag: '--kinds <a,b,c>',
+  const result = yield* askKindsList(world, {
     given,
-    prompt: 'which labels are work, comma-separated, first = taken first',
     current: currentDisplay,
     fallback: currentDisplay === null ? (deps.kindsFallback ?? SETUP_KINDS).join(', ') : undefined,
-    kept: deps.kept ?? 'Nothing was written',
     validate: (answer) => {
       const parsed = parseKinds(answer)
       return Effect.succeed(typeof parsed === 'string' ? parsed : null)
     },
+    kept: deps.kept ?? 'Nothing was written',
   })
   if ('refused' in result) return result
 

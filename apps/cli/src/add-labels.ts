@@ -51,7 +51,11 @@ const hasStatus = (err: unknown): boolean =>
   (err as { status: number }).status > 0
 
 /** The client `add` used to reach the repository, built again from `reach` (an App machine looks its installation up once more). */
-export const liveLabelClient = (owner: string, repo: string, reach: GithubReach): Effect.Effect<LabelClient, unknown> =>
+export const liveLabelClient = (
+  owner: string,
+  repo: string,
+  reach: GithubReach,
+): Effect.Effect<GitHubClient, unknown> =>
   Effect.gen(function* () {
     if (reach.kind === 'gh') {
       return yield* lift(() => createGitHubClient({ auth: { kind: 'gh' }, owner, repo }))

@@ -6,12 +6,16 @@ import type { OnBranchSketch } from '@/lib/task'
  */
 export function BranchSketch({ sketch }: { sketch: OnBranchSketch }) {
   const x = (i: number) => 150 + i * 70
-  const boxRight = Math.max(250, x(sketch.dots.length - 1) + 40)
+  const text = `${sketch.label}${sketch.more === 0 ? '' : ` · + ${sketch.more} more`}`
+  // The box is as wide as the label needs (the text starts at x=120, about 6.2 units a character at the drawn size),
+  // as the dots need, and at least 250; the lines end at 632, so it never goes past that.
+  const boxRight = Math.min(632, Math.max(250, x(sketch.dots.length - 1) + 40, 120 + text.length * 6.2 + 20))
   const dashed = sketch.box === 'draft'
   return (
     <svg
       className="obs-sketch"
       viewBox="0 0 640 170"
+      preserveAspectRatio="xMinYMin meet"
       role="img"
       aria-label={`${sketch.personal} branching from ${sketch.main}${sketch.label === '' ? '' : `; ${sketch.label}`}`}
     >
@@ -36,8 +40,7 @@ export function BranchSketch({ sketch }: { sketch: OnBranchSketch }) {
             strokeDasharray={dashed ? '5 4' : undefined}
           />
           <text x="120" y="100" className="prp-svg-t">
-            {sketch.label}
-            {sketch.more === 0 ? '' : ` · + ${sketch.more} more`}
+            {text}
           </text>
           {sketch.dots.map((d, i) => (
             <g key={d.ticket}>

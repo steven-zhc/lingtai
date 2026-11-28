@@ -83,7 +83,7 @@ export interface TrialAt {
   token?: ProvisionOptions['token']
   home?: string
   /** The recipe as the answers so far have drafted it. */
-  draft?: RecipeDraft
+  draft?: RecipeDraft | Pick<RecipeDraft, 'get'>
   /** Aborted by Ctrl+C; the caller owns the listener. */
   interrupt?: AbortSignal
 }

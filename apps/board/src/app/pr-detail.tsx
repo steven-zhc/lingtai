@@ -274,6 +274,11 @@ export function PrDetail({
           <section className="prp-panel" aria-label="Do">
             <h2 className="sec-h">Do</h2>
             {view.doNote === null ? null : <p className="prp-small">{view.doNote}</p>}
+            {(view.fixing ?? []).map((f) => (
+              <p key={f.href} className="prp-small">
+                <Link href={f.href}>{f.text}</Link>
+              </p>
+            ))}
             {view.wait === null ? null : (
               <div className="prp-wait">
                 <p>

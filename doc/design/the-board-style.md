@@ -106,6 +106,26 @@ people open the page (#80, #87, #89, #94), so it is not a small tag. It leads
 the title line at 20px weight 700 in its state's colour, followed by the
 title.
 
+## The task page's blocks
+
+**Under the title and its facts line, every block of a task page is a panel**,
+in every state ([task-page-panels.html](task-page-panels.html)). A panel has a
+`--surface` ground, the border and `--radius` of *Cards and panels*, the full
+width of the content column, and 12px between it and the next. Its inner
+dividers are `1px solid var(--surface-2)`; a row that closes it, such as *The
+whole ticket ↓*, is divided from it by `1px solid var(--rule)`.
+
+The figures panel has one equal column per figure. A figure's name is a section
+heading, the figure is `--fs-lg` mono, and its sub-line is `--fs-2xs` mono
+`--muted`. That size is for a row of equal small figures; `--fs-2xl` stays the
+size for the single large figure of a panel. The ticket panel sets *Problem*,
+*Want* and *Watch out* as equal columns, each a section heading over body
+text. *Where it is*, on a team project's ticket, has the branch sketch on the
+left and its facts on the right, and its state word is a state tag in the
+heading.
+
+A block that has nothing to say is not drawn. An empty panel is never drawn.
+
 ## The bar's icons
 
 The right rail carries icons without words, each with its sentence as tooltip

@@ -1,9 +1,11 @@
 /** What Ctrl+C at a setup question says (#762): what is kept, how to go on, and how to start over. */
+import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { initKept } from '../src/init.ts'
 import { stoppedAtQuestion } from '../src/prompt.ts'
 import type { AskShape } from '../src/question.ts'
+import { walkProject } from '../test/project-list.ts'
 import { question } from '../test/question.ts'
 
 describe('stoppedAtQuestion', () => {
@@ -104,4 +106,45 @@ describe('initKept', () => {
     })
     expect(r).toEqual({ kept: "this machine's store and projects are unchanged" })
   })
+})
+
+describe('the project list without a terminal (0125 §9)', () => {
+  const world = {
+    ask: () => {
+      throw new Error('no terminal may be asked')
+    },
+    log: () => {},
+  }
+  it('takes defaults for ordinary entries and skips the defaults switch', () =>
+    Effect.runPromise(
+      walkProject(world, {
+        interactive: false,
+        flags: { mode: 'solo', land: 'main' },
+        buildFlags: ['none'],
+      }),
+    ).then(({ result }) => {
+      expect(result.refused).toBeUndefined()
+      expect(result.entries.every((e) => !e.asked)).toBe(true)
+    }))
+  it('an unknown login refuses by --login', () =>
+    Effect.runPromise(
+      walkProject(world, {
+        interactive: false,
+        ports: { knownLogin: null },
+      }),
+    ).then(({ result }) => expect(result.refused).toContain('--login')))
+  it('making a personal branch refuses by --defaults', () =>
+    Effect.runPromise(
+      walkProject(world, {
+        interactive: false,
+        ports: { branchExists: (name) => Effect.succeed(name === 'main') },
+      }),
+    ).then(({ result }) => expect(result.refused).toContain('--defaults')))
+  it('registering unseen defaults refuses by --defaults', () =>
+    Effect.runPromise(
+      walkProject(world, {
+        interactive: false,
+        flags: { mode: 'solo' },
+      }),
+    ).then(({ result }) => expect(result.refused).toContain('--defaults')))
 })

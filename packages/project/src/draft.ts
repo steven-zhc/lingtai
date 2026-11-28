@@ -13,8 +13,11 @@ import {
   editedText,
   isRefusal,
   orderSteps,
+  overlaid,
   plainWhen,
+  RECIPE_VERSION,
   refFor,
+  type ResolvedRecipe,
   resolveSource,
   widenStepsIfNeeded,
 } from '@lingtai/recipe'
@@ -81,3 +84,52 @@ export const draftRecipe = Effect.fn('recipe.draft')(function* (
   }
   return draft
 })
+
+/** A recipe as an answer is being built: what is written under a key, and what the whole resolves to, read-only. */
+export interface ProjectView {
+  /** One key of the starting text with every pending change overlaid, null when nothing writes it. Never throws. */
+  get(path: readonly (string | number)[]): unknown
+  /** What the starting text and the pending changes resolve to, or null where that does not (yet) resolve. Never throws. */
+  resolved(): ResolvedRecipe | null
+  /** The same resolution, retaining its refusal for setup previews. */
+  resolution(): { value: ResolvedRecipe } | { error: unknown }
+}
+
+/**
+ * A read-only view of `start` with `pending` laid over it (#1530). Nothing is applied and nothing is written: `pending`
+ * is read live at every call, so a change pushed after the view was made is seen, and a later change at a path
+ * replaces an earlier one.
+ *
+ * `get` overlays with `editRecipe`'s own loop and never runs the parse that edit ends with, because a first run's
+ * prefix of answers need not be a recipe yet; a view that threw would turn every later read into an absent value.
+ * `resolved` is what `RecipeDraft.set` resolves, without the layout (`orderSteps`, `commentWritten`), which changes
+ * how the text reads and not what it resolves to; every throw is null.
+ */
+export function projectView(start: Pick<RecipeDraft, 'text' | 'path'>, pending: readonly RecipeChange[]): ProjectView {
+  const base = (): string => start.text() ?? `version: ${RECIPE_VERSION}\n`
+  const resolution = (): { value: ResolvedRecipe } | { error: unknown } => {
+    try {
+      const widened = widenStepsIfNeeded(start.text(), [...pending], start.path)
+      const text = editedText(start.text(), widened, start.path)
+      return { value: resolveSource(text, refFor(text, start.path), start.path) }
+    } catch (error) {
+      return { error }
+    }
+  }
+  return {
+    resolution,
+    get: (key) => {
+      try {
+        const doc = overlaid(base(), pending)
+        const value = doc.getIn(key)
+        return value === undefined ? null : isNode(value) ? value.toJSON() : value
+      } catch {
+        return null
+      }
+    },
+    resolved: () => {
+      const result = resolution()
+      return 'value' in result ? result.value : null
+    },
+  }
+}

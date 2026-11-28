@@ -9,6 +9,15 @@ import { type PayloadOf, type PrState, isOpen, openAmong, prStepRows, prWaitOf }
 import { type Recipe, callForPr, ceilingOf, modeOf, remoteOf } from '@lingtai/recipe'
 
 import { prPath } from './paths.ts'
+import {
+  type Fixing,
+  type PrFixRead,
+  countsAsWaiting,
+  fixingLines,
+  fixingOf,
+  movesToProgress,
+  unknownLine,
+} from './pr-fix.ts'
 
 type WaitReason = PayloadOf<'PrWaiting'>['reason']
 
@@ -93,6 +102,8 @@ export interface CardView {
   /** The by-hand commands, for a conflict. */
   readonly byHand: readonly string[]
   readonly buttons: readonly Button[]
+  /** The `fixing:` lines: each a link to a pr-fix ticket that is on this PR (#1506). */
+  readonly fixing?: readonly { readonly text: string; readonly href: string }[]
 }
 
 export interface FailedCard {
@@ -204,15 +215,19 @@ const shown = (all: readonly Slip[]): { slips: Slip[]; more: number } => ({
 
 const usd = (n: number | null): string => (n === null ? 'unknown' : `$${n.toFixed(2)}`)
 
-/** The failing check's link, picked as `lingtai pr` picks it. */
-export function failingRun(pr: PrState): string | null {
+/** The failing checks of the last read, picked as `lingtai pr` picks them: the flagged rows, else any not passing or pending. */
+export function failingChecks(pr: PrState): readonly NonNullable<PrState['checks']>['checks'][number][] {
   const read = pr.checks
-  if (read === null) return null
+  if (read === null) return []
   const flagged = read.checks.some((c) => c.failing === true)
-  const failing = read.checks.filter((c) =>
+  return read.checks.filter((c) =>
     flagged ? c.failing === true : !['success', 'neutral', 'skipped', 'queued', 'running'].includes(c.state),
   )
-  return failing.find((c) => c.url !== '')?.url ?? null
+}
+
+/** The failing check's link, picked as `lingtai pr` picks it. */
+export function failingRun(pr: PrState): string | null {
+  return failingChecks(pr).find((c) => c.url !== '')?.url ?? null
 }
 
 /** Why nothing follows a PR whose remote is not GitHub: the one sentence the page's rows and the card's chip share. */
@@ -292,6 +307,8 @@ export interface PrBoardInput {
   readonly newFixHref: FixTicket | null
   /** The same, for one PR: its name is in the prefilled title. Absent, `newFixHref` serves every PR. */
   readonly newFixFor?: (pr: PrState) => FixTicket | null
+  /** The pr-fix tickets read for the open PR (#1506); null or absent where nothing was asked. */
+  readonly fixes?: PrFixRead | null
 }
 
 const href = prPath
@@ -465,14 +482,24 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         }),
       )
     } else if (pr.status === 'waiting') {
-      waitingCount++
-      waiting.push(waitingCard(pr))
+      const fixing = fixingOf(pr, pr === open ? (input.fixes ?? null) : null)
+      const card = waitingCard(pr, fixing)
+      if (movesToProgress(pr, fixing)) progress.push(card)
+      else {
+        if (countsAsWaiting(pr, fixing)) waitingCount++
+        waiting.push(card)
+      }
     } else if (pr.status === 'in-review') {
       const ci = pr.ciSkipped !== null && pr.checks === null ? 'no CI' : pr.checks === null ? null : ciText(pr)
+      const fixing = fixingOf(pr, pr === open ? (input.fixes ?? null) : null)
       review.push(
         cardOf(pr, 'review', {
           pill: 'in review',
-          sub: [`${pr.prBranch ?? '?'} → ${pr.main ?? main}`],
+          fixing: fixingLines(project, fixing),
+          sub: [
+            `${pr.prBranch ?? '?'} → ${pr.main ?? main}`,
+            ...(fixing.unknown === null ? [] : [unknownLine(fixing.unknown)]),
+          ],
           meta: ci === null ? [] : [ci],
         }),
       )
@@ -497,7 +524,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     }
   }
 
-  function waitingCard(pr: PrState): CardView | FailedCard {
+  function waitingCard(pr: PrState, fixing: Fixing): CardView | FailedCard {
     const view = prWaitOf(pr, {
       project,
       checkout: localCheckout(recipe),
@@ -507,9 +534,18 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     const stillDraft =
       pr.host !== null && !pr.markedReady ? ['still a GitHub draft — nobody was asked to review it'] : []
     if (view === null) {
-      return cardOf(pr, 'waiting', { pill: 'waiting', sub: ['waiting on you'] })
+      return cardOf(pr, 'waiting', {
+        pill: 'waiting',
+        sub: ['waiting on you', ...(fixing.unknown === null ? [] : [unknownLine(fixing.unknown)])],
+        fixing: fixingLines(project, fixing),
+      })
     }
-    const header = `${prName(pr)} · ${WAIT_WORDS[view.reason]}`
+    const inFlight = fixing.tickets.length > 0
+    const toProgress = movesToProgress(pr, fixing)
+    const header = toProgress ? `${prName(pr)} · fixing CI` : `${prName(pr)} · ${WAIT_WORDS[view.reason]}`
+    const fixLines = fixingLines(project, fixing)
+    const unknown = fixing.unknown === null ? [] : [unknownLine(fixing.unknown)]
+    const waitsLine = fixing.waitsOn === null ? [] : [`#${fixing.waitsOn.issue} is waiting on you`]
     if (view.kind === 'conflict') {
       const spent = input.spend.get(n) ?? null
       const rounds =
@@ -537,6 +573,8 @@ export function prBoard(input: PrBoardInput): PrBoardView {
           `at ${view.merging === 'back' ? 'merge back' : 'submit'} · ${
             view.paths === null ? 'files unknown' : view.paths.join(', ')
           } · ${rounds} · ${usd(spent)}`,
+          ...waitsLine,
+          ...unknown,
         ],
         meta: [
           view.ours === null
@@ -549,6 +587,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
         ],
         byHand: view.commands,
         buttons,
+        fixing: fixLines,
       })
     }
     const buttons: Button[] = []
@@ -556,7 +595,7 @@ export function prBoard(input: PrBoardInput): PrBoardView {
       const run = failingRun(pr)
       if (run !== null) buttons.push({ kind: 'link', label: 'Open the run ↗', href: run })
       const fix = input.newFixFor === undefined ? input.newFixHref : input.newFixFor(pr)
-      if (fix !== null) {
+      if (fix !== null && !inFlight) {
         buttons.push(
           fix.kind === 'link'
             ? { kind: 'link', label: 'New pr-fix ticket', href: fix.href }
@@ -566,12 +605,26 @@ export function prBoard(input: PrBoardInput): PrBoardView {
     }
     // Only the waits a retry ends have a way out here; the others show what happened and nothing to press.
     if (view.commands.length > 0) buttons.push({ kind: 'retry', label: 'Check again' })
+    if (toProgress) {
+      const chips = chipsOf(pr, input.stepNames).map((c) =>
+        c.step === 'ci' ? { ...c, text: 'CI ↻ fix', status: 'running' as const } : c,
+      )
+      return cardOf(pr, 'progress', {
+        name: header,
+        pill: 'in progress',
+        sub: [...stillDraft, `${view.detail.split(':')[0]} — a pr-fix is on it`, ...unknown],
+        chips,
+        buttons,
+        fixing: fixLines,
+      })
+    }
     return cardOf(pr, 'waiting', {
       name: header,
       pill: 'waiting',
-      sub: [...stillDraft, view.detail],
+      sub: [...stillDraft, view.detail, ...waitsLine, ...unknown],
       chips: chipsOf(pr, input.stepNames),
       buttons,
+      fixing: fixLines,
     })
   }
 

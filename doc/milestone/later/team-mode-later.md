@@ -40,8 +40,10 @@ Later, on the same step of the PR's life:
 - **Flaky checks** — one commit red then green is recorded; enough of them open
   a ticket to fix the test.
 - **CI minutes** in a PR's spend, beside the agents'.
-- **An agent fixing a red CI run**, as the conflict agent fixes a sync — rounds,
-  build and review — before the PR waits on the person.
+- **An agent fixing a red CI run** — moved to 0.17.0 and changed (2026-11-26):
+  re-run once to tell a flaky check from a broken change, then open a
+  `lingtai:pr-fix` ticket automatically and wait for it to land
+  (`doc/milestone/0.17.0/0.17-zh.md` §六).
 - **Verify**: a step after CI that checks the code against what its tickets
   wanted (0.17's verifiable landing).
 
