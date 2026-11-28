@@ -33,7 +33,7 @@ import {
 import { Effect } from 'effect'
 
 import { askReviewer, askReviewerModel, askWriter, askWriterModel } from './agents.ts'
-import { askMoveLanding } from './first-project.ts'
+import { lift } from './exit.ts'
 import { askBudget, askConflictResolutions, askLandingChoice, askRefusalFixes, askWall } from './landing.ts'
 import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
 import { askSandboxHosts, askSandboxMode } from './sandbox-step.ts'
@@ -410,3 +410,23 @@ const askRegister = (
     kept: input.kept,
   })
 }
+
+/** Keep the move question's words and yes/no input; the runner owns its no-terminal refusal. */
+const askMoveLanding = (
+  world: QuestionWorld,
+  at: { name: string; oldRemote: string; kept: string },
+): Effect.Effect<Answered, unknown> =>
+  lift(() =>
+    world.ask(`Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror? [y/N]`, {
+      message: `Move ${at.name}'s landing to this checkout?`,
+      defaultValue: 'no',
+      choices: ['yes', 'no'],
+      kept: at.kept,
+    }),
+  ).pipe(
+    Effect.map((answer) =>
+      answer === null
+        ? { refused: `moving the landing needs an answer: pass --defaults. ${at.kept}` }
+        : { answer: /^y(es)?$/i.test(answer.trim()) ? 'yes' : 'no' },
+    ),
+  )

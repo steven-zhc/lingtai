@@ -1,6 +1,6 @@
 import { prStream } from '@lingtai/domain'
 import { ProjectFiles } from '@lingtai/project'
-import { editRecipe, resolveSource } from '@lingtai/recipe'
+import { resolveSource } from '@lingtai/recipe'
 import * as setup from '@lingtai/setup'
 import { Effect, Fiber } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -224,7 +224,7 @@ describe('init and add use the same project list (#1526)', () => {
 
   it('a failed board read or an in-flight attempt refuses before the list', () => {
     const w = setupWorld({
-      text: 'version: 2\nrepo:\n  remote: /old/repo\nbranch:\n  main: main\nsource:\n  tickets: db\nenv:\n  plantAt: .env.local\n',
+      text: 'version: 2\nrepo:\n  remote: /old/repo\nbranch:\n  main: main\nsource:\n  tickets: db\n  kinds: [bug]\nenv:\n  plantAt: .env.local\n',
       projects: [projectState()],
       origin: '/old/repo',
     })
@@ -361,7 +361,7 @@ describe('init and add use the same project list (#1526)', () => {
     return runLocal(w).then((result) => {
       expect(result).toMatchObject({ refused: expect.stringContaining('does not resolve') })
       const other = setupWorld({
-        text: editRecipe('version: 2\n', [{ path: ['repo', 'remote'], value: '/other/repo' }]),
+        text: 'version: 2\nrepo:\n  remote: /other/repo\n',
         projects: [projectState()],
       })
       return runLocal(other).then((result) =>

@@ -118,22 +118,6 @@ export interface RegisterLocalPayload {
   resolved: ResolvedRecipe
 }
 
-/** The move confirmation is asked only by the list's terminal input. */
-export function askMoveLanding(
-  world: QuestionWorld,
-  at: { name: string; oldRemote: string; kept?: string | undefined },
-) {
-  return questionEffect(world, {
-    name: 'moving the landing',
-    flag: '--defaults',
-    given: null,
-    prompt: `Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror?`,
-    fallback: 'no',
-    choices: ['yes', 'no'],
-    kept: at.kept ?? 'Nothing was written',
-  })
-}
-
 /**
  * `FirstProjectWorld.exists` over `node:fs`: only a path that is not there is
  * `false`. A directory that cannot be reached (EACCES on a parent) exists —
