@@ -457,13 +457,24 @@ describe('init and add use the same project list (#1526)', () => {
       )
     })
   })
-  it('solo to team keeps the working branch and detects the trunk from the checkout', () => {
+  it.each([false, true])('solo to team keeps the working branch and detects the trunk (defaults: %s)', (defaults) => {
     const first = setupWorld()
     first.branches.set('my-work', 'bbb222')
     return runLocal(first, { local: '/repo', mode: 'solo', main: 'my-work', defaults: '' }).then(() => {
       const w = setupWorld({ text: first.recipes.get(PATH), projects: [projectState()] })
       w.branches.set('my-work', 'bbb222')
-      return runLocal(w, { local: '/repo', mode: 'team', defaults: '' }).then((result) => {
+      let personalQuestions = 0
+      const ask = w.project.ask
+      w.project.ask = (prompt, opts) => {
+        if (/the branch Lingtai works on/.test(prompt)) {
+          personalQuestions++
+          expect(prompt).toContain('[my-work]')
+          // A second question would mean Enter rejected the offered working branch.
+          if (personalQuestions > 1) return Promise.resolve(null)
+        }
+        return ask(prompt, opts)
+      }
+      return runLocal(w, { local: '/repo', mode: 'team', ...(defaults ? { defaults: '' } : {}) }).then((result) => {
         expect(result).toMatchObject({ ok: true, base: 'my-work' })
         expect(resolveSource(w.recipes.get(PATH)!, 'repo', 'repo').recipe.branch).toMatchObject({
           main: 'main',
@@ -471,6 +482,7 @@ describe('init and add use the same project list (#1526)', () => {
         })
         expect(w.events.filter((e) => e.startsWith('branch:'))).toEqual([])
         expect(w.branches.get('my-work')).toBe('bbb222')
+        expect(personalQuestions).toBe(defaults ? 0 : 1)
       })
     })
   })

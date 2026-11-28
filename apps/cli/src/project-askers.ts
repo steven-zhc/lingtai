@@ -132,13 +132,12 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
     branch: (d) => {
       const ctx = d.ctx
       if (ctx.answers.mode === 'team') {
-        // Only for words: the descriptor's own `validate` runs the same check with the main the write will use.
-        const typed = text(ctx.flags['main'])
         return askPersonal(world, {
           given: null,
           fallback: personalFallback(ctx),
           current: currentOf(d),
-          main: typed ?? text(ctx.view.get(['branch', 'main'])) ?? '',
+          // The descriptor validates against the team's trunk; the view can still name the old solo working branch.
+          main: '',
           kept: d.kept,
           validate: d.question.validate,
         }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
