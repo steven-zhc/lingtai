@@ -401,7 +401,7 @@ const teamMainRead = (ctx: ProjectContext): Effect.Effect<{ branch: string | nul
   const typed = ctx.flags['main']
   if (typed !== undefined && typed !== '') return Effect.succeed({ branch: typed })
   // A solo local recipe's main is its working branch, not the team's trunk (0130 §2).
-  if (ctx.ports.local && atStart(ctx, ['mode']) !== 'team') return readDefaultBranch(ctx)
+  if (ctx.ports.local && rerun(ctx) && atStart(ctx, ['mode']) !== 'team') return readDefaultBranch(ctx)
   return mainRead(ctx)
 }
 
