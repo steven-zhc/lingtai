@@ -1,4 +1,4 @@
-import { prStream } from '@lingtai/domain'
+import { prStream, RuntimeId } from '@lingtai/domain'
 import { ProjectFiles } from '@lingtai/project'
 import { resolveSource } from '@lingtai/recipe'
 import * as setup from '@lingtai/setup'
@@ -71,6 +71,31 @@ describe('init and add use the same project list (#1526)', () => {
     }
     expect(w.recipes.get(PATH)).toContain('enabled: true')
     expect(w.events.filter((e) => e.startsWith('ask:')).some((e) => /which agent|extra hosts/.test(e))).toBe(false)
+  })
+
+  it('a real init rerun draws writer and spend changes, then unchanged without arrows', async () => {
+    const w = setupWorld()
+    w.init.runtimes = () =>
+      Effect.succeed([
+        { id: 'codex', state: 'signed-in', signedIn: true, detail: '' },
+        { id: 'claude-code', state: 'signed-in', signedIn: true, detail: '' },
+      ])
+    w.init.signedIn = () => Promise.resolve([RuntimeId.parse('codex'), RuntimeId.parse('claude-code')])
+    const base = ['--local', '/repo', '--mode', 'solo', '--defaults', '--reviewer', 'none']
+    expect(await runInit(w, [...base, '--agent', 'codex', '--day-usd', '100'])).toBe(0)
+    w.init.projects = () => Effect.succeed([projectState()])
+    w.logged.length = 0
+    const rerun = [...base, '--agent', 'claude-code', '--day-usd', '150']
+    expect(await runInit(w, rerun)).toBe(0)
+    const changed = w.logged.find((line) => line.includes('each attempt'))!
+    expect(changed).toMatch(/writes +codex → claude-code/)
+    expect(changed).toMatch(/spend +up to \$100 a day → up to \$150 a day/)
+    expect(changed).not.toContain('unchanged')
+    w.logged.length = 0
+    expect(await runInit(w, rerun)).toBe(0)
+    const same = w.logged.find((line) => line.includes('each attempt'))!
+    expect(same).toContain('unchanged')
+    expect(same).not.toContain('→')
   })
 
   it('init --local finishes all entries before setting the recipe, making lingtai-base or registering', () => {
