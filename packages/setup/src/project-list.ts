@@ -667,7 +667,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         const claim = v.resolved()?.recipe
         return claim === undefined ? null : (assigneeOf(claim) ?? null)
       },
-      (v) => (v === null ? 'every ticket — local tickets are yours' : `issues assigned to ${v.login}`),
+      (v, ctx) =>
+        ctx.ports.local
+          ? 'every ticket — local tickets are yours'
+          : v?.take === 'mine'
+            ? `issues assigned to ${v.login}`
+            : 'every issue, whoever it is assigned to',
     ),
     name: 'your GitHub login',
     flag: '--login <login>',

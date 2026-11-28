@@ -242,6 +242,20 @@ describe('project preview boundary', () => {
     expect(result.rows.find((r) => r.id === 'where')?.text).toContain('***@github.com')
   })
 
+  it('projects the solo GitHub selection rule, including a named login that still takes all issues', async () => {
+    const first = context(ports(), null, { mode: 'solo', main: 'main' })
+    const result = await run(first)
+    expect(result.refused).toBeUndefined()
+    expect(result.rows.find((r) => r.id === 'login')?.text).toBe('every issue, whoever it is assigned to')
+    const text = editRecipe(textOf(first), [{ path: ['source', 'assignee'], value: { take: 'all', login: 'sam' } }])
+    const rerun = await run(context(ports(), text))
+    expect(rerun.refused).toBeUndefined()
+    expect(rerun.rows.find((r) => r.id === 'login')).toMatchObject({
+      text: 'every issue, whoever it is assigned to',
+      changed: false,
+    })
+  })
+
   it('compares settled composite and derived values on reruns, even when fixed entries have no before answer', async () => {
     const first = context(ports(), null, { agent: 'codex' })
     expect((await run(first)).refused).toBeUndefined()
