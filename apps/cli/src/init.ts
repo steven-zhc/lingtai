@@ -526,7 +526,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       }
     }
 
-    const machineCardRows = machineRows(machine.list, listed.entries)
+    const machineCardRows = machineRows(machine.list, listed.entries, {}, hadConfig)
     const machineFact = { machine: machineCardRows }
 
     // ---- how this machine reaches GitHub, as the list left it --------------------
@@ -686,7 +686,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             homeIsNew,
             userHome: world.env['HOME'] ?? '',
             runtimes,
-            machine: machineRows(machine.list, listed.entries, { github: how }),
+            machine: machineRows(machine.list, listed.entries, { github: how }, hadConfig),
             ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],

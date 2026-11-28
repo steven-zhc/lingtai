@@ -442,11 +442,14 @@ export function machineQuestions(
   return [store, github, ceiling, claudeToken]
 }
 
-/** Rows from the same machine descriptors and answer records, with no credential snapshots. */
+/** Rows from the same machine descriptors and answer records, with no credential snapshots.
+ * A new machine has no before-state; a configured machine's absent keys retain their effective values.
+ */
 export function machineRows(
   list: readonly SetupQuestion<RunContext>[],
   entries: readonly Entry[],
   descriptions: Readonly<Record<string, string>> = {},
+  configured = true,
 ): SetupRow[] {
   return entries
     .filter((e) => e.applies)
@@ -457,7 +460,11 @@ export function machineRows(
       const beforeValue = before?.value ?? q.card?.absent
       const value = q.card?.effective?.(e) ?? e.after ?? beforeValue
       if (value === undefined) return []
-      const changed = beforeValue !== undefined && !(before !== null && 'fault' in before) && beforeValue !== value
+      const changed =
+        (configured || before !== null) &&
+        beforeValue !== undefined &&
+        !(before !== null && 'fault' in before) &&
+        beforeValue !== value
       const text = q.row(value, null, descriptions[e.id])
       return [
         {

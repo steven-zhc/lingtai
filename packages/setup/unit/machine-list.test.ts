@@ -390,6 +390,10 @@ describe('machine descriptor rows', () => {
       changed: true,
       text: 'no ceiling → up to $150 a day',
     })
+    expect(machineRows(list, limited.entries, {}, false)[0]).toMatchObject({
+      changed: false,
+      text: 'up to $150 a day',
+    })
     ports.dayCeiling = () => ({ value: 150, environment: false })
     const removed = await run(list, input({ flags: { 'day-usd': 'none' } }))
     expect(state.text).not.toContain('day_usd')
