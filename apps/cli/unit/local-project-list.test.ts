@@ -196,7 +196,7 @@ describe('init and add use the same project list (#1526)', () => {
     })
   })
 
-  it('a repair trial uses the new checkout commits, removing the old mirror once before provisioning', () => {
+  it.each(['complete', 'refuse', 'interrupt'] as const)('a repair trial keeps the mirror consistent (%s)', (ending) => {
     const first = setupWorld()
     return runInit(first).then(() => {
       const old = first.recipes.get(PATH)!.replace('remote: /repo', 'remote: /old/repo')
@@ -207,10 +207,28 @@ describe('init and add use the same project list (#1526)', () => {
         args.join(' ') === 'rev-parse --show-toplevel'
           ? Effect.succeed({ ok: true, stdout: '/new/repo', stderr: '' })
           : git(dir, args)
-      w.project.ask = (prompt) =>
-        Promise.resolve(
-          /Move repo's landing/.test(prompt) ? 'yes' : /keep the list as it is/.test(prompt) ? 'keep' : '',
+      let reached = () => {}
+      const atKinds = new Promise<void>((resolve) => {
+        reached = resolve
+      })
+      w.project.ask = (prompt) => {
+        if (/which labels are work/.test(prompt)) {
+          if (ending === 'refuse') return Promise.resolve(null)
+          if (ending === 'interrupt') {
+            reached()
+            return new Promise(() => {})
+          }
+        }
+        return Promise.resolve(
+          /Move repo's landing/.test(prompt)
+            ? 'yes'
+            : /keep the list as it is/.test(prompt)
+              ? 'keep'
+              : /use every default/.test(prompt)
+                ? 'no'
+                : '',
         )
+      }
       let mirrorOrigin: string | undefined = '/old/repo'
       w.project.removeMirror = () =>
         Effect.sync(() => {
@@ -256,11 +274,38 @@ describe('init and add use the same project list (#1526)', () => {
         base: setup.trialBaseEffect(at),
         run: (install, build) => setup.runTrialEffect(at, deps, install, build),
       }))
-      return Effect.runPromise(
-        chooseFirstProjectEffect(w.project, { local: '/new/repo', defaults: '', 'check-build': 'yes' }, [
-          'pnpm test',
-        ]).pipe(Effect.provideService(ProjectFiles, w.files)),
-      ).then((result) => {
+      const repair = chooseFirstProjectEffect(
+        w.project,
+        { local: '/new/repo', ...(ending === 'complete' ? { defaults: '' } : {}), 'check-build': 'yes' },
+        ['pnpm test'],
+      ).pipe(Effect.provideService(ProjectFiles, w.files))
+      const fiber = Effect.runFork(repair)
+      const finished =
+        ending === 'interrupt'
+          ? atKinds.then(() => Effect.runPromise(Fiber.interrupt(fiber))).then(() => undefined)
+          : Effect.runPromise(Fiber.join(fiber))
+      return finished.then((result) => {
+        if (ending !== 'complete') {
+          if (ending === 'refuse') expect(result).toMatchObject({ refused: expect.stringContaining('--kinds') })
+          expect(w.recipes.get(PATH)).toBe(old)
+          expect(w.writes).toEqual([])
+          expect(w.registered).toEqual([])
+          // The next pass still reads the registered recipe's old remote and must build its commits.
+          const remote = resolveSource(w.recipes.get(PATH)!, PATH, PATH).recipe.repo!.remote!
+          return Effect.runPromise(
+            setup.runTrialEffect(
+              { project: 'repo', owner: '', repo: 'repo', base: 'lingtai-base', remote, home: HOME },
+              deps,
+              null,
+              ['pnpm test'],
+            ),
+          ).then((next) => {
+            expect(next.results).toMatchObject([{ command: 'pnpm test', outcome: 'passed' }])
+            expect(mirrorOrigin).toBe('/old/repo')
+            expect(w.events).toContain('provision:lingtai-base:new222')
+            expect(w.events).toContain('provision:lingtai-base:old111')
+          })
+        }
         expect(result, w.logged.join('\n')).toMatchObject({ ok: true, trial: { trial: 'failed-kept' } })
         expect(w.events).toEqual(['mirror', 'provision:lingtai-base:new222', 'trial:failed', 'recipe', 'register'])
         expect(mirrorOrigin).toBe('/new/repo')
