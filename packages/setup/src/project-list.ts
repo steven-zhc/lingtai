@@ -17,7 +17,6 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
-import { redactUrl } from '@lingtai/env'
 import { keyIn, projectView, type ProjectView, type RecipeDraft } from '@lingtai/project'
 import {
   assigneeChanges,
@@ -180,6 +179,8 @@ export interface ProjectTrialAt {
 export interface ProjectPorts {
   /** The project's name: the log's streams are `ticket-<project>-*`. */
   project: string
+  /** Display location where the recipe itself has no checkout (owner/repo). */
+  location?: string
   /** A local directory has no owner: `where` is fixed to it, and no ticket is read from GitHub. */
   local: boolean
   /** The checkout this run is in, for *move the landing?*; null where there is none (GitHub). */
@@ -541,7 +542,13 @@ const safeLocation = (value: unknown): string => {
     (!text.includes('@') && !text.includes('://'))
   )
     return text
-  return redactUrl(text)
+  try {
+    const url = new URL(text)
+    url.password = url.password === '' ? '' : '***'
+    return url.toString()
+  } catch {
+    return '(remote could not be read)'
+  }
 }
 
 const actionIn = (view: ProjectView, step: string) => findAgentAction(view.get(['steps', step]))?.action
@@ -562,7 +569,16 @@ const limitPresentation = (label: string, read: (view: ProjectView) => unknown) 
 const entry = (
   id: ProjectQuestionId,
   d: Omit<ProjectQuestion, 'id' | 'flags' | 'row'> & { row?: ProjectQuestion['row'] },
-): ProjectQuestion => ({ id, flags: FLAGS_OF[id], row: rowOf, ...d })
+): ProjectQuestion => ({
+  id,
+  flags: FLAGS_OF[id],
+  row: rowOf,
+  ...d,
+  presentation:
+    d.presentation === undefined
+      ? undefined
+      : { ...d.presentation, order: d.presentation.order ?? PROJECT_QUESTION_IDS.indexOf(id) },
+})
 
 /**
  * The project list: 25 descriptors in design order. What the ports say about the run's shape (local or GitHub, a
@@ -580,8 +596,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       'code',
       'project',
       (v, ctx) => ({
-        where: v.get(['repo', 'owner']) === null ? 'local' : 'github',
-        code: safeLocation(v.get(['repo', 'remote']) ?? `${v.get(['repo', 'owner'])}/${ctx.ports.project}`),
+        where: ctx.ports.local ? 'local' : 'github',
+        code: safeLocation(v.get(['repo', 'remote']) ?? ctx.ports.location ?? ctx.ports.project),
       }),
       (v) => `${v.code}  ${v.where}`,
     ),
@@ -642,12 +658,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         const claim = v.resolved()?.recipe
         return claim === undefined ? null : (assigneeOf(claim) ?? null)
       },
-      (v) =>
-        v === null
-          ? 'every ticket — local tickets are yours'
-          : typeof v === 'string'
-            ? `issues assigned to ${v}`
-            : JSON.stringify(v),
+      (v) => (v === null ? 'every ticket — local tickets are yours' : `issues assigned to ${v.login}`),
     ),
     name: 'your GitHub login',
     flag: '--login <login>',
@@ -697,7 +708,10 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
           team: v.get(['mode']) === 'team',
         }
       },
-      (v) => (v.team ? `${v.name}; main (${v.main}) is brought in when you submit a PR` : String(v.name)),
+      (v) =>
+        v.team
+          ? `${v.name}; main (${v.main}) is brought in when you submit a PR — main changes only through a PR you submit, one at a time · lingtai pr — never pushes main`
+          : String(v.name),
     ),
     name: 'the branch',
     flag: '--main <branch> (solo), or --personal <branch> (team)',
@@ -899,7 +913,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   // ---- the writer and the reviewer: four entries, one action each ---------------------------------------------
 
   const writer = entry('writer', {
-    presentation: presentation('writes', 'attempt', agentPresentation('implement'), agentText, 8),
+    presentation: presentation('writes', 'attempt', agentPresentation('implement'), agentText, 7),
     name: 'which agent writes the change',
     flag: `--agent <${RuntimeId.options.join('|')}>`,
     fromFlags: (flags) => flags['agent'] ?? null,
@@ -994,7 +1008,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const reviewer = entry('reviewer', {
-    presentation: presentation('reviews', 'attempt', agentPresentation('review'), agentText, 10),
+    presentation: presentation('reviews', 'attempt', agentPresentation('review'), agentText, 9),
     name: 'a cold reviewer',
     flag: '--reviewer <runtime|none>',
     fromFlags: (flags) => flags['reviewer'] ?? null,
@@ -1524,7 +1538,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         v.judge === null
           ? 'no agent judge'
           : `go back to the writer (${v.judge}) up to ${v.rounds} times — each is a judge call and another writer run`,
-      9,
+      7.5,
     ),
     name: 'the findings judge',
     flag: '(derived from the writer)',

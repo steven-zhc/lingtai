@@ -30,7 +30,7 @@ export function runProjectList(
     const previewList = projectList(fork.ports).filter((q) => configuration.some((c) => c.id === q.id))
     const preview = yield* runSetupList(previewList, { ...previewInput, log: () => {} }, fork)
     // Disabling the capability must not describe the preview as lacking a checkout.
-    fork.answers.trial = { trial: 'not-run', because: 'declined' }
+    if ((fork.answers.checks?.length ?? 0) > 0) fork.answers.trial = { trial: 'not-run', because: 'declined' }
     const resolution = fork.view.resolution()
     const failure =
       preview.refused ??
@@ -50,6 +50,8 @@ export function runProjectList(
       if (failure !== undefined) return { refused: failure, entries, deferred: [], rows: [] as SetupRow[] }
       ctx.pending.splice(0, ctx.pending.length, ...fork.pending)
       ctx.answers = { ...fork.answers, defaults: 'yes' }
+      if (ctx.ports.trial === undefined && (ctx.answers.checks?.length ?? 0) > 0)
+        ctx.answers.trial = { trial: 'not-run', because: 'no checkout' }
       // Preview diagnostics are discarded. Completion still runs against the live ports.
       const completion = yield* runSetupList(
         list.filter((q) => q.id === 'trial' || q.id === 'register'),
@@ -65,7 +67,9 @@ export function runProjectList(
       )
       return {
         ...completion,
-        entries: [...entries, ...preview.entries, ...completion.entries],
+        entries: [...entries, ...preview.entries.map((e) => ({ ...e, asked: false })), ...completion.entries].sort(
+          (a, b) => list.findIndex((q) => q.id === a.id) - list.findIndex((q) => q.id === b.id),
+        ),
         rows: setupRows(list, ctx),
       }
     }

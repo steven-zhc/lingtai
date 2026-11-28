@@ -131,6 +131,9 @@ function ttyHarness(): Harness {
   }
   const logged: string[] = []
   const world: AddTestWorld = {
+    machine: Effect.succeed([
+      { id: 'github', label: 'github', text: 'gh, signed in as sam', group: 'machine', changed: false },
+    ]),
     project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
@@ -321,7 +324,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/^add {2}widgets$/m)
     expect(text).toMatch(/github\s+gh, signed in as sam/)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
-    expect(text).toMatch(/lands on\s+main, on GitHub/)
+    expect(text).toMatch(/works on\s+main/)
     expect(text).toContain('each attempt')
     expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
     expect(text).not.toContain('a dump line')

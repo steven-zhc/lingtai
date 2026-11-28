@@ -557,6 +557,7 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
 
   const ports: ProjectPorts = {
     project: repo,
+    location: slug,
     local: false,
     checkout: null,
     knownLogin: ghLogin,

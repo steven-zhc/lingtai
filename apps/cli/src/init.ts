@@ -674,7 +674,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
 
     // *this machine* alone, for a GitHub run that has no repository yet: no project group, and a ready
     // line without a recipe. `how` is the one row about GitHub.
-    const machineCard = (_how: string): Effect.Effect<string | undefined, unknown> =>
+    const machineCard = (how: string): Effect.Effect<string | undefined, unknown> =>
       Effect.gen(function* () {
         held.length = 0
         const end = yield* printSetupEndEffect(
@@ -686,7 +686,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             homeIsNew,
             userHome: world.env['HOME'] ?? '',
             runtimes,
-            ...machineFact,
+            machine: machineRows(machine.list, listed.entries, { github: how }),
             ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],

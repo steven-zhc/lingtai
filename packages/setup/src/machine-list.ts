@@ -298,7 +298,8 @@ export function machineQuestions(
       value === 'none' && opts.githubRequired
         ? 'LINGTAI_GITHUB_AUTH names none, and a GitHub project needs a way to reach GitHub — unset it or export gh or app. Nothing was written'
         : null,
-    row: (value) => (value === 'none' ? 'no GitHub' : value),
+    row: (value, _before, description) =>
+      description ?? (value === 'none' ? 'no GitHub' : value === 'app' ? 'the App' : value),
   }
 
   const ceiling: SetupQuestion<RunContext> = {
@@ -425,7 +426,11 @@ export function machineQuestions(
 }
 
 /** Rows from the same machine descriptors and answer records, with no credential snapshots. */
-export function machineRows(list: readonly SetupQuestion<RunContext>[], entries: readonly Entry[]): SetupRow[] {
+export function machineRows(
+  list: readonly SetupQuestion<RunContext>[],
+  entries: readonly Entry[],
+  descriptions: Readonly<Record<string, string>> = {},
+): SetupRow[] {
   const labels: Record<string, string> = {
     store: 'log',
     github: 'github',
@@ -446,7 +451,7 @@ export function machineRows(list: readonly SetupQuestion<RunContext>[], entries:
       if (q === undefined || value === undefined) return []
       const before = e.before
       const changed = before !== null && !('fault' in before) && before.value !== value
-      const text = q.row(value, null)
+      const text = q.row(value, null, descriptions[e.id])
       return [
         {
           id: e.id,

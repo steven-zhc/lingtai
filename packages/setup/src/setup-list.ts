@@ -119,7 +119,7 @@ export interface SetupQuestion<C> {
   defaultsSwitch?: true
   write: (answer: string, inForce: InForce, ctx: C) => Effect.Effect<WriteResult | { refused: string }, unknown>
   /** The card row: the value, and what it was. */
-  row: (value: string, before: InForce) => string
+  row: (value: string, before: InForce, description?: string) => string
   /** Words for `why`, drawn where the question is asked. */
   why?: readonly string[]
   /** What the environment's value is shown as. */

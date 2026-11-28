@@ -26,8 +26,8 @@ beforeEach(() => {
   vi.stubEnv('LINGTAI_HOME', HOME)
   walks = []
   observe = () => {}
-  const original = setup.runSetupList
-  vi.spyOn(setup, 'runSetupList').mockImplementation(((...args: Parameters<typeof original>) =>
+  const original = setup.runProjectList
+  vi.spyOn(setup, 'runProjectList').mockImplementation(((...args: Parameters<typeof original>) =>
     original(...args).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
