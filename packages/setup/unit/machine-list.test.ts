@@ -2,7 +2,7 @@ import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { MachineText } from '../src/claude-token.ts'
-import { type MachinePorts, machineQuestions, writeDayCeiling } from '../src/machine-list.ts'
+import { type MachinePorts, machineQuestions, machineRows, writeDayCeiling } from '../src/machine-list.ts'
 import { type Asker, type SetupInput, runSetupList } from '../src/setup-list.ts'
 
 const PATH = '/h/config.yml'
@@ -307,5 +307,35 @@ describe('an exported value beside a flag', () => {
     expect(refused.refused).toContain('GitHub')
     const fine = await run(github(false), input())
     expect(fine.refused).toBeUndefined()
+  })
+})
+
+describe('machine descriptor rows', () => {
+  it('shows the semantic ceiling change in dollars per day', async () => {
+    const { ports } = world('limits:\n  day_usd: 100\n', { dayCeiling: () => ({ value: 100, environment: false }) })
+    const list = ceilingOnly(ports)
+    const result = await run(list, input({ flags: { 'day-usd': '150' } }))
+    expect(machineRows(list, result.entries)).toEqual([
+      { id: 'ceiling', label: 'spend', group: 'machine', changed: true, text: 'up to $100 a day → up to $150 a day' },
+    ])
+  })
+  it('names the actual exported variable, without an arrow on a rerun', async () => {
+    const { ports, state } = world('', { dayCeiling: () => ({ value: 100, environment: true }) })
+    const list = ceilingOnly(ports)
+    const result = await run(list, input())
+    expect(machineRows(list, result.entries)[0]).toMatchObject({
+      changed: false,
+      text: 'up to $100 a day — from LINGTAI_LIMITS_DAY_USD',
+    })
+    expect(state.writes).toBe(0)
+  })
+  it('keeps database credentials out of the row snapshot', async () => {
+    const { ports } = world('', {
+      store: () => ({ store: 'postgres', url: 'postgres://me:secret@db.example/log', environment: true }),
+    })
+    const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+    const result = await run(list, input())
+    expect(JSON.stringify(machineRows(list, result.entries))).not.toContain('secret')
+    expect(machineRows(list, result.entries)[0]?.text).toContain('Postgres · db.example — from LINGTAI_DATABASE_URL')
   })
 })

@@ -236,7 +236,7 @@ describe('project preview boundary', () => {
       { 'sandbox-hosts': 'api.example.com' },
       { personal: 'sam/other' },
       { wall: '30m' },
-    ]) {
+    ] as Record<string, string>[]) {
       const ctx = context(ports(), text, flags)
       const result = await run(ctx)
       expect(result.refused).toBeUndefined()
@@ -245,8 +245,7 @@ describe('project preview boundary', () => {
       expect(rows.every((r) => r.text.includes(' → '))).toBe(true)
       if ('agent' in flags) {
         expect(rows.find((r) => r.id === 'writer')?.text).toBe('codex → claude-code')
-        expect(rows.find((r) => r.id === 'findings-judge')?.text).toContain('(codex)')
-        expect(rows.find((r) => r.id === 'findings-judge')?.text).toContain('(claude-code)')
+        expect(rows.find((r) => r.id === 'findings-judge')?.text).toContain('(codex → claude-code)')
       }
     }
     expect(projectView(start(text), []).resolved()).not.toBeNull()

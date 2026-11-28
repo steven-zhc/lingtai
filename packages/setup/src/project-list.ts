@@ -523,11 +523,15 @@ function presentation<T>(
   read: (view: ProjectView, ctx: ProjectContext) => T,
   format: (value: T, ctx: ProjectContext) => string = (v) => String(v ?? 'none'),
   order?: number,
+  diff?: (before: T, value: T, ctx: ProjectContext) => string,
 ): Presentation<ProjectContext> {
   return {
     label,
     group,
     order,
+    ...(diff === undefined
+      ? {}
+      : { diff: (before: unknown, value: unknown, ctx: ProjectContext) => diff(before as T, value as T, ctx) }),
     before: (ctx) => (rerun(ctx) ? read(projectView(ctx.start, []), ctx) : undefined),
     value: (ctx) => read(ctx.view, ctx),
     format: (value, ctx) => format(value as T, ctx),
@@ -1537,8 +1541,16 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       (v) =>
         v.judge === null
           ? 'no agent judge'
-          : `go back to the writer (${v.judge}) up to ${v.rounds} times — each is a judge call and another writer run`,
+          : v.rounds === 0
+            ? `no fix rounds — the ${v.judge} judge can still restart the attempt or hand a finding to you`
+            : `go back to the writer (${v.judge}) up to ${v.rounds} times — each is a judge call and another writer run`,
       7.5,
+      (before, value) => {
+        const judge =
+          before.judge === value.judge ? value.judge : `${before.judge ?? 'none'} → ${value.judge ?? 'none'}`
+        const rounds = before.rounds === value.rounds ? value.rounds : `${before.rounds} → ${value.rounds}`
+        return `go back to the writer (${judge}) up to ${rounds} times — each is a judge call and another writer run`
+      },
     ),
     name: 'the findings judge',
     flag: '(derived from the writer)',

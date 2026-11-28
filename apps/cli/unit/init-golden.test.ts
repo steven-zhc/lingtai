@@ -10,6 +10,8 @@
  * It is imported rather than read, because a filesystem read would make this an integration test (0060 §1), and
  * it is a module rather than a file snapshot because `vitest -u` would rewrite the reference this test holds. A
  * ticket that changes `init`'s words on purpose regenerates it, and says so in its diff.
+ * #1524 regenerates the card from descriptor rows (including sandbox and spend); preview diagnostics are buffered,
+ * and acceptingDefaults draws no preview without a terminal.
  */
 import { createMemoryEventStore } from '@lingtai/event-store/memory'
 import { ProjectFiles } from '@lingtai/project'
@@ -104,7 +106,7 @@ async function run(extra: string[] = []): Promise<{ code: number; lines: string[
   return { code, lines: logged }
 }
 
-it('init --local with Enter at each question prints what it printed before it was an Effect', async () => {
+it('init --local with Enter at each question prints the list-based card with no terminal preview', async () => {
   const { code, lines } = await run()
   expect({ code, lines }).toEqual(golden)
 })
