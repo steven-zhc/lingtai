@@ -81,7 +81,14 @@ export interface SetupQuestion<C> {
   id: string
   presentation?: Presentation<C>
   /** The answer row for a machine descriptor; values always pass through its safe formatter. */
-  card?: { label: string; environment: string }
+  card?: {
+    label: string
+    environment: string
+    /** The effective value when nothing is in force, independently of the offered default. */
+    absent?: string
+    /** Project a command answer to the state it actually left behind. */
+    effective?: (entry: Entry) => string
+  }
   /** The subject of a refusal — "the daily spend ceiling". */
   name: string
   /** The text after "pass" in a refusal. */

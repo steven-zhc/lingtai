@@ -1,8 +1,14 @@
-import { Effect } from 'effect'
+import { Effect, Redacted } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { MachineText } from '../src/claude-token.ts'
-import { type MachinePorts, machineQuestions, machineRows, writeDayCeiling } from '../src/machine-list.ts'
+import {
+  type MachinePorts,
+  machineQuestions,
+  machineRows,
+  machineSnapshotRows,
+  writeDayCeiling,
+} from '../src/machine-list.ts'
 import { type Asker, type SetupInput, runSetupList } from '../src/setup-list.ts'
 
 const PATH = '/h/config.yml'
@@ -159,6 +165,67 @@ const sandboxed = { runtime: { agent: 'claude-code' }, steps: {}, sandbox: { ena
 describe('the token entry', () => {
   const tokenList = (ports: MachinePorts) =>
     machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
+
+  it.each([null, Redacted.make('invalid-token')])(
+    'a failed token setup reports no effective change (%s)',
+    async (token) => {
+      let obtained = 0
+      const { ports, state } = world('', {
+        recipes: () => Effect.succeed([sandboxed]),
+        obtainToken: () => {
+          obtained++
+          return Effect.succeed(token)
+        },
+      })
+      const list = tokenList(ports)
+      const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer: 'run' }) } }))
+      expect(result.refused).toBeUndefined()
+      expect(obtained).toBe(1)
+      expect(state.writes).toBe(0)
+      expect(machineRows(list, result.entries)).toEqual([
+        { id: 'claude-token', label: 'claude token', group: 'machine', changed: false, text: 'skipped' },
+      ])
+    },
+  )
+
+  it.each(['keep', 'skip'])('an existing token stays set after %s and in the add snapshot', async (answer) => {
+    for (const environment of [false, true]) {
+      const { ports, state } = world('', {
+        recipes: () => Effect.succeed([sandboxed]),
+        tokenState: () => ({ environment, file: !environment, usable: true }),
+        obtainToken: () => Effect.die('an existing token must not be obtained again'),
+      })
+      const list = tokenList(ports)
+      const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer }) } }))
+      const expected = {
+        id: 'claude-token',
+        label: 'claude token',
+        group: 'machine',
+        changed: false,
+        text: `set${environment ? ' — from LINGTAI_CLAUDE_OAUTH_TOKEN' : ''}`,
+      }
+      expect(result.refused).toBeUndefined()
+      expect(machineRows(list, result.entries)).toEqual([expected])
+      expect((await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === 'claude-token')).toEqual(
+        expected,
+      )
+      expect(state.writes).toBe(0)
+    }
+  })
+
+  it('a successful token setup reports the saved state without retaining credentials', async () => {
+    const { ports, state } = world('', {
+      recipes: () => Effect.succeed([sandboxed]),
+      obtainToken: () => Effect.succeed(Redacted.make('sk-ant-oat01-test-secret')),
+    })
+    const list = tokenList(ports)
+    const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer: 'run' }) } }))
+    expect(state.writes).toBe(1)
+    expect(machineRows(list, result.entries)).toEqual([
+      { id: 'claude-token', label: 'claude token', group: 'machine', changed: true, text: 'skipped → set' },
+    ])
+    expect(JSON.stringify(machineRows(list, result.entries))).not.toContain('test-secret')
+  })
 
   it('is not asked where no recipe names claude-code with the sandbox on, and is asked once the draft does', async () => {
     const { ports } = world('')

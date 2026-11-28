@@ -359,7 +359,12 @@ export function machineQuestions(
 
   const claudeToken: SetupQuestion<RunContext> = {
     id: 'claude-token',
-    card: { label: 'claude token', environment: 'LINGTAI_CLAUDE_OAUTH_TOKEN' },
+    card: {
+      label: 'claude token',
+      environment: 'LINGTAI_CLAUDE_OAUTH_TOKEN',
+      absent: 'skip',
+      effective: (entry) => (entry.wrote ? 'set' : (entry.before?.value ?? 'skip')),
+    },
     name: 'the sandboxed Claude Code token',
     flag: '--claude-token keep, or --claude-token skip',
     fromFlags: (flags) => {
@@ -431,7 +436,7 @@ export function machineQuestions(
         if (saved.done.environmentWins) ports.say(environmentWinsSentence("this process's"))
         return { wrote: true }
       }),
-    row: (value) => (value === 'run' ? 'set' : value === 'keep' ? 'set' : 'skipped'),
+    row: (value) => (value === 'set' || value === 'run' || value === 'keep' ? 'set' : 'skipped'),
   }
 
   return [store, github, ceiling, claudeToken]
@@ -447,10 +452,12 @@ export function machineRows(
     .filter((e) => e.applies)
     .flatMap((e) => {
       const q = list.find((q) => q.id === e.id)
-      const value = e.after ?? e.before?.value
-      if (q === undefined || value === undefined) return []
+      if (q === undefined) return []
       const before = e.before
-      const changed = before !== null && !('fault' in before) && before.value !== value
+      const beforeValue = before?.value ?? q.card?.absent
+      const value = q.card?.effective?.(e) ?? e.after ?? beforeValue
+      if (value === undefined) return []
+      const changed = beforeValue !== undefined && !(before !== null && 'fault' in before) && beforeValue !== value
       const text = q.row(value, null, descriptions[e.id])
       return [
         {
@@ -459,7 +466,7 @@ export function machineRows(
           label: q.card?.label ?? e.id,
           changed,
           text:
-            (changed ? `${q.row(before!.value!, null)} → ${text}` : text) +
+            (changed ? `${q.row(beforeValue!, null)} → ${text}` : text) +
             (before?.from === 'environment' ? ` — from ${before.variable ?? q.card?.environment}` : ''),
         },
       ]
