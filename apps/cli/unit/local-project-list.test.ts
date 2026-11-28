@@ -369,4 +369,21 @@ describe('init and add use the same project list (#1526)', () => {
       )
     })
   })
+  it('solo to team keeps the working branch and detects the trunk from the checkout', () => {
+    const first = setupWorld()
+    first.branches.set('my-work', 'bbb222')
+    return runLocal(first, { local: '/repo', mode: 'solo', main: 'my-work', defaults: '' }).then(() => {
+      const w = setupWorld({ text: first.recipes.get(PATH), projects: [projectState()] })
+      w.branches.set('my-work', 'bbb222')
+      return runLocal(w, { local: '/repo', mode: 'team', defaults: '' }).then((result) => {
+        expect(result).toMatchObject({ ok: true, base: 'my-work' })
+        expect(resolveSource(w.recipes.get(PATH)!, 'repo', 'repo').recipe.branch).toMatchObject({
+          main: 'main',
+          personal: 'my-work',
+        })
+        expect(w.events.filter((e) => e.startsWith('branch:'))).toEqual([])
+        expect(w.branches.get('my-work')).toBe('bbb222')
+      })
+    })
+  })
 })
