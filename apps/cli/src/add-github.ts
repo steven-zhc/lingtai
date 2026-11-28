@@ -65,6 +65,7 @@ import {
 } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
 import { previewSetup } from '@lingtai/setup'
+import { SAID, ENV_PLANT_AT } from '@lingtai/setup'
 import { Effect } from 'effect'
 
 import { checkAppEffect } from './app-check.ts'
@@ -73,18 +74,11 @@ import { livePickerEffect } from './first-project.ts'
 import { type GithubAuthAnswer } from './github-auth.ts'
 import { askTokenFor, githubEntryFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { projectAskers, liveTrialPort } from './project-askers.ts'
+import { changedOf, fetchedRates, toolOnPath } from './project-support.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import type { QuestionWorld } from './question.ts'
-import {
-  ADD_KEPT,
-  changedLeftBehind,
-  changedOf,
-  ENV_PLANT_AT,
-  fetchedRates,
-  priceHints,
-  SAID,
-  toolOnPath,
-} from './recipe-flow.ts'
+import { changedLeftBehind, priceHints } from './recipe-flow.ts'
+const KEPT = 'Nothing was written and nothing was registered'
 import type { TrialOutcome } from './setup-build.ts'
 import type { LeftBehind } from './setup-card.ts'
 
@@ -245,7 +239,7 @@ export const liveGithubDeps: AskBeforeGithubAddDeps = {
         { app: checkAppEffect, ghStatus: () => ghStatusEffect(), gh: liveGh },
       ),
       flags,
-      ADD_KEPT,
+      KEPT,
     ),
   claudeToken: (recipe, flags) => {
     const setup = machineSetup(
@@ -309,7 +303,7 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
   /** Every `--build <cmd>` on the command line, in order — `flags['build']` alone is only the last (#431 fix round, finding 3). */
   buildFlags: readonly string[] = [],
   /** What a refusal says is already true: `add`'s sentence, or `init`'s own. */
-  kept: string = ADD_KEPT,
+  kept: string = KEPT,
 ): Effect.fn.Return<number | GithubAnswers, unknown> {
   // Tier, gates and the base are the recipe's, in the managed repository, which
   // is why this takes a slug and — at most — the branch to find the file on.

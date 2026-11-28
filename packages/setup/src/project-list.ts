@@ -399,7 +399,10 @@ const mainRead = (ctx: ProjectContext): Effect.Effect<{ branch: string | null } 
 /** The main a team's branch is cut from: a typed `--main` first, since that is what is written, then `mainRead`. */
 const teamMainRead = (ctx: ProjectContext): Effect.Effect<{ branch: string | null } | { refused: string }> => {
   const typed = ctx.flags['main']
-  return typed !== undefined && typed !== '' ? Effect.succeed({ branch: typed }) : mainRead(ctx)
+  if (typed !== undefined && typed !== '') return Effect.succeed({ branch: typed })
+  // A solo local recipe's main is its working branch, not the team's trunk (0130 §2).
+  if (ctx.ports.local && rerun(ctx) && atStart(ctx, ['mode']) !== 'team') return readDefaultBranch(ctx)
+  return mainRead(ctx)
 }
 
 /** The probed runtimes, a failure turned into the refusal that carries the port's words. */
@@ -615,7 +618,14 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     inForce: (ctx) =>
       inForceOf(
         rerun(ctx)
-          ? text(atStart(ctx, ctx.answers.mode === 'team' ? ['branch', 'personal'] : ['branch', 'main']))
+          ? text(
+              atStart(
+                ctx,
+                ctx.answers.mode === 'team' && (!ports.local || atStart(ctx, ['mode']) === 'team')
+                  ? ['branch', 'personal']
+                  : ['branch', 'main'],
+              ),
+            )
           : null,
       ),
     systemDefault: (ctx) =>
@@ -675,6 +685,19 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
             if (source === null) return { refused: `${answer} is not a branch ${where}. ${ctx.kept}` }
             from = source
           }
+          if (!found && ctx.ports.local && answer === LINGTAI_BASE) {
+            const old = yield* rerunBaseSource(ctx, answer)
+            if (old === 'unreadable')
+              return { refused: `could not read whether the current base exists in this checkout. ${ctx.kept}` }
+            const read = old === null ? yield* readDefaultBranch(ctx) : { branch: old }
+            if ('refused' in read) return read
+            if (read.branch === null)
+              return {
+                refused: `${ctx.ports.checkout} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. Check out a branch, or pass --main <branch>`,
+              }
+            from = read.branch
+            ctx.answers.make = { name: answer, from }
+          }
           ctx.answers.branch = { name: answer, exists: found, from, onlyIn: null, main: answer }
           return append(ctx, valueOf(inForce) === answer ? [] : [{ path: ['branch', 'main'], value: answer }])
         }
@@ -706,7 +729,9 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
         if (exists === 'unreadable') {
           return { refused: `could not read whether ${answer} exists on GitHub — nothing was made. ${kept}` }
         }
-        const old = rerun(ctx) ? text(atStart(ctx, ['branch', 'personal'])) : null
+        const old = rerun(ctx)
+          ? text(atStart(ctx, ['branch', ports.local && atStart(ctx, ['mode']) !== 'team' ? 'main' : 'personal']))
+          : null
         let from: string | null = null
         let onlyIn: string[] | null = null
         if (exists) {
@@ -729,7 +754,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
           }
         }
         ctx.answers.branch = { name: answer, exists, from, onlyIn, main }
-        if (valueOf(inForce) !== answer) changes.push({ path: ['branch', 'personal'], value: answer })
+        if (text(atStart(ctx, ['branch', 'personal'])) !== answer)
+          changes.push({ path: ['branch', 'personal'], value: answer })
         return append(ctx, changes)
       }),
   })
@@ -740,7 +766,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     applies: (ctx) =>
       ctx.answers.branch !== undefined &&
       !ctx.answers.branch.exists &&
-      (ctx.answers.mode === 'team' || (ports.local && ctx.answers.branch.from !== null)),
+      (ctx.answers.mode === 'team' ||
+        (ports.local && ctx.answers.branch.from !== null && ctx.answers.branch.name !== LINGTAI_BASE)),
     confirm: {
       declined: (ctx) => {
         const at = ctx.answers.branch

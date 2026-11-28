@@ -33,10 +33,9 @@ import {
 import { Effect } from 'effect'
 
 import { askReviewer, askReviewerModel, askWriter, askWriterModel } from './agents.ts'
-import { askMoveLanding } from './first-project.ts'
+import { lift } from './exit.ts'
 import { askBudget, askConflictResolutions, askLandingChoice, askRefusalFixes, askWall } from './landing.ts'
-import type { Answered, QuestionWorld } from './question.ts'
-import { askEveryDefault, askRegister } from './recipe-flow.ts'
+import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
 import { askSandboxHosts, askSandboxMode } from './sandbox-step.ts'
 import {
   NO_CHECKS_LINE,
@@ -133,13 +132,12 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
     branch: (d) => {
       const ctx = d.ctx
       if (ctx.answers.mode === 'team') {
-        // Only for words: the descriptor's own `validate` runs the same check with the main the write will use.
-        const typed = text(ctx.flags['main'])
         return askPersonal(world, {
           given: null,
           fallback: personalFallback(ctx),
           current: currentOf(d),
-          main: typed ?? text(ctx.view.get(['branch', 'main'])) ?? '',
+          // The descriptor validates against the team's trunk; the view can still name the old solo working branch.
+          main: '',
           kept: d.kept,
           validate: d.question.validate,
         }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
@@ -171,7 +169,7 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
         name: d.ctx.ports.project,
         oldRemote: text(keyIn(d.ctx.start.text(), ['repo', 'remote'])) ?? '',
         kept: d.kept,
-      }).pipe(Effect.map((answer) => ({ answer }))),
+      }),
 
     defaults: (d) => askEveryDefault(world, { given: null, kept: d.kept }),
 
@@ -366,3 +364,68 @@ export const liveTrialPort = (
   at: Omit<TrialAt, 'base' | 'draft' | 'interrupt'>,
 ): NonNullable<ProjectPorts['trial']> =>
   trialPortOver(world, at, (draft, base) => liveTrialBuild({ ...at, base, draft }))
+
+/** *use every default?* — the switch that answers every later question with its default (#433). */
+const askEveryDefault = (
+  world: QuestionWorld,
+  input: { given: string | null; kept: string },
+): Effect.Effect<Answered, unknown> =>
+  questionEffect(world, {
+    name: 'every default',
+    flag: '--defaults',
+    given: input.given,
+    prompt: 'use every default?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+
+/** The last confirmation: what the defaults would register without anyone having looked, said in one sentence. */
+const askRegister = (
+  world: QuestionWorld,
+  input: {
+    unseenEmptyBuild: boolean
+    unseenUnattended: boolean
+    /** The branch an attempt lands on; empty where the recipe names none. */
+    base: string
+    given: string | null
+    kept: string
+  },
+): Effect.Effect<Answered, unknown> => {
+  const lands = `an attempt lands on ${input.base || 'the base branch'} with no one asking`
+  const asks =
+    input.unseenEmptyBuild && input.unseenUnattended
+      ? `nothing checks a diff before review, and ${lands}`
+      : input.unseenEmptyBuild
+        ? 'nothing checks a diff before review'
+        : lands
+  return questionEffect(world, {
+    name: 'registering with these defaults',
+    flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
+    given: input.given,
+    prompt: `${asks} — register anyway?`,
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+}
+
+/** Keep the move question's words and yes/no input; the runner owns its no-terminal refusal. */
+const askMoveLanding = (
+  world: QuestionWorld,
+  at: { name: string; oldRemote: string; kept: string },
+): Effect.Effect<Answered, unknown> =>
+  lift(() =>
+    world.ask(`Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror? [y/N]`, {
+      message: `Move ${at.name}'s landing to this checkout?`,
+      defaultValue: 'no',
+      choices: ['yes', 'no'],
+      kept: at.kept,
+    }),
+  ).pipe(
+    Effect.map((answer) =>
+      answer === null
+        ? { refused: `moving the landing needs an answer: pass --defaults. ${at.kept}` }
+        : { answer: /^y(es)?$/i.test(answer.trim()) ? 'yes' : 'no' },
+    ),
+  )

@@ -47,7 +47,7 @@ async function askBeforeGithubAdd(
   }
   return result
 }
-import { SAID } from '../src/recipe-flow.ts'
+import { SAID } from '@lingtai/setup'
 
 const PREVIOUS_ENV = { ...process.env }
 

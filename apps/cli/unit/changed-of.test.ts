@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { changedOf } from '../src/recipe-flow.ts'
+import { changedOf } from '../src/project-support.ts'
 
 const start = (doc: Record<string, unknown> | null) => ({
   text: () => (doc === null ? null : 'x'),

@@ -149,6 +149,8 @@ import { liveSetupTokenRun } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import {
   chooseFirstProjectEffect,
+  liveInFlightEffect,
+  liveRemoveMirrorEffect,
   type FirstProjectWorld,
   type GitResult,
   livePickerEffect,
@@ -253,6 +255,8 @@ export interface InitWorld {
   store?: EventStore
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
+  inFlight?: FirstProjectWorld['inFlight']
+  removeMirror?: FirstProjectWorld['removeMirror']
   registerLocal: (payload: RegisterLocalPayload) => Effect.Effect<{ line: string; updated: boolean }, unknown>
   /** `FirstProjectWorld.history` (#396) — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Effect.Effect<readonly string[], unknown>
@@ -623,17 +627,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         if (flags['base'] !== undefined) {
           return stop(`--base is now --main: pass --main ${flags['base']}. The store chosen above is kept`)
         }
-        // The flags that name a recipe key the project list's own walk answers; `--mode` and the like are accepted here
-        // and ignored, as they always were, until #1523's list takes this path over.
-        const discardedFlag = PROJECT_FLAGS.find(
-          (name) =>
-            !['sandbox', 'sandbox-hosts', 'mode', 'login', 'personal', 'defaults'].includes(name) &&
-            flags[name] !== undefined,
-        )
+        const unaskedFlag = PROJECT_FLAGS.find((name) => flags[name] !== undefined)
         if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
-        if (discardedFlag !== undefined) {
+        if (unaskedFlag !== undefined) {
           return stop(
-            `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +
+            `--${unaskedFlag} ${flags[unaskedFlag]}, but this machine already has a project and none is named ` +
               'to set up here — pass --project github, --project local, or --local <dir>, or use lingtai add for ' +
               'one that already exists. The store chosen above is kept',
           )
@@ -737,6 +735,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       const firstProjectWorld: FirstProjectWorld = {
         ask: world.ask,
         log: world.log,
+        interactive,
         git: world.runGit,
         projects: world.projects,
         locker: world.locker,
@@ -754,6 +753,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         setupReader: world.setupReader,
         exists: world.exists,
         register: world.registerLocal,
+        ...(world.inFlight === undefined ? {} : { inFlight: world.inFlight }),
+        ...(world.removeMirror === undefined ? {} : { removeMirror: world.removeMirror }),
         history: world.history,
         // The store above is already written by the time this runs — the same
         // reason `askFirstProject` carries this sentence (#394 finding 2).
@@ -1336,6 +1337,8 @@ export function liveInitWorld(): InitWorld {
       }),
     open: (url) => lift(() => liveOpen(url)),
     runGit: liveGitEffect,
+    inFlight: liveInFlightEffect,
+    removeMirror: (project) => liveRemoveMirrorEffect(project, stateDir()),
     issueForms: checkoutIssueForms,
     projects: () => loadAllProjectsEffect(),
     signedIn: signedInHere,
