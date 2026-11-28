@@ -628,6 +628,12 @@ function runLocalBranch(
     // A mirror retains its old origin when fetched. Invalidate it once, before a repair trial can provision it;
     // when no trial runs, the same effect removes it before registration.
     let mirrorRemoved = false
+    let mirrorCommitted = false
+    // A trial can clone the new remote before later questions refuse or interrupt the move.
+    // Until registration succeeds, discard that mirror so the unchanged recipe can clone its own remote again.
+    yield* Effect.addFinalizer(() =>
+      mirrorRemoved && !mirrorCommitted && ports !== null ? ports.removeMirror(name).pipe(Effect.orDie) : Effect.void,
+    )
     const removeMirror = Effect.gen(function* () {
       if (!migrating || ports === null || mirrorRemoved) return
       yield* ports
@@ -817,6 +823,7 @@ function runLocalBranch(
         Effect.fail(error instanceof SetupWriteError ? error : new Error(`${errorText(error)}; ${keptSentence(path)}`)),
       ),
     )
+    mirrorCommitted = true
     const leftBehind: LeftBehind[] = []
     const oldBase = fileText === null ? null : branchOf(resolveSource(fileText, path, path).recipe)
     if (switching && oldBase !== null)
@@ -840,7 +847,7 @@ function runLocalBranch(
       })
     }
     return { ...common, updated: registration.registered.updated, ...(leftBehind.length === 0 ? {} : { leftBehind }) }
-  }).pipe(recoverWithLocal(world))
+  }).pipe(Effect.scoped, recoverWithLocal(world))
 }
 
 /** Preserve read and write failures by name, and let interruption leave the pending list alone. */
