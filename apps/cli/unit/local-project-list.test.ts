@@ -1,5 +1,6 @@
+import { prStream } from '@lingtai/domain'
 import { ProjectFiles } from '@lingtai/project'
-import { resolveSource } from '@lingtai/recipe'
+import { editRecipe, resolveSource } from '@lingtai/recipe'
 import * as setup from '@lingtai/setup'
 import { Effect, Fiber } from 'effect'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -223,7 +224,7 @@ describe('init and add use the same project list (#1526)', () => {
 
   it('a failed board read or an in-flight attempt refuses before the list', () => {
     const w = setupWorld({
-      text: 'version: 2\nrepo:\n  remote: /old/repo\nbranch:\n  main: main\n',
+      text: 'version: 2\nrepo:\n  remote: /old/repo\nbranch:\n  main: main\nsource:\n  tickets: db\nenv:\n  plantAt: .env.local\n',
       projects: [projectState()],
       origin: '/old/repo',
     })
@@ -284,6 +285,88 @@ describe('init and add use the same project list (#1526)', () => {
         expect(w.registered).toEqual([])
         expect(resolveSource(w.recipes.get(PATH)!, 'repo', 'repo').recipe.source.tickets).toBe('db')
       })
+    })
+  })
+  it('a team personal branch is made only after the whole list, and cancellation makes none', () => {
+    const w = setupWorld()
+    observe = () => w.events.push('list-finished')
+    w.project.ask = (prompt) =>
+      Promise.resolve(/Make it from/.test(prompt) ? 'yes' : /use every default/.test(prompt) ? 'no' : '')
+    return runLocal(w, { local: '/repo', mode: 'team', personal: 'my-work' }).then((result) => {
+      expect(result, w.logged.join('\n')).toMatchObject({ ok: true, base: 'my-work' })
+      expect(w.events.filter((e) => !e.startsWith('ask:'))).toEqual([
+        'list-finished',
+        'branch:my-work',
+        'recipe',
+        'register',
+      ])
+      const declined = setupWorld()
+      declined.project.ask = (prompt) => Promise.resolve(/Make it from/.test(prompt) ? 'no' : '')
+      return runLocal(declined, { local: '/repo', mode: 'team', personal: 'my-work' }).then((result) => {
+        expect(result).toMatchObject({ refused: expect.stringContaining('was not made') })
+        expect(declined.branches.has('my-work')).toBe(false)
+        expect(declined.writes).toEqual([])
+      })
+    })
+  })
+
+  it('team to solo with a pending draft refuses before making the new solo branch', () => {
+    const first = setupWorld()
+    return runLocal(first, { local: '/repo', mode: 'team', personal: 'my-work', defaults: '' }).then(() => {
+      const w = setupWorld({ text: first.recipes.get(PATH), projects: [projectState()] })
+      w.branches.set('my-work', 'abc123f')
+      return w.store
+        .append(prStream('repo', 1), 0, [
+          { type: 'PrDraftTicketAdded', actor: 'conductor', data: { ticket: '7', mergeCommit: 'abc123f', from: null } },
+        ])
+        .then(() => w.store.append('prj-repo', 0, [{ type: 'ProjectPrNumbered', actor: 'conductor', data: { n: 1 } }]))
+        .then(() => runLocal(w, { local: '/repo', mode: 'solo', main: 'new-solo', defaults: '' }))
+        .then((result) => {
+          expect(result).toMatchObject({ refused: expect.stringContaining('mode: team → solo is refused') })
+          expect(w.branches.has('new-solo')).toBe(false)
+          expect(w.writes).toEqual([])
+          expect(w.registered).toEqual([])
+        })
+    })
+  })
+
+  it('team to solo with no pending draft makes its new branch after the recipe check and keeps the personal branch', () => {
+    const first = setupWorld()
+    return runLocal(first, { local: '/repo', mode: 'team', personal: 'my-work', defaults: '' }).then(() => {
+      const w = setupWorld({ text: first.recipes.get(PATH), projects: [projectState()] })
+      w.branches.set('my-work', 'abc123f')
+      return runLocal(w, { local: '/repo', mode: 'solo', main: 'new-solo', defaults: '' }).then((result) => {
+        expect(result, w.logged.join('\n')).toMatchObject({ ok: true, base: 'new-solo' })
+        expect(w.events.filter((e) => !e.startsWith('ask:'))).toEqual(['recipe', 'branch:new-solo', 'register'])
+        expect(w.branches.get('my-work')).toBe('abc123f')
+      })
+    })
+  })
+
+  it('a changed solo base is cut from the old working branch after the list', () => {
+    const first = setupWorld()
+    return runInit(first).then(() => {
+      const w = setupWorld({ text: first.recipes.get(PATH), projects: [projectState()] })
+      w.branches.set('lingtai-base', 'bbb222')
+      return runLocal(w, { local: '/repo', mode: 'solo', main: 'new-base', defaults: '' }).then((result) => {
+        expect(result).toMatchObject({ ok: true, base: 'new-base' })
+        expect(w.branches.get('new-base')).toBe('bbb222')
+        expect(w.registered[0]?.fromSha).toBe('bbb222')
+      })
+    })
+  })
+
+  it('an unreadable recipe and an unrelated same-name checkout refuse before the list', () => {
+    const w = setupWorld({ text: 'version: 2\nbranch: [bad]\nrepo:\n  remote: /repo\n', projects: [projectState()] })
+    return runLocal(w).then((result) => {
+      expect(result).toMatchObject({ refused: expect.stringContaining('does not resolve') })
+      const other = setupWorld({
+        text: editRecipe('version: 2\n', [{ path: ['repo', 'remote'], value: '/other/repo' }]),
+        projects: [projectState()],
+      })
+      return runLocal(other).then((result) =>
+        expect(result).toMatchObject({ refused: expect.stringContaining('silently redirect') }),
+      )
     })
   })
 })

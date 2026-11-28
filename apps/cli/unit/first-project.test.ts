@@ -19,6 +19,7 @@ import { chooseFirstProjectEffect, liveFirstProjectWorld } from '../src/first-pr
 import {
   type FirstProjectTestWorld,
   liftFirstProjectWorld,
+  liftPort,
   type PromiseFirstProjectWorld,
 } from '../test/first-project-world.ts'
 
@@ -578,9 +579,16 @@ describe('chooseFirstProject — contradicting flags are refused (#394)', () => 
         '/repo::rev-parse --show-toplevel': ok('/repo\n'),
         '/repo::rev-parse --verify refs/heads/lingtai-base^{commit}': ok('abc123f\n'),
       },
-      answers: [...RECIPE_FLOW_DEFAULTS],
+      answers: [],
     })
-    const result = await chooseFirstProject(world, { local: '/repo', mode: 'solo', main: 'lingtai-base', land: 'hold' })
+    const result = await chooseFirstProject(world, {
+      local: '/repo',
+      mode: 'solo',
+      main: 'lingtai-base',
+      land: 'hold',
+      defaults: '',
+      install: 'none',
+    })
     expect(result).not.toEqual({
       refused: expect.stringContaining('name two different branches'),
     })

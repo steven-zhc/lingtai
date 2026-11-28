@@ -5,7 +5,7 @@ import { recipePath, ProjectFiles } from '@lingtai/project'
  * answers (#971). `askRecipe` is driven with `--defaults` over a
  * chapter-garden-shaped repository; the page's answers are the proposal's own,
  * run through `setupAnswers`; both are written by `applySetup` over a `Map`,
- * and the two files are compared byte for byte, comments included.
+ * and their executable recipes are compared. The list names typed checks; the form keeps detection names.
  */
 import { LIMIT_DEFAULTS, type RecipeChange, type RecipeFiles, resolveSource } from '@lingtai/recipe'
 import { SandboxUnavailable } from '@lingtai/sandbox'
@@ -151,6 +151,18 @@ const LIMITS = {
   newAttempts: LIMIT_DEFAULTS.ticket.newAttempts,
 }
 
+/** Check names and YAML key/comment order belong to each input; the executed commands and all other values agree. */
+const recipeFacts = (text: string | undefined) => {
+  const recipe = resolveSource(text ?? '', 'chapter-garden', 'chapter-garden').recipe
+  return {
+    ...recipe,
+    steps: {
+      ...recipe.steps,
+      build: recipe.steps.build.map((action) => ('run' in action ? { run: action.run } : action)),
+    },
+  }
+}
+
 describe('the page writes what lingtai add writes (#971)', () => {
   it('a GitHub repository, every default', async () => {
     const seeds = [
@@ -187,7 +199,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
       sandbox: null,
     }))
     expect(expected).toBeDefined()
-    expect(written).toBe(expected)
+    expect(recipeFacts(written)).toEqual(recipeFacts(expected))
   })
 
   it('a local directory, every default', async () => {
@@ -218,7 +230,7 @@ describe('the page writes what lingtai add writes (#971)', () => {
       login: null,
       sandbox: null,
     }))
-    expect(written).toBe(expected)
+    expect(recipeFacts(written)).toEqual(recipeFacts(expected))
   })
 })
 
@@ -313,7 +325,7 @@ describe('the sandbox step, new recipe (#1160)', () => {
     })
   })
 
-  it('a rerun asks the sandbox list and writes the explicit choice', async () => {
+  it('a rerun takes the value in force, so off leaves an absent sandbox block absent', async () => {
     const files = mapFiles()
     await viaAdd('chapter-garden', false, GH_SEEDS, { files })
     const before = files.store.get(recipePath('chapter-garden', HOME))
@@ -321,6 +333,6 @@ describe('the sandbox step, new recipe (#1160)', () => {
     const proposal = await proposalWith(HOST_CAN)
     // `--sandbox off` would write `enabled: false` if the step were asked.
     await viaAdd('chapter-garden', false, [], { files, proposal, flags: { sandbox: 'off' } })
-    expect(sandboxOf(files.store.get(recipePath('chapter-garden', HOME)))).toMatchObject({ enabled: false })
+    expect(sandboxOf(files.store.get(recipePath('chapter-garden', HOME)))).toBeUndefined()
   })
 })

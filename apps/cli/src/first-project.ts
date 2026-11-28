@@ -37,11 +37,10 @@ import { branchOf, resolveSource, type Recipe, type ResolvedRecipe, type SignedI
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { applySetup, keptSentence } from '@lingtai/setup'
+import { applySetup, keptSentence, SetupWriteError } from '@lingtai/setup'
 import {
   ENV_PLANT_AT,
   SAID,
-  PROJECT_FLAGS,
   projectContext,
   projectList,
   runSetupList,
@@ -546,7 +545,7 @@ function runLocalBranch(
     // True when the recipe names the remote the old `add --local` wrote — the checkout's own `origin` — so this
     // run moves its landing to the checkout (0104 §15, #772).
     let moving = false
-    // Only `add --local` rewrites a landing: `init` supplies neither port, and its name guard stays as it was.
+    // Both commands supply the move's board and mirror ports; an input without them cannot redirect a project.
     const ports =
       world.inFlight !== undefined && world.removeMirror !== undefined
         ? { inFlight: world.inFlight, removeMirror: world.removeMirror }
@@ -760,7 +759,7 @@ function runLocalBranch(
       const draft = draftIn(prs.listed)
       if (open.length > 0 || draft.length > 0)
         return {
-          refused: `${modeSwitchMessage(String(onDisk.get(['branch', 'personal']) ?? 'main'), open, draft)}. ${world.kept}`,
+          refused: `${modeSwitchMessage(String(fileText === null ? 'main' : (resolveSource(fileText, path, path).recipe.branch.personal ?? 'main')), open, draft)}. ${world.kept}`,
         }
     }
     const make = ctx.answers.make
@@ -783,6 +782,21 @@ function runLocalBranch(
       }))
       if (removal !== null) return removal
     }
+    const resolved = yield* resolveDraftRecipeEffect(name, finalText, {
+      home: world.home,
+      signedIn: world.signedIn,
+      ...HOST_FOR_SAVING,
+      base,
+    })
+    const readTip = Effect.gen(function* () {
+      const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
+      if (!tip.ok)
+        return yield* Effect.fail(
+          new Error(`${base} is not a branch in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}`),
+        )
+      tips.set(base, tip.stdout.trim())
+    })
+    if (!(switching && make?.name === base) && !tips.has(base)) yield* readTip
     const registration = yield* exclusiveAdd(
       name,
       applySetup(
@@ -790,34 +804,22 @@ function runLocalBranch(
         { project: name, changes: onDisk.changes(), said: SAID },
         Effect.gen(function* () {
           if (switching) yield* makeBranch
-          let sha = tips.get(base)
-          if (sha === undefined) {
-            const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
-            if (!tip.ok)
-              return yield* Effect.fail(
-                new Error(
-                  `${base} is not a branch in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}; ${keptSentence(path)}`,
-                ),
-              )
-            sha = tip.stdout.trim()
-          }
-          const resolved = yield* resolveDraftRecipeEffect(name, finalText, {
-            home: world.home,
-            signedIn: world.signedIn,
-            ...HOST_FOR_SAVING,
-            base,
-          })
+          if (!tips.has(base)) yield* readTip
           return yield* world.register({
             project: name,
             owner: null,
             base,
             configHash: resolved.configHash,
-            fromSha: sha,
+            fromSha: tips.get(base)!,
             resolved,
           })
         }),
       ),
       world.locker,
+    ).pipe(
+      recoverWith((error) =>
+        Effect.fail(error instanceof SetupWriteError ? error : new Error(`${errorText(error)}; ${keptSentence(path)}`)),
+      ),
     )
     const leftBehind: LeftBehind[] = []
     const oldBase = fileText === null ? null : branchOf(resolveSource(fileText, path, path).recipe)
@@ -849,7 +851,14 @@ function runLocalBranch(
 const recoverWithLocal =
   (world: FirstProjectWorld) =>
   <A>(effect: Effect.Effect<A, unknown>) =>
-    refusingOn(effect, (error) => ({ refused: `${errorText(error)}. ${world.kept}` }))
+    refusingOn(effect, (error) => ({
+      refused:
+        errorText(error).includes('was not written') ||
+        errorText(error).includes('was written') ||
+        errorText(error).includes('is kept and nothing was registered')
+          ? errorText(error)
+          : `${errorText(error)}. ${world.kept}`,
+    }))
 
 function runGithubBranch(
   world: FirstProjectWorld,
@@ -877,7 +886,22 @@ function runGithubBranch(
     // above — `init --project github`, with no slug, never calls `askRecipe`; `init --github <owner>/<repo>` and
     // `lingtai add` reach it through `githubProjectEffect` and never through here. Refused
     // by name instead of silently discarded (#431 fix round, finding 2).
-    const namedRecipeFlag = PROJECT_FLAGS.find((name) => flags[name] !== undefined)
+    const recipeFlagNames = [
+      'agent',
+      'model',
+      'reviewer',
+      'reviewer-model',
+      'install',
+      'build',
+      'check-build',
+      'land',
+      'rounds',
+      'refusal-fixes',
+      'conflict-resolutions',
+      'wall',
+      'budget',
+    ]
+    const namedRecipeFlag = recipeFlagNames.find((name) => flags[name] !== undefined)
     if (flags['rounds'] !== undefined) return { refused: `${ROUNDS_RETIRED}. ${world.kept}` }
     if (namedRecipeFlag !== undefined) {
       return {

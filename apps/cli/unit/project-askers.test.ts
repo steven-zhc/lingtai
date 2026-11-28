@@ -1,6 +1,6 @@
 /**
  * `project-askers.ts` (#1529): the project list, walked through the terminal's askers over a fake terminal, draws the
- * prompts today's `askRecipeEffect` draws — same words, same choices, same bracketed default. No filesystem, by 0060
+ * prompts the project descriptors decide, with their choices and bracketed defaults. No filesystem, by 0060
  * §1: the file seam is a `Map`, the trial is a fake, and the world records each prompt and answers from a script.
  *
  * **Enter everywhere tests almost nothing**: the runner answers every question itself once *use every default?* is yes,

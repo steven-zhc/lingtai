@@ -81,7 +81,8 @@ export function setupWorld(
       if (args[0] === 'rev-list') return ok()
       throw new Error(`unplanned git: ${args.join(' ')}`)
     })
-  const ghStatus = () => Effect.succeed({ ok: true, login: 'sam', scopes: ['repo', 'workflow'] } as const)
+  const ghStatus: FirstProjectWorld['github']['ghStatus'] = () =>
+    Effect.succeed({ ok: true, login: 'sam', scopes: ['repo', 'workflow'] })
   const locker = { tryLock: () => Promise.resolve({ ok: true as const, lock: { release: () => Promise.resolve() } }) }
   const doctor = () =>
     Effect.succeed({
@@ -164,8 +165,8 @@ export function setupWorld(
     doctor,
     userHome: '/home/me',
     store: () => ({ store: 'sqlite', path: `${HOME}/lingtai.db`, where: 'config.yml', from: `${HOME}/config.yml` }),
-    labels: () => Effect.succeed({ createLabel: () => Promise.resolve() }),
-    issueForms: () => Effect.succeed({ files: [], more: false }),
+    labels: () => Effect.succeed({ createLabel: () => Promise.resolve('created' as const) }),
+    issueForms: () => Effect.succeed({ kind: 'none' as const }),
   }
   const init: InitWorld = {
     env: { VITEST: '1', HOME: '/home/me', LINGTAI_HOME: HOME },
