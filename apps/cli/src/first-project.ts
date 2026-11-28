@@ -816,8 +816,8 @@ function runLocalBranch(
         }),
       ),
       world.locker,
-    ).pipe(
-      recoverWith((error) =>
+    ).pipe((write) =>
+      recoverWith(write, (error) =>
         Effect.fail(error instanceof SetupWriteError ? error : new Error(`${errorText(error)}; ${keptSentence(path)}`)),
       ),
     )
