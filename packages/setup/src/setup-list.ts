@@ -52,6 +52,7 @@ export interface Presentation<C> {
   before: (ctx: C) => unknown
   value: (ctx: C) => unknown
   format: (value: unknown, ctx: C) => string
+  diff?: (before: unknown, value: unknown, ctx: C) => string
 }
 
 export function setupRows<C>(list: readonly SetupQuestion<C>[], ctx: C): SetupRow[] {
@@ -68,7 +69,9 @@ export function setupRows<C>(list: readonly SetupQuestion<C>[], ctx: C): SetupRo
         label: p.label,
         group: p.group,
         changed,
-        text: changed ? `${p.format(before, ctx)} → ${p.format(value, ctx)}` : p.format(value, ctx),
+        text: changed
+          ? (p.diff?.(before, value, ctx) ?? `${p.format(before, ctx)} → ${p.format(value, ctx)}`)
+          : p.format(value, ctx),
       }
     })
 }
@@ -76,6 +79,8 @@ export function setupRows<C>(list: readonly SetupQuestion<C>[], ctx: C): SetupRo
 export interface SetupQuestion<C> {
   id: string
   presentation?: Presentation<C>
+  /** The answer row for a machine descriptor; values always pass through its safe formatter. */
+  card?: { label: string; environment: string }
   /** The subject of a refusal — "the daily spend ceiling". */
   name: string
   /** The text after "pass" in a refusal. */

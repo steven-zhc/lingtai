@@ -45,6 +45,34 @@ afterEach(() => {
 })
 
 describe('init and add use the same project list (#1526)', () => {
+  it('init --local supplies the remaining values as why before use this setup, including sandbox', async () => {
+    const w = setupWorld()
+    w.init.sandboxHost = () => ({ answer: Effect.void, install: null, builtIns: ['github.com'] })
+    const ask = w.init.ask
+    let preview: readonly string[] = []
+    w.init.ask = (prompt, opts) => {
+      if (prompt.startsWith('use this setup?')) {
+        preview = opts?.why ?? []
+        expect(w.writes).toEqual([])
+        expect(w.registered).toEqual([])
+        expect(w.branches.has('lingtai-base')).toBe(false)
+        expect(preview.some((row) => row.startsWith('sandbox  on'))).toBe(true)
+        expect(preview.some((row) => row.startsWith('writes  claude-code'))).toBe(true)
+        return Promise.resolve('yes')
+      }
+      return ask(prompt, opts)
+    }
+    expect(await runInit(w)).toBe(0)
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    for (const row of preview) {
+      const [label, ...words] = row.split('  ')
+      expect(card).toContain(label)
+      expect(card).toContain(words.join('  '))
+    }
+    expect(w.recipes.get(PATH)).toContain('enabled: true')
+    expect(w.events.filter((e) => e.startsWith('ask:')).some((e) => /which agent|extra hosts/.test(e))).toBe(false)
+  })
+
   it('init --local finishes all entries before setting the recipe, making lingtai-base or registering', () => {
     const w = setupWorld()
     observe = (entries) => {

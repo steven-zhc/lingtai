@@ -53,23 +53,28 @@ export function runProjectList(
       if (ctx.ports.trial === undefined && (ctx.answers.checks?.length ?? 0) > 0)
         ctx.answers.trial = { trial: 'not-run', because: 'no checkout' }
       // Preview diagnostics are discarded. Completion still runs against the live ports.
-      const completion = yield* runSetupList(
-        list.filter((q) => q.id === 'trial' || q.id === 'register'),
-        {
-          ...input,
-          // A typed yes takes the trial's safe default without accepting registration.
-          askers:
-            ctx.flags['check-build'] === undefined
-              ? { ...input.askers, trial: () => Effect.succeed({ answer: 'no' }) }
-              : input.askers,
-        },
+      // The trial descriptor owns the safe defaults rule; registration retains the original input.
+      const trial = yield* runSetupList(
+        list.filter((q) => q.id === 'trial'),
+        { ...input, defaults: true },
         ctx,
       )
+      const registration =
+        trial.refused === undefined
+          ? yield* runSetupList(
+              list.filter((q) => q.id === 'register'),
+              input,
+              ctx,
+            )
+          : trial
       return {
-        ...completion,
-        entries: [...entries, ...preview.entries.map((e) => ({ ...e, asked: false })), ...completion.entries].sort(
-          (a, b) => list.findIndex((q) => q.id === a.id) - list.findIndex((q) => q.id === b.id),
-        ),
+        ...registration,
+        entries: [
+          ...entries,
+          ...preview.entries.map((e) => ({ ...e, asked: false })),
+          ...trial.entries,
+          ...(trial.refused === undefined ? registration.entries : []),
+        ].sort((a, b) => list.findIndex((q) => q.id === a.id) - list.findIndex((q) => q.id === b.id)),
         rows: setupRows(list, ctx),
       }
     }

@@ -178,6 +178,7 @@ export function machineQuestions(
 ): readonly SetupQuestion<RunContext>[] {
   const store: SetupQuestion<RunContext> = {
     id: 'store',
+    card: { label: 'log', environment: 'LINGTAI_DATABASE_URL' },
     name: 'the store',
     flag: '--store sqlite, or --store postgres --database-url <url>',
     fromFlags: (flags) => {
@@ -220,11 +221,19 @@ export function machineQuestions(
         },
         catch: (e) => e,
       }),
-    row: (value) => (value === '' ? 'SQLite' : 'Postgres'),
+    row: (value) => {
+      if (value === '') return 'SQLite'
+      try {
+        return `Postgres · ${new URL(value).hostname}`
+      } catch {
+        return 'Postgres · (a URL that does not parse)'
+      }
+    },
   }
 
   const github: SetupQuestion<RunContext> = {
     id: 'github',
+    card: { label: 'github', environment: 'LINGTAI_GITHUB_AUTH' },
     name: 'how this machine reaches GitHub',
     flag: '--github-auth gh, --github-auth app, or --github-auth none',
     fromFlags: (flags) => {
@@ -304,6 +313,7 @@ export function machineQuestions(
 
   const ceiling: SetupQuestion<RunContext> = {
     id: 'ceiling',
+    card: { label: 'spend', environment: 'LINGTAI_LIMITS_DAY_USD' },
     name: 'the daily spend ceiling',
     flag: '--day-usd <dollars>, or --day-usd none',
     fromFlags: (flags) => flags['day-usd'] ?? null,
@@ -348,6 +358,7 @@ export function machineQuestions(
 
   const claudeToken: SetupQuestion<RunContext> = {
     id: 'claude-token',
+    card: { label: 'claude token', environment: 'LINGTAI_CLAUDE_OAUTH_TOKEN' },
     name: 'the sandboxed Claude Code token',
     flag: '--claude-token keep, or --claude-token skip',
     fromFlags: (flags) => {
@@ -431,18 +442,6 @@ export function machineRows(
   entries: readonly Entry[],
   descriptions: Readonly<Record<string, string>> = {},
 ): SetupRow[] {
-  const labels: Record<string, string> = {
-    store: 'log',
-    github: 'github',
-    ceiling: 'spend',
-    'claude-token': 'claude token',
-  }
-  const variables: Record<string, string> = {
-    store: 'LINGTAI_DATABASE_URL',
-    github: 'LINGTAI_GITHUB_AUTH',
-    ceiling: 'LINGTAI_LIMITS_DAY_USD',
-    'claude-token': 'LINGTAI_CLAUDE_OAUTH_TOKEN',
-  }
   return entries
     .filter((e) => e.applies)
     .flatMap((e) => {
@@ -456,11 +455,11 @@ export function machineRows(
         {
           id: e.id,
           group: 'machine' as const,
-          label: labels[e.id] ?? e.id,
+          label: q.card?.label ?? e.id,
           changed,
           text:
             (changed ? `${q.row(before!.value!, null)} → ${text}` : text) +
-            (before?.from === 'environment' ? ` — from ${variables[e.id]}` : ''),
+            (before?.from === 'environment' ? ` — from ${q.card?.environment}` : ''),
         },
       ]
     })
