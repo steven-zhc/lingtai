@@ -1,44 +1,5 @@
-/**
- * The first question `init` and `add` share (#394): a GitHub repository, or a
- * git checkout on this machine, which is its own remote.
- *
- * **One function, both callers.** `initCommand` and `addCommand` both call
- * `chooseFirstProject`, which asks through `question()` (#392) and the App
- * questions of #393's `askFirstProject`, and declares the slice of the world
- * it needs (`FirstProjectWorld`) rather than depending on `InitWorld` —
- * `question.ts` and `github-app.ts` already follow that rule, and `add` has no
- * `InitWorld` to depend on.
- *
- * **Remembering the answer is registering the project, not writing it down
- * twice.** Nothing machine-wide holds `local` or `github`; a project once
- * registered *is* the record, and `init`'s own printed list of what is
- * registered (`init.ts`) is how a machine with only local projects is told
- * how to add a GitHub one, rather than being asked the same question again.
- *
- * **The local branch writes nothing until everything has been checked.** The
- * directory is a git repository, it is the remote (0104 §15 — the merge lane
- * pushes back into the checkout, `packages/actions/src/merge-action.ts:47`; no
- * `origin` is needed), its name is not already
- * another project's, the base branch exists, and an agent can run here — only
- * then does `askRecipe` (#431) take `branch.main`, `repo.remote` and, on an
- * absent file, `env.plantAt` as its seeds, and ask the rest of the recipe's
- * questions — writing all of it, seeds and answers together, in the one
- * creation write an absent file gets (#432). **That seed's `base` is not
- * necessarily final**: `askLanding`, inside `askRecipe`, can still move
- * `branch.main` — so what follows is a re-read of the file for its actual
- * `branch.main`, a second `git rev-parse` for that base's sha when it moved,
- * `resolveLocalRecipe` reading the file back for its `configHash`, and
- * `register` (`addLocal` in `@lingtai/conductor/onboard`) appending
- * `ProjectConfigured` with `owner: null` against that final base, not the
- * one the seed wrote.
- *
- * **The GitHub branch is #393's App step, unchanged, plus the picker.** No App
- * configured runs `askFirstProject`'s App question and `waitForApp`; a slug
- * given or asked for is checked against `listRepositories` (`choose`,
- * `@lingtai/conductor/pick-repository`) and handed to `add`
- * (`@lingtai/conductor/onboard`) exactly as `lingtai add <owner>/<repo>` does
- * today.
- */
+/** The project paths shared by init and add. Local questions walk @lingtai/setup's project list;
+ * only checkout checks, branch creation and registration belong to this input. */
 
 import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
@@ -55,7 +16,7 @@ import { repositoryList } from '@lingtai/conductor/repository-list'
 import { liveHistoryEffect } from '@lingtai/conductor/ticket-history'
 import { held } from '@lingtai/daemon'
 import { isOpen, type ProjectState } from '@lingtai/domain'
-import { boardHost, boardPort, boardReachHost, githubAuthKind, stateDir } from '@lingtai/env'
+import { boardHost, boardPort, boardReachHost, codexTextConfig, githubAuthKind, stateDir } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import type { Locker } from '@lingtai/env/lock'
 import type { EventStore } from '@lingtai/event-store/store'
@@ -67,36 +28,28 @@ import {
   draftRecipe,
   listPrs,
   modeSwitchMessage,
-  type RecipeDraft,
   loadAllProjectsEffect,
   recipePath,
   resolveDraftRecipeEffect,
 } from '@lingtai/project'
 import { readTasksEffect } from '@lingtai/projector'
-import {
-  branchOf,
-  landOnBranchChanges,
-  resolveSource,
-  type Recipe,
-  type ResolvedRecipe,
-  type SignedIn,
-} from '@lingtai/recipe'
+import { branchOf, resolveSource, type Recipe, type ResolvedRecipe, type SignedIn } from '@lingtai/recipe'
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
+import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
+import { applySetup, keptSentence } from '@lingtai/setup'
 import {
-  askRuntimesEffect,
-  NO_GITHUB_ORIGIN,
-  noRuntimesSignedInRefusal,
-  proposeSetup,
-  type RuntimeFound,
-} from '@lingtai/setup'
-import {
-  alreadyAddedSentence,
-  applySetup,
-  keptSentence,
-  liveTrialBuild,
-  previewSetup,
-  SetupWriteError,
+  ENV_PLANT_AT,
+  SAID,
+  PROJECT_FLAGS,
+  projectContext,
+  projectList,
+  runSetupList,
+  type ProjectPorts,
+  type ProjectContext,
+  type Asker,
+  type Decided,
+  type Entry,
 } from '@lingtai/setup'
 import { Cause, Effect } from 'effect'
 
@@ -114,12 +67,14 @@ import {
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
 import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
-import { onCancelExit } from './prompt.ts'
-import { acceptingDefaults, questionEffect, spunEffect, type QuestionWorld } from './question.ts'
-import { ADD_KEPT, askRecipeEffect, ENV_PLANT_AT } from './recipe-flow.ts'
+import { projectAskers, liveTrialPort } from './project-askers.ts'
+import { fetchedRates, toolOnPath } from './project-support.ts'
+import { interactivity } from './prompt.ts'
+import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
+import { priceHints, summariseRecipe } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
 import { cardRecipe, type CardRecipe, type LeftBehind } from './setup-card.ts'
-import { askBaseBranch, askMakeBranch, askMode, askPersonal, type Mode } from './team.ts'
+import type { Mode } from './team.ts'
 import { ROUNDS_RETIRED, withoutProjectFlags } from './wizard-options.ts'
 
 /** The branch a local project lands on, made from the checked-out one when absent (0104 §15). */
@@ -164,23 +119,20 @@ export interface RegisterLocalPayload {
   resolved: ResolvedRecipe
 }
 
-/**
- * Whether to move `name`'s landing from `oldRemote` to this checkout and rebuild its mirror. A raw `world.ask`, as it
- * always was: the answer is `yes` or `no`, and no terminal (`null`) is `yes` — the line the caller printed above it is
- * the record. What a `no` refuses with is the caller's.
- */
+/** The move confirmation is asked only by the list's terminal input. */
 export function askMoveLanding(
-  world: Pick<QuestionWorld, 'ask'>,
+  world: QuestionWorld,
   at: { name: string; oldRemote: string; kept?: string | undefined },
-): Effect.Effect<'yes' | 'no', unknown> {
-  return lift(() =>
-    world.ask(`Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror? [y/N]`, {
-      message: `Move ${at.name}'s landing to this checkout?`,
-      defaultValue: 'no',
-      choices: ['yes', 'no'],
-      kept: at.kept,
-    }),
-  ).pipe(Effect.map((confirmed) => (confirmed === null || /^y(es)?$/i.test(confirmed.trim()) ? 'yes' : 'no')))
+) {
+  return questionEffect(world, {
+    name: 'moving the landing',
+    flag: '--defaults',
+    given: null,
+    prompt: `Move ${at.name}'s landing from ${at.oldRemote} to this checkout, and rebuild its mirror?`,
+    fallback: 'no',
+    choices: ['yes', 'no'],
+    kept: at.kept ?? 'Nothing was written',
+  })
 }
 
 /**
@@ -199,6 +151,8 @@ export const pathExistsEffect = (path: string): Effect.Effect<boolean> =>
  * A rejection or a throw inside a member is a failure or a defect, and the refusals below treat both alike.
  */
 export interface FirstProjectWorld extends QuestionWorld {
+  /** Live inputs set this from the terminal; fake worlds default to an interactive input. */
+  interactive?: boolean
   /**
    * The caller asks a GitHub project's questions itself once a repository is picked (`lingtai add`), so the GitHub
    * branch is handed the flags without the project's own, and the local branch still gets every one.
@@ -288,13 +242,11 @@ export interface FirstProjectWorld extends QuestionWorld {
   }
 }
 
-/** What an interrupted rerun wrote but could not register: the recipe is on disk, and this says why it is not registered. */
-class KeptNotRegistered extends Error {}
-
 export type FirstProjectOutcome =
   | {
       ok: true
       project: 'local'
+      entries: readonly Entry[]
       name: string
       remote: string
       base: string
@@ -552,9 +504,6 @@ export const liveRemoveMirrorEffect = (project: string, home: string): Effect.Ef
 
 const errorText = (error: unknown): string => (error instanceof Error ? error.message : String(error))
 
-/** `askRecipeEffect`'s result — the same value `askRecipe` resolved to. */
-type RecipeResult = Effect.Success<ReturnType<typeof askRecipeEffect>>
-
 function runLocalBranch(
   world: FirstProjectWorld,
   flags: Record<string, string>,
@@ -597,7 +546,6 @@ function runLocalBranch(
     // True when the recipe names the remote the old `add --local` wrote — the checkout's own `origin` — so this
     // run moves its landing to the checkout (0104 §15, #772).
     let moving = false
-    let oldRemote = ''
     // Only `add --local` rewrites a landing: `init` supplies neither port, and its name guard stays as it was.
     const ports =
       world.inFlight !== undefined && world.removeMirror !== undefined
@@ -620,7 +568,6 @@ function runLocalBranch(
       const origin = got.ok && got.stdout.trim() !== '' ? resolveRemote(got.stdout.trim(), toplevel) : null
       moving = ports !== null && origin !== null && existingRemote === origin
     }
-    if (typeof existingRemote === 'string') oldRemote = existingRemote
     if (found !== undefined && found.owner === null) {
       // `repo.remote` is optional in the schema (`recipe.ts`), so a project
       // registered before owners were recorded — #352's `unrecorded` state —
@@ -643,310 +590,165 @@ function runLocalBranch(
       }
     }
 
-    let fromSha = ''
-    const proposedNow = onDisk.get(['steps', 'proposed'])
-    const currentProposed = Array.isArray(proposedNow) ? (proposedNow as unknown[]) : []
-    // The base the recipe resolves (`branchOf`), which is the one compared, moved and seeded below. Null where
-    // there is no file yet or it does not resolve: the answer is then the detected one, never a raw path.
-    const currentBase = ((): string | null => {
-      const text = onDisk.text()
-      if (text === null) return null
-      try {
-        return branchOf(resolveSource(text, name, name).recipe)
-      } catch {
-        return null
-      }
-    })()
-    // `lingtai-base` is made from the checked-out branch when absent. A `--land <branch>` with no `--main`
-    // names the branch the person means to land on, and `askLanding` would move the base there anyway.
-    const given = flags['land']
-    const detected = flags['main'] === undefined && given !== undefined && given !== 'hold' ? given : LINGTAI_BASE
-    // Set by `validate` when the answer is `lingtai-base` and absent: the branch to make it from.
-    let source: string | null = null
-
-    // Already added and the old remote is not what it names (#772): `lingtai add` refuses, naming the
-    // recipe, before it asks anything. Only the move off the checkout's `origin` is a repair.
-    if (found !== undefined && ports !== null && !moving) {
-      return { refused: `${alreadyAddedSentence(found.project!, world.home)}. ${world.kept}` }
-    }
-
-    // Already added and a rerun of `init` (no ports): it takes the first run's path, with the recipe's values as
-    // the defaults (#1473). A recipe that does not resolve is refused by name before any question — falling back
-    // to the system's defaults would have a person's Enter rewrite a broken file. `lingtai add` was refused above.
-    if (found !== undefined && ports === null && !moving) {
-      const recipeAt = recipePath(found.project!, world.home)
-      world.log(`${found.project} is already added — its recipe is ${recipeAt}`)
-      const existing = onDisk.text()
-      if (existing !== null) {
-        try {
-          resolveSource(existing, recipeAt, recipeAt)
-        } catch (error) {
-          return { refused: `${recipeAt} does not resolve — ${errorText(error)}. ${world.kept}` }
-        }
-      }
-    }
-
-    // Solo or team (0130 §1), asked here and not inside `askRecipe`, because the branch below is made before it
-    // runs. A rerun asks it as a first run does, with the file's mode as the default (#1474); `--defaults` takes
-    // that default, and team where there is no file. A repair of a registered project (#772) asks nothing.
+    const path = recipePath(name, world.home)
     const fileText = onDisk.text()
-    const lingtaiWorld = flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world
     const fileMode: Mode = onDisk.get(['mode']) === 'team' ? 'team' : 'solo'
-    let mode: Mode = fileMode
-    if (!(found !== undefined && ports !== null)) {
-      const asked = yield* askMode(lingtaiWorld, {
-        given: flags['mode'] ?? null,
-        kept: world.kept,
-        current: fileText === null ? null : fileMode,
-      })
-      if ('refused' in asked) return { refused: asked.refused }
-      mode = asked.mode
-    }
-    // Where a rerun is, the branch the recipe works on now: a new one is cut from it when it is absent (#1474).
-    const rerunBase: string | null =
-      fileText !== null && ports === null && typeof currentBase === 'string' ? currentBase : null
-    const rerunBaseExists = function* () {
-      if (rerunBase === null) return false
-      const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${rerunBase}^{commit}`])
-      return check.ok
-    }
-    // A team project's `branch.main` is the branch checked out, or `--main` (0130 §2); never `lingtai-base`.
-    let mainBranch: string | null = null
-    if (mode === 'team') {
-      const landFlag = flags['land']
-      if (landFlag !== undefined && landFlag !== 'hold') {
-        return {
-          refused: `a team project lands on branch.personal, not on ${landFlag} — pass --personal <branch> to name it. ${world.kept}`,
-        }
-      }
-      const fileMain = onDisk.get(['branch', 'main'])
-      const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
-      const checkedOut = head.ok ? head.stdout.trim() : ''
-      // A solo file's `branch.main` is its working branch, which is not a team's main.
-      mainBranch = flags['main'] ?? (fileMode === 'team' && typeof fileMain === 'string' ? fileMain : checkedOut)
-      if (mainBranch === '') {
-        return {
-          refused: `${toplevel} has no branch checked out, and a team project's main is the one that is. Check out a branch, or pass --main <branch>. ${world.kept}`,
-        }
-      }
-      const mainTip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${mainBranch}^{commit}`])
-      if (!mainTip.ok) {
-        return {
-          refused: `${mainBranch} is not a branch in ${toplevel} — ${(mainTip.stderr || mainTip.stdout).trim()}. ${world.kept}`,
-        }
+    if (fileText !== null) {
+      try {
+        resolveSource(fileText, path, path)
+      } catch (error) {
+        return { refused: `${path} does not resolve — ${errorText(error)}. ${world.kept}` }
       }
     }
+    if (found !== undefined) world.log(`${name} is already added — its recipe is ${path}`)
 
-    // A detected answer, so `--defaults` takes it; the project, App and store questions are durable and stay unwrapped.
-    const baseAnswer =
-      mode === 'team' && mainBranch !== null
-        ? yield* askPersonal(lingtaiWorld, {
-            given: flags['personal'] ?? null,
-            fallback: typeof currentBase === 'string' && ports === null ? currentBase : LINGTAI_BASE,
-            ...(fileMode === 'team' && rerunBase !== null ? { current: rerunBase } : {}),
-            main: mainBranch,
-            kept: world.kept,
-            validate: (answer) =>
-              Effect.gen(function* () {
-                source = null
-                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
-                if (check.ok) {
-                  fromSha = check.stdout.trim()
-                  return null
-                }
-                // Decides only: `validate` can run again on a refusal, so nothing is created here. On a rerun the
-                // new branch is cut from the old one, which holds what landed and has not reached main (#1474).
-                source = (yield* Effect.suspend(() => Effect.gen(rerunBaseExists))) ? rerunBase : mainBranch
-                return null
-              }),
-          }).pipe(Effect.map((a) => ('refused' in a ? a : { answer: a.personal })))
-        : yield* askBaseBranch(flags['defaults'] !== undefined ? { ...world, ...acceptingDefaults(world) } : world, {
-            given: flags['main'] ?? null,
-            // `add --local` lands on `lingtai-base` unless a flag says otherwise (0104 §15): enter must not keep the recorded base.
-            current: typeof currentBase === 'string' && ports === null ? currentBase : null,
-            detected,
-            kept: world.kept,
-            ...(world.startOver === undefined ? {} : { startOver: world.startOver }),
-            ...(world.command === undefined ? {} : { command: world.command }),
-            validate: (answer) =>
-              Effect.gen(function* () {
-                source = null
-                const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${answer}^{commit}`])
-                if (check.ok) {
-                  fromSha = check.stdout.trim()
-                  return null
-                }
-                if (rerunBase !== null && (yield* Effect.suspend(() => Effect.gen(rerunBaseExists)))) {
-                  source = rerunBase
-                  return null
-                }
-                if (answer !== LINGTAI_BASE) {
-                  return `${answer} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}`
-                }
-                // Decides only: `validate` can run again on a refusal, so nothing is created here.
-                const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
-                const branch = head.ok ? head.stdout.trim() : ''
-                const tip =
-                  branch === ''
-                    ? null
-                    : yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
-                if (tip === null || !tip.ok) {
-                  return (
-                    `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. ` +
-                    'Check out a branch, or pass --main <branch>'
-                  )
-                }
-                source = branch
-                return null
-              }),
-          })
-    if ('refused' in baseAnswer) return { refused: baseAnswer.refused }
-    const base = baseAnswer.answer
-
-    // Probed once, before anything is written — an agent signed out of
-    // nowhere is refused by name rather than discovered partway through
-    // `askRecipe`'s own first question (#431).
-    const runtimes = yield* world.runtimes()
-    if (!runtimes.some((r) => r.signedIn)) {
-      return { refused: noRuntimesSignedInRefusal(runtimes) }
-    }
-
-    // A move is the remote leaving the old one, or the base differing from the one recorded.
-    const migrating =
-      ports !== null &&
-      typeof existingRemote === 'string' &&
-      // Any rewrite of the recipe's landing is a move — whether or not the old remote was recognised as the checkout's `origin`.
-      (existingRemote !== remote || (typeof currentBase === 'string' && currentBase !== base))
-    // A repair of a registered project asks none of the questionnaire, so a flag that would answer one is
-    // refused by name rather than dropped while the registration succeeds. `--land` is the base's own flag.
-    if (found !== undefined && migrating) {
-      const unread = [
-        'agent',
-        'model',
-        'reviewer',
-        'reviewer-model',
-        'build',
-        'check-build',
-        'rounds',
-        'refusal-fixes',
-        'conflict-resolutions',
-        'wall',
-        'budget',
-        'tickets',
-        'kinds',
-      ].find((n) => flags[n] !== undefined)
-      // `--install none` asks for no command, so a repair that adds none honours it; any other answer would be dropped.
-      const installFlag = flags['install']
-      // ... but not over a recipe that already names one, written or inherited from its preset.
-      const recipeNow = installFlag === 'none' ? onDisk.text() : null
-      let prepared: unknown = null
-      if (recipeNow !== null) {
-        // Resolved as the repair will leave it (with the base and remote it supplies), so a recipe that
-        // only fails to resolve for want of those is still read through its preset; one that still does not
-        // resolve is taken to keep its install, never to have none.
-        prepared = yield* refusingOn(
-          previewSetup(
-            { home: world.home },
-            {
-              project: name,
-              changes: [
-                { path: ['branch', 'main'], value: base },
-                { path: ['repo', 'remote'], value: remote },
-              ],
-            },
-          ).pipe(
-            Effect.map((after): unknown => {
-              const at = recipePath(name, world.home)
-              return resolveSource(after, at, at).recipe.steps.prepared
-            }),
-          ),
-          (): unknown => [null],
-        )
-      }
-      const keepsInstall = Array.isArray(prepared) && prepared.length > 0
-      if (flags['rounds'] !== undefined) return { refused: `${ROUNDS_RETIRED}. ${world.kept}` }
-      const unapplied =
-        unread ?? (installFlag !== undefined && (installFlag !== 'none' || keepsInstall) ? 'install' : undefined)
-      const landFlag = flags['land']
-      if (unapplied !== undefined || (landFlag !== undefined && landFlag !== base)) {
-        const n = unapplied ?? 'land'
-        return {
-          refused:
-            `--${n} ${flags[n]}, but ${name} is already added and this only moves its landing — its recipe is ` +
-            `${recipePath(name, world.home)}, and it is edited there. Leave it out. ${world.kept}`,
-        }
-      }
-    }
-    // Every refusal of a move comes before the first write — the branch below is one.
+    // A move must not change the remote under a running attempt. A failed board read is never an empty board.
+    const migrating = ports !== null && typeof existingRemote === 'string' && existingRemote !== remote
     if (migrating && ports !== null) {
-      world.log(
-        `lands: ${oldRemote} ${typeof currentBase === 'string' ? currentBase : '(none)'} → this checkout, ${base}`,
-      )
       const flying = yield* refusingOn(ports.inFlight(name), (error) => ({
         refused: `could not read the board to check for an attempt of ${name} in flight — ${errorText(error)}. ${world.kept}`,
       }))
       if ('refused' in flying) return flying
-      if (flying.length > 0) {
+      if (flying.length > 0)
         return {
-          refused:
-            `an attempt of ${name} is in flight (${flying.join(', ')}) — moving its landing under it would cut and land ` +
-            `on two remotes. Run this again once they finish, or after lingtai shutdown. ${world.kept}`,
+          refused: `an attempt of ${name} is in flight (${flying.join(', ')}) — moving its landing under it would cut and land on two remotes. Run this again once they finish, or after lingtai shutdown. ${world.kept}`,
         }
-      }
-      const moved = yield* askMoveLanding(world, { name, oldRemote, kept: world.kept })
-      // The refusal is the caller's, so it can be worded where the answer is.
-      if (moved === 'no') {
-        return { refused: `${name}'s landing was not moved. ${world.kept}` }
-      }
     }
-
-    if (migrating && ports !== null) {
-      // The mirror keeps the `origin` it was cloned with, so it is cloned again from the checkout.
-      const removal = yield* refusingOn(ports.removeMirror(name).pipe(Effect.as(null)), (error) => ({
-        refused:
-          `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed, ` +
-          `and no branch was made. ${world.kept}`,
-      }))
-      if (removal !== null) return removal
+    const runtimes = yield* world.runtimes()
+    const reader = world.setupReader(toplevel)
+    const proposal = yield* proposeSetup(
+      { kind: 'local', path: toplevel },
+      {
+        setupReader: reader,
+        defaultBranch: () => Effect.succeed(LINGTAI_BASE),
+        runtimes: () => Effect.succeed(runtimes),
+        history: world.history,
+        ...(world.sandboxHost === undefined ? {} : { host: world.sandboxHost() }),
+        origin: (dir) =>
+          Effect.gen(function* () {
+            const remotes = yield* world.git(dir, ['remote'])
+            if (!remotes.ok) return yield* Effect.fail(new Error(remotes.stderr.trim() || 'git remote failed'))
+            if (!remotes.stdout.split('\n').some((r) => r.trim() === 'origin')) return null
+            const url = yield* world.git(dir, ['remote', 'get-url', 'origin'])
+            if (!url.ok) return yield* Effect.fail(new Error(url.stderr.trim() || 'git remote get-url origin failed'))
+            return url.stdout.trim() || null
+          }),
+      },
+    )
+    if (
+      proposal.tickets.known &&
+      !proposal.tickets.because.startsWith('kept:') &&
+      proposal.tickets.because !== NO_GITHUB_ORIGIN
+    ) {
+      world.log(paint.muted(`tickets       db — ${proposal.tickets.because}`))
     }
+    const tips = new Map<string, string>()
+    const localPorts: ProjectPorts = {
+      project: name,
+      local: true,
+      checkout: remote,
+      knownLogin: null,
+      hostname: '',
+      reader,
+      proposal,
+      runtimes: Effect.succeed(runtimes),
+      history: world.history,
+      codexText: Effect.try(() => codexTextConfig() !== undefined),
+      onPath: (tool) => lift(() => toolOnPath(tool)),
+      defaultBranch: Effect.gen(function* () {
+        const head = yield* world.git(toplevel, ['symbolic-ref', '--short', '-q', 'HEAD'])
+        if (!head.ok) {
+          const detail = (head.stderr || head.stdout).trim()
+          return yield* Effect.fail(
+            new Error(
+              detail ||
+                `${toplevel} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. Check out a branch, or pass --main <branch>`,
+            ),
+          )
+        }
+        return head.stdout.trim() || null
+      }),
+      branchExists: (branch) =>
+        Effect.gen(function* () {
+          const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${branch}^{commit}`])
+          if (tip.ok) {
+            tips.set(branch, tip.stdout.trim())
+            return true
+          }
+          const detail = (tip.stderr || tip.stdout).trim()
+          // rev-parse reports a missing exact ref this way. Other failures (permissions, corrupt refs, IO) keep git's words.
+          if (/Needed a single revision|unknown revision|not a valid (object|ref)|bad revision/i.test(detail))
+            return false
+          return yield* Effect.die(new Error(detail || `could not read ${branch} in ${toplevel}`))
+        }),
+      commitsOnlyIn: (base, head) =>
+        world
+          .git(toplevel, ['rev-list', '--oneline', `${base}..${head}`])
+          .pipe(Effect.map((r) => (r.ok ? r.stdout.split('\n').filter((l) => l.trim() !== '') : null))),
+      trial: liveTrialPort(world, { project: name, owner: '', repo: name, remote, home: world.home }),
+    }
+    let printed = 0
+    const flushLog = (ctx: ProjectContext) => {
+      for (; printed < ctx.log.length; printed++) world.log(ctx.log[printed]!)
+    }
+    const askers = Object.fromEntries(
+      Object.entries(projectAskers(world)).map(([id, ask]) => [
+        id,
+        (d: Decided<ProjectContext>) => {
+          flushLog(d.ctx)
+          return ask(d)
+        },
+      ]),
+    ) as Record<string, Asker<ProjectContext>>
+    const ctx = projectContext({
+      start: onDisk,
+      flags,
+      buildFlags,
+      ports: localPorts,
+      kept: world.kept,
+      seeds: [
+        ...(existingRemote === remote ? [] : [{ path: ['repo', 'remote'], value: remote }]),
+        ...(fileText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
+      ],
+    })
+    const walked = yield* runSetupList(
+      projectList(localPorts),
+      {
+        interactive: world.interactive ?? true,
+        defaults: flags['defaults'] !== undefined,
+        flags,
+        askers,
+        log: world.log,
+        kept: () => ({ kept: world.kept }),
+      },
+      ctx,
+    )
+    flushLog(ctx)
+    if (walked.refused !== undefined)
+      return { refused: walked.refused.includes(world.kept) ? walked.refused : `${walked.refused}. ${world.kept}` }
+    // The whole list has finished. This is the sole draft set; interruption above has no write or branch to keep.
+    yield* onDisk.set(ctx.pending)
+    const finalText = onDisk.text()!
+    const recipe = resolveSource(finalText, path, path).recipe
+    const base = branchOf(recipe)
+    const trial = ctx.answers.trial ?? { trial: 'not-run' as const, because: 'no checks' as const }
+    const hints = priceHints(summariseRecipe(recipe).models, fetchedRates())
+    const common = {
+      ok: true as const,
+      project: 'local' as const,
+      name,
+      remote,
+      base,
+      trial,
+      card: cardRecipe(recipe, toplevel),
+      runtimes,
+      hints,
+      entries: walked.entries,
+    }
+    if (found !== undefined && onDisk.changes().length === 0) return { ...common, updated: true, unchanged: true }
 
-    // After the runtimes probe, whose refusal says nothing was written; before `askRecipe`, whose trial build
-    // cuts from a mirror of this checkout at `base`.
-    let madeKept: string | null = null
-    let madeFrom: string | null = null
-    let madeName: string | null = null
-    let madeSha = ''
-    const makeBranch = (keptText: string = world.kept) =>
-      Effect.gen(function* () {
-        if (source === null) return null
-        const made = yield* world.git(toplevel, ['branch', base, source])
-        if (!made.ok) {
-          return {
-            refused:
-              `could not make ${base} from ${source} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${keptText}`.trim(),
-          }
-        }
-        const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
-        if (!tip.ok) {
-          return {
-            refused:
-              `could not read ${base} after making it from ${source} in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}. ` +
-              `No recipe was written, and nothing was registered; the branch ${base} is kept.`,
-          }
-        }
-        fromSha = tip.stdout.trim()
-        madeKept = `the branch ${base} made from ${source} in ${toplevel}`
-        madeFrom = source
-        madeName = base
-        madeSha = fromSha
-        return null
-      })
-    // Team to solo is refused by `changeRecipe` while a draft holds a ticket or a PR is open (0130 §1), and that
-    // check runs at the write, after this branch is made: so it is read first, and a refusal makes nothing.
-    const switching = fileText !== null && ports === null && fileMode === 'team' && mode === 'solo'
-    // A branch a refused switch would have made is made after `changeRecipe`'s own check, inside the write, so a
-    // draft recorded after the read above leaves no branch behind (0130 §1).
-    const lateBranch = switching && source !== null
+    // A team-to-solo switch checks PRs before making anything; changeRecipe repeats the check at its write.
+    const switching = fileText !== null && fileMode === 'team' && ctx.answers.mode === 'solo'
     if (switching) {
       const store = world.store ?? (yield* defaultStore())
       const prs = yield* refusingOn(listPrs(name, store).pipe(Effect.map((listed) => ({ listed }))), (error) => ({
@@ -955,461 +757,98 @@ function runLocalBranch(
       if ('refused' in prs) return prs
       const open = prs.listed.filter(isOpen)
       const draft = draftIn(prs.listed)
-      if (open.length > 0 || draft.length > 0) {
-        const personal = onDisk.get(['branch', 'personal'])
+      if (open.length > 0 || draft.length > 0)
         return {
-          refused: `${modeSwitchMessage(typeof personal === 'string' ? personal : (rerunBase ?? 'main'), open, draft)}. ${world.kept}`,
+          refused: `${modeSwitchMessage(String(onDisk.get(['branch', 'personal']) ?? 'main'), open, draft)}. ${world.kept}`,
         }
-      }
     }
-    // A team project's personal branch is made only after every question is answered, and only once the person
-    // said yes: the trial build below cuts at `branch.main`, which is where the branch would be cut from anyway.
-    const deferBranch = mode === 'team' && source !== null
-    if (deferBranch) {
-      const confirmed = yield* askMakeBranch(lingtaiWorld, {
-        name: base,
-        // Set by `validate`; `deferBranch` is only true once it is.
-        from: (source as string | null) ?? '',
-        where: { checkout: toplevel },
-        given: flags['defaults'] !== undefined ? 'yes' : null,
-        kept: world.kept,
-      })
-      if ('refused' in confirmed) return { refused: confirmed.refused }
-      if (confirmed.answer === 'no') {
-        return {
-          refused:
-            `${base} was not made — nothing was written and nothing was registered. ` +
-            `Make it yourself with: git branch ${base} ${source}, then run this again. ${world.kept}`,
-        }
-      }
-    } else if (!lateBranch) {
-      const refusal = yield* makeBranch()
-      if (refusal !== null) return refusal
-    }
-    // Until the branch is made, a deferred one is cut at the main it would be made from.
-    // `source` is what `validate` decided: main on a first run, the old working branch on a rerun that has one.
-    const deferredFrom = (source as string | null) ?? mainBranch
-    const trialBase = (deferBranch || lateBranch) && deferredFrom !== null ? deferredFrom : base
-
-    const path = recipePath(name, world.home)
-    const existingText = onDisk.text()
-
-    // `env.plantAt` has no schema default (`recipe.ts`'s `plantAt: z.string()`)
-    // — a brand-new file needs it or it will not resolve at all, and nothing a
-    // directory offers answers it either. Written only when there is no file
-    // yet: an existing one already has it, possibly edited since, and a re-run
-    // must not overwrite that silently. `source.kinds` is no longer seeded here
-    // — `askRecipe`'s own `askKinds` always answers it on an absent file (#432).
-    const seeds = [
-      // `--land <branch>` is the unattended landing, so it takes a `human:` hold off `steps.proposed` as it does elsewhere.
-      ...landOnBranchChanges(
-        // A team project's `branch.main` is the checked-out branch; the branch made above is `branch.personal`.
-        mode === 'team' && mainBranch !== null ? mainBranch : base,
-        found !== undefined && flags['land'] !== undefined && flags['land'] !== 'hold' ? currentProposed : [],
-      ),
-      ...(mode === 'team'
-        ? [
-            { path: ['mode'], value: 'team' },
-            { path: ['branch', 'personal'], value: base },
-          ]
-        : // Solo is the absent key, so a team file moving to solo is the one case that has to say it (#1474).
-          fileText !== null && fileMode === 'team'
-          ? [
-              { path: ['mode'], value: 'solo' },
-              // Both are read only in team mode, and a recipe that keeps either does not resolve. The branch itself,
-              // its commits and any open PR are the person's, and are not touched.
-              { path: ['branch', 'personal'], value: undefined },
-              ...(onDisk.get(['pr']) === null ? [] : [{ path: ['pr'], value: undefined }]),
-            ]
-          : []),
-      { path: ['repo', 'remote'], value: remote },
-      ...(existingText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
-    ]
-
-    // Not `world.kept`: that described the state before `askRecipe` writes
-    // anything, and a refusal placed after its write must say what that write
-    // left behind (#431 fix round, finding 3).
-    const seededKept =
-      `Nothing was written to ${path} and nothing was registered` + (madeKept === null ? '' : `; ${madeKept} is kept`)
-
-    // What step 2 would show for this directory. `lingtai add --local` still
-    // registers no owner and so still keeps `db` (`askTickets` refuses `github`
-    // for it); the proposal's kinds are the part that reaches the questions.
-    const proposal = yield* proposeSetup(
-      { kind: 'local', path: toplevel },
-      {
-        setupReader: world.setupReader(toplevel),
-        defaultBranch: () => Effect.succeed(base),
-        runtimes: () => Effect.succeed(runtimes),
-        history: (project) => world.history(project),
-        // Asked on a rerun too (#1474); a repair of a registered project (#772) asks none of the questionnaire.
-        ...(!(found !== undefined && migrating) && world.sandboxHost !== undefined
-          ? { host: world.sandboxHost() }
-          : {}),
-        // No `origin` is an answer (null); a git that failed is not.
-        origin: (path) =>
-          Effect.gen(function* () {
-            const remotes = yield* world.git(path, ['remote'])
-            if (!remotes.ok) return yield* Effect.fail(new Error(remotes.stderr.trim() || 'git remote failed'))
-            if (!remotes.stdout.split('\n').some((r) => r.trim() === 'origin')) return null
-            const url = yield* world.git(path, ['remote', 'get-url', 'origin'])
-            if (!url.ok) return yield* Effect.fail(new Error(url.stderr.trim() || 'git remote get-url origin failed'))
-            return url.stdout.trim() || null
-          }),
-      },
-    )
-
-    // A local directory keeps `db`; where its origin is on GitHub the proposal's own line says how to
-    // take that repository's issues. The no-origin and kept: lines are not that hint.
-    if (
-      proposal.tickets.known &&
-      !proposal.tickets.because.startsWith('kept:') &&
-      proposal.tickets.because !== NO_GITHUB_ORIGIN
-    ) {
-      world.log(paint.muted(`tickets       db — ${proposal.tickets.because}`))
-    }
-
-    // A repair of a registered project (#772) changes what it moves and nothing else: no questionnaire,
-    // so no answer can touch another setting of a recipe that is edited by hand.
-    const repairOnly = found !== undefined && migrating
-    const repairResult: RecipeResult = {
-      ok: true,
-      trial: { trial: 'not-run', because: 'no checks' },
-      hints: [],
-      answers: { project: name, changes: seeds },
-    }
-    // `askRecipe`'s own `history` is still a promise port (`askTickets`'s), so it is carried the caller's services.
-    const services = yield* Effect.context<never>()
-    let answeredDraft: RecipeDraft | null = null
-    // A rerun's Ctrl+C keeps what was answered (#392): the draft's changes are written once, through
-    // `applySetup`, as the first thing an interruption does. A rerun that changed nothing writes nothing.
-    // The recipe the registration last read from disk: what the card and the lines after it describe, because
-    // another rerun may have written it since the preview (#1474).
-    let finalFromSha = fromSha
-    let settled: { recipe: ReturnType<typeof resolveSource>['recipe']; base: string } | null = null
-    // Registers the recipe as the write left it: its base must exist and is what the registration names, since
-    // each pass refuses a recipe that does not name the registered base.
-    const registerWritten = (written: string, known: { base: string; sha: string } | null) =>
-      Effect.gen(function* () {
-        const recipe = resolveSource(written, path, path).recipe
-        const writtenBase = branchOf(recipe)
-        let writtenSha = known?.sha ?? ''
-        if (known === null || writtenBase !== known.base) {
-          const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${writtenBase}^{commit}`])
-          if (!tip.ok) {
-            return yield* Effect.fail(
-              new Error(
-                `${writtenBase} is not a branch in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}; ${keptSentence(path)}`,
-              ),
-            )
-          }
-          writtenSha = tip.stdout.trim()
-        }
-        const writtenResolved = yield* resolveDraftRecipeEffect(name, written, {
-          home: world.home,
-          signedIn: world.signedIn,
-          ...HOST_FOR_SAVING,
-          base: writtenBase,
-        })
-        settled = { recipe, base: writtenBase }
-        return yield* world.register({
-          project: name,
-          owner: null,
-          base: writtenBase,
-          configHash: writtenResolved.configHash,
-          fromSha: writtenSha,
-          resolved: writtenResolved,
-        })
-      })
-    // An interruption writes what was answered, and registers it as a finished rerun does: a branch that was
-    // deferred is made first (it was confirmed above), so the recipe never names one that does not exist, and a
-    // moved base is registered again.
-    const keepAnswered = Effect.suspend(() => {
-      const answered = answeredDraft?.changes() ?? []
-      if (answered.length === 0) return Effect.succeed<string | null>(null)
-      // Under the lock every other add and rerun takes: the recipe it reads back and the registration it makes are
-      // one critical section, so a rerun that finished meanwhile is not overwritten by this one's older read.
-      return exclusiveAdd(
-        name,
-        applySetup(
-          { home: world.home, by: world.by, store: world.store },
-          { project: name, changes: answered },
-          Effect.gen(function* () {
-            if (deferBranch || lateBranch) {
-              const refusal = yield* makeBranch('')
-              if (refusal !== null) return yield* Effect.fail(new KeptNotRegistered(refusal.refused))
-            }
-            const written = (yield* draftRecipe(name, { home: world.home })).text()
-            if (written === null) return yield* Effect.fail(new KeptNotRegistered(`${path} could not be read back`))
-            yield* registerWritten(written, null).pipe(
-              Effect.mapError((err) => new KeptNotRegistered(err instanceof Error ? err.message : String(err))),
-            )
-          }),
-        ),
-        world.locker,
-      ).pipe(
-        Effect.map((): string | null => `What you answered was written to ${path}`),
-        // `applySetup` says what is on disk: "was not written" before the write, "was written but not recorded"
-        // after it. That sentence is kept as it came; only a failure it did not describe is reported as unknown.
-        Effect.catchCause((cause) => {
-          const failure = Cause.squash(cause)
-          return Effect.fail(
-            failure instanceof KeptNotRegistered
-              ? new Error(`what you answered was written to ${path}, but it was not registered: ${failure.message}`)
-              : failure instanceof SetupWriteError
-                ? new Error(`what you answered: ${failure.message}`)
-                : new Error(`whether what you answered was saved to ${path} is not known: ${Cause.pretty(cause)}`),
-          )
-        }),
-      )
-    })
-    const askingRecipe = askRecipeEffect(world, {
-      project: name,
-      onDraft: (draft) => {
-        answeredDraft = draft
-      },
-      local: true,
-      // Decided above, before the branch was made; `askRecipe` asks no mode of a local project.
-      mode,
-      proposal,
-      runtimes,
-      reader: world.setupReader(toplevel),
-      flags,
-      buildFlags,
-      defaultBranch: () => Promise.resolve(base),
-      // Over the draft the questions are answering, not the disk: a seed or an answer that moves the base
-      // is what the trial must build (#968).
-      tryBuild: (draft) =>
-        liveTrialBuild({
-          project: name,
-          owner: '',
-          repo: name,
-          base: trialBase,
-          remote,
-          home: world.home,
-          // A deferred branch does not exist yet, and the draft names it at `branch.personal`, which the
-          // trial prefers to its fallback: the trial reads it as the main it would be cut from.
-          // A team-to-solo switch to a branch not yet made names it at `branch.main`, which the trial prefers to
-          // its fallback in solo mode: that one is read as the old working branch, until the draft names another.
-          draft:
-            (deferBranch || lateBranch) && deferredFrom !== null
-              ? {
-                  path: draft.path,
-                  set: (changes) => draft.set(changes),
-                  get: (key) => {
-                    const joined = key.join('.')
-                    if (deferBranch && joined === 'branch.personal') return deferredFrom
-                    if (lateBranch && joined === 'branch.main' && draft.get(key) === base) return deferredFrom
-                    return draft.get(key)
-                  },
-                  text: () => draft.text(),
-                  changes: () => draft.changes(),
-                }
-              : draft,
-        }),
-      history: (project) => Effect.runPromiseWith(services)(world.history(project)),
-      seeds,
-      again: `lingtai add --local ${toplevel}`,
-      keptBeforeWrite:
-        madeKept === null ? world.kept : `No recipe was written, and nothing was registered; ${madeKept} is kept`,
-      kept: seededKept,
-      home: world.home,
-    })
-    const recipeResult = repairOnly
-      ? repairResult
-      : found !== undefined && existingText !== null
-        ? yield* Effect.acquireUseRelease(
-            Effect.sync(() => onCancelExit(() => Effect.runPromiseWith(services)(keepAnswered))),
-            () =>
-              askingRecipe.pipe(
-                Effect.onInterrupt(() =>
-                  keepAnswered.pipe(
-                    Effect.catch((error) => Effect.sync(() => world.log(error.message))),
-                    Effect.asVoid,
-                  ),
-                ),
-              ),
-            (release) => Effect.sync(release),
-          )
-        : yield* askingRecipe
-    if ('refused' in recipeResult) return { refused: recipeResult.refused }
-    if (deferBranch) {
-      const refusal = yield* makeBranch()
-      if (refusal !== null) return refusal
-    }
-
-    // A rerun whose answers changed nothing (the draft holds only sets that changed the text) writes nothing and
-    // registers nothing: no `ProjectConfigured`, no `ProjectRecipeChanged` (#1473).
-    if (found !== undefined && !repairOnly && existingText !== null && recipeResult.answers.changes.length === 0) {
-      const kept = resolveSource(existingText, path, path).recipe
-      return {
-        ok: true as const,
-        project: 'local' as const,
-        name,
-        remote,
-        base: branchOf(kept),
-        trial: recipeResult.trial,
-        card: cardRecipe(kept, toplevel),
-        updated: true,
-        unchanged: true,
-        runtimes,
-        hints: recipeResult.hints,
-      }
-    }
-
-    // `askLanding`, inside `askRecipe`, can move `branch.main` on a local
-    // project (#431's Watch out) — re-read the file it left behind rather than
-    // trust the `base` this function's own question settled.
-    const previewedOrRefused = yield* refusingOn(
-      previewSetup({ home: world.home }, recipeResult.answers).pipe(Effect.map((text) => ({ previewed: text }))),
-      (error) => ({ refused: `${errorText(error)}. ${ADD_KEPT}` }),
-    )
-    if ('refused' in previewedOrRefused) return previewedOrRefused
-    const previewed = previewedOrRefused.previewed
-    const finalRecipe = resolveSource(previewed, path, path).recipe
-    const final = branchOf(finalRecipe)
-    if (world.claudeToken !== undefined && !repairOnly) {
-      yield* world.claudeToken(finalRecipe, flags).pipe(Effect.catch(() => Effect.void))
-    }
-
-    // The branch of a team-to-solo switch, made once the write has passed `changeRecipe`'s check.
-    const makeLate = Effect.gen(function* () {
-      if (!lateBranch) return
-      const refusal = yield* makeBranch('')
-      if (refusal !== null) return yield* Effect.fail(new Error(refusal.refused))
-      if (final === base) finalFromSha = fromSha
-    })
-    if (final !== base) {
-      const check = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${final}^{commit}`])
-      if (!check.ok) {
-        return {
-          refused: `${final} is not a branch in ${toplevel} — ${(check.stderr || check.stdout).trim()}. ${ADD_KEPT}${madeKept === null ? '' : `; ${madeKept} is kept too`}`,
-        }
-      }
-      finalFromSha = check.stdout.trim()
-    }
-
-    const resolved = yield* resolveDraftRecipeEffect(name, previewed, {
-      home: world.home,
-      signedIn: world.signedIn,
-      ...HOST_FOR_SAVING,
-      base: final,
-      // The recipe is still only a draft (`applySetup` is its one writer), so it is resolved over that text.
-    })
-
-    // `register`'s live implementation (`addLocal`, `onboard.ts` — the only place a directory gets a
-    // `ProjectConfigured`) logs the "added"/"updated" line itself. It is the port `applySetup` is handed:
-    // the recipe is written once, just before it.
-    const appliedOrRefused = yield* refusingOn(
-      Effect.suspend(() => {
-        // Under the lock the board's Add takes; a project not yet registered is checked again inside it,
-        // since another process may have added it since the read above.
-        const write = applySetup(
-          { home: world.home, by: world.by, store: world.store },
-          recipeResult.answers,
-          // Registered from the file `applySetup` has just written, under the lock: the preview above was read
-          // before it, and another rerun may have changed the recipe since (its base, its mode).
-          Effect.gen(function* () {
-            yield* makeLate
-            const written = (yield* draftRecipe(name, { home: world.home })).text()
-            if (written === null || written === previewed) {
-              settled = { recipe: finalRecipe, base: final }
-              return yield* world.register({
-                project: name,
-                owner: null,
-                base: final,
-                configHash: resolved.configHash,
-                fromSha: finalFromSha,
-                resolved,
-              })
-            }
-            return yield* registerWritten(written, { base: final, sha: finalFromSha })
-          }).pipe(Effect.mapError((err) => (err instanceof Error ? err : new Error(String(err))))),
+    const make = ctx.answers.make
+    const makeBranch = Effect.gen(function* () {
+      if (make === undefined) return
+      const made = yield* world.git(toplevel, ['branch', make.name, make.from])
+      if (!made.ok)
+        return yield* Effect.fail(
+          new Error(
+            `could not make ${make.name} from ${make.from} in ${toplevel} — ${(made.stderr || made.stdout).trim()}. ${world.kept}`,
+          ),
         )
-        return exclusiveAdd(
-          name,
-          found !== undefined
-            ? write
-            : recoverWith(world.projects(), (err) =>
-                Effect.fail(new SetupWriteError(`could not read the projects: ${errorText(err)}`)),
-              ).pipe(
-                Effect.flatMap((now) =>
-                  now.some((p) => p.project?.toLowerCase() === name.toLowerCase())
-                    ? Effect.fail(new SetupWriteError(alreadyAddedSentence(name, world.home)))
-                    : write,
-                ),
-              ),
-          world.locker,
-        )
-      }).pipe(Effect.map((applied) => ({ applied }))),
-      // Before the write nothing is kept; after it, the recipe is, and a rerun
-      // proceeds because *registered* is the test, not *the file exists*.
-      (err) => ({
-        refused: `${errorText(err)}${err instanceof SetupWriteError ? '' : ` — ${keptSentence(path)}`}`,
-      }),
-    )
-    if ('refused' in appliedOrRefused) return appliedOrRefused
-    const registration = appliedOrRefused.applied.registered
-    // Everything said below is about the recipe the registration read, which another rerun may have rewritten
-    // since the preview: its base, its mode and its card are that recipe's, not the preview's.
-    const landed = settled ?? { recipe: finalRecipe, base: final }
-    const landedRecipe = landed.recipe
-    const landedBase = landed.base
-    const landedMode: Mode = landedRecipe.mode === 'team' ? 'team' : 'solo'
-
-    // What this rerun's changes left where they were (#1474). Read after the write, so a `git` that fails
-    // cannot refuse a change already made: the line says it could not read, and gives the command.
-    const leftBehind: LeftBehind[] = []
-    const commitsIn = (range: string) =>
-      Effect.gen(function* () {
-        const listed = yield* world.git(toplevel, ['rev-list', '--oneline', range])
-        return listed.ok ? listed.stdout.split('\n').filter((l) => l.trim() !== '') : null
-      })
-    const listing = (commits: string[] | null, range: string, none: string): string =>
-      commits === null
-        ? `the commits could not be read — git -C ${toplevel} rev-list --oneline ${range} lists them`
-        : commits.length === 0
-          ? none
-          : `${commits.length} commit${commits.length === 1 ? '' : 's'}: ${commits.join(' · ')}`
-    if (fileText !== null && ports === null) {
-      if (fileMode === 'team' && landedMode === 'solo') {
-        // Written only because nothing was pending (0130 §1): everything on the personal branch has reached `main`,
-        // so there is no git command to give. The branch is the person's and is left as it is.
-        const personal = rerunBase
-        if (personal !== null) {
-          leftBehind.push({ what: `${personal} was left as it is — nothing on it is waiting to reach main` })
-        }
-      }
-      // The branch made is the working branch the person answered, which is not always the one the recipe lands
-      // on (`askLanding` can pick another): each line names its own branch.
-      if (rerunBase !== null && madeName !== null && madeFrom === rerunBase) {
-        leftBehind.push({
-          what: `${madeName} was made from ${rerunBase} at ${madeSha.slice(0, 9)} — ${rerunBase} is kept and may be deleted`,
-        })
-      }
-      if (rerunBase !== null && landedBase !== rerunBase && landedBase !== madeName) {
-        const range = `${landedBase}..${rerunBase}`
-        leftBehind.push({
-          what: `${landedBase} existed and was left as it was — the commits only ${rerunBase} has: ${listing(yield* commitsIn(range), range, 'none')}`,
-          command: `git -C ${toplevel} rev-list --oneline ${range}`,
-        })
-      }
+      tips.delete(make.name)
+    })
+    if (!switching) yield* makeBranch
+    if (world.claudeToken !== undefined) yield* world.claudeToken(recipe, flags).pipe(Effect.catch(() => Effect.void))
+    if (migrating && ports !== null) {
+      const removal = yield* refusingOn(ports.removeMirror(name).pipe(Effect.as(null)), (error) => ({
+        refused: `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed. ${world.kept}`,
+      }))
+      if (removal !== null) return removal
     }
-    return {
-      ok: true as const,
-      project: 'local' as const,
+    const registration = yield* exclusiveAdd(
       name,
-      remote,
-      base: landedBase,
-      trial: recipeResult.trial,
-      card: cardRecipe(landedRecipe, toplevel),
-      updated: registration.updated,
-      runtimes,
-      hints: recipeResult.hints,
-      ...(leftBehind.length === 0 ? {} : { leftBehind }),
+      applySetup(
+        { home: world.home, by: world.by, store: world.store },
+        { project: name, changes: onDisk.changes(), said: SAID },
+        Effect.gen(function* () {
+          if (switching) yield* makeBranch
+          let sha = tips.get(base)
+          if (sha === undefined) {
+            const tip = yield* world.git(toplevel, ['rev-parse', '--verify', `refs/heads/${base}^{commit}`])
+            if (!tip.ok)
+              return yield* Effect.fail(
+                new Error(
+                  `${base} is not a branch in ${toplevel} — ${(tip.stderr || tip.stdout).trim()}; ${keptSentence(path)}`,
+                ),
+              )
+            sha = tip.stdout.trim()
+          }
+          const resolved = yield* resolveDraftRecipeEffect(name, finalText, {
+            home: world.home,
+            signedIn: world.signedIn,
+            ...HOST_FOR_SAVING,
+            base,
+          })
+          return yield* world.register({
+            project: name,
+            owner: null,
+            base,
+            configHash: resolved.configHash,
+            fromSha: sha,
+            resolved,
+          })
+        }),
+      ),
+      world.locker,
+    )
+    const leftBehind: LeftBehind[] = []
+    const oldBase = fileText === null ? null : branchOf(resolveSource(fileText, path, path).recipe)
+    if (switching && oldBase !== null)
+      leftBehind.push({ what: `${oldBase} was left as it is — nothing on it is waiting to reach main` })
+    if (oldBase !== null && make?.from === oldBase)
+      leftBehind.push({
+        what: `${make.name} was made from ${oldBase} at ${(tips.get(base) ?? '').slice(0, 9)} — ${oldBase} is kept and may be deleted`,
+      })
+    if (oldBase !== null && oldBase !== base && make?.name !== base) {
+      const commits = yield* localPorts.commitsOnlyIn(base, oldBase)
+      const command = `git -C ${toplevel} rev-list --oneline ${base}..${oldBase}`
+      const listing =
+        commits === null
+          ? `the commits could not be read — ${command} lists them`
+          : commits.length === 0
+            ? 'none'
+            : `${commits.length} commit${commits.length === 1 ? '' : 's'}: ${commits.join(' · ')}`
+      leftBehind.push({
+        what: `${base} existed and was left as it was — the commits only ${oldBase} has: ${listing}`,
+        command,
+      })
     }
-  })
+    return { ...common, updated: registration.registered.updated, ...(leftBehind.length === 0 ? {} : { leftBehind }) }
+  }).pipe(recoverWithLocal(world))
 }
+
+/** Preserve read and write failures by name, and let interruption leave the pending list alone. */
+const recoverWithLocal =
+  (world: FirstProjectWorld) =>
+  <A>(effect: Effect.Effect<A, unknown>) =>
+    refusingOn(effect, (error) => ({ refused: `${errorText(error)}. ${world.kept}` }))
 
 function runGithubBranch(
   world: FirstProjectWorld,
@@ -1437,22 +876,7 @@ function runGithubBranch(
     // above — `init --project github`, with no slug, never calls `askRecipe`; `init --github <owner>/<repo>` and
     // `lingtai add` reach it through `githubProjectEffect` and never through here. Refused
     // by name instead of silently discarded (#431 fix round, finding 2).
-    const recipeFlagNames = [
-      'agent',
-      'model',
-      'reviewer',
-      'reviewer-model',
-      'install',
-      'build',
-      'check-build',
-      'land',
-      'rounds',
-      'refusal-fixes',
-      'conflict-resolutions',
-      'wall',
-      'budget',
-    ]
-    const namedRecipeFlag = recipeFlagNames.find((name) => flags[name] !== undefined)
+    const namedRecipeFlag = PROJECT_FLAGS.find((name) => flags[name] !== undefined)
     if (flags['rounds'] !== undefined) return { refused: `${ROUNDS_RETIRED}. ${world.kept}` }
     if (namedRecipeFlag !== undefined) {
       return {
@@ -1760,6 +1184,7 @@ export function liveFirstProjectWorld(options: LiveFirstProjectOptions): FirstPr
   const home = stateDir()
 
   return {
+    interactive: interactivity(false).stdinIsTTY && interactivity(false).stdoutIsTTY,
     ask: options.ask,
     ...(options.spin === undefined ? {} : { spin: options.spin }),
     log: options.log,

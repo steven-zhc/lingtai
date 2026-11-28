@@ -35,8 +35,7 @@ import { Effect } from 'effect'
 import { askReviewer, askReviewerModel, askWriter, askWriterModel } from './agents.ts'
 import { askMoveLanding } from './first-project.ts'
 import { askBudget, askConflictResolutions, askLandingChoice, askRefusalFixes, askWall } from './landing.ts'
-import type { Answered, QuestionWorld } from './question.ts'
-import { askEveryDefault, askRegister } from './recipe-flow.ts'
+import { questionEffect, type Answered, type QuestionWorld } from './question.ts'
 import { askSandboxHosts, askSandboxMode } from './sandbox-step.ts'
 import {
   NO_CHECKS_LINE,
@@ -171,7 +170,7 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
         name: d.ctx.ports.project,
         oldRemote: text(keyIn(d.ctx.start.text(), ['repo', 'remote'])) ?? '',
         kept: d.kept,
-      }).pipe(Effect.map((answer) => ({ answer }))),
+      }),
 
     defaults: (d) => askEveryDefault(world, { given: null, kept: d.kept }),
 
@@ -366,3 +365,48 @@ export const liveTrialPort = (
   at: Omit<TrialAt, 'base' | 'draft' | 'interrupt'>,
 ): NonNullable<ProjectPorts['trial']> =>
   trialPortOver(world, at, (draft, base) => liveTrialBuild({ ...at, base, draft }))
+
+/** *use every default?* — the switch that answers every later question with its default (#433). */
+const askEveryDefault = (
+  world: QuestionWorld,
+  input: { given: string | null; kept: string },
+): Effect.Effect<Answered, unknown> =>
+  questionEffect(world, {
+    name: 'every default',
+    flag: '--defaults',
+    given: input.given,
+    prompt: 'use every default?',
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+
+/** The last confirmation: what the defaults would register without anyone having looked, said in one sentence. */
+const askRegister = (
+  world: QuestionWorld,
+  input: {
+    unseenEmptyBuild: boolean
+    unseenUnattended: boolean
+    /** The branch an attempt lands on; empty where the recipe names none. */
+    base: string
+    given: string | null
+    kept: string
+  },
+): Effect.Effect<Answered, unknown> => {
+  const lands = `an attempt lands on ${input.base || 'the base branch'} with no one asking`
+  const asks =
+    input.unseenEmptyBuild && input.unseenUnattended
+      ? `nothing checks a diff before review, and ${lands}`
+      : input.unseenEmptyBuild
+        ? 'nothing checks a diff before review'
+        : lands
+  return questionEffect(world, {
+    name: 'registering with these defaults',
+    flag: '--defaults, or --build <cmd>|none and --land <branch>|hold to choose explicitly',
+    given: input.given,
+    prompt: `${asks} — register anyway?`,
+    choices: ['yes', 'no'],
+    fallback: 'yes',
+    kept: input.kept,
+  })
+}

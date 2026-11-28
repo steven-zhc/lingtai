@@ -623,17 +623,11 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         if (flags['base'] !== undefined) {
           return stop(`--base is now --main: pass --main ${flags['base']}. The store chosen above is kept`)
         }
-        // The flags that name a recipe key the project list's own walk answers; `--mode` and the like are accepted here
-        // and ignored, as they always were, until #1523's list takes this path over.
-        const discardedFlag = PROJECT_FLAGS.find(
-          (name) =>
-            !['sandbox', 'sandbox-hosts', 'mode', 'login', 'personal', 'defaults'].includes(name) &&
-            flags[name] !== undefined,
-        )
+        const unaskedFlag = PROJECT_FLAGS.find((name) => flags[name] !== undefined)
         if (flags['rounds'] !== undefined) return stop(ROUNDS_RETIRED)
-        if (discardedFlag !== undefined) {
+        if (unaskedFlag !== undefined) {
           return stop(
-            `--${discardedFlag} ${flags[discardedFlag]}, but this machine already has a project and none is named ` +
+            `--${unaskedFlag} ${flags[unaskedFlag]}, but this machine already has a project and none is named ` +
               'to set up here — pass --project github, --project local, or --local <dir>, or use lingtai add for ' +
               'one that already exists. The store chosen above is kept',
           )
@@ -737,6 +731,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       const firstProjectWorld: FirstProjectWorld = {
         ask: world.ask,
         log: world.log,
+        interactive,
         git: world.runGit,
         projects: world.projects,
         locker: world.locker,

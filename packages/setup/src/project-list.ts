@@ -675,6 +675,19 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
             if (source === null) return { refused: `${answer} is not a branch ${where}. ${ctx.kept}` }
             from = source
           }
+          if (!found && ctx.ports.local && answer === LINGTAI_BASE) {
+            const old = yield* rerunBaseSource(ctx, answer)
+            if (old === 'unreadable')
+              return { refused: `could not read whether the current base exists in this checkout. ${ctx.kept}` }
+            const read = old === null ? yield* readDefaultBranch(ctx) : { branch: old }
+            if ('refused' in read) return read
+            if (read.branch === null)
+              return {
+                refused: `${ctx.ports.checkout} has no branch checked out, and ${LINGTAI_BASE} is made from the one that is. Check out a branch, or pass --main <branch>`,
+              }
+            from = read.branch
+            ctx.answers.make = { name: answer, from }
+          }
           ctx.answers.branch = { name: answer, exists: found, from, onlyIn: null, main: answer }
           return append(ctx, valueOf(inForce) === answer ? [] : [{ path: ['branch', 'main'], value: answer }])
         }
@@ -740,7 +753,8 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     applies: (ctx) =>
       ctx.answers.branch !== undefined &&
       !ctx.answers.branch.exists &&
-      (ctx.answers.mode === 'team' || (ports.local && ctx.answers.branch.from !== null)),
+      (ctx.answers.mode === 'team' ||
+        (ports.local && ctx.answers.branch.from !== null && ctx.answers.branch.name !== LINGTAI_BASE)),
     confirm: {
       declined: (ctx) => {
         const at = ctx.answers.branch

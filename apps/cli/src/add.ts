@@ -55,7 +55,7 @@ import { addSteps } from './next-steps.ts'
 import { renderNextBlock, renderNextLine } from './output.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
 import { questionEffect } from './question.ts'
-import { ADD_KEPT } from './recipe-flow.ts'
+const KEPT = 'Nothing was written and nothing was registered'
 import { type CardRecipe, cardRecipe, type LeftBehind } from './setup-card.ts'
 import { liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './setup-end.ts'
 import { withoutProjectFlags } from './wizard-options.ts'
@@ -354,7 +354,7 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
           found.base !== null &&
           found.base === branchOf(resolveSource(text, recipeAt, recipeAt).recipe)
       } catch (error) {
-        world.error(`${recipeAt} does not resolve — ${asError(error).message}. ${ADD_KEPT}`)
+        world.error(`${recipeAt} does not resolve — ${asError(error).message}. ${KEPT}`)
         return { exit: 1 }
       }
     }
@@ -372,7 +372,7 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
       flags,
       world.githubDeps,
       buildFlags,
-      entry.command === 'add' ? ADD_KEPT : world.project.kept,
+      entry.command === 'add' ? KEPT : world.project.kept,
     )
     if (typeof stopped === 'number') return { exit: stopped }
     asked = stopped
@@ -382,7 +382,7 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
   if (rerun && asked !== null && asked.answers.changes.length === 0 && registeredAsRecipe) {
     const { owner, repo: name } = parseSlug(slug)
     // The conflicts `chooseFirstProject` would refuse, which this return would otherwise step over.
-    const conflict = conflictingFlags(flags, entry.command === 'add' ? ADD_KEPT : world.project.kept)
+    const conflict = conflictingFlags(flags, entry.command === 'add' ? KEPT : world.project.kept)
     if (conflict !== null) {
       world.error(conflict)
       return { exit: 1 }
@@ -409,7 +409,7 @@ export const githubProjectEffect = Effect.fn('add.githubProject')(function* (
 
   // With a slug, `githubProjectAnswers` above has written nothing but `github.auth`, the machine's own: its answers are held in `asked`, and
   // `applySetup` writes them just before the registration they belong to.
-  const base = { ...world.project, kept: entry.command === 'add' ? ADD_KEPT : world.project.kept }
+  const base = { ...world.project, kept: entry.command === 'add' ? KEPT : world.project.kept }
   const pending = asked
   const projectWorld: typeof base =
     pending === null
