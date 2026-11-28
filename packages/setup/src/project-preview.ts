@@ -41,13 +41,17 @@ export function runProjectList(
     const why =
       failure === undefined
         ? rows.map((r) => `${r.label}  ${r.text}`)
-        : [`${preview.failedId ?? 'setup'}  could not read — ${failure}`]
+        : [preview.failedId === undefined ? failure : `${preview.failedId}  could not read — ${failure}`]
+    const beforeChoice = structuredClone(ctx.answers)
     const question = { ...list[split]!, why }
     const choice = yield* runSetupList([question], input, ctx)
     const entries = [...prefix.entries, ...choice.entries]
     if (choice.refused !== undefined) return { ...choice, entries, rows: [] as SetupRow[] }
     if (ctx.answers.defaults === 'yes') {
-      if (failure !== undefined) return { refused: failure, entries, deferred: [], rows: [] as SetupRow[] }
+      if (failure !== undefined) {
+        ctx.answers = beforeChoice
+        return { refused: failure, entries, deferred: [], rows: [] as SetupRow[] }
+      }
       ctx.pending.splice(0, ctx.pending.length, ...fork.pending)
       ctx.answers = { ...fork.answers, defaults: 'yes' }
       if (ctx.ports.trial === undefined && (ctx.answers.checks?.length ?? 0) > 0)

@@ -177,6 +177,7 @@ describe('project preview boundary', () => {
       if (answer === 'yes') {
         expect(result.refused).toContain('disk gone')
         expect(ctx.pending).toEqual(atChoice)
+        expect(ctx.answers.defaults).toBeUndefined()
       } else expect(result.refused).toBeUndefined()
     }
   })
@@ -224,6 +225,23 @@ describe('project preview boundary', () => {
     expect(result.rows.find((r) => r.id === 'install')?.text).toBe('npm ci')
   })
 
+  it('keeps the team explanations with descriptor rows and local tickets with their own login rule', async () => {
+    const team = await run(context())
+    expect(team.rows.find((r) => r.id === 'login')?.text).toBe('issues assigned to sam')
+    expect(team.rows.find((r) => r.id === 'branch')?.text).toContain('is brought in when you submit a PR')
+    expect(team.rows.find((r) => r.id === 'branch')?.text).toContain('never pushes main')
+    const local = await run(context(ports({ local: true, checkout: '/repo', knownLogin: null })))
+    expect(local.refused).toBeUndefined()
+    expect(local.rows.find((r) => r.id === 'login')?.text).toBe('every ticket — local tickets are yours')
+    expect(local.rows.find((r) => r.id === 'tickets')?.text).toContain('Lingtai’s table')
+  })
+
+  it('keeps remote credentials out of projected row snapshots', async () => {
+    const result = await run(context(ports({ location: 'https://me:secret@github.com/o/acme' })))
+    expect(JSON.stringify(result.rows)).not.toContain('secret')
+    expect(result.rows.find((r) => r.id === 'where')?.text).toContain('***@github.com')
+  })
+
   it('compares settled composite and derived values on reruns, even when fixed entries have no before answer', async () => {
     const first = context(ports(), null, { agent: 'codex' })
     expect((await run(first)).refused).toBeUndefined()
@@ -236,6 +254,7 @@ describe('project preview boundary', () => {
       { 'sandbox-hosts': 'api.example.com' },
       { personal: 'sam/other' },
       { wall: '30m' },
+      { mode: 'solo', main: 'main', land: 'hold' },
     ] as Record<string, string>[]) {
       const ctx = context(ports(), text, flags)
       const result = await run(ctx)

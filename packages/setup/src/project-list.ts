@@ -2,7 +2,7 @@
  * The project list (ADR 0125 §9, `doc/design/1523.md` §4, `doc/design/1529.md` §2–§5, #1531): the 25 questions
  * `lingtai add` and `init` ask about one project, as descriptors on #1527's runner. Each says what is in force, what
  * the system's default is, when it applies, what it writes and what it records for the entries after it. A terminal or
- * a board supplies an asker per id (#1529); no command walks the list yet (#1525, #1526).
+ * a board supplies an asker per id (#1529); CLI commands share the preview walk in `project-preview.ts`.
  *
  * **Nothing here applies a change.** Every `write` appends to `ctx.pending`, and the list's caller applies it once, at
  * its own end, so a refusal or a Ctrl+C anywhere in the walk leaves the recipe as it was. Reads of what the answers
