@@ -555,8 +555,13 @@ const safeLocation = (value: unknown): string => {
   }
 }
 
-const actionIn = (view: ProjectView, step: string) => findAgentAction(view.get(['steps', step]))?.action
-const agentPresentation = (step: string) => (view: ProjectView) => {
+const presentedActions = (view: ProjectView, step: 'implement' | 'review' | 'prepared' | 'build') => {
+  const written = view.get(['steps', step])
+  return written === null ? (view.resolved()?.recipe.steps[step] ?? []) : written
+}
+const actionIn = (view: ProjectView, step: 'implement' | 'review') =>
+  findAgentAction(presentedActions(view, step))?.action
+const agentPresentation = (step: 'implement' | 'review') => (view: ProjectView) => {
   const action = actionIn(view, step)
   return {
     agent: action?.['agent'] ?? (step === 'implement' ? view.get(['runtime', 'agent']) : 'none'),
@@ -1208,7 +1213,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     presentation: presentation(
       'install',
       'attempt',
-      (v) => runActionsIn(v.get(['steps', 'prepared'])).map((a) => a.run),
+      (v) => runActionsIn(presentedActions(v, 'prepared')).map((a) => a.run),
       (v) => (v.length === 0 ? 'none' : v.join(' · ')),
     ),
     name: 'the install command',
@@ -1249,7 +1254,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     presentation: presentation(
       'checks',
       'attempt',
-      (v) => runActionsIn(v.get(['steps', 'build'])).map((a) => a.run),
+      (v) => runActionsIn(presentedActions(v, 'build')).map((a) => a.run),
       (v) => (v.length === 0 ? 'none — nothing checks a diff before review' : v.join(' · ')),
     ),
     name: 'the build steps',
