@@ -17,9 +17,12 @@
  */
 import { everyRuntime } from '@lingtai/agent'
 import { RuntimeId } from '@lingtai/domain'
+import { redactUrl } from '@lingtai/env'
 import { keyIn, projectView, type ProjectView, type RecipeDraft } from '@lingtai/project'
 import {
   assigneeChanges,
+  assigneeOf,
+  modeOf,
   branchOf,
   budgetChange,
   ceilingOf,
@@ -530,6 +533,17 @@ function presentation<T>(
   }
 }
 
+const safeLocation = (value: unknown): string => {
+  const text = String(value)
+  if (
+    text.startsWith('/') ||
+    /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/.test(text) ||
+    (!text.includes('@') && !text.includes('://'))
+  )
+    return text
+  return redactUrl(text)
+}
+
 const actionIn = (view: ProjectView, step: string) => findAgentAction(view.get(['steps', step]))?.action
 const agentPresentation = (step: string) => (view: ProjectView) => {
   const action = actionIn(view, step)
@@ -567,7 +581,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       'project',
       (v, ctx) => ({
         where: v.get(['repo', 'owner']) === null ? 'local' : 'github',
-        code: v.get(['repo', 'remote']) ?? `${v.get(['repo', 'owner'])}/${ctx.ports.project}`,
+        code: safeLocation(v.get(['repo', 'remote']) ?? `${v.get(['repo', 'owner'])}/${ctx.ports.project}`),
       }),
       (v) => `${v.code}  ${v.where}`,
     ),
@@ -591,7 +605,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const mode = entry('mode', {
-    presentation: presentation('mode', 'project', (v) => v.resolved()?.recipe.mode ?? v.get(['mode']) ?? 'solo'),
+    presentation: presentation('mode', 'project', (v) =>
+      (() => {
+        const r = v.resolved()
+        return r === null ? (v.get(['mode']) ?? 'solo') : modeOf(r.recipe)
+      })(),
+    ),
     name: 'the mode',
     flag: '--mode team|solo',
     fromFlags: (flags) => flags['mode'] ?? null,
@@ -621,7 +640,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       'project',
       (v) => {
         const claim = v.resolved()?.recipe
-        return claim === undefined ? null : claim.source.assignee
+        return claim === undefined ? null : (assigneeOf(claim) ?? null)
       },
       (v) =>
         v === null
@@ -672,11 +691,13 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       'project',
       (v) => {
         const r = v.resolved()
-        return r === null
-          ? { branch: v.get(['branch']), remote: v.get(['repo', 'remote']) }
-          : { branch: branchOf(r.recipe), main: r.recipe.branch.main, remote: v.get(['repo', 'remote']) }
+        return {
+          name: r === null ? (v.get(['branch', 'personal']) ?? v.get(['branch', 'main'])) : branchOf(r.recipe),
+          main: v.get(['branch', 'main']),
+          team: v.get(['mode']) === 'team',
+        }
       },
-      (v) => JSON.stringify(v),
+      (v) => (v.team ? `${v.name}; main (${v.main}) is brought in when you submit a PR` : String(v.name)),
     ),
     name: 'the branch',
     flag: '--main <branch> (solo), or --personal <branch> (team)',

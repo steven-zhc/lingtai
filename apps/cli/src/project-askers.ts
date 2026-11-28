@@ -365,7 +365,7 @@ export const liveTrialPort = (
 ): NonNullable<ProjectPorts['trial']> =>
   trialPortOver(world, at, (draft, base) => liveTrialBuild({ ...at, base, draft }))
 
-/** *use every default?* — the switch that answers every later question with its default (#433). */
+/** *use this setup?* — the switch that answers every later question with its default (#433). */
 const askEveryDefault = (
   world: QuestionWorld,
   input: { given: string | null; kept: string; why: readonly string[] },

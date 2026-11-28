@@ -302,7 +302,7 @@ describe('askBeforeGithubAdd (#402)', () => {
     // No agent runtime signed in (`countedDeps`'s default) — the list refuses at its writer question rather than
     // succeeding, but by then it has already read the file (the one draft), proving the installation check ran first
     // and did not short the rest of the function out. `--defaults` (#433) answers the list's own first question,
-    // "use every default?".
+    // "use this setup?".
     const counted = countedDeps(async () => FULLY_PERMISSIONED)
 
     const code = await askBeforeGithubAdd(SLUG, { main: 'main', defaults: '', mode: 'solo' }, counted.deps)

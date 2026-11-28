@@ -159,7 +159,7 @@ describe('init and add use the same project list (#1526)', () => {
           reached()
           return new Promise(() => {})
         }
-        return Promise.resolve(/use every default/.test(prompt) ? 'no' : '')
+        return Promise.resolve(/use this setup/.test(prompt) ? 'no' : '')
       }
       const fiber = Effect.runFork(
         initCommandEffect(flagsFromArgv(['--local', '/repo', '--mode', 'solo', '--model', 'custom']), w.init).pipe(
@@ -225,7 +225,7 @@ describe('init and add use the same project list (#1526)', () => {
             ? 'yes'
             : /keep the list as it is/.test(prompt)
               ? 'keep'
-              : /use every default/.test(prompt)
+              : /use this setup/.test(prompt)
                 ? 'no'
                 : '',
         )
@@ -441,7 +441,7 @@ describe('init and add use the same project list (#1526)', () => {
     const w = setupWorld()
     observe = () => w.events.push('list-finished')
     w.project.ask = (prompt) =>
-      Promise.resolve(/Make it from/.test(prompt) ? 'yes' : /use every default/.test(prompt) ? 'no' : '')
+      Promise.resolve(/Make it from/.test(prompt) ? 'yes' : /use this setup/.test(prompt) ? 'no' : '')
     return runLocal(w, { local: '/repo', mode: 'team', personal: 'my-work' }).then((result) => {
       expect(result, w.logged.join('\n')).toMatchObject({ ok: true, base: 'my-work' })
       expect(w.events.filter((e) => !e.startsWith('ask:'))).toEqual([

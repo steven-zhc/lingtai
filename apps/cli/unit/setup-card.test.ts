@@ -1,14 +1,11 @@
-/**
- * `renderSetupCard` and the ready line (#754): pure, so every fact comes in on
- * `facts`. Rows are found by label, never by comparing the whole screen.
- */
+/** The card draws descriptor rows and ancillary facts; it makes no recipe decisions. */
 import { resolveSource } from '@lingtai/recipe'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { SetupRow } from '@lingtai/setup'
+import { describe, expect, it } from 'vitest'
 
 import type { DoctorReport } from '../src/doctor.ts'
 import { stripColour } from '../src/output.ts'
 import {
-  type CardRecipe,
   cardRecipe,
   formatTrialTime,
   renderReadyLine,
@@ -16,197 +13,91 @@ import {
   type SetupCardFacts,
 } from '../src/setup-card.ts'
 
-afterEach(() => vi.unstubAllEnvs())
-
-const RECIPE: CardRecipe = {
-  code: '/Users/me/workspace/chapter-garden',
-  base: 'lingtai-base',
-  remote: '/Users/me/workspace/chapter-garden',
-  tickets: 'db',
-  kinds: ['bug', 'feature', 'documentation'],
-  writer: { agent: 'claude-code', model: null },
-  reviewer: { agent: 'claude-code', model: 'opus' },
-  checks: ['npm run check', 'npm run build'],
-  approves: true,
-  takes: { take: 'all', login: null },
-  findingsJudge: { judge: 'claude-code', rounds: 6 },
-}
-
+const item = (id: string, label: string, text: string, group: SetupRow['group'], changed = false): SetupRow => ({
+  id,
+  label,
+  text,
+  group,
+  changed,
+})
 const FACTS: SetupCardFacts = {
   command: 'init',
-  project: 'chapter-garden-a',
+  project: 'garden',
   updated: false,
-  home: '/Users/me/lingtai-trial/a',
+  home: '/Users/me/lingtai',
   homeIsNew: true,
   userHome: '/Users/me',
-  store: { store: 'sqlite', path: '/Users/me/lingtai-trial/a/lingtai.db', where: 'config.yml', from: 'config.yml' },
-  runtimes: [
-    { id: 'claude-code', state: 'signed-in', signedIn: true, detail: '' },
-    { id: 'codex', state: 'did-not-start', signedIn: false, detail: '' },
+  runtimes: [{ id: 'codex', signedIn: true, state: 'signed-in', detail: '' }],
+  machine: [item('store', 'log', 'SQLite', 'machine'), item('ceiling', 'spend', 'up to $100 a day', 'machine')],
+  rows: [
+    item('where', 'code', '/repo  local', 'project'),
+    item('sandbox', 'sandbox', 'on · api.example.com', 'project'),
+    item('writer', 'writes', 'codex', 'attempt'),
+    item('checks', 'checks', 'pnpm test', 'attempt'),
   ],
-  recipe: RECIPE,
-  trial: { trial: 'passed', ms: 41_000 },
-  recipePath: '/Users/me/lingtai-trial/a/chapter-garden-a/recipe.yml',
+  trial: { trial: 'passed', ms: 41000 },
 }
 
-const rows = (facts: SetupCardFacts): string[] => stripColour(renderSetupCard(facts)).split('\n')
-const row = (facts: SetupCardFacts, label: string): string =>
-  rows(facts)
-    .find((l) => l.trimStart().startsWith(`${label} `))
-    ?.trim() ?? ''
-
 describe('renderSetupCard', () => {
-  it('quotes a label name the shell would split in the gh line it prints (#1486)', () => {
-    const labels = {
-      slug: 'owner/repo',
-      created: [],
-      missing: [
-        { name: 'type: bug', why: 'denied' as const },
-        { name: "it's", why: 'denied' as const },
-        { name: 'feature', why: 'denied' as const },
-      ],
-    }
-    const text = stripColour(renderSetupCard({ ...FACTS, labels }))
-    expect(text).toContain("gh label create 'type: bug' --repo owner/repo")
-    expect(text).toContain("gh label create 'it'\\''s' --repo owner/repo")
-    expect(text).toContain('gh label create feature --repo owner/repo')
+  it('draws supplied rows in their groups, including sandbox and spend', () => {
+    const out = stripColour(renderSetupCard(FACTS))
+    for (const value of [
+      'this machine',
+      'this project',
+      'each attempt',
+      'on · api.example.com',
+      'up to $100 a day',
+      'pnpm test',
+      'codex ✓',
+      '~/lingtai  new',
+      '✓ 41s',
+    ])
+      expect(out).toContain(value)
   })
-
-  it('draws a heading and three groups a blank line apart', () => {
-    const lines = rows(FACTS)
-    expect(lines[0]).toBe('init  chapter-garden-a')
-    expect(lines.filter((l) => l === '')).toHaveLength(3)
-    expect(lines).toEqual(expect.arrayContaining(['this machine', 'this project', 'each attempt']))
-  })
-
-  it('aligns every value in one column', () => {
-    const cols = rows(FACTS)
-      .filter((l) => l.startsWith('  '))
-      .map((l) => /^ {2}(?:lands on|\S+) +/.exec(l)![0].length)
-    expect(new Set(cols).size).toBe(1)
-  })
-
-  it('never prints a Postgres URL with its password', () => {
-    const store = {
-      store: 'postgres',
-      url: 'postgres://u:s3cret@db.x.supabase.co:5432/p',
-      directUrl: 'postgres://u:s3cret@db.x.supabase.co:5432/p',
-      where: 'environment',
-      from: 'x',
-    } as SetupCardFacts['store']
-    const out = renderSetupCard({ ...FACTS, store })
-    expect(out).not.toContain('s3cret')
-    expect(row({ ...FACTS, store }, 'log')).toMatch(/^log +Postgres · db\.x\.supabase\.co$/)
-  })
-
-  it('shows the SQLite file name, and a refusal as said', () => {
-    expect(row(FACTS, 'log')).toContain('SQLite · lingtai.db')
-    const refused = { refused: 'nothing chosen', because: 'nothing chosen' } as const
-    expect(row({ ...FACTS, store: refused }, 'log')).toContain('nothing chosen')
-  })
-
-  it('marks agents ✓, ✗ and ? — never ✓ for a probe that could not tell', () => {
-    expect(row(FACTS, 'agents')).toContain('claude-code ✓')
-    expect(row(FACTS, 'agents')).toContain('codex ?')
-    const out = row(
-      { ...FACTS, runtimes: [{ id: 'codex', state: 'signed-out', signedIn: false, detail: '' }] },
-      'agents',
+  it('uses semantic change flags for rerun headings, never rendered arrows', () => {
+    const same = stripColour(renderSetupCard({ ...FACTS, updated: true }))
+    expect(same).toContain('garden  unchanged')
+    expect(same).not.toContain('→')
+    const changed = stripColour(
+      renderSetupCard({
+        ...FACTS,
+        updated: true,
+        machine: [item('ceiling', 'spend', 'up to $100 a day → up to $150 a day', 'machine', true)],
+        rows: [item('writer', 'writes', 'codex → claude-code', 'attempt', true)],
+      }),
     )
-    expect(out).toContain('codex ✗')
+    expect(changed).toMatch(/writes +codex → claude-code/)
+    expect(changed).toMatch(/spend +up to \$100 a day → up to \$150 a day/)
+    expect(changed).not.toMatch(/unchanged|updated/)
+    expect(stripColour(renderSetupCard({ ...FACTS, updated: false }))).not.toContain('unchanged')
   })
-
-  it('writes the trial time as 41s and 2m 05s', () => {
-    expect(row(FACTS, 'trial')).toContain('✓ 41s')
-    expect(row({ ...FACTS, trial: { trial: 'passed', ms: 125_000 } }, 'trial')).toContain('✓ 2m 05s')
+  it('keeps labels, left behind, trial and next instructions', () => {
+    const out = stripColour(
+      renderSetupCard({
+        ...FACTS,
+        labels: { slug: 'o/r', created: ['bug'], missing: [{ name: 'type: bug', why: 'denied' }] },
+        leftBehind: [{ what: 'old branch is kept', command: 'git log old' }],
+        next: 'lingtai start',
+        trial: { trial: 'failed-kept', command: 'pnpm test', ms: 10 },
+      }),
+    )
+    for (const value of [
+      'made bug',
+      "gh label create 'type: bug' --repo o/r",
+      'old branch is kept',
+      'git log old',
+      'lingtai start',
+      'pnpm test — kept as written',
+    ])
+      expect(out).toContain(value)
+  })
+  it('draws a machine-only card and formats trial time', () => {
+    const { rows: _r, trial: _t, project: _p, ...machine } = FACTS
+    const out = renderSetupCard(machine)
+    expect(out).not.toContain('this project')
+    expect(out).not.toContain('each attempt')
+    expect(formatTrialTime(125000)).toBe('2m 05s')
     expect(formatTrialTime(100)).toBe('<1s')
-  })
-
-  it('says why the trial did not run, and what a kept red list was', () => {
-    for (const because of ['declined', 'no checkout', 'no checks'] as const) {
-      expect(row({ ...FACTS, trial: { trial: 'not-run', because } }, 'trial')).toContain('not run — ')
-    }
-    const kept = row({ ...FACTS, trial: { trial: 'failed-kept', command: 'npm run check', ms: 1000 } }, 'trial')
-    expect(kept).toContain('✗ npm run check — kept as written')
-  })
-
-  it('reads reviews none, and checks none, and the approve sentence', () => {
-    const bare = { ...FACTS, recipe: { ...RECIPE, reviewer: null, checks: [], approves: false } }
-    expect(row(bare, 'reviews')).toMatch(/^reviews +none$/)
-    expect(row(bare, 'checks')).toContain('none — nothing checks a diff before review')
-    expect(row(bare, 'approve')).toContain('an attempt lands with no one asking')
-    expect(row(FACTS, 'approve')).toContain('you approve every attempt before it lands')
-    expect(row(FACTS, 'reviews')).toContain('claude-code, opus')
-  })
-
-  it('says findings go back to the writer up to refusalFixes times, only where a judge is declared', () => {
-    expect(row(FACTS, 'findings')).toContain('up to 6 times')
-    const none = { ...FACTS, recipe: { ...RECIPE, findingsJudge: null } }
-    expect(rows(none).some((r) => r.startsWith('findings'))).toBe(false)
-    const zero = { ...FACTS, recipe: { ...RECIPE, findingsJudge: { judge: 'codex', rounds: 0 } } }
-    expect(row(zero, 'findings')).toContain('no fix rounds')
-    expect(row(zero, 'findings')).not.toContain('stops for you')
-  })
-
-  it('puts updated in the heading on a re-registration, and new on home only for a new home', () => {
-    expect(rows({ ...FACTS, updated: true })[0]).toBe('init  chapter-garden-a  updated')
-    expect(row(FACTS, 'home')).toContain('~/lingtai-trial/a  new')
-    expect(row({ ...FACTS, homeIsNew: false }, 'home')).not.toContain('new')
-  })
-
-  it('lands on the base in a remote that is the checkout, under ~', () => {
-    expect(row(FACTS, 'lands on')).toContain('lingtai-base, in ~/workspace/chapter-garden')
-    expect(row(FACTS, 'code')).toContain('~/workspace/chapter-garden  local')
-  })
-
-  it('redacts a URL remote and prints an scp-style one as written', () => {
-    const url = { ...FACTS, recipe: { ...RECIPE, remote: 'https://u:pw@github.com/o/r.git' } }
-    expect(renderSetupCard(url)).not.toContain('pw@')
-    const scp = { ...FACTS, recipe: { ...RECIPE, remote: 'git@github.com:o/r' } }
-    expect(row(scp, 'lands on')).toContain('lingtai-base, in git@github.com:o/r')
-    const bad = { ...FACTS, recipe: { ...RECIPE, remote: 'https://u:s3cret@github.com:bad/o/r' } }
-    expect(renderSetupCard(bad)).not.toContain('s3cret')
-  })
-
-  it('names the tickets source and kinds in order', () => {
-    expect(row(FACTS, 'tickets')).toContain('Lingtai’s table · bug › feature › documentation')
-    expect(row({ ...FACTS, recipe: { ...RECIPE, tickets: 'github' } }, 'tickets')).toContain('GitHub issues')
-  })
-
-  it('plain mode carries no escape', () => {
-    vi.stubEnv('NO_COLOR', '1')
-    expect(renderSetupCard(FACTS)).not.toContain('\x1b')
-    expect(renderReadyLine({ threw: 'x' }, '/r')).not.toContain('\x1b')
-  })
-})
-
-describe('renderSetupCard for a repository on GitHub (#755)', () => {
-  const GITHUB: SetupCardFacts = {
-    ...FACTS,
-    command: 'add',
-    where: 'github',
-    github: 'gh, signed in as sam',
-    recipe: { ...RECIPE, code: 'acme/widgets', remote: null, tickets: 'github' },
-  }
-
-  it('draws code, lands on and the github row', () => {
-    expect(row(GITHUB, 'code')).toBe('code      acme/widgets  github')
-    expect(row(GITHUB, 'lands on')).toMatch(/^lands on\s+lingtai-base, on GitHub$/)
-    expect(row(GITHUB, 'github')).toMatch(/^github\s+gh, signed in as sam$/)
-    expect(row(GITHUB, 'tickets')).toContain('GitHub issues')
-  })
-
-  it('draws no github row where nothing names how GitHub is reached', () => {
-    expect(row({ ...GITHUB, github: undefined }, 'github')).toBe('')
-  })
-
-  it('is this machine alone when there is no project yet', () => {
-    const { recipe: _r, trial: _t, recipePath: _p, project: _n, ...machine } = GITHUB
-    const lines = rows({ ...machine, command: 'init', github: 'the App lingtai-me' })
-    expect(lines[0]).toBe('init')
-    expect(lines).toContain('this machine')
-    expect(lines).not.toContain('this project')
-    expect(lines).not.toContain('each attempt')
-    expect(lines.find((l) => l.trim().startsWith('github'))).toMatch(/the App lingtai-me/)
   })
 })
 

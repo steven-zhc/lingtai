@@ -184,7 +184,7 @@ function world(home: string, script: Script, db = database()): { world: InitTest
         // carries on to the App question these tests were written against.
         if (/a GitHub App of its own/.test(question)) return 'app'
         // The list switch takes later defaults; its individual questions are answered by flags below.
-        if (/use every default/.test(question)) return ''
+        if (/use this setup/.test(question)) return ''
         // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
         expect(question).toMatch(/Postgres/)

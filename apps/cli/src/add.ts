@@ -3,11 +3,13 @@ import type { GithubReach } from '@lingtai/conductor/onboard'
 import { taken } from '@lingtai/conductor/pick-repository'
 import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
+import { ghStatusEffect } from '@lingtai/github'
 import { recipePath, recipeText } from '@lingtai/project'
 import { branchOf, type Recipe, resolveSource } from '@lingtai/recipe'
 import { type SetupRow } from '@lingtai/setup'
 import {
   alreadyAdded,
+  machineSnapshotRows,
   alreadyAddedSentence,
   type Answers,
   applySetup,
@@ -44,6 +46,7 @@ import {
  * recipe disagrees (#75).
  */
 import { ensureLabelsEffect, labelNames, liveLabelClient, type LabelClient } from './add-labels.ts'
+import { checkAppEffect } from './app-check.ts'
 import {
   chooseFirstProjectEffect,
   conflictingFlags,
@@ -52,6 +55,7 @@ import {
   type FirstProjectWorld,
 } from './first-project.ts'
 import { githubIssueForms, type IssueForms } from './issue-forms.ts'
+import { liveMachineWorld, machineSetup } from './machine-askers.ts'
 import { addSteps } from './next-steps.ts'
 import { renderNextBlock, renderNextLine } from './output.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
@@ -62,6 +66,7 @@ import { liveSetupDoctorEffect, printSetupEndEffect, type SetupDoctor } from './
 import { withoutProjectFlags } from './wizard-options.ts'
 
 export interface AddWorld {
+  machine?: Effect.Effect<readonly SetupRow[], unknown>
   project: FirstProjectWorld
   /** `githubProjectAnswers`'s own deps — its live ones unless a test says otherwise. */
   githubDeps?: AskBeforeGithubAddDeps
@@ -270,9 +275,17 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         // Only `init` writes `config.yml`.
         homeIsNew: false,
         userHome: world.userHome,
-        machine: [],
+        machine: world.machine === undefined ? [] : yield* world.machine,
         runtimes: result.runtimes,
         rows: result.rows,
+        ...(result.card.team === undefined
+          ? {}
+          : {
+              next:
+                result.card.team.login === null
+                  ? 'open a ticket with lingtai ticket new, then lingtai start'
+                  : 'assign yourself an issue, then lingtai start',
+            }),
         trial: result.trial,
         recipePath: recipePath(result.name, world.project.home),
       },
@@ -505,9 +518,17 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
       home: world.project.home,
       homeIsNew: entry.homeIsNew,
       userHome: world.userHome,
-      machine: entry.machine ?? [],
+      machine: entry.machine ?? (world.machine === undefined ? [] : yield* world.machine),
       runtimes: asked.runtimes,
       rows: asked.rows,
+      ...(recipeCard.team === undefined
+        ? {}
+        : {
+            next:
+              recipeCard.team.login === null
+                ? 'open a ticket with lingtai ticket new, then lingtai start'
+                : 'assign yourself an issue, then lingtai start',
+          }),
       labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
       trial: asked.trial,
       recipePath: path,
@@ -618,6 +639,17 @@ export function githubRow(reach: GithubReach): string {
 
 export function liveAddWorld(): AddWorld {
   return {
+    machine: Effect.suspend(() =>
+      machineSnapshotRows(
+        machineSetup(
+          liveMachineWorld(
+            { ask: liveAsk, spin: liveSpin, log: () => {} },
+            { app: checkAppEffect, ghStatus: () => ghStatusEffect() },
+          ),
+          { githubRequired: false },
+        ).ports,
+      ),
+    ),
     project: liveFirstProjectWorld({ ask: liveAsk, spin: liveSpin, log: (line) => console.log(line) }),
     error: (line) => console.error(line),
     log: (line) => console.log(line),

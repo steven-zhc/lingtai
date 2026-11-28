@@ -854,6 +854,14 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
               runtimes,
               ...machineFact,
               rows: chosen.rows,
+              ...(chosen.card.team === undefined
+                ? {}
+                : {
+                    next:
+                      chosen.card.team.login === null
+                        ? 'open a ticket with lingtai ticket new, then lingtai start'
+                        : 'assign yourself an issue, then lingtai start',
+                  }),
               trial: chosen.trial,
               recipePath: recipeFile,
               ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0

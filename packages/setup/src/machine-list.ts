@@ -460,3 +460,24 @@ export function machineRows(list: readonly SetupQuestion<RunContext>[], entries:
       ]
     })
 }
+
+/** Observes the machine list without answering or writing any question (the `add` card). */
+export function machineSnapshotRows(ports: MachinePorts): Effect.Effect<SetupRow[], unknown> {
+  const list = machineQuestions(ports, { githubRequired: false })
+  return Effect.gen(function* () {
+    const entries: Entry[] = []
+    for (const q of list) {
+      const before = q.inForce === undefined ? null : yield* q.inForce({})
+      entries.push({
+        id: q.id,
+        before,
+        after: before === null && q.id === 'ceiling' ? 'none' : null,
+        wrote: false,
+        pending: false,
+        asked: false,
+        applies: true,
+      })
+    }
+    return machineRows(list, entries)
+  })
+}

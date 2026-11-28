@@ -226,7 +226,11 @@ export function renderSetupCard(facts: SetupCardFacts): string {
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
   const unchanged = facts.updated && ![...facts.machine, ...(facts.rows ?? [])].some((r) => r.changed)
-  const top = `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${unchanged ? `  ${paint.muted('unchanged')}` : ''}`
+  const firstTeam =
+    !facts.updated && facts.rows?.some((r) => r.id === 'mode' && r.text === 'team') && facts.project !== undefined
+  const top = firstTeam
+    ? `${symbol.pass()} ${facts.project} added — team`
+    : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${unchanged ? `  ${paint.muted('unchanged')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),

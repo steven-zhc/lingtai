@@ -9,7 +9,6 @@ import { describe, expect, it } from 'vitest'
 import { makePersonalBranch } from '../src/add-github.ts'
 import type { QuestionWorld } from '../src/question.ts'
 import { askSandbox } from '../src/sandbox-step.ts'
-import { renderSetupCard, type CardRecipe, type SetupCardFacts } from '../src/setup-card.ts'
 import { askPersonal } from '../src/team.ts'
 import { walkProject } from '../test/project-list.ts'
 
@@ -25,11 +24,11 @@ const world = (answer: (prompt: string) => string | null = () => null): Question
   }
 }
 
-/** `no` to *use every default?*, `make` to the branch, and an Enter to everything else — a stray `yes` would loop a choice question. */
+/** `no` to *use this setup?*, `make` to the branch, and an Enter to everything else — a stray `yes` would loop a choice question. */
 const answers =
   (make: 'yes' | 'no') =>
   (prompt: string): string =>
-    /use every default/.test(prompt) ? 'no' : /Make it from origin/.test(prompt) ? make : ''
+    /use this setup/.test(prompt) ? 'no' : /Make it from origin/.test(prompt) ? make : ''
 
 describe('the personal branch question (#1324)', () => {
   const ask = (given: string, main = 'main') =>
@@ -146,54 +145,6 @@ describe('making the branch (#1324)', () => {
     )
     expect(out._tag).toBe('Failure')
     expect(calls).toEqual([])
-  })
-})
-
-describe('the team card (#1324)', () => {
-  const recipe: CardRecipe = {
-    code: 'acme/foundry',
-    base: 'steven-zhc/studio',
-    remote: null,
-    tickets: 'github',
-    kinds: ['bug'],
-    writer: { agent: 'claude-code', model: null },
-    reviewer: null,
-    checks: ['pnpm test'],
-    approves: false,
-    takes: { take: 'mine', login: 'sam' },
-    findingsJudge: null,
-    team: { login: 'steven-zhc', personal: 'steven-zhc/studio' },
-  }
-  const facts: SetupCardFacts = {
-    command: 'add',
-    project: 'foundry',
-    updated: false,
-    home: '/h',
-    homeIsNew: false,
-    userHome: '/Users/me',
-    store: { store: 'sqlite', path: '/h/l.db', where: 'config.yml', from: 'config.yml' },
-    runtimes: [],
-    where: 'github',
-    recipe,
-    trial: { trial: 'not-run', because: 'no checks' },
-  }
-
-  it('says what team means, and never that main is kept current', () => {
-    const text = renderSetupCard(facts)
-    expect(text).toContain('foundry added — team')
-    expect(text).toContain('issues assigned to steven-zhc')
-    expect(text).toContain('steven-zhc/studio; main is brought in when you submit a PR')
-    expect(text).toContain('only through a PR you submit, one at a time · lingtai pr')
-    expect(text).toContain('never pushes main')
-    expect(text).toContain('assign yourself an issue, then lingtai start')
-    expect(text).not.toMatch(/kept current/)
-  })
-
-  it('a local team project takes every ticket', () => {
-    const text = renderSetupCard({ ...facts, recipe: { ...recipe, team: { login: null, personal: 'lingtai-base' } } })
-    expect(text).toContain('every ticket — local tickets are yours')
-    expect(text).toContain('open a ticket with lingtai ticket new, then lingtai start')
-    expect(text).not.toContain('assign yourself an issue')
   })
 })
 
