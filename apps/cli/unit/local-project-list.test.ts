@@ -98,6 +98,24 @@ describe('init and add use the same project list (#1526)', () => {
     expect(same).not.toContain('→')
   })
 
+  it('a rerun that only adds a daily ceiling compares no ceiling and does not say unchanged', async () => {
+    const w = setupWorld()
+    const base = ['--local', '/repo', '--mode', 'solo', '--defaults']
+    expect(await runInit(w, [...base, '--day-usd', 'none'])).toBe(0)
+    w.init.projects = () => Effect.succeed([projectState()])
+    const recipe = w.recipes.get(PATH)
+    w.logged.length = 0
+    expect(await runInit(w, [...base, '--day-usd', '150'])).toBe(0)
+    expect(w.recipes.get(PATH)).toBe(recipe)
+    expect(w.machineFiles.get(`${HOME}/config.yml`)).toContain('day_usd: 150')
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    expect(card).toMatch(/spend +no ceiling → up to \$150 a day/)
+    expect(card).not.toContain('unchanged')
+    w.logged.length = 0
+    expect(await runInit(w, [...base, '--day-usd', '150'])).toBe(0)
+    expect(w.logged.find((line) => line.includes('each attempt'))).toContain('unchanged')
+  })
+
   it('init --local finishes all entries before setting the recipe, making lingtai-base or registering', () => {
     const w = setupWorld()
     observe = (entries) => {

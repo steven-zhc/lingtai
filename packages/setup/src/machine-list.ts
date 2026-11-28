@@ -314,7 +314,7 @@ export function machineQuestions(
 
   const ceiling: SetupQuestion<RunContext> = {
     id: 'ceiling',
-    card: { label: 'spend', environment: 'LINGTAI_LIMITS_DAY_USD' },
+    card: { label: 'spend', environment: 'LINGTAI_LIMITS_DAY_USD', absent: 'none' },
     name: 'the daily spend ceiling',
     flag: '--day-usd <dollars>, or --day-usd none',
     fromFlags: (flags) => flags['day-usd'] ?? null,
@@ -483,7 +483,7 @@ export function machineSnapshotRows(ports: MachinePorts): Effect.Effect<SetupRow
       entries.push({
         id: q.id,
         before,
-        after: before === null && q.id === 'ceiling' ? 'none' : null,
+        after: null,
         wrote: false,
         pending: false,
         asked: false,

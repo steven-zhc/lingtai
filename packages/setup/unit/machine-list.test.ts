@@ -378,6 +378,32 @@ describe('an exported value beside a flag', () => {
 })
 
 describe('machine descriptor rows', () => {
+  it('compares no ceiling with a later daily ceiling, and the reverse', async () => {
+    const { ports, state } = world('')
+    const list = ceilingOnly(ports)
+    const none = await run(list, input({ flags: { 'day-usd': 'none' } }))
+    expect(machineRows(list, none.entries)[0]).toMatchObject({ changed: false, text: 'no ceiling' })
+    expect(state.writes).toBe(0)
+    const limited = await run(list, input({ flags: { 'day-usd': '150' } }))
+    expect(state.text).toContain('day_usd: 150')
+    expect(machineRows(list, limited.entries)[0]).toMatchObject({
+      changed: true,
+      text: 'no ceiling → up to $150 a day',
+    })
+    ports.dayCeiling = () => ({ value: 150, environment: false })
+    const removed = await run(list, input({ flags: { 'day-usd': 'none' } }))
+    expect(state.text).not.toContain('day_usd')
+    expect(machineRows(list, removed.entries)[0]).toMatchObject({
+      changed: true,
+      text: 'up to $150 a day → no ceiling',
+    })
+    ports.dayCeiling = () => ({ value: null, environment: false })
+    expect((await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === 'ceiling')).toMatchObject({
+      changed: false,
+      text: 'no ceiling',
+    })
+  })
+
   it('shows the semantic ceiling change in dollars per day', async () => {
     const { ports } = world('limits:\n  day_usd: 100\n', { dayCeiling: () => ({ value: 100, environment: false }) })
     const list = ceilingOnly(ports)
