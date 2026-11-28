@@ -5,6 +5,7 @@ import { githubAuthKind, storeChoice, type StoreChoice } from '@lingtai/env'
 import { parseSlug } from '@lingtai/github'
 import { recipePath, recipeText } from '@lingtai/project'
 import { branchOf, type Recipe, resolveSource } from '@lingtai/recipe'
+import { type SetupRow } from '@lingtai/setup'
 import {
   alreadyAdded,
   alreadyAddedSentence,
@@ -265,14 +266,13 @@ export const addFlowEffect = Effect.fn('add.addFlow')(function* (
         command: 'add',
         project: result.name,
         updated: result.updated,
-        ...(result.unchanged === true ? { unchanged: true } : {}),
         home: world.project.home,
         // Only `init` writes `config.yml`.
         homeIsNew: false,
         userHome: world.userHome,
-        store: world.store(),
+        machine: [],
         runtimes: result.runtimes,
-        recipe: result.card,
+        rows: result.rows,
         trial: result.trial,
         recipePath: recipePath(result.name, world.project.home),
       },
@@ -295,7 +295,7 @@ export interface GithubProjectEntry {
   /** What the command's own earlier steps left behind, ahead of the project's. */
   leftBehind?: readonly LeftBehind[]
   /** The day's ceiling `init`'s list asked about or was told, as the card's `spend` row. */
-  spend?: string
+  machine?: readonly SetupRow[]
 }
 
 /** What the project's setup came to; the command closes on `closing` (or `fix`) itself, and exits `exit`. */
@@ -502,19 +502,15 @@ const drawGithubCard = Effect.fn('add.githubCard')(function* (
       command: entry.command,
       project: repo,
       updated: card.updated,
-      ...(card.unchanged === true ? { unchanged: true } : {}),
       home: world.project.home,
       homeIsNew: entry.homeIsNew,
       userHome: world.userHome,
-      store: world.store(),
+      machine: entry.machine ?? [],
       runtimes: asked.runtimes,
-      where: 'github',
-      github: githubRow(reach),
-      recipe: recipeCard,
+      rows: asked.rows,
       labels: { slug: `${owner}/${repo}`, created: labels.created, missing: labels.missing },
       trial: asked.trial,
       recipePath: path,
-      ...(entry.spend === undefined ? {} : { spend: entry.spend }),
       ...(left.length === 0 ? {} : { leftBehind: left }),
     },
     asked.hints,

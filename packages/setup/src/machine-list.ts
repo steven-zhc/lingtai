@@ -27,7 +27,7 @@ import {
   needsClaudeToken,
   setClaudeTokenEffect,
 } from './claude-token.ts'
-import type { InForce, SetupQuestion } from './setup-list.ts'
+import type { Entry, InForce, SetupQuestion, SetupRow } from './setup-list.ts'
 
 // ------------------------------------------------------------ the descriptor --
 
@@ -342,12 +342,7 @@ export function machineQuestions(
         },
         catch: (e) => e,
       }),
-    row: (value, before) =>
-      value === 'none'
-        ? 'no ceiling'
-        : before !== null && !('fault' in before) && before.value !== value
-          ? `${dollarsText(Number(value))} a day (was ${dollarsText(Number(before.value))})`
-          : `${dollarsText(Number(value))} a day`,
+    row: (value) => (value === 'none' ? 'no ceiling' : `up to ${dollarsText(Number(value))} a day`),
   }
 
   const claudeToken: SetupQuestion<RunContext> = {
@@ -427,4 +422,41 @@ export function machineQuestions(
   }
 
   return [store, github, ceiling, claudeToken]
+}
+
+/** Rows from the same machine descriptors and answer records, with no credential snapshots. */
+export function machineRows(list: readonly SetupQuestion<RunContext>[], entries: readonly Entry[]): SetupRow[] {
+  const labels: Record<string, string> = {
+    store: 'log',
+    github: 'github',
+    ceiling: 'spend',
+    'claude-token': 'claude token',
+  }
+  const variables: Record<string, string> = {
+    store: 'LINGTAI_DATABASE_URL',
+    github: 'LINGTAI_GITHUB_AUTH',
+    ceiling: 'LINGTAI_LIMITS_DAY_USD',
+    'claude-token': 'LINGTAI_CLAUDE_OAUTH_TOKEN',
+  }
+  return entries
+    .filter((e) => e.applies)
+    .flatMap((e) => {
+      const q = list.find((q) => q.id === e.id)
+      const value = e.after ?? e.before?.value
+      if (q === undefined || value === undefined) return []
+      const before = e.before
+      const changed = before !== null && !('fault' in before) && before.value !== value
+      const text = q.row(value, null)
+      return [
+        {
+          id: e.id,
+          group: 'machine' as const,
+          label: labels[e.id] ?? e.id,
+          changed,
+          text:
+            (changed ? `${q.row(before!.value!, null)} → ${text}` : text) +
+            (before?.from === 'environment' ? ` — from ${variables[e.id]}` : ''),
+        },
+      ]
+    })
 }

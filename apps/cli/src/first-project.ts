@@ -1,7 +1,6 @@
+import { execFile, spawn } from 'node:child_process'
 /** The project paths shared by init and add. Local questions walk @lingtai/setup's project list;
  * only checkout checks, branch creation and registration belong to this input. */
-
-import { execFile, spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { readFile, rm, stat } from 'node:fs/promises'
 import { userInfo } from 'node:os'
@@ -42,8 +41,8 @@ import {
   ENV_PLANT_AT,
   SAID,
   projectContext,
-  projectList,
-  runSetupList,
+  runProjectList,
+  type SetupRow,
   type ProjectPorts,
   type ProjectContext,
   type Asker,
@@ -69,6 +68,7 @@ import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts
 import { projectAskers, trialPortOver } from './project-askers.ts'
 import { fetchedRates, toolOnPath } from './project-support.ts'
 import { interactivity } from './prompt.ts'
+import { acceptingDefaults } from './question.ts'
 import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
 import { priceHints, summariseRecipe } from './recipe-flow.ts'
 import type { TrialOutcome } from './setup-build.ts'
@@ -230,6 +230,7 @@ export type FirstProjectOutcome =
       ok: true
       project: 'local'
       entries: readonly Entry[]
+      rows: readonly SetupRow[]
       name: string
       remote: string
       base: string
@@ -723,8 +724,8 @@ function runLocalBranch(
         ...(fileText === null ? [{ path: ['env', 'plantAt'], value: ENV_PLANT_AT }] : []),
       ],
     })
-    const walked = yield* runSetupList(
-      projectList(localPorts),
+    const walked = yield* runProjectList(
+      ctx,
       {
         interactive: world.interactive ?? true,
         defaults: flags['defaults'] !== undefined,
@@ -733,7 +734,13 @@ function runLocalBranch(
         log: world.log,
         kept: () => ({ kept: world.kept }),
       },
-      ctx,
+      {
+        interactive: true,
+        defaults: false,
+        flags,
+        askers: projectAskers(acceptingDefaults({ ...world, log: () => {} })),
+        log: () => {},
+      },
     )
     flushLog(ctx)
     if (walked.refused !== undefined)
@@ -756,6 +763,7 @@ function runLocalBranch(
       runtimes,
       hints,
       entries: walked.entries,
+      rows: walked.rows,
     }
     if (found !== undefined && onDisk.changes().length === 0 && ctx.answers.make === undefined)
       return { ...common, updated: true, unchanged: true }

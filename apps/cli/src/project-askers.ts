@@ -171,7 +171,7 @@ export function projectAskers(world: QuestionWorld): ProjectAskers {
         kept: d.kept,
       }),
 
-    defaults: (d) => askEveryDefault(world, { given: null, kept: d.kept }),
+    defaults: (d) => askEveryDefault(world, { given: null, kept: d.kept, why: d.why }),
 
     writer: (d) =>
       Effect.gen(function* () {
@@ -368,13 +368,14 @@ export const liveTrialPort = (
 /** *use every default?* — the switch that answers every later question with its default (#433). */
 const askEveryDefault = (
   world: QuestionWorld,
-  input: { given: string | null; kept: string },
+  input: { given: string | null; kept: string; why: readonly string[] },
 ): Effect.Effect<Answered, unknown> =>
   questionEffect(world, {
     name: 'every default',
     flag: '--defaults',
     given: input.given,
-    prompt: 'use every default?',
+    prompt: 'use this setup?',
+    why: input.why,
     choices: ['yes', 'no'],
     fallback: 'yes',
     kept: input.kept,

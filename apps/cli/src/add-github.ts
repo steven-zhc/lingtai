@@ -59,8 +59,8 @@ import {
   type ProposalReaders,
   type SetupReader,
   projectContext,
-  projectList,
-  runSetupList,
+  runProjectList,
+  type SetupRow,
   summariseRecipe,
 } from '@lingtai/setup'
 import { askRuntimesEffect, proposeSetup, type RuntimeFound } from '@lingtai/setup'
@@ -76,6 +76,7 @@ import { askTokenFor, githubEntryFor, liveMachineWorld, machineSetup } from './m
 import { projectAskers, liveTrialPort } from './project-askers.ts'
 import { changedOf, fetchedRates, toolOnPath } from './project-support.ts'
 import { interactivity, liveAsk, liveSpin } from './prompt.ts'
+import { acceptingDefaults } from './question.ts'
 import type { QuestionWorld } from './question.ts'
 import { changedLeftBehind, priceHints } from './recipe-flow.ts'
 const KEPT = 'Nothing was written and nothing was registered'
@@ -269,6 +270,7 @@ export interface GithubAnswers {
   reach?: GithubReach
   /** What the project list asked and wrote, in its own order: the entries the runner returned. */
   entries: readonly Entry[]
+  rows: readonly SetupRow[]
 }
 
 /** An Effect settled to the value or what it threw: a failure and a defect alike, an interruption never. */
@@ -633,8 +635,8 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
   ) as Record<string, Asker<ProjectContext>>
 
   const ctx = projectContext({ start: onDisk, buildFlags, flags, ports, kept, seeds })
-  const walked = yield* runSetupList(
-    projectList(ports),
+  const walked = yield* runProjectList(
+    ctx,
     {
       interactive: deps.interactive(),
       defaults: flags['defaults'] !== undefined,
@@ -644,7 +646,13 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
       // Nothing is written until the list ends, so a Ctrl+C keeps no recipe — whatever `append` marked as pending.
       kept: () => ({ kept }),
     },
-    ctx,
+    {
+      interactive: true,
+      defaults: false,
+      flags,
+      askers: projectAskers(acceptingDefaults({ ...world, log: () => {} })),
+      log: () => {},
+    },
   )
   flushLog(ctx)
   if (walked.refused !== undefined) {
@@ -701,6 +709,7 @@ export const githubProjectAnswersEffect = Effect.fn('add-github.githubProjectAns
     runtimes,
     answers,
     entries: walked.entries,
+    rows: walked.rows,
     ...(changedLeftBehind(changed, slug).length === 0 ? {} : { leftBehind: changedLeftBehind(changed, slug) }),
     ...(reach === undefined
       ? {}
