@@ -680,11 +680,12 @@ function runLocalBranch(
           if (/Needed a single revision|unknown revision|not a valid (object|ref)|bad revision/i.test(detail))
             return false
           return yield* Effect.die(new Error(detail || `could not read ${branch} in ${toplevel}`))
-        }),
+        }).pipe(Effect.orDie),
       commitsOnlyIn: (base, head) =>
-        world
-          .git(toplevel, ['rev-list', '--oneline', `${base}..${head}`])
-          .pipe(Effect.map((r) => (r.ok ? r.stdout.split('\n').filter((l) => l.trim() !== '') : null))),
+        world.git(toplevel, ['rev-list', '--oneline', `${base}..${head}`]).pipe(
+          Effect.map((r) => (r.ok ? r.stdout.split('\n').filter((l) => l.trim() !== '') : null)),
+          Effect.catch(() => Effect.succeed(null)),
+        ),
       trial: liveTrialPort(world, { project: name, owner: '', repo: name, remote, home: world.home }),
     }
     let printed = 0

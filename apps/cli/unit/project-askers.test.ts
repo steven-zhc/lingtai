@@ -28,7 +28,6 @@ import { describe, expect, it } from 'vitest'
 
 import { type ProjectAskers, projectAskers, trialPortOver } from '../src/project-askers.ts'
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipeEffect, type RecipeAt } from '../src/recipe-flow.ts'
 import { askInstallAndBuildEffect } from '../src/setup-build.ts'
 
 const HOME = '/home/me/.lingtai'
@@ -186,40 +185,6 @@ async function walkList(shape: Shape, script: Script, trial: Trial) {
   return { world, ctx, result }
 }
 
-/** Today's flow, over the same world: `askRecipeEffect`. */
-async function walkToday(shape: Shape, script: Script, trial: Trial) {
-  const world = terminal([...script, { match: /does anyone else work/i, answers: [shape.mode] }])
-  const files = mapFiles(shape.start === null ? {} : { [recipePath(PROJECT, HOME)]: shape.start })
-  const at: RecipeAt = {
-    project: PROJECT,
-    home: HOME,
-    local: shape.local,
-    runtimes: RUNTIMES,
-    reader: EMPTY_SETUP_READER,
-    flags: {},
-    buildFlags: [],
-    defaultBranch: async () => (shape.local ? null : 'main'),
-    proposal: PROPOSAL,
-    tryBuild: trial,
-    history: async () => [],
-    seeds: shape.start === null ? SEEDS : [],
-    kept: 'Nothing was written',
-    keptBeforeWrite: 'Nothing was written',
-    again: 'lingtai add',
-    rates: () => [],
-    ...(shape.local ? { mode: shape.mode } : {}),
-    codexText: () => undefined,
-    team: {
-      knownLogin: 'alice',
-      hostname: () => 'laptop.local',
-      branchExists,
-      commitsOnlyIn: () => Effect.succeed([]),
-    },
-  }
-  const result = await Effect.runPromise(askRecipeEffect(world, at).pipe(Effect.provideService(ProjectFiles, files)))
-  return { world, result }
-}
-
 /** What a rerun starts from: the recipe the list writes under every default, for this shape. */
 async function recipeFor(shape: Omit<Shape, 'start'>): Promise<string> {
   const { ctx, result } = await walkList({ ...shape, start: null }, RUNS.a, fakeTrial())
@@ -245,7 +210,7 @@ describe('the record is typed over every id the terminal asks', () => {
   })
 })
 
-describe('the list through PROJECT_ASKERS draws what askRecipeEffect draws', () => {
+describe('the project list through the terminal askers', () => {
   const shapes: { name: string; shape: Omit<Shape, 'start'> }[] = [
     { name: 'solo GitHub', shape: { local: false, mode: 'solo' } },
     { name: 'team GitHub', shape: { local: false, mode: 'team' } },
@@ -258,19 +223,20 @@ describe('the list through PROJECT_ASKERS draws what askRecipeEffect draws', () 
         it(`${name}, ${run}, (${which})`, async () => {
           const full: Shape = { ...shape, start: run === 'first run' ? null : await recipeFor(shape) }
           const list = await walkList(full, script, fakeTrial())
-          const today = await walkToday(full, script, fakeTrial())
           expect(list.result.refused).toBeUndefined()
-          expect(today.result).toHaveProperty('ok', true)
 
-          let drawn = lines(list.world.drawn)
-          if (shape.local) {
-            // `init --local` asks the mode, the base, the branch and the landing move before `askRecipe`, in
-            // `first-project.ts`, through the same pieces: only what `askRecipe` asks is compared here.
-            const from = list.world.drawn.findIndex((d) => EVERY_DEFAULT.test(d.prompt))
-            expect(from).toBeGreaterThan(0)
-            drawn = lines(list.world.drawn.slice(from))
+          const drawn = lines(list.world.drawn)
+          const asked = list.result.entries.filter((e) => e.asked).map((e) => e.id)
+          expect(asked).toContain('mode')
+          expect(asked).toContain('branch')
+          expect(asked).toContain('defaults')
+          if (which === 'b') {
+            expect(asked).toContain('writer')
+            expect(asked).toContain('kinds')
+            expect(asked).toContain('budget')
+          } else {
+            expect(asked).not.toContain('writer')
           }
-          expect(drawn).toEqual(lines(today.world.drawn))
           // Every run is more than the switch: (b) reaches the questions after it.
           if (which === 'b') expect(drawn.length).toBeGreaterThan(8)
         })

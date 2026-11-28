@@ -3,18 +3,15 @@
  * existence check and make-after-asking, the login, and the card. No filesystem, no network — the
  * file seam is a `Map` and the client is a fake (0060 §1).
  */
-import { ProjectFiles } from '@lingtai/project'
-import { type RecipeFiles } from '@lingtai/recipe'
-import { EMPTY_SETUP_READER } from '@lingtai/setup'
 import { Effect } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import { makePersonalBranch } from '../src/add-github.ts'
 import type { QuestionWorld } from '../src/question.ts'
-import { askRecipeEffect, ENV_PLANT_AT, type RecipeAt } from '../src/recipe-flow.ts'
 import { askSandbox } from '../src/sandbox-step.ts'
 import { renderSetupCard, type CardRecipe, type SetupCardFacts } from '../src/setup-card.ts'
 import { askPersonal } from '../src/team.ts'
+import { walkProject } from '../test/project-list.ts'
 
 const world = (answer: (prompt: string) => string | null = () => null): QuestionWorld & { asked: string[] } => {
   const asked: string[] = []
@@ -60,107 +57,61 @@ describe('the personal branch question (#1324)', () => {
   })
 })
 
-describe('askRecipe in team mode, on GitHub (#1324)', () => {
-  const files = (): RecipeFiles => ({ read: async () => null, replace: async () => {} })
-  const at = (
-    over: Partial<RecipeAt> & { existing?: readonly string[]; login?: string | null; asked?: string[] },
-  ): RecipeAt => {
-    const existing = new Set(over.existing ?? [])
-    return {
-      project: 'foundry',
-      local: false,
-      runtimes: [{ id: 'claude-code', state: 'signed-in', signedIn: true, detail: 'signed in' }],
-      reader: EMPTY_SETUP_READER,
-      flags: { mode: 'team', install: 'none', personal: 'steven-zhc/foundry', ...over.flags },
-      buildFlags: ['none'],
-      defaultBranch: async () => 'main',
-      history: async () => [],
-      seeds: [
-        { path: ['branch', 'main'], value: 'main' },
-        { path: ['env', 'plantAt'], value: ENV_PLANT_AT },
-      ],
-      kept: 'kept',
-      keptBeforeWrite: 'Nothing was written',
-      again: 'lingtai add acme/foundry',
-      home: '/home/me/.lingtai',
-      // An exact ref: what `foundry-pr-7` being there says of `foundry` is nothing.
-      team: {
-        knownLogin: over.login === undefined ? 'steven-zhc' : over.login,
-        hostname: () => 'Stevens-MacBook-Pro.local',
-        branchExists: (name) => Effect.succeed(existing.has(name)),
-      },
-      ...(over.team === undefined ? {} : { team: over.team }),
-    }
-  }
-  const run = (world: QuestionWorld, options: RecipeAt) =>
-    Effect.runPromise(askRecipeEffect(world, options).pipe(Effect.provideService(ProjectFiles, files())))
-
-  it('an absent branch is asked about, and made from main when the answer is yes', async () => {
-    const w = world(answers('yes'))
-    const result = await run(w, at({}))
-    expect(result).toMatchObject({ ok: true, make: { name: 'steven-zhc/foundry', from: 'main' } })
-    expect(w.asked.some((p) => /does not exist.*Make it from origin\/main/.test(p))).toBe(true)
-    if (!('ok' in result)) throw new Error('refused')
-    const changes = result.answers.changes.map((c) => `${c.path.join('.')}=${JSON.stringify(c.value)}`)
-    expect(changes).toContain('mode="team"')
-    expect(changes).toContain('branch.personal="steven-zhc/foundry"')
-    expect(changes).toContain('source.assignee={"login":"steven-zhc","take":"mine"}')
-  })
-
-  it('no writes nothing and registers nothing, and says how to make it by hand', async () => {
-    const result = await run(world(answers('no')), at({}))
-    expect(result).toEqual({
-      refused: expect.stringContaining('git push origin origin/main:refs/heads/steven-zhc/foundry'),
-    })
-    expect(result).not.toHaveProperty('answers')
-  })
-
-  it('an existing branch is used as it is, and steven-zhc/foundry-pr-7 existing does not count as it', async () => {
-    const pr = world(answers('yes'))
-    const withPr = await run(pr, at({ existing: ['steven-zhc/foundry-pr-7'] }))
-    expect(withPr).toMatchObject({ ok: true, make: { name: 'steven-zhc/foundry' } })
-
-    const exact = await run(world(answers('yes')), at({ existing: ['steven-zhc/foundry'] }))
-    expect(exact).toMatchObject({ ok: true })
-    expect(exact).not.toHaveProperty('make')
-  })
-
-  it('GitHub not answering is not read as absent', async () => {
-    const result = await run(
-      world(answers('yes')),
-      at({
-        team: {
-          knownLogin: 'steven-zhc',
-          hostname: () => 'studio',
-          branchExists: () => Effect.succeed('unreadable' as const),
-        },
+describe('the project list in team mode on GitHub (#1324)', () => {
+  const run = (w: QuestionWorld, over: Partial<Parameters<typeof walkProject>[1]> = {}) =>
+    Effect.runPromise(
+      walkProject(w, {
+        ...over,
+        flags: { mode: 'team', install: 'none', personal: 'steven-zhc/foundry', ...over.flags },
+        ports: { branchExists: (name) => Effect.succeed(name === 'main'), ...over.ports },
+        buildFlags: ['none'],
       }),
     )
-    expect(result).toEqual({ refused: expect.stringContaining('could not read whether steven-zhc/foundry exists') })
-  })
 
-  it('an App machine with no --login and no terminal is refused by --login', async () => {
-    const result = await run(
-      world(() => null),
-      at({ login: null, flags: { defaults: '' } }),
-    )
-    expect(result).toEqual({ refused: expect.stringContaining('--login') })
-  })
+  it('an absent branch is confirmed and planned after the branch answer', () =>
+    run(world(answers('yes'))).then(({ result, ctx }) => {
+      expect(result.refused).toBeUndefined()
+      expect(ctx.answers.make).toEqual({ name: 'steven-zhc/foundry', from: 'main' })
+      expect(result.entries.filter((e) => e.asked).map((e) => e.id)).toContain('make-branch')
+      expect(ctx.pending).toContainEqual({ path: ['source', 'assignee'], value: { login: 'sam', take: 'mine' } })
+    }))
 
-  it('a gh machine asks no login', async () => {
-    const w = world(answers('yes'))
-    await run(w, at({ login: 'sam' }))
-    expect(w.asked.filter((p) => /GitHub login/.test(p))).toEqual([])
-  })
+  it('declining writes nothing and says how to make it by hand', () =>
+    run(world(answers('no'))).then(({ result, ctx }) => {
+      expect(result.refused).toContain('git push origin origin/main:refs/heads/steven-zhc/foundry')
+      expect(ctx.answers.make).toBeUndefined()
+    }))
 
-  it('asks no landing question, and refuses --land <branch>', async () => {
-    const w = world(answers('yes'))
-    await run(w, at({}))
-    expect(w.asked.filter((p) => /when an attempt is ready|land this on which branch/.test(p))).toEqual([])
+  it('an exact existing branch needs no creation, while a PR branch does', () =>
+    run(world(answers('yes')), {
+      ports: { branchExists: (name) => Effect.succeed(name === 'main' || name === 'steven-zhc/foundry-pr-7') },
+    })
+      .then(({ ctx }) => {
+        expect(ctx.answers.make?.name).toBe('steven-zhc/foundry')
+        return run(world(answers('yes')), { ports: { branchExists: () => Effect.succeed(true) } })
+      })
+      .then(({ ctx }) => expect(ctx.answers.make).toBeUndefined()))
 
-    const refused = await run(world(answers('yes')), at({ flags: { land: 'develop' } }))
-    expect(refused).toEqual({ refused: expect.stringContaining('a team project lands on branch.personal') })
-  })
+  it('a failed branch read is refused, never treated as absent', () =>
+    run(world(answers('yes')), {
+      ports: { branchExists: () => Effect.succeed('unreadable') },
+    }).then(({ result }) => expect(result.refused).toContain('could not read whether')))
+
+  it('an unknown login without a terminal refuses by name', () =>
+    run(world(), {
+      interactive: false,
+      ports: { knownLogin: null },
+    }).then(({ result }) => expect(result.refused).toContain('--login')))
+
+  it('a discovered login is not asked and a team landing is not asked', () =>
+    run(world(answers('yes'))).then(({ result }) => {
+      for (const id of ['login', 'landing']) expect(result.entries.find((e) => e.id === id)?.asked).toBe(false)
+    }))
+
+  it('a team project refuses --land <branch>', () =>
+    run(world(answers('yes')), {
+      flags: { land: 'develop' },
+    }).then(({ result }) => expect(result.refused).toContain('a team project lands on branch.personal')))
 })
 
 describe('making the branch (#1324)', () => {

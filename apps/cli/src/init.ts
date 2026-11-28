@@ -149,6 +149,8 @@ import { liveSetupTokenRun } from './claude-token.ts'
 import { lift, recovering } from './exit.ts'
 import {
   chooseFirstProjectEffect,
+  liveInFlightEffect,
+  liveRemoveMirrorEffect,
   type FirstProjectWorld,
   type GitResult,
   livePickerEffect,
@@ -253,6 +255,8 @@ export interface InitWorld {
   store?: EventStore
   signedIn: SignedIn
   /** `FirstProjectWorld.register` for the local branch — appends `ProjectConfigured`. */
+  inFlight?: FirstProjectWorld['inFlight']
+  removeMirror?: FirstProjectWorld['removeMirror']
   registerLocal: (payload: RegisterLocalPayload) => Effect.Effect<{ line: string; updated: boolean }, unknown>
   /** `FirstProjectWorld.history` (#396) — `ticket-<project>-*` streams already in the log for this project. */
   history: (project: string) => Effect.Effect<readonly string[], unknown>
@@ -749,6 +753,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
         setupReader: world.setupReader,
         exists: world.exists,
         register: world.registerLocal,
+        ...(world.inFlight === undefined ? {} : { inFlight: world.inFlight }),
+        ...(world.removeMirror === undefined ? {} : { removeMirror: world.removeMirror }),
         history: world.history,
         // The store above is already written by the time this runs — the same
         // reason `askFirstProject` carries this sentence (#394 finding 2).
@@ -1331,6 +1337,8 @@ export function liveInitWorld(): InitWorld {
       }),
     open: (url) => lift(() => liveOpen(url)),
     runGit: liveGitEffect,
+    inFlight: liveInFlightEffect,
+    removeMirror: (project) => liveRemoveMirrorEffect(project, stateDir()),
     issueForms: checkoutIssueForms,
     projects: () => loadAllProjectsEffect(),
     signedIn: signedInHere,

@@ -35,20 +35,21 @@ const GITHUB_APP = 'github:\n  auth: app\n'
  * given base as a local branch, not as `main^{commit}`).
  */
 const LOCAL_REPO_GIT = {
+  '/repo::remote': { ok: true, stdout: 'origin\n', stderr: '' },
   '/repo::rev-parse --show-toplevel': { ok: true, stdout: '/repo\n', stderr: '' },
   '/repo::remote get-url origin': { ok: true, stdout: 'https://github.com/acme/widget.git\n', stderr: '' },
   '/repo::rev-parse --verify refs/heads/main^{commit}': { ok: true, stdout: 'abc123f\n', stderr: '' },
 }
 
 /**
- * Every `askRecipe` (#431) question on the local branch, answered by flag
+ * Every project-list question on the local branch, answered by flag
  * rather than scripted through `ask()` — this suite's own `ask` only
  * recognises the project, App, database and kinds questions (#431 fix
  * round, finding 1), and base is `main` in every test that uses this. Solo,
  * because these tests land on `main` (--land main); the team/solo question
  * is 3b80a64d9's and a team project lands on its personal branch (0130 §1).
  */
-const RECIPE_FLOW_FLAGS = [
+const PROJECT_FLAGS = [
   '--mode',
   'solo',
   '--agent',
@@ -182,10 +183,7 @@ function world(home: string, script: Script, db = database()): { world: InitTest
         // world's `ghStatus` is never ready, so `app` is the one answer that
         // carries on to the App question these tests were written against.
         if (/a GitHub App of its own/.test(question)) return 'app'
-        // #433's first recipe question, answered with its own default so
-        // `acceptingDefaults` wraps the world and every later recipe question
-        // takes its default without reaching this `ask` — this suite is about
-        // the database question alone.
+        // The list switch takes later defaults; its individual questions are answered by flags below.
         if (/use every default/.test(question)) return ''
         // The store is the one question init asks about the database: the agent is each recipe's (#372).
         const which: Step = 'ask:database'
@@ -202,8 +200,8 @@ function world(home: string, script: Script, db = database()): { world: InitTest
         step('runtimes')
         return script.runtimes ?? [signedIn('claude-code'), notInstalled('codex')]
       },
-      // `askRecipe`'s own questions (#431) are answered by flag instead —
-      // `RECIPE_FLOW_FLAGS` — rather than scripted here: this suite's `ask`
+      // The project list's questions are answered by flag instead —
+      // `PROJECT_FLAGS` — rather than scripted here: this suite's `ask`
       // only recognises the project, App, database and kinds questions.
       // `/repo` is the repository `LOCAL_REPO_GIT` plans git for; it is not on
       // this machine, and `--local` refuses a directory that is not.
@@ -329,7 +327,7 @@ describe('lingtai init (#186)', () => {
       answers: [URL_],
       gitPlan: LOCAL_REPO_GIT,
     })
-    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), w)).toBe(0)
+    expect(await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]), w)).toBe(0)
     expect(seen.opened).toEqual([])
     expect(seen.appeared).toBe(0)
     expect(seen.lines.join('\n')).toMatch(/init {2}repo/)
@@ -338,7 +336,7 @@ describe('lingtai init (#186)', () => {
   it('--base on a first --local run is refused by name, and nothing is registered (13a4060)', async () => {
     const home = freshHome()
     const { world: w, seen } = world(home, { answers: [URL_], gitPlan: LOCAL_REPO_GIT })
-    const code = await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...RECIPE_FLOW_FLAGS]), w)
+    const code = await initCommand(flagsFromArgv(['--local', '/repo', '--base', 'main', ...PROJECT_FLAGS]), w)
     expect(code).not.toBe(0)
     expect(seen.lines.join('\n')).toContain('--base is now --main: pass --main main')
     expect(seen.registered).toEqual([])
@@ -349,7 +347,7 @@ describe('lingtai init (#186)', () => {
     const git = LOCAL_REPO_GIT
     const first = world(home, { answers: [URL_], gitPlan: git })
     expect(
-      await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]), first.world),
+      await initCommand(flagsFromArgv(['--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]), first.world),
     ).toBe(0)
 
     // The first run actually registered the directory — not just printed a
@@ -914,7 +912,7 @@ describe('--store answers the store question without a terminal (#345)', () => {
     })
     expect(
       await initCommand(
-        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--main', 'main', ...RECIPE_FLOW_FLAGS]),
+        flagsFromArgv(['--store', 'sqlite', '--local', '/repo', '--main', 'main', ...PROJECT_FLAGS]),
         w,
       ),
     ).toBe(0)

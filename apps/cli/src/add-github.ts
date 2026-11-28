@@ -239,6 +239,7 @@ export const liveGithubDeps: AskBeforeGithubAddDeps = {
         { app: checkAppEffect, ghStatus: () => ghStatusEffect(), gh: liveGh },
       ),
       flags,
+      KEPT,
     ),
   claudeToken: (recipe, flags) => {
     const setup = machineSetup(
