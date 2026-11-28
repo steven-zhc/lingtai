@@ -336,6 +336,7 @@ describe('a value that could not be read is not an absent one', () => {
     const { state, ports } = faulty('limits:\n  day_usd: 0\n  other: 1\n')
     const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': 'none' } }))
     expect(out.entries[0]).toMatchObject({ after: 'none', wrote: true })
+    expect(machineRows(ceilingOnly(ports), out.entries)[0]?.text).toBe('no ceiling')
     expect(state.text).not.toContain('day_usd')
     expect(state.text).toContain('other: 1')
   })
@@ -344,6 +345,7 @@ describe('a value that could not be read is not an absent one', () => {
     const { state, ports } = faulty('limits:\n  day_usd: 0\n')
     const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': '50' } }))
     expect(out.entries[0]).toMatchObject({ after: '50', wrote: true })
+    expect(machineRows(ceilingOnly(ports), out.entries)[0]?.text).toBe('up to $50 a day')
     expect(state.text).toContain('day_usd: 50')
   })
 })
@@ -378,6 +380,37 @@ describe('an exported value beside a flag', () => {
 })
 
 describe('machine descriptor rows', () => {
+  it.each([
+    { id: 'ceiling', label: 'spend', ports: { dayCeiling: () => ({ fault: 'invalid ceiling', environment: false }) } },
+    { id: 'ceiling', label: 'spend', ports: { dayCeiling: () => ({ fault: 'invalid ceiling', environment: true }) } },
+    { id: 'store', label: 'log', ports: { store: () => ({ store: null, fault: 'invalid store' }) } },
+    {
+      id: 'store',
+      label: 'log',
+      ports: {
+        store: () => ({ store: 'postgres', url: 'postgres://db.example/log', environment: false }),
+        database: () => Effect.succeed({ ok: false, why: 'connection refused' }),
+      },
+    },
+    { id: 'github', label: 'github', ports: { githubAuth: () => ({ refused: 'invalid auth', environment: false }) } },
+  ] satisfies { id: string; label: string; ports: Partial<MachinePorts> }[])(
+    'keeps an unanswered $id read fault in the add snapshot ($ports)',
+    async ({ id, label, ports: overrides }) => {
+      const { ports, state } = world('', overrides)
+      const q = machineQuestions(ports, { githubRequired: false }).find((q) => q.id === id)!
+      const before = await Effect.runPromise(q.inForce!({}))
+      expect(before).toHaveProperty('fault')
+      const row = (await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === id)
+      expect(row).toMatchObject({
+        label,
+        changed: false,
+        text: expect.stringContaining(`could not read — ${before !== null && 'fault' in before ? before.fault : ''}`),
+      })
+      expect(row?.text).not.toContain('no ceiling')
+      expect(state.writes).toBe(0)
+    },
+  )
+
   it('compares no ceiling with a later daily ceiling, and the reverse', async () => {
     const { ports, state } = world('')
     const list = ceilingOnly(ports)

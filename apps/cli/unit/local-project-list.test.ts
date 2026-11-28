@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addFlowEffect } from '../src/add.ts'
 import { chooseFirstProjectEffect } from '../src/first-project.ts'
 import { initCommandEffect } from '../src/init.ts'
+import { machineSetup } from '../src/machine-askers.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 import { setupWorld, HOME, PATH, projectState } from '../test/local-setup-world.ts'
 
@@ -45,6 +46,32 @@ afterEach(() => {
 })
 
 describe('init and add use the same project list (#1526)', () => {
+  it.each(['file', 'environment'])('add --local identifies an unreadable %s ceiling on its card', async (source) => {
+    const w = setupWorld()
+    const config = `${HOME}/config.yml`
+    const text = w.machineFiles.get(config)! + (source === 'file' ? 'limits:\n  day_usd: invalid\n' : '')
+    w.machineFiles.set(config, text)
+    const machine = machineSetup(
+      {
+        ...w.init,
+        path: config,
+        interactive: true,
+        env: { ...w.init.env, ...(source === 'environment' ? { LINGTAI_LIMITS_DAY_USD: 'invalid' } : {}) },
+        run: () => Promise.reject(new Error('the snapshot must not obtain a token')),
+        recipes: () => Effect.succeed([]),
+      },
+      { githubRequired: false },
+    )
+    w.add.machine = setup.machineSnapshotRows(machine.ports)
+    expect(await runAdd(w)).toBe(0)
+    expect(w.registered).toHaveLength(1)
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    expect(card).toMatch(/spend +could not read — /)
+    expect(card).toContain(source === 'file' ? 'limits.day_usd' : 'LINGTAI_LIMITS_DAY_USD')
+    expect(card).not.toMatch(/spend +no ceiling/)
+    expect(w.machineFiles.get(config)).toBe(text)
+  })
+
   it('init --local supplies the remaining values as why before use this setup, including sandbox', async () => {
     const w = setupWorld()
     w.init.sandboxHost = () => ({ answer: Effect.void, install: null, builtIns: ['github.com'] })

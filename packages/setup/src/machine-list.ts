@@ -457,15 +457,16 @@ export function machineRows(
       const q = list.find((q) => q.id === e.id)
       if (q === undefined) return []
       const before = e.before
-      const beforeValue = before?.value ?? q.card?.absent
+      const fault = before !== null && 'fault' in before && e.after === null ? before.fault : undefined
+      const beforeValue = before === null ? q.card?.absent : before.value
       const value = q.card?.effective?.(e) ?? e.after ?? beforeValue
-      if (value === undefined) return []
+      if (value === undefined && fault === undefined) return []
       const changed =
         (configured || before !== null) &&
         beforeValue !== undefined &&
         !(before !== null && 'fault' in before) &&
         beforeValue !== value
-      const text = q.row(value, null, descriptions[e.id])
+      const text = fault === undefined ? q.row(value!, null, descriptions[e.id]) : `could not read — ${fault}`
       return [
         {
           id: e.id,
