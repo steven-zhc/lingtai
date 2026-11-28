@@ -615,7 +615,7 @@ describe('init and add, driven end to end from unit/ (#400, #435)', () => {
 
   it('a re-run with every answer empty leaves config.yml and recipe.yml byte-for-byte unchanged, and writes the machine file no further', async () => {
     const h = harness({ gitPlan: GIT_PLAN })
-    // Every question's own default, including "use every default?" itself —
+    // Every question's own default, including "use this setup?" itself —
     // which, taken, answers every recipe question underneath it too, so a
     // re-run needs nothing scripted beyond this one function.
     h.world.ask = async () => ''

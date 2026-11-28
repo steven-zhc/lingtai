@@ -136,6 +136,7 @@ import type { EventStore } from '@lingtai/event-store/store'
 import { ghStatusEffect, liveGh, type GhRun, type GhStatus } from '@lingtai/github'
 import { loadAllProjectsEffect, projectsOnDisk, recipePath, recipeText, recipeValue } from '@lingtai/project'
 import { kindsOf, resolveSource, ticketSourceOf, type SignedIn } from '@lingtai/recipe'
+import { machineRows } from '@lingtai/setup'
 import { runSetupList, writeGithubAuth, writeStore, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, runtimeStateSentence, type RuntimeFound } from '@lingtai/setup'
 import { Effect } from 'effect'
@@ -525,18 +526,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
       }
     }
 
-    // The day's ceiling this run asked about or was told, as the card's `spend` row.
-    const ceilingEntry = listed.entries.find((e) => e.id === 'ceiling')
-    const ceilingQuestion = machine.list.find((x) => x.id === 'ceiling')
-    const spendRow: string | undefined = (() => {
-      if (ceilingEntry === undefined || ceilingQuestion === undefined) return undefined
-      if (ceilingEntry.after !== null) return ceilingQuestion.row(ceilingEntry.after, ceilingEntry.before)
-      const was = ceilingEntry.before
-      return was !== null && was.value !== undefined
-        ? `${ceilingQuestion.row(was.value, was)} — from the environment`
-        : undefined
-    })()
-    const spendFact = spendRow === undefined ? {} : { spend: spendRow }
+    const machineCardRows = machineRows(machine.list, listed.entries, {}, hadConfig)
+    const machineFact = { machine: machineCardRows }
 
     // ---- how this machine reaches GitHub, as the list left it --------------------
     // Read off the file this world was handed and the environment, not off the disk. A refused `github.auth`
@@ -694,10 +685,8 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             home,
             homeIsNew,
             userHome: world.env['HOME'] ?? '',
-            store: storeNow,
             runtimes,
-            github: how,
-            ...spendFact,
+            machine: machineRows(machine.list, listed.entries, { github: how }, hadConfig),
             ...(storeLeft.length === 0 ? {} : { leftBehind: storeLeft }),
           },
           [],
@@ -822,7 +811,7 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
             store: () => storeNow,
             userHome: world.env['HOME'] ?? '',
           },
-          { command: 'init', homeIsNew, leftBehind: storeLeft, ...spendFact },
+          { command: 'init', homeIsNew, leftBehind: storeLeft, ...machineFact },
         )
         if (done.exit !== 0) return done.exit
         held.length = 0
@@ -859,14 +848,20 @@ export function initCommandEffect(args: WizardFlags, world: InitWorld): Effect.E
               command: 'init',
               project: chosen.name,
               updated: chosen.updated,
-              ...(chosen.unchanged === true ? { unchanged: true } : {}),
               home,
               homeIsNew,
               userHome: world.env['HOME'] ?? '',
-              store: storeNow,
               runtimes,
-              ...spendFact,
-              recipe: chosen.card,
+              ...machineFact,
+              rows: chosen.rows,
+              ...(chosen.card.team === undefined
+                ? {}
+                : {
+                    next:
+                      chosen.card.team.login === null
+                        ? 'open a ticket with lingtai ticket new, then lingtai start'
+                        : 'assign yourself an issue, then lingtai start',
+                  }),
               trial: chosen.trial,
               recipePath: recipeFile,
               ...(storeLeft.length + (chosen.leftBehind?.length ?? 0) === 0

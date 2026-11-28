@@ -1189,7 +1189,7 @@ describe('register', () => {
     expect(typed.entry('register')).toMatchObject({ applies: false })
   })
 
-  it('is asked after a typed yes to use every default, and refused with no terminal and no flag', async () => {
+  it('is asked after a typed yes to use this setup, and refused with no terminal and no flag', async () => {
     const typedYes = await walk(ports(), {
       interactive: true,
       flags: { mode: 'solo', main: 'main' },

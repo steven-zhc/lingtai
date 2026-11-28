@@ -3,8 +3,8 @@
  * prompts the project descriptors decide, with their choices and bracketed defaults. No filesystem, by 0060
  * §1: the file seam is a `Map`, the trial is a fake, and the world records each prompt and answers from a script.
  *
- * **Enter everywhere tests almost nothing**: the runner answers every question itself once *use every default?* is yes,
- * so each case runs twice — (a) Enter everywhere, (b) `no` at *use every default?* and Enter elsewhere, which is the
+ * **Enter everywhere tests almost nothing**: the runner answers every question itself once *use this setup?* is yes,
+ * so each case runs twice — (a) Enter everywhere, (b) `no` at *use this setup?* and Enter elsewhere, which is the
  * run that reaches the agent, sandbox, install, checks, trial, tickets, landing and limit askers.
  */
 import { ProjectFiles, draftRecipe, keyIn, recipePath, type RecipeDraft } from '@lingtai/project'
@@ -75,8 +75,8 @@ function terminal(script: Script): QuestionWorld & { drawn: Drawn[]; logged: str
   }
 }
 
-const EVERY_DEFAULT = /use every default/
-/** (a) Enter everywhere. (b) `no` at *use every default?*, Enter elsewhere. */
+const EVERY_DEFAULT = /use this setup/
+/** (a) Enter everywhere. (b) `no` at *use this setup?*, Enter elsewhere. */
 const RUNS = { a: [] as Script, b: [{ match: EVERY_DEFAULT, answers: ['no'] }] as Script }
 
 // ---------------------------------------------------------------------------------------------------------------

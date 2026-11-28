@@ -1,4 +1,4 @@
-import { prStream } from '@lingtai/domain'
+import { prStream, RuntimeId } from '@lingtai/domain'
 import { ProjectFiles } from '@lingtai/project'
 import { resolveSource } from '@lingtai/recipe'
 import * as setup from '@lingtai/setup'
@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { addFlowEffect } from '../src/add.ts'
 import { chooseFirstProjectEffect } from '../src/first-project.ts'
 import { initCommandEffect } from '../src/init.ts'
+import { machineSetup } from '../src/machine-askers.ts'
 import { flagsFromArgv } from '../test/flags.ts'
 import { setupWorld, HOME, PATH, projectState } from '../test/local-setup-world.ts'
 
@@ -26,8 +27,8 @@ beforeEach(() => {
   vi.stubEnv('LINGTAI_HOME', HOME)
   walks = []
   observe = () => {}
-  const original = setup.runSetupList
-  vi.spyOn(setup, 'runSetupList').mockImplementation(((...args: Parameters<typeof original>) =>
+  const original = setup.runProjectList
+  vi.spyOn(setup, 'runProjectList').mockImplementation(((...args: Parameters<typeof original>) =>
     original(...args).pipe(
       Effect.tap((result) =>
         Effect.sync(() => {
@@ -45,6 +46,103 @@ afterEach(() => {
 })
 
 describe('init and add use the same project list (#1526)', () => {
+  it.each(['file', 'environment'])('add --local identifies an unreadable %s ceiling on its card', async (source) => {
+    const w = setupWorld()
+    const config = `${HOME}/config.yml`
+    const text = w.machineFiles.get(config)! + (source === 'file' ? 'limits:\n  day_usd: invalid\n' : '')
+    w.machineFiles.set(config, text)
+    const machine = machineSetup(
+      {
+        ...w.init,
+        path: config,
+        interactive: true,
+        env: { ...w.init.env, ...(source === 'environment' ? { LINGTAI_LIMITS_DAY_USD: 'invalid' } : {}) },
+        run: () => Promise.reject(new Error('the snapshot must not obtain a token')),
+        recipes: () => Effect.succeed([]),
+      },
+      { githubRequired: false },
+    )
+    w.add.machine = setup.machineSnapshotRows(machine.ports)
+    expect(await runAdd(w)).toBe(0)
+    expect(w.registered).toHaveLength(1)
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    expect(card).toMatch(/spend +could not read — /)
+    expect(card).toContain(source === 'file' ? 'limits.day_usd' : 'LINGTAI_LIMITS_DAY_USD')
+    expect(card).not.toMatch(/spend +no ceiling/)
+    expect(w.machineFiles.get(config)).toBe(text)
+  })
+
+  it('init --local supplies the remaining values as why before use this setup, including sandbox', async () => {
+    const w = setupWorld()
+    w.init.sandboxHost = () => ({ answer: Effect.void, install: null, builtIns: ['github.com'] })
+    const ask = w.init.ask
+    let preview: readonly string[] = []
+    w.init.ask = (prompt, opts) => {
+      if (prompt.startsWith('use this setup?')) {
+        preview = opts?.why ?? []
+        expect(w.writes).toEqual([])
+        expect(w.registered).toEqual([])
+        expect(w.branches.has('lingtai-base')).toBe(false)
+        expect(preview.some((row) => row.startsWith('sandbox  on'))).toBe(true)
+        expect(preview.some((row) => row.startsWith('writes  claude-code'))).toBe(true)
+        return Promise.resolve('yes')
+      }
+      return ask(prompt, opts)
+    }
+    expect(await runInit(w)).toBe(0)
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    for (const row of preview) {
+      const [label, ...words] = row.split('  ')
+      expect(card).toContain(label)
+      expect(card).toContain(words.join('  '))
+    }
+    expect(w.recipes.get(PATH)).toContain('enabled: true')
+    expect(w.events.filter((e) => e.startsWith('ask:')).some((e) => /which agent|extra hosts/.test(e))).toBe(false)
+  })
+
+  it('a real init rerun draws writer and spend changes, then unchanged without arrows', async () => {
+    const w = setupWorld()
+    w.init.runtimes = () =>
+      Effect.succeed([
+        { id: 'codex', state: 'signed-in', signedIn: true, detail: '' },
+        { id: 'claude-code', state: 'signed-in', signedIn: true, detail: '' },
+      ])
+    w.init.signedIn = () => Promise.resolve([RuntimeId.parse('codex'), RuntimeId.parse('claude-code')])
+    const base = ['--local', '/repo', '--mode', 'solo', '--defaults', '--reviewer', 'none']
+    expect(await runInit(w, [...base, '--agent', 'codex', '--day-usd', '100'])).toBe(0)
+    w.init.projects = () => Effect.succeed([projectState()])
+    w.logged.length = 0
+    const rerun = [...base, '--agent', 'claude-code', '--day-usd', '150']
+    expect(await runInit(w, rerun)).toBe(0)
+    const changed = w.logged.find((line) => line.includes('each attempt'))!
+    expect(changed).toMatch(/writes +codex → claude-code/)
+    expect(changed).toMatch(/spend +up to \$100 a day → up to \$150 a day/)
+    expect(changed).not.toContain('unchanged')
+    w.logged.length = 0
+    expect(await runInit(w, rerun)).toBe(0)
+    const same = w.logged.find((line) => line.includes('each attempt'))!
+    expect(same).toContain('unchanged')
+    expect(same).not.toContain('→')
+  })
+
+  it('a rerun that only adds a daily ceiling compares no ceiling and does not say unchanged', async () => {
+    const w = setupWorld()
+    const base = ['--local', '/repo', '--mode', 'solo', '--defaults']
+    expect(await runInit(w, [...base, '--day-usd', 'none'])).toBe(0)
+    w.init.projects = () => Effect.succeed([projectState()])
+    const recipe = w.recipes.get(PATH)
+    w.logged.length = 0
+    expect(await runInit(w, [...base, '--day-usd', '150'])).toBe(0)
+    expect(w.recipes.get(PATH)).toBe(recipe)
+    expect(w.machineFiles.get(`${HOME}/config.yml`)).toContain('day_usd: 150')
+    const card = w.logged.find((line) => line.includes('each attempt'))!
+    expect(card).toMatch(/spend +no ceiling → up to \$150 a day/)
+    expect(card).not.toContain('unchanged')
+    w.logged.length = 0
+    expect(await runInit(w, [...base, '--day-usd', '150'])).toBe(0)
+    expect(w.logged.find((line) => line.includes('each attempt'))).toContain('unchanged')
+  })
+
   it('init --local finishes all entries before setting the recipe, making lingtai-base or registering', () => {
     const w = setupWorld()
     observe = (entries) => {
@@ -159,7 +257,7 @@ describe('init and add use the same project list (#1526)', () => {
           reached()
           return new Promise(() => {})
         }
-        return Promise.resolve(/use every default/.test(prompt) ? 'no' : '')
+        return Promise.resolve(/use this setup/.test(prompt) ? 'no' : '')
       }
       const fiber = Effect.runFork(
         initCommandEffect(flagsFromArgv(['--local', '/repo', '--mode', 'solo', '--model', 'custom']), w.init).pipe(
@@ -225,7 +323,7 @@ describe('init and add use the same project list (#1526)', () => {
             ? 'yes'
             : /keep the list as it is/.test(prompt)
               ? 'keep'
-              : /use every default/.test(prompt)
+              : /use this setup/.test(prompt)
                 ? 'no'
                 : '',
         )
@@ -441,7 +539,7 @@ describe('init and add use the same project list (#1526)', () => {
     const w = setupWorld()
     observe = () => w.events.push('list-finished')
     w.project.ask = (prompt) =>
-      Promise.resolve(/Make it from/.test(prompt) ? 'yes' : /use every default/.test(prompt) ? 'no' : '')
+      Promise.resolve(/Make it from/.test(prompt) ? 'yes' : /use this setup/.test(prompt) ? 'no' : '')
     return runLocal(w, { local: '/repo', mode: 'team', personal: 'my-work' }).then((result) => {
       expect(result, w.logged.join('\n')).toMatchObject({ ok: true, base: 'my-work' })
       expect(w.events.filter((e) => !e.startsWith('ask:'))).toEqual([

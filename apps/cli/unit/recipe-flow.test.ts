@@ -17,7 +17,7 @@ const run = (at: Parameters<typeof walkProject>[1] = {}, world = terminal()) =>
 const textOf = (ctx: Awaited<ReturnType<typeof run>>['ctx']) =>
   editRecipe(ctx.start.text() ?? 'version: 2\n', ctx.pending)
 
-const noDefaults = (prompt: string) => (/use every default/.test(prompt) ? 'no' : '')
+const noDefaults = (prompt: string) => (/use this setup/.test(prompt) ? 'no' : '')
 
 describe('the recipe at the end of the list', () => {
   it('walks every entry, derives the findings judge and never sets a draft', () =>

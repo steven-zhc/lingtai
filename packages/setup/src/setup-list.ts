@@ -12,11 +12,12 @@ import { Effect } from 'effect'
 
 /** What is in force for one question: the value and whose it is, a fault in it, or nothing. */
 export type InForce =
-  | { value: string; from: 'environment' | 'file' }
+  | { value: string; from: 'environment' | 'file'; variable?: string }
   | {
       /** What is wrong with it, said before asking. */
       fault: string
       from: 'environment' | 'file'
+      variable?: string
       /** The answer that keeps what is there, where the fault is not the value's own (a database that is down). */
       value?: string
       /** A fault the run cannot repair (an exported variable): refused by name rather than asked. */
@@ -36,8 +37,58 @@ export interface DefaultsMode {
   interactive: boolean
 }
 
+export interface SetupRow {
+  id: string
+  label: string
+  text: string
+  group: 'machine' | 'project' | 'attempt'
+  changed: boolean
+}
+
+/** Pure projection of settled state; composite rows own all their components. */
+export interface Presentation<C> {
+  label: string
+  group: SetupRow['group']
+  order?: number
+  before: (ctx: C) => unknown
+  value: (ctx: C) => unknown
+  format: (value: unknown, ctx: C) => string
+  diff?: (before: unknown, value: unknown, ctx: C) => string
+}
+
+export function setupRows<C>(list: readonly SetupQuestion<C>[], ctx: C): SetupRow[] {
+  return list
+    .filter((q) => q.presentation !== undefined)
+    .sort((a, b) => (a.presentation!.order ?? list.indexOf(a)) - (b.presentation!.order ?? list.indexOf(b)))
+    .map((q) => {
+      const p = q.presentation!
+      const before = p.before(ctx)
+      const value = p.value(ctx)
+      const changed = before !== undefined && JSON.stringify(before) !== JSON.stringify(value)
+      return {
+        id: q.id,
+        label: p.label,
+        group: p.group,
+        changed,
+        text: changed
+          ? (p.diff?.(before, value, ctx) ?? `${p.format(before, ctx)} → ${p.format(value, ctx)}`)
+          : p.format(value, ctx),
+      }
+    })
+}
+
 export interface SetupQuestion<C> {
   id: string
+  presentation?: Presentation<C>
+  /** The answer row for a machine descriptor; values always pass through its safe formatter. */
+  card?: {
+    label: string
+    environment: string
+    /** The effective value when nothing is in force, independently of the offered default. */
+    absent?: string
+    /** Project a command answer to the state it actually left behind. */
+    effective?: (entry: Entry) => string
+  }
   /** The subject of a refusal — "the daily spend ceiling". */
   name: string
   /** The text after "pass" in a refusal. */
@@ -77,11 +128,11 @@ export interface SetupQuestion<C> {
    * do not answer it: a confirmation after the switch is still asked.
    */
   confirm?: { declined: string | ((ctx: C) => string) }
-  /** The *use every default?* entry: a yes makes every later entry behave as under `--defaults`. */
+  /** A defaults switch. Project preview orchestration consumes it before the configuration walk. */
   defaultsSwitch?: true
   write: (answer: string, inForce: InForce, ctx: C) => Effect.Effect<WriteResult | { refused: string }, unknown>
   /** The card row: the value, and what it was. */
-  row: (value: string, before: InForce) => string
+  row: (value: string, before: InForce, description?: string) => string
   /** Words for `why`, drawn where the question is asked. */
   why?: readonly string[]
   /** What the environment's value is shown as. */
@@ -138,8 +189,8 @@ export interface Entry {
 }
 
 export type ListResult<C> =
-  | { refused: string; entries: Entry[]; deferred: SetupQuestion<C>[] }
-  | { refused?: undefined; entries: Entry[]; deferred: SetupQuestion<C>[] }
+  | { refused: string; entries: Entry[]; failedId?: string; deferred: SetupQuestion<C>[] }
+  | { refused?: undefined; entries: Entry[]; failedId?: string; deferred: SetupQuestion<C>[] }
 
 const normalized = <C>(q: SetupQuestion<C>, answer: string): string =>
   q.normalize === undefined ? answer : q.normalize(answer)
@@ -168,10 +219,12 @@ export function runSetupList<C extends object>(
   return Effect.gen(function* () {
     const entries: Entry[] = []
     const deferred: SetupQuestion<C>[] = []
-    const refuse = (refused: string): ListResult<C> => ({ refused, entries, deferred })
+    let failedId: string | undefined
+    const refuse = (refused: string): ListResult<C> => ({ refused, entries, deferred, failedId })
     let defaults = input.defaults
 
     for (const q of list) {
+      failedId = q.id
       if (q.needed !== undefined && !(yield* q.needed(ctx))) {
         deferred.push(q)
         continue

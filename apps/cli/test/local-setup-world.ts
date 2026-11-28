@@ -54,7 +54,7 @@ export function setupWorld(
   }
   const ask: FirstProjectWorld['ask'] = (prompt) => {
     events.push(`ask:${prompt}`)
-    return Promise.resolve(/use every default/.test(prompt) ? 'no' : '')
+    return Promise.resolve(/use this setup/.test(prompt) ? 'no' : '')
   }
   const projects = () => Effect.succeed(at.projects ?? [])
   const git: FirstProjectWorld['git'] = (_dir, args) =>

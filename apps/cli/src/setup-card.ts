@@ -3,9 +3,6 @@
  * facts. It reads no file and runs no doctor: everything arrives on `facts`.
  * `setup-end.ts` prints it.
  */
-import { basename } from 'node:path'
-
-import { type StoreChoice, redactUrl } from '@lingtai/env'
 import { paint } from '@lingtai/env/colour'
 import {
   type Recipe,
@@ -18,7 +15,7 @@ import {
   remoteOf,
   ticketSourceOf,
 } from '@lingtai/recipe'
-import type { RuntimeFound } from '@lingtai/setup'
+import type { RuntimeFound, SetupRow } from '@lingtai/setup'
 
 import type { DoctorReport } from './doctor.ts'
 import type { IssueTakes } from './next-steps.ts'
@@ -62,26 +59,15 @@ export interface SetupCardFacts {
   project?: string
   /** The project was already registered. */
   updated: boolean
-  /** A rerun that took every default: it wrote nothing and registered nothing (#1473). */
-  unchanged?: boolean
   home: string
   /** This run created `config.yml`. */
   homeIsNew: boolean
   /** For the `~` substitution — passed in, so a test never depends on the real `$HOME`. */
   userHome: string
-  store: StoreChoice
   runtimes: readonly RuntimeFound[]
-  /** Where the code lives: a checkout (`local`, the default), or a repository on GitHub. */
-  where?: 'local' | 'github'
-  /** How this machine reaches GitHub — `gh, signed in as me`, `the App x` — as a row of *this machine*. */
-  github?: string
-  /** The day's spend ceiling this run asked about, as a row of *this machine*: `$100 a day`, `no ceiling`. */
-  spend?: string
-  /**
-   * `recipe` and `trial` come together, or not at all: `init --project github` has no repository yet, so
-   * its card is *this machine* alone and `recipePath` is absent with them.
-   */
-  recipe?: CardRecipe
+  machine: readonly SetupRow[]
+  rows?: readonly SetupRow[]
+  next?: string
   /** The labels the queue reads, made at `add` (#1486); absent on `init`, whose card is unchanged. */
   labels?: {
     slug: string
@@ -162,41 +148,10 @@ function tilde(path: string, userHome: string): string {
   return path.startsWith(`${userHome}/`) ? `~${path.slice(userHome.length)}` : path
 }
 
-function logRow(store: StoreChoice): string {
-  if ('refused' in store) return paint.fail(store.refused)
-  if (store.store === 'sqlite') return `SQLite · ${basename(store.path)}`
-  try {
-    return `Postgres · ${new URL(store.url).hostname}`
-  } catch {
-    return 'Postgres · (a URL that does not parse)'
-  }
-}
-
 function agentsRow(runtimes: readonly RuntimeFound[]): string {
   const mark = (r: RuntimeFound): string =>
     r.state === 'signed-in' ? symbol.pass() : r.state === 'did-not-start' ? '?' : symbol.fail()
   return runtimes.map((r) => `${r.id} ${mark(r)}`).join('  ')
-}
-
-/** `git@host:o/r` — user without a password, then `host:path`; the only non-URL remote printed as written. */
-const SCP_REMOTE = /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/
-
-function landsOnRow(recipe: CardRecipe, userHome: string, site: 'local' | 'github'): string {
-  if (site === 'github') return `${recipe.base}, on GitHub`
-  if (recipe.remote === null) return recipe.base
-  const remote = recipe.remote
-  // A remote that does not parse as a URL is printed only when it is plainly a path or scp-style;
-  // anything else could carry `user:password@`, and redaction cannot vouch for it.
-  const where = remote.startsWith('/')
-    ? tilde(remote, userHome)
-    : SCP_REMOTE.test(remote) || (!remote.includes('@') && !remote.includes('://'))
-      ? remote
-      : redactUrl(remote)
-  return `${recipe.base}, in ${where}`
-}
-
-function agentRow(a: CardAgent | null): string {
-  return a === null ? 'none' : a.model === null ? a.agent : `${a.agent}, ${a.model}`
 }
 
 function trialRow(trial: TrialOutcome): string {
@@ -225,86 +180,33 @@ function shellQuote(word: string): string {
 
 /** The card: a heading, three groups a blank line apart, one fact a row. No closing line — that is `renderReadyLine`. */
 export function renderSetupCard(facts: SetupCardFacts): string {
-  const { recipe, trial, userHome } = facts
-  const where = facts.where ?? 'local'
+  const { trial, userHome } = facts
   const home = `${tilde(facts.home, userHome)}${facts.homeIsNew ? '  new' : ''}`
   const groups: { title: string; rows: Row[] }[] = [
     {
       title: 'this machine',
       rows: [
         ['home', home],
-        ['log', logRow(facts.store)],
         ['agents', agentsRow(facts.runtimes)],
-        ...(facts.github === undefined ? [] : [['github', facts.github] as const]),
-        ...(facts.spend === undefined ? [] : [['spend', facts.spend] as const]),
+        ...facts.machine.map((r): Row => [r.label, r.text]),
       ],
     },
   ]
-  if (recipe !== undefined && trial !== undefined) {
+  if (facts.rows !== undefined && trial !== undefined) {
     groups.push(
-      {
-        title: 'this project',
-        rows: [
-          ['code', where === 'github' ? `${recipe.code}  github` : `${tilde(recipe.code, userHome)}  local`],
-          ...(recipe.team === undefined
-            ? [['lands on', landsOnRow(recipe, userHome, where)] as const]
-            : [
-                [
-                  'takes',
-                  recipe.team.login === null
-                    ? 'every ticket — local tickets are yours'
-                    : `issues assigned to ${recipe.team.login}`,
-                ] as const,
-                ['works on', `${recipe.team.personal}; main is brought in when you submit a PR`] as const,
-                ['main', 'only through a PR you submit, one at a time · lingtai pr — never pushes main'] as const,
-              ]),
-          ['tickets', `${recipe.tickets === 'db' ? 'Lingtai’s table' : 'GitHub issues'} · ${recipe.kinds.join(' › ')}`],
-        ],
-      },
+      { title: 'this project', rows: facts.rows.filter((r) => r.group === 'project').map((r) => [r.label, r.text]) },
       {
         title: 'each attempt',
         rows: [
-          ['writes', agentRow(recipe.writer)],
-          ['reviews', agentRow(recipe.reviewer)],
-          ...(recipe.findingsJudge === null
-            ? []
-            : [
-                [
-                  'findings',
-                  recipe.findingsJudge.rounds === 0
-                    ? `no fix rounds — the ${recipe.findingsJudge.judge} judge can still restart the attempt or hand a finding to you`
-                    : `go back to the writer up to ${recipe.findingsJudge.rounds} times — each is a ${recipe.findingsJudge.judge} judge call and another writer run`,
-                ] as const,
-              ]),
-          [
-            'checks',
-            recipe.checks.length > 0 ? recipe.checks.join(' · ') : 'none — nothing checks a diff before review',
-          ],
+          ...facts.rows.filter((r) => r.group === 'attempt').map((r): Row => [r.label, r.text]),
           ['trial', trialRow(trial)],
-          ...(recipe.team !== undefined && !recipe.approves
-            ? []
-            : [
-                [
-                  'approve',
-                  recipe.approves ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking',
-                ] as const,
-              ]),
-          ...(recipe.team === undefined
-            ? []
-            : [
-                [
-                  'next',
-                  recipe.team.login === null
-                    ? 'open a ticket with lingtai ticket new, then lingtai start'
-                    : 'assign yourself an issue, then lingtai start',
-                ] as const,
-              ]),
+          ...(facts.next === undefined ? [] : [['next', facts.next] as const]),
         ],
       },
     )
   }
   const labels = facts.labels
-  if (labels !== undefined && recipe !== undefined && trial !== undefined) {
+  if (labels !== undefined && facts.rows !== undefined && trial !== undefined) {
     const rows: Row[] = []
     if (labels.created.length > 0) rows.push(['labels', `made ${labels.created.join(', ')}`])
     for (const m of labels.missing) {
@@ -323,10 +225,12 @@ export function renderSetupCard(facts: SetupCardFacts): string {
     groups.splice(Math.min(2, groups.length), 0, { title: 'left behind', rows })
   }
   const column = Math.max(...groups.flatMap((g) => g.rows.map(([label]) => width(label)))) + 2
-  const top =
-    recipe?.team !== undefined && facts.project !== undefined && !facts.updated
-      ? `${symbol.pass()} ${facts.project} added — team`
-      : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${facts.unchanged === true ? `  ${paint.muted('unchanged')}` : facts.updated ? `  ${paint.muted('updated')}` : ''}`
+  const unchanged = facts.updated && ![...facts.machine, ...(facts.rows ?? [])].some((r) => r.changed)
+  const firstTeam =
+    !facts.updated && facts.rows?.some((r) => r.id === 'mode' && r.text === 'team') && facts.project !== undefined
+  const top = firstTeam
+    ? `${symbol.pass()} ${facts.project} added — team`
+    : `${heading(facts.command)}${facts.project === undefined ? '' : `  ${facts.project}`}${unchanged ? `  ${paint.muted('unchanged')}` : ''}`
   const body = groups.map((g) => [
     g.title,
     ...g.rows.map(([label, value]) => `  ${paint.muted(label)}${' '.repeat(column - width(label))}${value}`),

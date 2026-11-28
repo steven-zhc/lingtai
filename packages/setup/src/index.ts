@@ -23,3 +23,5 @@ export * from './personal-branch.ts'
 export * from './machine-list.ts'
 export * from './setup-list.ts'
 export * from './summary.ts'
+
+export * from './project-preview.ts'

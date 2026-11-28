@@ -88,7 +88,7 @@ interface Harness {
 /**
  * A TTY: `ask` answers the first prompt `local`, the second `/repo`, and
  * every later one `''` — the default at every later question, including
- * `askRecipe`'s own "use every default?", which takes every recipe question's
+ * `askRecipe`'s own "use this setup?", which takes every recipe question's
  * default along with it (#435's Done-when 3).
  */
 function ttyHarness(): Harness {
@@ -131,6 +131,9 @@ function ttyHarness(): Harness {
   }
   const logged: string[] = []
   const world: AddTestWorld = {
+    machine: Effect.succeed([
+      { id: 'github', label: 'github', text: 'gh, signed in as sam', group: 'machine', changed: false },
+    ]),
     project: liftFirstProjectWorld(project),
     error: (line) => errors.push(line),
     log: (line) => logged.push(line),
@@ -158,12 +161,12 @@ describe('addFlow at a TTY asks the project and recipe questions, and nothing be
     // anything (`world.github.app()` answers directly, with no prompt).
     expect(asked[0]).toMatch(/a GitHub project, or one on this machine only/)
     // Every later prompt is the directory, the base branch, or a recipe
-    // question — `askRecipe`'s "use every default?" is the only one of
+    // question — `askRecipe`'s "use this setup?" is the only one of
     // those actually reached, since taking its own default (an empty answer)
     // answers every question beneath it without asking again — and then the summary's confirm.
     for (const prompt of asked.slice(1)) {
       expect(prompt).toMatch(
-        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use every default\?|register anyway\?/,
+        /the directory of the repository on this machine|the branch this project's recipe governs and merges into|use this setup\?|register anyway\?/,
       )
     }
     expect(asked.length).toBeGreaterThan(1)
@@ -321,7 +324,7 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     expect(text).toMatch(/^add {2}widgets$/m)
     expect(text).toMatch(/github\s+gh, signed in as sam/)
     expect(text).toMatch(/code\s+acme\/widgets {2}github/)
-    expect(text).toMatch(/lands on\s+main, on GitHub/)
+    expect(text).toMatch(/works on\s+main/)
     expect(text).toContain('each attempt')
     expect(text).toMatch(/✓ ready — doctor: all 27 passed.*recipe: .*widgets/)
     expect(text).not.toContain('a dump line')
@@ -904,8 +907,8 @@ describe('a GitHub add ends on the card, not on a dump of every setting (#755)',
     h.world.githubDeps = {
       ...h.world.githubDeps!,
       ask: async (prompt, shape) => {
-        // `use every default?` defaults to yes, which would answer the kinds without asking.
-        if (prompt.startsWith('use every default?')) return 'no'
+        // `use this setup?` defaults to yes, which would answer the kinds without asking.
+        if (prompt.startsWith('use this setup?')) return 'no'
         if (prompt.startsWith('which labels are work')) {
           asked = true
           return null

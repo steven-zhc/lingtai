@@ -27,7 +27,7 @@ import {
   needsClaudeToken,
   setClaudeTokenEffect,
 } from './claude-token.ts'
-import type { InForce, SetupQuestion } from './setup-list.ts'
+import type { Entry, InForce, SetupQuestion, SetupRow } from './setup-list.ts'
 
 // ------------------------------------------------------------ the descriptor --
 
@@ -95,8 +95,8 @@ export function writeStore(file: MachineText, path: string, store: { sqlite: tru
 
 export type StoreReading =
   | { store: null; fault?: string }
-  | { store: 'sqlite' }
-  | { store: 'postgres'; url: string; environment: boolean }
+  | { store: 'sqlite'; environment?: boolean; variable?: string }
+  | { store: 'postgres'; url: string; environment: boolean; variable?: string }
 
 export type AuthReading =
   | { kind: 'gh' | 'app' | 'none' | null; environment: boolean; written: boolean }
@@ -178,6 +178,7 @@ export function machineQuestions(
 ): readonly SetupQuestion<RunContext>[] {
   const store: SetupQuestion<RunContext> = {
     id: 'store',
+    card: { label: 'log', environment: 'LINGTAI_DATABASE_URL' },
     name: 'the store',
     flag: '--store sqlite, or --store postgres --database-url <url>',
     fromFlags: (flags) => {
@@ -190,10 +191,11 @@ export function machineQuestions(
       Effect.gen(function* () {
         const read = ports.store()
         if (read.store === null) return read.fault === undefined ? null : ({ fault: read.fault, from: 'file' } as const)
-        if (read.store === 'sqlite') return { value: '', from: 'file' } as const
+        if (read.store === 'sqlite')
+          return { value: '', from: read.environment ? 'environment' : 'file', variable: read.variable } as const
         const check = yield* ports.database(read.url)
         const from = read.environment ? ('environment' as const) : ('file' as const)
-        if (check.ok) return { value: read.url, from } as const
+        if (check.ok) return { value: read.url, from, variable: read.variable } as const
         return {
           fault: `the database ${read.environment ? 'the environment' : 'config.yml'} names does not answer — ${check.why}`,
           from,
@@ -220,11 +222,19 @@ export function machineQuestions(
         },
         catch: (e) => e,
       }),
-    row: (value) => (value === '' ? 'SQLite' : 'Postgres'),
+    row: (value) => {
+      if (value === '') return 'SQLite'
+      try {
+        return `Postgres · ${new URL(value).hostname}`
+      } catch {
+        return 'Postgres · (a URL that does not parse)'
+      }
+    },
   }
 
   const github: SetupQuestion<RunContext> = {
     id: 'github',
+    card: { label: 'github', environment: 'LINGTAI_GITHUB_AUTH' },
     name: 'how this machine reaches GitHub',
     flag: '--github-auth gh, --github-auth app, or --github-auth none',
     fromFlags: (flags) => {
@@ -298,11 +308,13 @@ export function machineQuestions(
       value === 'none' && opts.githubRequired
         ? 'LINGTAI_GITHUB_AUTH names none, and a GitHub project needs a way to reach GitHub — unset it or export gh or app. Nothing was written'
         : null,
-    row: (value) => (value === 'none' ? 'no GitHub' : value),
+    row: (value, _before, description) =>
+      description ?? (value === 'none' ? 'no GitHub' : value === 'app' ? 'the App' : value),
   }
 
   const ceiling: SetupQuestion<RunContext> = {
     id: 'ceiling',
+    card: { label: 'spend', environment: 'LINGTAI_LIMITS_DAY_USD', absent: 'none' },
     name: 'the daily spend ceiling',
     flag: '--day-usd <dollars>, or --day-usd none',
     fromFlags: (flags) => flags['day-usd'] ?? null,
@@ -342,16 +354,17 @@ export function machineQuestions(
         },
         catch: (e) => e,
       }),
-    row: (value, before) =>
-      value === 'none'
-        ? 'no ceiling'
-        : before !== null && !('fault' in before) && before.value !== value
-          ? `${dollarsText(Number(value))} a day (was ${dollarsText(Number(before.value))})`
-          : `${dollarsText(Number(value))} a day`,
+    row: (value) => (value === 'none' ? 'no ceiling' : `up to ${dollarsText(Number(value))} a day`),
   }
 
   const claudeToken: SetupQuestion<RunContext> = {
     id: 'claude-token',
+    card: {
+      label: 'claude token',
+      environment: 'LINGTAI_CLAUDE_OAUTH_TOKEN',
+      absent: 'skip',
+      effective: (entry) => (entry.wrote ? 'set' : (entry.before?.value ?? 'skip')),
+    },
     name: 'the sandboxed Claude Code token',
     flag: '--claude-token keep, or --claude-token skip',
     fromFlags: (flags) => {
@@ -423,8 +436,68 @@ export function machineQuestions(
         if (saved.done.environmentWins) ports.say(environmentWinsSentence("this process's"))
         return { wrote: true }
       }),
-    row: (value) => (value === 'run' ? 'set' : value === 'keep' ? 'set' : 'skipped'),
+    row: (value) => (value === 'set' || value === 'run' || value === 'keep' ? 'set' : 'skipped'),
   }
 
   return [store, github, ceiling, claudeToken]
+}
+
+/** Rows from the same machine descriptors and answer records, with no credential snapshots.
+ * A new machine has no before-state; a configured machine's absent keys retain their effective values.
+ */
+export function machineRows(
+  list: readonly SetupQuestion<RunContext>[],
+  entries: readonly Entry[],
+  descriptions: Readonly<Record<string, string>> = {},
+  configured = true,
+): SetupRow[] {
+  return entries
+    .filter((e) => e.applies)
+    .flatMap((e) => {
+      const q = list.find((q) => q.id === e.id)
+      if (q === undefined) return []
+      const before = e.before
+      const fault = before !== null && 'fault' in before && e.after === null ? before.fault : undefined
+      const beforeValue = before === null ? q.card?.absent : before.value
+      const value = q.card?.effective?.(e) ?? e.after ?? beforeValue
+      if (value === undefined && fault === undefined) return []
+      const changed =
+        (configured || before !== null) &&
+        beforeValue !== undefined &&
+        !(before !== null && 'fault' in before) &&
+        beforeValue !== value
+      const text = fault === undefined ? q.row(value!, null, descriptions[e.id]) : `could not read — ${fault}`
+      return [
+        {
+          id: e.id,
+          group: 'machine' as const,
+          label: q.card?.label ?? e.id,
+          changed,
+          text:
+            (changed ? `${q.row(beforeValue!, null)} → ${text}` : text) +
+            (before?.from === 'environment' ? ` — from ${before.variable ?? q.card?.environment}` : ''),
+        },
+      ]
+    })
+}
+
+/** Observes the machine list without answering or writing any question (the `add` card). */
+export function machineSnapshotRows(ports: MachinePorts): Effect.Effect<SetupRow[], unknown> {
+  const list = machineQuestions(ports, { githubRequired: false })
+  return Effect.gen(function* () {
+    const entries: Entry[] = []
+    for (const q of list) {
+      const before = q.inForce === undefined ? null : yield* q.inForce({})
+      entries.push({
+        id: q.id,
+        before,
+        after: null,
+        wrote: false,
+        pending: false,
+        asked: false,
+        applies: true,
+      })
+    }
+    return machineRows(list, entries)
+  })
 }

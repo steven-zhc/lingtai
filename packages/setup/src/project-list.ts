@@ -2,7 +2,7 @@
  * The project list (ADR 0125 §9, `doc/design/1523.md` §4, `doc/design/1529.md` §2–§5, #1531): the 25 questions
  * `lingtai add` and `init` ask about one project, as descriptors on #1527's runner. Each says what is in force, what
  * the system's default is, when it applies, what it writes and what it records for the entries after it. A terminal or
- * a board supplies an asker per id (#1529); no command walks the list yet (#1525, #1526).
+ * a board supplies an asker per id (#1529); CLI commands share the preview walk in `project-preview.ts`.
  *
  * **Nothing here applies a change.** Every `write` appends to `ctx.pending`, and the list's caller applies it once, at
  * its own end, so a refusal or a Ctrl+C anywhere in the walk leaves the recipe as it was. Reads of what the answers
@@ -20,6 +20,8 @@ import { RuntimeId } from '@lingtai/domain'
 import { keyIn, projectView, type ProjectView, type RecipeDraft } from '@lingtai/project'
 import {
   assigneeChanges,
+  assigneeOf,
+  modeOf,
   branchOf,
   budgetChange,
   ceilingOf,
@@ -29,6 +31,7 @@ import {
   holdRemovalChanges,
   kindsChanges,
   kindsOf,
+  isBuiltInJudge,
   landingChanges,
   landOnBranchChanges,
   refusalFixesChange,
@@ -73,7 +76,7 @@ import {
   resolvedRunActions,
   type NamedRun,
 } from './setup-build-actions.ts'
-import type { InForce, SetupQuestion, WriteResult } from './setup-list.ts'
+import type { InForce, SetupQuestion, WriteResult, Presentation, SetupRow } from './setup-list.ts'
 import { summariseRecipe } from './summary.ts'
 import { ticketSourceOf, type TicketSourceName } from './ticket-source.ts'
 
@@ -176,6 +179,8 @@ export interface ProjectTrialAt {
 export interface ProjectPorts {
   /** The project's name: the log's streams are `ticket-<project>-*`. */
   project: string
+  /** Display location where the recipe itself has no checkout (owner/repo). */
+  location?: string
   /** A local directory has no owner: `where` is fixed to it, and no ticket is read from GitHub. */
   local: boolean
   /** The checkout this run is in, for *move the landing?*; null where there is none (GitHub). */
@@ -511,13 +516,78 @@ function dollarCeilingNote(named: unknown): string {
     : 'only claude-code holds a dollar ceiling on one run, and this recipe names no runtime.agent — runtime.limits.run.usd is written, and holds only where claude-code is the runtime that runs'
 }
 
+/** Presentation reads settled state, never computes an offered default or runs a port. */
+function presentation<T>(
+  label: string,
+  group: SetupRow['group'],
+  read: (view: ProjectView, ctx: ProjectContext) => T,
+  format: (value: T, ctx: ProjectContext) => string = (v) => String(v ?? 'none'),
+  order?: number,
+  diff?: (before: T, value: T, ctx: ProjectContext) => string,
+): Presentation<ProjectContext> {
+  return {
+    label,
+    group,
+    order,
+    ...(diff === undefined
+      ? {}
+      : { diff: (before: unknown, value: unknown, ctx: ProjectContext) => diff(before as T, value as T, ctx) }),
+    before: (ctx) => (rerun(ctx) ? read(projectView(ctx.start, []), ctx) : undefined),
+    value: (ctx) => read(ctx.view, ctx),
+    format: (value, ctx) => format(value as T, ctx),
+  }
+}
+
+const safeLocation = (value: unknown): string => {
+  const text = String(value)
+  if (
+    text.startsWith('/') ||
+    /^[^:@/\s]+@[^:/\s]+:(?!\/\/)\S*$/.test(text) ||
+    (!text.includes('@') && !text.includes('://'))
+  )
+    return text
+  try {
+    const url = new URL(text)
+    url.password = url.password === '' ? '' : '***'
+    return url.toString()
+  } catch {
+    return '(remote could not be read)'
+  }
+}
+
+const presentedActions = (view: ProjectView, step: 'implement' | 'review' | 'prepared' | 'build') => {
+  const written = view.get(['steps', step])
+  return written === null ? (view.resolved()?.recipe.steps[step] ?? []) : written
+}
+const actionIn = (view: ProjectView, step: 'implement' | 'review') =>
+  findAgentAction(presentedActions(view, step))?.action
+const agentPresentation = (step: 'implement' | 'review') => (view: ProjectView) => {
+  const action = actionIn(view, step)
+  return {
+    agent: action?.['agent'] ?? (step === 'implement' ? view.get(['runtime', 'agent']) : 'none'),
+    model: action?.['model'] ?? null,
+  }
+}
+const agentText = (a: ReturnType<ReturnType<typeof agentPresentation>>) =>
+  a.model === null ? String(a.agent ?? 'none') : `${a.agent}, ${a.model}`
+const limitPresentation = (label: string, read: (view: ProjectView) => unknown) => presentation(label, 'attempt', read)
+
 // ---------------------------------------------------------------------------------------------------------------
 // The list
 
 const entry = (
   id: ProjectQuestionId,
   d: Omit<ProjectQuestion, 'id' | 'flags' | 'row'> & { row?: ProjectQuestion['row'] },
-): ProjectQuestion => ({ id, flags: FLAGS_OF[id], row: rowOf, ...d })
+): ProjectQuestion => ({
+  id,
+  flags: FLAGS_OF[id],
+  row: rowOf,
+  ...d,
+  presentation:
+    d.presentation === undefined
+      ? undefined
+      : { ...d.presentation, order: d.presentation.order ?? PROJECT_QUESTION_IDS.indexOf(id) },
+})
 
 /**
  * The project list: 25 descriptors in design order. What the ports say about the run's shape (local or GitHub, a
@@ -531,6 +601,15 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
       Effect.succeed(allowed.includes(answer) ? null : `${answer} is not one of ${allowed.join(', ')}`)
 
   const where = entry('where', {
+    presentation: presentation(
+      'code',
+      'project',
+      (v, ctx) => ({
+        where: ctx.ports.local ? 'local' : 'github',
+        code: safeLocation(v.get(['repo', 'remote']) ?? ctx.ports.location ?? ctx.ports.project),
+      }),
+      (v) => `${v.code}  ${v.where}`,
+    ),
     name: 'where the project is',
     flag: '--project github, or --project local',
     // Always fixed: the ports exist only once it is answered, and it takes no flag and has no asker.
@@ -551,6 +630,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const mode = entry('mode', {
+    presentation: presentation('mode', 'project', (v) =>
+      (() => {
+        const r = v.resolved()
+        return r === null ? (v.get(['mode']) ?? 'solo') : modeOf(r.recipe)
+      })(),
+    ),
     name: 'the mode',
     flag: '--mode team|solo',
     fromFlags: (flags) => flags['mode'] ?? null,
@@ -575,6 +660,20 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const login = entry('login', {
+    presentation: presentation(
+      'takes',
+      'project',
+      (v) => {
+        const claim = v.resolved()?.recipe
+        return claim === undefined ? null : (assigneeOf(claim) ?? null)
+      },
+      (v, ctx) =>
+        ctx.ports.local
+          ? 'every ticket — local tickets are yours'
+          : v?.take === 'mine'
+            ? `issues assigned to ${v.login}`
+            : 'every issue, whoever it is assigned to',
+    ),
     name: 'your GitHub login',
     flag: '--login <login>',
     applies: (ctx) => ctx.answers.mode === 'team' && !ports.local,
@@ -612,6 +711,22 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     })
 
   const branch = entry('branch', {
+    presentation: presentation(
+      'works on',
+      'project',
+      (v) => {
+        const r = v.resolved()
+        return {
+          name: r === null ? (v.get(['branch', 'personal']) ?? v.get(['branch', 'main'])) : branchOf(r.recipe),
+          main: v.get(['branch', 'main']),
+          team: v.get(['mode']) === 'team',
+        }
+      },
+      (v) =>
+        v.team
+          ? `${v.name}; main (${v.main}) is brought in when you submit a PR — main changes only through a PR you submit, one at a time · lingtai pr — never pushes main`
+          : String(v.name),
+    ),
     name: 'the branch',
     flag: '--main <branch> (solo), or --personal <branch> (team)',
     fromFlags: (flags, ctx) => (ctx.answers.mode === 'team' ? flags['personal'] : flags['main']) ?? null,
@@ -799,7 +914,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const defaults = entry('defaults', {
-    name: 'every default',
+    name: 'this setup',
     flag: '--defaults',
     defaultsSwitch: true,
     write: (answer, _inForce, ctx) =>
@@ -812,6 +927,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   // ---- the writer and the reviewer: four entries, one action each ---------------------------------------------
 
   const writer = entry('writer', {
+    presentation: presentation('writes', 'attempt', agentPresentation('implement'), agentText, 7),
     name: 'which agent writes the change',
     flag: `--agent <${RuntimeId.options.join('|')}>`,
     fromFlags: (flags) => flags['agent'] ?? null,
@@ -906,6 +1022,7 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const reviewer = entry('reviewer', {
+    presentation: presentation('reviews', 'attempt', agentPresentation('review'), agentText, 9),
     name: 'a cold reviewer',
     flag: '--reviewer <runtime|none>',
     fromFlags: (flags) => flags['reviewer'] ?? null,
@@ -1015,6 +1132,23 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   // ---- the sandbox ----------------------------------------------------------------------------------------------
 
   const sandbox = entry('sandbox', {
+    presentation: presentation(
+      'sandbox',
+      'project',
+      (v) => {
+        const s = v.resolved()?.recipe.sandbox
+        return { on: s?.enabled === true, hosts: s?.network.allow ?? [] }
+      },
+      (v, ctx) =>
+        `${v.on ? `on · ${v.hosts.length === 0 ? 'no extra hosts' : v.hosts.join(', ')}` : 'off'}${
+          ctx.ports.proposal?.sandbox == null
+            ? ''
+            : (() => {
+                const why = sandboxCannotSentence(ctx.ports.proposal.sandbox)
+                return why === null ? '' : ` — ${why}`
+              })()
+        }`,
+    ),
     name: 'the sandbox',
     flag: '--sandbox on|off',
     applies: () => ports.proposal?.sandbox != null,
@@ -1081,6 +1215,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   // ---- install, the checks and the trial ---------------------------------------------------------------------
 
   const install = entry('install', {
+    presentation: presentation(
+      'install',
+      'attempt',
+      (v) => runActionsIn(presentedActions(v, 'prepared')).map((a) => a.run),
+      (v) => (v.length === 0 ? 'none' : v.join(' · ')),
+    ),
     name: 'the install command',
     flag: '--install <command>, or --install none',
     fromFlags: (flags) => flags['install'] ?? null,
@@ -1116,6 +1256,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const checks = entry('checks', {
+    presentation: presentation(
+      'checks',
+      'attempt',
+      (v) => runActionsIn(presentedActions(v, 'build')).map((a) => a.run),
+      (v) => (v.length === 0 ? 'none — nothing checks a diff before review' : v.join(' · ')),
+    ),
     name: 'the build steps',
     flag: '--build <command> (repeatable), or --build none',
     // Every `--build`, in order, as a JSON array: `flags['build']` holds only the last.
@@ -1221,6 +1367,19 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
     ticketSourceOf(atStart(ctx, ['source', 'tickets']), ctx.answers.history ?? [])
 
   const tickets = entry('tickets', {
+    presentation: presentation(
+      'tickets',
+      'project',
+      (v) => {
+        const r = v.resolved()
+        return {
+          tickets: v.get(['source', 'tickets']),
+          kinds: r === null ? v.get(['source', 'kinds']) : kindsOf(r.recipe),
+        }
+      },
+      (v) =>
+        `${v.tickets === 'db' ? 'Lingtai’s table' : 'GitHub issues'} · ${Array.isArray(v.kinds) ? v.kinds.join(' › ') : ''}`,
+    ),
     name: 'the ticket source',
     flag: '--tickets <github|db>',
     fromFlags: (flags) => {
@@ -1304,6 +1463,15 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   // ---- the landing and the judge -------------------------------------------------------------------------------
 
   const landing = entry('landing', {
+    presentation: presentation(
+      'approve',
+      'attempt',
+      (v) => {
+        const proposed = v.resolved()?.recipe.steps.proposed ?? []
+        return proposed.some((a) => 'human' in a)
+      },
+      (v) => (v ? 'you approve every attempt before it lands' : 'an attempt lands with no one asking'),
+    ),
     name: 'the landing',
     flag: '--land hold (wait for me to approve) or --land <branch> (land on that branch)',
     // A team project lands where its mode says (0130 §2), so neither half is asked; `--land hold` is still honoured.
@@ -1367,6 +1535,33 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const findingsJudge = entry('findings-judge', {
+    presentation: presentation(
+      'findings',
+      'attempt',
+      (v) => {
+        const r = v.resolved()
+        const a = r?.recipe.steps.proposed.find(
+          (a) => 'judge' in a && a.when === 'findings' && !isBuiltInJudge(String(a.judge)),
+        )
+        return {
+          judge: a !== undefined && 'judge' in a ? String(a.judge) : null,
+          rounds: r === null ? null : ceilingOf(r.recipe).attempt.refusalFixes,
+        }
+      },
+      (v) =>
+        v.judge === null
+          ? 'no agent judge'
+          : v.rounds === 0
+            ? `no fix rounds — the ${v.judge} judge can still restart the attempt or hand a finding to you`
+            : `go back to the writer (${v.judge}) up to ${v.rounds} times — each is a judge call and another writer run`,
+      7.5,
+      (before, value) => {
+        const judge =
+          before.judge === value.judge ? value.judge : `${before.judge ?? 'none'} → ${value.judge ?? 'none'}`
+        const rounds = before.rounds === value.rounds ? value.rounds : `${before.rounds} → ${value.rounds}`
+        return `go back to the writer (${judge}) up to ${rounds} times — each is a judge call and another writer run`
+      },
+    ),
     name: 'the findings judge',
     flag: '(derived from the writer)',
     // After the landing, so the hold stays first in `steps.proposed`. An entry with no question: it follows the writer.
@@ -1391,6 +1586,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   }
 
   const refusalFixes = entry('refusal-fixes', {
+    presentation: limitPresentation('refusal fixes', (v) => {
+      const r = v.resolved()
+      return r === null
+        ? v.get(['runtime', 'limits', 'attempt', 'refusalFixes'])
+        : ceilingOf(r.recipe).attempt.refusalFixes
+    }),
     name: 'refusal fixes',
     flag: '--refusal-fixes <n>',
     fromFlags: (flags) =>
@@ -1404,6 +1605,12 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const conflictResolutions = entry('conflict-resolutions', {
+    presentation: limitPresentation('conflict resolutions', (v) => {
+      const r = v.resolved()
+      return r === null
+        ? v.get(['runtime', 'limits', 'attempt', 'conflictResolutions'])
+        : ceilingOf(r.recipe).attempt.conflictResolutions
+    }),
     name: 'conflict resolutions',
     flag: '--conflict-resolutions <n>',
     fromFlags: (flags) => flags['conflict-resolutions'] ?? null,
@@ -1422,6 +1629,10 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const wall = entry('wall', {
+    presentation: limitPresentation('wall', (v) => {
+      const r = v.resolved()
+      return r === null ? v.get(['runtime', 'limits', 'run', 'wall']) : ceilingOf(r.recipe).run.wall
+    }),
     name: 'wall',
     flag: '--wall <duration>',
     fromFlags: (flags) => flags['wall'] ?? null,
@@ -1432,6 +1643,15 @@ export function projectList(ports: ProjectPorts): readonly ProjectQuestion[] {
   })
 
   const budget = entry('budget', {
+    presentation: presentation(
+      'budget',
+      'attempt',
+      (v) => {
+        const r = v.resolved()
+        return r === null ? v.get(['runtime', 'limits', 'run', 'usd']) : (ceilingOf(r.recipe).run.usd ?? null)
+      },
+      (v) => (v === null ? 'no ceiling' : `$${v}`),
+    ),
     name: 'the spend ceiling',
     flag: '--budget <dollars>|none',
     fromFlags: (flags) => flags['budget'] ?? null,

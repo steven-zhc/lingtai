@@ -91,6 +91,8 @@ export interface ProjectView {
   get(path: readonly (string | number)[]): unknown
   /** What the starting text and the pending changes resolve to, or null where that does not (yet) resolve. Never throws. */
   resolved(): ResolvedRecipe | null
+  /** The same resolution, retaining its refusal for setup previews. */
+  resolution(): { value: ResolvedRecipe } | { error: unknown }
 }
 
 /**
@@ -105,7 +107,17 @@ export interface ProjectView {
  */
 export function projectView(start: Pick<RecipeDraft, 'text' | 'path'>, pending: readonly RecipeChange[]): ProjectView {
   const base = (): string => start.text() ?? `version: ${RECIPE_VERSION}\n`
+  const resolution = (): { value: ResolvedRecipe } | { error: unknown } => {
+    try {
+      const widened = widenStepsIfNeeded(start.text(), [...pending], start.path)
+      const text = editedText(start.text(), widened, start.path)
+      return { value: resolveSource(text, refFor(text, start.path), start.path) }
+    } catch (error) {
+      return { error }
+    }
+  }
   return {
+    resolution,
     get: (key) => {
       try {
         const doc = overlaid(base(), pending)
@@ -116,15 +128,8 @@ export function projectView(start: Pick<RecipeDraft, 'text' | 'path'>, pending: 
       }
     },
     resolved: () => {
-      try {
-        const changes = [...pending]
-        const existing = start.text()
-        const widened = widenStepsIfNeeded(existing, changes, start.path)
-        const text = editedText(existing, widened, start.path)
-        return resolveSource(text, refFor(text, start.path), start.path)
-      } catch {
-        return null
-      }
+      const result = resolution()
+      return 'value' in result ? result.value : null
     },
   }
 }

@@ -1,8 +1,14 @@
-import { Effect } from 'effect'
+import { Effect, Redacted } from 'effect'
 import { describe, expect, it } from 'vitest'
 
 import type { MachineText } from '../src/claude-token.ts'
-import { type MachinePorts, machineQuestions, writeDayCeiling } from '../src/machine-list.ts'
+import {
+  type MachinePorts,
+  machineQuestions,
+  machineRows,
+  machineSnapshotRows,
+  writeDayCeiling,
+} from '../src/machine-list.ts'
 import { type Asker, type SetupInput, runSetupList } from '../src/setup-list.ts'
 
 const PATH = '/h/config.yml'
@@ -160,6 +166,67 @@ describe('the token entry', () => {
   const tokenList = (ports: MachinePorts) =>
     machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'claude-token')
 
+  it.each([null, Redacted.make('invalid-token')])(
+    'a failed token setup reports no effective change (%s)',
+    async (token) => {
+      let obtained = 0
+      const { ports, state } = world('', {
+        recipes: () => Effect.succeed([sandboxed]),
+        obtainToken: () => {
+          obtained++
+          return Effect.succeed(token)
+        },
+      })
+      const list = tokenList(ports)
+      const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer: 'run' }) } }))
+      expect(result.refused).toBeUndefined()
+      expect(obtained).toBe(1)
+      expect(state.writes).toBe(0)
+      expect(machineRows(list, result.entries)).toEqual([
+        { id: 'claude-token', label: 'claude token', group: 'machine', changed: false, text: 'skipped' },
+      ])
+    },
+  )
+
+  it.each(['keep', 'skip'])('an existing token stays set after %s and in the add snapshot', async (answer) => {
+    for (const environment of [false, true]) {
+      const { ports, state } = world('', {
+        recipes: () => Effect.succeed([sandboxed]),
+        tokenState: () => ({ environment, file: !environment, usable: true }),
+        obtainToken: () => Effect.die('an existing token must not be obtained again'),
+      })
+      const list = tokenList(ports)
+      const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer }) } }))
+      const expected = {
+        id: 'claude-token',
+        label: 'claude token',
+        group: 'machine',
+        changed: false,
+        text: `set${environment ? ' — from LINGTAI_CLAUDE_OAUTH_TOKEN' : ''}`,
+      }
+      expect(result.refused).toBeUndefined()
+      expect(machineRows(list, result.entries)).toEqual([expected])
+      expect((await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === 'claude-token')).toEqual(
+        expected,
+      )
+      expect(state.writes).toBe(0)
+    }
+  })
+
+  it('a successful token setup reports the saved state without retaining credentials', async () => {
+    const { ports, state } = world('', {
+      recipes: () => Effect.succeed([sandboxed]),
+      obtainToken: () => Effect.succeed(Redacted.make('sk-ant-oat01-test-secret')),
+    })
+    const list = tokenList(ports)
+    const result = await run(list, input({ askers: { 'claude-token': () => Effect.succeed({ answer: 'run' }) } }))
+    expect(state.writes).toBe(1)
+    expect(machineRows(list, result.entries)).toEqual([
+      { id: 'claude-token', label: 'claude token', group: 'machine', changed: true, text: 'skipped → set' },
+    ])
+    expect(JSON.stringify(machineRows(list, result.entries))).not.toContain('test-secret')
+  })
+
   it('is not asked where no recipe names claude-code with the sandbox on, and is asked once the draft does', async () => {
     const { ports } = world('')
     const list = tokenList(ports)
@@ -269,6 +336,7 @@ describe('a value that could not be read is not an absent one', () => {
     const { state, ports } = faulty('limits:\n  day_usd: 0\n  other: 1\n')
     const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': 'none' } }))
     expect(out.entries[0]).toMatchObject({ after: 'none', wrote: true })
+    expect(machineRows(ceilingOnly(ports), out.entries)[0]?.text).toBe('no ceiling')
     expect(state.text).not.toContain('day_usd')
     expect(state.text).toContain('other: 1')
   })
@@ -277,6 +345,7 @@ describe('a value that could not be read is not an absent one', () => {
     const { state, ports } = faulty('limits:\n  day_usd: 0\n')
     const out = await run(ceilingOnly(ports), input({ flags: { 'day-usd': '50' } }))
     expect(out.entries[0]).toMatchObject({ after: '50', wrote: true })
+    expect(machineRows(ceilingOnly(ports), out.entries)[0]?.text).toBe('up to $50 a day')
     expect(state.text).toContain('day_usd: 50')
   })
 })
@@ -308,4 +377,104 @@ describe('an exported value beside a flag', () => {
     const fine = await run(github(false), input())
     expect(fine.refused).toBeUndefined()
   })
+})
+
+describe('machine descriptor rows', () => {
+  it.each([
+    { id: 'ceiling', label: 'spend', ports: { dayCeiling: () => ({ fault: 'invalid ceiling', environment: false }) } },
+    { id: 'ceiling', label: 'spend', ports: { dayCeiling: () => ({ fault: 'invalid ceiling', environment: true }) } },
+    { id: 'store', label: 'log', ports: { store: () => ({ store: null, fault: 'invalid store' }) } },
+    {
+      id: 'store',
+      label: 'log',
+      ports: {
+        store: () => ({ store: 'postgres', url: 'postgres://db.example/log', environment: false }),
+        database: () => Effect.succeed({ ok: false, why: 'connection refused' }),
+      },
+    },
+    { id: 'github', label: 'github', ports: { githubAuth: () => ({ refused: 'invalid auth', environment: false }) } },
+  ] satisfies { id: string; label: string; ports: Partial<MachinePorts> }[])(
+    'keeps an unanswered $id read fault in the add snapshot ($ports)',
+    async ({ id, label, ports: overrides }) => {
+      const { ports, state } = world('', overrides)
+      const q = machineQuestions(ports, { githubRequired: false }).find((q) => q.id === id)!
+      const before = await Effect.runPromise(q.inForce!({}))
+      expect(before).toHaveProperty('fault')
+      const row = (await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === id)
+      expect(row).toMatchObject({
+        label,
+        changed: false,
+        text: expect.stringContaining(`could not read — ${before !== null && 'fault' in before ? before.fault : ''}`),
+      })
+      expect(row?.text).not.toContain('no ceiling')
+      expect(state.writes).toBe(0)
+    },
+  )
+
+  it('compares no ceiling with a later daily ceiling, and the reverse', async () => {
+    const { ports, state } = world('')
+    const list = ceilingOnly(ports)
+    const none = await run(list, input({ flags: { 'day-usd': 'none' } }))
+    expect(machineRows(list, none.entries)[0]).toMatchObject({ changed: false, text: 'no ceiling' })
+    expect(state.writes).toBe(0)
+    const limited = await run(list, input({ flags: { 'day-usd': '150' } }))
+    expect(state.text).toContain('day_usd: 150')
+    expect(machineRows(list, limited.entries)[0]).toMatchObject({
+      changed: true,
+      text: 'no ceiling → up to $150 a day',
+    })
+    expect(machineRows(list, limited.entries, {}, false)[0]).toMatchObject({
+      changed: false,
+      text: 'up to $150 a day',
+    })
+    ports.dayCeiling = () => ({ value: 150, environment: false })
+    const removed = await run(list, input({ flags: { 'day-usd': 'none' } }))
+    expect(state.text).not.toContain('day_usd')
+    expect(machineRows(list, removed.entries)[0]).toMatchObject({
+      changed: true,
+      text: 'up to $150 a day → no ceiling',
+    })
+    ports.dayCeiling = () => ({ value: null, environment: false })
+    expect((await Effect.runPromise(machineSnapshotRows(ports))).find((r) => r.id === 'ceiling')).toMatchObject({
+      changed: false,
+      text: 'no ceiling',
+    })
+  })
+
+  it('shows the semantic ceiling change in dollars per day', async () => {
+    const { ports } = world('limits:\n  day_usd: 100\n', { dayCeiling: () => ({ value: 100, environment: false }) })
+    const list = ceilingOnly(ports)
+    const result = await run(list, input({ flags: { 'day-usd': '150' } }))
+    expect(machineRows(list, result.entries)).toEqual([
+      { id: 'ceiling', label: 'spend', group: 'machine', changed: true, text: 'up to $100 a day → up to $150 a day' },
+    ])
+  })
+  it('names the actual exported variable, without an arrow on a rerun', async () => {
+    const { ports, state } = world('', { dayCeiling: () => ({ value: 100, environment: true }) })
+    const list = ceilingOnly(ports)
+    const result = await run(list, input())
+    expect(machineRows(list, result.entries)[0]).toMatchObject({
+      changed: false,
+      text: 'up to $100 a day — from LINGTAI_LIMITS_DAY_USD',
+    })
+    expect(state.writes).toBe(0)
+  })
+  it('keeps database credentials out of the row snapshot', async () => {
+    const { ports } = world('', {
+      store: () => ({ store: 'postgres', url: 'postgres://me:secret@db.example/log', environment: true }),
+    })
+    const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+    const result = await run(list, input())
+    expect(JSON.stringify(machineRows(list, result.entries))).not.toContain('secret')
+    expect(machineRows(list, result.entries)[0]?.text).toContain('Postgres · db.example — from LINGTAI_DATABASE_URL')
+  })
+})
+
+it('carries the actual store variable rather than guessing a production name', async () => {
+  const { ports } = world('', {
+    store: () => ({ store: 'sqlite', environment: true, variable: 'LINGTAI_TEST_SQLITE_PATH' }),
+  })
+  const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+  const result = await run(list, input())
+  expect(machineRows(list, result.entries)[0]?.text).toBe('SQLite — from LINGTAI_TEST_SQLITE_PATH')
 })
