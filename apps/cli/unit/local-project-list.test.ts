@@ -213,6 +213,7 @@ describe('init and add use the same project list (#1526)', () => {
       })
       w.project.ask = (prompt) => {
         if (/which labels are work/.test(prompt)) {
+          expect(mirrorOrigin).toBeUndefined()
           if (ending === 'refuse') return Promise.resolve(null)
           if (ending === 'interrupt') {
             reached()
@@ -307,8 +308,15 @@ describe('init and add use the same project list (#1526)', () => {
           })
         }
         expect(result, w.logged.join('\n')).toMatchObject({ ok: true, trial: { trial: 'failed-kept' } })
-        expect(w.events).toEqual(['mirror', 'provision:lingtai-base:new222', 'trial:failed', 'recipe', 'register'])
-        expect(mirrorOrigin).toBe('/new/repo')
+        expect(w.events).toEqual([
+          'mirror',
+          'provision:lingtai-base:new222',
+          'trial:failed',
+          'mirror',
+          'recipe',
+          'register',
+        ])
+        expect(mirrorOrigin).toBeUndefined()
         expect(w.registered[0]).toMatchObject({ base: 'lingtai-base', fromSha: 'new222' })
         expect(w.recipes.get(PATH)).toContain('remote: /new/repo')
       })

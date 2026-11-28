@@ -37,7 +37,7 @@ import { branchOf, resolveSource, type Recipe, type ResolvedRecipe, type SignedI
 import { mirrorPathFor } from '@lingtai/repo'
 import { type Picker, type ProposalReaders, type RepositoryList, type SetupReader } from '@lingtai/setup'
 import { askRuntimesEffect, NO_GITHUB_ORIGIN, proposeSetup, type RuntimeFound } from '@lingtai/setup'
-import { applySetup, keptSentence, SetupWriteError } from '@lingtai/setup'
+import { applySetup, keptSentence, liveTrialBuild, SetupWriteError } from '@lingtai/setup'
 import {
   ENV_PLANT_AT,
   SAID,
@@ -66,7 +66,7 @@ import {
 import { liveMachineText, writeGithubAuth } from './github-auth.ts'
 import { waitForKeypress } from './keypress.ts'
 import { askTokenFor, liveMachineWorld, machineSetup } from './machine-askers.ts'
-import { projectAskers, liveTrialPort } from './project-askers.ts'
+import { projectAskers, trialPortOver } from './project-askers.ts'
 import { fetchedRates, toolOnPath } from './project-support.ts'
 import { interactivity } from './prompt.ts'
 import { questionEffect, spunEffect, type QuestionWorld } from './question.ts'
@@ -628,12 +628,6 @@ function runLocalBranch(
     // A mirror retains its old origin when fetched. Invalidate it once, before a repair trial can provision it;
     // when no trial runs, the same effect removes it before registration.
     let mirrorRemoved = false
-    let mirrorCommitted = false
-    // A trial can clone the new remote before later questions refuse or interrupt the move.
-    // Until registration succeeds, discard that mirror so the unchanged recipe can clone its own remote again.
-    yield* Effect.addFinalizer(() =>
-      mirrorRemoved && !mirrorCommitted && ports !== null ? ports.removeMirror(name).pipe(Effect.orDie) : Effect.void,
-    )
     const removeMirror = Effect.gen(function* () {
       if (!migrating || ports === null || mirrorRemoved) return
       yield* ports
@@ -646,7 +640,19 @@ function runLocalBranch(
         )
       mirrorRemoved = true
     })
-    const trialPort = liveTrialPort(world, { project: name, owner: '', repo: name, remote, home: world.home })
+    const trialPort = trialPortOver(world, { project: name, home: world.home }, (draft, base) => {
+      const trial = liveTrialBuild({ project: name, owner: '', repo: name, remote, home: world.home, base, draft })
+      return {
+        ...trial,
+        // Discard the trial's new origin before any later prompt can exit the process directly on Ctrl+C.
+        run: (install, build) =>
+          Effect.acquireUseRelease(
+            removeMirror,
+            () => trial.run(install, build),
+            () => (migrating && ports !== null ? ports.removeMirror(name).pipe(Effect.orDie) : Effect.void),
+          ),
+      }
+    })
     const tips = new Map<string, string>()
     const localPorts: ProjectPorts = {
       project: name,
@@ -691,7 +697,7 @@ function runLocalBranch(
           Effect.map((r) => (r.ok ? r.stdout.split('\n').filter((l) => l.trim() !== '') : null)),
           Effect.catch(() => Effect.succeed(null)),
         ),
-      trial: (at) => removeMirror.pipe(Effect.andThen(trialPort(at))),
+      trial: trialPort,
     }
     let printed = 0
     const flushLog = (ctx: ProjectContext) => {
@@ -823,7 +829,6 @@ function runLocalBranch(
         Effect.fail(error instanceof SetupWriteError ? error : new Error(`${errorText(error)}; ${keptSentence(path)}`)),
       ),
     )
-    mirrorCommitted = true
     const leftBehind: LeftBehind[] = []
     const oldBase = fileText === null ? null : branchOf(resolveSource(fileText, path, path).recipe)
     if (switching && oldBase !== null)
@@ -847,7 +852,7 @@ function runLocalBranch(
       })
     }
     return { ...common, updated: registration.registered.updated, ...(leftBehind.length === 0 ? {} : { leftBehind }) }
-  }).pipe(Effect.scoped, recoverWithLocal(world))
+  }).pipe(recoverWithLocal(world))
 }
 
 /** Preserve read and write failures by name, and let interruption leave the pending list alone. */
