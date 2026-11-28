@@ -95,8 +95,8 @@ export function writeStore(file: MachineText, path: string, store: { sqlite: tru
 
 export type StoreReading =
   | { store: null; fault?: string }
-  | { store: 'sqlite' }
-  | { store: 'postgres'; url: string; environment: boolean }
+  | { store: 'sqlite'; environment?: boolean; variable?: string }
+  | { store: 'postgres'; url: string; environment: boolean; variable?: string }
 
 export type AuthReading =
   | { kind: 'gh' | 'app' | 'none' | null; environment: boolean; written: boolean }
@@ -191,10 +191,11 @@ export function machineQuestions(
       Effect.gen(function* () {
         const read = ports.store()
         if (read.store === null) return read.fault === undefined ? null : ({ fault: read.fault, from: 'file' } as const)
-        if (read.store === 'sqlite') return { value: '', from: 'file' } as const
+        if (read.store === 'sqlite')
+          return { value: '', from: read.environment ? 'environment' : 'file', variable: read.variable } as const
         const check = yield* ports.database(read.url)
         const from = read.environment ? ('environment' as const) : ('file' as const)
-        if (check.ok) return { value: read.url, from } as const
+        if (check.ok) return { value: read.url, from, variable: read.variable } as const
         return {
           fault: `the database ${read.environment ? 'the environment' : 'config.yml'} names does not answer — ${check.why}`,
           from,
@@ -459,7 +460,7 @@ export function machineRows(
           changed,
           text:
             (changed ? `${q.row(before!.value!, null)} → ${text}` : text) +
-            (before?.from === 'environment' ? ` — from ${q.card?.environment}` : ''),
+            (before?.from === 'environment' ? ` — from ${before.variable ?? q.card?.environment}` : ''),
         },
       ]
     })

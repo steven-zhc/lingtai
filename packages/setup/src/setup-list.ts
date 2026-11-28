@@ -12,11 +12,12 @@ import { Effect } from 'effect'
 
 /** What is in force for one question: the value and whose it is, a fault in it, or nothing. */
 export type InForce =
-  | { value: string; from: 'environment' | 'file' }
+  | { value: string; from: 'environment' | 'file'; variable?: string }
   | {
       /** What is wrong with it, said before asking. */
       fault: string
       from: 'environment' | 'file'
+      variable?: string
       /** The answer that keeps what is there, where the fault is not the value's own (a database that is down). */
       value?: string
       /** A fault the run cannot repair (an exported variable): refused by name rather than asked. */

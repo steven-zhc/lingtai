@@ -339,3 +339,12 @@ describe('machine descriptor rows', () => {
     expect(machineRows(list, result.entries)[0]?.text).toContain('Postgres · db.example — from LINGTAI_DATABASE_URL')
   })
 })
+
+it('carries the actual store variable rather than guessing a production name', async () => {
+  const { ports } = world('', {
+    store: () => ({ store: 'sqlite', environment: true, variable: 'LINGTAI_TEST_SQLITE_PATH' }),
+  })
+  const list = machineQuestions(ports, { githubRequired: false }).filter((q) => q.id === 'store')
+  const result = await run(list, input())
+  expect(machineRows(list, result.entries)[0]?.text).toBe('SQLite — from LINGTAI_TEST_SQLITE_PATH')
+})

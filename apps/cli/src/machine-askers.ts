@@ -146,8 +146,17 @@ export function machineSetup(world: MachineWorld, opts: { githubRequired: boolea
           : { store: null }
       }
       return read.store === 'sqlite'
-        ? { store: 'sqlite' }
-        : { store: 'postgres', url: read.url, environment: read.where === 'environment' }
+        ? {
+            store: 'sqlite',
+            environment: read.where === 'environment',
+            variable: read.where === 'environment' ? read.from.split(',')[0] : undefined,
+          }
+        : {
+            store: 'postgres',
+            url: read.url,
+            environment: read.where === 'environment',
+            variable: read.where === 'environment' ? read.from.split(',')[0] : undefined,
+          }
     },
     githubAuth: () => {
       const read = githubAuthElectionFrom(world.env, fileNow())
