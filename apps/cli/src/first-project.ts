@@ -625,6 +625,22 @@ function runLocalBranch(
     ) {
       world.log(paint.muted(`tickets       db — ${proposal.tickets.because}`))
     }
+    // A mirror retains its old origin when fetched. Invalidate it once, before a repair trial can provision it;
+    // when no trial runs, the same effect removes it before registration.
+    let mirrorRemoved = false
+    const removeMirror = Effect.gen(function* () {
+      if (!migrating || ports === null || mirrorRemoved) return
+      yield* ports
+        .removeMirror(name)
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new Error(`could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed`),
+          ),
+        )
+      mirrorRemoved = true
+    })
+    const trialPort = liveTrialPort(world, { project: name, owner: '', repo: name, remote, home: world.home })
     const tips = new Map<string, string>()
     const localPorts: ProjectPorts = {
       project: name,
@@ -669,7 +685,7 @@ function runLocalBranch(
           Effect.map((r) => (r.ok ? r.stdout.split('\n').filter((l) => l.trim() !== '') : null)),
           Effect.catch(() => Effect.succeed(null)),
         ),
-      trial: liveTrialPort(world, { project: name, owner: '', repo: name, remote, home: world.home }),
+      trial: (at) => removeMirror.pipe(Effect.andThen(trialPort(at))),
     }
     let printed = 0
     const flushLog = (ctx: ProjectContext) => {
@@ -761,12 +777,7 @@ function runLocalBranch(
     })
     if (!switching) yield* makeBranch
     if (world.claudeToken !== undefined) yield* world.claudeToken(recipe, flags).pipe(Effect.catch(() => Effect.void))
-    if (migrating && ports !== null) {
-      const removal = yield* refusingOn(ports.removeMirror(name).pipe(Effect.as(null)), (error) => ({
-        refused: `could not remove the mirror of ${name} — ${errorText(error)}. The recipe was not changed. ${world.kept}`,
-      }))
-      if (removal !== null) return removal
-    }
+    yield* removeMirror
     const resolved = yield* resolveDraftRecipeEffect(name, finalText, {
       home: world.home,
       signedIn: world.signedIn,

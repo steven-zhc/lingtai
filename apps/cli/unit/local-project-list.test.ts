@@ -196,6 +196,71 @@ describe('init and add use the same project list (#1526)', () => {
     })
   })
 
+  it('a repair trial uses the new checkout commits, removing the old mirror once before provisioning', () => {
+    const first = setupWorld()
+    return runInit(first).then(() => {
+      const old = first.recipes.get(PATH)!.replace('remote: /repo', 'remote: /old/repo')
+      const w = setupWorld({ text: old, projects: [projectState()], origin: '/old/repo' })
+      w.branches.set('lingtai-base', 'new222')
+      const git = w.project.git
+      w.project.git = (dir, args) =>
+        args.join(' ') === 'rev-parse --show-toplevel'
+          ? Effect.succeed({ ok: true, stdout: '/new/repo', stderr: '' })
+          : git(dir, args)
+      w.project.ask = (prompt) =>
+        Promise.resolve(
+          /Move repo's landing/.test(prompt) ? 'yes' : /keep the list as it is/.test(prompt) ? 'keep' : '',
+        )
+      let mirrorOrigin: string | undefined = '/old/repo'
+      w.project.removeMirror = () =>
+        Effect.sync(() => {
+          w.events.push('mirror')
+          mirrorOrigin = undefined
+        })
+      // Provisioning fetches an existing mirror's origin; the supplied remote is used only on clone.
+      const deps: setup.TrialDeps = {
+        provision: (at) =>
+          Effect.sync(() => {
+            mirrorOrigin ??= at.remote
+            const sha = mirrorOrigin === '/new/repo' ? 'new222' : 'old111'
+            w.events.push(`provision:${at.base}:${sha}`)
+            return { path: `/trial/${sha}` }
+          }),
+        run: (at) =>
+          Effect.sync(() => {
+            const passed = at.cwd === '/trial/old111'
+            w.events.push(`trial:${passed ? 'passed' : 'failed'}`)
+            return {
+              ok: passed,
+              exitCode: passed ? 0 : 1,
+              evidence: passed ? '' : 'new commits fail',
+              timedOut: false,
+              durationMs: 0,
+            }
+          }),
+        remove: () => Effect.void,
+        resolveEnv: () => Promise.resolve({ values: {} }),
+        runId: () => 'repair-trial',
+        log: () => {},
+      }
+      vi.spyOn(setup, 'liveTrialBuild').mockImplementation((at) => ({
+        base: setup.trialBaseEffect(at),
+        run: (install, build) => setup.runTrialEffect(at, deps, install, build),
+      }))
+      return Effect.runPromise(
+        chooseFirstProjectEffect(w.project, { local: '/new/repo', defaults: '', 'check-build': 'yes' }, [
+          'pnpm test',
+        ]).pipe(Effect.provideService(ProjectFiles, w.files)),
+      ).then((result) => {
+        expect(result, w.logged.join('\n')).toMatchObject({ ok: true, trial: { trial: 'failed-kept' } })
+        expect(w.events).toEqual(['mirror', 'provision:lingtai-base:new222', 'trial:failed', 'recipe', 'register'])
+        expect(mirrorOrigin).toBe('/new/repo')
+        expect(w.registered[0]).toMatchObject({ base: 'lingtai-base', fromSha: 'new222' })
+        expect(w.recipes.get(PATH)).toContain('remote: /new/repo')
+      })
+    })
+  })
+
   it.each(['mode', 'login', 'personal', 'sandbox', 'sandbox-hosts', 'agent', 'defaults', 'rounds'])(
     'init with projects but none named refuses --%s by name',
     (flag) => {
