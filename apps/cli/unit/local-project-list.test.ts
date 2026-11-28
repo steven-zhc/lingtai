@@ -239,7 +239,16 @@ describe('init and add use the same project list (#1526)', () => {
             }
           }),
         remove: () => Effect.void,
-        resolveEnv: () => Promise.resolve({ values: {} }),
+        resolveEnv: () =>
+          Promise.resolve({
+            values: {},
+            merged: {},
+            names: [],
+            missing: [],
+            deferred: [],
+            file: `${HOME}/env/repo.env`,
+            refusal: null,
+          }),
         runId: () => 'repair-trial',
         log: () => {},
       }
